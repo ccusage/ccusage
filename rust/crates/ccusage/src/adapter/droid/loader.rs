@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, debug_log,
-    format_date_tz, parse_tz, read_files_parallel,
+    format_date_tz, parse_tz,
 };
 
 pub(crate) fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
@@ -21,31 +21,36 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     let tz = parse_tz(shared.timezone.as_deref());
     let mut files = discover_settings_files()?;
     files.sort();
-    // Read files in parallel, reassembled in the original (sorted) file order so
-    // the subsequent stable sort and reverse latest-wins dedup pick the same
-    // snapshot per session as the single-threaded read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        load_settings_file(file).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read Droid settings file {}: {error}",
-                    file.display()
-                ),
-            );
-            None
-        })
-    });
-    let mut parsed: Vec<DroidEntry> = loaded.into_iter().flatten().collect();
-    parsed.sort_by_key(|entry| entry.timestamp);
-    let mut seen_sessions = HashSet::new();
-    let mut entries = Vec::new();
-    for entry in parsed.into_iter().rev() {
-        if !seen_sessions.insert(entry.session_id.clone()) {
-            continue;
-        }
-        entries.push(to_loaded_entry(entry, tz.as_ref(), pricing));
-    }
+    let mut all = crate::cache::load_with_cache(
+        "droid",
+        &files,
+        shared.single_thread,
+        crate::cache::cost_fingerprint(Some(pricing.fingerprint()), shared.mode),
+        shared.live_only,
+        |file| {
+            let Some(entry) = load_settings_file(file).unwrap_or_else(|error| {
+                debug_log(
+                    shared,
+                    format!(
+                        "Failed to read Droid settings file {}: {error}",
+                        file.display()
+                    ),
+                );
+                None
+            }) else {
+                return Ok(Vec::new());
+            };
+            Ok(vec![to_loaded_entry(entry, tz.as_ref(), pricing)])
+        },
+    )?;
+    // Keep only the latest snapshot per session (multiple settings files can share a session_id).
+    all.sort_by_key(|e| e.timestamp);
+    let mut seen_sessions: HashSet<Arc<str>> = HashSet::new();
+    let entries: Vec<_> = all
+        .into_iter()
+        .rev()
+        .filter(|e| seen_sessions.insert(Arc::clone(&e.session_id)))
+        .collect();
     Ok(entries)
 }
 
@@ -92,6 +97,8 @@ use super::report::{report_from_rows, summarize_entries};
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
     use serde_json::json;
 
@@ -101,8 +108,12 @@ mod tests {
     };
     use super::*;
     use crate::{
-        TokenUsageRaw, UsageEntry, UsageMessage, cli::AgentReportKind, parse_ts_timestamp,
+        TokenUsageRaw, UsageEntry, UsageMessage, cache::tests::CacheEnv, cli::AgentReportKind,
+        parse_ts_timestamp,
     };
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn normalizes_droid_model_names() {
         assert_eq!(
@@ -132,6 +143,8 @@ mod tests {
 
     #[test]
     fn loads_usage_from_droid_settings_files() {
+        let _cache_env = CacheEnv::new("droid-loads-settings");
+        let _guard = ENV_LOCK.lock().unwrap();
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -172,6 +185,8 @@ mod tests {
 
     #[test]
     fn falls_back_to_sidecar_jsonl_model() {
+        let _cache_env = CacheEnv::new("droid-sidecar-model");
+        let _guard = ENV_LOCK.lock().unwrap();
         let fixture = fs_fixture!({
             "session-b.settings.json": r#"{
                 "providerLock": "anthropic",
@@ -194,6 +209,8 @@ mod tests {
 
     #[test]
     fn keeps_latest_snapshot_for_duplicate_session_ids() {
+        let _cache_env = CacheEnv::new("droid-dedup-snapshot");
+        let _guard = ENV_LOCK.lock().unwrap();
         let fixture = fs_fixture!({
             "archive/session-c.settings.json": r#"{
                 "model": "gpt-5",

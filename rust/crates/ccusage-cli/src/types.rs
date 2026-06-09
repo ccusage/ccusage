@@ -10,6 +10,7 @@ pub struct Cli {
 
 pub enum Command {
     All(AgentCommandArgs),
+    ClearCache { agent: Option<String> },
     Daily(DailyArgs),
     Monthly(SharedArgs),
     Weekly(WeeklyArgs),
@@ -52,6 +53,7 @@ pub struct SharedArgs {
     pub compact: bool,
     pub single_thread: bool,
     pub no_cost: bool,
+    pub live_only: bool,
     pub pricing_overrides: BTreeMap<String, PricingOverride>,
 }
 

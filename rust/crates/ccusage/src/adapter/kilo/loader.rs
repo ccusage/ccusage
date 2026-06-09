@@ -1,10 +1,8 @@
-use std::{collections::HashSet, path::Path, path::PathBuf};
+use std::{collections::HashSet, path::Path};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
 
 use super::{
     parser::{KiloMessage, message_value_to_entry},
@@ -19,26 +17,28 @@ pub(crate) fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<
 
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
-    let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
-    // Load each database in parallel (a fresh read-only connection per DB), then
-    // run the sequential id dedup over the original path order so the surviving
-    // record per id matches the single-threaded read.
-    let loaded = read_files_parallel(&db_paths, shared.single_thread, |db_path| {
-        load_entries_from_database(db_path, tz.as_ref(), shared, pricing)
-    });
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for db_entries in loaded {
-        for entry in db_entries {
-            if let Some(id) = entry.data.message.id.as_deref()
-                && !seen.insert(id.to_string())
-            {
-                continue;
+    let db_paths: Vec<_> = paths()?.into_iter().filter_map(|p| db_path(&p)).collect();
+    let all = crate::cache::load_with_cache(
+        "kilo",
+        &db_paths,
+        shared.single_thread,
+        crate::cache::cost_fingerprint(Some(pricing.fingerprint()), shared.mode),
+        shared.live_only,
+        |db| Ok(load_entries_from_database(db, tz.as_ref(), shared, pricing)),
+    )?;
+    // Deduplicate message ids across databases (same id can appear in multiple synced dbs).
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut entries: Vec<LoadedEntry> = all
+        .into_iter()
+        .filter(|e| {
+            if let Some(id) = e.data.message.id.as_deref() {
+                seen.insert(id.to_string())
+            } else {
+                true
             }
-            entries.push(entry);
-        }
-    }
-    entries.sort_by_key(|entry| entry.timestamp);
+        })
+        .collect();
+    entries.sort_by_key(|e| e.timestamp);
     Ok(entries)
 }
 
@@ -77,8 +77,18 @@ fn load_entries_from_database(
                 let Ok(data) = statement.read::<String, _>(2) else {
                     continue;
                 };
-                let Ok(value) = serde_json::from_str::<KiloMessage>(&data) else {
-                    continue;
+                let value = match serde_json::from_str::<KiloMessage>(&data) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        debug_log(
+                            shared,
+                            format!(
+                                "Failed to read Kilo database {}: {error}",
+                                db_path.display()
+                            ),
+                        );
+                        continue;
+                    }
                 };
                 if let Some(entry) = message_value_to_entry(
                     &value,
@@ -107,11 +117,13 @@ fn load_entries_from_database(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{path::Path, sync::Mutex};
 
     use super::*;
-    use crate::{PricingMap, cli::CostMode};
+    use crate::{PricingMap, cache::tests::CacheEnv, cli::CostMode};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    static KILO_DATA_DIR_LOCK: Mutex<()> = Mutex::new(());
 
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
@@ -128,6 +140,8 @@ mod tests {
 
     #[test]
     fn loads_kilo_messages_from_sqlite() {
+        let _cache_env = CacheEnv::new("kilo-loads-sqlite");
+        let _guard = KILO_DATA_DIR_LOCK.lock().unwrap();
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path(super::super::paths::KILO_DB_FILE_NAME),
@@ -163,6 +177,8 @@ mod tests {
 
     #[test]
     fn ignores_kilo_messages_without_timestamps() {
+        let _cache_env = CacheEnv::new("kilo-no-timestamps");
+        let _guard = KILO_DATA_DIR_LOCK.lock().unwrap();
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path(super::super::paths::KILO_DB_FILE_NAME),
@@ -179,6 +195,8 @@ mod tests {
 
     #[test]
     fn deduplicates_kilo_messages_across_data_dirs() {
+        let _cache_env = CacheEnv::new("kilo-dedup-dirs");
+        let _guard = KILO_DATA_DIR_LOCK.lock().unwrap();
         let first = fs_fixture!({});
         let second = fs_fixture!({});
         for (fixture, input) in [(&first, 10), (&second, 20)] {

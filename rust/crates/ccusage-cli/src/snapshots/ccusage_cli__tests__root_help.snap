@@ -28,6 +28,7 @@ COMMANDS:
   kimi                       Show Kimi usage commands
   qwen                       Show Qwen usage commands
   openclaw                   Show OpenClaw usage commands
+  clear-cache                Clear the on-disk cache, optionally for a single agent
 
 For more info, run any command with the `--help` flag:
   ccusage daily --help
@@ -51,6 +52,7 @@ For more info, run any command with the `--help` flag:
   ccusage kimi --help
   ccusage qwen --help
   ccusage openclaw --help
+  ccusage clear-cache --help
 
 OPTIONS:
   -j, --json                           Output in JSON format (default: false)
@@ -60,6 +62,7 @@ OPTIONS:
   --all                                Accepted for compatibility; all detected supported agents are included by default (default: false)
   -O, --offline                        Use cached pricing data where supported (default: false)
   --no-offline                         Negatable of -O, --offline
+  --live-only                          Show only usage from log files still on disk; exclude spend retained from deleted source logs (default: false)
   --compact                            Force compact table layout for narrow terminals (default: false)
   --no-cost                            Hide cost information in table and JSON output (default: false)
   --color                              Enable colored output. FORCE_COLOR=1 has the same effect. (default: auto)

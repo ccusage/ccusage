@@ -1,95 +1,38 @@
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde::Deserialize;
 
-use super::super::jsonl;
 use crate::{
-    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    calculate_cost_for_usage, cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
+    LoadedEntry, OpenCodeMessage, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage,
+    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
+    missing_pricing_model_for_candidates,
 };
 
-/// A single parsed OpenCode message. Only the fields ccusage consumes are
-/// declared; serde skips everything else.
-#[derive(Debug, Default, Deserialize)]
-pub(crate) struct OpenCodeMessage {
-    #[serde(default, deserialize_with = "jsonl::lenient_object")]
-    tokens: Option<OpenCodeTokens>,
-    #[serde(
-        rename = "modelID",
-        default,
-        deserialize_with = "jsonl::non_empty_string"
-    )]
-    model_id: Option<String>,
-    #[serde(
-        rename = "providerID",
-        default,
-        deserialize_with = "jsonl::non_empty_string"
-    )]
-    provider_id: Option<String>,
-    #[serde(default, deserialize_with = "jsonl::lenient_object")]
-    time: Option<OpenCodeTime>,
-    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
-    id: Option<String>,
-    #[serde(
-        rename = "sessionID",
-        default,
-        deserialize_with = "jsonl::non_empty_string"
-    )]
-    session_id: Option<String>,
-    #[serde(default, deserialize_with = "jsonl::lenient_f64")]
-    cost: Option<f64>,
+/// Trim a string and discard it if it is empty, matching the original
+/// `Value`-based parser's `non_empty_json_string` handling.
+fn non_empty(value: Option<&String>) -> Option<String> {
+    let trimmed = value?.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
-/// Token usage block carried by OpenCode messages.
-#[derive(Debug, Default, Deserialize)]
-struct OpenCodeTokens {
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    input: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    output: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_object")]
-    cache: Option<OpenCodeCache>,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    total: u64,
-}
-
-/// Cache read/write counts nested under OpenCode token usage.
-#[derive(Debug, Default, Deserialize)]
-struct OpenCodeCache {
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    read: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    write: u64,
-}
-
-/// Creation timestamp block carried by OpenCode messages.
-#[derive(Debug, Default, Deserialize)]
-struct OpenCodeTime {
-    #[serde(default, deserialize_with = "jsonl::lenient_i64")]
-    created: Option<i64>,
-}
-
-pub(crate) fn message_value_to_entry(
-    value: &OpenCodeMessage,
+pub(crate) fn message_to_entry(
+    msg: &OpenCodeMessage,
     id: Option<String>,
     session_id: Option<String>,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<LoadedEntry> {
-    let tokens = value.tokens.as_ref()?;
-    let cache = tokens.cache.as_ref();
+    let tokens = msg.tokens.as_ref()?;
     let usage = TokenUsageRaw {
         input_tokens: tokens.input,
         output_tokens: tokens.output,
-        cache_creation_input_tokens: cache.map_or(0, |cache| cache.write),
-        cache_read_input_tokens: cache.map_or(0, |cache| cache.read),
+        cache_creation_input_tokens: tokens.cache.as_ref().map_or(0, |c| c.write),
+        cache_read_input_tokens: tokens.cache.as_ref().map_or(0, |c| c.read),
         speed: None,
         cache_creation: None,
     };
-    let total_tokens = tokens.total;
-    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total_tokens);
+    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, tokens.total);
     if usage.input_tokens == 0
         && usage.output_tokens == 0
         && usage.cache_creation_input_tokens == 0
@@ -98,17 +41,13 @@ pub(crate) fn message_value_to_entry(
     {
         return None;
     }
-    let model = value.model_id.clone()?;
-    let provider = value.provider_id.clone()?;
-    let millis = value
-        .time
-        .as_ref()
-        .and_then(|time| time.created)
-        .unwrap_or(0);
+    let model = non_empty(msg.model_id.as_ref())?;
+    let provider = non_empty(msg.provider_id.as_ref())?;
+    let millis = msg.time.as_ref().and_then(|t| t.created).unwrap_or(0);
     let timestamp = crate::TimestampMs::from_millis(millis);
     let timestamp_text = crate::format_rfc3339_millis(timestamp);
-    let message_id = id.or_else(|| value.id.clone());
-    let session_id = session_id.or_else(|| value.session_id.clone());
+    let message_id = id.or_else(|| non_empty(msg.id.as_ref()));
+    let session_id = session_id.or_else(|| non_empty(msg.session_id.as_ref()));
     let data = UsageEntry {
         session_id: session_id.clone(),
         timestamp: timestamp_text,
@@ -118,7 +57,7 @@ pub(crate) fn message_value_to_entry(
             model: Some(model.clone()),
             id: message_id,
         },
-        cost_usd: value.cost,
+        cost_usd: msg.cost,
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
@@ -245,8 +184,23 @@ fn normalize_open_code_model_name(model: &str) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::{OpenCodeMessage, message_value_to_entry, open_code_model_candidates};
-    use crate::{LoadedEntry, PricingMap, cli::CostMode};
+    use super::{message_to_entry, open_code_model_candidates};
+    use crate::{
+        LoadedEntry, OpenCodeCache, OpenCodeMessage, OpenCodeTime, OpenCodeTokens, PricingMap,
+        cli::CostMode,
+    };
+
+    fn test_message(tokens: OpenCodeTokens) -> OpenCodeMessage {
+        OpenCodeMessage {
+            id: Some("message-a".to_string()),
+            session_id: Some("session-a".to_string()),
+            provider_id: Some("openai".to_string()),
+            model_id: Some("gpt-test".to_string()),
+            time: Some(OpenCodeTime { created: Some(0) }),
+            tokens: Some(tokens),
+            cost: Some(0.0),
+        }
+    }
 
     fn message(value: serde_json::Value) -> OpenCodeMessage {
         serde_json::from_value(value).unwrap()
@@ -293,20 +247,13 @@ mod tests {
                 }
             }"#,
         );
-        let entry = message_value_to_entry(
-            &message(json!({
-                "id": "message-a",
-                "sessionID": "session-a",
-                "providerID": "openai",
-                "modelID": "gpt-test",
-                "time": { "created": 0 },
-                "tokens": {
-                    "input": 100,
-                    "output": 10,
-                    "cache": { "read": 50 }
-                },
-                "cost": 0
-            })),
+        let entry = message_to_entry(
+            &test_message(OpenCodeTokens {
+                input: 100,
+                output: 10,
+                total: 0,
+                cache: Some(OpenCodeCache { read: 50, write: 0 }),
+            }),
             None,
             None,
             None,
@@ -320,18 +267,16 @@ mod tests {
 
     #[test]
     fn keeps_positive_opencode_cost() {
-        let entry = message_value_to_entry(
-            &message(json!({
-                "id": "message-a",
-                "sessionID": "session-a",
-                "providerID": "openai",
-                "modelID": "gpt-test",
-                "time": { "created": 0 },
-                "tokens": {
-                    "input": 100
-                },
-                "cost": 0.02
-            })),
+        let entry = message_to_entry(
+            &OpenCodeMessage {
+                cost: Some(0.02),
+                ..test_message(OpenCodeTokens {
+                    input: 100,
+                    output: 0,
+                    total: 0,
+                    cache: None,
+                })
+            },
             None,
             None,
             None,
@@ -345,7 +290,7 @@ mod tests {
 
     #[test]
     fn keeps_opencode_record_when_cache_field_is_not_an_object() {
-        let entry = message_value_to_entry(
+        let entry = message_to_entry(
             &message(json!({
                 "id": "message-a",
                 "sessionID": "session-a",
@@ -373,10 +318,9 @@ mod tests {
         assert_eq!(entry.data.message.usage.cache_read_input_tokens, 0);
         assert_eq!(entry.cost, 0.02);
     }
-
     #[test]
-    fn falls_back_to_total_tokens_when_opencode_token_parts_are_missing() {
-        let entry = message_value_to_entry(
+    fn coerces_string_typed_numeric_fields_without_dropping_record() {
+        let entry = message_to_entry(
             &message(json!({
                 "id": "message-a",
                 "sessionID": "session-a",
@@ -384,9 +328,33 @@ mod tests {
                 "modelID": "gpt-test",
                 "time": { "created": 0 },
                 "tokens": {
-                    "total": 123
-                }
+                    "input": "100",
+                    "output": 10
+                },
+                "cost": 0.02
             })),
+            None,
+            None,
+            None,
+            CostMode::Auto,
+            None,
+        )
+        .expect("record with a mistyped token field must still be recorded");
+
+        assert_eq!(entry.data.message.usage.input_tokens, 100);
+        assert_eq!(entry.data.message.usage.output_tokens, 10);
+        assert_eq!(entry.cost, 0.02);
+    }
+
+    #[test]
+    fn falls_back_to_total_tokens_when_opencode_token_parts_are_missing() {
+        let entry = message_to_entry(
+            &test_message(OpenCodeTokens {
+                input: 0,
+                output: 0,
+                total: 123,
+                cache: None,
+            }),
             None,
             None,
             None,
@@ -415,20 +383,17 @@ mod tests {
     #[test]
     fn calculates_cost_for_k2p6_when_opencode_stores_zero_cost() {
         let pricing = PricingMap::load_embedded();
-        let entry = message_value_to_entry(
-            &message(json!({
-                "id": "message-a",
-                "sessionID": "session-a",
-                "providerID": "kimi-for-coding",
-                "modelID": "k2p6",
-                "time": { "created": 0 },
-                "tokens": {
-                    "input": 100,
-                    "output": 10,
-                    "cache": { "read": 50 }
-                },
-                "cost": 0
-            })),
+        let entry = message_to_entry(
+            &OpenCodeMessage {
+                provider_id: Some("kimi-for-coding".to_string()),
+                model_id: Some("k2p6".to_string()),
+                ..test_message(OpenCodeTokens {
+                    input: 100,
+                    output: 10,
+                    total: 0,
+                    cache: Some(OpenCodeCache { read: 50, write: 0 }),
+                })
+            },
             None,
             None,
             None,
@@ -452,21 +417,26 @@ mod tests {
                 }
             }"#,
         );
-        let calculated = message_value_to_entry(
-            &message(json!({
-                "id": "message-a",
-                "sessionID": "session-a",
-                "providerID": "github-copilot",
-                "modelID": "claude-sonnet-4.5",
-                "time": { "created": 1767312000000i64 },
-                "tokens": {
-                    "input": 100,
-                    "output": 10,
-                    "cache": { "read": 50, "write": 25 },
-                    "total": 185
-                },
-                "cost": 0
-            })),
+        let calculated = message_to_entry(
+            &OpenCodeMessage {
+                id: Some("message-a".to_string()),
+                session_id: Some("session-a".to_string()),
+                provider_id: Some("github-copilot".to_string()),
+                model_id: Some("claude-sonnet-4.5".to_string()),
+                time: Some(OpenCodeTime {
+                    created: Some(1767312000000),
+                }),
+                tokens: Some(OpenCodeTokens {
+                    input: 100,
+                    output: 10,
+                    total: 185,
+                    cache: Some(OpenCodeCache {
+                        read: 50,
+                        write: 25,
+                    }),
+                }),
+                cost: Some(0.0),
+            },
             None,
             None,
             None,
@@ -474,15 +444,21 @@ mod tests {
             Some(&pricing),
         )
         .unwrap();
-        let display_cost = message_value_to_entry(
-            &message(json!({
-                "id": "message-b",
-                "providerID": "openai",
-                "modelID": "gpt-test",
-                "time": { "created": 0 },
-                "tokens": { "total": 123 },
-                "cost": 0.02
-            })),
+        let display_cost = message_to_entry(
+            &OpenCodeMessage {
+                id: Some("message-b".to_string()),
+                session_id: None,
+                provider_id: Some("openai".to_string()),
+                model_id: Some("gpt-test".to_string()),
+                time: Some(OpenCodeTime { created: Some(0) }),
+                tokens: Some(OpenCodeTokens {
+                    input: 0,
+                    output: 0,
+                    total: 123,
+                    cache: None,
+                }),
+                cost: Some(0.02),
+            },
             None,
             Some("explicit-session".to_string()),
             None,

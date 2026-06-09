@@ -62,13 +62,13 @@ where
 }
 
 /// Deserialize a JSON value into `u64` with the same lenient rules as
-/// [`serde_json::Value::as_u64`].
+/// [`serde_json::Value::as_u64`], plus string coercion for numeric strings.
 ///
-/// Non-negative integers that fit in `u64` are returned as-is; floats, strings,
-/// nulls, negative numbers, and missing values all become `0`. This reproduces
-/// the historical `json_value_u64(value.get(...))` behavior so typed structs
-/// match the previous dynamic-`Value` parsing instead of failing the whole line
-/// when a token count is encoded unexpectedly.
+/// Non-negative integers that fit in `u64` are returned as-is. Numeric strings
+/// are trimmed and parsed. Floats, nulls, negative numbers, and missing values
+/// all become `0`. This reproduces the historical `json_value_u64(value.get(...))`
+/// behavior while still tolerating the string-typed token counts that upstream
+/// OpenCode emits in practice.
 ///
 /// Use with `#[serde(default, deserialize_with = "jsonl::lenient_u64")]` so a
 /// missing field also defaults to `0`.
@@ -77,10 +77,11 @@ where
     D: Deserializer<'de>,
 {
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
-    Ok(value
-        .as_ref()
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or_default())
+    Ok(match value {
+        Some(serde_json::Value::Number(number)) => number.as_u64().unwrap_or_default(),
+        Some(serde_json::Value::String(text)) => text.trim().parse::<u64>().unwrap_or_default(),
+        _ => 0,
+    })
 }
 
 /// Deserialize a JSON value into `Option<i64>` with the same lenient rules as
@@ -266,7 +267,7 @@ mod tests {
         assert_eq!(coerce("42"), 42);
         assert_eq!(coerce("12.5"), 0);
         assert_eq!(coerce("-1"), 0);
-        assert_eq!(coerce("\"7\""), 0);
+        assert_eq!(coerce("\"7\""), 7);
         assert_eq!(coerce("null"), 0);
     }
 

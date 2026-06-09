@@ -94,6 +94,10 @@
 			{
 				"name": "openclaw",
 				"description": "Show OpenClaw usage commands"
+			},
+			{
+				"name": "clear-cache",
+				"description": "Clear the on-disk cache, optionally for a single agent"
 			}
 		]
 	},
@@ -728,6 +732,12 @@
 			"description": "Show OpenClaw usage grouped by session",
 			"usage": "ccusage openclaw session <OPTIONS>",
 			"options": "openclaw_combined_options"
+		},
+		{
+			"path": ["clear-cache"],
+			"description": "Clear the on-disk cache, optionally for a single agent (omit the agent or pass \"all\" to clear everything).",
+			"usage": "ccusage clear-cache [AGENT]",
+			"options": "clear_cache_options"
 		}
 	]
 }

@@ -3,8 +3,57 @@ use std::{collections::BTreeMap, sync::Arc};
 use serde::{Deserialize, Serialize};
 
 use crate::TimestampMs;
+use crate::adapter::jsonl;
+
+/// One row of an OpenCode message database / `storage/message/*.json` file.
+///
+/// Deserialized directly with serde (rather than via `serde_json::Value`)
+/// because typed deserialization is meaningfully faster on the hot load path.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct OpenCodeMessage {
+    #[serde(default)]
+    pub(crate) id: Option<String>,
+    #[serde(default, alias = "sessionID")]
+    pub(crate) session_id: Option<String>,
+    #[serde(default, alias = "providerID")]
+    pub(crate) provider_id: Option<String>,
+    #[serde(default, alias = "modelID")]
+    pub(crate) model_id: Option<String>,
+    #[serde(default)]
+    pub(crate) time: Option<OpenCodeTime>,
+    #[serde(default)]
+    pub(crate) tokens: Option<OpenCodeTokens>,
+    #[serde(default, deserialize_with = "jsonl::lenient_f64")]
+    pub(crate) cost: Option<f64>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
+pub(crate) struct OpenCodeTime {
+    #[serde(default)]
+    pub(crate) created: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct OpenCodeTokens {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    pub(crate) input: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    pub(crate) output: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    pub(crate) total: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    pub(crate) cache: Option<OpenCodeCache>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct OpenCodeCache {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    pub(crate) read: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    pub(crate) write: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UsageEntry {
     pub(crate) session_id: Option<String>,
@@ -18,14 +67,14 @@ pub(crate) struct UsageEntry {
     pub(crate) is_sidechain: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct UsageMessage {
     pub(crate) usage: TokenUsageRaw,
     pub(crate) model: Option<String>,
     pub(crate) id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 pub(crate) struct TokenUsageRaw {
     pub(crate) input_tokens: u64,
     pub(crate) output_tokens: u64,
@@ -48,7 +97,7 @@ impl TokenUsageRaw {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 pub(crate) struct CacheCreationRaw {
     #[serde(default)]
     pub(crate) ephemeral_5m_input_tokens: u64,
@@ -56,7 +105,7 @@ pub(crate) struct CacheCreationRaw {
     pub(crate) ephemeral_1h_input_tokens: u64,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Speed {
     Standard,
@@ -105,7 +154,7 @@ pub(crate) struct ModelBreakdown {
     pub(crate) missing_pricing: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct LoadedEntry {
     pub(crate) data: UsageEntry,
     pub(crate) timestamp: TimestampMs,

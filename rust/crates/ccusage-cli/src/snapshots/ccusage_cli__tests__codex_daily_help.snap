@@ -14,6 +14,7 @@ OPTIONS:
   -z, --timezone <timezone>            Timezone for date grouping (IANA)
   -O, --offline                        Use cached pricing data instead of fetching from LiteLLM (default: false)
   --no-offline                         Negatable of -O, --offline
+  --live-only                          Show only usage from log files still on disk; exclude spend retained from deleted source logs (default: false)
   --speed [speed]                      Cost speed tier: auto reads Codex config.toml service_tier; use standard or fast to override (default: auto, choices: auto | standard | fast)
   --compact                            Force compact table layout for narrow terminals (default: false)
   --no-cost                            Hide cost information in table and JSON output (default: false)

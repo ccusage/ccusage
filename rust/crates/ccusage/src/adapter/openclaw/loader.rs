@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
 
 use super::{
     parser::{entry_id, parse_session_file},
@@ -27,31 +25,38 @@ fn load_entries_inner(
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
+    let mut files = Vec::new();
     for root in paths(custom_path) {
-        let files = collect_session_files(&root)?;
-        // Read session files in parallel; the first-wins dedup runs sequentially
-        // over the original file order so the surviving record per id is the
-        // same as the single-threaded read.
-        let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-            parse_session_file(file, tz.as_ref(), shared.mode, pricing).unwrap_or_else(|error| {
-                debug_log(
-                    shared,
-                    format!(
-                        "Failed to read OpenClaw session file {}: {error}",
-                        file.display()
-                    ),
-                );
-                Vec::new()
-            })
-        });
-        for file_entries in loaded {
-            for entry in file_entries {
-                if seen.insert(entry_id(&entry)) {
-                    entries.push(entry);
-                }
-            }
+        files.extend(collect_session_files(&root)?);
+    }
+    let parsed = crate::cache::load_with_cache(
+        "openclaw",
+        &files,
+        shared.single_thread,
+        crate::cache::cost_fingerprint(pricing.as_ref().map(|p| p.fingerprint()), shared.mode),
+        shared.live_only,
+        |file| {
+            Ok(
+                parse_session_file(file, tz.as_ref(), shared.mode, pricing).unwrap_or_else(
+                    |error| {
+                        debug_log(
+                            shared,
+                            format!(
+                                "Failed to read OpenClaw session file {}: {error}",
+                                file.display()
+                            ),
+                        );
+                        Vec::new()
+                    },
+                ),
+            )
+        },
+    )?;
+    let mut seen = HashSet::new();
+    let mut entries = Vec::with_capacity(parsed.len());
+    for entry in parsed {
+        if seen.insert(entry_id(&entry)) {
+            entries.push(entry);
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);
@@ -60,16 +65,13 @@ fn load_entries_inner(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
+    use crate::cache::tests::CacheEnv;
     use ccusage_test_support::fs_fixture;
-
-    static OPENCLAW_DIR_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn loads_assistant_usage_and_uses_model_change_events() {
-        let _guard = OPENCLAW_DIR_LOCK.lock().unwrap();
+        let _cache_env = CacheEnv::new("openclaw-model-change");
         let fixture = fs_fixture!({
             "agents/main/sessions/abc.jsonl": [
                 r#"{"type":"model_change","provider":"openai-codex","modelId":"gpt-5.2"}"#,
@@ -100,7 +102,7 @@ mod tests {
 
     #[test]
     fn deduplicates_repeated_openclaw_records() {
-        let _guard = OPENCLAW_DIR_LOCK.lock().unwrap();
+        let _cache_env = CacheEnv::new("openclaw-dedup");
         let line = r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1,"output":1,"totalTokens":2},"timestamp":1769753935279}}"#;
         let fixture = fs_fixture!({
             "agents/main/sessions/session.jsonl": format!("{line}\n{line}\n"),
@@ -112,7 +114,7 @@ mod tests {
 
     #[test]
     fn calculates_cost_from_pricing_overrides() {
-        let _guard = OPENCLAW_DIR_LOCK.lock().unwrap();
+        let _cache_env = CacheEnv::new("openclaw-pricing");
         let fixture = fs_fixture!({
             "agents/main/sessions/abc.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1000,"output":500,"cost":{"total":0.99}},"timestamp":1769753935279}}"#,
         });

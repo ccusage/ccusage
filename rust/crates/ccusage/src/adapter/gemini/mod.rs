@@ -12,6 +12,9 @@ pub(crate) use loader::load_entries;
 pub(crate) use report::{report_from_rows, summarize_entries};
 
 #[cfg(test)]
+static GEMINI_DATA_DIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
 struct GeminiDataDirEnvGuard {
     _guard: ccusage_test_support::EnvVarGuard,
 }

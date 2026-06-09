@@ -9,7 +9,6 @@ use super::{
 use crate::{
     LoadedEntry, Result, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage,
     cli::CostMode, debug_log, format_date_tz, missing_pricing_model_for_usage, parse_tz,
-    read_files_parallel,
 };
 
 pub(crate) fn load_entries(
@@ -29,24 +28,27 @@ fn load_entries_inner(
 ) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
     let files = paths()?;
-    // Read OTEL files in parallel; entries keep their original file order before
-    // the stable sort, so output is identical to the sequential read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |path| {
-        read_otel_file(path, tz.as_ref(), shared.mode, pricing).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read Copilot OTEL file {}: {error}",
-                    path.display()
-                ),
-            );
-            Vec::new()
-        })
-    });
-    let mut entries = Vec::new();
-    for file_entries in loaded {
-        entries.extend(file_entries);
-    }
+    let mut entries = crate::cache::load_with_cache(
+        "copilot",
+        &files,
+        shared.single_thread,
+        crate::cache::cost_fingerprint(Some(pricing.fingerprint()), shared.mode),
+        shared.live_only,
+        |path| {
+            Ok(
+                read_otel_file(path, tz.as_ref(), shared.mode, pricing).unwrap_or_else(|error| {
+                    debug_log(
+                        shared,
+                        format!(
+                            "Failed to read Copilot OTEL file {}: {error}",
+                            path.display()
+                        ),
+                    );
+                    Vec::new()
+                }),
+            )
+        },
+    )?;
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }

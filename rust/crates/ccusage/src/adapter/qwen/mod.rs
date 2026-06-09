@@ -71,10 +71,12 @@ mod tests {
 
     use super::*;
     use crate::UsageSummary;
+    use crate::cache::tests::CacheEnv;
     use crate::cli::{CostMode, SharedArgs};
 
     #[test]
     fn loads_qwen_jsonl_usage_entries() {
+        let _cache_env = CacheEnv::new("qwen-loads-jsonl");
         let fixture = fs_fixture!({
             "projects/myProject/chats/chat-a.jsonl": [
                 r#"{"type":"user","text":"hello"}"#,
@@ -104,6 +106,7 @@ mod tests {
 
     #[test]
     fn builds_qwen_daily_json_report_with_reasoning_in_total() {
+        let _cache_env = CacheEnv::new("qwen-daily-report");
         let fixture = fs_fixture!({
             "projects/myProject/chats/chat-a.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-23T14:24:56.857Z","sessionId":"session-json","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"thoughtsTokenCount":10,"cachedContentTokenCount":5}}"#,
         });

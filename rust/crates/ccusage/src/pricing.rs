@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::fast::FxHashMap;
+use rustc_hash::FxHasher;
 
 const BUILD_TIME_PRICING_JSON: &str =
     include_str!(concat!(env!("OUT_DIR"), "/litellm-pricing.json"));
@@ -53,6 +54,23 @@ impl Pricing {
             cache_read_above_200k: None,
             fast_multiplier: 1.0,
         }
+    }
+}
+
+impl std::hash::Hash for Pricing {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.input.to_bits().hash(state);
+        self.output.to_bits().hash(state);
+        self.cache_create.to_bits().hash(state);
+        self.cache_read.to_bits().hash(state);
+        self.cache_read_explicit.hash(state);
+        self.input_above_200k.map(|v| v.to_bits()).hash(state);
+        self.output_above_200k.map(|v| v.to_bits()).hash(state);
+        self.cache_create_above_200k
+            .map(|v| v.to_bits())
+            .hash(state);
+        self.cache_read_above_200k.map(|v| v.to_bits()).hash(state);
+        self.fast_multiplier.to_bits().hash(state);
     }
 }
 
@@ -549,6 +567,44 @@ impl PricingMap {
         if let Some(limit) = override_value.max_input_tokens {
             self.context_limits.insert(model.to_string(), limit);
         }
+    }
+
+    pub(crate) fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+
+        let mut result: u64 = 0;
+
+        let mut keys: Vec<_> = self.entries.keys().collect();
+        keys.sort();
+        for key in keys {
+            let pricing = &self.entries[key];
+            let mut entry_hasher = FxHasher::default();
+            key.hash(&mut entry_hasher);
+            pricing.hash(&mut entry_hasher);
+            result = result.wrapping_add(entry_hasher.finish());
+        }
+
+        let mut context_keys: Vec<_> = self.context_limits.keys().collect();
+        context_keys.sort();
+        for key in context_keys {
+            let limit = self.context_limits[key];
+            let mut entry_hasher = FxHasher::default();
+            key.hash(&mut entry_hasher);
+            limit.hash(&mut entry_hasher);
+            result = result.wrapping_add(entry_hasher.finish());
+        }
+
+        let mut flag_hasher = FxHasher::default();
+        self.enable_models_dev_fallback.hash(&mut flag_hasher);
+        result = result.wrapping_add(flag_hasher.finish());
+
+        if self.enable_models_dev_fallback {
+            if let Some(models_dev) = models_dev_pricing() {
+                result = result.wrapping_add(models_dev.fingerprint());
+            }
+        }
+
+        result
     }
 
     #[cfg(test)]
@@ -1224,36 +1280,119 @@ fn fetch_models_dev_json() -> std::io::Result<String> {
 }
 
 fn fetch_json_url(url: &str) -> std::io::Result<String> {
+    let cached = crate::cache::load_pricing(url);
+
     let agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)))
         .build()
         .new_agent();
-    let mut response = agent
-        .get(url)
-        .call()
-        .map_err(|error| std::io::Error::other(error.to_string()))?;
-    if response.status().as_u16() != 200 {
-        return Err(std::io::Error::other(format!(
-            "HTTP {}",
-            response.status().as_u16()
-        )));
+
+    let mut req = agent.get(url);
+    if let Some(ref c) = cached {
+        if let Some(ref etag) = c.etag {
+            req = req.header("If-None-Match", etag.as_str());
+        } else if let Some(ref lm) = c.last_modified {
+            req = req.header("If-Modified-Since", lm.as_str());
+        }
     }
-    response
+
+    let mut response = match req.call() {
+        Ok(resp) => resp,
+        Err(error) if cached.is_some() => {
+            // Network failure: degrade to last-known cached pricing, warning that
+            // prices may be stale.
+            if should_log_pricing_refresh_details() {
+                eprintln!(
+                    "WARN  Failed to refresh LiteLLM pricing ({error}); using last-known cached pricing."
+                );
+            }
+            return Ok(cached.unwrap().body);
+        }
+        Err(error) => return Err(std::io::Error::other(error.to_string())),
+    };
+
+    let status = response.status().as_u16();
+
+    // 304 Not Modified — server confirmed nothing changed.
+    if status == 304 {
+        return match cached {
+            Some(c) => Ok(c.body),
+            None => {
+                // Edge case: server said 304 but we had no cache.
+                // Fall back to an unconditional GET.
+                let mut resp = agent
+                    .get(url)
+                    .call()
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
+                if resp.status().as_u16() != 200 {
+                    return Err(std::io::Error::other(format!(
+                        "HTTP {}",
+                        resp.status().as_u16()
+                    )));
+                }
+                let body = resp
+                    .body_mut()
+                    .with_config()
+                    .limit(PRICING_FETCH_MAX_BYTES)
+                    .read_to_string()
+                    .map_err(|e| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+                    })?;
+                crate::cache::store_pricing(url, &body, None, None);
+                Ok(body)
+            }
+        };
+    }
+
+    if status != 200 {
+        return Err(std::io::Error::other(format!("HTTP {status}")));
+    }
+
+    // Capture conditional-request headers before consuming the body.
+    let etag = response
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let last_modified = response
+        .headers()
+        .get("last-modified")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+
+    let body = response
         .body_mut()
         .with_config()
         .limit(PRICING_FETCH_MAX_BYTES)
         .read_to_string()
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+    crate::cache::store_pricing(url, &body, etag.as_deref(), last_modified.as_deref());
+    Ok(body)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         BUILD_TIME_MODELS_DEV_JSON, BUILD_TIME_PRICING_JSON, Pricing, PricingMap,
-        embedded_models_dev_pricing,
+        embedded_models_dev_pricing, fetch_json_url,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    /// Convenience constructor for Pricing with default cache/fast fields.
+    fn px(input: f64, output: f64) -> Pricing {
+        Pricing {
+            input,
+            output,
+            cache_create: 0.0,
+            cache_read: 0.0,
+            cache_read_explicit: false,
+            input_above_200k: None,
+            output_above_200k: None,
+            cache_create_above_200k: None,
+            cache_read_above_200k: None,
+            fast_multiplier: 1.0,
+        }
+    }
 
     #[test]
     fn loads_embedded_claude_pricing() {
@@ -2389,5 +2528,280 @@ mod tests {
             // cache_create still scaled since not explicitly provided
             assert!((entry.cache_create - 2.5e-6).abs() < 1e-15);
         }
+    }
+
+    #[test]
+    fn fingerprint_is_deterministic() {
+        let a = PricingMap::load_embedded();
+        let b = PricingMap::load_embedded();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_is_order_independent() {
+        let mut map_a = PricingMap::default();
+        let mut map_b = PricingMap::default();
+
+        let pricing_x = px(1.0, 2.0);
+        let pricing_y = px(3.0, 4.0);
+
+        // Insert in opposite order via raw FxHashMap manipulation
+        map_a.entries.insert("model-b".to_string(), pricing_y);
+        map_a.entries.insert("model-a".to_string(), pricing_x);
+
+        map_b.entries.insert("model-a".to_string(), pricing_x);
+        map_b.entries.insert("model-b".to_string(), pricing_y);
+
+        assert_eq!(map_a.fingerprint(), map_b.fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_changes_when_rate_changes() {
+        let mut map_a = PricingMap::default();
+        let mut map_b = PricingMap::default();
+
+        let pricing = px(1.0, 2.0);
+        let pricing_changed = px(1.5, 2.0);
+
+        map_a.entries.insert("model-a".to_string(), pricing);
+        map_b.entries.insert("model-a".to_string(), pricing_changed);
+
+        assert_ne!(map_a.fingerprint(), map_b.fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_changes_when_context_limit_changes() {
+        let mut map_a = PricingMap::default();
+        let mut map_b = PricingMap::default();
+
+        map_a.context_limits.insert("model-a".to_string(), 100_000);
+        map_b.context_limits.insert("model-a".to_string(), 200_000);
+
+        assert_ne!(map_a.fingerprint(), map_b.fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_changes_when_fallback_flag_changes() {
+        let mut map_a = PricingMap::default();
+        let mut map_b = PricingMap::default();
+
+        map_a.enable_models_dev_fallback = false;
+        map_b.enable_models_dev_fallback = true;
+
+        assert_ne!(map_a.fingerprint(), map_b.fingerprint());
+    }
+
+    /// Isolates `XDG_CACHE_HOME` for one pricing-fetch test so `cache.db` is a
+    /// fresh temp dir and conditional-fetch state cannot leak between runs.
+    /// Holds the shared env lock and restores the var on drop.
+    struct PricingCacheEnv {
+        dir: std::path::PathBuf,
+        prev_xdg: Option<std::ffi::OsString>,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl PricingCacheEnv {
+        fn new(name: &str) -> Self {
+            let guard = crate::test_env_lock();
+            let dir = std::env::temp_dir().join(format!("ccusage-pricing-test-{name}"));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
+            unsafe { std::env::set_var("XDG_CACHE_HOME", &dir) };
+            Self {
+                dir,
+                prev_xdg,
+                _guard: guard,
+            }
+        }
+    }
+
+    impl Drop for PricingCacheEnv {
+        fn drop(&mut self) {
+            match &self.prev_xdg {
+                Some(v) => unsafe { std::env::set_var("XDG_CACHE_HOME", v) },
+                None => unsafe { std::env::remove_var("XDG_CACHE_HOME") },
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// Build a raw `200 OK` HTTP response carrying `body` and `etag`.
+    fn resp_200(etag: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 200 OK\r\nETag: {etag}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
+            len = body.len(),
+        )
+    }
+
+    /// Build a raw, bodyless `304 Not Modified` HTTP response.
+    fn resp_304(etag: &str) -> String {
+        format!("HTTP/1.1 304 Not Modified\r\nETag: {etag}\r\nConnection: close\r\n\r\n")
+    }
+
+    /// Single-threaded HTTP origin that replays `responses` in order — one per
+    /// incoming request — closing the socket after each. Returns the origin URL
+    /// plus a log recording, per request, whether it carried `If-None-Match`,
+    /// so a test can assert the conditional-request behavior of the client.
+    /// The thread exits after `responses.len()` requests.
+    fn spawn_scripted_origin(
+        responses: Vec<String>,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<bool>>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log_thread = log.clone();
+        std::thread::spawn(move || {
+            for response in responses {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                // Read the request head (GET has no body) up to the blank line.
+                let mut req = Vec::new();
+                let mut buf = [0u8; 1024];
+                loop {
+                    let Ok(n) = stream.read(&mut buf) else { break };
+                    if n == 0 {
+                        break;
+                    }
+                    req.extend_from_slice(&buf[..n]);
+                    if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let conditional = String::from_utf8_lossy(&req)
+                    .to_ascii_lowercase()
+                    .contains("if-none-match");
+                log_thread.lock().unwrap().push(conditional);
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://{addr}/pricing.json"), log)
+    }
+
+    /// HTTP origin that accepts one connection then closes it without
+    /// responding, forcing a deterministic client-side read failure (no
+    /// bound-then-dropped port race).
+    fn spawn_closing_origin() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() {
+                drop(stream);
+            }
+        });
+        format!("http://{addr}/pricing.json")
+    }
+
+    /// Cold fetch stores body + ETag; warm fetch sends `If-None-Match`, gets a
+    /// bodyless `304`, and is served the cached body. The request log
+    /// (`[unconditional, conditional]`) plus the empty `304` prove the warm
+    /// body came from the cache — an ETag-ignoring re-GET would log two
+    /// unconditional requests and fail here.
+    #[test]
+    fn etag_conditional_fetch_round_trip() {
+        let _env = PricingCacheEnv::new("etag-round-trip");
+        let (url, log) =
+            spawn_scripted_origin(vec![resp_200("\"v1\"", "PRICING_V1"), resp_304("\"v1\"")]);
+
+        let cold = fetch_json_url(&url).unwrap();
+        assert_eq!(cold, "PRICING_V1");
+        assert_eq!(
+            crate::cache::load_pricing(&url)
+                .expect("etag stored after 200")
+                .etag
+                .as_deref(),
+            Some("\"v1\"")
+        );
+
+        let warm = fetch_json_url(&url).unwrap();
+        assert_eq!(
+            warm, "PRICING_V1",
+            "304 has no body, so this is the cached copy"
+        );
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec![false, true],
+            "cold request unconditional, warm request conditional"
+        );
+    }
+
+    /// When the server answers the conditional request with a fresh `200` (the
+    /// document changed), the new body and ETag must replace the cached copy —
+    /// the `304` short-circuit must not swallow a real update.
+    #[test]
+    fn etag_change_refetches_and_updates_cache() {
+        let _env = PricingCacheEnv::new("etag-change");
+        let (url, log) = spawn_scripted_origin(vec![
+            resp_200("\"v1\"", "PRICING_V1"),
+            resp_200("\"v2\"", "PRICING_V2"),
+        ]);
+
+        assert_eq!(fetch_json_url(&url).unwrap(), "PRICING_V1");
+        let warm = fetch_json_url(&url).unwrap();
+        assert_eq!(warm, "PRICING_V2", "changed pricing must be re-downloaded");
+
+        let cached = crate::cache::load_pricing(&url).unwrap();
+        assert_eq!(cached.body, "PRICING_V2");
+        assert_eq!(cached.etag.as_deref(), Some("\"v2\""));
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec![false, true],
+            "warm request was conditional but the server returned a fresh 200"
+        );
+    }
+
+    /// A `304` answered to an unconditional request (there was no cache to
+    /// validate) must not be trusted as "unchanged": the fetch falls back to a
+    /// plain GET and returns that body.
+    #[test]
+    fn stale_304_without_cache_falls_back_to_get() {
+        let _env = PricingCacheEnv::new("stale-304");
+        let (url, log) =
+            spawn_scripted_origin(vec![resp_304("\"v1\""), resp_200("\"v1\"", "PRICING_V1")]);
+
+        let body = fetch_json_url(&url).unwrap();
+        assert_eq!(
+            body, "PRICING_V1",
+            "a 304 with an empty cache must fall back to an unconditional GET"
+        );
+        assert_eq!(
+            crate::cache::load_pricing(&url).unwrap().body,
+            "PRICING_V1",
+            "the fallback body is cached"
+        );
+        assert_eq!(
+            log.lock().unwrap().len(),
+            2,
+            "original request plus fallback GET"
+        );
+    }
+
+    /// Network failure with a primed cache degrades to the last-known body
+    /// rather than erroring.
+    #[test]
+    fn fetch_degrades_to_cache_on_network_failure() {
+        let _env = PricingCacheEnv::new("degrade-on-failure");
+        let url = spawn_closing_origin();
+        crate::cache::store_pricing(&url, "CACHED_BODY", Some("\"v1\""), None);
+        assert_eq!(
+            fetch_json_url(&url).unwrap(),
+            "CACHED_BODY",
+            "must serve cached body when the response read fails"
+        );
+    }
+
+    /// Network failure with no cache must propagate the error, not fabricate an
+    /// empty success.
+    #[test]
+    fn fetch_without_cache_propagates_error() {
+        let _env = PricingCacheEnv::new("no-cache-error");
+        let url = spawn_closing_origin();
+        assert!(
+            fetch_json_url(&url).is_err(),
+            "a read failure with no cached fallback must surface as an error"
+        );
     }
 }

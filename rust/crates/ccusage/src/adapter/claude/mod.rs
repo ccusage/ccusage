@@ -1,4 +1,3 @@
-mod daily;
 mod paths;
 
 use std::{
@@ -6,7 +5,6 @@ use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     sync::Arc,
-    thread,
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -14,13 +12,13 @@ use memchr::memmem;
 use rustc_hash::FxHasher;
 
 use crate::{
-    LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, UsageEntry, UsageSummary,
-    calculate_cost,
+    LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, UsageEntry, UsageMessage,
+    UsageSummary, calculate_cost,
     cli::{CostMode, SharedArgs},
     debug_log,
     fast::{FxHashMap, SmallIndexVec, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
-    progress,
+    progress, summarize_by_key,
 };
 
 #[cfg(test)]
@@ -44,9 +42,31 @@ pub(crate) fn load_daily_summaries(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
-    progress::track_usage_load(progress::UsageLoadAgent::Claude, shared.json, || {
-        daily::load_daily_summaries_inner(shared, project_filter, group_by_project)
-    })
+    // Daily/monthly/weekly summaries share the cached, deduped entry path with
+    // session and blocks so every Claude report mode warms (and is served by)
+    // the on-disk cache and ledger. `summarize_by_key` reproduces the former
+    // bespoke daily accumulator exactly (insertion-ordered models, cost-desc
+    // breakdowns); the parity tests in `main.rs` pin this equivalence.
+    let entries = load_entries(shared, project_filter)?;
+    if group_by_project {
+        summarize_by_key(
+            &entries,
+            |entry| format!("{}\0{}", entry.date, entry.project),
+            |key| {
+                let mut parts = key.split('\0');
+                (
+                    parts.next().unwrap_or_default().to_string(),
+                    parts.next().map(str::to_string),
+                )
+            },
+        )
+    } else {
+        summarize_by_key(
+            &entries,
+            |entry| entry.date.clone(),
+            |key| (key.to_string(), None),
+        )
+    }
 }
 
 fn load_entries_inner(
@@ -82,38 +102,33 @@ fn load_entries_inner(
     };
     let tz = parse_tz(shared.timezone.as_deref());
     let mode = shared.mode;
-    let loaded_files = if shared.single_thread {
-        files
-            .iter()
-            .map(|file| read_usage_file(file, tz.as_ref(), mode, pricing.as_ref()))
-            .collect::<Vec<_>>()
-    } else {
-        read_usage_files_parallel(&files, tz.as_ref(), mode, pricing.as_ref())
-    };
-    let loaded_entry_count = loaded_files
-        .iter()
-        .map(|file| file.entries.len())
-        .sum::<usize>();
+    let tz_ref = tz.as_ref();
+    let pricing_ref = pricing.as_ref();
+
+    // Archived entries (from deleted source files) are filtered by project below
+    // alongside live entries, so no archive_filter is needed here.
+    let loaded_entries = crate::cache::load_with_cache(
+        "claude",
+        &files,
+        shared.single_thread,
+        crate::cache::cost_fingerprint(pricing.as_ref().map(|p| p.fingerprint()), mode),
+        shared.live_only,
+        |file| read_usage_file(file, tz_ref, mode, pricing_ref).map(|f| f.entries),
+    )?;
     debug_log(
         shared,
-        format!(
-            "Loaded {loaded_entry_count} usage entries from {} JSONL files",
-            loaded_files.len()
-        ),
+        format!("Loaded {} usage entries", loaded_entries.len()),
     );
 
     let mut deduped_indexes: FxHashMap<u64, SmallIndexVec> = FxHashMap::default();
-    let mut deduped: Vec<LoadedEntry> =
-        Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
-    for loaded_file in loaded_files {
-        for entry in loaded_file.entries {
-            if let Some(filter) = project_filter
-                && entry.project.as_ref() != filter
-            {
+    let mut deduped: Vec<LoadedEntry> = Vec::with_capacity(loaded_entries.len());
+    for entry in loaded_entries {
+        if let Some(filter) = project_filter {
+            if entry.project.as_ref() != filter {
                 continue;
             }
-            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
         }
+        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
     }
     debug_log(
         shared,
@@ -163,55 +178,6 @@ pub(crate) fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) 
         .collect()
 }
 
-fn read_usage_files_parallel(
-    files: &[PathBuf],
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Vec<LoadedFile> {
-    let worker_count = thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(files.len());
-    if worker_count <= 1 {
-        return files
-            .iter()
-            .map(|file| read_usage_file(file, tz, mode, pricing))
-            .collect();
-    }
-
-    let chunks = chunk_file_indexes_by_size(files, worker_count);
-    thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(worker_count);
-        for chunk in chunks {
-            let tz = tz.cloned();
-            handles.push(scope.spawn(move || {
-                chunk
-                    .into_iter()
-                    .map(|index| {
-                        (
-                            index,
-                            read_usage_file(&files[index], tz.as_ref(), mode, pricing),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            }));
-        }
-        let mut loaded_files = Vec::with_capacity(files.len());
-        loaded_files.resize_with(files.len(), || None);
-        for (index, file) in handles
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("usage worker panicked"))
-        {
-            loaded_files[index] = Some(file);
-        }
-        loaded_files
-            .into_iter()
-            .map(|file| file.expect("usage worker returned every file"))
-            .collect()
-    })
-}
-
 fn usage_token_total(data: &UsageEntry) -> u64 {
     let usage = data.message.usage;
     usage.input_tokens
@@ -220,20 +186,27 @@ fn usage_token_total(data: &UsageEntry) -> u64 {
         + usage.cache_read_input_tokens
 }
 
-fn should_replace_deduped_entry(candidate: &UsageEntry, existing: &UsageEntry) -> bool {
-    let candidate_is_sidechain = is_sidechain_usage_entry(candidate);
-    let existing_is_sidechain = is_sidechain_usage_entry(existing);
+fn should_replace_deduped_entry(candidate: &LoadedEntry, existing: &LoadedEntry) -> bool {
+    let candidate_is_sidechain = is_sidechain_usage_entry(&candidate.data);
+    let existing_is_sidechain = is_sidechain_usage_entry(&existing.data);
     if candidate_is_sidechain != existing_is_sidechain {
         return existing_is_sidechain;
     }
 
-    let candidate_total = usage_token_total(candidate);
-    let existing_total = usage_token_total(existing);
+    let candidate_total = usage_token_total(&candidate.data);
+    let existing_total = usage_token_total(&existing.data);
     if candidate_total != existing_total {
         return candidate_total > existing_total;
     }
 
-    candidate.message.usage.speed.is_some() && existing.message.usage.speed.is_none()
+    // A duplicated agent-progress line and its direct subagent line carry equal
+    // tokens but the direct line has the computed cost; prefer the higher cost
+    // so the cached path matches the former daily loader's tiebreak.
+    if candidate.cost != existing.cost {
+        return candidate.cost > existing.cost;
+    }
+
+    candidate.data.message.usage.speed.is_some() && existing.data.message.usage.speed.is_none()
 }
 
 fn push_deduped_entry(
@@ -269,7 +242,7 @@ fn push_deduped_entry(
     });
 
     if let Some((hash, Some(index))) = dedupe_lookup {
-        if should_replace_deduped_entry(&entry.data, &deduped[index].data) {
+        if should_replace_deduped_entry(&entry, &deduped[index]) {
             deduped[index] = entry;
             push_deduped_index(deduped_indexes, hash, index);
             if let Some(message_id) = deduped[index].data.message.id.as_deref() {
@@ -329,12 +302,56 @@ fn push_deduped_index(
     }
 }
 
+/// A nested agent-progress log line: `{"type":"progress","data":{"message":{..}}}`.
+/// The billable usage lives under `data.message.message`, with the request id,
+/// cost, and sidechain flag on the wrapping `data.message`.
+#[derive(serde::Deserialize)]
+struct AgentProgressEntry {
+    data: AgentProgressData,
+}
+
+#[derive(serde::Deserialize)]
+struct AgentProgressData {
+    message: AgentProgressMessage,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentProgressMessage {
+    timestamp: String,
+    message: UsageMessage,
+    #[serde(rename = "costUSD")]
+    cost_usd: Option<f64>,
+    request_id: Option<String>,
+    is_sidechain: Option<bool>,
+}
+
+impl AgentProgressEntry {
+    /// Flatten the progress wrapper into the same `UsageEntry` shape a direct
+    /// line produces. `version`/`session_id` are absent on progress lines (left
+    /// `None`, which `is_valid_usage_entry` treats as valid), matching the
+    /// former daily loader's `DailyUsageLine::AgentProgress` mapping.
+    fn into_usage_entry(self) -> UsageEntry {
+        let message = self.data.message;
+        UsageEntry {
+            session_id: None,
+            timestamp: message.timestamp,
+            version: None,
+            message: message.message,
+            cost_usd: message.cost_usd,
+            request_id: message.request_id,
+            is_api_error_message: None,
+            is_sidechain: message.is_sidechain,
+        }
+    }
+}
+
 fn read_usage_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> LoadedFile {
+) -> crate::Result<LoadedFile> {
     let project: Arc<str> = Arc::from(extract_project(path));
     let (session_id, project_path) = extract_session_parts(path);
     let session_id: Arc<str> = Arc::from(session_id);
@@ -344,7 +361,7 @@ fn read_usage_file(
         entries: Vec::new(),
     };
     let Ok(content) = fs::read(path) else {
-        return loaded_file;
+        return Ok(loaded_file);
     };
 
     let usage_marker = memmem::Finder::new(br#""usage":{"#);
@@ -355,8 +372,17 @@ fn read_usage_file(
         if has_unsupported_null_field(line) {
             continue;
         }
-        let Ok(data) = serde_json::from_slice::<UsageEntry>(line) else {
-            continue;
+        // Direct usage lines deserialize straight into `UsageEntry`; nested
+        // agent-progress lines (`"type":"progress"`) carry their usage under
+        // `data.message.message`, so fall back to the progress shape. Trying the
+        // cheap direct parse first avoids untagged-enum buffering on the hot path
+        // while preserving the agent-progress entries the daily loader captured.
+        let data = match serde_json::from_slice::<UsageEntry>(line) {
+            Ok(entry) => entry,
+            Err(_) => match serde_json::from_slice::<AgentProgressEntry>(line) {
+                Ok(progress) => progress.into_usage_entry(),
+                Err(_) => continue,
+            },
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
             continue;
@@ -401,7 +427,7 @@ fn read_usage_file(
             missing_pricing_model,
         });
     }
-    loaded_file
+    Ok(loaded_file)
 }
 
 fn update_loaded_file_timestamp(loaded_file: &mut LoadedFile, timestamp: TimestampMs) {
@@ -565,6 +591,8 @@ mod tests {
         extract_session_parts, has_unsupported_null_field, paths::is_project_path_segment,
         push_deduped_entry, usage_files,
     };
+    use crate::cache::CachedEntry;
+    use crate::fast::{FxHashMap, SmallIndexVec};
     use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage};
     use ccusage_test_support::fs_fixture;
 
@@ -651,6 +679,59 @@ mod tests {
         assert!(!has_unsupported_null_field(
             br#"{"message":{"content":null,"usage":{"input_tokens":0}}}"#
         ));
+    }
+
+    #[test]
+    fn propagates_sidechain_metadata_from_agent_progress_lines() {
+        let data = serde_json::from_str::<super::AgentProgressEntry>(
+            r#"{"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
+        )
+        .unwrap()
+        .into_usage_entry();
+
+        assert_eq!(data.is_sidechain, Some(true));
+        assert_eq!(data.request_id.as_deref(), Some("req-sidechain"));
+        assert_eq!(data.message.id.as_deref(), Some("msg-sidechain"));
+        assert_eq!(
+            data.message.model.as_deref(),
+            Some("claude-sonnet-4-20250514")
+        );
+    }
+
+    #[test]
+    fn sidechain_replay_collapsed_after_cache_round_trip() {
+        // A sidechain replay reuses the parent message_id with a new request_id.
+        // The collapse depends on is_sidechain, so it only survives a cache hit if
+        // CachedEntry persists that flag — this guards against warm-run drift.
+        let parent = loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-parent",
+            is_sidechain: false,
+            cache_read_tokens: 20,
+            output_tokens: 10,
+        });
+        let replay = loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-sidechain-replay",
+            is_sidechain: true,
+            cache_read_tokens: 50_000,
+            output_tokens: 10,
+        });
+
+        // Round-trip through CachedEntry to simulate a cache hit.
+        let parent_cached = LoadedEntry::from(CachedEntry::from(&parent));
+        let replay_cached = LoadedEntry::from(CachedEntry::from(&replay));
+
+        let mut deduped_indexes: FxHashMap<u64, SmallIndexVec> = FxHashMap::default();
+        let mut deduped: Vec<LoadedEntry> = Vec::new();
+        push_deduped_entry(parent_cached, &mut deduped_indexes, &mut deduped);
+        push_deduped_entry(replay_cached, &mut deduped_indexes, &mut deduped);
+
+        // Same result as the cold path: the replay collapses into the parent.
+        assert_eq!(deduped.len(), 1, "sidechain replay must collapse to parent");
+        assert_eq!(deduped[0].data.message.id.as_deref(), Some("msg-parent"));
+        assert_eq!(deduped[0].data.request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 20);
     }
 
     #[test]

@@ -202,6 +202,10 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
+        Some(Command::ClearCache { agent }) => json!({
+            "type": "clear-cache",
+            "agent": agent,
+        }),
     }
 }
 
@@ -946,4 +950,37 @@ fn parses_openclaw_session_options() {
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
     assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+}
+
+#[test]
+fn parses_clear_cache_command_without_agent() {
+    let cli = parse(&["ccusage", "clear-cache"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::ClearCache { agent: None })
+    ));
+}
+
+#[test]
+fn parses_clear_cache_command_with_agent() {
+    let cli = parse(&["ccusage", "clear-cache", "opencode"]);
+    let Some(Command::ClearCache { agent }) = cli.command else {
+        panic!("expected clear-cache command");
+    };
+    assert_eq!(agent.as_deref(), Some("opencode"));
+}
+
+#[test]
+fn clear_cache_all_means_no_agent() {
+    let cli = parse(&["ccusage", "clear-cache", "all"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::ClearCache { agent: None })
+    ));
+}
+
+#[test]
+fn rejects_clear_cache_unknown_agent() {
+    let error = parse_error(&["ccusage", "clear-cache", "bogus"]);
+    assert!(error.contains("Unknown agent 'bogus' for clear-cache"));
 }

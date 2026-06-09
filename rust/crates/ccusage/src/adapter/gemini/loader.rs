@@ -1,6 +1,4 @@
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
 
 use super::{
     parser::{event_to_loaded, parse_json_file, parse_jsonl_file},
@@ -16,37 +14,50 @@ pub(crate) fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
     let files = discover_log_files()?;
-    // Read each log file in parallel; the events keep their original file order
-    // before the stable sort, so output is identical to the sequential read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        let parsed = if file.extension().and_then(|extension| extension.to_str()) == Some("jsonl") {
-            parse_jsonl_file(file)
-        } else {
-            parse_json_file(file)
-        };
-        parsed.unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!("Failed to read Gemini log file {}: {error}", file.display()),
-            );
-            Vec::new()
-        })
-    });
-    let mut events: Vec<_> = loaded.into_iter().flatten().collect();
-    events.sort_by_key(|event| event.timestamp);
-    Ok(events
-        .into_iter()
-        .map(|event| event_to_loaded(event, tz.as_ref(), shared.mode, pricing))
-        .collect())
+    let mut entries = crate::cache::load_with_cache(
+        "gemini",
+        &files,
+        shared.single_thread,
+        crate::cache::cost_fingerprint(Some(pricing.fingerprint()), shared.mode),
+        shared.live_only,
+        |file| {
+            Ok({
+                let events = if file.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                    parse_jsonl_file(file)
+                } else {
+                    parse_json_file(file)
+                };
+                events
+                    .map(|events| {
+                        events
+                            .into_iter()
+                            .map(|event| event_to_loaded(event, tz.as_ref(), shared.mode, pricing))
+                            .collect()
+                    })
+                    .unwrap_or_else(|error| {
+                        debug_log(
+                            shared,
+                            format!("Failed to read Gemini log file {}: {error}", file.display()),
+                        );
+                        Vec::new()
+                    })
+            })
+        },
+    )?;
+    entries.sort_by_key(|e| e.timestamp);
+    Ok(entries)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cache::tests::CacheEnv;
     use ccusage_test_support::fs_fixture;
 
     #[test]
     fn loads_jsonl_token_events_and_separates_cached_input() {
+        let _cache_env = CacheEnv::new("gemini-loads-jsonl");
+        let _guard = super::super::GEMINI_DATA_DIR_LOCK.lock().unwrap();
         let fixture = fs_fixture!({
             "project/chats/session-a.jsonl": [
                 r#"{"sessionId":"session-a","projectHash":"project-a","startTime":"2026-05-17T11:07:00.000Z"}"#,

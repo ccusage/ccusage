@@ -1,19 +1,18 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use super::{
-    parser::{OpenCodeMessage, message_value_to_entry},
-    paths::paths,
-};
+use super::{parser::message_to_entry, paths::paths};
 use crate::{
-    LoadedEntry, PricingMap, Result,
+    LoadedEntry, OpenCodeMessage, PricingMap, Result,
+    cache::{self, OpenCodeRow},
     cli::{CostMode, SharedArgs},
-    collect_files_with_extension, debug_log, parse_tz, read_files_parallel,
+    collect_files_with_extension, debug_log, parse_tz,
 };
 
 pub(crate) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
@@ -57,48 +56,43 @@ pub(crate) fn load_entries_from_directory(
     let tz = parse_tz(shared.timezone.as_deref());
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
-    if let Some(db_path) = db_path(opencode_dir) {
-        for entry in
+
+    // Load current DB rows (empty when the database file is absent), then always
+    // pass them through the ledger under a dedicated namespace so spend is
+    // retained even after the whole `opencode.db` is deleted.
+    let db_entries = match db_path(opencode_dir) {
+        Some(db_path) => {
             load_entries_from_database(&db_path, tz.as_ref(), shared.mode, pricing.as_ref(), shared)
-        {
-            if let Some(id) = entry_id(&entry)
-                && !seen.insert(id.to_string())
-            {
+        }
+        None => Vec::new(),
+    };
+    for entry in cache::retain_via_ledger("opencode-db", db_entries, shared.live_only) {
+        if let Some(id) = entry_id(&entry) {
+            if !seen.insert(id.to_string()) {
                 continue;
             }
-            entries.push(entry);
         }
+        entries.push(entry);
     }
 
     let messages_dir = opencode_dir.join("storage").join("message");
     let mut files = Vec::new();
     collect_files_with_extension(&messages_dir, "json", &mut files);
-
-    // Skip files the DB pass already covered. Message files are stored as
-    // `storage/message/<sessionID>/<messageID>.json`, so the file stem is the
-    // message id used for dedup. When the DB already contributed that id, the
-    // file would be discarded by the id dedup below anyway — drop it here so we
-    // never pay the read. Files whose stem is not a known id (or that have no
-    // usable stem) are kept and parsed normally.
-    if !seen.is_empty() {
-        files.retain(|file| {
-            file.file_stem()
-                .and_then(|stem| stem.to_str())
-                .is_none_or(|stem| !seen.contains(stem))
-        });
-    }
-
-    // Read the surviving files in parallel, then run the sequential id dedup
-    // over the results in their original file order so parallelism never changes
-    // which duplicate survives.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_message_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared)
-    });
-    for entry in loaded.into_iter().flatten() {
-        if let Some(id) = entry_id(&entry)
-            && !seen.insert(id.to_string())
-        {
-            continue;
+    let cost_fp =
+        crate::cache::cost_fingerprint(pricing.as_ref().map(|p| p.fingerprint()), shared.mode);
+    let json_entries = cache::load_with_cache(
+        "opencode",
+        &files,
+        shared.single_thread,
+        cost_fp,
+        shared.live_only,
+        |path| read_message_file(path, tz.as_ref(), shared.mode, pricing.as_ref(), shared),
+    )?;
+    for entry in json_entries {
+        if let Some(id) = entry_id(&entry) {
+            if !seen.insert(id.to_string()) {
+                continue;
+            }
         }
         entries.push(entry);
     }
@@ -135,6 +129,13 @@ fn is_channel_db_name(name: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
 }
 
+/// Load all OpenCode message-database rows, reusing the per-database row cache so
+/// rows whose `data` content hash is unchanged skip the expensive JSON parse.
+///
+/// The output is built only from rows seen in *this* scan, so the result is byte
+/// identical to a cold (no-cache) run: rows deleted from the database fall out
+/// and are never resurrected, and reuse is keyed on an exact `id` match with
+/// `content_hash` validation so changed content correctly invalidates the cache.
 fn load_entries_from_database(
     db_path: &Path,
     tz: Option<&JiffTimeZone>,
@@ -151,14 +152,31 @@ fn load_entries_from_database(
         );
         return Vec::new();
     };
-    let Ok(mut statement) = connection.prepare("SELECT id, session_id, data FROM message") else {
-        debug_log(
-            shared,
-            format!("Failed to read OpenCode database: {}", db_path.display()),
-        );
-        return Vec::new();
+
+    let cost_fp = crate::cache::cost_fingerprint(pricing.map(|p| p.fingerprint()), mode);
+    let cache_key = cache::file_metadata(db_path).map(|meta| meta.cache_key);
+    // Index the previous run's rows by id for O(1) reuse lookups.
+    let cached: HashMap<String, OpenCodeRow> = cache_key
+        .as_deref()
+        .and_then(|key| cache::load_opencode_row_cache(key, cost_fp))
+        .into_iter()
+        .flatten()
+        .map(|row| (row.id.clone(), row))
+        .collect();
+
+    let mut statement = match connection.prepare("SELECT id, session_id, data FROM message") {
+        Ok(statement) => statement,
+        Err(_) => {
+            debug_log(
+                shared,
+                format!("Failed to read OpenCode database: {}", db_path.display()),
+            );
+            return Vec::new();
+        }
     };
+
     let mut entries = Vec::new();
+    let mut fresh_rows = Vec::new();
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
@@ -171,12 +189,41 @@ fn load_entries_from_database(
                 let Ok(data) = statement.read::<String, _>(2) else {
                     continue;
                 };
-                let Ok(value) = serde_json::from_str::<OpenCodeMessage>(&data) else {
-                    continue;
+
+                let mut hasher = rustc_hash::FxHasher::default();
+                data.hash(&mut hasher);
+                let content_hash = hasher.finish();
+
+                // Reuse the cached entry on exact (id, content_hash) match.
+                if let Some(row) = cached.get(&id) {
+                    if row.content_hash == content_hash {
+                        entries.push(crate::LoadedEntry::from(row.entry.clone()));
+                        fresh_rows.push(row.clone());
+                        continue;
+                    }
+                }
+
+                let msg = match serde_json::from_str::<OpenCodeMessage>(&data) {
+                    Ok(msg) => msg,
+                    Err(error) => {
+                        debug_log(
+                            shared,
+                            format!(
+                                "Failed to read OpenCode database message {}: {error}",
+                                db_path.display()
+                            ),
+                        );
+                        continue;
+                    }
                 };
                 if let Some(entry) =
-                    message_value_to_entry(&value, Some(id), Some(session_id), tz, mode, pricing)
+                    message_to_entry(&msg, Some(id.clone()), Some(session_id), tz, mode, pricing)
                 {
+                    fresh_rows.push(OpenCodeRow {
+                        id,
+                        content_hash,
+                        entry: crate::cache::CachedEntry::from(&entry),
+                    });
                     entries.push(entry);
                 }
             }
@@ -190,6 +237,12 @@ fn load_entries_from_database(
             }
         }
     }
+
+    // Rebuild the cache from exactly the rows seen this run.
+    if let Some(cache_key) = cache_key {
+        cache::save_opencode_row_cache(&cache_key, &fresh_rows, cost_fp);
+    }
+
     entries
 }
 
@@ -199,8 +252,8 @@ fn read_message_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     shared: &SharedArgs,
-) -> Option<LoadedEntry> {
-    let content = match fs::read(path) {
+) -> crate::Result<Vec<LoadedEntry>> {
+    let content = match fs::read_to_string(path) {
         Ok(content) => content,
         Err(error) => {
             debug_log(
@@ -210,11 +263,25 @@ fn read_message_file(
                     path.display()
                 ),
             );
-            return None;
+            return Ok(Vec::new());
         }
     };
-    let value = serde_json::from_slice::<OpenCodeMessage>(&content).ok()?;
-    message_value_to_entry(&value, None, None, tz, mode, pricing)
+    let msg = match serde_json::from_str::<OpenCodeMessage>(&content) {
+        Ok(msg) => msg,
+        Err(error) => {
+            debug_log(
+                shared,
+                format!(
+                    "Failed to read OpenCode message file {}: {error}",
+                    path.display()
+                ),
+            );
+            return Ok(Vec::new());
+        }
+    };
+    Ok(message_to_entry(&msg, None, None, tz, mode, pricing)
+        .into_iter()
+        .collect())
 }
 
 fn entry_id(entry: &LoadedEntry) -> Option<&str> {
@@ -223,37 +290,106 @@ fn entry_id(entry: &LoadedEntry) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        sync::MutexGuard,
+    };
 
     use super::load_entries_from_directory;
     use crate::cli::{CostMode, SharedArgs};
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{Fixture, fs_fixture};
 
+    /// Serializes tests that mutate the process-global `XDG_CACHE_HOME`. Shares
+    /// the crate-wide lock so opencode tests never race cache tests on the env
+    /// var (both now read/write the same `ledger.jsonl`).
+    fn test_lock() -> MutexGuard<'static, ()> {
+        crate::test_env_lock()
+    }
+
+    /// Isolate cache I/O in a temp dir so tests never touch the real cache.
+    struct CacheEnv {
+        dir: PathBuf,
+        prev_xdg: Option<std::ffi::OsString>,
+        _guard: MutexGuard<'static, ()>,
+    }
+
+    impl CacheEnv {
+        fn new(name: &str) -> Self {
+            let guard = test_lock();
+            let dir = std::env::temp_dir().join(format!("ccusage-opencode-test-{name}"));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
+            let prev_xdg = std::env::var_os("XDG_CACHE_HOME");
+            unsafe { std::env::set_var("XDG_CACHE_HOME", &dir) };
+            Self {
+                dir,
+                prev_xdg,
+                _guard: guard,
+            }
+        }
+    }
+
+    impl Drop for CacheEnv {
+        fn drop(&mut self) {
+            match &self.prev_xdg {
+                Some(v) => unsafe { std::env::set_var("XDG_CACHE_HOME", v) },
+                None => unsafe { std::env::remove_var("XDG_CACHE_HOME") },
+            }
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// Create a message database with the realistic OpenCode schema, carrying
+    /// `time_created` / `time_updated` columns.
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
+        create_db_message_at(path, id, session_id, data, time_created_of(data));
+    }
+
+    fn create_db_message_at(path: &Path, id: &str, session_id: &str, data: &str, time: i64) {
         let db = sqlite::open(path).unwrap();
-        db.execute("CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)")
-            .unwrap();
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL)",
+        )
+        .unwrap();
+        insert_message(&db, id, session_id, data, time);
+    }
+
+    fn insert_message(db: &sqlite::Connection, id: &str, session_id: &str, data: &str, time: i64) {
         let mut statement = db
-            .prepare("INSERT INTO message (id, session_id, data) VALUES (?1, ?2, ?3)")
+            .prepare("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?1, ?2, ?3, ?4, ?5)")
             .unwrap();
         statement.bind((1, id)).unwrap();
         statement.bind((2, session_id)).unwrap();
-        statement.bind((3, data)).unwrap();
+        statement.bind((3, time)).unwrap();
+        statement.bind((4, time)).unwrap();
+        statement.bind((5, data)).unwrap();
         statement.next().unwrap();
+    }
+
+    fn time_created_of(data: &str) -> i64 {
+        serde_json::from_str::<serde_json::Value>(data)
+            .ok()
+            .and_then(|v| v.get("time")?.get("created")?.as_i64())
+            .unwrap_or(0)
+    }
+
+    fn display_shared() -> SharedArgs {
+        SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        }
     }
 
     #[test]
     fn loads_message_json_files() {
+        let _env = CacheEnv::new("loads-json");
         let fixture = fs_fixture!({
             "storage/message/message.json": r#"{"id":"msg-1","sessionID":"session-a","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":100,"output":50,"cache":{"read":10,"write":20}},"cost":0.02}"#,
         });
 
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -274,6 +410,7 @@ mod tests {
 
     #[test]
     fn loads_messages_from_sqlite_database() {
+        let _env = CacheEnv::new("loads-sqlite");
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path("opencode.db"),
@@ -282,12 +419,7 @@ mod tests {
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":120,"output":60,"cache":{"read":12,"write":24}},"cost":0.03}"#,
         );
 
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -305,6 +437,7 @@ mod tests {
 
     #[test]
     fn loads_channel_sqlite_database() {
+        let _env = CacheEnv::new("loads-channel");
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path("opencode-beta.db"),
@@ -322,6 +455,7 @@ mod tests {
 
     #[test]
     fn prefers_database_messages_over_duplicate_json_files() {
+        let _env = CacheEnv::new("prefers-db");
         let fixture = fs_fixture!({
             "storage/message/message.json": r#"{"id":"msg-1","sessionID":"json-session-a","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":999,"output":999},"cost":0.99}"#,
         });
@@ -345,7 +479,189 @@ mod tests {
     }
 
     #[test]
+    fn serves_unchanged_row_from_cache_on_second_load() {
+        let _env = CacheEnv::new("row-cache-hit");
+        let fixture = fs_fixture!({});
+        let db = fixture.path("opencode.db");
+        create_db_message(
+            &db,
+            "msg-1",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":100,"output":50},"cost":0.02}"#,
+        );
+
+        let cold = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        // The cache database holding the row cache must now exist.
+        assert!(
+            _env.dir.join("ccusage").join("cache.db").exists(),
+            "row cache should be written to the cache database"
+        );
+
+        let warm = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(cold.len(), warm.len());
+        assert_eq!(cold[0].cost, warm[0].cost);
+        assert_eq!(
+            cold[0].data.message.usage.input_tokens,
+            warm[0].data.message.usage.input_tokens
+        );
+    }
+
+    #[test]
+    fn changed_row_content_invalidates_cache() {
+        let _env = CacheEnv::new("row-content-change");
+        let fixture = fs_fixture!({});
+        let db = fixture.path("opencode.db");
+        create_db_message(
+            &db,
+            "msg-1",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"m","time":{"created":1767312000000},"tokens":{"input":100}}"#,
+        );
+
+        let cold = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(cold[0].data.message.usage.input_tokens, 100);
+
+        // Rewrite the row's `data` in place (same id). Only the content hash
+        // catches this; the old `(id, time_updated)` key would serve a stale 100.
+        let conn = sqlite::open(&db).unwrap();
+        conn.execute(
+            r#"UPDATE message SET data = '{"providerID":"anthropic","modelID":"m","time":{"created":1767312000000},"tokens":{"input":999}}' WHERE id = 'msg-1'"#,
+        )
+        .unwrap();
+        drop(conn);
+
+        let warm = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(
+            warm[0].data.message.usage.input_tokens, 999,
+            "changed row content must invalidate the cache and reparse"
+        );
+    }
+
+    #[test]
+    fn deleted_database_retains_spend_via_ledger() {
+        let _env = CacheEnv::new("db-retain");
+        let fixture = fs_fixture!({});
+        let db = fixture.path("opencode.db");
+        create_db_message(
+            &db,
+            "msg-1",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"m","time":{"created":1767312000000},"tokens":{"input":100}}"#,
+        );
+
+        // Cold load records the DB row's spend in the ledger.
+        let cold = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(cold.len(), 1);
+        assert_eq!(cold[0].data.message.usage.input_tokens, 100);
+
+        // Delete the entire database file — simulates a removed opencode store.
+        fs::remove_file(&db).unwrap();
+
+        // The spend must still be reported, re-emitted from the ledger.
+        let warm = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(
+            warm.len(),
+            1,
+            "deleted DB spend must be retained via the ledger"
+        );
+        assert_eq!(warm[0].data.message.usage.input_tokens, 100);
+    }
+
+    #[test]
+    fn deleted_row_spend_retained_via_ledger() {
+        let _env = CacheEnv::new("row-cache-delete");
+        let fixture = fs_fixture!({});
+        let db = fixture.path("opencode.db");
+        create_db_message(
+            &db,
+            "msg-1",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"m","time":{"created":1767312000000},"tokens":{"input":100}}"#,
+        );
+        create_db_message(
+            &db,
+            "msg-2",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"m","time":{"created":1767312000000},"tokens":{"input":200}}"#,
+        );
+
+        let first = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(first.len(), 2);
+
+        // Delete one row, then reload: its spend must persist via the ledger so
+        // a removed chat never erases the tokens/cost already incurred.
+        let conn = sqlite::open(&db).unwrap();
+        conn.execute("DELETE FROM message WHERE id = 'msg-2'")
+            .unwrap();
+        drop(conn);
+
+        let second = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(second.len(), 2, "deleted row's spend must be retained");
+        let deleted = second
+            .iter()
+            .find(|e| e.data.message.id.as_deref() == Some("msg-2"))
+            .expect("deleted row retained from ledger");
+        assert_eq!(deleted.data.message.usage.input_tokens, 200);
+    }
+
+    #[test]
+    fn loads_distinct_rows_with_same_timestamp() {
+        let _env = CacheEnv::new("row-same-tick");
+        let fixture = fs_fixture!({});
+        let db = fixture.path("opencode.db");
+        // Two distinct rows sharing an identical time_updated value: content-hash
+        // keying must keep both, never collapse them on the shared timestamp.
+        create_db_message_at(
+            &db,
+            "msg-1",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"m","time":{"created":1767312000000},"tokens":{"input":100}}"#,
+            1767312000000,
+        );
+        create_db_message_at(
+            &db,
+            "msg-2",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"m","time":{"created":1767312000000},"tokens":{"input":200}}"#,
+            1767312000000,
+        );
+
+        let first = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(first.len(), 2);
+        let second = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(second.len(), 2);
+    }
+
+    #[test]
+    fn loads_legacy_schema_without_time_updated() {
+        let _env = CacheEnv::new("legacy-schema");
+        let fixture = fs_fixture!({});
+        let db = fixture.path("opencode.db");
+        let conn = sqlite::open(&db).unwrap();
+        conn.execute("CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)")
+            .unwrap();
+        let mut statement = conn
+            .prepare("INSERT INTO message (id, session_id, data) VALUES (?1, ?2, ?3)")
+            .unwrap();
+        statement.bind((1, "msg-1")).unwrap();
+        statement.bind((2, "session-a")).unwrap();
+        statement
+            .bind((
+                3,
+                r#"{"providerID":"anthropic","modelID":"m","time":{"created":1767312000000},"tokens":{"input":100}}"#,
+            ))
+            .unwrap();
+        statement.next().unwrap();
+        drop(statement);
+        drop(conn);
+
+        let entries = load_entries_from_directory(fixture.root(), &display_shared()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+    }
+    #[test]
     fn skips_message_files_already_covered_by_database() {
+        let _env = CacheEnv::new("opencode-skips-db-covered");
         // Real OpenCode message files live at
         // `storage/message/<sessionID>/<messageID>.json`, so the file stem is
         // the message id. The DB pass contributes `msg-db`, so the matching
@@ -387,11 +703,12 @@ mod tests {
 
     #[test]
     fn dedup_is_stable_across_thread_counts() {
+        let _env = CacheEnv::new("opencode-dedup-thread-stable");
         // Build a directory with many files spread over several sessions, some
         // sharing ids with each other and with the DB, so the file pass has to
         // dedup. Parallel reads must not change which duplicate survives or the
         // final ordering compared to the single-threaded read.
-        let fixture = ccusage_test_support::Fixture::new();
+        let fixture = Fixture::new();
         for session in 0..4 {
             for message in 0..15 {
                 let id = format!("msg-{session}-{message}");

@@ -27,6 +27,11 @@
 			"description": "Negatable of -O, --offline"
 		},
 		{
+			"flags": "--live-only",
+			"description": "Show only usage from log files still on disk; exclude spend retained from deleted source logs",
+			"default": "false"
+		},
+		{
 			"flags": "--compact",
 			"description": "Force compact table layout for narrow terminals",
 			"default": "false"
@@ -91,6 +96,11 @@
 		{
 			"flags": "--no-offline",
 			"description": "Negatable of -O, --offline"
+		},
+		{
+			"flags": "--live-only",
+			"description": "Show only usage from log files still on disk; exclude spend retained from deleted source logs",
+			"default": "false"
 		},
 		{
 			"flags": "--compact",
@@ -173,6 +183,11 @@
 		{
 			"flags": "--no-offline",
 			"description": "Negatable of -O, --offline"
+		},
+		{
+			"flags": "--live-only",
+			"description": "Show only usage from log files still on disk; exclude spend retained from deleted source logs",
+			"default": "false"
 		},
 		{
 			"flags": "--speed [speed]",
@@ -298,6 +313,11 @@
 			"description": "Negatable of -O, --offline"
 		},
 		{
+			"flags": "--live-only",
+			"description": "Show only usage from log files still on disk; exclude spend retained from deleted source logs",
+			"default": "false"
+		},
+		{
 			"flags": "--single-thread",
 			"description": "Disable parallel JSONL file loading",
 			"default": "false"
@@ -327,6 +347,16 @@
 			"description": "Force compact mode for narrow displays (better for screenshots)",
 			"default": "false"
 		},
+		{
+			"flags": "-h, --help",
+			"description": "Display this help message"
+		},
+		{
+			"flags": "-v, --version",
+			"description": "Display this version"
+		}
+	],
+	"clear_cache_options": [
 		{
 			"flags": "-h, --help",
 			"description": "Display this help message"

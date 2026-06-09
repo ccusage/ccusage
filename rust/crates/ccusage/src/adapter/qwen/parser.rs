@@ -14,10 +14,9 @@ use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage,
     cli::{CostMode, SharedArgs},
-    debug_log,
     fast::LinePrefilter,
     format_date_tz, format_rfc3339_millis, missing_pricing_model_for_candidates,
-    parse_ts_timestamp, parse_tz, read_files_parallel,
+    parse_ts_timestamp, parse_tz,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
@@ -66,27 +65,19 @@ pub(super) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
     };
     let tz = parse_tz(shared.timezone.as_deref());
     let files = paths::discover_chat_files()?;
-    // Read chat files in parallel; the first-wins dedup runs sequentially over
-    // the original discovery order so the surviving record per id matches the
-    // single-threaded read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_chat_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared).unwrap_or_else(
-            |error| {
-                debug_log(
-                    shared,
-                    format!("Failed to read Qwen chat file {}: {error}", file.display()),
-                );
-                Vec::new()
-            },
-        )
-    });
-    let mut entries = Vec::new();
+    let parsed = crate::cache::load_with_cache(
+        "qwen",
+        &files,
+        shared.single_thread,
+        crate::cache::cost_fingerprint(pricing.as_ref().map(|p| p.fingerprint()), shared.mode),
+        shared.live_only,
+        |file| read_chat_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared),
+    )?;
     let mut seen = HashSet::new();
-    for file_entries in loaded {
-        for entry in file_entries {
-            if seen.insert(entry_id(&entry)) {
-                entries.push(entry);
-            }
+    let mut entries = Vec::with_capacity(parsed.len());
+    for entry in parsed {
+        if seen.insert(entry_id(&entry)) {
+            entries.push(entry);
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);

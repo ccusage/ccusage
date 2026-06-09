@@ -23,9 +23,10 @@ jiff = { version = "0.2.24", default-features = false, features = [
 ] }
 memchr = "2"
 compact_str = "0.9"
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 rustc-hash = "2"
 schemars = "0.8"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 smallvec = "1"
 sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
