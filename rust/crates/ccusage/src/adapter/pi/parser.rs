@@ -125,6 +125,8 @@ pub(crate) fn read_session_file(
                 usage,
                 model: model.clone(),
                 id: None,
+
+                provider: None,
             },
             cost_usd: display_cost,
             request_id: None,

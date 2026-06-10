@@ -154,6 +154,8 @@ fn parse_ledger_events(
                 usage,
                 model: Some(model.clone()),
                 id: non_empty_json_string(event.id.as_ref()),
+
+                provider: None,
             },
             cost_usd: None,
             request_id: None,
@@ -262,6 +264,8 @@ fn parse_message_usage(
                 usage: usage_raw,
                 model: Some(model.clone()),
                 id: message_id,
+
+                provider: None,
             },
             cost_usd: None,
             request_id: None,

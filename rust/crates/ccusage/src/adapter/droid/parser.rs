@@ -14,7 +14,7 @@ pub(super) struct DroidEntry {
     pub(super) timestamp_text: String,
     pub(super) session_id: String,
     pub(super) model: String,
-    provider: String,
+    pub(super) provider: String,
     pub(super) usage: TokenUsageRaw,
     pub(super) reasoning_tokens: u64,
 }
@@ -175,15 +175,59 @@ pub(super) fn missing_droid_pricing(entry: &DroidEntry, pricing: &PricingMap) ->
 }
 
 fn droid_model_candidates(entry: &DroidEntry) -> Vec<String> {
-    let mut candidates = vec![entry.model.clone()];
-    for prefix in provider_prefixes(&entry.provider) {
-        candidates.push(format!("{prefix}{}", entry.model));
+    droid_model_candidates_for(&entry.model, &entry.provider)
+}
+
+fn droid_model_candidates_for(model: &str, provider: &str) -> Vec<String> {
+    let mut candidates = vec![model.to_string()];
+    for prefix in provider_prefixes(provider) {
+        candidates.push(format!("{prefix}{model}"));
     }
     let mut seen = HashSet::new();
     candidates
         .into_iter()
         .filter(|candidate| seen.insert(candidate.clone()))
         .collect()
+}
+
+/// Recompute cost and missing-pricing for a cached entry from its stored tokens
+/// and provider hint, mirroring `calculate_droid_cost`: always `Calculate`, output
+/// folds in `extra_total_tokens` (which holds Droid reasoning tokens).
+pub(super) fn reprice(entry: &mut crate::LoadedEntry, pricing: &PricingMap) {
+    let model = entry.data.message.model.clone().unwrap_or_default();
+    let provider = entry.data.message.provider.clone().unwrap_or_default();
+    let usage = TokenUsageRaw {
+        output_tokens: entry
+            .data
+            .message
+            .usage
+            .output_tokens
+            .saturating_add(entry.extra_total_tokens),
+        cache_creation: None,
+        ..entry.data.message.usage
+    };
+    let candidates = droid_model_candidates_for(&model, &provider);
+    let mut cost = 0.0;
+    for candidate in &candidates {
+        let candidate_cost = calculate_cost_for_usage(
+            Some(candidate),
+            usage,
+            None,
+            CostMode::Calculate,
+            Some(pricing),
+        );
+        if candidate_cost > 0.0 {
+            cost = candidate_cost;
+            break;
+        }
+    }
+    entry.cost = cost;
+    entry.missing_pricing_model = missing_pricing_model_for_candidates(
+        &model,
+        candidates,
+        crate::total_usage_tokens(usage),
+        Some(pricing),
+    );
 }
 
 fn provider_prefixes(provider: &str) -> Vec<String> {

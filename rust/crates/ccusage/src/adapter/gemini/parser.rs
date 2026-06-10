@@ -470,6 +470,8 @@ pub(super) fn event_to_loaded(
             usage,
             model: Some(event.model.clone()),
             id: event.message_id,
+
+            provider: None,
         },
         cost_usd: None,
         request_id: None,
@@ -533,6 +535,24 @@ fn missing_gemini_pricing(
         crate::total_usage_tokens(usage),
         Some(pricing),
     )
+}
+
+/// Recompute cost and missing-pricing for a cached entry from its stored tokens,
+/// mirroring `event_to_loaded` exactly (output folds in `extra_total_tokens`).
+pub(super) fn reprice(entry: &mut LoadedEntry, mode: CostMode, pricing: &PricingMap) {
+    let model = entry.data.message.model.clone().unwrap_or_default();
+    let cost_usage = TokenUsageRaw {
+        output_tokens: entry
+            .data
+            .message
+            .usage
+            .output_tokens
+            .saturating_add(entry.extra_total_tokens),
+        cache_creation: None,
+        ..entry.data.message.usage
+    };
+    entry.cost = calculate_gemini_cost(&model, cost_usage, mode, pricing);
+    entry.missing_pricing_model = missing_gemini_pricing(&model, cost_usage, mode, pricing);
 }
 
 fn model_candidates(model: &str) -> Vec<String> {

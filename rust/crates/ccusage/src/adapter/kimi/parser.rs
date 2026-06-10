@@ -235,6 +235,8 @@ pub(super) fn kimi_entry_to_loaded(
             usage,
             model: Some(entry.model.clone()),
             id: entry.message_id.clone(),
+
+            provider: None,
         },
         cost_usd: None,
         request_id: None,

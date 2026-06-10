@@ -129,6 +129,7 @@ pub(super) fn message_value_to_entry(
             usage,
             model: Some(model.clone()),
             id: Some(message_id),
+            provider: value.provider_id.clone(),
         },
         cost_usd,
         request_id: None,
@@ -181,6 +182,32 @@ fn normalize_timestamp(value: i64) -> Option<TimestampMs> {
         value
     };
     Some(TimestampMs::from_millis(millis))
+}
+
+/// Recompute cost and missing-pricing for a cached entry from its stored tokens,
+/// provider hint, and logged cost, mirroring the parse path's `cost_data`
+/// (billable output folds in `extra_total_tokens`).
+pub(super) fn reprice(entry: &mut LoadedEntry, mode: CostMode, pricing: &PricingMap) {
+    let provider = entry.data.message.provider.clone();
+    let cost_data = UsageEntry {
+        message: UsageMessage {
+            usage: TokenUsageRaw {
+                output_tokens: entry
+                    .data
+                    .message
+                    .usage
+                    .output_tokens
+                    .saturating_add(entry.extra_total_tokens),
+                cache_creation: None,
+                ..entry.data.message.usage
+            },
+            ..entry.data.message.clone()
+        },
+        ..entry.data.clone()
+    };
+    entry.cost = calculate_kilo_cost(&cost_data, provider.as_deref(), mode, pricing);
+    entry.missing_pricing_model =
+        missing_kilo_pricing(&cost_data, provider.as_deref(), mode, pricing);
 }
 
 fn calculate_kilo_cost(

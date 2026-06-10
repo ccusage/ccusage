@@ -3,7 +3,9 @@ use std::{collections::HashSet, sync::Arc};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{DroidEntry, calculate_droid_cost, load_settings_file, missing_droid_pricing},
+    parser::{
+        DroidEntry, calculate_droid_cost, load_settings_file, missing_droid_pricing, reprice,
+    },
     paths::discover_settings_files,
 };
 use crate::{
@@ -25,7 +27,6 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         "droid",
         &files,
         shared.single_thread,
-        crate::cache::cost_fingerprint(Some(pricing.fingerprint()), shared.mode),
         shared.live_only,
         |file| {
             let Some(entry) = load_settings_file(file).unwrap_or_else(|error| {
@@ -42,6 +43,7 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
             };
             Ok(vec![to_loaded_entry(entry, tz.as_ref(), pricing)])
         },
+        |e| reprice(e, pricing),
     )?;
     // Keep only the latest snapshot per session (multiple settings files can share a session_id).
     all.sort_by_key(|e| e.timestamp);
@@ -69,6 +71,7 @@ fn to_loaded_entry(
             usage: entry.usage,
             model: Some(entry.model.clone()),
             id: Some(format!("droid:{}", entry.session_id)),
+            provider: Some(entry.provider.clone()),
         },
         cost_usd: None,
         request_id: None,
@@ -254,6 +257,8 @@ mod tests {
                     },
                     model: Some("claude-sonnet-4".to_string()),
                     id: Some("droid:session-a".to_string()),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: None,

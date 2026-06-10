@@ -302,6 +302,8 @@ fn openclaw_entry_to_loaded(
             usage,
             model: Some(entry.model.clone()),
             id: None,
+
+            provider: None,
         },
         cost_usd: entry.cost,
         request_id: None,

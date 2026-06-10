@@ -56,6 +56,7 @@ pub(crate) fn message_to_entry(
             usage,
             model: Some(model.clone()),
             id: message_id,
+            provider: Some(provider.clone()),
         },
         cost_usd: msg.cost,
         request_id: None,
@@ -90,6 +91,28 @@ pub(crate) fn message_to_entry(
         missing_pricing_model,
         data,
     })
+}
+
+/// Recompute cost and missing-pricing for a cached entry from its stored tokens,
+/// provider hint, and logged cost, mirroring `message_to_entry` (billable output
+/// folds in `extra_total_tokens`).
+pub(crate) fn reprice(entry: &mut LoadedEntry, mode: CostMode, pricing: Option<&PricingMap>) {
+    let model = entry.data.message.model.clone().unwrap_or_default();
+    let provider = entry.data.message.provider.clone().unwrap_or_default();
+    let cost_usage = TokenUsageRaw {
+        output_tokens: entry
+            .data
+            .message
+            .usage
+            .output_tokens
+            .saturating_add(entry.extra_total_tokens),
+        cache_creation: None,
+        ..entry.data.message.usage
+    };
+    let cost_usd = entry.data.cost_usd;
+    entry.cost = calculate_open_code_cost(&model, &provider, cost_usage, cost_usd, mode, pricing);
+    entry.missing_pricing_model =
+        missing_open_code_pricing(&model, &provider, cost_usage, cost_usd, mode, pricing);
 }
 
 fn calculate_open_code_cost(

@@ -99,6 +99,8 @@ mod tests {
                     },
                     model: Some("claude-sonnet-4-20250514".to_string()),
                     id: Some("session-a".to_string()),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: None,

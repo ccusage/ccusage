@@ -10,7 +10,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::fast::FxHashMap;
-use rustc_hash::FxHasher;
 
 const BUILD_TIME_PRICING_JSON: &str =
     include_str!(concat!(env!("OUT_DIR"), "/litellm-pricing.json"));
@@ -80,6 +79,14 @@ pub(crate) struct PricingMap {
     context_limits: FxHashMap<String, u64>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
+    // Memoizes `find` results (including misses) keyed by raw model string. The
+    // pricing entries are immutable once constructed, and resolution otherwise
+    // depends only on the global alias table; the stored generation invalidates
+    // the cache if that table changes (test-only in practice). The lookup does a
+    // linear scan over thousands of entries on a non-exact match, which the
+    // reprice loop would otherwise repeat for every billable row. Distinct
+    // models per run number in the dozens.
+    find_cache: std::sync::RwLock<(u64, FxHashMap<String, Option<Pricing>>)>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -379,6 +386,25 @@ impl PricingMap {
     }
 
     pub(crate) fn find(&self, model: &str) -> Option<Pricing> {
+        let generation = crate::model_aliases::alias_generation();
+        if let Ok(cache) = self.find_cache.read()
+            && cache.0 == generation
+            && let Some(cached) = cache.1.get(model)
+        {
+            return *cached;
+        }
+        let resolved = self.find_uncached(model);
+        if let Ok(mut cache) = self.find_cache.write() {
+            if cache.0 != generation {
+                cache.0 = generation;
+                cache.1.clear();
+            }
+            cache.1.insert(model.to_string(), resolved);
+        }
+        resolved
+    }
+
+    fn find_uncached(&self, model: &str) -> Option<Pricing> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
         self.find_entry_or_alias(model)
@@ -567,44 +593,6 @@ impl PricingMap {
         if let Some(limit) = override_value.max_input_tokens {
             self.context_limits.insert(model.to_string(), limit);
         }
-    }
-
-    pub(crate) fn fingerprint(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-
-        let mut result: u64 = 0;
-
-        let mut keys: Vec<_> = self.entries.keys().collect();
-        keys.sort();
-        for key in keys {
-            let pricing = &self.entries[key];
-            let mut entry_hasher = FxHasher::default();
-            key.hash(&mut entry_hasher);
-            pricing.hash(&mut entry_hasher);
-            result = result.wrapping_add(entry_hasher.finish());
-        }
-
-        let mut context_keys: Vec<_> = self.context_limits.keys().collect();
-        context_keys.sort();
-        for key in context_keys {
-            let limit = self.context_limits[key];
-            let mut entry_hasher = FxHasher::default();
-            key.hash(&mut entry_hasher);
-            limit.hash(&mut entry_hasher);
-            result = result.wrapping_add(entry_hasher.finish());
-        }
-
-        let mut flag_hasher = FxHasher::default();
-        self.enable_models_dev_fallback.hash(&mut flag_hasher);
-        result = result.wrapping_add(flag_hasher.finish());
-
-        if self.enable_models_dev_fallback {
-            if let Some(models_dev) = models_dev_pricing() {
-                result = result.wrapping_add(models_dev.fingerprint());
-            }
-        }
-
-        result
     }
 
     #[cfg(test)]
@@ -1378,22 +1366,6 @@ mod tests {
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    /// Convenience constructor for Pricing with default cache/fast fields.
-    fn px(input: f64, output: f64) -> Pricing {
-        Pricing {
-            input,
-            output,
-            cache_create: 0.0,
-            cache_read: 0.0,
-            cache_read_explicit: false,
-            input_above_200k: None,
-            output_above_200k: None,
-            cache_create_above_200k: None,
-            cache_read_above_200k: None,
-            fast_multiplier: 1.0,
-        }
-    }
-
     #[test]
     fn loads_embedded_claude_pricing() {
         let pricing = PricingMap::load_embedded();
@@ -2530,67 +2502,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fingerprint_is_deterministic() {
-        let a = PricingMap::load_embedded();
-        let b = PricingMap::load_embedded();
-        assert_eq!(a.fingerprint(), b.fingerprint());
-    }
-
-    #[test]
-    fn fingerprint_is_order_independent() {
-        let mut map_a = PricingMap::default();
-        let mut map_b = PricingMap::default();
-
-        let pricing_x = px(1.0, 2.0);
-        let pricing_y = px(3.0, 4.0);
-
-        // Insert in opposite order via raw FxHashMap manipulation
-        map_a.entries.insert("model-b".to_string(), pricing_y);
-        map_a.entries.insert("model-a".to_string(), pricing_x);
-
-        map_b.entries.insert("model-a".to_string(), pricing_x);
-        map_b.entries.insert("model-b".to_string(), pricing_y);
-
-        assert_eq!(map_a.fingerprint(), map_b.fingerprint());
-    }
-
-    #[test]
-    fn fingerprint_changes_when_rate_changes() {
-        let mut map_a = PricingMap::default();
-        let mut map_b = PricingMap::default();
-
-        let pricing = px(1.0, 2.0);
-        let pricing_changed = px(1.5, 2.0);
-
-        map_a.entries.insert("model-a".to_string(), pricing);
-        map_b.entries.insert("model-a".to_string(), pricing_changed);
-
-        assert_ne!(map_a.fingerprint(), map_b.fingerprint());
-    }
-
-    #[test]
-    fn fingerprint_changes_when_context_limit_changes() {
-        let mut map_a = PricingMap::default();
-        let mut map_b = PricingMap::default();
-
-        map_a.context_limits.insert("model-a".to_string(), 100_000);
-        map_b.context_limits.insert("model-a".to_string(), 200_000);
-
-        assert_ne!(map_a.fingerprint(), map_b.fingerprint());
-    }
-
-    #[test]
-    fn fingerprint_changes_when_fallback_flag_changes() {
-        let mut map_a = PricingMap::default();
-        let mut map_b = PricingMap::default();
-
-        map_a.enable_models_dev_fallback = false;
-        map_b.enable_models_dev_fallback = true;
-
-        assert_ne!(map_a.fingerprint(), map_b.fingerprint());
-    }
-
     /// Isolates `XDG_CACHE_HOME` for one pricing-fetch test so `cache.db` is a
     /// fresh temp dir and conditional-fetch state cannot leak between runs.
     /// Holds the shared env lock and restores the var on drop.
@@ -2660,8 +2571,7 @@ mod tests {
                 // Read the request head (GET has no body) up to the blank line.
                 let mut req = Vec::new();
                 let mut buf = [0u8; 1024];
-                loop {
-                    let Ok(n) = stream.read(&mut buf) else { break };
+                while let Ok(n) = stream.read(&mut buf) {
                     if n == 0 {
                         break;
                     }

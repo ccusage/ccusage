@@ -111,9 +111,18 @@ fn load_entries_inner(
         "claude",
         &files,
         shared.single_thread,
-        crate::cache::cost_fingerprint(pricing.as_ref().map(|p| p.fingerprint()), mode),
         shared.live_only,
         |file| read_usage_file(file, tz_ref, mode, pricing_ref).map(|f| f.entries),
+        |e| {
+            e.cost = calculate_cost(&e.data, mode, pricing_ref);
+            e.missing_pricing_model = missing_pricing_model_for_usage(
+                e.data.message.model.as_deref(),
+                e.data.message.usage,
+                e.data.cost_usd,
+                mode,
+                pricing_ref,
+            );
+        },
     )?;
     debug_log(
         shared,
@@ -123,10 +132,10 @@ fn load_entries_inner(
     let mut deduped_indexes: FxHashMap<u64, SmallIndexVec> = FxHashMap::default();
     let mut deduped: Vec<LoadedEntry> = Vec::with_capacity(loaded_entries.len());
     for entry in loaded_entries {
-        if let Some(filter) = project_filter {
-            if entry.project.as_ref() != filter {
-                continue;
-            }
+        if let Some(filter) = project_filter
+            && entry.project.as_ref() != filter
+        {
+            continue;
         }
         push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
     }
@@ -853,6 +862,8 @@ mod tests {
                     },
                     model: Some("claude-sonnet-4-20250514".to_string()),
                     id: Some(fixture.message_id.to_string()),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: Some(fixture.request_id.to_string()),

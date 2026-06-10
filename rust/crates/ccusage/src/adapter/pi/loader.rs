@@ -31,7 +31,6 @@ fn load_entries_inner(
         "pi",
         &files,
         shared.single_thread,
-        crate::cache::cost_fingerprint(pricing.as_ref().map(|p| p.fingerprint()), shared.mode),
         shared.live_only,
         |file| {
             Ok(
@@ -45,6 +44,23 @@ fn load_entries_inner(
                     },
                 ),
             )
+        },
+        |e| {
+            let model = e.data.message.model.as_deref();
+            e.cost = crate::calculate_cost_for_usage(
+                model,
+                e.data.message.usage,
+                e.data.cost_usd,
+                shared.mode,
+                pricing,
+            );
+            e.missing_pricing_model = crate::missing_pricing_model_for_usage(
+                model,
+                e.data.message.usage,
+                e.data.cost_usd,
+                shared.mode,
+                pricing,
+            );
         },
     )?;
     let mut seen = HashSet::new();

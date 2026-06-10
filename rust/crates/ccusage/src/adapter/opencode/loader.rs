@@ -7,7 +7,10 @@ use std::{
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use super::{parser::message_to_entry, paths::paths};
+use super::{
+    parser::{message_to_entry, reprice},
+    paths::paths,
+};
 use crate::{
     LoadedEntry, OpenCodeMessage, PricingMap, Result,
     cache::{self, OpenCodeRow},
@@ -67,10 +70,10 @@ pub(crate) fn load_entries_from_directory(
         None => Vec::new(),
     };
     for entry in cache::retain_via_ledger("opencode-db", db_entries, shared.live_only) {
-        if let Some(id) = entry_id(&entry) {
-            if !seen.insert(id.to_string()) {
-                continue;
-            }
+        if let Some(id) = entry_id(&entry)
+            && !seen.insert(id.to_string())
+        {
+            continue;
         }
         entries.push(entry);
     }
@@ -78,21 +81,19 @@ pub(crate) fn load_entries_from_directory(
     let messages_dir = opencode_dir.join("storage").join("message");
     let mut files = Vec::new();
     collect_files_with_extension(&messages_dir, "json", &mut files);
-    let cost_fp =
-        crate::cache::cost_fingerprint(pricing.as_ref().map(|p| p.fingerprint()), shared.mode);
     let json_entries = cache::load_with_cache(
         "opencode",
         &files,
         shared.single_thread,
-        cost_fp,
         shared.live_only,
         |path| read_message_file(path, tz.as_ref(), shared.mode, pricing.as_ref(), shared),
+        |e| reprice(e, shared.mode, pricing.as_ref()),
     )?;
     for entry in json_entries {
-        if let Some(id) = entry_id(&entry) {
-            if !seen.insert(id.to_string()) {
-                continue;
-            }
+        if let Some(id) = entry_id(&entry)
+            && !seen.insert(id.to_string())
+        {
+            continue;
         }
         entries.push(entry);
     }
@@ -153,12 +154,11 @@ fn load_entries_from_database(
         return Vec::new();
     };
 
-    let cost_fp = crate::cache::cost_fingerprint(pricing.map(|p| p.fingerprint()), mode);
     let cache_key = cache::file_metadata(db_path).map(|meta| meta.cache_key);
     // Index the previous run's rows by id for O(1) reuse lookups.
     let cached: HashMap<String, OpenCodeRow> = cache_key
         .as_deref()
-        .and_then(|key| cache::load_opencode_row_cache(key, cost_fp))
+        .and_then(cache::load_opencode_row_cache)
         .into_iter()
         .flatten()
         .map(|row| (row.id.clone(), row))
@@ -195,12 +195,12 @@ fn load_entries_from_database(
                 let content_hash = hasher.finish();
 
                 // Reuse the cached entry on exact (id, content_hash) match.
-                if let Some(row) = cached.get(&id) {
-                    if row.content_hash == content_hash {
-                        entries.push(crate::LoadedEntry::from(row.entry.clone()));
-                        fresh_rows.push(row.clone());
-                        continue;
-                    }
+                if let Some(row) = cached.get(&id)
+                    && row.content_hash == content_hash
+                {
+                    entries.push(crate::LoadedEntry::from(row.entry.clone()));
+                    fresh_rows.push(row.clone());
+                    continue;
                 }
 
                 let msg = match serde_json::from_str::<OpenCodeMessage>(&data) {
@@ -240,7 +240,14 @@ fn load_entries_from_database(
 
     // Rebuild the cache from exactly the rows seen this run.
     if let Some(cache_key) = cache_key {
-        cache::save_opencode_row_cache(&cache_key, &fresh_rows, cost_fp);
+        cache::save_opencode_row_cache(&cache_key, &fresh_rows);
+    }
+
+    // Reprice every entry (cache hits carry cost 0 from `CachedEntry`; fresh
+    // parses are repriced idempotently) so cost reflects the current pricing/mode
+    // without reparsing. Ledger-frozen entries are merged later and untouched.
+    for entry in &mut entries {
+        reprice(entry, mode, pricing);
     }
 
     entries

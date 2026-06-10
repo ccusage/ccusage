@@ -2,12 +2,25 @@ use std::{
     borrow::Cow,
     collections::BTreeMap,
     env,
-    sync::{OnceLock, RwLock},
+    sync::{
+        OnceLock, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 const MODEL_ALIASES_ENV: &str = "CCUSAGE_MODEL_ALIASES";
 
 static MODEL_ALIASES: OnceLock<RwLock<BTreeMap<String, String>>> = OnceLock::new();
+
+/// Bumped whenever the alias table is mutated so callers that memoize
+/// alias-dependent resolution (e.g. `PricingMap::find`) can invalidate stale
+/// entries. In production the table is loaded once and never changes, so this
+/// stays at 0; only the test-only setter advances it.
+static ALIAS_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn alias_generation() -> u64 {
+    ALIAS_GENERATION.load(Ordering::Acquire)
+}
 #[cfg(test)]
 static TEST_MODEL_ALIASES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -77,6 +90,7 @@ pub(crate) fn set_model_aliases_for_tests<const N: usize>(
             .map(|(from, to)| (from.to_string(), to.to_string()))
             .collect(),
     );
+    ALIAS_GENERATION.fetch_add(1, Ordering::Release);
     ModelAliasesGuard {
         previous,
         _guard: guard,
@@ -95,6 +109,7 @@ impl Drop for ModelAliasesGuard {
         let lock = model_aliases();
         let mut current = lock.write().unwrap_or_else(|error| error.into_inner());
         *current = std::mem::take(&mut self.previous);
+        ALIAS_GENERATION.fetch_add(1, Ordering::Release);
     }
 }
 

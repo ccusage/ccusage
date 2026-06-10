@@ -91,6 +91,8 @@ mod tests {
                     },
                     model: Some("claude-sonnet-4-20250514".to_string()),
                     id: Some("hermes:session-1".to_string()),
+
+                    provider: None,
                 },
                 cost_usd: Some(0.34),
                 request_id: None,

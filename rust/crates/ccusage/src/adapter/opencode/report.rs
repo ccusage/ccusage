@@ -271,6 +271,8 @@ mod tests {
                     },
                     model: Some("gpt-5.2-codex".to_string()),
                     id: Some(format!("msg-{timestamp_millis}")),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: None,

@@ -5,7 +5,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
 
 use super::{
-    parser::{KiloMessage, message_value_to_entry},
+    parser::{KiloMessage, message_value_to_entry, reprice},
     paths::{db_path, paths},
 };
 
@@ -22,9 +22,9 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         "kilo",
         &db_paths,
         shared.single_thread,
-        crate::cache::cost_fingerprint(Some(pricing.fingerprint()), shared.mode),
         shared.live_only,
         |db| Ok(load_entries_from_database(db, tz.as_ref(), shared, pricing)),
+        |e| reprice(e, shared.mode, pricing),
     )?;
     // Deduplicate message ids across databases (same id can appear in multiple synced dbs).
     let mut seen: HashSet<String> = HashSet::new();

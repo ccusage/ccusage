@@ -28,15 +28,15 @@ fn load_entries_inner(
 ) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
     let files = paths()?;
+    let mode = shared.mode;
     let mut entries = crate::cache::load_with_cache(
         "copilot",
         &files,
         shared.single_thread,
-        crate::cache::cost_fingerprint(Some(pricing.fingerprint()), shared.mode),
         shared.live_only,
         |path| {
             Ok(
-                read_otel_file(path, tz.as_ref(), shared.mode, pricing).unwrap_or_else(|error| {
+                read_otel_file(path, tz.as_ref(), mode, pricing).unwrap_or_else(|error| {
                     debug_log(
                         shared,
                         format!(
@@ -47,6 +47,23 @@ fn load_entries_inner(
                     Vec::new()
                 }),
             )
+        },
+        |e| {
+            // Copilot bills reasoning tokens as output; extra_total_tokens holds them.
+            let cost_usage = crate::TokenUsageRaw {
+                output_tokens: e
+                    .data
+                    .message
+                    .usage
+                    .output_tokens
+                    .saturating_add(e.extra_total_tokens),
+                cache_creation: None,
+                ..e.data.message.usage
+            };
+            let model = e.data.message.model.as_deref();
+            e.cost = calculate_cost_for_usage(model, cost_usage, None, mode, Some(pricing));
+            e.missing_pricing_model =
+                missing_pricing_model_for_usage(model, cost_usage, None, mode, Some(pricing));
         },
     )?;
     entries.sort_by_key(|entry| entry.timestamp);
@@ -92,6 +109,8 @@ fn usage_entry_to_loaded(
             usage,
             model: Some(entry.model.clone()),
             id: Some(entry.dedup_key),
+
+            provider: None,
         },
         cost_usd: None,
         request_id: None,

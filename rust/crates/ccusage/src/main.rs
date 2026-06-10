@@ -812,6 +812,8 @@ mod tests {
                     },
                     model: Some("claude-sonnet-4-20250514".to_string()),
                     id: Some("event-a".to_string()),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: None,
@@ -897,6 +899,8 @@ mod tests {
                     },
                     model: Some("[pi] gpt-5.4".to_string()),
                     id: None,
+
+                    provider: None,
                 },
                 cost_usd: Some(0.05),
                 request_id: None,
@@ -948,6 +952,8 @@ mod tests {
                     },
                     model: Some("claude-sonnet-4-20250514".to_string()),
                     id: Some("msg-1".to_string()),
+
+                    provider: None,
                 },
                 cost_usd: Some(0.02),
                 request_id: None,

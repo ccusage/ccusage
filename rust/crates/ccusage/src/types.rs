@@ -72,6 +72,13 @@ pub(crate) struct UsageMessage {
     pub(crate) usage: TokenUsageRaw,
     pub(crate) model: Option<String>,
     pub(crate) id: Option<String>,
+    /// Source provider hint (e.g. `anthropic`, `github-copilot`). Used by
+    /// adapters whose pricing lookup falls back to provider-prefixed model
+    /// candidates (droid, kilo, opencode). Carried through the cache so cost can
+    /// be repriced from cached tokens without reparsing. Not part of the raw log
+    /// JSON for most agents, so it defaults to `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]

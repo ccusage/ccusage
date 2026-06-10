@@ -67,6 +67,8 @@ fn to_loaded_entry(
             usage: entry.usage,
             model: Some(entry.model.clone()),
             id: Some(entry.dedup_key.clone()),
+
+            provider: None,
         },
         cost_usd: None,
         request_id: None,
@@ -189,6 +191,8 @@ mod tests {
                     },
                     model: Some("claude-sonnet-4-20250514".to_string()),
                     id: Some("message-a".to_string()),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: None,

@@ -61,6 +61,8 @@ pub(super) fn row_to_entry(
             usage,
             model: Some(model.clone()),
             id: Some(id.clone()),
+
+            provider: None,
         },
         cost_usd: None,
         request_id: None,

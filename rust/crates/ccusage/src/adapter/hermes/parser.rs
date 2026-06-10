@@ -154,6 +154,8 @@ pub(super) fn to_loaded_entry(
             usage: entry.usage,
             model: Some(entry.model.clone()),
             id: Some(format!("hermes:{}", entry.session_id)),
+
+            provider: None,
         },
         cost_usd: entry.cost_usd,
         request_id: None,

@@ -43,7 +43,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     LoadedEntry, chunk_file_indexes_by_size,
-    cli::CostMode,
     types::{TokenUsageRaw, UsageEntry, UsageMessage},
 };
 
@@ -62,13 +61,12 @@ pub(crate) struct CachedEntry {
     project: Arc<str>,
     session_id: Arc<str>,
     project_path: Arc<str>,
-    cost: f64,
+    cost_usd: Option<f64>,
     extra_total_tokens: u64,
     credits: Option<f64>,
     message_count: Option<u64>,
     model: Option<String>,
     usage_limit_reset_time: Option<crate::date_utils::TimestampMs>,
-    missing_pricing_model: Option<String>,
     // Flattened from UsageEntry — only what is used post-parse:
     usage: TokenUsageRaw,
     version: Option<String>,
@@ -76,6 +74,7 @@ pub(crate) struct CachedEntry {
     request_id: Option<String>,
     is_sidechain: Option<bool>,
     message_model: Option<String>,
+    message_provider: Option<String>,
 }
 
 impl From<&LoadedEntry> for CachedEntry {
@@ -86,19 +85,19 @@ impl From<&LoadedEntry> for CachedEntry {
             project: Arc::clone(&e.project),
             session_id: Arc::clone(&e.session_id),
             project_path: Arc::clone(&e.project_path),
-            cost: e.cost,
+            cost_usd: e.data.cost_usd,
             extra_total_tokens: e.extra_total_tokens,
             credits: e.credits,
             message_count: e.message_count,
             model: e.model.clone(),
             usage_limit_reset_time: e.usage_limit_reset_time,
-            missing_pricing_model: e.missing_pricing_model.clone(),
             usage: e.data.message.usage,
             version: e.data.version.clone(),
             message_id: e.data.message.id.clone(),
             request_id: e.data.request_id.clone(),
             is_sidechain: e.data.is_sidechain,
             message_model: e.data.message.model.clone(),
+            message_provider: e.data.message.provider.clone(),
         }
     }
 }
@@ -114,8 +113,9 @@ impl From<CachedEntry> for LoadedEntry {
                     usage: c.usage,
                     model: c.message_model,
                     id: c.message_id,
+                    provider: c.message_provider,
                 },
-                cost_usd: None,
+                cost_usd: c.cost_usd,
                 request_id: c.request_id,
                 is_api_error_message: None,
                 is_sidechain: c.is_sidechain,
@@ -125,13 +125,13 @@ impl From<CachedEntry> for LoadedEntry {
             project: c.project,
             session_id: c.session_id,
             project_path: c.project_path,
-            cost: c.cost,
+            cost: 0.0,
             extra_total_tokens: c.extra_total_tokens,
             credits: c.credits,
             message_count: c.message_count,
             model: c.model,
             usage_limit_reset_time: c.usage_limit_reset_time,
-            missing_pricing_model: c.missing_pricing_model,
+            missing_pricing_model: None,
         }
     }
 }
@@ -202,6 +202,8 @@ impl LedgerEntry {
                     usage: self.usage,
                     model: self.message_model,
                     id: Some(dedup_key),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: None,
@@ -231,8 +233,6 @@ pub(crate) struct FileMetadata {
     pub(crate) size: u64,
     /// Stable per-path key, used by the OpenCode adapter to key its row cache.
     pub(crate) cache_key: String,
-    /// Fingerprint of pricing + cost-mode used when caching. Mismatch invalidates the cache.
-    pub(crate) cost_fingerprint: u64,
 }
 
 /// Parsed entries recovered from the cache for one source file.
@@ -267,19 +267,6 @@ fn cache_key(path: &Path) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-/// Compute a fingerprint from pricing and cost mode for cache invalidation.
-pub(crate) fn cost_fingerprint(pricing_fingerprint: Option<u64>, mode: CostMode) -> u64 {
-    // Mix through a hasher rather than XOR-ing shifted fields: an XOR with a
-    // shifted mode discriminant can collapse the "no pricing" (Display) domain
-    // onto a real pricing hash. Hashing presence + value + mode keeps the
-    // domains separate.
-    let mut hasher = FxHasher::default();
-    pricing_fingerprint.is_some().hash(&mut hasher);
-    pricing_fingerprint.unwrap_or(0).hash(&mut hasher);
-    (mode as u64).hash(&mut hasher);
-    hasher.finish()
-}
-
 /// Capture the current freshness fingerprint of a source file, if it exists.
 pub(crate) fn file_metadata(path: &Path) -> Option<FileMetadata> {
     let metadata = fs::metadata(path).ok()?;
@@ -294,7 +281,6 @@ pub(crate) fn file_metadata(path: &Path) -> Option<FileMetadata> {
         mtime_epoch_millis: mtime,
         size: metadata.len(),
         cache_key: cache_key(path),
-        cost_fingerprint: 0, // filled in by caller
     })
 }
 
@@ -505,7 +491,6 @@ fn read_schema_version(conn: &sqlite::Connection, name: &str) -> Option<i64> {
 struct StoredFile {
     mtime: u64,
     size: u64,
-    cost_fingerprint: u64,
     entries: Vec<u8>,
 }
 
@@ -522,7 +507,7 @@ fn load_namespace_files(conn: &sqlite::Connection, namespace: &str) -> HashMap<S
         return map;
     }
     while let Ok(sqlite::State::Row) = st.next() {
-        let (Ok(path), Ok(mtime), Ok(size), Ok(cost), Ok(entries)) = (
+        let (Ok(path), Ok(mtime), Ok(size), Ok(_cost), Ok(entries)) = (
             st.read::<String, _>(0),
             st.read::<i64, _>(1),
             st.read::<i64, _>(2),
@@ -536,7 +521,6 @@ fn load_namespace_files(conn: &sqlite::Connection, namespace: &str) -> HashMap<S
             StoredFile {
                 mtime: mtime as u64,
                 size: size as u64,
-                cost_fingerprint: cost as u64,
                 entries,
             },
         );
@@ -563,14 +547,7 @@ struct FilePartition {
 }
 
 /// Partition source files into cached (still valid) and fresh (must re-parse).
-///
-/// `cost_fingerprint` is a hash of the pricing + cost-mode used at parse time.
-/// Cached entries are invalidated when this fingerprint changes.
-fn partition_files(
-    files: &[PathBuf],
-    stored: &HashMap<String, StoredFile>,
-    cost_fingerprint: u64,
-) -> FilePartition {
+fn partition_files(files: &[PathBuf], stored: &HashMap<String, StoredFile>) -> FilePartition {
     let mut cached = Vec::new();
     let mut fresh = Vec::new();
 
@@ -585,19 +562,13 @@ fn partition_files(
 
         let path_str = path.to_string_lossy().to_string();
         if let Some(entry) = stored.get(&path_str) {
-            let unchanged = entry.mtime == current.mtime_epoch_millis
-                && entry.size == current.size
-                && entry.cost_fingerprint == cost_fingerprint;
-            if unchanged {
-                if let Some(entries) = decode_entries(&entry.entries) {
-                    cached.push(CachedEntries { entries });
-                    continue;
-                }
+            let unchanged = entry.mtime == current.mtime_epoch_millis && entry.size == current.size;
+            if unchanged && let Some(entries) = decode_entries(&entry.entries) {
+                cached.push(CachedEntries { entries });
+                continue;
             }
         }
 
-        let mut current = current;
-        current.cost_fingerprint = cost_fingerprint;
         fresh.push(FreshFile {
             path: path.clone(),
             metadata: Some(current),
@@ -619,16 +590,17 @@ fn partition_files(
 ///
 /// `parse_file` returns `Err` when a file cannot be read or parsed; the error
 /// propagates and a failed run is never persisted.
-pub(crate) fn load_with_cache<F>(
+pub(crate) fn load_with_cache<F, R>(
     namespace: &str,
     files: &[PathBuf],
     single_thread: bool,
-    cost_fingerprint: u64,
     live_only: bool,
     parse_file: F,
+    reprice: R,
 ) -> crate::Result<Vec<LoadedEntry>>
 where
     F: Fn(&Path) -> crate::Result<Vec<LoadedEntry>> + Sync,
+    R: Fn(&mut LoadedEntry) + Sync,
 {
     let conn = open_db();
 
@@ -638,7 +610,7 @@ where
         .as_ref()
         .map(|conn| load_namespace_files(conn, namespace))
         .unwrap_or_default();
-    let partition = partition_files(files, &stored, cost_fingerprint);
+    let partition = partition_files(files, &stored);
 
     let fresh_paths: Vec<PathBuf> = partition.fresh.iter().map(|f| f.path.clone()).collect();
     let mut parsed = parse_fresh_files(&fresh_paths, single_thread, &parse_file)?;
@@ -731,7 +703,7 @@ fn upsert_file(
     st.bind((2, namespace)).ok()?;
     st.bind((3, meta.mtime_epoch_millis as i64)).ok()?;
     st.bind((4, meta.size as i64)).ok()?;
-    st.bind((5, meta.cost_fingerprint as i64)).ok()?;
+    st.bind((5, 0_i64)).ok()?;
     st.bind((6, &blob[..])).ok()?;
     st.next().ok()?;
     Some(())
@@ -749,10 +721,10 @@ fn prune_deleted(conn: &sqlite::Connection, namespace: &str) -> Option<()> {
             .ok()?;
         st.bind((1, namespace)).ok()?;
         while let Ok(sqlite::State::Row) = st.next() {
-            if let Ok(path) = st.read::<String, _>(0) {
-                if file_metadata(Path::new(&path)).is_none() {
-                    gone.push(path);
-                }
+            if let Ok(path) = st.read::<String, _>(0)
+                && file_metadata(Path::new(&path)).is_none()
+            {
+                gone.push(path);
             }
         }
     }
@@ -780,21 +752,15 @@ pub(crate) struct OpenCodeRow {
 /// `cache_key`. Returns `None` on any missing/corrupt cache or fingerprint
 /// mismatch, mirroring the rest of this module's tolerance for stale or
 /// unreadable cache state.
-pub(crate) fn load_opencode_row_cache(
-    cache_key: &str,
-    cost_fingerprint: u64,
-) -> Option<Vec<OpenCodeRow>> {
+pub(crate) fn load_opencode_row_cache(cache_key: &str) -> Option<Vec<OpenCodeRow>> {
     let conn = open_db()?;
     let mut st = conn
-        .prepare("SELECT cost_fingerprint, rows FROM opencode WHERE db_key = ?")
+        .prepare("SELECT rows FROM opencode WHERE db_key = ?")
         .ok()?;
     st.bind((1, cache_key)).ok()?;
     match st.next().ok()? {
         sqlite::State::Row => {
-            if st.read::<i64, _>(0).ok()? as u64 != cost_fingerprint {
-                return None;
-            }
-            let blob = st.read::<Vec<u8>, _>(1).ok()?;
+            let blob = st.read::<Vec<u8>, _>(0).ok()?;
             postcard::from_bytes::<Vec<OpenCodeRow>>(&blob).ok()
         }
         sqlite::State::Done => None,
@@ -803,23 +769,21 @@ pub(crate) fn load_opencode_row_cache(
 
 /// Persist the cached rows for an OpenCode database. Failures are silently
 /// ignored: a missing cache simply forces a full re-parse next run.
-pub(crate) fn save_opencode_row_cache(
-    cache_key: &str,
-    rows: &[OpenCodeRow],
-    cost_fingerprint: u64,
-) {
+pub(crate) fn save_opencode_row_cache(cache_key: &str, rows: &[OpenCodeRow]) {
     let Some(conn) = open_db() else { return };
     let Ok(blob) = postcard::to_allocvec(rows) else {
         return;
     };
+    // `cost_fingerprint` is retained as a NOT NULL schema column to avoid a
+    // migration, but cost is now derived at load, so it is always written as 0
+    // and never consulted for validity.
     let Ok(mut st) = conn.prepare(
-        "INSERT OR REPLACE INTO opencode(db_key, cost_fingerprint, rows) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO opencode(db_key, cost_fingerprint, rows) VALUES (?, 0, ?)",
     ) else {
         return;
     };
     let _ = st.bind((1, cache_key));
-    let _ = st.bind((2, cost_fingerprint as i64));
-    let _ = st.bind((3, &blob[..]));
+    let _ = st.bind((2, &blob[..]));
     let _ = st.next();
 }
 /// Cached conditional-fetch state for a remote pricing JSON document.
@@ -927,11 +891,11 @@ fn merge_ledger(
             .filter(|k| !seen.contains(k))
             .collect();
         for key in deleted_keys {
-            if let Some(blob) = load_ledger_blob(conn, namespace, &key) {
-                if let Ok(entry) = postcard::from_bytes::<LedgerEntry>(&blob) {
-                    seen.insert(key.clone());
-                    out.push(entry.into_loaded(key));
-                }
+            if let Some(blob) = load_ledger_blob(conn, namespace, &key)
+                && let Ok(entry) = postcard::from_bytes::<LedgerEntry>(&blob)
+            {
+                seen.insert(key.clone());
+                out.push(entry.into_loaded(key));
             }
         }
     }
@@ -1144,6 +1108,8 @@ pub(crate) mod tests {
                     usage: TokenUsageRaw::default(),
                     model: Some("claude-test".to_string()),
                     id: Some("msg-a".to_string()),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: Some("req-a".to_string()),
@@ -1177,7 +1143,6 @@ pub(crate) mod tests {
         path: &Path,
         meta: &FileMetadata,
         entries: &[LoadedEntry],
-        cost_fingerprint: u64,
     ) -> HashMap<String, StoredFile> {
         let mut map = HashMap::new();
         map.insert(
@@ -1185,7 +1150,6 @@ pub(crate) mod tests {
             StoredFile {
                 mtime: meta.mtime_epoch_millis,
                 size: meta.size,
-                cost_fingerprint,
                 entries: encode_entries(entries).unwrap(),
             },
         );
@@ -1228,9 +1192,9 @@ pub(crate) mod tests {
         let _env = CacheEnv::new("roundtrip");
         let src = write_source("roundtrip", "line\n");
         let meta = file_metadata(&src).expect("metadata");
-        let stored = stored_snapshot(&src, &meta, &[sample_entry()], 0);
+        let stored = stored_snapshot(&src, &meta, &[sample_entry()]);
 
-        let part = partition_files(std::slice::from_ref(&src), &stored, 0);
+        let part = partition_files(std::slice::from_ref(&src), &stored);
         assert_eq!(part.cached.len(), 1);
         assert!(part.fresh.is_empty());
         assert_eq!(part.cached[0].entries[0].session_id.as_ref(), "session-a");
@@ -1242,12 +1206,12 @@ pub(crate) mod tests {
         let _env = CacheEnv::new("invalidate");
         let src = write_source("invalidate", "line\n");
         let meta = file_metadata(&src).expect("metadata");
-        let stored = stored_snapshot(&src, &meta, &[sample_entry()], 0);
+        let stored = stored_snapshot(&src, &meta, &[sample_entry()]);
 
         // Mutate the source so its size no longer matches the fingerprint.
         fs::write(&src, "line\nlonger\n").unwrap();
 
-        let part = partition_files(std::slice::from_ref(&src), &stored, 0);
+        let part = partition_files(std::slice::from_ref(&src), &stored);
         assert!(part.cached.is_empty());
         assert_eq!(part.fresh.len(), 1);
         assert_eq!(part.fresh[0].path, src);
@@ -1264,12 +1228,12 @@ pub(crate) mod tests {
             "test",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_path| {
                 calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(vec![sample_entry()])
             },
+            |_| {},
         )
         .unwrap();
         assert_eq!(cold.len(), 1);
@@ -1279,11 +1243,11 @@ pub(crate) mod tests {
             "test",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_path| {
                 panic!("parse_file should not run for a cached file");
             },
+            |_| {},
         )
         .unwrap();
         assert_eq!(warm.len(), 1);
@@ -1304,9 +1268,9 @@ pub(crate) mod tests {
             "test",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |path| Err(crate::cli_error(format!("boom: {}", path.display()))),
+            |_| {},
         );
         assert!(errored.is_err());
 
@@ -1317,12 +1281,12 @@ pub(crate) mod tests {
             "test",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_path| {
                 calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(vec![sample_entry()])
             },
+            |_| {},
         )
         .unwrap();
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -1337,11 +1301,11 @@ pub(crate) mod tests {
 
         let cached_src = write_source("partition-cached", "a\n");
         let cached_meta = file_metadata(&cached_src).unwrap();
-        let stored = stored_snapshot(&cached_src, &cached_meta, &[sample_entry()], 0);
+        let stored = stored_snapshot(&cached_src, &cached_meta, &[sample_entry()]);
 
         let fresh_src = write_source("partition-fresh", "b\n");
 
-        let part = partition_files(&[cached_src.clone(), fresh_src.clone()], &stored, 0);
+        let part = partition_files(&[cached_src.clone(), fresh_src.clone()], &stored);
 
         assert_eq!(part.cached.len(), 1);
         assert_eq!(part.fresh.len(), 1);
@@ -1367,9 +1331,9 @@ pub(crate) mod tests {
             "test-ns",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_| Ok(vec![sample_entry()]),
+            |_| {},
         )
         .unwrap();
         assert_eq!(cold.len(), 1);
@@ -1377,7 +1341,8 @@ pub(crate) mod tests {
         // Delete the source file — simulates "deleted chat".
         fs::remove_file(&src).unwrap();
 
-        let warm = load_with_cache("test-ns", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+        let warm =
+            load_with_cache("test-ns", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
 
         assert_eq!(warm.len(), 1, "ledger entry must be emitted after deletion");
         assert_eq!(warm[0].session_id.as_ref(), "session-a");
@@ -1406,9 +1371,9 @@ pub(crate) mod tests {
             "test-ns-noid",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_| Ok(vec![entry.clone()]),
+            |_| {},
         )
         .unwrap();
         assert_eq!(cold.len(), 1);
@@ -1416,8 +1381,15 @@ pub(crate) mod tests {
         // Delete the source file — simulates adapter log removal.
         fs::remove_file(&src).unwrap();
 
-        let warm =
-            load_with_cache("test-ns-noid", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+        let warm = load_with_cache(
+            "test-ns-noid",
+            &[],
+            false,
+            false,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
 
         assert_eq!(
             warm.len(),
@@ -1456,16 +1428,17 @@ pub(crate) mod tests {
             "ns-synth",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_| Ok(vec![a.clone(), b.clone()]),
+            |_| {},
         )
         .unwrap();
         assert_eq!(cold.len(), 2);
 
         // Source removed — both must re-emit from the ledger, not collapse.
         fs::remove_file(&src).unwrap();
-        let warm = load_with_cache("ns-synth", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+        let warm =
+            load_with_cache("ns-synth", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
 
         assert_eq!(
             warm.len(),
@@ -1501,15 +1474,16 @@ pub(crate) mod tests {
             "ns-proj",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_| Ok(vec![a.clone(), b.clone()]),
+            |_| {},
         )
         .unwrap();
         assert_eq!(cold.len(), 2);
 
         fs::remove_file(&src).unwrap();
-        let warm = load_with_cache("ns-proj", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+        let warm =
+            load_with_cache("ns-proj", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
 
         assert_eq!(
             warm.len(),
@@ -1580,22 +1554,32 @@ pub(crate) mod tests {
         let _env = CacheEnv::new("resume-evict");
         let src = write_source("resume-evict", "original\n");
 
-        let _ = load_with_cache("ns", std::slice::from_ref(&src), false, 0, false, |_| {
-            Ok(vec![sample_entry()])
-        });
+        let _ = load_with_cache(
+            "ns",
+            std::slice::from_ref(&src),
+            false,
+            false,
+            |_| Ok(vec![sample_entry()]),
+            |_| {},
+        );
 
         // Delete: spend is retained in the ledger.
         fs::remove_file(&src).unwrap();
-        let _ = load_with_cache("ns", &[], false, 0, false, |_| Ok(Vec::new()));
+        let _ = load_with_cache("ns", &[], false, false, |_| Ok(Vec::new()), |_| {});
 
         fs::write(&src, "new content\n").unwrap();
         let mut new_entry = sample_entry();
         new_entry.session_id = Arc::from("session-new");
 
         // Live run: exactly 1 entry (live), not 2 (live + ledger).
-        let live = load_with_cache("ns", std::slice::from_ref(&src), false, 0, false, |_| {
-            Ok(vec![new_entry.clone()])
-        })
+        let live = load_with_cache(
+            "ns",
+            std::slice::from_ref(&src),
+            false,
+            false,
+            |_| Ok(vec![new_entry.clone()]),
+            |_| {},
+        )
         .unwrap();
         assert_eq!(live.len(), 1, "must not double-count live + ledger");
         assert_eq!(live[0].session_id.as_ref(), "session-new");
@@ -1631,12 +1615,17 @@ pub(crate) mod tests {
         entry.data.is_sidechain = Some(true);
 
         // Cold run caches it; deletion retains its spend in the ledger only.
-        let _ = load_with_cache("ns", std::slice::from_ref(&src), false, 0, false, |_| {
-            Ok(vec![entry.clone()])
-        });
+        let _ = load_with_cache(
+            "ns",
+            std::slice::from_ref(&src),
+            false,
+            false,
+            |_| Ok(vec![entry.clone()]),
+            |_| {},
+        );
         fs::remove_file(&src).unwrap();
 
-        let warm = load_with_cache("ns", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+        let warm = load_with_cache("ns", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
 
         assert_eq!(
             warm.len(),
@@ -1676,17 +1665,24 @@ pub(crate) mod tests {
             "ns-two-phase",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_| Ok(vec![entry_a.clone()]),
+            |_| {},
         )
         .unwrap();
         assert_eq!(cold.len(), 1);
 
         // Delete source -> spend retained in ledger only.
         fs::remove_file(&src).unwrap();
-        let warm_deleted =
-            load_with_cache("ns-two-phase", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+        let warm_deleted = load_with_cache(
+            "ns-two-phase",
+            &[],
+            false,
+            false,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(
             warm_deleted.len(),
             1,
@@ -1704,9 +1700,9 @@ pub(crate) mod tests {
             "ns-two-phase",
             std::slice::from_ref(&src2),
             false,
-            0,
             false,
             |_| Ok(vec![entry_a.clone(), entry_b.clone()]),
+            |_| {},
         )
         .unwrap();
         assert_eq!(
@@ -1735,17 +1731,18 @@ pub(crate) mod tests {
             "ns-a",
             std::slice::from_ref(&src_a),
             false,
-            0,
             false,
             |_| Ok(vec![sample_entry()]),
+            |_| {},
         );
 
         // Delete the "a" file so its spend lives only in the ledger under "ns-a".
         fs::remove_file(&src_a).unwrap();
-        let _ = load_with_cache("ns-a", &[], false, 0, false, |_| Ok(Vec::new()));
+        let _ = load_with_cache("ns-a", &[], false, false, |_| Ok(Vec::new()), |_| {});
 
         // Now run namespace "b" with no files — must NOT emit "a"'s ledger entries.
-        let result_b = load_with_cache("ns-b", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+        let result_b =
+            load_with_cache("ns-b", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
         assert_eq!(result_b.len(), 0, "ns-b must not see ns-a's ledger entries");
 
         // Create a separate "b" file that still exists on disk, then run "ns-b".
@@ -1755,9 +1752,9 @@ pub(crate) mod tests {
             "ns-b",
             std::slice::from_ref(&src_b),
             false,
-            0,
             false,
             |_| Ok(vec![sample_entry()]),
+            |_| {},
         )
         .unwrap();
         // ns-b gets its own live entry, still not the ns-a ledger entry.
@@ -1779,9 +1776,9 @@ pub(crate) mod tests {
             "dup-ns",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_| Ok(vec![sample_entry()]),
+            |_| {},
         );
 
         // Attempt to insert the same key again, simulating a concurrent append.
@@ -1790,7 +1787,8 @@ pub(crate) mod tests {
 
         // Delete the source: the key must emit exactly once.
         fs::remove_file(&src).unwrap();
-        let warm = load_with_cache("dup-ns", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+        let warm =
+            load_with_cache("dup-ns", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
         assert_eq!(
             warm.len(),
             1,
@@ -1799,90 +1797,139 @@ pub(crate) mod tests {
         assert_eq!(warm[0].session_id.as_ref(), "session-a");
     }
 
+    /// Pricing change does NOT reparse: a warm `load_with_cache` with a different
+    /// reprice closure must not invoke `parse_file` (cache hit on mtime+size), and
+    /// the returned entry's cost reflects the new reprice logic.
     #[test]
-    fn fingerprint_mismatch_forces_reparse() {
-        let _env = CacheEnv::new("fp-mismatch");
-        let src = write_source("fp-mismatch", "line\n");
+    fn pricing_change_does_not_reparse() {
+        let _env = CacheEnv::new("pricing-no-reparse");
+        let src = write_source("pricing-no-reparse", "line\n");
 
-        // Cache with fingerprint 1.
-        let calls_a = std::sync::atomic::AtomicUsize::new(0);
         let cold = load_with_cache(
             "test",
             std::slice::from_ref(&src),
             false,
-            1,
             false,
-            |_path| {
-                calls_a.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Ok(vec![sample_entry()])
-            },
+            |_path| Ok(vec![sample_entry()]),
+            |_| {}, // no repricing on cold run
         )
         .unwrap();
         assert_eq!(cold.len(), 1);
-        assert_eq!(calls_a.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(cold[0].cost, 0.0);
 
-        // Load with fingerprint 2 — must reparse, not serve stale cache.
-        let calls_b = std::sync::atomic::AtomicUsize::new(0);
-        let reparsed = load_with_cache(
+        // Warm run with a different reprice closure — parse_file must NOT be called.
+        let warm = load_with_cache(
             "test",
             std::slice::from_ref(&src),
             false,
-            2,
             false,
             |_path| {
-                calls_b.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Ok(vec![sample_entry()])
+                panic!("parse_file must not run when only pricing changes");
+            },
+            |e| {
+                e.cost = 1.23; // simulates new pricing
             },
         )
         .unwrap();
-        assert_eq!(reparsed.len(), 1);
-        assert_eq!(
-            calls_b.load(std::sync::atomic::Ordering::SeqCst),
-            1,
-            "parse_file must run again when fingerprint changes"
+        assert_eq!(warm.len(), 1);
+        assert!(
+            (warm[0].cost - 1.23).abs() < 1e-9,
+            "cost must reflect new reprice closure, got {}",
+            warm[0].cost
         );
 
         let _ = fs::remove_file(&src);
     }
 
+    /// Mode change does NOT reparse but cost updates: switching CostMode between
+    /// runs must be handled by the reprice closure, not by invalidating the cache.
     #[test]
-    fn fingerprint_match_serves_from_cache() {
-        let _env = CacheEnv::new("fp-match");
-        let src = write_source("fp-match", "line\n");
+    fn mode_change_does_not_reparse_but_cost_updates() {
+        let _env = CacheEnv::new("mode-no-reparse");
+        let src = write_source("mode-no-reparse", "line\n");
 
-        // Cache with fingerprint 42.
-        let calls = std::sync::atomic::AtomicUsize::new(0);
+        // Cold run with "calculate" mode semantics (cost = 0.5).
         let cold = load_with_cache(
             "test",
             std::slice::from_ref(&src),
             false,
-            42,
             false,
-            |_path| {
-                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Ok(vec![sample_entry()])
+            |_path| Ok(vec![sample_entry()]),
+            |e| {
+                e.cost = 0.5;
             },
         )
         .unwrap();
         assert_eq!(cold.len(), 1);
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!((cold[0].cost - 0.5).abs() < 1e-9);
 
-        // Load with same fingerprint 42 — must be a cache hit.
+        // Warm run simulating "display" mode (cost = 0.0 when no cost_usd).
+        // parse_file must NOT be invoked.
         let warm = load_with_cache(
             "test",
             std::slice::from_ref(&src),
             false,
-            42,
             false,
             |_path| {
-                panic!("parse_file should not run when fingerprint matches");
+                panic!("parse_file must not run when only mode changes");
             },
+            |e| {
+                e.cost = 0.0;
+            }, // display mode: no cost_usd → 0
         )
         .unwrap();
         assert_eq!(warm.len(), 1);
-        assert_eq!(warm[0].session_id.as_ref(), "session-a");
+        assert!(
+            (warm[0].cost - 0.0).abs() < 1e-9,
+            "cost must reflect mode-change reprice"
+        );
 
         let _ = fs::remove_file(&src);
+    }
+
+    /// Ledger immutability: a retained (deleted-source) entry keeps its original
+    /// cost after a pricing change — ledger entries are NOT repriced by the
+    /// reprice closure (only live entries are).
+    #[test]
+    fn ledger_entry_cost_immutable_after_pricing_change() {
+        let _env = CacheEnv::new("ledger-immutable");
+        let src = write_source("ledger-immutable", "line\n");
+
+        let mut entry = sample_entry();
+        entry.cost = 0.42;
+        let _ = load_with_cache(
+            "ledger-immut-ns",
+            std::slice::from_ref(&src),
+            false,
+            false,
+            |_| Ok(vec![entry.clone()]),
+            |_| {},
+        );
+
+        // Delete source — spend retained in ledger.
+        fs::remove_file(&src).unwrap();
+
+        // Warm run with a reprice closure that would change cost to 9.99 if applied.
+        // Ledger entries must NOT be repriced — they keep the cost from when they
+        // were first recorded.
+        let warm = load_with_cache(
+            "ledger-immut-ns",
+            &[],
+            false,
+            false,
+            |_| Ok(Vec::new()),
+            |e| {
+                e.cost = 9.99;
+            },
+        )
+        .unwrap();
+
+        assert_eq!(warm.len(), 1, "ledger entry must be re-emitted");
+        assert!(
+            (warm[0].cost - 0.42).abs() < 1e-9,
+            "ledger entry cost must be immutable (was {}, expected 0.42)",
+            warm[0].cost
+        );
     }
 
     /// Concurrent write-backs sharing the cache database must each preserve the
@@ -1922,9 +1969,9 @@ pub(crate) mod tests {
                             &namespace,
                             std::slice::from_ref(src),
                             true,
-                            0,
                             false,
                             |_| Ok(vec![sample_entry()]),
+                            |_| {},
                         );
                     });
                 }
@@ -1954,9 +2001,9 @@ pub(crate) mod tests {
             "test-live",
             std::slice::from_ref(&src),
             false,
-            0,
             false,
             |_| Ok(vec![entry.clone()]),
+            |_| {},
         )
         .unwrap();
 
@@ -1965,7 +2012,7 @@ pub(crate) mod tests {
 
         // Default run: re-emits the retained entry.
         let default_result =
-            load_with_cache("test-live", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+            load_with_cache("test-live", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
         assert_eq!(
             default_result.len(),
             1,
@@ -1974,7 +2021,7 @@ pub(crate) mod tests {
 
         // live_only run: excludes the retained entry.
         let live_only_result =
-            load_with_cache("test-live", &[], false, 0, true, |_| Ok(Vec::new())).unwrap();
+            load_with_cache("test-live", &[], false, true, |_| Ok(Vec::new()), |_| {}).unwrap();
         assert_eq!(
             live_only_result.len(),
             0,
@@ -1993,16 +2040,16 @@ pub(crate) mod tests {
             "test-live",
             std::slice::from_ref(&src),
             false,
-            0,
             true,
             |_| Ok(vec![entry.clone()]),
+            |_| {},
         )
         .unwrap();
 
         // Delete source and run with live_only=false: should re-emit from ledger.
         fs::remove_file(&src).unwrap();
         let result =
-            load_with_cache("test-live", &[], false, 0, false, |_| Ok(Vec::new())).unwrap();
+            load_with_cache("test-live", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
         assert_eq!(
             result.len(),
             1,
@@ -2134,17 +2181,17 @@ pub(crate) mod tests {
             "claude",
             std::slice::from_ref(&src_a),
             false,
-            0,
             false,
             |_| Ok(vec![sample_entry()]),
+            |_| {},
         );
         let _ = load_with_cache(
             "opencode",
             std::slice::from_ref(&src_b),
             false,
-            0,
             false,
             |_| Ok(vec![sample_entry()]),
+            |_| {},
         );
 
         clear_cache_namespaces("claude");

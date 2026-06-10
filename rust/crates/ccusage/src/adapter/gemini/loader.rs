@@ -1,7 +1,7 @@
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
 
 use super::{
-    parser::{event_to_loaded, parse_json_file, parse_jsonl_file},
+    parser::{event_to_loaded, parse_json_file, parse_jsonl_file, reprice},
     paths::discover_log_files,
 };
 
@@ -18,7 +18,6 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         "gemini",
         &files,
         shared.single_thread,
-        crate::cache::cost_fingerprint(Some(pricing.fingerprint()), shared.mode),
         shared.live_only,
         |file| {
             Ok({
@@ -43,6 +42,7 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
                     })
             })
         },
+        |e| reprice(e, shared.mode, pricing),
     )?;
     entries.sort_by_key(|e| e.timestamp);
     Ok(entries)

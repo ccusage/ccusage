@@ -676,6 +676,8 @@ mod tests {
                     usage,
                     model: fixture.model.map(str::to_string),
                     id: Some(format!("msg-{}", fixture.timestamp)),
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: None,

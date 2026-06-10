@@ -69,9 +69,9 @@ pub(super) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
         "qwen",
         &files,
         shared.single_thread,
-        crate::cache::cost_fingerprint(pricing.as_ref().map(|p| p.fingerprint()), shared.mode),
         shared.live_only,
         |file| read_chat_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared),
+        |e| reprice(e, shared.mode, pricing.as_ref()),
     )?;
     let mut seen = HashSet::new();
     let mut entries = Vec::with_capacity(parsed.len());
@@ -175,6 +175,8 @@ fn parse_line(
             usage: display_usage,
             model: Some(model.clone()),
             id: None,
+
+            provider: None,
         },
         cost_usd: None,
         request_id: None,
@@ -196,6 +198,24 @@ fn parse_line(
         missing_pricing_model,
         extra_total_tokens,
     })
+}
+
+/// Recompute cost and missing-pricing for a cached entry from its stored tokens,
+/// mirroring the parse path (billable output folds in `extra_total_tokens`).
+pub(super) fn reprice(entry: &mut LoadedEntry, mode: CostMode, pricing: Option<&PricingMap>) {
+    let model = entry.data.message.model.clone().unwrap_or_default();
+    let billable_usage = TokenUsageRaw {
+        output_tokens: entry
+            .data
+            .message
+            .usage
+            .output_tokens
+            .saturating_add(entry.extra_total_tokens),
+        cache_creation: None,
+        ..entry.data.message.usage
+    };
+    entry.cost = calculate_qwen_cost(&model, billable_usage, mode, pricing);
+    entry.missing_pricing_model = missing_qwen_pricing(&model, billable_usage, mode, pricing);
 }
 
 fn calculate_qwen_cost(
@@ -365,6 +385,8 @@ mod tests {
                     },
                     model: Some("model:1".to_string()),
                     id: None,
+
+                    provider: None,
                 },
                 cost_usd: None,
                 request_id: None,
