@@ -7,7 +7,7 @@ ccusage supports three cost calculation modes to handle various scenarios and da
 Claude Code stores usage data in JSONL files with both token counts and pre-calculated cost information. ccusage can handle this data in different ways depending on your needs:
 
 - **`auto`** - Smart mode using the best available data
-- **`calculate`** - Always calculate from token counts (LiteLLM pricing)
+- **`calculate`** (also aliased as **`api`**) - Always calculate from token counts (LiteLLM pricing)
 - **`display`** - Only show pre-calculated costs
 
 ## Mode Details
@@ -62,6 +62,12 @@ The `calculate` mode always computes costs from token counts using model pricing
 ```bash
 ccusage daily --mode calculate
 ccusage monthly --mode calculate --breakdown
+
+# `api` is an alias for `calculate` (same behavior — bills from
+# LiteLLM token pricing). The shorter, intent-revealing name is useful
+# for Copilot reports where you want to contrast the "API-equivalent"
+# cost against `auto`'s "what Copilot actually billed" figure.
+ccusage copilot daily --mode api
 ```
 
 #### How it works:

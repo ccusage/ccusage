@@ -655,7 +655,7 @@ impl From<ConfigCostMode> for CostMode {
     fn from(value: ConfigCostMode) -> Self {
         match value {
             ConfigCostMode::Auto => Self::Auto,
-            ConfigCostMode::Calculate => Self::Calculate,
+            ConfigCostMode::Calculate | ConfigCostMode::Api => Self::Calculate,
             ConfigCostMode::Display => Self::Display,
         }
     }

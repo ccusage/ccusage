@@ -366,13 +366,13 @@ mod tests {
                 "flags": "--mode <MODE>",
                 "description": "Cost calculation mode",
                 "default": "auto",
-                "choices": ["auto", "calculate", "display"]
+                "choices": ["auto", "calculate", "display", "api"]
             }
         ]);
 
         let output = render_options(&options);
 
         assert!(output.contains("default: auto"));
-        assert!(output.contains("choices: auto | calculate | display"));
+        assert!(output.contains("choices: auto | calculate | display | api"));
     }
 }

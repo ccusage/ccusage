@@ -151,7 +151,8 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "enum": [
           "auto",
           "calculate",
-          "display"
+          "display",
+          "api"
         ],
         "markdownDescription": "Cost calculation mode.",
         "type": "string"
@@ -331,7 +332,8 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "enum": [
           "auto",
           "calculate",
-          "display"
+          "display",
+          "api"
         ],
         "markdownDescription": "Cost calculation mode.",
         "type": "string"
@@ -496,7 +498,8 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "enum": [
           "auto",
           "calculate",
-          "display"
+          "display",
+          "api"
         ],
         "markdownDescription": "Cost calculation mode.",
         "type": "string"
@@ -668,7 +671,8 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "enum": [
           "auto",
           "calculate",
-          "display"
+          "display",
+          "api"
         ],
         "markdownDescription": "Cost calculation mode.",
         "type": "string"
@@ -833,7 +837,8 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "enum": [
           "auto",
           "calculate",
-          "display"
+          "display",
+          "api"
         ],
         "markdownDescription": "Cost calculation mode.",
         "type": "string"
@@ -1003,7 +1008,8 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "enum": [
           "auto",
           "calculate",
-          "display"
+          "display",
+          "api"
         ],
         "markdownDescription": "Cost calculation mode.",
         "type": "string"

@@ -122,6 +122,12 @@
 			"default": "auto"
 		},
 		{
+			"flags": "-m, --mode [mode]",
+			"description": "Cost calculation mode (api is an alias for calculate)",
+			"default": "auto",
+			"choices": ["auto", "calculate", "display", "api"]
+		},
+		{
 			"flags": "--config <config>",
 			"description": "Path to configuration file",
 			"default": "auto-discovery"
@@ -241,9 +247,9 @@
 	"copilot_options": [
 		{
 			"flags": "-m, --mode [mode]",
-			"description": "Cost calculation mode (auto = billing-field-aware true bill; display = source precomputed only; calculate = LiteLLM token pricing)",
+			"description": "Cost calculation mode (auto = billing-field-aware true bill; display = source precomputed only; calculate = LiteLLM token pricing; api is an alias for calculate)",
 			"default": "auto",
-			"choices": ["auto", "calculate", "display"]
+			"choices": ["auto", "calculate", "display", "api"]
 		}
 	],
 	"pi_options": [
@@ -280,9 +286,9 @@
 		},
 		{
 			"flags": "-m, --mode [mode]",
-			"description": "Cost calculation mode",
+			"description": "Cost calculation mode (api is an alias for calculate)",
 			"default": "auto",
-			"choices": ["auto", "calculate", "display"]
+			"choices": ["auto", "calculate", "display", "api"]
 		},
 		{
 			"flags": "-d, --debug",

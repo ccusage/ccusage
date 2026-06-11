@@ -489,6 +489,25 @@ pub(crate) enum ConfigCostMode {
     Auto,
     Calculate,
     Display,
+    // Discoverability alias for `Calculate` — both bill from LiteLLM token
+    // pricing. Surfaces as `"api"` in the JSON schema enum so users can
+    // name the api-equivalent intent explicitly without expanding the
+    // `CostMode` enum.
+    //
+    // This is a **global** alias, not Copilot-scoped: setting
+    // `--mode api` (or `mode: "api"` in config) works for every agent
+    // (Claude, Codex, Amp, Copilot, etc.) and means the same thing
+    // everywhere — "compute from token counts via LiteLLM, never from
+    // any source-precomputed cost." The motivation for adding it was to
+    // give Copilot users an obvious way to contrast `auto`'s
+    // "what GitHub billed" with the equivalent if they had gone direct
+    // to the provider's API, but the semantics generalise cleanly so
+    // exposing it globally is intentional rather than a leak.
+    //
+    // No doc-comment (only line comments) here so schemars keeps the
+    // variant inside the flat enum rather than splitting it into a
+    // separate `oneOf` arm.
+    Api,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]

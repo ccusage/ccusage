@@ -55,9 +55,14 @@ ccusage daily --mode auto
 # Calculate mode - always calculate from tokens
 ccusage daily --mode calculate
 
+# api - alias for `calculate` (same behavior)
+ccusage daily --mode api
+
 # Display mode - only show pre-calculated costUSD
 ccusage daily --mode display
 ```
+
+See [Cost Modes](/guide/cost-modes) for a full breakdown of each mode.
 
 ### Sort Order
 

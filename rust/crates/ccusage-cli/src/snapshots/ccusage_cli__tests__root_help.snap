@@ -66,6 +66,7 @@ OPTIONS:
   --no-cost                            Hide cost information in table and JSON output (default: false)
   --color                              Enable colored output. FORCE_COLOR=1 has the same effect. (default: auto)
   --no-color                           Disable colored output. NO_COLOR=1 has the same effect. (default: auto)
+  -m, --mode [mode]                    Cost calculation mode (api is an alias for calculate) (default: auto, choices: auto | calculate | display | api)
   --config <config>                    Path to configuration file (default: auto-discovery)
   -h, --help                           Display this help message
   -v, --version                        Display this version

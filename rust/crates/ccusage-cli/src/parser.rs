@@ -996,7 +996,12 @@ fn is_shared_flag(arg: &str) -> bool {
 fn parse_cost_mode(value: &str) -> Result<CostMode, String> {
     match value {
         "auto" => Ok(CostMode::Auto),
-        "calculate" => Ok(CostMode::Calculate),
+        // `api` is a discoverability alias for `calculate` — both bill
+        // from LiteLLM token pricing. The shorter, intent-revealing name
+        // is useful for Copilot reports where users want to contrast the
+        // "API-equivalent" cost against `auto`'s "what Copilot actually
+        // billed" figure.
+        "calculate" | "api" => Ok(CostMode::Calculate),
         "display" => Ok(CostMode::Display),
         _ => Err(format!("Invalid cost mode '{value}'")),
     }
@@ -1104,5 +1109,29 @@ mod tests {
             control_arg(&args(&["--help", "--version"])),
             Some(ControlArg::Version)
         );
+    }
+
+    #[test]
+    fn parse_cost_mode_accepts_all_documented_values() {
+        assert_eq!(parse_cost_mode("auto"), Ok(CostMode::Auto));
+        assert_eq!(parse_cost_mode("calculate"), Ok(CostMode::Calculate));
+        assert_eq!(parse_cost_mode("display"), Ok(CostMode::Display));
+    }
+
+    #[test]
+    fn parse_cost_mode_api_aliases_calculate() {
+        // `api` is a discoverability alias for `calculate` — both bill
+        // from LiteLLM token pricing. Surfaces the api-equivalent intent
+        // in `--help` without expanding the `CostMode` enum.
+        assert_eq!(parse_cost_mode("api"), Ok(CostMode::Calculate));
+    }
+
+    #[test]
+    fn parse_cost_mode_rejects_unknown_values() {
+        assert!(parse_cost_mode("invalid").is_err());
+        assert!(parse_cost_mode("").is_err());
+        assert!(parse_cost_mode("API").is_err(), "case-sensitive");
+        // Old pre-rename spelling is no longer accepted.
+        assert!(parse_cost_mode("api-equiv").is_err());
     }
 }

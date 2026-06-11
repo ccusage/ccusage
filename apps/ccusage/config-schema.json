@@ -75,7 +75,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -106,7 +111,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -241,7 +249,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -272,7 +285,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -407,7 +423,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -438,7 +459,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -576,7 +600,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -607,7 +636,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -750,7 +782,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -776,7 +813,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -924,7 +964,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -950,7 +995,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -1094,7 +1142,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -1125,7 +1178,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -1260,7 +1316,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -1291,7 +1352,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -1399,7 +1463,12 @@
 										"costSource": {
 											"default": "auto",
 											"description": "Source for statusline cost calculation.",
-											"enum": ["auto", "ccusage", "cc", "both"],
+											"enum": [
+												"auto",
+												"ccusage",
+												"cc",
+												"both"
+											],
 											"markdownDescription": "Source for statusline cost calculation.",
 											"type": "string"
 										},
@@ -1451,7 +1520,12 @@
 										"visualBurnRate": {
 											"default": "off",
 											"description": "Visual burn-rate display mode.",
-											"enum": ["off", "emoji", "text", "emoji-text"],
+											"enum": [
+												"off",
+												"emoji",
+												"text",
+												"emoji-text"
+											],
 											"markdownDescription": "Visual burn-rate display mode.",
 											"type": "string"
 										}
@@ -1505,7 +1579,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -1531,7 +1610,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -1677,7 +1759,12 @@
 								},
 								"costSource": {
 									"description": "Source for statusline cost calculation.",
-									"enum": ["auto", "ccusage", "cc", "both"],
+									"enum": [
+										"auto",
+										"ccusage",
+										"cc",
+										"both"
+									],
 									"markdownDescription": "Source for statusline cost calculation.",
 									"type": "string"
 								},
@@ -1710,7 +1797,12 @@
 								},
 								"mode": {
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -1749,7 +1841,10 @@
 								},
 								"order": {
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -1874,7 +1969,12 @@
 								},
 								"visualBurnRate": {
 									"description": "Visual burn-rate display mode.",
-									"enum": ["off", "emoji", "text", "emoji-text"],
+									"enum": [
+										"off",
+										"emoji",
+										"text",
+										"emoji-text"
+									],
 									"markdownDescription": "Visual burn-rate display mode.",
 									"type": "string"
 								}
@@ -1947,7 +2047,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -1978,7 +2083,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -2113,7 +2221,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -2144,7 +2257,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -2279,7 +2395,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -2310,7 +2431,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -2448,7 +2572,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -2479,7 +2608,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -2617,7 +2749,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -2643,7 +2780,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -2712,7 +2852,11 @@
 										"speed": {
 											"default": "auto",
 											"description": "Codex speed normalization strategy.",
-											"enum": ["auto", "standard", "fast"],
+											"enum": [
+												"auto",
+												"standard",
+												"fast"
+											],
 											"markdownDescription": "Codex speed normalization strategy.",
 											"type": "string"
 										},
@@ -2776,7 +2920,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -2802,7 +2951,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -2871,7 +3023,11 @@
 										"speed": {
 											"default": "auto",
 											"description": "Codex speed normalization strategy.",
-											"enum": ["auto", "standard", "fast"],
+											"enum": [
+												"auto",
+												"standard",
+												"fast"
+											],
 											"markdownDescription": "Codex speed normalization strategy.",
 											"type": "string"
 										},
@@ -2935,7 +3091,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -2961,7 +3122,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -3030,7 +3194,11 @@
 										"speed": {
 											"default": "auto",
 											"description": "Codex speed normalization strategy.",
-											"enum": ["auto", "standard", "fast"],
+											"enum": [
+												"auto",
+												"standard",
+												"fast"
+											],
 											"markdownDescription": "Codex speed normalization strategy.",
 											"type": "string"
 										},
@@ -3097,7 +3265,12 @@
 								},
 								"mode": {
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -3123,7 +3296,10 @@
 								},
 								"order": {
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -3192,7 +3368,11 @@
 								"speed": {
 									"default": "auto",
 									"description": "Codex speed normalization strategy.",
-									"enum": ["auto", "standard", "fast"],
+									"enum": [
+										"auto",
+										"standard",
+										"fast"
+									],
 									"markdownDescription": "Codex speed normalization strategy.",
 									"type": "string"
 								},
@@ -3269,7 +3449,12 @@
 								},
 								"mode": {
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -3295,7 +3480,10 @@
 								},
 								"order": {
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -3443,7 +3631,12 @@
 								},
 								"mode": {
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -3469,7 +3662,10 @@
 								},
 								"order": {
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -3613,7 +3809,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -3644,7 +3845,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -3779,7 +3983,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -3810,7 +4019,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -3918,7 +4130,12 @@
 								"costSource": {
 									"default": "auto",
 									"description": "Source for statusline cost calculation.",
-									"enum": ["auto", "ccusage", "cc", "both"],
+									"enum": [
+										"auto",
+										"ccusage",
+										"cc",
+										"both"
+									],
 									"markdownDescription": "Source for statusline cost calculation.",
 									"type": "string"
 								},
@@ -3970,7 +4187,12 @@
 								"visualBurnRate": {
 									"default": "off",
 									"description": "Visual burn-rate display mode.",
-									"enum": ["off", "emoji", "text", "emoji-text"],
+									"enum": [
+										"off",
+										"emoji",
+										"text",
+										"emoji-text"
+									],
 									"markdownDescription": "Visual burn-rate display mode.",
 									"type": "string"
 								}
@@ -4024,7 +4246,12 @@
 								},
 								"mode": {
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -4050,7 +4277,10 @@
 								},
 								"order": {
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -4210,7 +4440,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -4241,7 +4476,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -4376,7 +4614,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -4407,7 +4650,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -4542,7 +4788,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -4573,7 +4824,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -4711,7 +4965,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -4742,7 +5001,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -4882,7 +5144,12 @@
 						"mode": {
 							"default": "auto",
 							"description": "Cost calculation mode.",
-							"enum": ["auto", "calculate", "display"],
+							"enum": [
+								"auto",
+								"calculate",
+								"display",
+								"api"
+							],
 							"markdownDescription": "Cost calculation mode.",
 							"type": "string"
 						},
@@ -4913,7 +5180,10 @@
 						"order": {
 							"default": "asc",
 							"description": "Sort order.",
-							"enum": ["desc", "asc"],
+							"enum": [
+								"desc",
+								"asc"
+							],
 							"markdownDescription": "Sort order.",
 							"type": "string"
 						},
@@ -5056,7 +5326,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -5087,7 +5362,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -5222,7 +5500,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -5253,7 +5536,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -5388,7 +5674,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -5419,7 +5710,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -5557,7 +5851,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -5588,7 +5887,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -5734,7 +6036,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -5765,7 +6072,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -5900,7 +6210,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -5931,7 +6246,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -6066,7 +6384,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -6097,7 +6420,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -6235,7 +6561,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -6266,7 +6597,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -6412,7 +6746,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -6443,7 +6782,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -6578,7 +6920,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -6609,7 +6956,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -6744,7 +7094,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -6775,7 +7130,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -6913,7 +7271,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -6944,7 +7307,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -7090,7 +7456,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -7121,7 +7492,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -7256,7 +7630,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -7287,7 +7666,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -7422,7 +7804,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -7453,7 +7840,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -7591,7 +7981,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -7622,7 +8017,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -7768,7 +8166,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -7799,7 +8202,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -7934,7 +8340,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -7965,7 +8376,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -8100,7 +8514,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -8131,7 +8550,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -8269,7 +8691,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -8300,7 +8727,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -8446,7 +8876,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -8477,7 +8912,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -8612,7 +9050,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -8643,7 +9086,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -8778,7 +9224,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -8809,7 +9260,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -8947,7 +9401,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -8978,7 +9437,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -9116,7 +9578,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -9147,7 +9614,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -9273,7 +9743,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -9304,7 +9779,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -9430,7 +9908,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -9461,7 +9944,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -9590,7 +10076,12 @@
 								},
 								"mode": {
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -9621,7 +10112,10 @@
 								},
 								"order": {
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -9766,7 +10260,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -9797,7 +10296,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -9932,7 +10434,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -9963,7 +10470,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -10098,7 +10608,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -10129,7 +10644,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -10264,7 +10782,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -10295,7 +10818,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -10433,7 +10959,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -10464,7 +10995,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -10602,7 +11136,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -10628,7 +11167,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -10759,7 +11301,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -10785,7 +11332,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -10916,7 +11466,12 @@
 										},
 										"mode": {
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -10942,7 +11497,10 @@
 										},
 										"order": {
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -11076,7 +11634,12 @@
 								},
 								"mode": {
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -11102,7 +11665,10 @@
 								},
 								"order": {
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
@@ -11275,7 +11841,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -11306,7 +11877,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -11441,7 +12015,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -11472,7 +12051,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -11607,7 +12189,12 @@
 										"mode": {
 											"default": "auto",
 											"description": "Cost calculation mode.",
-											"enum": ["auto", "calculate", "display"],
+											"enum": [
+												"auto",
+												"calculate",
+												"display",
+												"api"
+											],
 											"markdownDescription": "Cost calculation mode.",
 											"type": "string"
 										},
@@ -11638,7 +12225,10 @@
 										"order": {
 											"default": "asc",
 											"description": "Sort order.",
-											"enum": ["desc", "asc"],
+											"enum": [
+												"desc",
+												"asc"
+											],
 											"markdownDescription": "Sort order.",
 											"type": "string"
 										},
@@ -11776,7 +12366,12 @@
 								"mode": {
 									"default": "auto",
 									"description": "Cost calculation mode.",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display",
+										"api"
+									],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
 								},
@@ -11807,7 +12402,10 @@
 								"order": {
 									"default": "asc",
 									"description": "Sort order.",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"markdownDescription": "Sort order.",
 									"type": "string"
 								},
