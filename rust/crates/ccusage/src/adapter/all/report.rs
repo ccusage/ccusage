@@ -134,15 +134,10 @@ fn row_json(row: &AllRow, include_agents: bool) -> Value {
     if let Some(obj) = value.as_object_mut() {
         obj.insert("period".to_string(), json!(row.period));
     }
-    if let (Some(obj), Some(agents)) = (value.as_object_mut(), row.metadata_agents.as_ref()) {
-        obj.insert(
-            "metadata".to_string(),
-            row.metadata
-                .clone()
-                .unwrap_or_else(|| json!({ "agents": agents })),
-        );
-    } else if let (Some(obj), Some(metadata)) = (value.as_object_mut(), row.metadata.as_ref()) {
-        obj.insert("metadata".to_string(), metadata.clone());
+    if let Some(metadata) = build_row_metadata(row)
+        && let Some(obj) = value.as_object_mut()
+    {
+        obj.insert("metadata".to_string(), metadata);
     }
     if include_agents
         && let (Some(obj), Some(agent_breakdowns)) =
@@ -154,6 +149,51 @@ fn row_json(row: &AllRow, include_agents: bool) -> Value {
         );
     }
     value
+}
+
+fn build_row_metadata(row: &AllRow) -> Option<Value> {
+    let mut map = row
+        .metadata
+        .as_ref()
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(agents) = row.metadata_agents.as_ref()
+        && !map.contains_key("agents")
+    {
+        map.insert("agents".to_string(), json!(agents));
+    }
+    if let Some(credits) = row.credits {
+        map.insert("credits".to_string(), json!(credits));
+    }
+    (!map.is_empty()).then_some(Value::Object(map))
+}
+
+fn totals_json(rows: &[AllRow]) -> Value {
+    let mut totals = json!({
+        "inputTokens": rows.iter().map(|row| row.input_tokens).sum::<u64>(),
+        "outputTokens": rows.iter().map(|row| row.output_tokens).sum::<u64>(),
+        "cacheCreationTokens": rows.iter().map(|row| row.cache_creation_tokens).sum::<u64>(),
+        "cacheReadTokens": rows.iter().map(|row| row.cache_read_tokens).sum::<u64>(),
+        "totalTokens": rows.iter().map(|row| row.total_tokens).sum::<u64>(),
+        "totalCost": json_float(rows.iter().map(|row| row.total_cost).sum::<f64>()),
+    });
+    let total_credits = rows.iter().filter_map(|row| row.credits).sum::<f64>();
+    if total_credits > 0.0
+        && let Some(obj) = totals.as_object_mut()
+    {
+        obj.insert("credits".to_string(), json!(total_credits));
+    }
+    totals
+}
+
+fn rows_key(kind: AgentReportKind) -> &'static str {
+    match kind {
+        AgentReportKind::Daily => "daily",
+        AgentReportKind::Weekly => "weekly",
+        AgentReportKind::Monthly => "monthly",
+        AgentReportKind::Session => "session",
+    }
 }
 
 fn agent_json(row: &AllRow) -> Value {
@@ -168,26 +208,6 @@ fn agent_json(row: &AllRow) -> Value {
         "totalCost": json_float(row.total_cost),
         "modelBreakdowns": row.model_breakdowns,
     })
-}
-
-fn totals_json(rows: &[AllRow]) -> Value {
-    json!({
-        "inputTokens": rows.iter().map(|row| row.input_tokens).sum::<u64>(),
-        "outputTokens": rows.iter().map(|row| row.output_tokens).sum::<u64>(),
-        "cacheCreationTokens": rows.iter().map(|row| row.cache_creation_tokens).sum::<u64>(),
-        "cacheReadTokens": rows.iter().map(|row| row.cache_read_tokens).sum::<u64>(),
-        "totalTokens": rows.iter().map(|row| row.total_tokens).sum::<u64>(),
-        "totalCost": json_float(rows.iter().map(|row| row.total_cost).sum::<f64>()),
-    })
-}
-
-fn rows_key(kind: AgentReportKind) -> &'static str {
-    match kind {
-        AgentReportKind::Daily => "daily",
-        AgentReportKind::Weekly => "weekly",
-        AgentReportKind::Monthly => "monthly",
-        AgentReportKind::Session => "session",
-    }
 }
 
 pub(super) fn print_table(

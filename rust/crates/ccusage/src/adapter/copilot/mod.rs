@@ -12,7 +12,28 @@ use crate::{
 };
 
 pub(crate) use loader::load_entries;
+#[cfg(test)]
+pub(crate) use paths::COPILOT_CONFIG_DIR_ENV;
 pub(crate) use report::{report_from_rows, summarize_entries};
+
+/// Returns `true` if any GitHub Copilot session-state file exists on disk
+/// (under `<COPILOT_CONFIG_DIR>/session-state/<uuid>/events.jsonl`),
+/// regardless of whether parsing succeeds or whether the active
+/// `--since`/`--until` filter excludes every entry.
+///
+/// Used by the cross-source aggregator (`adapter::all::loader::load_copilot_rows`)
+/// to keep "copilot" in the `Detected:` report header even when the date
+/// filter narrows the row set to empty — mirroring the
+/// `qwen::has_data()` sentinel pattern. This is required because
+/// `load_entries_inner` pre-filters by date before its content-keyed dedup
+/// HashMap collapse (see `loader.rs` — the credit-only dedup key omits
+/// `event_id`, so filtering after the HashMap could let a content-key
+/// collision drop the in-range row). With the pre-filter in place,
+/// `!entries.is_empty()` no longer reflects on-disk presence; the
+/// `has_data()` sentinel restores that signal.
+pub(crate) fn has_data() -> bool {
+    paths::has_any_session_state_event_file()
+}
 
 pub(crate) fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;

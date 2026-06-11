@@ -15,6 +15,16 @@ pub(super) struct AllRow {
     pub(super) cache_read_tokens: u64,
     pub(super) total_tokens: u64,
     pub(super) total_cost: f64,
+    /// Raw billing-credits count (e.g. GitHub Copilot AI Credits,
+    /// where 1 AIU = 1 credit = $0.01). First-class field so that the
+    /// `--all` aggregator can sum credits across agents/periods and
+    /// the JSON renderer can surface them in `metadata.credits`
+    /// (per-row, gated on `Option::is_some`) and `totals.credits`
+    /// (gated on SUM > 0.0), matching the direct per-agent renderer
+    /// for byte-identical totals JSON. `None` for rows whose source
+    /// had no credits signal; `Some(0.0)` is distinguishable from
+    /// absence at the row level.
+    pub(super) credits: Option<f64>,
     pub(super) metadata: Option<Value>,
     pub(super) metadata_agents: Option<Vec<&'static str>>,
     pub(super) agent_breakdowns: Option<Vec<AllRow>>,
@@ -69,6 +79,12 @@ pub(super) struct AllAccumulator {
     cache_read_tokens: u64,
     total_tokens: u64,
     total_cost: f64,
+    /// `None` while no contributor has reported any credits; flips to
+    /// `Some(sum)` on the first `Some` contribution. This keeps the
+    /// "credits channel absent" semantic distinct from "credits channel
+    /// reported zero" — matching the same distinction `Option<f64>`
+    /// carries on each `AllRow`.
+    credits: Option<f64>,
     models: BTreeSet<String>,
     agents: BTreeSet<&'static str>,
     agent_breakdowns: Vec<AllRow>,
@@ -83,6 +99,9 @@ impl AllAccumulator {
         self.cache_read_tokens += row.cache_read_tokens;
         self.total_tokens += row.total_tokens;
         self.total_cost += row.total_cost;
+        if let Some(credits) = row.credits {
+            self.credits = Some(self.credits.unwrap_or(0.0) + credits);
+        }
         self.models.extend(row.models_used.iter().cloned());
         if let Some(agents) = row.metadata_agents.as_ref() {
             self.agents.extend(agents.iter().copied());
@@ -121,6 +140,7 @@ impl AllAccumulator {
             cache_read_tokens: self.cache_read_tokens,
             total_tokens: self.total_tokens,
             total_cost: self.total_cost,
+            credits: self.credits,
             metadata: None,
             metadata_agents: Some(self.agents.into_iter().collect()),
             agent_breakdowns: Some(agent_breakdowns),
@@ -136,6 +156,9 @@ fn merge_agent_breakdown(target: &mut AllRow, source: AllRow) {
     target.cache_read_tokens += source.cache_read_tokens;
     target.total_tokens += source.total_tokens;
     target.total_cost += source.total_cost;
+    if let Some(credits) = source.credits {
+        target.credits = Some(target.credits.unwrap_or(0.0) + credits);
+    }
     let mut models: BTreeSet<String> = target.models_used.drain(..).collect();
     models.extend(source.models_used);
     target.models_used = models.into_iter().collect();

@@ -26,6 +26,20 @@ pub(super) fn session_state_paths() -> Result<Vec<PathBuf>> {
     Ok(session_state_event_files(&session_state_dir))
 }
 
+pub(super) fn has_any_session_state_event_file() -> bool {
+    let Some(base) = copilot_base_dir() else {
+        return false;
+    };
+    let session_state_dir = base.join(SESSION_STATE_DIR_NAME);
+    let Ok(entries) = std::fs::read_dir(&session_state_dir) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        path.is_dir() && path.join(EVENTS_FILENAME).is_file()
+    })
+}
+
 fn copilot_base_dir() -> Option<PathBuf> {
     if let Some(value) = env::var_os(COPILOT_CONFIG_DIR_ENV) {
         let trimmed_path = PathBuf::from(trim_os_string(&value));
