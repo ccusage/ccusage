@@ -251,7 +251,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
                 "cacheCreationTokens": entry.data.message.usage.cache_creation_input_tokens,
                 "cacheReadTokens": entry.data.message.usage.cache_read_input_tokens,
                 "model": entry.data.message.model.as_deref().unwrap_or("unknown"),
-                "costUSD": entry.data.cost_usd.unwrap_or(0.0),
+                "costUSD": entry.cost,
             })).collect::<Vec<_>>(),
         });
         print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost)?;

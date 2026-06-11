@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, collect_files_with_extension, debug_log,
-    parse_tz,
+    LoadedEntry, PricingMap, Result, cli::SharedArgs, collect_files_with_extension,
+    cost_and_missing_for_output, debug_log, parse_tz,
 };
 
 use super::{parser, paths};
@@ -32,6 +32,7 @@ fn load_entries_inner(
         &files,
         shared.single_thread,
         shared.live_only,
+        crate::cache::Freshness::FileStat,
         |file| {
             Ok(
                 parser::read_session_file(file, tz.as_ref(), shared.mode, pricing).unwrap_or_else(
@@ -46,21 +47,10 @@ fn load_entries_inner(
             )
         },
         |e| {
-            let model = e.data.message.model.as_deref();
-            e.cost = crate::calculate_cost_for_usage(
-                model,
-                e.data.message.usage,
-                e.data.cost_usd,
-                shared.mode,
-                pricing,
-            );
-            e.missing_pricing_model = crate::missing_pricing_model_for_usage(
-                model,
-                e.data.message.usage,
-                e.data.cost_usd,
-                shared.mode,
-                pricing,
-            );
+            let (cost, missing_pricing_model) =
+                cost_and_missing_for_output(&e.data, shared.mode, pricing);
+            e.cost = cost;
+            e.missing_pricing_model = missing_pricing_model;
         },
     )?;
     let mut seen = HashSet::new();
@@ -73,4 +63,34 @@ fn load_entries_inner(
     }
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cache::tests::CacheEnv;
+    use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn display_mode_surfaces_logged_cost() {
+        let _cache_env = CacheEnv::new("pi-display");
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":100,"output":200,"cost":{"total":0.05}}}}"#,
+        });
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            ..SharedArgs::default()
+        };
+        // Mirror pi::run(): pricing is loaded regardless of mode. Display must
+        // still surface the logged costUSD, not reprice it to 0.0.
+        let pricing =
+            PricingMap::load_with_overrides(shared.offline, false, shared.pricing_overrides.iter());
+
+        let entries = load_entries(&shared, fixture.root().to_str(), Some(&pricing)).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 0.05);
+        assert_eq!(entries[0].missing_pricing_model, None);
+    }
 }

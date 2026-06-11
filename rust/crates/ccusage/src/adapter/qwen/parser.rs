@@ -70,6 +70,7 @@ pub(super) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
         &files,
         shared.single_thread,
         shared.live_only,
+        crate::cache::Freshness::FileStat,
         |file| read_chat_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared),
         |e| reprice(e, shared.mode, pricing.as_ref()),
     )?;

@@ -1,12 +1,13 @@
 ---
 source: crates/ccusage/src/adapter/opencode/parser.rs
+assertion_line: 504
 expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"displayCost\":\n    entry_snapshot(&display_cost), \"candidates\":\n    {\n        \"anthropic\":\n        open_code_model_candidates(\"claude-sonnet-4.5\", \"anthropic\"),\n        \"copilot\":\n        open_code_model_candidates(\"claude-sonnet-4.5\", \"github-copilot\"),\n        \"geminiAlias\":\n        open_code_model_candidates(\"gemini-3-pro-high\", \"google\"),\n        \"unknownProvider\": open_code_model_candidates(\"gpt-test\", \"unknown\"),\n    }\n})"
 ---
 {
   "calculated": {
     "cost": 22.03125,
     "data": {
-      "costUSD": 0.0,
+      "costUSD": 22.03125,
       "message": {
         "id": "message-a",
         "model": "claude-sonnet-4.5",

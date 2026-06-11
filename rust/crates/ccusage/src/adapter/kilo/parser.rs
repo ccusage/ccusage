@@ -137,24 +137,23 @@ pub(super) fn message_value_to_entry(
         is_sidechain: None,
     };
     let provider = value.provider_id.clone();
-    let cost_data = UsageEntry {
-        message: UsageMessage {
-            usage: TokenUsageRaw {
-                output_tokens: data
-                    .message
-                    .usage
-                    .output_tokens
-                    .saturating_add(extra_total_tokens),
-                cache_creation: None,
-                ..data.message.usage
-            },
-            ..data.message.clone()
-        },
-        ..data.clone()
+    let cost_usage = TokenUsageRaw {
+        output_tokens: data
+            .message
+            .usage
+            .output_tokens
+            .saturating_add(extra_total_tokens),
+        cache_creation: None,
+        ..data.message.usage
     };
-    let cost = calculate_kilo_cost(&cost_data, provider.as_deref(), mode, pricing);
-    let missing_pricing_model =
-        missing_kilo_pricing(&cost_data, provider.as_deref(), mode, pricing);
+    let (cost, missing_pricing_model) = kilo_cost_and_missing(
+        data.message.model.as_deref(),
+        provider.as_deref(),
+        cost_usage,
+        data.cost_usd,
+        mode,
+        pricing,
+    );
     Some(LoadedEntry {
         date: format_date_tz(timestamp, tz),
         timestamp,
@@ -184,60 +183,82 @@ fn normalize_timestamp(value: i64) -> Option<TimestampMs> {
     Some(TimestampMs::from_millis(millis))
 }
 
-/// Recompute cost and missing-pricing for a cached entry from its stored tokens,
-/// provider hint, and logged cost, mirroring the parse path's `cost_data`
-/// (billable output folds in `extra_total_tokens`).
+/// Recompute cost and missing-pricing for a cached entry from its stored
+/// tokens and provider hint, mirroring the parse path's `cost_usage`
+/// (billable output folds in `extra_total_tokens`). In `Auto`/`Calculate` the
+/// log's `costUSD` is not consulted — cost is derived from current pricing on
+/// warm runs. In `Display` the logged `costUSD` is surfaced verbatim.
 pub(super) fn reprice(entry: &mut LoadedEntry, mode: CostMode, pricing: &PricingMap) {
     let provider = entry.data.message.provider.clone();
-    let cost_data = UsageEntry {
-        message: UsageMessage {
-            usage: TokenUsageRaw {
-                output_tokens: entry
-                    .data
-                    .message
-                    .usage
-                    .output_tokens
-                    .saturating_add(entry.extra_total_tokens),
-                cache_creation: None,
-                ..entry.data.message.usage
-            },
-            ..entry.data.message.clone()
-        },
-        ..entry.data.clone()
+    let cost_usage = TokenUsageRaw {
+        output_tokens: entry
+            .data
+            .message
+            .usage
+            .output_tokens
+            .saturating_add(entry.extra_total_tokens),
+        cache_creation: None,
+        ..entry.data.message.usage
     };
-    entry.cost = calculate_kilo_cost(&cost_data, provider.as_deref(), mode, pricing);
-    entry.missing_pricing_model =
-        missing_kilo_pricing(&cost_data, provider.as_deref(), mode, pricing);
+    let model = entry.data.message.model.as_deref();
+    let (cost, missing_pricing_model) = kilo_cost_and_missing(
+        model,
+        provider.as_deref(),
+        cost_usage,
+        entry.data.cost_usd,
+        mode,
+        pricing,
+    );
+    entry.cost = cost;
+    entry.missing_pricing_model = missing_pricing_model;
 }
 
-fn calculate_kilo_cost(
-    data: &UsageEntry,
+/// Decide cost and the missing-pricing flag together so they stay coherent.
+///
+/// `Display` surfaces the agent's logged cost verbatim and never reprices.
+/// `Auto`/`Calculate` derive cost from tokens; in `Auto` the logged `costUSD`
+/// is used as a fallback when the model can't be priced (so logged spend is
+/// never lost for unmapped models), and that row is not flagged as missing
+/// pricing. `Calculate` stays strict token-only — kilo pricing is always
+/// embedded, so there is no offline `None` case to handle here.
+fn kilo_cost_and_missing(
+    model: Option<&str>,
     provider: Option<&str>,
+    usage: TokenUsageRaw,
+    cost_usd: Option<f64>,
     mode: CostMode,
     pricing: &PricingMap,
-) -> f64 {
-    match mode {
-        CostMode::Display => data.cost_usd.unwrap_or(0.0),
-        CostMode::Auto => data
-            .cost_usd
-            .unwrap_or_else(|| calculate_kilo_cost_from_tokens(data, provider, pricing)),
-        CostMode::Calculate => calculate_kilo_cost_from_tokens(data, provider, pricing),
+) -> (f64, Option<String>) {
+    if mode == CostMode::Display {
+        return (cost_usd.unwrap_or(0.0), None);
     }
+    let computed = calculate_kilo_cost_from_tokens(model, provider, usage, pricing);
+    if mode == CostMode::Auto
+        && computed == 0.0
+        && let Some(cost) = cost_usd.filter(|c| *c > 0.0)
+    {
+        return (cost, None);
+    }
+    (
+        computed,
+        missing_kilo_pricing(model, provider, usage, mode, pricing),
+    )
 }
 
 fn calculate_kilo_cost_from_tokens(
-    data: &UsageEntry,
+    model: Option<&str>,
     provider: Option<&str>,
+    usage: TokenUsageRaw,
     pricing: &PricingMap,
 ) -> f64 {
-    let Some(model) = data.message.model.as_deref() else {
+    let Some(model) = model else {
         return 0.0;
     };
     for candidate in model_candidates(model, provider) {
         if pricing.find(&candidate).is_some() {
             return calculate_cost_for_usage(
                 Some(&candidate),
-                data.message.usage,
+                usage,
                 None,
                 CostMode::Calculate,
                 Some(pricing),
@@ -248,19 +269,20 @@ fn calculate_kilo_cost_from_tokens(
 }
 
 fn missing_kilo_pricing(
-    data: &UsageEntry,
+    model: Option<&str>,
     provider: Option<&str>,
+    usage: TokenUsageRaw,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> Option<String> {
-    if mode == CostMode::Display || data.cost_usd.is_some_and(|cost| cost > 0.0) {
+    if mode == CostMode::Display {
         return None;
     }
-    let model = data.message.model.as_deref()?;
+    let model = model?;
     missing_pricing_model_for_candidates(
         model,
         model_candidates(model, provider),
-        crate::total_usage_tokens(data.message.usage),
+        crate::total_usage_tokens(usage),
         Some(pricing),
     )
 }

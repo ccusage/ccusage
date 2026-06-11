@@ -49,11 +49,17 @@ use crate::{
 /// Lean on-disk representation of a [`LoadedEntry`].
 ///
 /// Only the fields consumed after parsing are persisted; parse-only fields
-/// (duplicate session_id/timestamp, cost_usd already folded into `.cost`,
-/// is_api_error_message) are stripped and zeroed on read. Kept: `usage` (token
-/// counts), `version` (version breakdowns), `message_id`/`request_id`/
-/// `is_sidechain` (billable-call identity for cross-file dedup and the ledger
-/// key), and `message_model` (read by some adapters post-load).
+/// (duplicate session_id/timestamp, is_api_error_message) are stripped and
+/// zeroed on read. Kept: `usage` (token counts, invariant per log line),
+/// `version` (version breakdowns), `message_id`/`request_id`/`is_sidechain`
+/// (billable-call identity for cross-file dedup and the ledger key), and
+/// `message_model` (read by some adapters post-load).
+///
+/// `cost_usd` is persisted as a fallback signal for the no-pricing path:
+/// when pricing is unavailable (offline mode, unknown model), the reprice
+/// callback uses the cached value rather than returning 0.0 and silently
+/// dropping spend. When pricing is available, the cached `cost_usd` is
+/// never consulted for cost — current pricing is always used.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CachedEntry {
     timestamp: crate::date_utils::TimestampMs,
@@ -231,8 +237,18 @@ impl LedgerEntry {
 pub(crate) struct FileMetadata {
     pub(crate) mtime_epoch_millis: u64,
     pub(crate) size: u64,
+    /// Content fingerprint for SQLite adapters (0 for FileStat strategy).
+    pub(crate) fingerprint: u64,
     /// Stable per-path key, used by the OpenCode adapter to key its row cache.
     pub(crate) cache_key: String,
+}
+
+/// Strategy for determining whether a cached file is still fresh.
+pub(crate) enum Freshness<'a> {
+    /// Compare file mtime + size (original behavior for JSONL adapters).
+    FileStat,
+    /// Use a content fingerprint (for SQLite/WAL adapters).
+    Fingerprint(&'a (dyn Fn(&Path) -> Option<u64> + Sync)),
 }
 
 /// Parsed entries recovered from the cache for one source file.
@@ -280,6 +296,7 @@ pub(crate) fn file_metadata(path: &Path) -> Option<FileMetadata> {
     Some(FileMetadata {
         mtime_epoch_millis: mtime,
         size: metadata.len(),
+        fingerprint: 0,
         cache_key: cache_key(path),
     })
 }
@@ -491,6 +508,8 @@ fn read_schema_version(conn: &sqlite::Connection, name: &str) -> Option<i64> {
 struct StoredFile {
     mtime: u64,
     size: u64,
+    /// Content fingerprint from the `cost_fingerprint` column.
+    fingerprint: u64,
     entries: Vec<u8>,
 }
 
@@ -507,7 +526,7 @@ fn load_namespace_files(conn: &sqlite::Connection, namespace: &str) -> HashMap<S
         return map;
     }
     while let Ok(sqlite::State::Row) = st.next() {
-        let (Ok(path), Ok(mtime), Ok(size), Ok(_cost), Ok(entries)) = (
+        let (Ok(path), Ok(mtime), Ok(size), Ok(cost), Ok(entries)) = (
             st.read::<String, _>(0),
             st.read::<i64, _>(1),
             st.read::<i64, _>(2),
@@ -521,6 +540,7 @@ fn load_namespace_files(conn: &sqlite::Connection, namespace: &str) -> HashMap<S
             StoredFile {
                 mtime: mtime as u64,
                 size: size as u64,
+                fingerprint: cost as u64,
                 entries,
             },
         );
@@ -547,7 +567,11 @@ struct FilePartition {
 }
 
 /// Partition source files into cached (still valid) and fresh (must re-parse).
-fn partition_files(files: &[PathBuf], stored: &HashMap<String, StoredFile>) -> FilePartition {
+fn partition_files(
+    files: &[PathBuf],
+    stored: &HashMap<String, StoredFile>,
+    freshness: &Freshness<'_>,
+) -> FilePartition {
     let mut cached = Vec::new();
     let mut fresh = Vec::new();
 
@@ -560,9 +584,23 @@ fn partition_files(files: &[PathBuf], stored: &HashMap<String, StoredFile>) -> F
             continue;
         };
 
+        let mut current = current;
+        let fingerprint_value = match freshness {
+            Freshness::FileStat => 0,
+            Freshness::Fingerprint(f) => f(path).unwrap_or(u64::MAX),
+        };
+        current.fingerprint = fingerprint_value;
+
         let path_str = path.to_string_lossy().to_string();
         if let Some(entry) = stored.get(&path_str) {
-            let unchanged = entry.mtime == current.mtime_epoch_millis && entry.size == current.size;
+            let unchanged = match freshness {
+                Freshness::FileStat => {
+                    entry.mtime == current.mtime_epoch_millis && entry.size == current.size
+                }
+                Freshness::Fingerprint(_) => {
+                    entry.fingerprint == current.fingerprint && current.fingerprint != u64::MAX
+                }
+            };
             if unchanged && let Some(entries) = decode_entries(&entry.entries) {
                 cached.push(CachedEntries { entries });
                 continue;
@@ -590,11 +628,12 @@ fn partition_files(files: &[PathBuf], stored: &HashMap<String, StoredFile>) -> F
 ///
 /// `parse_file` returns `Err` when a file cannot be read or parsed; the error
 /// propagates and a failed run is never persisted.
-pub(crate) fn load_with_cache<F, R>(
+pub(crate) fn load_with_cache<'a, F, R>(
     namespace: &str,
     files: &[PathBuf],
     single_thread: bool,
     live_only: bool,
+    freshness: Freshness<'a>,
     parse_file: F,
     reprice: R,
 ) -> crate::Result<Vec<LoadedEntry>>
@@ -610,7 +649,7 @@ where
         .as_ref()
         .map(|conn| load_namespace_files(conn, namespace))
         .unwrap_or_default();
-    let partition = partition_files(files, &stored);
+    let partition = partition_files(files, &stored, &freshness);
 
     let fresh_paths: Vec<PathBuf> = partition.fresh.iter().map(|f| f.path.clone()).collect();
     let mut parsed = parse_fresh_files(&fresh_paths, single_thread, &parse_file)?;
@@ -703,7 +742,7 @@ fn upsert_file(
     st.bind((2, namespace)).ok()?;
     st.bind((3, meta.mtime_epoch_millis as i64)).ok()?;
     st.bind((4, meta.size as i64)).ok()?;
-    st.bind((5, 0_i64)).ok()?;
+    st.bind((5, meta.fingerprint as i64)).ok()?;
     st.bind((6, &blob[..])).ok()?;
     st.next().ok()?;
     Some(())
@@ -1150,6 +1189,7 @@ pub(crate) mod tests {
             StoredFile {
                 mtime: meta.mtime_epoch_millis,
                 size: meta.size,
+                fingerprint: meta.fingerprint,
                 entries: encode_entries(entries).unwrap(),
             },
         );
@@ -1194,7 +1234,7 @@ pub(crate) mod tests {
         let meta = file_metadata(&src).expect("metadata");
         let stored = stored_snapshot(&src, &meta, &[sample_entry()]);
 
-        let part = partition_files(std::slice::from_ref(&src), &stored);
+        let part = partition_files(std::slice::from_ref(&src), &stored, &Freshness::FileStat);
         assert_eq!(part.cached.len(), 1);
         assert!(part.fresh.is_empty());
         assert_eq!(part.cached[0].entries[0].session_id.as_ref(), "session-a");
@@ -1211,7 +1251,7 @@ pub(crate) mod tests {
         // Mutate the source so its size no longer matches the fingerprint.
         fs::write(&src, "line\nlonger\n").unwrap();
 
-        let part = partition_files(std::slice::from_ref(&src), &stored);
+        let part = partition_files(std::slice::from_ref(&src), &stored, &Freshness::FileStat);
         assert!(part.cached.is_empty());
         assert_eq!(part.fresh.len(), 1);
         assert_eq!(part.fresh[0].path, src);
@@ -1229,6 +1269,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_path| {
                 calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(vec![sample_entry()])
@@ -1244,6 +1285,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_path| {
                 panic!("parse_file should not run for a cached file");
             },
@@ -1269,6 +1311,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |path| Err(crate::cli_error(format!("boom: {}", path.display()))),
             |_| {},
         );
@@ -1282,6 +1325,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_path| {
                 calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(vec![sample_entry()])
@@ -1305,7 +1349,11 @@ pub(crate) mod tests {
 
         let fresh_src = write_source("partition-fresh", "b\n");
 
-        let part = partition_files(&[cached_src.clone(), fresh_src.clone()], &stored);
+        let part = partition_files(
+            &[cached_src.clone(), fresh_src.clone()],
+            &stored,
+            &Freshness::FileStat,
+        );
 
         assert_eq!(part.cached.len(), 1);
         assert_eq!(part.fresh.len(), 1);
@@ -1332,6 +1380,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![sample_entry()]),
             |_| {},
         )
@@ -1341,8 +1390,16 @@ pub(crate) mod tests {
         // Delete the source file — simulates "deleted chat".
         fs::remove_file(&src).unwrap();
 
-        let warm =
-            load_with_cache("test-ns", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let warm = load_with_cache(
+            "test-ns",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
 
         assert_eq!(warm.len(), 1, "ledger entry must be emitted after deletion");
         assert_eq!(warm[0].session_id.as_ref(), "session-a");
@@ -1372,6 +1429,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![entry.clone()]),
             |_| {},
         )
@@ -1386,6 +1444,7 @@ pub(crate) mod tests {
             &[],
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(Vec::new()),
             |_| {},
         )
@@ -1429,6 +1488,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![a.clone(), b.clone()]),
             |_| {},
         )
@@ -1437,8 +1497,16 @@ pub(crate) mod tests {
 
         // Source removed — both must re-emit from the ledger, not collapse.
         fs::remove_file(&src).unwrap();
-        let warm =
-            load_with_cache("ns-synth", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let warm = load_with_cache(
+            "ns-synth",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
 
         assert_eq!(
             warm.len(),
@@ -1475,6 +1543,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![a.clone(), b.clone()]),
             |_| {},
         )
@@ -1482,8 +1551,16 @@ pub(crate) mod tests {
         assert_eq!(cold.len(), 2);
 
         fs::remove_file(&src).unwrap();
-        let warm =
-            load_with_cache("ns-proj", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let warm = load_with_cache(
+            "ns-proj",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
 
         assert_eq!(
             warm.len(),
@@ -1559,13 +1636,22 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![sample_entry()]),
             |_| {},
         );
 
         // Delete: spend is retained in the ledger.
         fs::remove_file(&src).unwrap();
-        let _ = load_with_cache("ns", &[], false, false, |_| Ok(Vec::new()), |_| {});
+        let _ = load_with_cache(
+            "ns",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        );
 
         fs::write(&src, "new content\n").unwrap();
         let mut new_entry = sample_entry();
@@ -1577,6 +1663,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![new_entry.clone()]),
             |_| {},
         )
@@ -1620,12 +1707,22 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![entry.clone()]),
             |_| {},
         );
         fs::remove_file(&src).unwrap();
 
-        let warm = load_with_cache("ns", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let warm = load_with_cache(
+            "ns",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
 
         assert_eq!(
             warm.len(),
@@ -1666,6 +1763,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![entry_a.clone()]),
             |_| {},
         )
@@ -1679,6 +1777,7 @@ pub(crate) mod tests {
             &[],
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(Vec::new()),
             |_| {},
         )
@@ -1701,6 +1800,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src2),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![entry_a.clone(), entry_b.clone()]),
             |_| {},
         )
@@ -1732,17 +1832,34 @@ pub(crate) mod tests {
             std::slice::from_ref(&src_a),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![sample_entry()]),
             |_| {},
         );
 
         // Delete the "a" file so its spend lives only in the ledger under "ns-a".
         fs::remove_file(&src_a).unwrap();
-        let _ = load_with_cache("ns-a", &[], false, false, |_| Ok(Vec::new()), |_| {});
+        let _ = load_with_cache(
+            "ns-a",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        );
 
         // Now run namespace "b" with no files — must NOT emit "a"'s ledger entries.
-        let result_b =
-            load_with_cache("ns-b", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let result_b = load_with_cache(
+            "ns-b",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(result_b.len(), 0, "ns-b must not see ns-a's ledger entries");
 
         // Create a separate "b" file that still exists on disk, then run "ns-b".
@@ -1753,6 +1870,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src_b),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![sample_entry()]),
             |_| {},
         )
@@ -1777,6 +1895,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![sample_entry()]),
             |_| {},
         );
@@ -1787,8 +1906,16 @@ pub(crate) mod tests {
 
         // Delete the source: the key must emit exactly once.
         fs::remove_file(&src).unwrap();
-        let warm =
-            load_with_cache("dup-ns", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let warm = load_with_cache(
+            "dup-ns",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(
             warm.len(),
             1,
@@ -1810,6 +1937,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_path| Ok(vec![sample_entry()]),
             |_| {}, // no repricing on cold run
         )
@@ -1823,6 +1951,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_path| {
                 panic!("parse_file must not run when only pricing changes");
             },
@@ -1854,6 +1983,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_path| Ok(vec![sample_entry()]),
             |e| {
                 e.cost = 0.5;
@@ -1870,6 +2000,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_path| {
                 panic!("parse_file must not run when only mode changes");
             },
@@ -1902,6 +2033,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![entry.clone()]),
             |_| {},
         );
@@ -1917,6 +2049,7 @@ pub(crate) mod tests {
             &[],
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(Vec::new()),
             |e| {
                 e.cost = 9.99;
@@ -1970,6 +2103,7 @@ pub(crate) mod tests {
                             std::slice::from_ref(src),
                             true,
                             false,
+                            Freshness::FileStat,
                             |_| Ok(vec![sample_entry()]),
                             |_| {},
                         );
@@ -2002,6 +2136,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![entry.clone()]),
             |_| {},
         )
@@ -2011,8 +2146,16 @@ pub(crate) mod tests {
         fs::remove_file(&src).unwrap();
 
         // Default run: re-emits the retained entry.
-        let default_result =
-            load_with_cache("test-live", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let default_result = load_with_cache(
+            "test-live",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(
             default_result.len(),
             1,
@@ -2020,8 +2163,16 @@ pub(crate) mod tests {
         );
 
         // live_only run: excludes the retained entry.
-        let live_only_result =
-            load_with_cache("test-live", &[], false, true, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let live_only_result = load_with_cache(
+            "test-live",
+            &[],
+            false,
+            true,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(
             live_only_result.len(),
             0,
@@ -2041,6 +2192,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src),
             false,
             true,
+            Freshness::FileStat,
             |_| Ok(vec![entry.clone()]),
             |_| {},
         )
@@ -2048,8 +2200,16 @@ pub(crate) mod tests {
 
         // Delete source and run with live_only=false: should re-emit from ledger.
         fs::remove_file(&src).unwrap();
-        let result =
-            load_with_cache("test-live", &[], false, false, |_| Ok(Vec::new()), |_| {}).unwrap();
+        let result = load_with_cache(
+            "test-live",
+            &[],
+            false,
+            false,
+            Freshness::FileStat,
+            |_| Ok(Vec::new()),
+            |_| {},
+        )
+        .unwrap();
         assert_eq!(
             result.len(),
             1,
@@ -2182,6 +2342,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src_a),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![sample_entry()]),
             |_| {},
         );
@@ -2190,6 +2351,7 @@ pub(crate) mod tests {
             std::slice::from_ref(&src_b),
             false,
             false,
+            Freshness::FileStat,
             |_| Ok(vec![sample_entry()]),
             |_| {},
         );
@@ -2213,5 +2375,160 @@ pub(crate) mod tests {
 
         let _ = fs::remove_file(&src_a);
         let _ = fs::remove_file(&src_b);
+    }
+    // -------------------------------------------------------------------------
+    // Fingerprint freshness strategy tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn fingerprint_same_value_is_cache_hit() {
+        let _env = CacheEnv::new("fp-hit");
+        let src = write_source("fp-hit", "line\n");
+        let mut meta = file_metadata(&src).unwrap();
+        meta.fingerprint = 42;
+        let stored = stored_snapshot(&src, &meta, &[sample_entry()]);
+
+        // Current fingerprint matches stored → cache hit.
+        let fp_fn = |_: &std::path::Path| Some(42u64);
+        let part = partition_files(
+            std::slice::from_ref(&src),
+            &stored,
+            &Freshness::Fingerprint(&fp_fn),
+        );
+        assert_eq!(part.cached.len(), 1, "matching fingerprint must hit cache");
+        assert!(part.fresh.is_empty());
+        let _ = fs::remove_file(&src);
+    }
+
+    #[test]
+    fn fingerprint_different_value_is_cache_miss() {
+        let _env = CacheEnv::new("fp-miss");
+        let src = write_source("fp-miss", "line\n");
+        let mut meta = file_metadata(&src).unwrap();
+        meta.fingerprint = 42;
+        let stored = stored_snapshot(&src, &meta, &[sample_entry()]);
+
+        // Current fingerprint differs → cache miss.
+        let fp_fn = |_: &std::path::Path| Some(99u64);
+        let part = partition_files(
+            std::slice::from_ref(&src),
+            &stored,
+            &Freshness::Fingerprint(&fp_fn),
+        );
+        assert!(part.cached.is_empty(), "different fingerprint must miss");
+        assert_eq!(part.fresh.len(), 1);
+        let _ = fs::remove_file(&src);
+    }
+
+    #[test]
+    fn fingerprint_none_forces_reparse() {
+        let _env = CacheEnv::new("fp-none");
+        let src = write_source("fp-none", "line\n");
+        let mut meta = file_metadata(&src).unwrap();
+        meta.fingerprint = 42;
+        let stored = stored_snapshot(&src, &meta, &[sample_entry()]);
+
+        // Fingerprint function returns None → must reparse.
+        let fp_fn = |_: &std::path::Path| None;
+        let part = partition_files(
+            std::slice::from_ref(&src),
+            &stored,
+            &Freshness::Fingerprint(&fp_fn),
+        );
+        assert!(
+            part.cached.is_empty(),
+            "None fingerprint must force reparse"
+        );
+        assert_eq!(part.fresh.len(), 1);
+        let _ = fs::remove_file(&src);
+    }
+
+    #[test]
+    fn fingerprint_ignores_mtime_size_drift() {
+        let _env = CacheEnv::new("fp-ignores-mtime");
+        let src = write_source("fp-ignores-mtime", "line\n");
+        let mut meta = file_metadata(&src).unwrap();
+        meta.fingerprint = 42;
+        let stored = stored_snapshot(&src, &meta, &[sample_entry()]);
+
+        // Mutate file so mtime/size change, but fingerprint stays the same.
+        fs::write(&src, "longer content\n").unwrap();
+
+        let fp_fn = |_: &std::path::Path| Some(42u64);
+        let part = partition_files(
+            std::slice::from_ref(&src),
+            &stored,
+            &Freshness::Fingerprint(&fp_fn),
+        );
+        assert_eq!(
+            part.cached.len(),
+            1,
+            "matching fingerprint must hit even when mtime/size drift"
+        );
+        assert!(part.fresh.is_empty());
+        let _ = fs::remove_file(&src);
+    }
+
+    #[test]
+    fn fingerprint_load_with_cache_end_to_end() {
+        let _env = CacheEnv::new("fp-e2e");
+        let src = write_source("fp-e2e", "line\n");
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let fp_value = std::sync::atomic::AtomicU64::new(100);
+
+        let fp_fn = |_: &std::path::Path| -> Option<u64> {
+            Some(fp_value.load(std::sync::atomic::Ordering::SeqCst))
+        };
+
+        let cold = load_with_cache(
+            "fp-e2e",
+            std::slice::from_ref(&src),
+            false,
+            false,
+            Freshness::Fingerprint(&fp_fn),
+            |_path| {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(vec![sample_entry()])
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(cold.len(), 1);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Warm run: same fingerprint → cache hit, parse_file not called.
+        let warm = load_with_cache(
+            "fp-e2e",
+            std::slice::from_ref(&src),
+            false,
+            false,
+            Freshness::Fingerprint(&fp_fn),
+            |_path| {
+                panic!("parse_file must not run for a fingerprint cache hit");
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(warm.len(), 1);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Fingerprint changes → must reparse.
+        fp_value.store(200, std::sync::atomic::Ordering::SeqCst);
+        let reparsed = load_with_cache(
+            "fp-e2e",
+            std::slice::from_ref(&src),
+            false,
+            false,
+            Freshness::Fingerprint(&fp_fn),
+            |_path| {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(vec![sample_entry()])
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(reparsed.len(), 1);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        let _ = fs::remove_file(&src);
     }
 }

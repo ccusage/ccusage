@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
+use crate::{
+    LoadedEntry, PricingMap, Result, cli::SharedArgs, cost_and_missing_for_output, debug_log,
+    parse_tz,
+};
 
 use super::{
     parser::{entry_id, parse_session_file},
@@ -34,6 +37,7 @@ fn load_entries_inner(
         &files,
         shared.single_thread,
         shared.live_only,
+        crate::cache::Freshness::FileStat,
         |file| {
             Ok(
                 parse_session_file(file, tz.as_ref(), shared.mode, pricing).unwrap_or_else(
@@ -51,21 +55,10 @@ fn load_entries_inner(
             )
         },
         |e| {
-            let model = e.data.message.model.as_deref();
-            e.cost = crate::calculate_cost_for_usage(
-                model,
-                e.data.message.usage,
-                e.data.cost_usd,
-                shared.mode,
-                pricing,
-            );
-            e.missing_pricing_model = crate::missing_pricing_model_for_usage(
-                model,
-                e.data.message.usage,
-                e.data.cost_usd,
-                shared.mode,
-                pricing,
-            );
+            let (cost, missing_pricing_model) =
+                cost_and_missing_for_output(&e.data, shared.mode, pricing);
+            e.cost = cost;
+            e.missing_pricing_model = missing_pricing_model;
         },
     )?;
     let mut seen = HashSet::new();
@@ -155,5 +148,28 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert!((entries[0].cost - 0.002).abs() < f64::EPSILON);
         assert_eq!(entries[0].data.cost_usd, Some(0.99));
+    }
+
+    #[test]
+    fn display_mode_surfaces_logged_cost() {
+        let _cache_env = CacheEnv::new("openclaw-display");
+        let fixture = fs_fixture!({
+            "agents/main/sessions/abc.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1000,"output":500,"cost":{"total":0.99}},"timestamp":1769753935279}}"#,
+        });
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            ..SharedArgs::default()
+        };
+        // Mirror openclaw::run(): pricing is loaded regardless of mode. Display
+        // must still surface the logged costUSD, not reprice it to 0.0.
+        let pricing =
+            PricingMap::load_with_overrides(shared.offline, false, shared.pricing_overrides.iter());
+
+        let entries = load_entries(&shared, fixture.root().to_str(), Some(&pricing)).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 0.99);
+        assert_eq!(entries[0].missing_pricing_model, None);
     }
 }

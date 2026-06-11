@@ -31,8 +31,9 @@ pub(crate) use blocks::{
     identify_session_blocks, print_active_block_detail, print_blocks_table, sort_blocks,
 };
 pub(crate) use cost::{
-    calculate_cost, calculate_cost_for_usage, missing_pricing_model_for_candidates,
-    missing_pricing_model_for_token_total, missing_pricing_model_for_usage,
+    calculate_cost, calculate_cost_for_usage, cost_and_missing_for_output,
+    missing_pricing_model_for_candidates, missing_pricing_model_for_token_total,
+    missing_pricing_model_for_usage,
 };
 pub(crate) use date_utils::*;
 pub(crate) use logger::{debug_log, log_level};

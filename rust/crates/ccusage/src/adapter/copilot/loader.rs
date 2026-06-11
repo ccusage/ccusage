@@ -34,6 +34,7 @@ fn load_entries_inner(
         &files,
         shared.single_thread,
         shared.live_only,
+        crate::cache::Freshness::FileStat,
         |path| {
             Ok(
                 read_otel_file(path, tz.as_ref(), mode, pricing).unwrap_or_else(|error| {

@@ -19,6 +19,7 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         &files,
         shared.single_thread,
         shared.live_only,
+        crate::cache::Freshness::FileStat,
         |file| {
             Ok({
                 let events = if file.extension().and_then(|e| e.to_str()) == Some("jsonl") {

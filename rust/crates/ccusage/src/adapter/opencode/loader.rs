@@ -86,6 +86,7 @@ pub(crate) fn load_entries_from_directory(
         &files,
         shared.single_thread,
         shared.live_only,
+        cache::Freshness::FileStat,
         |path| read_message_file(path, tz.as_ref(), shared.mode, pricing.as_ref(), shared),
         |e| reprice(e, shared.mode, pricing.as_ref()),
     )?;

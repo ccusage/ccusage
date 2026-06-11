@@ -20,6 +20,34 @@ pub(crate) fn calculate_cost(
     )
 }
 
+/// Cost and missing-pricing flag for output paths, honoring the cost mode.
+///
+/// Cost and the missing-pricing flag are decided together so they stay
+/// coherent: a row that surfaces a logged `costUSD` is never also flagged as
+/// missing pricing.
+///
+/// `Display` surfaces the agent's logged `costUSD` verbatim (or `0.0` when
+/// absent) and never reprices — "display" means show what the agent recorded.
+///
+/// `Auto` uses the logged `costUSD` when present; only falls back to token
+/// computation when the entry has no logged cost. This keeps warm-run output
+/// faithful to the agent's own accounting for mapped models, while still
+/// computing cost for unmapped models that carry no logged spend.
+///
+/// `Calculate` always derives cost from tokens + current pricing, ignoring the
+/// logged `costUSD` entirely.
+pub(crate) fn cost_and_missing_for_output(
+    data: &UsageEntry,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> (f64, Option<String>) {
+    let model = data.message.model.as_deref();
+    let usage = data.message.usage;
+    let cost = calculate_cost_for_usage(model, usage, data.cost_usd, mode, pricing);
+    let missing = missing_pricing_model_for_usage(model, usage, data.cost_usd, mode, pricing);
+    (cost, missing)
+}
+
 pub(crate) fn calculate_cost_for_usage(
     model: Option<&str>,
     usage: crate::TokenUsageRaw,
@@ -152,10 +180,81 @@ mod tests {
     use crate::{
         cli::CostMode,
         pricing::PricingMap,
-        types::{CacheCreationRaw, TokenUsageRaw},
+        types::{CacheCreationRaw, TokenUsageRaw, UsageEntry, UsageMessage},
     };
 
-    use super::calculate_cost_for_usage;
+    use super::{calculate_cost_for_usage, cost_and_missing_for_output};
+
+    fn entry(model: &str, cost_usd: Option<f64>) -> UsageEntry {
+        UsageEntry {
+            session_id: Some("session".to_string()),
+            timestamp: "2026-01-02T00:00:00.000Z".to_string(),
+            version: None,
+            message: UsageMessage {
+                usage: TokenUsageRaw {
+                    input_tokens: 100,
+                    output_tokens: 200,
+                    ..TokenUsageRaw::default()
+                },
+                model: Some(model.to_string()),
+                id: None,
+                provider: None,
+            },
+            cost_usd,
+            request_id: None,
+            is_api_error_message: None,
+            is_sidechain: None,
+        }
+    }
+
+    #[test]
+    fn auto_falls_back_to_logged_cost_for_unmapped_model() {
+        // Model absent from the pricing map: Auto must surface the logged
+        // costUSD rather than zeroing it, and must not flag missing pricing.
+        let data = entry("model-not-in-map", Some(0.42));
+        let (cost, missing) = cost_and_missing_for_output(&data, CostMode::Auto, Some(&pricing()));
+        assert_eq!(cost, 0.42);
+        assert_eq!(missing, None);
+    }
+
+    #[test]
+    fn calculate_stays_strict_zero_for_unmapped_model() {
+        // Calculate with pricing available keeps its always-recompute contract:
+        // an unmapped model is $0.00 and is flagged as missing pricing.
+        let data = entry("model-not-in-map", Some(0.42));
+        let (cost, missing) =
+            cost_and_missing_for_output(&data, CostMode::Calculate, Some(&pricing()));
+        assert_eq!(cost, 0.0);
+        assert_eq!(missing.as_deref(), Some("model-not-in-map"));
+    }
+
+    #[test]
+    fn auto_uses_logged_cost_for_mapped_model() {
+        // Mapped model in Auto with logged costUSD: the logged value is used
+        // verbatim (999.0), not recomputed from tokens. No missing flag.
+        let data = entry("test-model", Some(999.0));
+        let (cost, missing) = cost_and_missing_for_output(&data, CostMode::Auto, Some(&pricing()));
+        assert!((cost - 999.0).abs() < f64::EPSILON);
+        assert_eq!(missing, None);
+    }
+
+    #[test]
+    fn auto_falls_back_to_compute_when_no_logged_cost() {
+        // Auto with no logged costUSD and a priceable model: computes from tokens.
+        let data = entry("test-model", None);
+        let (cost, missing) = cost_and_missing_for_output(&data, CostMode::Auto, Some(&pricing()));
+        assert!((cost - 2100.0).abs() < f64::EPSILON);
+        assert_eq!(missing, None);
+    }
+
+    #[test]
+    fn auto_flags_missing_when_no_logged_cost_and_unmapped() {
+        // Auto with no logged costUSD and an unmapped model: flags missing pricing.
+        let data = entry("model-not-in-map", None);
+        let (cost, missing) = cost_and_missing_for_output(&data, CostMode::Auto, Some(&pricing()));
+        assert_eq!(cost, 0.0);
+        assert_eq!(missing.as_deref(), Some("model-not-in-map"));
+    }
 
     fn pricing() -> PricingMap {
         let mut pricing = PricingMap::default();

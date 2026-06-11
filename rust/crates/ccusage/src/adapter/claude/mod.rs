@@ -112,16 +112,13 @@ fn load_entries_inner(
         &files,
         shared.single_thread,
         shared.live_only,
+        crate::cache::Freshness::FileStat,
         |file| read_usage_file(file, tz_ref, mode, pricing_ref).map(|f| f.entries),
         |e| {
-            e.cost = calculate_cost(&e.data, mode, pricing_ref);
-            e.missing_pricing_model = missing_pricing_model_for_usage(
-                e.data.message.model.as_deref(),
-                e.data.message.usage,
-                e.data.cost_usd,
-                mode,
-                pricing_ref,
-            );
+            let (cost, missing_pricing_model) =
+                crate::cost::cost_and_missing_for_output(&e.data, mode, pricing_ref);
+            e.cost = cost;
+            e.missing_pricing_model = missing_pricing_model;
         },
     )?;
     debug_log(

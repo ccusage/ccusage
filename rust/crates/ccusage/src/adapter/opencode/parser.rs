@@ -68,10 +68,8 @@ pub(crate) fn message_to_entry(
         cache_creation: None,
         ..usage
     };
-    let cost =
-        calculate_open_code_cost(&model, &provider, cost_usage, data.cost_usd, mode, pricing);
-    let missing_pricing_model =
-        missing_open_code_pricing(&model, &provider, cost_usage, data.cost_usd, mode, pricing);
+    let (cost, missing_pricing_model) =
+        open_code_cost_and_missing(&model, &provider, cost_usage, data.cost_usd, mode, pricing);
     let loaded_session_id = data
         .session_id
         .clone()
@@ -93,9 +91,13 @@ pub(crate) fn message_to_entry(
     })
 }
 
-/// Recompute cost and missing-pricing for a cached entry from its stored tokens,
-/// provider hint, and logged cost, mirroring `message_to_entry` (billable output
-/// folds in `extra_total_tokens`).
+/// Recompute cost and missing-pricing for a cached entry from its stored
+/// tokens and provider hint, mirroring `message_to_entry` (billable output
+/// folds in `extra_total_tokens`). The log's `costUSD` is intentionally not
+/// consulted when pricing is available: cost is always derived from current
+/// pricing on warm runs. When pricing is unavailable, the log's `costUSD` is
+/// kept as a graceful fallback (matches the prior `cost_for_output` semantics
+/// for unknown models / offline mode).
 pub(crate) fn reprice(entry: &mut LoadedEntry, mode: CostMode, pricing: Option<&PricingMap>) {
     let model = entry.data.message.model.clone().unwrap_or_default();
     let provider = entry.data.message.provider.clone().unwrap_or_default();
@@ -109,23 +111,55 @@ pub(crate) fn reprice(entry: &mut LoadedEntry, mode: CostMode, pricing: Option<&
         cache_creation: None,
         ..entry.data.message.usage
     };
-    let cost_usd = entry.data.cost_usd;
-    entry.cost = calculate_open_code_cost(&model, &provider, cost_usage, cost_usd, mode, pricing);
-    entry.missing_pricing_model =
-        missing_open_code_pricing(&model, &provider, cost_usage, cost_usd, mode, pricing);
+    let (cost, missing_pricing_model) = open_code_cost_and_missing(
+        &model,
+        &provider,
+        cost_usage,
+        entry.data.cost_usd,
+        mode,
+        pricing,
+    );
+    entry.cost = cost;
+    entry.missing_pricing_model = missing_pricing_model;
+}
+
+/// Decide cost and the missing-pricing flag together so they stay coherent.
+///
+/// `Display` is handled upstream (logged `costUSD`, no flag). For `Auto`/
+/// `Calculate`, cost is computed from tokens; the logged `costUSD` is used as a
+/// fallback only when the computation yields `0.0` because the model can't be
+/// priced — in `Auto` (never lose logged spend for unmapped models) or offline
+/// (`pricing` is `None`) in any recomputing mode. When that fallback fires the
+/// row is not flagged as missing pricing.
+fn open_code_cost_and_missing(
+    model: &str,
+    provider: &str,
+    usage: TokenUsageRaw,
+    cost_usd: Option<f64>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> (f64, Option<String>) {
+    let computed = calculate_open_code_cost(model, provider, usage, mode, pricing);
+    let allow_fallback = mode == CostMode::Auto || pricing.is_none();
+    if allow_fallback
+        && computed == 0.0
+        && let Some(cost) = cost_usd.filter(|c| *c > 0.0)
+    {
+        return (cost, None);
+    }
+    (
+        computed,
+        missing_open_code_pricing(model, provider, usage, mode, pricing),
+    )
 }
 
 fn calculate_open_code_cost(
     model: &str,
     provider: &str,
     usage: TokenUsageRaw,
-    cost_usd: Option<f64>,
     _mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> f64 {
-    if let Some(cost) = cost_usd.filter(|cost| *cost > 0.0) {
-        return cost;
-    }
     for candidate in open_code_model_candidates(model, provider) {
         let cost =
             calculate_cost_for_usage(Some(&candidate), usage, None, CostMode::Calculate, pricing);
@@ -140,11 +174,10 @@ fn missing_open_code_pricing(
     model: &str,
     provider: &str,
     usage: TokenUsageRaw,
-    cost_usd: Option<f64>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<String> {
-    if mode == CostMode::Display || cost_usd.is_some_and(|cost| cost > 0.0) {
+    if mode == CostMode::Display {
         return None;
     }
     missing_pricing_model_for_candidates(
@@ -253,7 +286,7 @@ mod tests {
                         "cacheReadInputTokens": entry.data.message.usage.cache_read_input_tokens,
                     },
                 },
-                "costUSD": entry.data.cost_usd,
+                "costUSD": entry.cost,
             },
         })
     }

@@ -28,6 +28,7 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         &files,
         shared.single_thread,
         shared.live_only,
+        crate::cache::Freshness::FileStat,
         |file| {
             let Some(entry) = load_settings_file(file).unwrap_or_else(|error| {
                 debug_log(

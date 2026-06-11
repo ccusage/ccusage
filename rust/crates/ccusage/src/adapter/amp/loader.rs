@@ -24,6 +24,7 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         &files,
         shared.single_thread,
         shared.live_only,
+        crate::cache::Freshness::FileStat,
         |file| {
             Ok(
                 parser::read_thread_file(file, tz.as_ref(), mode, Some(pricing)).unwrap_or_else(
