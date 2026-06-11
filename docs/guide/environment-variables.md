@@ -216,8 +216,18 @@ env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OP
 LOG_LEVEL=4 ccusage daily --debug
 ```
 
+## XDG_CACHE_HOME
+
+Controls where `ccusage` stores its on-disk cache. The cache lives under
+`$XDG_CACHE_HOME/ccusage`; when `XDG_CACHE_HOME` is not set, it falls back to
+`~/.cache/ccusage`. The cache directory contains a SQLite database (`cache.db`)
+and its WAL sidecar files (`cache.db-wal`, `cache.db-shm`).
+
+See [Clear Cache](/guide/clear-cache) for how to remove the cache.
+
 ## Related Documentation
 
 - [Command-Line Options](/guide/cli-options) - CLI arguments and flags
 - [Configuration Files](/guide/config-files) - JSON configuration files
 - [Configuration Overview](/guide/configuration) - Complete configuration guide
+- [Clear Cache](/guide/clear-cache) - Manage the on-disk cache

@@ -229,6 +229,17 @@ Analyze usage by project:
 ccusage daily --instances --project "My App"
 ```
 
+### Persistent Cache
+
+`ccusage` keeps a small SQLite cache (`cache.db`) under `$XDG_CACHE_HOME/ccusage`
+(falling back to `~/.cache/ccusage`) so repeat runs are fast. The cache stores
+parsed usage entries, OpenCode database rows, LiteLLM model pricing, and a spend
+ledger. Everything except the ledger is rebuilt from source logs on the next run.
+
+Use [`ccusage clear-cache`](/guide/clear-cache) to remove the cache. A full clear
+also discards the spend ledger — see the [Clear Cache](/guide/clear-cache) page for
+details.
+
 ## Debugging Configuration
 
 Use debug mode to understand configuration loading:
@@ -369,4 +380,5 @@ Explore specific configuration topics:
 - [Configuration Files](/guide/config-files) - Persistent settings
 - [Claude Code](/guide/claude/) - Claude Code data discovery
 - [Cost Modes](/guide/cost-modes) - Understanding calculation modes
+- [Clear Cache](/guide/clear-cache) - Manage the on-disk cache
 - [Claude Code](/guide/claude/) - Claude Code data paths and source-specific options

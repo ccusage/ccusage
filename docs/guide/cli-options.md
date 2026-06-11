@@ -81,6 +81,18 @@ ccusage daily --offline
 ccusage daily -O
 ```
 
+### Live Only Mode
+
+Show only usage from log files that still exist on disk, excluding spend retained from deleted source logs:
+
+```bash
+# Show only current log file usage
+ccusage daily --live-only
+ccusage claude daily --live-only
+```
+
+This flag excludes data that was recovered from deleted source logs and stored in the spend ledger. The fast on-disk cache stays active.
+
 ### Timezone
 
 Set the timezone for date calculations:
@@ -211,6 +223,28 @@ ccusage statusline --cache
 ccusage statusline --refresh-interval 5
 ```
 
+### Clear Cache Command
+
+Clear the on-disk cache. You can clear everything or target a single agent:
+
+```bash
+# Clear the entire cache
+ccusage clear-cache
+ccusage clear-cache all
+
+# Clear only one agent's cached data
+ccusage clear-cache claude
+ccusage clear-cache opencode
+```
+
+Output messages:
+
+- `Cleared the cache.` — the whole cache was removed.
+- `Cleared the <agent> cache.` — that agent's cached data was removed.
+- `<agent> has no on-disk cache to clear.` — that agent currently had nothing cached.
+
+See [Clear Cache](/guide/clear-cache) for details on what is cached and the ledger caveat.
+
 ## JSON Output
 
 ```bash
@@ -312,3 +346,4 @@ Many options have short aliases for convenience:
 - [Environment Variables](/guide/environment-variables) - Configure via environment
 - [Configuration Files](/guide/config-files) - Persistent configuration
 - [Cost Calculation Modes](/guide/cost-modes) - Understanding cost modes
+- [Clear Cache](/guide/clear-cache) - Manage the on-disk cache

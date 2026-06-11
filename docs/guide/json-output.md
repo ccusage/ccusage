@@ -225,7 +225,7 @@ ccusage daily --project my-frontend-app --json
 - `cacheCreationTokens`: Tokens used for cache creation
 - `cacheReadTokens`: Tokens read from cache
 - `totalTokens`: Sum of all token types
-- `costUSD`: Estimated cost in US dollars
+- `costUSD`: Per-entry cost in US dollars, honoring the active [cost mode](/guide/cost-modes) (`--mode`). In `auto` (default) it uses the logged `costUSD` when present and otherwise computes from current pricing; `calculate` always computes from pricing; `display` uses only logged values. Per-entry `costUSD` values sum to the report's `totalCostUSD`.
 
 ### Report-Specific Fields
 

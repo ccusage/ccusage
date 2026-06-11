@@ -177,6 +177,17 @@ If ccusage shows no data, check:
    - Qwen: `${QWEN_DATA_DIR:-~/.qwen}`
    - GitHub Copilot CLI: `~/.copilot/otel/*.jsonl` or `COPILOT_OTEL_FILE_EXPORTER_PATH`
 
+### Stale or Unexpected Numbers
+
+If the numbers look stale or wrong (for example after an upgrade), clear the
+cache and let `ccusage` rebuild from your source logs:
+
+```bash
+ccusage clear-cache
+```
+
+See [Clear Cache](/guide/clear-cache) for more details.
+
 ### Custom Data Directory
 
 If your agent data is in a custom location, set the matching environment variable:

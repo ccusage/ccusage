@@ -94,6 +94,7 @@ export default defineConfig({
 						{ text: 'Environment Variables', link: '/guide/environment-variables' },
 						{ text: 'Configuration Files', link: '/guide/config-files' },
 						{ text: 'Cost Calculation Modes', link: '/guide/cost-modes' },
+						{ text: 'Clear Cache', link: '/guide/clear-cache' },
 					],
 				},
 				{
