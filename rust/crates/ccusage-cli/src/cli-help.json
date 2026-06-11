@@ -238,6 +238,14 @@
 			"description": "Comma-separated project aliases (e.g., 'ccusage=Usage Tracker,myproject=My Project')"
 		}
 	],
+	"copilot_options": [
+		{
+			"flags": "-m, --mode [mode]",
+			"description": "Cost calculation mode (auto = billing-field-aware true bill; display = source precomputed only; calculate = LiteLLM token pricing)",
+			"default": "auto",
+			"choices": ["auto", "calculate", "display"]
+		}
+	],
 	"pi_options": [
 		{
 			"flags": "--pi-path <pi-path>",

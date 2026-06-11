@@ -17,18 +17,26 @@ fn env_lock() -> MutexGuard<'static, ()> {
 }
 
 pub struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<OsString>,
+    previous: Vec<(&'static str, Option<OsString>)>,
     _guard: MutexGuard<'static, ()>,
 }
 
 impl EnvVarGuard {
     pub fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
+        Self::set_many(&[(key, Some(value.as_ref()))])
+    }
+
+    pub fn set_many(overrides: &[(&'static str, Option<&OsStr>)]) -> Self {
         let guard = env_lock();
-        let previous = std::env::var_os(key);
-        unsafe { std::env::set_var(key, value) };
+        let mut previous = Vec::with_capacity(overrides.len());
+        for (key, value) in overrides {
+            previous.push((*key, std::env::var_os(key)));
+            match value {
+                Some(value) => unsafe { std::env::set_var(key, value) },
+                None => unsafe { std::env::remove_var(key) },
+            }
+        }
         Self {
-            key,
             previous,
             _guard: guard,
         }
@@ -37,9 +45,11 @@ impl EnvVarGuard {
 
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
-        match self.previous.take() {
-            Some(value) => unsafe { std::env::set_var(self.key, value) },
-            None => unsafe { std::env::remove_var(self.key) },
+        for (key, value) in self.previous.drain(..).rev() {
+            match value {
+                Some(value) => unsafe { std::env::set_var(key, value) },
+                None => unsafe { std::env::remove_var(key) },
+            }
         }
     }
 }

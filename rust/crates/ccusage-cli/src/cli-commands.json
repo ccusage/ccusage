@@ -5,6 +5,7 @@
 		"claude_daily_options": ["shared_claude_options", "daily_options"],
 		"claude_session_options": ["shared_claude_options", "session_options"],
 		"claude_weekly_options": ["shared_claude_options", "weekly_options"],
+		"copilot_combined_options": ["agent_options", "copilot_options"],
 		"openclaw_combined_options": ["agent_options", "openclaw_options"],
 		"pi_combined_options": ["agent_options", "pi_options"]
 	},
@@ -567,19 +568,19 @@
 			"path": ["copilot", "daily"],
 			"description": "Show GitHub Copilot CLI usage grouped by date",
 			"usage": "ccusage copilot daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "copilot_combined_options"
 		},
 		{
 			"path": ["copilot", "monthly"],
 			"description": "Show GitHub Copilot CLI usage grouped by month",
 			"usage": "ccusage copilot monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "copilot_combined_options"
 		},
 		{
 			"path": ["copilot", "session"],
 			"description": "Show GitHub Copilot CLI usage grouped by session",
 			"usage": "ccusage copilot session <OPTIONS>",
-			"options": "agent_options"
+			"options": "copilot_combined_options"
 		},
 		{
 			"path": ["gemini"],
