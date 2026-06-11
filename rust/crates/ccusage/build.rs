@@ -20,7 +20,7 @@ fn main() {
         println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
         fetch_pricing_json().expect("fetch LiteLLM pricing for embed")
     };
-    let pricing_json = compact_pricing_json(&pricing_json).expect("compact LiteLLM pricing JSON");
+    let pricing_json = compact_litellm(&pricing_json, false).expect("compact LiteLLM pricing JSON");
 
     fs::write(out_path, pricing_json).expect("write build-time pricing snapshot");
 }
@@ -92,64 +92,4 @@ fn required_flake_lock_string_field(
         })
 }
 
-fn compact_pricing_json(json: &str) -> Option<String> {
-    let Value::Object(raw) = serde_json::from_str::<Value>(json).ok()? else {
-        return None;
-    };
-    let mut compact = Map::new();
-    for (model, pricing) in raw {
-        if !is_embedded_model(&model) {
-            continue;
-        }
-        let Value::Object(pricing) = pricing else {
-            continue;
-        };
-        let mut fields = Map::new();
-        for (source, target) in [
-            ("input_cost_per_token", "i"),
-            ("output_cost_per_token", "o"),
-            ("cache_creation_input_token_cost", "cc"),
-            ("cache_read_input_token_cost", "cr"),
-            ("input_cost_per_token_above_200k_tokens", "ia"),
-            ("output_cost_per_token_above_200k_tokens", "oa"),
-            ("cache_creation_input_token_cost_above_200k_tokens", "cca"),
-            ("cache_read_input_token_cost_above_200k_tokens", "cra"),
-            ("max_input_tokens", "ctx"),
-        ] {
-            let Some(value) = pricing.get(source) else {
-                continue;
-            };
-            if !value.is_null() {
-                fields.insert(target.to_string(), value.clone());
-            }
-        }
-        if let Some(fast) = pricing
-            .get("provider_specific_entry")
-            .and_then(Value::as_object)
-            .and_then(|entry| entry.get("fast"))
-            .filter(|value| !value.is_null())
-        {
-            fields.insert("fast".to_string(), fast.clone());
-        }
-        if fields.contains_key("i") && fields.contains_key("o") {
-            compact.insert(model, Value::Object(fields));
-        }
-    }
-    serde_json::to_string(&Value::Object(compact)).ok()
-}
-
-fn is_embedded_model(model: &str) -> bool {
-    model.starts_with("claude-")
-        || model.starts_with("anthropic.")
-        || model.starts_with("anthropic/")
-        || model.starts_with("us.anthropic.")
-        || model.starts_with("eu.anthropic.")
-        || model.starts_with("global.anthropic.")
-        || model.starts_with("jp.anthropic.")
-        || model.starts_with("au.anthropic.")
-        || model.starts_with("gpt-")
-        || model.starts_with("openai/")
-        || model.starts_with("azure/")
-        || model.starts_with("zai/")
-        || model.starts_with("openrouter/openai/")
-}
+include!("src/pricing_compact.rs");

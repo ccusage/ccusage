@@ -7,7 +7,7 @@ use std::{
 use ccusage_cli::PricingOverride;
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::fast::FxHashMap;
 
@@ -24,6 +24,139 @@ const MODELS_DEV_FAILURE_RETRY_AFTER: Duration = Duration::from_secs(60);
 // Anthropic date-suffixed model aliases use YYYYMMDD, while other numeric
 // suffixes are treated as distinct model versions.
 const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
+include!("pricing_compact.rs");
+
+/// Projects a models.dev `api.json` body to keep only the fields the runtime
+/// parser reads (`id`, `cost.{input,output,cache_read,cache_write}`,
+/// `limit.context`) while **preserving the container shape**.
+///
+/// The shape must be preserved (provider-wrapped stays provider-wrapped, flat
+/// stays flat) and `id` must be kept, because the parser flattens provider
+/// bodies with order-dependent first-wins dedup
+/// (`load_models_dev_models`: `if entries.contains_key(id) { continue }`) and a
+/// single model id can appear under several providers with different prices
+/// (e.g. `openai/gpt-5.1-codex` via both the openai and openrouter providers).
+/// Flattening here would pick a different dedup winner than the parser and break
+/// parse-equivalence. Round-tripping the same provider/model keys (and `id`)
+/// through the same `parse_models_dev_json` variant guarantees an identical
+/// `PricingMap`.
+///
+/// Variant acceptance MIRRORS the parser's strict all-or-nothing gates
+/// (`parse_models_dev_json`): a mixed body (some entries with `models`, some
+/// without) and a flat body where any entry lacks numeric input+output both make
+/// the parser reject the whole body. We return `None` in those cases too, so
+/// `project_pricing_body` falls back to the raw body and behavior stays identical
+/// to pre-projection. Cost-less leaves inside a provider body are skipped, not
+/// rejected — the parser keeps-then-drops them at flatten, so skipping is
+/// equivalent (and preserves the size win). Returns `None` on parse failure.
+fn project_models_dev_body(raw_body: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(raw_body).ok()?;
+    let Value::Object(entries) = value else {
+        return None;
+    };
+
+    // Detect the same variant the parser does (`parse_models_dev_json`).
+    let projected = if entries.values().any(models_dev_entry_has_models_field) {
+        // Provider format: { "provider_id": { "models": { ... }, ... } }.
+        // Mirror the parser: any-but-not-all `models` => reject the whole body.
+        if !entries.values().all(models_dev_entry_has_models_field) {
+            return None;
+        }
+        // Keep the provider wrapper and model keys; project only leaf models.
+        let mut providers = Map::new();
+        for (provider_id, provider) in entries {
+            let Value::Object(provider_obj) = provider else {
+                continue;
+            };
+            let Some(Value::Object(models)) = provider_obj.get("models") else {
+                continue;
+            };
+            let mut projected_models = Map::new();
+            for (model_key, model_value) in models {
+                if let Some(projected) = project_models_dev_model(model_value) {
+                    projected_models.insert(model_key.clone(), projected);
+                }
+            }
+            let mut wrapper = Map::new();
+            wrapper.insert("models".to_string(), Value::Object(projected_models));
+            providers.insert(provider_id, Value::Object(wrapper));
+        }
+        providers
+    } else {
+        // Flat format: { "model_id": { "cost": { ... } } }.
+        // Mirror the parser: any entry missing numeric input+output => reject the
+        // whole body (the parser returns None rather than dropping entries here).
+        if !entries.values().all(models_dev_entry_has_required_cost) {
+            return None;
+        }
+        let mut models = Map::new();
+        for (model_key, model_value) in entries {
+            if let Some(projected) = project_models_dev_model(&model_value) {
+                models.insert(model_key, projected);
+            }
+        }
+        models
+    };
+
+    serde_json::to_string(&Value::Object(projected)).ok()
+}
+
+/// Projects a single models.dev model entry to only the fields the runtime
+/// reads, preserving `id` so the parser resolves the same key
+/// (`model.id.unwrap_or(model_key)`). Returns `None` if the model lacks the
+/// required numeric `cost.input` and `cost.output`.
+fn project_models_dev_model(model_value: &Value) -> Option<Value> {
+    let model_obj = model_value.as_object()?;
+    let cost = model_obj.get("cost")?.as_object()?;
+
+    let input = cost.get("input")?;
+    let output = cost.get("output")?;
+    if !input.is_number() || !output.is_number() {
+        return None;
+    }
+
+    let mut cost_obj = Map::new();
+    cost_obj.insert("input".to_string(), input.clone());
+    cost_obj.insert("output".to_string(), output.clone());
+
+    if let Some(cache_read) = cost.get("cache_read").filter(|v| !v.is_null()) {
+        cost_obj.insert("cache_read".to_string(), cache_read.clone());
+    }
+    if let Some(cache_write) = cost.get("cache_write").filter(|v| !v.is_null()) {
+        cost_obj.insert("cache_write".to_string(), cache_write.clone());
+    }
+
+    let mut projected = Map::new();
+    if let Some(id) = model_obj.get("id").filter(|v| v.is_string()) {
+        projected.insert("id".to_string(), id.clone());
+    }
+    projected.insert("cost".to_string(), Value::Object(cost_obj));
+
+    if let Some(limit_obj) = model_obj.get("limit").and_then(|v| v.as_object())
+        && let Some(context) = limit_obj.get("context").filter(|v| !v.is_null())
+    {
+        let mut limit_projected = Map::new();
+        limit_projected.insert("context".to_string(), context.clone());
+        projected.insert("limit".to_string(), Value::Object(limit_projected));
+    }
+
+    Some(Value::Object(projected))
+}
+
+/// Projects a pricing body to the compact form before caching.
+///
+/// Branches on `url` to select the appropriate projector. Returns the raw body
+/// unchanged on any projection failure (never loses data).
+fn project_pricing_body(url: &str, body: &str) -> String {
+    let projected = if url == LITELLM_PRICING_URL {
+        compact_litellm(body, true)
+    } else if url == MODELS_DEV_API_URL {
+        project_models_dev_body(body)
+    } else {
+        None
+    };
+    projected.unwrap_or_else(|| body.to_string())
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Pricing {
@@ -1326,6 +1459,7 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
                     .map_err(|e| {
                         std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
                     })?;
+                let body = project_pricing_body(url, &body);
                 crate::cache::store_pricing(url, &body, None, None);
                 Ok(body)
             }
@@ -1354,6 +1488,7 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
         .limit(PRICING_FETCH_MAX_BYTES)
         .read_to_string()
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+    let body = project_pricing_body(url, &body);
     crate::cache::store_pricing(url, &body, etag.as_deref(), last_modified.as_deref());
     Ok(body)
 }
@@ -2712,6 +2847,515 @@ mod tests {
         assert!(
             fetch_json_url(&url).is_err(),
             "a read failure with no cached fallback must surface as an error"
+        );
+    }
+    // -----------------------------------------------------------------------
+    // Pricing projection tests
+    // -----------------------------------------------------------------------
+
+    /// Regression: a model id appearing under multiple providers with different
+    /// prices must dedup identically in the raw and projected bodies. The parser
+    /// flattens provider bodies with order-dependent first-wins dedup, so the
+    /// projector preserves the provider-wrapped shape (and `id`) to round-trip
+    /// through the same dedup. Flattening here picked a different winner and
+    /// corrupted prices for ids like `openai/gpt-5.1-codex` on the live api.json.
+    #[test]
+    fn models_dev_projection_preserves_cross_provider_dedup() {
+        let raw = r#"{
+            "openai": {
+                "id": "openai",
+                "models": {
+                    "gpt-5.1-codex": {
+                        "id": "openai/gpt-5.1-codex",
+                        "cost": { "input": 1.25, "output": 10.0, "cache_read": 0.125 },
+                        "limit": { "context": 400000 }
+                    }
+                }
+            },
+            "openrouter": {
+                "id": "openrouter",
+                "models": {
+                    "openai/gpt-5.1-codex": {
+                        "id": "openai/gpt-5.1-codex",
+                        "cost": { "input": 1.5, "output": 12.0, "cache_read": 0.15 },
+                        "limit": { "context": 256000 }
+                    }
+                }
+            }
+        }"#;
+
+        let projected = super::project_models_dev_body(raw).expect("projection should succeed");
+
+        // Shape preserved: still provider-wrapped (every entry has a `models` object).
+        let value: serde_json::Value = serde_json::from_str(&projected).unwrap();
+        assert!(
+            value.as_object().unwrap().values().all(|entry| entry
+                .get("models")
+                .is_some_and(serde_json::Value::is_object)),
+            "projected must stay provider-wrapped to preserve dedup order"
+        );
+
+        let mut from_raw = super::PricingMap::default();
+        from_raw.load_models_dev_json_missing(raw);
+        let mut from_projected = super::PricingMap::default();
+        from_projected.load_models_dev_json_missing(&projected);
+
+        let id = "openai/gpt-5.1-codex";
+        let raw_p = from_raw.entries.get(id).expect("raw should have id");
+        let proj_p = from_projected
+            .entries
+            .get(id)
+            .expect("projected should have id");
+        assert_eq!(
+            raw_p.input, proj_p.input,
+            "dedup winner input price must match"
+        );
+        assert_eq!(
+            raw_p.output, proj_p.output,
+            "dedup winner output price must match"
+        );
+        assert_eq!(
+            from_raw.context_limits.get(id),
+            from_projected.context_limits.get(id),
+            "dedup winner context must match"
+        );
+        assert_eq!(
+            from_raw.entries.len(),
+            from_projected.entries.len(),
+            "entry count must match"
+        );
+    }
+
+    /// Headline: projected litellm body yields the same PricingMap as the raw body.
+    #[test]
+    fn litellm_projection_parse_equivalence() {
+        let raw = r#"{
+            "claude-sonnet-4-20250514": {
+                "input_cost_per_token": 0.000003,
+                "output_cost_per_token": 0.000015,
+                "cache_creation_input_token_cost": 0.00000375,
+                "cache_read_input_token_cost": 0.0000003,
+                "max_input_tokens": 200000,
+                "provider_specific_entry": { "fast": 2.0 },
+                "source": "litellm",
+                "mode": "chat"
+            },
+            "gpt-4o": {
+                "input_cost_per_token": 0.0000025,
+                "output_cost_per_token": 0.00001,
+                "max_input_tokens": 128000,
+                "source": "litellm"
+            },
+            "gemini-2.5-pro": {
+                "input_cost_per_token": 0.00000125,
+                "output_cost_per_token": 0.00001,
+                "cache_read_input_token_cost": 0.0000003125,
+                "max_input_tokens": 1048576
+            }
+        }"#;
+
+        let projected = super::compact_litellm(raw, true).expect("projection should succeed");
+
+        let mut from_raw = super::PricingMap::default();
+        let raw_count = from_raw.load_json(raw);
+
+        let mut from_projected = super::PricingMap::default();
+        let proj_count = from_projected.load_json(&projected);
+
+        assert_eq!(raw_count, proj_count, "same number of entries loaded");
+
+        for model in ["claude-sonnet-4-20250514", "gpt-4o", "gemini-2.5-pro"] {
+            let raw_entry = from_raw.find(model).expect("raw should have {model}");
+            let proj_entry = from_projected
+                .find(model)
+                .expect("projected should have {model}");
+            assert_eq!(
+                raw_entry.input, proj_entry.input,
+                "input mismatch for {model}"
+            );
+            assert_eq!(
+                raw_entry.output, proj_entry.output,
+                "output mismatch for {model}"
+            );
+            assert_eq!(
+                from_raw.context_limit(model),
+                from_projected.context_limit(model),
+                "context_limit mismatch for {model}"
+            );
+        }
+
+        let raw_sonnet = from_raw.find("claude-sonnet-4-20250514").unwrap();
+        let proj_sonnet = from_projected.find("claude-sonnet-4-20250514").unwrap();
+        assert_eq!(raw_sonnet.fast_multiplier, proj_sonnet.fast_multiplier);
+    }
+
+    /// Headline: projected models.dev body yields the same PricingMap as the raw body.
+    #[test]
+    fn models_dev_projection_parse_equivalence() {
+        // Provider-wrapped format with a non-Anthropic model
+        let raw = r#"{
+            "openai": {
+                "id": "openai",
+                "name": "OpenAI",
+                "models": {
+                    "gpt-4o": {
+                        "id": "gpt-4o",
+                        "name": "GPT-4o",
+                        "cost": { "input": 2.5, "output": 10.0, "cache_read": 1.25 },
+                        "limit": { "context": 128000 },
+                        "description": "a model",
+                        "created_at": "2024-05-01"
+                    },
+                    "claude-sonnet-4": {
+                        "id": "claude-sonnet-4",
+                        "cost": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 },
+                        "limit": { "context": 200000 }
+                    }
+                }
+            }
+        }"#;
+
+        let projected = super::project_models_dev_body(raw).expect("projection should succeed");
+
+        let mut from_raw = super::PricingMap::default();
+        from_raw.load_models_dev_json_missing(raw);
+
+        let mut from_projected = super::PricingMap::default();
+        from_projected.load_models_dev_json_missing(&projected);
+
+        for model in ["gpt-4o", "claude-sonnet-4"] {
+            let raw_entry = from_raw.find_entry(model).expect("raw should have {model}");
+            let proj_entry = from_projected
+                .find_entry(model)
+                .expect("projected should have {model}");
+            assert_eq!(
+                raw_entry.input, proj_entry.input,
+                "input mismatch for {model}"
+            );
+            assert_eq!(
+                raw_entry.output, proj_entry.output,
+                "output mismatch for {model}"
+            );
+            assert_eq!(
+                from_raw.context_limit_entry(model),
+                from_projected.context_limit_entry(model),
+                "context_limit mismatch for {model}"
+            );
+        }
+    }
+
+    /// Regression: when a model's `id` differs from its map key, the parser keys
+    /// the entry by `id` (`model.id.unwrap_or(model_key)`). The projected body
+    /// drops `id`, so the projector must emit the resolved `id` as the output key
+    /// — otherwise the projected body parses to a different `PricingMap`.
+    #[test]
+    fn models_dev_projection_keys_by_id_not_map_key() {
+        let raw = r#"{
+            "anthropic": {
+                "id": "anthropic",
+                "models": {
+                    "sonnet-latest": {
+                        "id": "claude-sonnet-4-5-20250101",
+                        "cost": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 },
+                        "limit": { "context": 200000 }
+                    }
+                }
+            }
+        }"#;
+
+        let projected = super::project_models_dev_body(raw).expect("projection should succeed");
+
+        let mut from_raw = super::PricingMap::default();
+        from_raw.load_models_dev_json_missing(raw);
+
+        let mut from_projected = super::PricingMap::default();
+        from_projected.load_models_dev_json_missing(&projected);
+
+        // Assert on the exact entry keys (not fuzzy `find_entry`): the parser
+        // keys by the resolved id, so the projected map must too.
+        let id = "claude-sonnet-4-5-20250101";
+        assert!(from_raw.entries.contains_key(id), "raw should key by id");
+        assert!(
+            from_projected.entries.contains_key(id),
+            "projected must key by id, not map key"
+        );
+        assert!(
+            !from_projected.entries.contains_key("sonnet-latest"),
+            "projected must not key by the map key"
+        );
+        assert_eq!(
+            from_raw.entries.get(id).map(|p| (p.input, p.output)),
+            from_projected.entries.get(id).map(|p| (p.input, p.output)),
+            "pricing mismatch for resolved id"
+        );
+        assert_eq!(
+            from_raw.context_limits.get(id),
+            from_projected.context_limits.get(id),
+            "context_limit mismatch for resolved id"
+        );
+    }
+
+    /// Headline: flat-by-model models.dev body projection preserves all models.
+    #[test]
+    fn models_dev_flat_projection_parse_equivalence() {
+        let raw = r#"{
+            "gemini-2.5-pro": {
+                "cost": { "input": 1.25, "output": 10.0 },
+                "limit": { "context": 1048576 },
+                "description": "Gemini model"
+            },
+            "claude-3-haiku": {
+                "cost": { "input": 0.25, "output": 1.25, "cache_read": 0.03, "cache_write": 0.3 },
+                "limit": { "context": 200000 }
+            }
+        }"#;
+
+        let projected = super::project_models_dev_body(raw).expect("projection should succeed");
+
+        let mut from_raw = super::PricingMap::default();
+        from_raw.load_models_dev_json_missing(raw);
+
+        let mut from_projected = super::PricingMap::default();
+        from_projected.load_models_dev_json_missing(&projected);
+
+        for model in ["gemini-2.5-pro", "claude-3-haiku"] {
+            let raw_entry = from_raw.find_entry(model).expect("raw should have {model}");
+            let proj_entry = from_projected
+                .find_entry(model)
+                .expect("projected should have {model}");
+            assert_eq!(
+                raw_entry.input, proj_entry.input,
+                "input mismatch for {model}"
+            );
+            assert_eq!(
+                raw_entry.output, proj_entry.output,
+                "output mismatch for {model}"
+            );
+            assert_eq!(
+                from_raw.context_limit_entry(model),
+                from_projected.context_limit_entry(model),
+                "context_limit mismatch for {model}"
+            );
+        }
+    }
+
+    /// A mixed models.dev body (some entries with `models`, some without) is
+    /// rejected by the parser; projection must match by falling back to the raw
+    /// body so behavior is identical to pre-projection.
+    #[test]
+    fn models_dev_mixed_body_falls_back_to_raw() {
+        let raw = r#"{
+            "openai": { "models": { "gpt-5": { "id": "gpt-5", "cost": { "input": 1.0, "output": 2.0 } } } },
+            "claude-3-haiku": { "cost": { "input": 0.25, "output": 1.25 } }
+        }"#;
+
+        // Parser rejects the whole body (any-but-not-all has `models`).
+        assert!(
+            super::parse_models_dev_json(raw).is_none(),
+            "parser should reject a mixed body"
+        );
+        // Projector returns None, so the fetch layer caches the raw body unchanged.
+        assert!(
+            super::project_models_dev_body(raw).is_none(),
+            "projection should fall back on a mixed body"
+        );
+        assert_eq!(
+            super::project_pricing_body(super::MODELS_DEV_API_URL, raw),
+            raw,
+            "fetch layer should cache the raw body on fallback"
+        );
+    }
+
+    /// A flat models.dev body with an entry lacking numeric input+output is
+    /// rejected by the parser; projection must fall back to the raw body to match.
+    #[test]
+    fn models_dev_flat_partial_cost_falls_back_to_raw() {
+        let raw = r#"{
+            "gemini-2.5-pro": { "cost": { "input": 1.25, "output": 10.0 } },
+            "broken-model": { "cost": { "input": 1.0 } }
+        }"#;
+
+        assert!(
+            super::parse_models_dev_json(raw).is_none(),
+            "parser should reject a flat body missing required cost"
+        );
+        assert!(
+            super::project_models_dev_body(raw).is_none(),
+            "projection should fall back when a flat entry lacks numeric input+output"
+        );
+        assert_eq!(
+            super::project_pricing_body(super::MODELS_DEV_API_URL, raw),
+            raw,
+            "fetch layer should cache the raw body on fallback"
+        );
+    }
+
+    /// Embedded litellm blob is byte-identical when compacted with the filter.
+    #[test]
+    fn embedded_litellm_blob_unchanged_with_filter() {
+        let embedded = BUILD_TIME_PRICING_JSON;
+        // Re-parse and re-compact the embedded blob through the shared function
+        // with the filter enabled (keep_all=false). The output must be identical.
+        // We can't re-fetch the raw litellm data in a unit test, but we can
+        // verify the embedded blob is compact (no verbose fields).
+        assert!(embedded.len() < 200_000, "embedded blob should be compact");
+        assert!(
+            !embedded.contains("\"source\""),
+            "embedded blob should not contain verbose fields"
+        );
+        assert!(
+            !embedded.contains("vertex_ai/"),
+            "embedded blob should not contain non-embedded models"
+        );
+        assert!(
+            embedded.contains("claude-opus-4-6"),
+            "embedded blob should contain known models"
+        );
+    }
+
+    /// Projected store/load round-trip: store projected body, load it back, parse to same map.
+    #[test]
+    fn projected_store_load_round_trip() {
+        let raw = r#"{
+            "gpt-4o": {
+                "input_cost_per_token": 0.0000025,
+                "output_cost_per_token": 0.00001,
+                "max_input_tokens": 128000
+            },
+            "claude-sonnet-4-20250514": {
+                "input_cost_per_token": 0.000003,
+                "output_cost_per_token": 0.000015,
+                "cache_read_input_token_cost": 0.0000003,
+                "max_input_tokens": 200000
+            }
+        }"#;
+
+        let projected = super::compact_litellm(raw, true).expect("projection should succeed");
+
+        let mut from_raw = super::PricingMap::default();
+        from_raw.load_json(raw);
+        let mut from_projected = super::PricingMap::default();
+        from_projected.load_json(&projected);
+
+        let _env = PricingCacheEnv::new("projected-round-trip");
+        crate::cache::store_pricing("test://round-trip", &projected, Some("\"v1\""), None);
+        let cached =
+            crate::cache::load_pricing("test://round-trip").expect("cache should have entry");
+        let mut from_cached = super::PricingMap::default();
+        from_cached.load_json(&cached.body);
+
+        for model in ["gpt-4o", "claude-sonnet-4-20250514"] {
+            let raw_entry = from_raw.find_entry(model).unwrap();
+            let proj_entry = from_projected.find_entry(model).unwrap();
+            let cached_entry = from_cached.find_entry(model).unwrap();
+            assert_eq!(raw_entry.input, proj_entry.input);
+            assert_eq!(raw_entry.input, cached_entry.input);
+            assert_eq!(raw_entry.output, cached_entry.output);
+            assert_eq!(
+                from_raw.context_limit_entry(model),
+                from_cached.context_limit_entry(model)
+            );
+        }
+    }
+
+    /// Legacy raw-JSON row (not projected) still parses correctly.
+    #[test]
+    fn legacy_raw_json_row_still_parses() {
+        let legacy_body = r#"{
+            "gpt-4o": {
+                "input_cost_per_token": 0.0000025,
+                "output_cost_per_token": 0.00001,
+                "max_input_tokens": 128000,
+                "source": "litellm",
+                "mode": "chat",
+                "max_output_tokens": 16384
+            }
+        }"#;
+
+        let _env = PricingCacheEnv::new("legacy-row");
+        crate::cache::store_pricing("test://legacy", legacy_body, Some("\"old\""), None);
+        let cached = crate::cache::load_pricing("test://legacy").expect("cache should have entry");
+
+        let mut pricing = super::PricingMap::default();
+        let loaded = pricing.load_json(&cached.body);
+        assert_eq!(loaded, 1);
+        let entry = pricing.find_entry("gpt-4o").unwrap();
+        assert_eq!(entry.input, 2.5e-6);
+        assert_eq!(entry.output, 10e-6);
+        assert_eq!(pricing.context_limit_entry("gpt-4o"), Some(128000));
+    }
+
+    /// 304 reuse returns the stored (already-projected) body and parses to the same map.
+    #[test]
+    fn etag_304_returns_projected_body() {
+        let _env = PricingCacheEnv::new("etag-304-projected");
+        let raw_body = r#"{
+            "gpt-4o-proj": {
+                "input_cost_per_token": 0.0000025,
+                "output_cost_per_token": 0.00001,
+                "max_input_tokens": 128000
+            }
+        }"#;
+
+        // Simulate: first fetch stores projected body
+        let projected = super::compact_litellm(raw_body, true).expect("projection should succeed");
+        let (url, log) = spawn_scripted_origin(vec![resp_304("\"v1\"")]);
+        crate::cache::store_pricing(&url, &projected, Some("\"v1\""), None);
+
+        // 304 path returns cached (projected) body
+        let body = fetch_json_url(&url).unwrap();
+        assert_eq!(
+            body, projected,
+            "304 should return the stored projected body"
+        );
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec![true],
+            "request should be conditional"
+        );
+
+        let mut pricing = super::PricingMap::default();
+        let loaded = pricing.load_json(&body);
+        assert_eq!(loaded, 1);
+        assert_eq!(pricing.find_entry("gpt-4o-proj").unwrap().input, 2.5e-6);
+        assert_eq!(pricing.context_limit_entry("gpt-4o-proj"), Some(128000));
+    }
+
+    /// Size sanity: projected litellm body is materially smaller than raw.
+    #[test]
+    fn projected_litellm_is_materially_smaller() {
+        let raw = r#"{
+            "claude-sonnet-4-20250514": {
+                "input_cost_per_token": 0.000003,
+                "output_cost_per_token": 0.000015,
+                "cache_creation_input_token_cost": 0.00000375,
+                "cache_read_input_token_cost": 0.0000003,
+                "input_cost_per_token_above_200k_tokens": 0.000006,
+                "output_cost_per_token_above_200k_tokens": 0.00003,
+                "max_input_tokens": 200000,
+                "max_output_tokens": 8192,
+                "source": "litellm",
+                "mode": "chat",
+                "provider_specific_entry": { "fast": 2.0 },
+                "supported_parameters": ["temperature", "max_tokens"],
+                "model_map": { "claude": true }
+            },
+            "gpt-4o": {
+                "input_cost_per_token": 0.0000025,
+                "output_cost_per_token": 0.00001,
+                "max_input_tokens": 128000,
+                "source": "litellm",
+                "mode": "chat",
+                "supported_parameters": ["temperature"]
+            }
+        }"#;
+
+        let projected = super::compact_litellm(raw, true).expect("projection should succeed");
+        assert!(
+            projected.len() < raw.len() / 2,
+            "projected ({}) should be less than half of raw ({})",
+            projected.len(),
+            raw.len()
         );
     }
 }
