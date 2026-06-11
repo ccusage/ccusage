@@ -4,7 +4,7 @@ ccusage supports several environment variables for configuration and customizati
 
 ## Agent Data Directories
 
-ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; the Copilot variable points at one explicit JSONL export file:
+ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Most directory variables accept a comma-separated list of directories; `COPILOT_CONFIG_DIR` and `GOOSE_PATH_ROOT` are exceptions that mirror each tool's own single-directory semantics. `COPILOT_CONFIG_DIR` reads `session-state/` underneath the one path you set:
 
 | Variable                          | Agent        | Default                            |
 | --------------------------------- | ------------ | ---------------------------------- |
@@ -21,7 +21,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `KILO_DATA_DIR`                   | Kilo         | `~/.local/share/kilo`              |
 | `KIMI_DATA_DIR`                   | Kimi         | `~/.kimi`, `~/.kimi-code`          |
 | `QWEN_DATA_DIR`                   | Qwen         | `~/.qwen`                          |
-| `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI  | Explicit `.jsonl` file             |
+| `COPILOT_CONFIG_DIR`              | Copilot CLI  | `~/.copilot` (base dir; reads `session-state/<sessionId>/events.jsonl` underneath) |
 | `GEMINI_DATA_DIR`                 | Gemini CLI   | `~/.gemini/tmp`                    |
 
 Example:
@@ -34,17 +34,17 @@ export DROID_SESSIONS_DIR="/path/to/factory/sessions,/archive/factory/sessions"
 export CODEBUFF_DATA_DIR="/path/to/manicode,/archive/manicode"
 export HERMES_HOME="/path/to/hermes,/archive/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions,/archive/pi/sessions"
-export GOOSE_PATH_ROOT="/path/to/goose,/archive/goose"
+export GOOSE_PATH_ROOT="/path/to/goose"
 export OPENCLAW_DIR="/path/to/openclaw,/archive/openclaw"
 export KILO_DATA_DIR="/path/to/kilo,/archive/kilo"
 export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
-export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
+export COPILOT_CONFIG_DIR="/path/to/copilot"
 export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
 ccusage daily
 ```
 
-Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once.
+Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once. `COPILOT_CONFIG_DIR` and `GOOSE_PATH_ROOT` are exceptions — they mirror each tool's own single-directory semantics and do not split on commas.
 
 ## CLAUDE_CONFIG_DIR
 

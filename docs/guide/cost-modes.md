@@ -1,20 +1,20 @@
 # Cost Modes
 
-ccusage supports three different cost calculation modes to handle various scenarios and data sources. Understanding these modes helps you get the most accurate cost estimates for your usage analysis.
+ccusage supports three cost calculation modes to handle various scenarios and data sources. Understanding these modes helps you get the most accurate cost estimates for your usage analysis.
 
 ## Overview
 
 Claude Code stores usage data in JSONL files with both token counts and pre-calculated cost information. ccusage can handle this data in different ways depending on your needs:
 
 - **`auto`** - Smart mode using the best available data
-- **`calculate`** - Always calculate from token counts
+- **`calculate`** - Always calculate from token counts (LiteLLM pricing)
 - **`display`** - Only show pre-calculated costs
 
 ## Mode Details
 
 ### auto (Default)
 
-The `auto` mode intelligently chooses the best cost calculation method for each entry:
+The `auto` mode intelligently chooses the best cost calculation method for each entry — it prefers whatever cost value the source already shipped, falling back to LiteLLM token pricing when none is available:
 
 ```bash
 ccusage daily --mode auto
@@ -24,9 +24,17 @@ ccusage daily
 
 #### How it works:
 
-1. **Pre-calculated costs available** → Uses Claude's `costUSD` values
-2. **No pre-calculated costs** → Calculates from token counts using model pricing
+1. **Source-precomputed cost available** → Uses it directly (Claude's `costUSD`, Copilot's AI Credits at `$0.01`/credit — converted from `totalNanoAiu / 10^9`, etc.)
+2. **No pre-calculated cost** → Calculates from token counts using model pricing
 3. **Mixed data** → Uses the best method for each entry
+
+For Copilot specifically, `auto` is **billing-field-aware**: it picks the right billing model **per row** (each per-model entry inside a `session.shutdown` event) based on the billing fields the Copilot CLI recorded on that row — not on the session date. GitHub switched billing models on June 1, 2026, so different sessions ship different fields, but the loader dispatches on field presence (so a row backfilled to a different era still routes correctly):
+
+- **Rows with per-model `totalNanoAiu`** (typically CLI ≥ 1.0.40, post-cutover) → AI Credits × $0.01 — what GitHub actually bills against your AI Credit allotment.
+- **Rows with per-model `requests.cost` but no AIU** (typically pre-cutover) → `requests.cost × $0.04` — what GitHub charged at the overage rate. Free-tier rows (`requests.cost == 0` for sonnet/haiku in your subscription) genuinely bill $0 under that model.
+- **Rows without either billing field** (rare) → LiteLLM token pricing as best-effort fallback.
+
+If a `session.shutdown` event ALSO carries an event-level `data.totalNanoAiu` aggregate, ccusage emits a synthetic AI-Credit row carrying that aggregate **only** when no per-model row already carries a priced billing signal (per-model `totalNanoAiu > 0` OR `requests.cost > 0`). This prevents double-billing the same usage in AIU and premium-request currencies during the cutover transition — the per-model row is treated as authoritative when present, and the aggregate is surfaced only when it would otherwise be silently lost.
 
 #### Best for:
 
@@ -84,7 +92,7 @@ ccusage monthly --mode calculate --breakdown
 
 ### display
 
-The `display` mode only shows pre-calculated costs from Claude Code:
+The `display` mode only shows pre-calculated costs that the source data itself ships:
 
 ```bash
 ccusage daily --mode display
@@ -93,15 +101,15 @@ ccusage session --mode display --json
 
 #### How it works:
 
-1. **Uses only `costUSD` values** from Claude Code data
-2. **Shows $0.00** for entries without pre-calculated costs
+1. **Uses only the cost data present in the source** — Claude's `costUSD`, Copilot's `totalNanoAiu` (converted at `$0.01`/credit), or Copilot's `requests.cost × $0.04` for pre-AIU sessions
+2. **Shows $0.00** for rows the source records as zero cost (older Claude data, Copilot free-tier rows with no billable credits or premium requests)
 3. **No token-based calculations** performed
-4. **Exact Claude billing data** when available
+4. **Exact source billing data** when available
 
 #### Best for:
 
-- ✅ **Official costs only** - Shows exactly what Claude calculated
-- ✅ **Billing verification** - Comparing with actual Claude charges
+- ✅ **Official costs only** - Shows exactly what the provider reported
+- ✅ **Billing verification** - Comparing with actual provider charges
 - ✅ **Recent data** - Most accurate for newer usage entries
 - ✅ **Audit purposes** - Verifying pre-calculated costs
 

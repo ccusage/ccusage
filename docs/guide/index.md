@@ -72,26 +72,26 @@ Each data source page covers the details that only apply to that source, includi
 
 ccusage reads from local coding CLI data directories:
 
-| Agent        | ID         | Default data location                             |
-| ------------ | ---------- | ------------------------------------------------- |
-| Claude Code  | `claude`   | `~/.config/claude/projects/`, `~/.claude/`        |
-| Codex        | `codex`    | `${CODEX_HOME:-~/.codex}`                         |
-| OpenCode     | `opencode` | `${OPENCODE_DATA_DIR:-~/.local/share/opencode}`   |
-| Amp          | `amp`      | `${AMP_DATA_DIR:-~/.local/share/amp}`             |
-| Droid        | `droid`    | `${DROID_SESSIONS_DIR:-~/.factory/sessions}`      |
-| Codebuff     | `codebuff` | `${CODEBUFF_DATA_DIR:-~/.config/manicode}`        |
-| Hermes Agent | `hermes`   | `${HERMES_HOME:-~/.hermes}/state.db`              |
-| pi-agent     | `pi`       | `${PI_AGENT_DIR:-~/.pi/agent/sessions}`           |
-| Goose        | `goose`    | Standard Goose data roots or `GOOSE_PATH_ROOT`    |
-| OpenClaw     | `openclaw` | `${OPENCLAW_DIR:-~/.openclaw}`                    |
-| Kilo         | `kilo`     | `${KILO_DATA_DIR:-~/.local/share/kilo}`           |
-| Kimi         | `kimi`     | `${KIMI_DATA_DIR:-~/.kimi}` (also `~/.kimi-code`) |
-| Qwen         | `qwen`     | `${QWEN_DATA_DIR:-~/.qwen}`                       |
-| Copilot CLI  | `copilot`  | `~/.copilot/otel/*.jsonl`                         |
-| Gemini CLI   | `gemini`   | `${GEMINI_DATA_DIR:-~/.gemini/tmp}`               |
+| Agent        | ID         | Default data location                                                       |
+| ------------ | ---------- | --------------------------------------------------------------------------- |
+| Claude Code  | `claude`   | `~/.config/claude/projects/`, `~/.claude/`                                  |
+| Codex        | `codex`    | `${CODEX_HOME:-~/.codex}`                                                   |
+| OpenCode     | `opencode` | `${OPENCODE_DATA_DIR:-~/.local/share/opencode}`                             |
+| Amp          | `amp`      | `${AMP_DATA_DIR:-~/.local/share/amp}`                                       |
+| Droid        | `droid`    | `${DROID_SESSIONS_DIR:-~/.factory/sessions}`                                |
+| Codebuff     | `codebuff` | `${CODEBUFF_DATA_DIR:-~/.config/manicode}`                                  |
+| Hermes Agent | `hermes`   | `${HERMES_HOME:-~/.hermes}/state.db`                                        |
+| pi-agent     | `pi`       | `${PI_AGENT_DIR:-~/.pi/agent/sessions}`                                     |
+| Goose        | `goose`    | Standard Goose data roots or `GOOSE_PATH_ROOT`                              |
+| OpenClaw     | `openclaw` | `${OPENCLAW_DIR:-~/.openclaw}`                                              |
+| Kilo         | `kilo`     | `${KILO_DATA_DIR:-~/.local/share/kilo}`                                     |
+| Kimi         | `kimi`     | `${KIMI_DATA_DIR:-~/.kimi}` (also `~/.kimi-code`)                           |
+| Qwen         | `qwen`     | `${QWEN_DATA_DIR:-~/.qwen}`                                                 |
+| Copilot CLI  | `copilot`  | `${COPILOT_CONFIG_DIR:-~/.copilot}/session-state/<sessionId>/events.jsonl` |
+| Gemini CLI   | `gemini`   | `${GEMINI_DATA_DIR:-~/.gemini/tmp}`                                         |
 
 The tool automatically detects available data and aggregates all supported coding CLIs by default.
-Each source-specific environment variable can also contain comma-separated directories, which lets unified reports combine current profiles and archives.
+Each source-specific environment variable can also contain comma-separated directories, which lets unified reports combine current profiles and archives. `COPILOT_CONFIG_DIR` and `GOOSE_PATH_ROOT` are exceptions; each uses one directory and does not split on commas.
 
 Some coding agents have been investigated but are not supported because their local files do not contain reliable token usage. See [Source Support Q&A](/guide/source-support-qa) for the current notes on Antigravity CLI, Grok CLI, and Devin CLI.
 
