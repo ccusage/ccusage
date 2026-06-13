@@ -479,7 +479,9 @@ mod tests {
     use ccusage_test_support::fs_fixture;
     use serde_json::json;
 
-    use crate::adapter::codex::paths::CodexUsageSource;
+    use crate::{
+        adapter::codex::paths::CodexUsageSource, model_aliases::set_model_aliases_for_tests,
+    };
 
     #[test]
     fn dedupes_copied_token_usage_across_session_files() {
@@ -526,6 +528,70 @@ mod tests {
             assert_eq!(group.output_tokens, 200);
             assert_eq!(group.reasoning_output_tokens, 20);
             assert_eq!(group.total_tokens, 1_200);
+        }
+    }
+
+    #[test]
+    fn dedupes_copied_token_usage_after_model_alias_resolution() {
+        let _aliases = set_model_aliases_for_tests([("private-alpha", "gpt-5.2")]);
+        let private_usage_line = json!({
+            "timestamp": "2026-05-29T08:01:00.000Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "model": "private-alpha",
+                    "last_token_usage": {
+                        "input_tokens": 1_000,
+                        "cached_input_tokens": 100,
+                        "output_tokens": 200,
+                        "reasoning_output_tokens": 20,
+                        "total_tokens": 1_200,
+                    },
+                },
+            },
+        })
+        .to_string();
+        let canonical_usage_line = json!({
+            "timestamp": "2026-05-29T08:01:00.000Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": {
+                        "input_tokens": 1_000,
+                        "cached_input_tokens": 100,
+                        "output_tokens": 200,
+                        "reasoning_output_tokens": 20,
+                        "total_tokens": 1_200,
+                    },
+                },
+            },
+        })
+        .to_string();
+        let fixture = fs_fixture!({
+            "sessions/root.jsonl": &private_usage_line,
+            "sessions/goal.jsonl": &canonical_usage_line,
+        });
+        for single_thread in [true, false] {
+            let shared = SharedArgs {
+                single_thread,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            };
+
+            let groups = load_groups_from_directory(
+                &fixture.path("sessions"),
+                &shared,
+                AgentReportKind::Daily,
+            )
+            .unwrap();
+
+            let group = groups.get("2026-05-29").unwrap();
+            assert_eq!(group.input_tokens, 1_000);
+            assert_eq!(group.models.len(), 1);
+            assert_eq!(group.models["gpt-5.2"].input_tokens, 1_000);
         }
     }
 

@@ -11,6 +11,7 @@ static MODEL_ALIASES: OnceLock<RwLock<BTreeMap<String, String>>> = OnceLock::new
 #[cfg(test)]
 static TEST_MODEL_ALIASES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Resolves a model name through `CCUSAGE_MODEL_ALIASES`, including `-fast` variants.
 pub(crate) fn resolve_model_name(model: &str) -> Cow<'_, str> {
     let aliases = model_aliases();
     let aliases = aliases.read().unwrap_or_else(|error| error.into_inner());
@@ -127,11 +128,16 @@ mod tests {
 
     #[test]
     fn falls_back_to_delimited_parsing_when_json_is_malformed() {
-        let aliases = parse_model_aliases(r#"{private-alpha=gpt-5.5}"#);
+        let aliases =
+            parse_model_aliases(r#"{private-alpha=gpt-5.5, other-alpha=claude-sonnet-4}"#);
 
         assert_eq!(
             aliases.get("private-alpha").map(String::as_str),
             Some("gpt-5.5")
+        );
+        assert_eq!(
+            aliases.get("other-alpha").map(String::as_str),
+            Some("claude-sonnet-4")
         );
     }
 
