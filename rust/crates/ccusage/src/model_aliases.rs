@@ -44,9 +44,12 @@ fn parse_model_aliases(raw: &str) -> BTreeMap<String, String> {
         return parsed;
     }
 
-    trimmed
-        .trim_start_matches('{')
-        .trim_end_matches('}')
+    let stripped = trimmed
+        .strip_prefix('{')
+        .and_then(|inner| inner.strip_suffix('}'))
+        .unwrap_or(trimmed);
+
+    stripped
         .split([',', ';', '\n'])
         .filter_map(|pair| {
             let (from, to) = pair.split_once('=')?;
