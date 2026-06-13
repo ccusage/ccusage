@@ -241,7 +241,15 @@ fn add_event_to_groups(
     if !insert_event_key(event, timestamp, model.as_ref(), kind, seen) {
         return Ok(());
     }
-    add_deduped_event_to_groups(event, model.as_ref(), timestamp, kind, timezone, shared, groups)
+    add_deduped_event_to_groups(
+        event,
+        model.as_ref(),
+        timestamp,
+        kind,
+        timezone,
+        shared,
+        groups,
+    )
 }
 
 fn add_event_to_groups_local(

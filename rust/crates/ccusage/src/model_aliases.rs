@@ -45,6 +45,8 @@ fn parse_model_aliases(raw: &str) -> BTreeMap<String, String> {
     }
 
     trimmed
+        .trim_start_matches('{')
+        .trim_end_matches('}')
         .split([',', ';', '\n'])
         .filter_map(|pair| {
             let (from, to) = pair.split_once('=')?;
@@ -122,10 +124,10 @@ mod tests {
 
     #[test]
     fn falls_back_to_delimited_parsing_when_json_is_malformed() {
-        let aliases = parse_model_aliases(r#"{private-alpha=gpt-5.5"#);
+        let aliases = parse_model_aliases(r#"{private-alpha=gpt-5.5}"#);
 
         assert_eq!(
-            aliases.get("{private-alpha").map(String::as_str),
+            aliases.get("private-alpha").map(String::as_str),
             Some("gpt-5.5")
         );
     }
