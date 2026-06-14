@@ -362,18 +362,18 @@ impl PricingMap {
 
     pub(crate) fn find(&self, model: &str) -> Option<Pricing> {
         let alias = crate::model_aliases::resolve_model_name(model);
-        let fallback_model = alias.as_ref();
+        let resolved_alias = alias.as_ref();
         self.find_entry_or_alias(model)
             .or_else(|| {
-                (fallback_model != model)
-                    .then(|| self.find_entry_or_alias(fallback_model))
+                (resolved_alias != model)
+                    .then(|| self.find_entry_or_alias(resolved_alias))
                     .flatten()
             })
             .or_else(|| {
                 self.enable_models_dev_fallback
                     .then(|| {
                         models_dev_pricing()
-                            .and_then(|pricing| pricing.find_entry_or_alias(fallback_model))
+                            .and_then(|pricing| pricing.find_entry_or_alias(resolved_alias))
                     })
                     .flatten()
             })
@@ -382,7 +382,7 @@ impl PricingMap {
             // fuzzy alias matching. It works offline, unlike the network source.
             .or_else(|| {
                 self.enable_embedded_models_dev_fallback
-                    .then(|| embedded_models_dev_pricing().find_entry_or_alias(fallback_model))
+                    .then(|| embedded_models_dev_pricing().find_entry_or_alias(resolved_alias))
                     .flatten()
             })
     }
@@ -409,18 +409,18 @@ impl PricingMap {
 
     pub(crate) fn context_limit(&self, model: &str) -> Option<u64> {
         let alias = crate::model_aliases::resolve_model_name(model);
-        let fallback_model = alias.as_ref();
+        let resolved_alias = alias.as_ref();
         self.context_limit_entry_or_alias(model)
             .or_else(|| {
-                (fallback_model != model)
-                    .then(|| self.context_limit_entry_or_alias(fallback_model))
+                (resolved_alias != model)
+                    .then(|| self.context_limit_entry_or_alias(resolved_alias))
                     .flatten()
             })
             .or_else(|| {
                 self.enable_models_dev_fallback
                     .then(|| {
                         models_dev_pricing().and_then(|pricing| {
-                            pricing.context_limit_entry_or_alias(fallback_model)
+                            pricing.context_limit_entry_or_alias(resolved_alias)
                         })
                     })
                     .flatten()
@@ -428,7 +428,7 @@ impl PricingMap {
             .or_else(|| {
                 self.enable_embedded_models_dev_fallback
                     .then(|| {
-                        embedded_models_dev_pricing().context_limit_entry_or_alias(fallback_model)
+                        embedded_models_dev_pricing().context_limit_entry_or_alias(resolved_alias)
                     })
                     .flatten()
             })
