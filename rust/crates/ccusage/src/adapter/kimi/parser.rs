@@ -9,8 +9,10 @@ use serde_json::Value;
 
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
-    json_value_u64, missing_pricing_model_for_candidates, non_empty_json_string,
+    apply_total_token_fallback, calculate_cost_for_usage,
+    cli::CostMode,
+    fast::{LinePrefilter, byte_lines},
+    format_date_tz, json_value_u64, missing_pricing_model_for_candidates, non_empty_json_string,
 };
 
 const DEFAULT_MODEL: &str = "kimi-for-coding";
@@ -34,11 +36,11 @@ pub(super) struct KimiUsageEntry {
 pub(super) fn read_wire_file(path: &Path) -> Result<Vec<KimiUsageEntry>> {
     let model = read_model_from_config(path);
     let fallback_timestamp = file_modified_timestamp(path);
-    let content = fs::read_to_string(path)?;
-    Ok(content
-        .lines()
-        .filter(|line| line.contains("\"StatusUpdate\"") && line.contains("\"token_usage\""))
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+    let content = fs::read(path)?;
+    let prefilter = LinePrefilter::all(&[br#""StatusUpdate""#, br#""token_usage""#]);
+    Ok(byte_lines(&content)
+        .filter(|line| prefilter.matches(line))
+        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
         .filter_map(|value| wire_line_to_entry(&value, path, &model, fallback_timestamp))
         .collect::<Vec<_>>())
 }

@@ -1,7 +1,6 @@
 use std::{
     collections::HashSet,
-    fs::{self, File},
-    io::{BufRead, BufReader},
+    fs,
     path::Path,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -15,6 +14,7 @@ use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage,
     cli::{CostMode, SharedArgs},
+    fast::{LinePrefilter, byte_lines},
     format_date_tz, format_rfc3339_millis, json_value_u64, missing_pricing_model_for_candidates,
     non_empty_json_string, parse_ts_timestamp, parse_tz,
 };
@@ -53,14 +53,14 @@ fn read_chat_file(
     shared: &SharedArgs,
 ) -> Result<Vec<LoadedEntry>> {
     let fallback = file_timestamp(file, shared);
-    let input = File::open(file)?;
-    let reader = BufReader::new(input);
+    let content = fs::read(file)?;
     let mut entries = Vec::new();
-    for line in reader.lines() {
-        let Ok(line) = line else {
+    let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
+    for line in byte_lines(&content) {
+        if !prefilter.matches(line) {
             continue;
-        };
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+        }
+        let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
         };
         if let Some(entry) = parse_line(file, fallback, &value, tz, mode, pricing) {

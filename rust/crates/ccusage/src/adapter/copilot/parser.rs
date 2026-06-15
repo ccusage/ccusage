@@ -6,7 +6,10 @@ use std::{
 
 use serde_json::{Map, Value};
 
-use crate::{Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback};
+use crate::{
+    Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback,
+    fast::{LinePrefilter, byte_lines},
+};
 
 #[derive(Debug, Clone)]
 pub(super) struct CopilotUsageEntry {
@@ -53,11 +56,11 @@ struct CopilotUsageCandidate {
 }
 
 pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
-    let content = fs::read_to_string(path)?;
-    let records = content
-        .lines()
-        .filter(|line| line.contains("\"attributes\""))
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+    let content = fs::read(path)?;
+    let prefilter = LinePrefilter::all(&[br#""attributes""#]);
+    let records = byte_lines(&content)
+        .filter(|line| prefilter.matches(line))
+        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
         .filter_map(|value| value.as_object().cloned())
         .collect::<Vec<_>>();
     let trace_contexts = collect_trace_contexts(&records);

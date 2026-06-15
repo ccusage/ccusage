@@ -5,8 +5,10 @@ use serde_json::Value;
 
 use crate::{
     LoadedEntry, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
-    json_value_u64, missing_pricing_model_for_usage, non_empty_json_string,
+    apply_total_token_fallback, calculate_cost_for_usage,
+    cli::CostMode,
+    fast::{LinePrefilter, byte_lines},
+    format_date_tz, json_value_u64, missing_pricing_model_for_usage, non_empty_json_string,
 };
 
 pub(crate) fn read_session_file(
@@ -15,16 +17,17 @@ pub(crate) fn read_session_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
-    let content = fs::read_to_string(path)?;
+    let content = fs::read(path)?;
     let project = extract_project(path);
     let session_id = extract_session_id(path);
     let mut entries = Vec::new();
 
-    for line in content.lines() {
-        if !line.contains("\"usage\"") || !line.contains("\"message\"") {
+    let prefilter = LinePrefilter::all(&[br#""usage""#, br#""message""#]);
+    for line in byte_lines(&content) {
+        if !prefilter.matches(line) {
             continue;
         }
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
+        let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
         };
         if !is_pi_message_usage(&value) {
