@@ -486,7 +486,8 @@ fn is_unsupported_nullable_field(field: &[u8]) -> bool {
     // hash computation a `phf::Set` lookup would incur on every call.
     matches!(
         field,
-        b"id" | b"cwd"
+        b"id"
+            | b"cwd"
             | b"model"
             | b"speed"
             | b"costUSD"
