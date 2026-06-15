@@ -37,8 +37,8 @@ catalogs:
       specifier: ^24.10.1
       version: 24.13.2
     '@types/react':
-      specifier: ^19.1.13
-      version: 19.1.13
+      specifier: ^19.2.17
+      version: 19.2.17
 
 overrides:
   changelogithub>c12: 3.3.4
@@ -98,7 +98,7 @@ importers:
         version: 24.13.2
       '@types/react':
         specifier: catalog:types
-        version: 19.1.13
+        version: 19.2.17
       vitepress:
         specifier: catalog:docs
         version: 2.0.0-alpha.17(@types/node@24.13.2)(jiti@2.6.1)(lightningcss@1.32.0)(postcss@8.5.14)(yaml@2.9.0)
@@ -658,8 +658,8 @@ packages:
   '@types/node@24.13.2':
     resolution: {integrity: sha512-fRa09kZTgu8o71KFcDjUFuc7F+dEbZYZmkI0mg5YBTRs0yMKjYHsq/c0urDKeDb+D5qVgXOdFcuu+DZPKOITwA==}
 
-  '@types/react@19.1.13':
-    resolution: {integrity: sha512-hHkbU/eoO3EG5/MZkuFSKmYqPbSVk5byPFa3e7y/8TybHiLMACgI8seVYlicwk7H5K/rI2px9xrQp/C+AUDTiQ==}
+  '@types/react@19.2.17':
+    resolution: {integrity: sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw==}
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
@@ -2222,7 +2222,7 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
-  '@types/react@19.1.13':
+  '@types/react@19.2.17':
     dependencies:
       csstype: 3.2.3
 
