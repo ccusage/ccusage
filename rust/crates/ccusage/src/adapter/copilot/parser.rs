@@ -8,11 +8,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use super::super::jsonl;
-use crate::{Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback};
-
-/// Cheap substring prefilter: every usable Copilot OTel record carries the
-/// `attributes` object, so lines without it are skipped before JSON parsing.
-const COPILOT_ATTRIBUTES_MARKER: &[u8] = b"\"attributes\"";
+use crate::{Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter};
 
 /// A single parsed Copilot OpenTelemetry record. Only the fields ccusage
 /// consumes are declared; serde skips everything else. The `attributes` block
@@ -99,8 +95,10 @@ struct CopilotUsageCandidate {
 
 pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
     let content = fs::read(path)?;
-    let records = jsonl::records::<CopilotRecord>(&content, Some(COPILOT_ATTRIBUTES_MARKER))
-        .collect::<Vec<_>>();
+    // Every usable Copilot OTel record carries the `attributes` object, so
+    // lines without it are skipped before JSON parsing.
+    let prefilter = LinePrefilter::all(&[br#""attributes""#]);
+    let records = jsonl::records::<CopilotRecord>(&content, Some(&prefilter)).collect::<Vec<_>>();
     let trace_contexts = collect_trace_contexts(&records);
     let fallback_timestamp = file_modified_timestamp(path);
     let candidates = records

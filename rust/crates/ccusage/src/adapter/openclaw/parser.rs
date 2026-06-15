@@ -7,8 +7,8 @@ use serde_json::Value;
 use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
-    missing_pricing_model_for_usage,
+    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, fast::LinePrefilter,
+    format_date_tz, missing_pricing_model_for_usage,
 };
 
 /// A single parsed OpenClaw session line. Only the fields ccusage consumes are
@@ -164,10 +164,15 @@ pub(super) fn parse_session_file(
     let session_id = extract_session_id(path);
     let fallback_timestamp = file_modified_timestamp(path);
     let content = fs::read(path)?;
+    // OpenClaw lines that matter are either model-tracking records
+    // (`model_change`/`model-snapshot`) or assistant records carrying `usage`,
+    // so admit lines containing any of those substrings before JSON parsing.
+    let prefilter =
+        LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#]);
     let mut current_model = None::<String>;
     let mut current_provider = None::<String>;
     let mut entries = Vec::new();
-    for record in jsonl::records::<OpenClawLine>(&content, None) {
+    for record in jsonl::records::<OpenClawLine>(&content, Some(&prefilter)) {
         if is_model_change(&record) {
             let (source_model_id, source_model, source_provider) = match record.data.as_ref() {
                 Some(source) => (

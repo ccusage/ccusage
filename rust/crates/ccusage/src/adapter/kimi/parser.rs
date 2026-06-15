@@ -10,18 +10,13 @@ use serde::Deserialize;
 use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
-    missing_pricing_model_for_candidates,
+    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, fast::LinePrefilter,
+    format_date_tz, missing_pricing_model_for_candidates,
 };
 
 const DEFAULT_MODEL: &str = "kimi-for-coding";
 const DEFAULT_PROVIDER: &str = "moonshot";
 const KIMI_FOR_CODING_K2_6_CUTOFF_MS: i64 = 1_776_698_890_072;
-
-/// Cheap substring prefilter: every usable Kimi wire line carries a token usage
-/// payload under the `token_usage` key, so lines without it are skipped before
-/// JSON parsing.
-const KIMI_TOKEN_USAGE_MARKER: &[u8] = b"\"token_usage\"";
 
 /// Kimi `config.json` document, used to read the configured display model.
 #[derive(Debug, Deserialize)]
@@ -90,11 +85,12 @@ pub(super) fn read_wire_file(path: &Path) -> Result<Vec<KimiUsageEntry>> {
     let model = read_model_from_config(path);
     let fallback_timestamp = file_modified_timestamp(path);
     let content = fs::read(path)?;
-    Ok(
-        jsonl::records::<KimiWireLine>(&content, Some(KIMI_TOKEN_USAGE_MARKER))
-            .filter_map(|line| wire_line_to_entry(&line, path, &model, fallback_timestamp))
-            .collect::<Vec<_>>(),
-    )
+    // Usable Kimi wire lines are `StatusUpdate` records carrying a
+    // `token_usage` payload, so require both substrings before JSON parsing.
+    let prefilter = LinePrefilter::all(&[br#""StatusUpdate""#, br#""token_usage""#]);
+    Ok(jsonl::records::<KimiWireLine>(&content, Some(&prefilter))
+        .filter_map(|line| wire_line_to_entry(&line, path, &model, fallback_timestamp))
+        .collect::<Vec<_>>())
 }
 
 fn read_model_from_config(file_path: &Path) -> String {

@@ -14,15 +14,12 @@ use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage,
     cli::{CostMode, SharedArgs},
+    fast::LinePrefilter,
     format_date_tz, format_rfc3339_millis, missing_pricing_model_for_candidates,
     parse_ts_timestamp, parse_tz,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
-
-/// Cheap substring prefilter: every usable Qwen line carries token counts under
-/// the `usageMetadata` key, so lines without it are skipped before JSON parsing.
-const QWEN_USAGE_MARKER: &[u8] = b"usageMetadata";
 
 /// A single parsed Qwen chat record. Only the fields ccusage consumes are
 /// declared; serde skips everything else.
@@ -89,8 +86,11 @@ fn read_chat_file(
 ) -> Result<Vec<LoadedEntry>> {
     let fallback = file_timestamp(file, shared);
     let content = fs::read(file)?;
+    // Every usable Qwen line carries token counts under the `usageMetadata`
+    // key, so lines without it are skipped before JSON parsing.
+    let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
     let mut entries = Vec::new();
-    for record in jsonl::records::<QwenLine>(&content, Some(QWEN_USAGE_MARKER)) {
+    for record in jsonl::records::<QwenLine>(&content, Some(&prefilter)) {
         if let Some(entry) = parse_line(file, fallback, &record, tz, mode, pricing) {
             entries.push(entry);
         }

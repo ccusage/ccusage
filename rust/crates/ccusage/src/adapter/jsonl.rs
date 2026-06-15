@@ -14,17 +14,16 @@
 //!    `serde_json::from_slice`, so unused fields are skipped instead of being
 //!    materialized into an intermediate `Value` tree.
 
-use memchr::memmem;
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 
-use crate::fast::byte_lines;
+use crate::fast::{LinePrefilter, byte_lines};
 
 /// Iterate over deserialized JSONL records contained in `content`.
 ///
-/// When `marker` is provided, lines that do not contain that byte substring are
-/// skipped before any JSON parsing, mirroring the per-line `memmem` prefilter
-/// used by the Claude loader. Pick a marker that appears in every line the
-/// adapter would accept (for example the required `"usage"` key) so the
+/// When `prefilter` is provided, lines that it rejects are skipped before any
+/// JSON parsing, mirroring the per-line `memmem` prefilter used by the Claude
+/// loader. Build the [`LinePrefilter`] from markers that appear in every line
+/// the adapter would accept (for example the required `"usage"` key) so the
 /// prefilter never drops a usable record. Pass `None` to parse every line.
 ///
 /// Lines that fail to deserialize into `T` are silently skipped, matching the
@@ -39,24 +38,22 @@ use crate::fast::byte_lines;
 /// }
 ///
 /// let content = b"{\"model\":\"qwen3-coder\"}\n{}\n";
-/// let models: Vec<_> = jsonl::records::<Record>(content, Some(b"model"))
+/// let prefilter = LinePrefilter::all(&[b"model"]);
+/// let models: Vec<_> = jsonl::records::<Record>(content, Some(&prefilter))
 ///     .filter_map(|record| record.model)
 ///     .collect();
 /// assert_eq!(models, ["qwen3-coder"]);
 /// ```
 pub(crate) fn records<'data, T>(
     content: &'data [u8],
-    marker: Option<&[u8]>,
+    prefilter: Option<&'data LinePrefilter>,
 ) -> impl Iterator<Item = T> + 'data
 where
     T: DeserializeOwned + 'data,
 {
-    // Build the finder once and move it into the closure so the needle is
-    // compiled a single time and reused for every line in the file.
-    let finder = marker.map(|needle| memmem::Finder::new(needle).into_owned());
     byte_lines(content).filter_map(move |line| {
-        if let Some(finder) = &finder
-            && finder.find(line).is_none()
+        if let Some(prefilter) = prefilter
+            && !prefilter.matches(line)
         {
             return None;
         }
@@ -141,6 +138,7 @@ mod tests {
     use serde::Deserialize;
 
     use super::{lenient_f64, lenient_i64, lenient_u64, non_empty_string, records};
+    use crate::fast::LinePrefilter;
 
     #[derive(Debug, PartialEq, Deserialize)]
     struct Record {
@@ -154,7 +152,8 @@ mod tests {
     fn records_skips_lines_without_marker() {
         let content =
             b"{\"model\":\"a\",\"tokens\":1}\n{\"other\":true}\n{\"model\":\"b\",\"tokens\":2}\n";
-        let parsed = records::<Record>(content, Some(b"model")).collect::<Vec<_>>();
+        let prefilter = LinePrefilter::all(&[b"model"]);
+        let parsed = records::<Record>(content, Some(&prefilter)).collect::<Vec<_>>();
 
         assert_eq!(
             parsed,

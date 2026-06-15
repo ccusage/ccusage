@@ -6,16 +6,9 @@ use serde::Deserialize;
 use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
-    missing_pricing_model_for_usage,
+    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, fast::LinePrefilter,
+    format_date_tz, missing_pricing_model_for_usage,
 };
-
-/// Cheap substring prefilter: every usable pi line carries token counts under
-/// the `usage` key, so lines without it are skipped before JSON parsing. The
-/// companion `"message"` requirement is enforced downstream by
-/// [`is_pi_message_usage`], which only accepts records whose message object
-/// carries a usage block.
-const PI_USAGE_MARKER: &[u8] = b"\"usage\"";
 
 /// A single parsed pi session record. Only the fields ccusage consumes are
 /// declared; serde skips everything else.
@@ -78,9 +71,12 @@ pub(crate) fn read_session_file(
     let content = fs::read(path)?;
     let project = extract_project(path);
     let session_id = extract_session_id(path);
+    // Usable pi lines carry token counts under a `usage` key nested in a
+    // `message` object, so require both substrings before JSON parsing.
+    let prefilter = LinePrefilter::all(&[br#""usage""#, br#""message""#]);
     let mut entries = Vec::new();
 
-    for record in jsonl::records::<PiLine>(&content, Some(PI_USAGE_MARKER)) {
+    for record in jsonl::records::<PiLine>(&content, Some(&prefilter)) {
         if !is_pi_message_usage(&record) {
             continue;
         }
