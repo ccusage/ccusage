@@ -117,6 +117,29 @@ where
     Ok(value.as_ref().and_then(serde_json::Value::as_f64))
 }
 
+/// Deserialize a nested JSON object into `Option<T>` leniently.
+///
+/// JSON objects are deserialized into `T`; any non-object value (number,
+/// string, array, bool), nulls, and missing values become `None`. An object
+/// that fails to deserialize into `T` also yields `None` rather than failing
+/// the whole record. This reproduces the historical
+/// `Value::get(...).map_or(.., ..)` navigation, where a malformed nested object
+/// was simply treated as absent instead of discarding an otherwise usable
+/// record.
+///
+/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_object")]`.
+pub(crate) fn lenient_object<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        Some(value @ serde_json::Value::Object(_)) => serde_json::from_value(value).ok(),
+        _ => None,
+    })
+}
+
 /// Deserialize a JSON value into a trimmed, non-empty [`String`].
 ///
 /// Mirrors [`crate::non_empty_json_string`]: non-string values and
@@ -137,7 +160,7 @@ where
 mod tests {
     use serde::Deserialize;
 
-    use super::{lenient_f64, lenient_i64, lenient_u64, non_empty_string, records};
+    use super::{lenient_f64, lenient_i64, lenient_object, lenient_u64, non_empty_string, records};
     use crate::fast::LinePrefilter;
 
     #[derive(Debug, PartialEq, Deserialize)]
@@ -228,6 +251,53 @@ mod tests {
         let missing = parse("{}");
         assert_eq!(missing.created, None);
         assert_eq!(missing.cost, None);
+    }
+
+    #[test]
+    fn lenient_object_keeps_record_when_nested_field_is_not_an_object() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Nested {
+            #[serde(default, deserialize_with = "lenient_u64")]
+            read: u64,
+        }
+
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Outer {
+            #[serde(default, deserialize_with = "lenient_object")]
+            cache: Option<Nested>,
+            #[serde(default, deserialize_with = "lenient_u64")]
+            input: u64,
+        }
+
+        let parse = |raw: &str| serde_json::from_str::<Outer>(raw).unwrap();
+
+        // A real object deserializes as expected.
+        assert_eq!(
+            parse("{\"cache\":{\"read\":5},\"input\":7}"),
+            Outer {
+                cache: Some(Nested { read: 5 }),
+                input: 7,
+            }
+        );
+
+        // Non-object cache payloads become None instead of failing the record,
+        // preserving the sibling `input` value.
+        for raw in [
+            "{\"cache\":5,\"input\":7}",
+            "{\"cache\":\"oops\",\"input\":7}",
+            "{\"cache\":[1,2],\"input\":7}",
+            "{\"cache\":null,\"input\":7}",
+            "{\"input\":7}",
+        ] {
+            assert_eq!(
+                parse(raw),
+                Outer {
+                    cache: None,
+                    input: 7,
+                },
+                "raw: {raw}"
+            );
+        }
     }
 
     #[test]
