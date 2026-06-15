@@ -52,6 +52,9 @@ struct PiUsage {
         deserialize_with = "jsonl::lenient_u64"
     )]
     total_tokens: u64,
+    // A non-object `cost` previously left display cost absent without dropping
+    // the record, so deserialize it leniently instead of failing the line.
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     cost: Option<PiCost>,
 }
 
