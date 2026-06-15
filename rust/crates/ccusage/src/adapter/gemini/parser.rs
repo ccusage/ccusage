@@ -24,7 +24,7 @@ const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrout
 /// integer-only [`jsonl::lenient_u64`] helper.
 #[derive(Debug, Default, Deserialize)]
 struct GeminiRecord {
-    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    #[serde(default, deserialize_with = "lenient_str")]
     r#type: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     #[serde(rename = "sessionId")]
@@ -54,9 +54,11 @@ struct GeminiRecord {
 /// Deserialize a JSON value into an optional, untrimmed [`String`] with the same
 /// rules as [`serde_json::Value::as_str`]: JSON strings are returned verbatim,
 /// while numbers, nulls, and other types become `None` instead of failing the
-/// line. Used for timestamp fields that are fed directly to
+/// line. Used for fields that the original code navigated with raw
+/// `Value::as_str`: the `type` discriminator (compared exactly against
+/// `"gemini"`, so it must not be trimmed) and the timestamp fields fed to
 /// [`crate::parse_ts_timestamp`], whose strict length checks must see the raw,
-/// untrimmed text exactly as the original `Value::as_str` navigation did.
+/// untrimmed text.
 fn lenient_str<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -567,5 +569,26 @@ mod tests {
 
         assert_eq!(event.output_tokens, 654);
         assert_eq!(event.reasoning_tokens, 0);
+    }
+
+    #[test]
+    fn type_discriminator_is_untrimmed_and_tolerates_non_strings() {
+        // Exact match still works.
+        let exact = serde_json::from_str::<GeminiRecord>(r#"{"type":"gemini"}"#).unwrap();
+        assert_eq!(exact.r#type.as_deref(), Some("gemini"));
+
+        // Surrounding whitespace must NOT be trimmed, so a padded value does not
+        // spuriously match the "gemini" discriminator. This mirrors the original
+        // raw `Value::as_str` comparison rather than the trimming
+        // `non_empty_string` helper.
+        let padded = serde_json::from_str::<GeminiRecord>(r#"{"type":" gemini "}"#).unwrap();
+        assert_eq!(padded.r#type.as_deref(), Some(" gemini "));
+        assert_ne!(padded.r#type.as_deref(), Some("gemini"));
+
+        // A non-string type becomes None without failing the line, so the record
+        // still falls through to stats parsing.
+        let numeric = serde_json::from_str::<GeminiRecord>(r#"{"type":5,"stats":{}}"#).unwrap();
+        assert_eq!(numeric.r#type, None);
+        assert!(numeric.stats.is_some());
     }
 }
