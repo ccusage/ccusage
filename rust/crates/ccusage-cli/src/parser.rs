@@ -264,6 +264,13 @@ fn parse_command(
             Command::Qwen,
         ),
         "openclaw" => parse_openclaw_command(parser, shared, config),
+        "vibe" => parse_basic_agent_command(
+            parser,
+            shared,
+            "vibe",
+            STANDARD_AGENT_REPORTS,
+            Command::Vibe,
+        ),
         _ => Err(format!("Unknown command '{command}'")),
     }
 }

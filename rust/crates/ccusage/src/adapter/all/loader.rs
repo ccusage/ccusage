@@ -6,7 +6,7 @@ use crate::{
     CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result, SessionAccumulator, UsageSummary,
     adapter::{
         amp, claude, codebuff, codex, copilot, droid, gemini, goose, hermes, kilo, kimi, openclaw,
-        opencode, pi, qwen,
+        opencode, pi, qwen, vibe,
     },
     cli::{AgentReportKind, CodexSpeed, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -237,6 +237,21 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                 agent: "qwen",
                 progress_agent: crate::progress::UsageLoadAgent::Qwen,
                 load: Box::new(|| load_qwen_rows(load_kind, &loader_shared)),
+            },
+            AgentLoadSpec {
+                index: 15,
+                agent: "vibe",
+                progress_agent: crate::progress::UsageLoadAgent::Vibe,
+                load: Box::new(|| {
+                    load_priced_summary_agent_rows(
+                        "vibe",
+                        load_kind,
+                        &loader_shared,
+                        &pricing,
+                        vibe::load_entries,
+                        vibe::summarize_entries,
+                    )
+                }),
             },
         ],
         &mut progress,
@@ -483,6 +498,26 @@ fn load_qwen_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRow
     let summaries = qwen::summarize_entries(&entries, kind)?;
     Ok(AgentRows {
         rows: summary_rows("qwen", summaries),
+        detected,
+    })
+}
+
+fn load_vibe_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRows> {
+    let entries = vibe::load_entries(shared)?;
+    let detected = !entries.is_empty() || vibe::has_data();
+    if kind == AgentReportKind::Session {
+        let mut summaries = vibe::summarize_entries(&entries, kind)?;
+        filter_session_summaries(&mut summaries, shared);
+        return Ok(AgentRows {
+            rows: summary_rows("vibe", summaries),
+            detected,
+        });
+    }
+    let mut entries = entries;
+    filter_loaded_entries_by_date(&mut entries, shared);
+    let summaries = vibe::summarize_entries(&entries, kind)?;
+    Ok(AgentRows {
+        rows: summary_rows("vibe", summaries),
         detected,
     })
 }

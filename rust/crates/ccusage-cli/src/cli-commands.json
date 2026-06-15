@@ -92,6 +92,10 @@
 				"description": "Show Qwen usage commands"
 			},
 			{
+				"name": "vibe",
+				"description": "Show Mistral Vibe usage commands"
+			},
+			{
 				"name": "openclaw",
 				"description": "Show OpenClaw usage commands"
 			}
@@ -690,6 +694,43 @@
 			"path": ["qwen", "session"],
 			"description": "Show Qwen usage grouped by session",
 			"usage": "ccusage qwen session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["vibe"],
+			"description": "Usage reports for vibe.",
+			"usage": "ccusage vibe <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Mistral Vibe usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Mistral Vibe usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Mistral Vibe usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["vibe", "daily"],
+			"description": "Show Mistral Vibe usage grouped by date",
+			"usage": "ccusage vibe daily <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["vibe", "monthly"],
+			"description": "Show Mistral Vibe usage grouped by month",
+			"usage": "ccusage vibe monthly <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["vibe", "session"],
+			"description": "Show Mistral Vibe usage grouped by session",
+			"usage": "ccusage vibe session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
