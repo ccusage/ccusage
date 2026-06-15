@@ -1,8 +1,10 @@
-use std::{collections::HashSet, path::Path};
+use std::{collections::HashSet, path::Path, path::PathBuf};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
+use crate::{
+    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
+};
 
 use super::{
     parser::{KiloMessage, message_value_to_entry},
@@ -17,13 +19,17 @@ pub(crate) fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<
 
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
+    let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
+    // Load each database in parallel (a fresh read-only connection per DB), then
+    // run the sequential id dedup over the original path order so the surviving
+    // record per id matches the single-threaded read.
+    let loaded = read_files_parallel(&db_paths, shared.single_thread, |db_path| {
+        load_entries_from_database(db_path, tz.as_ref(), shared, pricing)
+    });
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
-    for path in paths()? {
-        let Some(db_path) = db_path(&path) else {
-            continue;
-        };
-        for entry in load_entries_from_database(&db_path, tz.as_ref(), shared, pricing) {
+    for db_entries in loaded {
+        for entry in db_entries {
             if let Some(id) = entry.data.message.id.as_deref()
                 && !seen.insert(id.to_string())
             {

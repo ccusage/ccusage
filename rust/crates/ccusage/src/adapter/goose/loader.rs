@@ -2,7 +2,9 @@ use std::{collections::HashSet, path::Path};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
+use crate::{
+    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
+};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -31,10 +33,26 @@ pub(crate) fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<
 
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
+    let db_paths = goose_db_paths()?;
+    // Load each database in parallel (a fresh read-only connection per DB), then
+    // run the sequential per-db dedup over the original path order so the
+    // surviving session per key matches the single-threaded read.
+    let loaded = read_files_parallel(&db_paths, shared.single_thread, |db_path| {
+        load_entries_from_db(db_path, tz.as_ref(), pricing, shared).unwrap_or_else(|error| {
+            debug_log(
+                shared,
+                format!(
+                    "Failed to load Goose database {}: {error}",
+                    db_path.display()
+                ),
+            );
+            Vec::new()
+        })
+    });
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
-    for db_path in goose_db_paths()? {
-        for entry in load_entries_from_db(&db_path, tz.as_ref(), pricing, shared)? {
+    for (db_path, db_entries) in db_paths.iter().zip(loaded) {
+        for entry in db_entries {
             let key = format!("{}:{}", db_path.display(), entry.session_id);
             if seen.insert(key) {
                 entries.push(entry);
