@@ -11,7 +11,7 @@ use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage,
     cli::CostMode,
-    fast::{LinePrefilter, byte_lines},
+    fast::{LinePrefilter, prefiltered_json_values},
     format_date_tz, json_value_u64, missing_pricing_model_for_candidates, non_empty_json_string,
 };
 
@@ -38,9 +38,7 @@ pub(super) fn read_wire_file(path: &Path) -> Result<Vec<KimiUsageEntry>> {
     let fallback_timestamp = file_modified_timestamp(path);
     let content = fs::read(path)?;
     let prefilter = LinePrefilter::all(&[br#""StatusUpdate""#, br#""token_usage""#]);
-    Ok(byte_lines(&content)
-        .filter(|line| prefilter.matches(line))
-        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
+    Ok(prefiltered_json_values(&content, &prefilter)
         .filter_map(|value| wire_line_to_entry(&value, path, &model, fallback_timestamp))
         .collect::<Vec<_>>())
 }

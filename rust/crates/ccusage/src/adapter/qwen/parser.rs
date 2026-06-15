@@ -14,7 +14,7 @@ use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage,
     cli::{CostMode, SharedArgs},
-    fast::{LinePrefilter, byte_lines},
+    fast::{LinePrefilter, prefiltered_json_values},
     format_date_tz, format_rfc3339_millis, json_value_u64, missing_pricing_model_for_candidates,
     non_empty_json_string, parse_ts_timestamp, parse_tz,
 };
@@ -56,13 +56,7 @@ fn read_chat_file(
     let content = fs::read(file)?;
     let mut entries = Vec::new();
     let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
-    for line in byte_lines(&content) {
-        if !prefilter.matches(line) {
-            continue;
-        }
-        let Ok(value) = serde_json::from_slice::<Value>(line) else {
-            continue;
-        };
+    for value in prefiltered_json_values(&content, &prefilter) {
         if let Some(entry) = parse_line(file, fallback, &value, tz, mode, pricing) {
             entries.push(entry);
         }

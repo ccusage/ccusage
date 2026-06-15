@@ -1,4 +1,5 @@
 use memchr::{memchr, memmem::Finder};
+use serde_json::Value;
 use smallvec::SmallVec;
 
 pub(crate) type FxHashMap<K, V> = rustc_hash::FxHashMap<K, V>;
@@ -103,6 +104,33 @@ pub(crate) fn byte_lines(bytes: &[u8]) -> ByteLines<'_> {
     ByteLines::new(bytes)
 }
 
+/// Parse newline-delimited JSON, yielding each owned [`Value`] whose source
+/// line passes `prefilter`.
+///
+/// This is the shared fast-path used by the line-delimited agent adapters: it
+/// iterates the raw bytes with [`byte_lines`], skips lines rejected by the
+/// reusable [`LinePrefilter`] before paying for a parse, and silently drops
+/// lines that fail to deserialize (matching the per-adapter `let Ok(..) else`
+/// behavior). Callers keep ownership of `content` and the `prefilter`.
+///
+/// # Example
+///
+/// ```ignore
+/// let content = std::fs::read(path)?;
+/// let prefilter = LinePrefilter::all(&[b"\"usage\""]);
+/// for value in prefiltered_json_values(&content, &prefilter) {
+///     // adapter-specific handling of `value`
+/// }
+/// ```
+pub(crate) fn prefiltered_json_values<'a>(
+    content: &'a [u8],
+    prefilter: &'a LinePrefilter,
+) -> impl Iterator<Item = Value> + 'a {
+    byte_lines(content)
+        .filter(move |line| prefilter.matches(line))
+        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
+}
+
 pub(crate) fn suffix_string(value: &str, suffix: &str) -> String {
     let mut output = String::with_capacity(value.len() + suffix.len());
     output.push_str(value);
@@ -112,7 +140,28 @@ pub(crate) fn suffix_string(value: &str, suffix: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{LinePrefilter, byte_lines, suffix_string};
+    use super::{LinePrefilter, byte_lines, prefiltered_json_values, suffix_string};
+
+    #[test]
+    fn prefiltered_json_values_skips_filtered_and_malformed_lines() {
+        let content = concat!(
+            r#"{"usage":{"input":1}}"#,
+            "\n",
+            r#"{"role":"user"}"#,
+            "\n",
+            r#"not json but has "usage""#,
+            "\n",
+            r#"{"usage":{"input":2}}"#,
+        )
+        .as_bytes();
+        let prefilter = LinePrefilter::all(&[b"\"usage\""]);
+
+        let inputs = prefiltered_json_values(content, &prefilter)
+            .filter_map(|value| value.get("usage")?.get("input")?.as_u64())
+            .collect::<Vec<_>>();
+
+        assert_eq!(inputs, [1, 2]);
+    }
 
     #[test]
     fn line_prefilter_all_requires_every_marker() {
