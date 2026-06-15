@@ -5,8 +5,8 @@ use crate::help::{print_help_and_exit, print_version_and_exit};
 use crate::types::{OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS};
 use crate::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, Cli, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DailyArgs, NoConfig, SessionArgs, SharedArgs, SortOrder, StatuslineArgs,
-    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    CostSource, DailyArgs, NoConfig, SessionArgs, SharedArgs, ShortcutCommand, SortOrder,
+    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -110,6 +110,8 @@ fn parse_command(
 ) -> Result<Command, String> {
     match command {
         "daily" => parse_all_command(parser, shared, AgentReportKind::Daily, config),
+        "today" => parse_shortcut_command(parser, shared, ShortcutCommand::Today),
+        "this-week" => parse_shortcut_command(parser, shared, ShortcutCommand::ThisWeek),
         "monthly" => parse_all_command(parser, shared, AgentReportKind::Monthly, config),
         "weekly" => parse_all_command(parser, shared, AgentReportKind::Weekly, config),
         "session" => parse_top_level_session_command(parser, shared, config),
@@ -266,6 +268,21 @@ fn parse_command(
         "openclaw" => parse_openclaw_command(parser, shared, config),
         _ => Err(format!("Unknown command '{command}'")),
     }
+}
+
+fn parse_shortcut_command(
+    parser: &mut ArgParser,
+    mut shared: SharedArgs,
+    shortcut: ShortcutCommand,
+) -> Result<Command, String> {
+    while parser.peek().is_some() {
+        if matches!(parser.peek(), Some("--all")) {
+            parser.next();
+            continue;
+        }
+        parse_shared_arg(parser, &mut shared)?;
+    }
+    Ok(Command::Shortcut(shortcut, shared))
 }
 
 fn parse_all_command(
@@ -611,6 +628,8 @@ fn is_command(arg: &str) -> bool {
     matches!(
         arg,
         "daily"
+            | "today"
+            | "this-week"
             | "monthly"
             | "weekly"
             | "session"

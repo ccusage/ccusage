@@ -100,6 +100,8 @@ Some coding agents have been investigated but are not supported because their lo
 Run ccusage without a source name to aggregate all detected sources:
 
 ```bash
+ccusage today
+ccusage this-week
 ccusage daily
 ccusage weekly
 ccusage monthly

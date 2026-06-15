@@ -11,6 +11,12 @@ All ccusage commands support these global options:
 Filter usage data by date range:
 
 ```bash
+# Today's usage across all detected sources
+ccusage today
+
+# Daily usage from Monday through today
+ccusage this-week
+
 # Filter by date range
 ccusage daily --since 20260101 --until 20260531
 
@@ -20,6 +26,8 @@ ccusage monthly --since 20260101
 # Show data up to a specific date
 ccusage session --until 20260531
 ```
+
+The `today` and `this-week` shortcuts respect `--timezone` when calculating their date range.
 
 ### Output Format
 

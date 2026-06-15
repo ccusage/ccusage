@@ -16,12 +16,20 @@
 				"description": "Show all detected coding (agent) CLI usage grouped by date"
 			},
 			{
+				"name": "today",
+				"description": "Show all detected coding (agent) CLI usage for today"
+			},
+			{
 				"name": "monthly",
 				"description": "Show all detected coding (agent) CLI usage grouped by month"
 			},
 			{
 				"name": "weekly",
 				"description": "Show all detected coding (agent) CLI usage grouped by week"
+			},
+			{
+				"name": "this-week",
+				"description": "Show all detected coding (agent) CLI usage for this week grouped by date"
 			},
 			{
 				"name": "session",
@@ -105,6 +113,12 @@
 			"options": "all_agent_options"
 		},
 		{
+			"path": ["today"],
+			"description": "Show all detected coding (agent) CLI usage for today",
+			"usage": "ccusage today <OPTIONS>",
+			"options": "all_agent_options"
+		},
+		{
 			"path": ["monthly"],
 			"description": "Show all detected coding (agent) CLI usage grouped by month",
 			"usage": "ccusage monthly <OPTIONS>",
@@ -114,6 +128,12 @@
 			"path": ["weekly"],
 			"description": "Show all detected coding (agent) CLI usage grouped by week",
 			"usage": "ccusage weekly <OPTIONS>",
+			"options": "all_agent_options"
+		},
+		{
+			"path": ["this-week"],
+			"description": "Show all detected coding (agent) CLI usage for this week grouped by date",
+			"usage": "ccusage this-week <OPTIONS>",
 			"options": "all_agent_options"
 		},
 		{

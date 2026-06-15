@@ -66,7 +66,7 @@ ccusage reads local usage data from coding agent CLIs and turns it into daily, w
 | GitHub Copilot CLI | `ccusage copilot daily`  |
 | Gemini CLI         | `ccusage gemini daily`   |
 
-Use `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session` to include every detected source in one report.
+Use `ccusage today`, `ccusage this-week`, `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session` to include every detected source in one report.
 
 ## Installation
 
@@ -98,10 +98,12 @@ bunx -p https://pkg.pr.new/ccusage/ccusage@<pr-number> ccusage --offline
 # Basic usage
 bunx ccusage          # Show all detected sources by day (default)
 bunx ccusage daily    # All detected sources by day
-bunx ccusage weekly   # All detected sources by week
-bunx ccusage monthly  # All detected sources by month
-bunx ccusage session  # All detected sources by session
-bunx ccusage blocks   # Claude Code 5-hour billing windows
+bunx ccusage today    # Today's usage across all detected sources
+bunx ccusage this-week  # Daily usage since Monday
+bunx ccusage weekly     # All detected sources by week
+bunx ccusage monthly    # All detected sources by month
+bunx ccusage session    # All detected sources by session
+bunx ccusage blocks     # Claude Code 5-hour billing windows
 bunx ccusage statusline  # Claude Code status line for hooks (Beta)
 
 # Source-focused reports and options
@@ -126,6 +128,8 @@ bunx ccusage pi daily --pi-path /path/to/sessions,/archive/pi/sessions
 bunx ccusage daily --all
 
 # Filters and options
+bunx ccusage today --json
+bunx ccusage this-week --timezone UTC
 bunx ccusage daily --since 2026-04-25 --until 2026-05-16
 bunx ccusage daily --json  # JSON output
 bunx ccusage daily --no-cost  # Hide cost columns and JSON cost fields

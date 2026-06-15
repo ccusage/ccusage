@@ -107,6 +107,8 @@ Now that you have your first unified view, explore these features:
 ### Monitor Daily Usage
 
 ```bash
+ccusage today
+ccusage this-week
 ccusage daily --since 2026-05-01 --until 2026-05-16
 ```
 

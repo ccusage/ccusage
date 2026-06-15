@@ -10,6 +10,7 @@ pub struct Cli {
 
 pub enum Command {
     All(AgentCommandArgs),
+    Shortcut(ShortcutCommand, SharedArgs),
     Daily(DailyArgs),
     Monthly(SharedArgs),
     Weekly(WeeklyArgs),
@@ -30,6 +31,12 @@ pub enum Command {
     Kimi(AgentCommandArgs),
     Qwen(AgentCommandArgs),
     OpenClaw(AgentCommandArgs),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShortcutCommand {
+    Today,
+    ThisWeek,
 }
 
 #[derive(Clone, Debug, Default)]

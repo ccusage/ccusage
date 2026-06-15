@@ -8,8 +8,10 @@ USAGE:
 
 COMMANDS:
   daily                      Show all detected coding (agent) CLI usage grouped by date
+  today                      Show all detected coding (agent) CLI usage for today
   monthly                    Show all detected coding (agent) CLI usage grouped by month
   weekly                     Show all detected coding (agent) CLI usage grouped by week
+  this-week                  Show all detected coding (agent) CLI usage for this week grouped by date
   session                    Show all detected coding (agent) CLI usage grouped by session
   blocks                     Show usage report grouped by session billing blocks
   statusline                 Display compact status line for Claude Code hooks with hybrid time+file caching (Beta)
@@ -31,8 +33,10 @@ COMMANDS:
 
 For more info, run any command with the `--help` flag:
   ccusage daily --help
+  ccusage today --help
   ccusage monthly --help
   ccusage weekly --help
+  ccusage this-week --help
   ccusage session --help
   ccusage blocks --help
   ccusage statusline --help

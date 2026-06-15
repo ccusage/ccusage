@@ -145,6 +145,11 @@ fn command_snapshot(command: Option<Command>) -> Value {
     match command {
         None => Value::Null,
         Some(Command::All(args)) => agent_command_snapshot("all", args),
+        Some(Command::Shortcut(shortcut, shared)) => json!({
+            "type": "shortcut",
+            "shortcut": format!("{:?}", shortcut),
+            "shared": shared_snapshot(&shared),
+        }),
         Some(Command::Daily(args)) => json!({
             "type": "daily",
             "shared": shared_snapshot(&args.shared),
@@ -225,6 +230,29 @@ fn parses_root_daily_as_all_agent_report() {
     assert_eq!(args.kind, AgentReportKind::Daily);
     assert!(args.shared.json);
     assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+}
+
+#[test]
+fn parses_today_as_date_shortcut() {
+    let cli = parse(&["ccusage", "today", "--json", "--timezone", "Asia/Tokyo"]);
+    let Some(Command::Shortcut(shortcut, shared)) = cli.command else {
+        panic!("expected shortcut command");
+    };
+
+    assert_eq!(shortcut, ShortcutCommand::Today);
+    assert!(shared.json);
+    assert_eq!(shared.timezone.as_deref(), Some("Asia/Tokyo"));
+}
+
+#[test]
+fn parses_this_week_as_date_shortcut() {
+    let cli = parse(&["ccusage", "this-week", "--offline"]);
+    let Some(Command::Shortcut(shortcut, shared)) = cli.command else {
+        panic!("expected shortcut command");
+    };
+
+    assert_eq!(shortcut, ShortcutCommand::ThisWeek);
+    assert!(shared.offline);
 }
 
 #[test]
@@ -371,10 +399,34 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
 fn root_help_lists_command_descriptions_and_follow_up_help_commands() {
     let help = help_text();
 
+    assert!(help.contains("today"));
+    assert!(help.contains("Show all detected coding (agent) CLI usage for today"));
+    assert!(
+        help.contains("Show all detected coding (agent) CLI usage for this week grouped by date")
+    );
     assert!(help.contains("codex                      Show Codex token usage commands"));
     assert!(help.contains("For more info, run any command with the `--help` flag:"));
+    assert!(help.contains("ccusage today --help"));
+    assert!(help.contains("ccusage this-week --help"));
     assert!(help.contains("ccusage codex --help"));
     assert!(!help.contains("ccusage codex daily --help"));
+}
+
+#[test]
+fn contextual_shortcut_help_lists_all_agent_options() {
+    let help = help_text_for_args(&["ccusage".to_string(), "today".to_string()]);
+
+    assert!(help.contains("Show all detected coding (agent) CLI usage for today"));
+    assert!(help.contains("USAGE:\n  ccusage today <OPTIONS>"));
+    assert!(help.contains("--timezone"));
+
+    let help = help_text_for_args(&["ccusage".to_string(), "this-week".to_string()]);
+
+    assert!(
+        help.contains("Show all detected coding (agent) CLI usage for this week grouped by date")
+    );
+    assert!(help.contains("USAGE:\n  ccusage this-week <OPTIONS>"));
+    assert!(help.contains("--timezone"));
 }
 
 #[test]
@@ -503,6 +555,14 @@ fn snapshots_representative_cli_parse_shapes() {
                 "--single-thread",
                 "daily",
             ])),
+        }),
+        json!({
+            "case": "today shortcut",
+            "cli": cli_snapshot(parse(&["ccusage", "today", "--json"])),
+        }),
+        json!({
+            "case": "this-week shortcut",
+            "cli": cli_snapshot(parse(&["ccusage", "this-week", "--offline"])),
         }),
         json!({
             "case": "claude weekly monday",

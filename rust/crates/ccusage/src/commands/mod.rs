@@ -15,17 +15,18 @@ use crate::{
     MILLIS_PER_DAY, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs, block_json,
     calculate_burn_rate,
     cli::{
-        BlocksArgs, CostSource, DailyArgs, SessionArgs, SharedArgs, SortOrder, StatuslineArgs,
-        VisualBurnRate, WeekDay, WeeklyArgs,
+        AgentCommandArgs, AgentReportKind, BlocksArgs, CostSource, DailyArgs, SessionArgs,
+        SharedArgs, ShortcutCommand, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay,
+        WeeklyArgs, normalize_date_bound,
     },
-    color,
+    cli_error, color,
     fast::FxHashMap,
     filter_and_sort_summaries, filter_blocks_by_date, format_currency, format_date, format_number,
     format_remaining_time, format_rfc3339_millis, group_project_output, identify_session_blocks,
     load_daily_summaries, load_entries, print_active_block_detail, print_blocks_table,
     print_json_or_jq, print_usage_table, session_summary_json, sort_blocks, sort_summaries,
     summarize_by_key, summarize_summaries_by_bucket, summary_json, total_usage_tokens, totals_json,
-    utc_now, wants_json,
+    utc_now, wants_json, week_start,
 };
 
 pub(crate) fn run_daily(args: DailyArgs) -> Result<()> {
@@ -546,6 +547,36 @@ fn statusline_today_shared(
     }
 }
 
+pub(crate) fn shortcut_agent_args(
+    shortcut: ShortcutCommand,
+    shared: SharedArgs,
+    now: TimestampMs,
+) -> Result<AgentCommandArgs> {
+    Ok(AgentCommandArgs {
+        shared: shortcut_shared_args(shortcut, shared, now)?,
+        kind: AgentReportKind::Daily,
+        pi_path: None,
+        open_claw_path: None,
+        codex_speed: crate::cli::CodexSpeed::Auto,
+    })
+}
+
+fn shortcut_shared_args(
+    shortcut: ShortcutCommand,
+    mut shared: SharedArgs,
+    now: TimestampMs,
+) -> Result<SharedArgs> {
+    let today = format_date(now, shared.timezone.as_deref());
+    let since = match shortcut {
+        ShortcutCommand::Today => today.clone(),
+        ShortcutCommand::ThisWeek => week_start(&today, WeekDay::Monday)
+            .ok_or_else(|| cli_error("Failed to calculate this week's start date"))?,
+    };
+    shared.since = Some(normalize_date_bound(&since));
+    shared.until = Some(normalize_date_bound(&today));
+    Ok(shared)
+}
+
 fn calculate_session_cost(session_id: &str, shared: &SharedArgs) -> Result<f64> {
     Ok(load_entries(shared, None)?
         .into_iter()
@@ -917,6 +948,43 @@ mod tests {
                 .pricing_overrides
                 .contains_key("statusline-model")
         );
+    }
+
+    #[test]
+    fn builds_today_shortcut_filter_from_timezone() {
+        let shared = SharedArgs {
+            since: Some("20260101".to_string()),
+            until: Some("20260131".to_string()),
+            json: true,
+            timezone: Some("Asia/Tokyo".to_string()),
+            ..SharedArgs::default()
+        };
+        let now = crate::parse_ts_timestamp("2026-06-14T15:30:00Z").unwrap();
+
+        let today_shared =
+            shortcut_shared_args(crate::cli::ShortcutCommand::Today, shared, now).unwrap();
+
+        assert_eq!(today_shared.since.as_deref(), Some("20260615"));
+        assert_eq!(today_shared.until.as_deref(), Some("20260615"));
+        assert!(today_shared.json);
+        assert_eq!(today_shared.timezone.as_deref(), Some("Asia/Tokyo"));
+    }
+
+    #[test]
+    fn builds_this_week_shortcut_filter_from_monday() {
+        let shared = SharedArgs {
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let now = crate::parse_ts_timestamp("2026-06-17T12:00:00Z").unwrap();
+
+        let week_shared =
+            shortcut_shared_args(crate::cli::ShortcutCommand::ThisWeek, shared, now).unwrap();
+
+        assert_eq!(week_shared.since.as_deref(), Some("20260615"));
+        assert_eq!(week_shared.until.as_deref(), Some("20260617"));
+        assert!(week_shared.offline);
     }
 
     #[test]

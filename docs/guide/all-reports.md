@@ -10,12 +10,16 @@ ccusage aggregates every detected supported data source by default. You do not n
 # Daily usage across every detected source
 ccusage
 ccusage daily
+ccusage today
+ccusage this-week
 
 # Other unified views
 ccusage weekly
 ccusage monthly
 ccusage session
 ```
+
+`ccusage today` shows the current day's daily rows. `ccusage this-week` shows daily rows from Monday through today. Both commands respect `--timezone`.
 
 The `--all` flag is accepted for compatibility, but it is optional because unified views are already the default.
 
@@ -27,11 +31,13 @@ ccusage daily --all
 
 ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI. The same daily, weekly, monthly, and session views can run in two modes:
 
-| Mode    | Command example        | What it shows                           |
-| ------- | ---------------------- | --------------------------------------- |
-| Unified | `ccusage daily`        | Every detected supported source         |
-| Focused | `ccusage codex daily`  | One source using the same report shape  |
-| Focused | `ccusage claude daily` | One source with source-specific options |
+| Mode    | Command example        | What it shows                            |
+| ------- | ---------------------- | ---------------------------------------- |
+| Unified | `ccusage today`        | Today's usage from every detected source |
+| Unified | `ccusage this-week`    | Daily usage since Monday                 |
+| Unified | `ccusage daily`        | Every detected supported source          |
+| Focused | `ccusage codex daily`  | One source using the same report shape   |
+| Focused | `ccusage claude daily` | One source with source-specific options  |
 
 Unified tables include an **Agent** column so you can compare sources in one view. Focused views remove that comparison layer and show the selected source in more detail where applicable.
 

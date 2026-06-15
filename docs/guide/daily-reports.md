@@ -10,6 +10,8 @@ Show all daily usage:
 
 ```bash
 ccusage daily
+ccusage today
+ccusage this-week
 # or simply:
 ccusage
 
@@ -21,7 +23,7 @@ ccusage pi daily
 ccusage qwen daily
 ```
 
-The daily command is the default, so you can omit it when running ccusage.
+The daily command is the default, so you can omit it when running ccusage. Use `ccusage today` for the current day and `ccusage this-week` for daily rows from Monday through today.
 
 ## Example Output
 
@@ -57,6 +59,12 @@ ccusage automatically adapts to your terminal width:
 Filter reports by date range:
 
 ```bash
+# Show today's usage
+ccusage today
+
+# Show daily usage since Monday
+ccusage this-week
+
 # Show usage from May 2026
 ccusage daily --since 20260501 --until 20260516
 
@@ -66,6 +74,8 @@ ccusage daily --since 20260510 --until 20260516
 # Show usage since a specific date
 ccusage daily --since 20260501
 ```
+
+The shortcut commands respect `--timezone` when calculating today and the current week.
 
 ### Sort Order
 
