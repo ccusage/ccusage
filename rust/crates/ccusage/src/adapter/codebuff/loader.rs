@@ -7,8 +7,8 @@ use super::{
     paths::discover_chat_files,
 };
 use crate::{
-    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, format_date_tz,
-    parse_tz,
+    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, debug_log,
+    format_date_tz, parse_tz, read_files_parallel,
 };
 
 pub(crate) fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
@@ -23,9 +23,24 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     let tz = parse_tz(shared.timezone.as_deref());
     let mut files = discover_chat_files()?;
     files.sort();
+    // Read files in parallel but apply the last-wins dedup sequentially over the
+    // original (sorted) file order, so the surviving entry per dedup key is
+    // identical to the single-threaded read.
+    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
+        load_chat_file(file).unwrap_or_else(|error| {
+            debug_log(
+                shared,
+                format!(
+                    "Failed to read Codebuff chat file {}: {error}",
+                    file.display()
+                ),
+            );
+            Vec::new()
+        })
+    });
     let mut deduped = HashMap::<String, CodebuffEntry>::new();
-    for file in files {
-        for entry in load_chat_file(&file)? {
+    for file_entries in loaded {
+        for entry in file_entries {
             deduped.insert(entry.dedup_key.clone(), entry);
         }
     }

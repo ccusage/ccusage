@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz};
+use crate::{
+    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
+};
 
 use super::{
     parser::{kimi_entry_key, kimi_entry_to_loaded, read_wire_file},
@@ -15,10 +17,23 @@ pub(crate) fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<
 
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
+    let files = discover_wire_files()?;
+    // Read wire files in parallel, then apply the first-wins dedup sequentially
+    // over the original discovery order so the surviving entry per key matches
+    // the single-threaded read.
+    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
+        read_wire_file(file).unwrap_or_else(|error| {
+            debug_log(
+                shared,
+                format!("Failed to read Kimi wire file {}: {error}", file.display()),
+            );
+            Vec::new()
+        })
+    });
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
-    for file in discover_wire_files()? {
-        for entry in read_wire_file(&file)? {
+    for file_entries in loaded {
+        for entry in file_entries {
             let key = kimi_entry_key(&entry);
             if seen.insert(key) {
                 entries.push(kimi_entry_to_loaded(

@@ -7,8 +7,8 @@ use super::{
     paths::discover_settings_files,
 };
 use crate::{
-    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, format_date_tz,
-    parse_tz,
+    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, debug_log,
+    format_date_tz, parse_tz, read_files_parallel,
 };
 
 pub(crate) fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
@@ -21,12 +21,22 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     let tz = parse_tz(shared.timezone.as_deref());
     let mut files = discover_settings_files()?;
     files.sort();
-    let mut parsed = Vec::new();
-    for file in files {
-        if let Some(entry) = load_settings_file(&file)? {
-            parsed.push(entry);
-        }
-    }
+    // Read files in parallel, reassembled in the original (sorted) file order so
+    // the subsequent stable sort and reverse latest-wins dedup pick the same
+    // snapshot per session as the single-threaded read.
+    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
+        load_settings_file(file).unwrap_or_else(|error| {
+            debug_log(
+                shared,
+                format!(
+                    "Failed to read Droid settings file {}: {error}",
+                    file.display()
+                ),
+            );
+            None
+        })
+    });
+    let mut parsed: Vec<DroidEntry> = loaded.into_iter().flatten().collect();
     parsed.sort_by_key(|entry| entry.timestamp);
     let mut seen_sessions = HashSet::new();
     let mut entries = Vec::new();
