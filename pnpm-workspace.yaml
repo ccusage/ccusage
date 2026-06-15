@@ -28,7 +28,7 @@ catalogs:
     gunshi: ^0.31.0
     picospinner: ^3.0.0
     type-fest: ^4.41.0
-    valibot: ^1.1.0
+    valibot: ^1.4.1
     xdg-basedir: ^5.1.0
   types:
     '@types/node': ^24.10.1
