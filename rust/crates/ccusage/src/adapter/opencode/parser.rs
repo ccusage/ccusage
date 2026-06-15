@@ -13,6 +13,7 @@ use crate::{
 /// declared; serde skips everything else.
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct OpenCodeMessage {
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     tokens: Option<OpenCodeTokens>,
     #[serde(
         rename = "modelID",
@@ -26,6 +27,7 @@ pub(crate) struct OpenCodeMessage {
         deserialize_with = "jsonl::non_empty_string"
     )]
     provider_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     time: Option<OpenCodeTime>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     id: Option<String>,
@@ -46,6 +48,7 @@ struct OpenCodeTokens {
     input: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     output: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     cache: Option<OpenCodeCache>,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     total: u64,
@@ -337,6 +340,37 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(entry.cost, 0.02);
+    }
+
+    #[test]
+    fn keeps_opencode_record_when_cache_field_is_not_an_object() {
+        let entry = message_value_to_entry(
+            &message(json!({
+                "id": "message-a",
+                "sessionID": "session-a",
+                "providerID": "openai",
+                "modelID": "gpt-test",
+                "time": { "created": 0 },
+                "tokens": {
+                    "input": 100,
+                    "output": 10,
+                    "cache": 0
+                },
+                "cost": 0.02
+            })),
+            None,
+            None,
+            None,
+            CostMode::Auto,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(entry.data.message.usage.input_tokens, 100);
+        assert_eq!(entry.data.message.usage.output_tokens, 10);
+        assert_eq!(entry.data.message.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entry.data.message.usage.cache_read_input_tokens, 0);
         assert_eq!(entry.cost, 0.02);
     }
 

@@ -16,6 +16,7 @@ use crate::{
 pub(super) struct KiloMessage {
     #[serde(default)]
     role: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     tokens: Option<KiloTokens>,
     #[serde(
         rename = "modelID",
@@ -23,6 +24,7 @@ pub(super) struct KiloMessage {
         deserialize_with = "jsonl::non_empty_string"
     )]
     model_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     time: Option<KiloTime>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     session_id: Option<String>,
@@ -45,6 +47,7 @@ struct KiloTokens {
     input: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     output: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     cache: Option<KiloCache>,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     reasoning: u64,
@@ -258,6 +261,34 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn keeps_kilo_record_when_cache_field_is_not_an_object() {
+        let value = serde_json::from_value::<KiloMessage>(serde_json::json!({
+            "id": "msg-1",
+            "role": "assistant",
+            "providerID": "openai",
+            "modelID": "gpt-5",
+            "time": { "created": 1767312000000_i64 },
+            "tokens": { "input": 100, "output": 10, "cache": 0 }
+        }))
+        .unwrap();
+        let entry = message_value_to_entry(
+            &value,
+            "row-1",
+            "session-a",
+            Path::new("/tmp/kilo.db"),
+            None,
+            CostMode::Auto,
+            &PricingMap::load_embedded(),
+        )
+        .unwrap();
+
+        assert_eq!(entry.data.message.usage.input_tokens, 100);
+        assert_eq!(entry.data.message.usage.output_tokens, 10);
+        assert_eq!(entry.data.message.usage.cache_creation_input_tokens, 0);
+        assert_eq!(entry.data.message.usage.cache_read_input_tokens, 0);
+    }
 
     #[test]
     fn falls_back_to_total_tokens_when_kilo_parts_are_missing() {
