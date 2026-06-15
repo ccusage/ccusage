@@ -24,6 +24,7 @@ pub(crate) use adapter::claude::{
     chunk_file_indexes_by_size, collect_files_with_extension, collect_usage_files,
     filter_loaded_entries_by_date, load_daily_summaries, load_entries,
 };
+pub(crate) use adapter::read_files_parallel;
 pub(crate) use blocks::{
     block_json, calculate_burn_rate, filter_blocks_by_date, format_remaining_time,
     identify_session_blocks, print_active_block_detail, print_blocks_table, sort_blocks,

@@ -2,7 +2,6 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    thread,
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -12,9 +11,9 @@ use super::{
     paths::paths,
 };
 use crate::{
-    LoadedEntry, PricingMap, Result, chunk_file_indexes_by_size,
+    LoadedEntry, PricingMap, Result,
     cli::{CostMode, SharedArgs},
-    collect_files_with_extension, debug_log, parse_tz,
+    collect_files_with_extension, debug_log, parse_tz, read_files_parallel,
 };
 
 pub(crate) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
@@ -89,7 +88,12 @@ pub(crate) fn load_entries_from_directory(
         });
     }
 
-    let loaded = read_message_files(&files, tz.as_ref(), shared.mode, pricing.as_ref(), shared);
+    // Read the surviving files in parallel, then run the sequential id dedup
+    // over the results in their original file order so parallelism never changes
+    // which duplicate survives.
+    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
+        read_message_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared)
+    });
     for entry in loaded.into_iter().flatten() {
         if let Some(id) = entry_id(&entry)
             && !seen.insert(id.to_string())
@@ -100,71 +104,6 @@ pub(crate) fn load_entries_from_directory(
     }
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
-}
-
-/// Reads and parses the collected message files, returning one slot per input
-/// file in the original order so the caller's sequential dedup pass observes a
-/// deterministic ordering regardless of how many worker threads ran.
-///
-/// Honors [`SharedArgs::single_thread`] and falls back to a sequential read
-/// when only a single worker would be used. Per-file read failures are logged
-/// and skipped (mirroring the Claude loader's swallow-and-continue behavior)
-/// rather than aborting the whole load.
-fn read_message_files(
-    files: &[PathBuf],
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    shared: &SharedArgs,
-) -> Vec<Option<LoadedEntry>> {
-    let worker_count = if shared.single_thread {
-        1
-    } else {
-        thread::available_parallelism()
-            .map(usize::from)
-            .unwrap_or(1)
-            .min(files.len())
-    };
-    if worker_count <= 1 {
-        return files
-            .iter()
-            .map(|file| read_message_file(file, tz, mode, pricing, shared))
-            .collect();
-    }
-
-    // Balance the files across workers by byte size so a few large files do not
-    // serialize a single worker, then reassemble results by their original
-    // index to keep the output order identical to the sequential read.
-    let chunks = chunk_file_indexes_by_size(files, worker_count);
-    thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(chunks.len());
-        for chunk in chunks {
-            let tz = tz.cloned();
-            handles.push(scope.spawn(move || {
-                chunk
-                    .into_iter()
-                    .map(|index| {
-                        (
-                            index,
-                            read_message_file(&files[index], tz.as_ref(), mode, pricing, shared),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            }));
-        }
-        let mut loaded = Vec::with_capacity(files.len());
-        loaded.resize_with(files.len(), || None);
-        for (index, entry) in handles
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("opencode message worker panicked"))
-        {
-            loaded[index] = Some(entry);
-        }
-        loaded
-            .into_iter()
-            .map(|entry| entry.expect("opencode message worker returned every file"))
-            .collect()
-    })
 }
 
 fn db_path(opencode_dir: &Path) -> Option<PathBuf> {
