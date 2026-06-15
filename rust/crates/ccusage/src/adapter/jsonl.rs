@@ -140,6 +140,51 @@ where
     })
 }
 
+/// Deserialize a JSON array into `Option<Vec<T>>` leniently, skipping elements
+/// that fail to deserialize into `T`.
+///
+/// A JSON array yields `Some(vec)` containing only the elements that
+/// successfully deserialize (malformed entries are dropped, not fatal); any
+/// non-array value, null, and missing values become `None`. This reproduces the
+/// historical `Value::as_array` navigation, where a non-array field was treated
+/// as absent and individual bad elements were skipped instead of discarding the
+/// whole record. The `Some`/`None` distinction lets callers tell an array that
+/// was present (even if empty) apart from a missing or non-array field.
+///
+/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_array")]`.
+pub(crate) fn lenient_array<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        Some(serde_json::Value::Array(items)) => Some(
+            items
+                .into_iter()
+                .filter_map(|item| serde_json::from_value(item).ok())
+                .collect(),
+        ),
+        _ => None,
+    })
+}
+
+/// Deserialize a JSON array into `Vec<T>` leniently, skipping elements that fail
+/// to deserialize into `T`.
+///
+/// Like [`lenient_array`] but collapses the missing/non-array case to an empty
+/// `Vec` for callers that do not need to distinguish a present-but-empty array
+/// from an absent field.
+///
+/// Use with `#[serde(default, deserialize_with = "jsonl::lenient_vec")]`.
+pub(crate) fn lenient_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    Ok(lenient_array(deserializer)?.unwrap_or_default())
+}
+
 /// Deserialize a JSON value into a trimmed, non-empty [`String`].
 ///
 /// Mirrors [`crate::non_empty_json_string`]: non-string values and
@@ -160,7 +205,10 @@ where
 mod tests {
     use serde::Deserialize;
 
-    use super::{lenient_f64, lenient_i64, lenient_object, lenient_u64, non_empty_string, records};
+    use super::{
+        lenient_array, lenient_f64, lenient_i64, lenient_object, lenient_u64, lenient_vec,
+        non_empty_string, records,
+    };
     use crate::fast::LinePrefilter;
 
     #[derive(Debug, PartialEq, Deserialize)]
@@ -297,6 +345,52 @@ mod tests {
                 },
                 "raw: {raw}"
             );
+        }
+    }
+
+    #[test]
+    fn lenient_array_and_vec_skip_bad_elements_and_tolerate_non_arrays() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Item {
+            #[serde(default, deserialize_with = "lenient_u64")]
+            value: u64,
+        }
+
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Outer {
+            #[serde(default, deserialize_with = "lenient_array")]
+            optional: Option<Vec<Item>>,
+            #[serde(default, deserialize_with = "lenient_vec")]
+            required: Vec<Item>,
+        }
+
+        let parse = |raw: &str| serde_json::from_str::<Outer>(raw).unwrap();
+
+        // Non-object array elements are skipped instead of failing the record.
+        let mixed =
+            parse(r#"{"optional":[{"value":1},"oops",{"value":2}],"required":[3,{"value":4}]}"#);
+        assert_eq!(
+            mixed.optional,
+            Some(vec![Item { value: 1 }, Item { value: 2 }])
+        );
+        assert_eq!(mixed.required, vec![Item { value: 4 }]);
+
+        // A present-but-empty array stays distinguishable from a missing field
+        // for `lenient_array`, while `lenient_vec` collapses both to an empty
+        // vec.
+        let empty = parse(r#"{"optional":[],"required":[]}"#);
+        assert_eq!(empty.optional, Some(vec![]));
+        assert_eq!(empty.required, vec![]);
+
+        // Non-array and missing values become None / empty without erroring.
+        for raw in [
+            r#"{"optional":5,"required":"nope"}"#,
+            r#"{"optional":null,"required":null}"#,
+            r#"{}"#,
+        ] {
+            let parsed = parse(raw);
+            assert_eq!(parsed.optional, None, "raw: {raw}");
+            assert_eq!(parsed.required, Vec::<Item>::new(), "raw: {raw}");
         }
     }
 
