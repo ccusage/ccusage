@@ -21,17 +21,17 @@ use crate::{
 struct AmpThread {
     #[serde(default, deserialize_with = "super::super::jsonl::non_empty_string")]
     id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::super::jsonl::lenient_vec")]
     messages: Vec<AmpMessage>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::super::jsonl::lenient_object")]
     usage_ledger: Option<AmpUsageLedger>,
 }
 
 /// Wrapper around the ledger's `events` array.
 #[derive(Debug, Default, Deserialize)]
 struct AmpUsageLedger {
-    #[serde(default)]
-    events: Vec<AmpLedgerEvent>,
+    #[serde(default, deserialize_with = "super::super::jsonl::lenient_array")]
+    events: Option<Vec<AmpLedgerEvent>>,
 }
 
 /// A single ledger event carrying token counts and pricing metadata.
@@ -83,10 +83,12 @@ pub(crate) fn read_thread_file(
     };
     let messages = &thread.messages;
 
-    if let Some(ledger) = thread.usage_ledger.as_ref() {
+    if let Some(ledger) = thread.usage_ledger.as_ref()
+        && let Some(events) = ledger.events.as_ref()
+    {
         let cache_tokens = cache_tokens_by_message_id(messages);
         return Ok(parse_ledger_events(
-            &ledger.events,
+            events,
             &cache_tokens,
             &thread_id,
             tz,
@@ -474,5 +476,61 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.output_tokens, 345);
         assert_eq!(entries[0].extra_total_tokens, 0);
+    }
+
+    #[test]
+    fn empty_usage_ledger_falls_back_to_message_usage() {
+        // A `usageLedger` object without a usable `events` array must not win
+        // precedence over `messages`; the thread should still report message
+        // usage instead of returning nothing.
+        let fixture = fs_fixture!({
+            "thread.json": r#"{
+                "id":"T-thread-a",
+                "usageLedger":{},
+                "messages":[
+                    {"role":"assistant","usage":{
+                        "model":"claude-haiku-4-5-20251001",
+                        "inputTokens":10,
+                        "outputTokens":178,
+                        "timestamp":"2026-01-19T11:42:10.652Z"
+                    }}
+                ]
+            }"#,
+        });
+        let file = fixture.path("thread.json");
+
+        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 178);
+    }
+
+    #[test]
+    fn malformed_message_element_does_not_drop_the_thread() {
+        // A non-object entry in `messages` (and a non-object `usageLedger`) must
+        // be skipped gracefully rather than failing the whole thread.
+        let fixture = fs_fixture!({
+            "thread.json": r#"{
+                "id":"T-thread-a",
+                "usageLedger":"not-an-object",
+                "messages":[
+                    "garbage",
+                    {"role":"assistant","usage":{
+                        "model":"claude-haiku-4-5-20251001",
+                        "inputTokens":10,
+                        "outputTokens":178,
+                        "timestamp":"2026-01-19T11:42:10.652Z"
+                    }}
+                ]
+            }"#,
+        });
+        let file = fixture.path("thread.json");
+
+        let entries = read_thread_file(&file, None, CostMode::Auto, None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 178);
     }
 }

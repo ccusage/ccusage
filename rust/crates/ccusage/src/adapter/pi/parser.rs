@@ -274,4 +274,20 @@ mod tests {
         // In Auto mode with a display cost present, no missing pricing warning
         assert_eq!(entries[0].missing_pricing_model, None);
     }
+
+    #[test]
+    fn keeps_record_when_cost_is_not_an_object() {
+        // A non-object `cost` must not fail the whole line; the usage tokens
+        // should still be counted with display cost treated as missing.
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":100,"output":200,"cost":0}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+
+        let entries = read_session_file(&file, None, CostMode::Display, None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 200);
+    }
 }
