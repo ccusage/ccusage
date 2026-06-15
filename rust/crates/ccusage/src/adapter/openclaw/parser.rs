@@ -33,6 +33,11 @@ struct OpenClawLine {
     model: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     provider: Option<String>,
+    // A non-object `message` previously navigated to no usage without dropping
+    // the line, so deserialize it leniently. Otherwise a malformed `message` on
+    // a model-tracking line would fail the whole record and lose the
+    // model/provider state update for subsequent usage entries.
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     message: Option<OpenClawMessage>,
     timestamp: Option<Value>,
 }
@@ -381,7 +386,32 @@ pub(super) fn entry_id(entry: &LoadedEntry) -> String {
 
 #[cfg(test)]
 mod tests {
+    use ccusage_test_support::fs_fixture;
+
     use super::*;
+
+    #[test]
+    fn malformed_message_does_not_drop_model_tracking_line() {
+        // A `model_change` line whose `message` field is a non-object must still
+        // deserialize and update the tracked model/provider, instead of being
+        // dropped by `records().ok()` and losing state for later usage entries.
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":"not-an-object"}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                "\n",
+            ),
+        });
+        let file = fixture.path("session.jsonl");
+
+        let entries = parse_session_file(&file, None, CostMode::Auto, None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
+        assert_eq!(entries[0].data.version.as_deref(), Some("openai"));
+        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+    }
 
     #[test]
     fn falls_back_to_total_tokens_when_openclaw_parts_are_missing() {
