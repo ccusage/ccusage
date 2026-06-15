@@ -38,11 +38,8 @@ struct CodebuffContext {
 }
 
 pub(super) fn load_chat_file(path: &Path) -> Result<Vec<CodebuffEntry>> {
-    let content = fs::read_to_string(path)?;
-    let Ok(messages) = serde_json::from_str::<Value>(&content) else {
-        return Ok(Vec::new());
-    };
-    let Some(messages) = messages.as_array() else {
+    let content = fs::read(path)?;
+    let Ok(messages) = serde_json::from_slice::<Vec<Value>>(&content) else {
         return Ok(Vec::new());
     };
     let context = derive_context(path);

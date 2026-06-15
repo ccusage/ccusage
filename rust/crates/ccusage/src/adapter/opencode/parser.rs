@@ -1,36 +1,91 @@
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde_json::Value;
+use serde::Deserialize;
 
+use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    calculate_cost_for_usage, cli::CostMode, format_date_tz, json_value_u64,
-    missing_pricing_model_for_candidates, non_empty_json_string,
+    calculate_cost_for_usage, cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
 };
 
+/// A single parsed OpenCode message. Only the fields ccusage consumes are
+/// declared; serde skips everything else.
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct OpenCodeMessage {
+    tokens: Option<OpenCodeTokens>,
+    #[serde(
+        rename = "modelID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    model_id: Option<String>,
+    #[serde(
+        rename = "providerID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    provider_id: Option<String>,
+    time: Option<OpenCodeTime>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    id: Option<String>,
+    #[serde(
+        rename = "sessionID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    session_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_f64")]
+    cost: Option<f64>,
+}
+
+/// Token usage block carried by OpenCode messages.
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeTokens {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    input: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    output: u64,
+    cache: Option<OpenCodeCache>,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    total: u64,
+}
+
+/// Cache read/write counts nested under OpenCode token usage.
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeCache {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    read: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    write: u64,
+}
+
+/// Creation timestamp block carried by OpenCode messages.
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeTime {
+    #[serde(default, deserialize_with = "jsonl::lenient_i64")]
+    created: Option<i64>,
+}
+
 pub(crate) fn message_value_to_entry(
-    value: &Value,
+    value: &OpenCodeMessage,
     id: Option<String>,
     session_id: Option<String>,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<LoadedEntry> {
-    let tokens = value.get("tokens")?;
+    let tokens = value.tokens.as_ref()?;
+    let cache = tokens.cache.as_ref();
     let usage = TokenUsageRaw {
-        input_tokens: json_value_u64(tokens.get("input")),
-        output_tokens: json_value_u64(tokens.get("output")),
-        cache_creation_input_tokens: tokens
-            .get("cache")
-            .map_or(0, |cache| json_value_u64(cache.get("write"))),
-        cache_read_input_tokens: tokens
-            .get("cache")
-            .map_or(0, |cache| json_value_u64(cache.get("read"))),
+        input_tokens: tokens.input,
+        output_tokens: tokens.output,
+        cache_creation_input_tokens: cache.map_or(0, |cache| cache.write),
+        cache_read_input_tokens: cache.map_or(0, |cache| cache.read),
         speed: None,
         cache_creation: None,
     };
-    let total_tokens = json_value_u64(tokens.get("total"));
+    let total_tokens = tokens.total;
     let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total_tokens);
     if usage.input_tokens == 0
         && usage.output_tokens == 0
@@ -40,17 +95,17 @@ pub(crate) fn message_value_to_entry(
     {
         return None;
     }
-    let model = non_empty_json_string(value.get("modelID"))?;
-    let provider = non_empty_json_string(value.get("providerID"))?;
+    let model = value.model_id.clone()?;
+    let provider = value.provider_id.clone()?;
     let millis = value
-        .get("time")
-        .and_then(|time| time.get("created"))
-        .and_then(Value::as_i64)
+        .time
+        .as_ref()
+        .and_then(|time| time.created)
         .unwrap_or(0);
     let timestamp = crate::TimestampMs::from_millis(millis);
     let timestamp_text = crate::format_rfc3339_millis(timestamp);
-    let message_id = id.or_else(|| non_empty_json_string(value.get("id")));
-    let session_id = session_id.or_else(|| non_empty_json_string(value.get("sessionID")));
+    let message_id = id.or_else(|| value.id.clone());
+    let session_id = session_id.or_else(|| value.session_id.clone());
     let data = UsageEntry {
         session_id: session_id.clone(),
         timestamp: timestamp_text,
@@ -60,7 +115,7 @@ pub(crate) fn message_value_to_entry(
             model: Some(model.clone()),
             id: message_id,
         },
-        cost_usd: value.get("cost").and_then(Value::as_f64),
+        cost_usd: value.cost,
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
@@ -187,8 +242,12 @@ fn normalize_open_code_model_name(model: &str) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::{message_value_to_entry, open_code_model_candidates};
+    use super::{OpenCodeMessage, message_value_to_entry, open_code_model_candidates};
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
+
+    fn message(value: serde_json::Value) -> OpenCodeMessage {
+        serde_json::from_value(value).unwrap()
+    }
 
     fn entry_snapshot(entry: &LoadedEntry) -> serde_json::Value {
         json!({
@@ -232,7 +291,7 @@ mod tests {
             }"#,
         );
         let entry = message_value_to_entry(
-            &json!({
+            &message(json!({
                 "id": "message-a",
                 "sessionID": "session-a",
                 "providerID": "openai",
@@ -244,7 +303,7 @@ mod tests {
                     "cache": { "read": 50 }
                 },
                 "cost": 0
-            }),
+            })),
             None,
             None,
             None,
@@ -259,7 +318,7 @@ mod tests {
     #[test]
     fn keeps_positive_opencode_cost() {
         let entry = message_value_to_entry(
-            &json!({
+            &message(json!({
                 "id": "message-a",
                 "sessionID": "session-a",
                 "providerID": "openai",
@@ -269,7 +328,7 @@ mod tests {
                     "input": 100
                 },
                 "cost": 0.02
-            }),
+            })),
             None,
             None,
             None,
@@ -284,7 +343,7 @@ mod tests {
     #[test]
     fn falls_back_to_total_tokens_when_opencode_token_parts_are_missing() {
         let entry = message_value_to_entry(
-            &json!({
+            &message(json!({
                 "id": "message-a",
                 "sessionID": "session-a",
                 "providerID": "openai",
@@ -293,7 +352,7 @@ mod tests {
                 "tokens": {
                     "total": 123
                 }
-            }),
+            })),
             None,
             None,
             None,
@@ -323,7 +382,7 @@ mod tests {
     fn calculates_cost_for_k2p6_when_opencode_stores_zero_cost() {
         let pricing = PricingMap::load_embedded();
         let entry = message_value_to_entry(
-            &json!({
+            &message(json!({
                 "id": "message-a",
                 "sessionID": "session-a",
                 "providerID": "kimi-for-coding",
@@ -335,7 +394,7 @@ mod tests {
                     "cache": { "read": 50 }
                 },
                 "cost": 0
-            }),
+            })),
             None,
             None,
             None,
@@ -360,7 +419,7 @@ mod tests {
             }"#,
         );
         let calculated = message_value_to_entry(
-            &json!({
+            &message(json!({
                 "id": "message-a",
                 "sessionID": "session-a",
                 "providerID": "github-copilot",
@@ -373,7 +432,7 @@ mod tests {
                     "total": 185
                 },
                 "cost": 0
-            }),
+            })),
             None,
             None,
             None,
@@ -382,14 +441,14 @@ mod tests {
         )
         .unwrap();
         let display_cost = message_value_to_entry(
-            &json!({
+            &message(json!({
                 "id": "message-b",
                 "providerID": "openai",
                 "modelID": "gpt-test",
                 "time": { "created": 0 },
                 "tokens": { "total": 123 },
                 "cost": 0.02
-            }),
+            })),
             None,
             Some("explicit-session".to_string()),
             None,

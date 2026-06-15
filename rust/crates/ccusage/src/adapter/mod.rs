@@ -8,6 +8,7 @@ pub(crate) mod droid;
 pub(crate) mod gemini;
 pub(crate) mod goose;
 pub(crate) mod hermes;
+pub(crate) mod jsonl;
 pub(crate) mod kilo;
 pub(crate) mod kimi;
 pub(crate) mod openclaw;

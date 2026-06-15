@@ -1,25 +1,60 @@
 use std::{
     collections::HashSet,
-    fs::{self, File},
-    io::{BufRead, BufReader},
+    fs,
     path::Path,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde_json::Value;
+use serde::Deserialize;
 
-use super::paths;
+use super::{super::jsonl, paths};
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage,
     cli::{CostMode, SharedArgs},
-    format_date_tz, format_rfc3339_millis, json_value_u64, missing_pricing_model_for_candidates,
-    non_empty_json_string, parse_ts_timestamp, parse_tz,
+    format_date_tz, format_rfc3339_millis, missing_pricing_model_for_candidates,
+    parse_ts_timestamp, parse_tz,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
+
+/// Cheap substring prefilter: every usable Qwen line carries token counts under
+/// the `usageMetadata` key, so lines without it are skipped before JSON parsing.
+const QWEN_USAGE_MARKER: &[u8] = b"usageMetadata";
+
+/// A single parsed Qwen chat record. Only the fields ccusage consumes are
+/// declared; serde skips everything else.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QwenLine {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    r#type: Option<String>,
+    usage_metadata: Option<QwenUsageMetadata>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    timestamp: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    session_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+}
+
+/// Gemini-style usage metadata block carried by Qwen assistant records.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QwenUsageMetadata {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    prompt_token_count: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    candidates_token_count: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    thoughts_token_count: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cached_content_token_count: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    total_token_count: u64,
+}
 
 pub(super) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
     let pricing = if shared.mode == CostMode::Display {
@@ -53,17 +88,10 @@ fn read_chat_file(
     shared: &SharedArgs,
 ) -> Result<Vec<LoadedEntry>> {
     let fallback = file_timestamp(file, shared);
-    let input = File::open(file)?;
-    let reader = BufReader::new(input);
+    let content = fs::read(file)?;
     let mut entries = Vec::new();
-    for line in reader.lines() {
-        let Ok(line) = line else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if let Some(entry) = parse_line(file, fallback, &value, tz, mode, pricing) {
+    for record in jsonl::records::<QwenLine>(&content, Some(QWEN_USAGE_MARKER)) {
+        if let Some(entry) = parse_line(file, fallback, &record, tz, mode, pricing) {
             entries.push(entry);
         }
     }
@@ -73,21 +101,20 @@ fn read_chat_file(
 fn parse_line(
     file: &Path,
     fallback: TimestampMs,
-    value: &Value,
+    record: &QwenLine,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<LoadedEntry> {
-    let record = value.as_object()?;
-    if record.get("type").and_then(Value::as_str) != Some("assistant") {
+    if record.r#type.as_deref() != Some("assistant") {
         return None;
     }
-    let usage = record.get("usageMetadata")?;
-    let input_tokens = json_value_u64(usage.get("promptTokenCount"));
-    let output_tokens = json_value_u64(usage.get("candidatesTokenCount"));
-    let reasoning_tokens = json_value_u64(usage.get("thoughtsTokenCount"));
-    let cache_read_tokens = json_value_u64(usage.get("cachedContentTokenCount"));
-    let total_tokens = json_value_u64(usage.get("totalTokenCount"));
+    let usage = record.usage_metadata.as_ref()?;
+    let input_tokens = usage.prompt_token_count;
+    let output_tokens = usage.candidates_token_count;
+    let reasoning_tokens = usage.thoughts_token_count;
+    let cache_read_tokens = usage.cached_content_token_count;
+    let total_tokens = usage.total_token_count;
     let display_usage = TokenUsageRaw {
         input_tokens,
         output_tokens,
@@ -106,19 +133,23 @@ fn parse_line(
         return None;
     }
 
-    let timestamp_text = non_empty_json_string(record.get("timestamp"))
+    let timestamp_text = record
+        .timestamp
+        .clone()
         .and_then(|value| parse_ts_timestamp(&value).map(|_| value))
         .unwrap_or_else(|| format_rfc3339_millis(fallback));
     let timestamp = parse_ts_timestamp(&timestamp_text).unwrap_or(fallback);
     let project = paths::project_from_file(file).unwrap_or_else(|| "unknown".to_string());
-    let session_id = non_empty_json_string(record.get("sessionId")).unwrap_or_else(|| {
+    let session_id = record.session_id.clone().unwrap_or_else(|| {
         let stem = file
             .file_stem()
             .and_then(|stem| stem.to_str())
             .unwrap_or("unknown");
         format!("{project}-{stem}")
     });
-    let model = non_empty_json_string(record.get("model"))
+    let model = record
+        .model
+        .clone()
         .unwrap_or_else(|| DEFAULT_QWEN_MODEL.to_string());
     let billable_usage = TokenUsageRaw {
         output_tokens: display_usage
@@ -285,18 +316,20 @@ mod tests {
 
     #[test]
     fn falls_back_to_total_token_count_when_qwen_parts_are_missing() {
+        let record = serde_json::from_value::<QwenLine>(serde_json::json!({
+            "type": "assistant",
+            "timestamp": "2026-01-02T00:00:00.000Z",
+            "sessionId": "session-a",
+            "model": "qwen3-coder",
+            "usageMetadata": {
+                "totalTokenCount": 321
+            }
+        }))
+        .unwrap();
         let entry = parse_line(
             Path::new("/tmp/project/chat.jsonl"),
             TimestampMs::UNIX_EPOCH,
-            &serde_json::json!({
-                "type": "assistant",
-                "timestamp": "2026-01-02T00:00:00.000Z",
-                "sessionId": "session-a",
-                "model": "qwen3-coder",
-                "usageMetadata": {
-                    "totalTokenCount": 321
-                }
-            }),
+            &record,
             None,
             CostMode::Auto,
             None,

@@ -4,9 +4,54 @@ use std::{
     path::Path,
 };
 
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
+use super::super::jsonl;
 use crate::{Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback};
+
+/// Cheap substring prefilter: every usable Copilot OTel record carries the
+/// `attributes` object, so lines without it are skipped before JSON parsing.
+const COPILOT_ATTRIBUTES_MARKER: &[u8] = b"\"attributes\"";
+
+/// A single parsed Copilot OpenTelemetry record. Only the fields ccusage
+/// consumes are declared; serde skips everything else. The `attributes` block
+/// is kept as a dynamic map because Copilot addresses it by arbitrary dotted
+/// keys (for example `gen_ai.usage.input_tokens`), and the timestamp-bearing
+/// fields stay as raw values because they appear as both numeric scalars and
+/// `[seconds, nanos]` arrays depending on the exporter.
+#[derive(Debug, Deserialize)]
+struct CopilotRecord {
+    #[serde(rename = "type")]
+    record_type: Option<Value>,
+    name: Option<Value>,
+    #[serde(rename = "spanId")]
+    span_id: Option<Value>,
+    #[serde(rename = "traceId")]
+    trace_id: Option<Value>,
+    #[serde(rename = "spanContext")]
+    span_context: Option<Value>,
+    #[serde(rename = "startTime")]
+    start_time: Option<Value>,
+    #[serde(rename = "endTime")]
+    end_time: Option<Value>,
+    duration: Option<Value>,
+    kind: Option<Value>,
+    #[serde(rename = "hrTime")]
+    hr_time: Option<Value>,
+    #[serde(rename = "_hrTime")]
+    underscore_hr_time: Option<Value>,
+    time: Option<Value>,
+    timestamp: Option<Value>,
+    #[serde(rename = "observedTimestamp")]
+    observed_timestamp: Option<Value>,
+    #[serde(rename = "timeUnixNano")]
+    time_unix_nano: Option<Value>,
+    body: Option<Value>,
+    #[serde(rename = "_body")]
+    underscore_body: Option<Value>,
+    attributes: Option<Map<String, Value>>,
+}
 
 #[derive(Debug, Clone)]
 pub(super) struct CopilotUsageEntry {
@@ -53,12 +98,8 @@ struct CopilotUsageCandidate {
 }
 
 pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
-    let content = fs::read_to_string(path)?;
-    let records = content
-        .lines()
-        .filter(|line| line.contains("\"attributes\""))
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter_map(|value| value.as_object().cloned())
+    let content = fs::read(path)?;
+    let records = jsonl::records::<CopilotRecord>(&content, Some(COPILOT_ATTRIBUTES_MARKER))
         .collect::<Vec<_>>();
     let trace_contexts = collect_trace_contexts(&records);
     let fallback_timestamp = file_modified_timestamp(path);
@@ -88,13 +129,13 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
         .collect())
 }
 
-fn collect_trace_contexts(records: &[Map<String, Value>]) -> HashMap<String, TraceContext> {
+fn collect_trace_contexts(records: &[CopilotRecord]) -> HashMap<String, TraceContext> {
     let mut contexts = HashMap::new();
     for record in records {
         let Some(trace_id) = trace_id_from_record(record) else {
             continue;
         };
-        let Some(attributes) = record.get("attributes").and_then(Value::as_object) else {
+        let Some(attributes) = record.attributes.as_ref() else {
             continue;
         };
         let context = contexts
@@ -114,12 +155,12 @@ fn collect_trace_contexts(records: &[Map<String, Value>]) -> HashMap<String, Tra
 }
 
 fn to_candidate(
-    record: &Map<String, Value>,
+    record: &CopilotRecord,
     index: usize,
     fallback_timestamp: TimestampMs,
     trace_contexts: &HashMap<String, TraceContext>,
 ) -> Option<CopilotUsageCandidate> {
-    let attributes = record.get("attributes")?.as_object()?;
+    let attributes = record.attributes.as_ref()?;
     let source = if is_chat_span_record(record, attributes) {
         CopilotUsageSource::ChatSpan
     } else if is_inference_log_record(record, attributes) {
@@ -299,43 +340,40 @@ const SESSION_ATTRS: &[(&str, u8)] = &[
     ("gen_ai.response.id", 1),
 ];
 
-fn is_span_record(record: &Map<String, Value>) -> bool {
-    if let Some(record_type) = record.get("type").and_then(Value::as_str) {
+fn is_span_record(record: &CopilotRecord) -> bool {
+    if let Some(record_type) = record.record_type.as_ref().and_then(Value::as_str) {
         return record_type == "span";
     }
-    string_value(record.get("name")).is_some()
-        && (string_value(record.get("spanId")).is_some()
-            || string_value(record.get("traceId")).is_some()
-            || record.get("startTime").is_some()
-            || record.get("endTime").is_some()
-            || record.get("duration").is_some()
-            || record.get("kind").is_some())
+    string_value(record.name.as_ref()).is_some()
+        && (string_value(record.span_id.as_ref()).is_some()
+            || string_value(record.trace_id.as_ref()).is_some()
+            || record.start_time.is_some()
+            || record.end_time.is_some()
+            || record.duration.is_some()
+            || record.kind.is_some())
 }
 
-fn is_chat_span_record(record: &Map<String, Value>, attributes: &Map<String, Value>) -> bool {
+fn is_chat_span_record(record: &CopilotRecord, attributes: &Map<String, Value>) -> bool {
     is_span_record(record)
         && (attr_string(attributes, "gen_ai.operation.name").as_deref() == Some("chat")
-            || string_value(record.get("name")).is_some_and(|name| name.starts_with("chat ")))
+            || string_value(record.name.as_ref()).is_some_and(|name| name.starts_with("chat ")))
 }
 
-fn is_agent_summary_span_record(
-    record: &Map<String, Value>,
-    attributes: &Map<String, Value>,
-) -> bool {
+fn is_agent_summary_span_record(record: &CopilotRecord, attributes: &Map<String, Value>) -> bool {
     is_span_record(record)
         && (attr_string(attributes, "gen_ai.operation.name").as_deref() == Some("invoke_agent")
-            || string_value(record.get("name"))
+            || string_value(record.name.as_ref())
                 .is_some_and(|name| name.starts_with("invoke_agent ")))
 }
 
-fn is_inference_log_record(record: &Map<String, Value>, attributes: &Map<String, Value>) -> bool {
+fn is_inference_log_record(record: &CopilotRecord, attributes: &Map<String, Value>) -> bool {
     !is_span_record(record)
         && (attr_string(attributes, "event.name").as_deref()
             == Some("gen_ai.client.inference.operation.details")
             || record_body(record).is_some_and(|body| body.starts_with("GenAI inference:")))
 }
 
-fn is_agent_turn_log_record(record: &Map<String, Value>, attributes: &Map<String, Value>) -> bool {
+fn is_agent_turn_log_record(record: &CopilotRecord, attributes: &Map<String, Value>) -> bool {
     !is_span_record(record)
         && (attr_string(attributes, "event.name").as_deref() == Some("copilot_chat.agent.turn")
             || record_body(record).is_some_and(|body| body.starts_with("copilot_chat.agent.turn")))
@@ -343,7 +381,7 @@ fn is_agent_turn_log_record(record: &Map<String, Value>, attributes: &Map<String
 
 fn dedup_key_for_record(
     source: CopilotUsageSource,
-    record: &Map<String, Value>,
+    record: &CopilotRecord,
     attributes: &Map<String, Value>,
     trace_id: &Option<String>,
     session_id: &str,
@@ -376,28 +414,27 @@ fn dedup_key_for_record(
     }
 }
 
-fn trace_id_from_record(record: &Map<String, Value>) -> Option<String> {
-    string_value(record.get("traceId"))
+fn trace_id_from_record(record: &CopilotRecord) -> Option<String> {
+    string_value(record.trace_id.as_ref())
         .map(str::to_string)
-        .or_else(|| nested_string(record, "spanContext", "traceId"))
+        .or_else(|| nested_string(record.span_context.as_ref(), "traceId"))
 }
 
-fn span_id_from_record(record: &Map<String, Value>) -> Option<String> {
-    string_value(record.get("spanId"))
+fn span_id_from_record(record: &CopilotRecord) -> Option<String> {
+    string_value(record.span_id.as_ref())
         .map(str::to_string)
-        .or_else(|| nested_string(record, "spanContext", "spanId"))
+        .or_else(|| nested_string(record.span_context.as_ref(), "spanId"))
 }
 
-fn nested_string(record: &Map<String, Value>, object: &str, key: &str) -> Option<String> {
-    record
-        .get(object)
+fn nested_string(object: Option<&Value>, key: &str) -> Option<String> {
+    object
         .and_then(Value::as_object)
         .and_then(|object| string_value(object.get(key)))
         .map(str::to_string)
 }
 
-fn record_body(record: &Map<String, Value>) -> Option<&str> {
-    string_value(record.get("body")).or_else(|| string_value(record.get("_body")))
+fn record_body(record: &CopilotRecord) -> Option<&str> {
+    string_value(record.body.as_ref()).or_else(|| string_value(record.underscore_body.as_ref()))
 }
 
 fn string_value(value: Option<&Value>) -> Option<&str> {
@@ -443,15 +480,15 @@ fn best_session_attr(attributes: &Map<String, Value>) -> Option<(String, u8)> {
         .max_by_key(|(_, priority)| *priority)
 }
 
-fn timestamp_from_record(record: &Map<String, Value>) -> Option<TimestampMs> {
-    timestamp_from_parts(record.get("endTime"))
-        .or_else(|| timestamp_from_parts(record.get("startTime")))
-        .or_else(|| timestamp_from_parts(record.get("hrTime")))
-        .or_else(|| timestamp_from_parts(record.get("_hrTime")))
-        .or_else(|| timestamp_from_parts(record.get("time")))
-        .or_else(|| timestamp_from_scalar(record.get("timestamp")))
-        .or_else(|| timestamp_from_scalar(record.get("observedTimestamp")))
-        .or_else(|| timestamp_from_unix_nanos(record.get("timeUnixNano")))
+fn timestamp_from_record(record: &CopilotRecord) -> Option<TimestampMs> {
+    timestamp_from_parts(record.end_time.as_ref())
+        .or_else(|| timestamp_from_parts(record.start_time.as_ref()))
+        .or_else(|| timestamp_from_parts(record.hr_time.as_ref()))
+        .or_else(|| timestamp_from_parts(record.underscore_hr_time.as_ref()))
+        .or_else(|| timestamp_from_parts(record.time.as_ref()))
+        .or_else(|| timestamp_from_scalar(record.timestamp.as_ref()))
+        .or_else(|| timestamp_from_scalar(record.observed_timestamp.as_ref()))
+        .or_else(|| timestamp_from_unix_nanos(record.time_unix_nano.as_ref()))
 }
 
 fn timestamp_from_parts(value: Option<&Value>) -> Option<TimestampMs> {

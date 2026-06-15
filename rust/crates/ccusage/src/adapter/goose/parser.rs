@@ -1,12 +1,21 @@
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde_json::Value;
+use serde::Deserialize;
 
+use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage,
     cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
 };
+
+/// Goose stores the per-session model selection as a JSON blob in the
+/// `model_config_json` column. Only the human-readable model name is consumed.
+#[derive(Debug, Deserialize)]
+struct GooseModelConfig {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model_name: Option<String>,
+}
 
 pub(super) fn row_to_entry(
     statement: &sqlite::Statement<'_>,
@@ -97,9 +106,8 @@ fn read_timestamp_value(statement: &sqlite::Statement<'_>, index: usize) -> Opti
 }
 
 fn parse_goose_model_config(value: &str) -> Option<String> {
-    let value = serde_json::from_str::<Value>(value).ok()?;
-    let model = value.get("model_name")?.as_str()?.trim();
-    (!model.is_empty()).then(|| model.to_string())
+    let config = serde_json::from_str::<GooseModelConfig>(value).ok()?;
+    config.model_name
 }
 
 fn parse_goose_timestamp(value: &str) -> Option<crate::TimestampMs> {

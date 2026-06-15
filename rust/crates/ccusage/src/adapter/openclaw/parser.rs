@@ -1,18 +1,144 @@
-use std::{
-    fs,
-    io::{BufRead, BufReader},
-    path::Path,
-    sync::Arc,
-};
+use std::{fs, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde_json::{Map, Value};
+use serde::Deserialize;
+use serde_json::Value;
 
+use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
-    json_value_u64, missing_pricing_model_for_usage, non_empty_json_string,
+    missing_pricing_model_for_usage,
 };
+
+/// A single parsed OpenClaw session line. Only the fields ccusage consumes are
+/// declared; serde skips everything else. Both `model_change`/`model-snapshot`
+/// records and assistant `message` records share this struct so the stateful
+/// model/provider tracking can read either shape in order.
+#[derive(Debug, Default, Deserialize)]
+struct OpenClawLine {
+    #[serde(default)]
+    r#type: Option<String>,
+    #[serde(rename = "customType", default)]
+    custom_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_model_source")]
+    data: Option<OpenClawModelSource>,
+    #[serde(
+        rename = "modelId",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    model_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    provider: Option<String>,
+    message: Option<OpenClawMessage>,
+    timestamp: Option<Value>,
+}
+
+/// Deserialize the `data` block of a model-change record, mirroring the
+/// historical `Value::as_object` navigation: only JSON objects yield a source,
+/// while any other shape (or a missing key) becomes `None` instead of failing
+/// the whole line.
+fn deserialize_model_source<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<OpenClawModelSource>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| {
+        value
+            .is_object()
+            .then(|| serde_json::from_value(value).ok())
+            .flatten()
+    }))
+}
+
+/// Model/provider fields carried either at the root of a `model_change` record
+/// or nested under its `data` key.
+#[derive(Debug, Default, Deserialize)]
+struct OpenClawModelSource {
+    #[serde(
+        rename = "modelId",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    model_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    provider: Option<String>,
+}
+
+/// Assistant message payload carrying token usage and per-message metadata.
+#[derive(Debug, Default, Deserialize)]
+struct OpenClawMessage {
+    #[serde(default)]
+    role: Option<String>,
+    usage: Option<OpenClawUsage>,
+    timestamp: Option<Value>,
+    #[serde(
+        rename = "modelId",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    model_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    provider: Option<String>,
+}
+
+/// Token usage block carried by OpenClaw assistant messages.
+#[derive(Debug, Default, Deserialize)]
+struct OpenClawUsage {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    input: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    output: u64,
+    #[serde(rename = "cacheRead", default, deserialize_with = "jsonl::lenient_u64")]
+    cache_read: u64,
+    #[serde(
+        rename = "cacheWrite",
+        default,
+        deserialize_with = "jsonl::lenient_u64"
+    )]
+    cache_write: u64,
+    #[serde(
+        rename = "totalTokens",
+        default,
+        deserialize_with = "jsonl::lenient_u64"
+    )]
+    total_tokens: u64,
+    #[serde(default, deserialize_with = "deserialize_cost")]
+    cost: Option<OpenClawCost>,
+}
+
+/// Deserialize the `cost` block, mirroring the historical
+/// `usage.get("cost").and_then(|cost| cost.get("total"))` navigation: only JSON
+/// objects yield a cost, while any other shape (or a missing key) becomes `None`
+/// instead of failing the whole line.
+fn deserialize_cost<'de, D>(deserializer: D) -> std::result::Result<Option<OpenClawCost>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| {
+        value
+            .is_object()
+            .then(|| serde_json::from_value(value).ok())
+            .flatten()
+    }))
+}
+
+/// Precomputed cost block carried alongside OpenClaw usage.
+#[derive(Debug, Default, Deserialize)]
+struct OpenClawCost {
+    #[serde(default, deserialize_with = "jsonl::lenient_f64")]
+    total: Option<f64>,
+}
 
 #[derive(Debug, Clone)]
 struct OpenClawEntry {
@@ -37,42 +163,34 @@ pub(super) fn parse_session_file(
 ) -> Result<Vec<LoadedEntry>> {
     let session_id = extract_session_id(path);
     let fallback_timestamp = file_modified_timestamp(path);
-    let input = fs::File::open(path)?;
-    let reader = BufReader::new(input);
+    let content = fs::read(path)?;
     let mut current_model = None::<String>;
     let mut current_provider = None::<String>;
     let mut entries = Vec::new();
-    for line in reader.lines() {
-        let line = line?;
-        if !line.contains("\"model_change\"")
-            && !line.contains("\"model-snapshot\"")
-            && !line.contains("\"usage\"")
-        {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        let Some(record) = value.as_object() else {
-            continue;
-        };
-        if is_model_change(record) {
-            let source = record
-                .get("data")
-                .and_then(Value::as_object)
-                .unwrap_or(record);
-            if let Some(model) = non_empty_json_string(source.get("modelId"))
-                .or_else(|| non_empty_json_string(source.get("model")))
-            {
+    for record in jsonl::records::<OpenClawLine>(&content, None) {
+        if is_model_change(&record) {
+            let (source_model_id, source_model, source_provider) = match record.data.as_ref() {
+                Some(source) => (
+                    source.model_id.clone(),
+                    source.model.clone(),
+                    source.provider.clone(),
+                ),
+                None => (
+                    record.model_id.clone(),
+                    record.model.clone(),
+                    record.provider.clone(),
+                ),
+            };
+            if let Some(model) = source_model_id.or(source_model) {
                 current_model = Some(model);
             }
-            if let Some(provider) = non_empty_json_string(source.get("provider")) {
+            if let Some(provider) = source_provider {
                 current_provider = Some(provider);
             }
             continue;
         }
         if let Some(entry) = parse_message_entry(
-            record,
+            &record,
             &session_id,
             current_model.as_deref(),
             current_provider.as_deref(),
@@ -84,34 +202,34 @@ pub(super) fn parse_session_file(
     Ok(entries)
 }
 
-fn is_model_change(record: &Map<String, Value>) -> bool {
-    if record.get("type").and_then(Value::as_str) == Some("model_change") {
+fn is_model_change(record: &OpenClawLine) -> bool {
+    if record.r#type.as_deref() == Some("model_change") {
         return true;
     }
-    record.get("type").and_then(Value::as_str) == Some("custom")
-        && record.get("customType").and_then(Value::as_str) == Some("model-snapshot")
+    record.r#type.as_deref() == Some("custom")
+        && record.custom_type.as_deref() == Some("model-snapshot")
 }
 
 fn parse_message_entry(
-    record: &Map<String, Value>,
+    record: &OpenClawLine,
     session_id: &str,
     current_model: Option<&str>,
     current_provider: Option<&str>,
     fallback_timestamp: TimestampMs,
 ) -> Option<OpenClawEntry> {
-    if record.get("type").and_then(Value::as_str) != Some("message") {
+    if record.r#type.as_deref() != Some("message") {
         return None;
     }
-    let message = record.get("message")?.as_object()?;
-    if message.get("role").and_then(Value::as_str) != Some("assistant") {
+    let message = record.message.as_ref()?;
+    if message.role.as_deref() != Some("assistant") {
         return None;
     }
-    let usage = message.get("usage")?.as_object()?;
-    let input_tokens = json_value_u64(usage.get("input"));
-    let output_tokens = json_value_u64(usage.get("output"));
-    let cache_read_tokens = json_value_u64(usage.get("cacheRead"));
-    let cache_creation_tokens = json_value_u64(usage.get("cacheWrite"));
-    let total_tokens = json_value_u64(usage.get("totalTokens"));
+    let usage = message.usage.as_ref()?;
+    let input_tokens = usage.input;
+    let output_tokens = usage.output;
+    let cache_read_tokens = usage.cache_read;
+    let cache_creation_tokens = usage.cache_write;
+    let total_tokens = usage.total_tokens;
     let raw_usage = TokenUsageRaw {
         input_tokens,
         output_tokens,
@@ -125,14 +243,17 @@ fn parse_message_entry(
         return None;
     }
     let total_tokens = total_tokens.max(crate::total_usage_tokens(raw_usage) + extra_total_tokens);
-    let timestamp =
-        timestamp_from_value(message.get("timestamp").or_else(|| record.get("timestamp")))
-            .unwrap_or(fallback_timestamp);
-    let model = non_empty_json_string(message.get("modelId"))
-        .or_else(|| non_empty_json_string(message.get("model")))
+    let timestamp = timestamp_from_value(message.timestamp.as_ref().or(record.timestamp.as_ref()))
+        .unwrap_or(fallback_timestamp);
+    let model = message
+        .model_id
+        .clone()
+        .or_else(|| message.model.clone())
         .or_else(|| current_model.map(str::to_string))
         .unwrap_or_else(|| "unknown".to_string());
-    let provider = non_empty_json_string(message.get("provider"))
+    let provider = message
+        .provider
+        .clone()
         .or_else(|| current_provider.map(str::to_string));
     Some(OpenClawEntry {
         timestamp,
@@ -145,10 +266,7 @@ fn parse_message_entry(
         cache_creation_tokens: raw_usage.cache_creation_input_tokens,
         cache_read_tokens: raw_usage.cache_read_input_tokens,
         total_tokens,
-        cost: usage
-            .get("cost")
-            .and_then(|cost| cost.get("total"))
-            .and_then(Value::as_f64),
+        cost: usage.cost.as_ref().and_then(|cost| cost.total),
     })
 }
 
@@ -262,7 +380,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_total_tokens_when_openclaw_parts_are_missing() {
-        let record = serde_json::json!({
+        let record = serde_json::from_value::<OpenClawLine>(serde_json::json!({
             "type": "message",
             "message": {
                 "role": "assistant",
@@ -271,15 +389,10 @@ mod tests {
                     "totalTokens": 222
                 }
             }
-        });
-        let entry = parse_message_entry(
-            record.as_object().unwrap(),
-            "session-a",
-            None,
-            None,
-            TimestampMs::UNIX_EPOCH,
-        )
+        }))
         .unwrap();
+        let entry =
+            parse_message_entry(&record, "session-a", None, None, TimestampMs::UNIX_EPOCH).unwrap();
 
         assert_eq!(entry.output_tokens, 222);
         assert_eq!(entry.total_tokens, 222);

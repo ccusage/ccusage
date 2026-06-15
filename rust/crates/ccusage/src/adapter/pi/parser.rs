@@ -1,13 +1,73 @@
 use std::{fs, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde_json::Value;
+use serde::Deserialize;
 
+use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
-    json_value_u64, missing_pricing_model_for_usage, non_empty_json_string,
+    missing_pricing_model_for_usage,
 };
+
+/// Cheap substring prefilter: every usable pi line carries token counts under
+/// the `usage` key, so lines without it are skipped before JSON parsing. The
+/// companion `"message"` requirement is enforced downstream by
+/// [`is_pi_message_usage`], which only accepts records whose message object
+/// carries a usage block.
+const PI_USAGE_MARKER: &[u8] = b"\"usage\"";
+
+/// A single parsed pi session record. Only the fields ccusage consumes are
+/// declared; serde skips everything else.
+#[derive(Debug, Deserialize)]
+struct PiLine {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    r#type: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    timestamp: Option<String>,
+    message: Option<PiMessage>,
+}
+
+/// The pi `message` block carried by assistant records.
+#[derive(Debug, Deserialize)]
+struct PiMessage {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    role: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    usage: Option<PiUsage>,
+}
+
+/// Token counts and optional display cost carried by a pi assistant message.
+#[derive(Debug, Default, Deserialize)]
+struct PiUsage {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    input: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    output: u64,
+    #[serde(rename = "cacheRead", default, deserialize_with = "jsonl::lenient_u64")]
+    cache_read: u64,
+    #[serde(
+        rename = "cacheWrite",
+        default,
+        deserialize_with = "jsonl::lenient_u64"
+    )]
+    cache_write: u64,
+    #[serde(
+        rename = "totalTokens",
+        default,
+        deserialize_with = "jsonl::lenient_u64"
+    )]
+    total_tokens: u64,
+    cost: Option<PiCost>,
+}
+
+/// Optional display cost block carried by a pi assistant message.
+#[derive(Debug, Default, Deserialize)]
+struct PiCost {
+    #[serde(default, deserialize_with = "jsonl::lenient_f64")]
+    total: Option<f64>,
+}
 
 pub(crate) fn read_session_file(
     path: &Path,
@@ -15,38 +75,32 @@ pub(crate) fn read_session_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
-    let content = fs::read_to_string(path)?;
+    let content = fs::read(path)?;
     let project = extract_project(path);
     let session_id = extract_session_id(path);
     let mut entries = Vec::new();
 
-    for line in content.lines() {
-        if !line.contains("\"usage\"") || !line.contains("\"message\"") {
+    for record in jsonl::records::<PiLine>(&content, Some(PI_USAGE_MARKER)) {
+        if !is_pi_message_usage(&record) {
             continue;
         }
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if !is_pi_message_usage(&value) {
-            continue;
-        }
-        let Some(timestamp_text) = non_empty_json_string(value.get("timestamp")) else {
+        let Some(timestamp_text) = record.timestamp.clone() else {
             continue;
         };
         let Some(timestamp) = crate::parse_ts_timestamp(&timestamp_text) else {
             continue;
         };
-        let Some(message) = value.get("message") else {
+        let Some(message) = record.message.as_ref() else {
             continue;
         };
-        let Some(usage_value) = message.get("usage") else {
+        let Some(usage_value) = message.usage.as_ref() else {
             continue;
         };
-        let input = json_value_u64(usage_value.get("input"));
-        let output = json_value_u64(usage_value.get("output"));
-        let cache_read = json_value_u64(usage_value.get("cacheRead"));
-        let cache_create = json_value_u64(usage_value.get("cacheWrite"));
-        let total = json_value_u64(usage_value.get("totalTokens"));
+        let input = usage_value.input;
+        let output = usage_value.output;
+        let cache_read = usage_value.cache_read;
+        let cache_create = usage_value.cache_write;
+        let total = usage_value.total_tokens;
         let usage = TokenUsageRaw {
             input_tokens: input,
             output_tokens: output,
@@ -59,12 +113,8 @@ pub(crate) fn read_session_file(
         if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
             continue;
         }
-        let model =
-            non_empty_json_string(message.get("model")).map(|model| format!("[pi] {model}"));
-        let display_cost = usage_value
-            .get("cost")
-            .and_then(|cost| cost.get("total"))
-            .and_then(Value::as_f64);
+        let model = message.model.clone().map(|model| format!("[pi] {model}"));
+        let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
         let cost = calculate_cost_for_usage(model.as_deref(), usage, display_cost, mode, pricing);
         let missing_pricing_model =
             missing_pricing_model_for_usage(model.as_deref(), usage, display_cost, mode, pricing);
@@ -101,16 +151,18 @@ pub(crate) fn read_session_file(
     Ok(entries)
 }
 
-fn is_pi_message_usage(value: &Value) -> bool {
-    let message_type = value.get("type").and_then(Value::as_str);
-    if message_type.is_some_and(|message_type| message_type != "message") {
+fn is_pi_message_usage(record: &PiLine) -> bool {
+    if record
+        .r#type
+        .as_deref()
+        .is_some_and(|message_type| message_type != "message")
+    {
         return false;
     }
-    let Some(message) = value.get("message") else {
+    let Some(message) = record.message.as_ref() else {
         return false;
     };
-    message.get("role").and_then(Value::as_str) == Some("assistant")
-        && message.get("usage").is_some()
+    message.role.as_deref() == Some("assistant") && message.usage.is_some()
 }
 
 fn extract_session_id(path: &Path) -> String {

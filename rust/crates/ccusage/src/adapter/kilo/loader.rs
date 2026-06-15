@@ -1,12 +1,11 @@
 use std::{collections::HashSet, path::Path};
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde_json::Value;
 
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
 
 use super::{
-    parser::message_value_to_entry,
+    parser::{KiloMessage, message_value_to_entry},
     paths::{db_path, paths},
 };
 
@@ -72,7 +71,7 @@ fn load_entries_from_database(
                 let Ok(data) = statement.read::<String, _>(2) else {
                     continue;
                 };
-                let Ok(value) = serde_json::from_str::<Value>(&data) else {
+                let Ok(value) = serde_json::from_str::<KiloMessage>(&data) else {
                     continue;
                 };
                 if let Some(entry) = message_value_to_entry(

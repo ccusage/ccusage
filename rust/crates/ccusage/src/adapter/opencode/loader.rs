@@ -5,9 +5,11 @@ use std::{
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde_json::Value;
 
-use super::{parser::message_value_to_entry, paths::paths};
+use super::{
+    parser::{OpenCodeMessage, message_value_to_entry},
+    paths::paths,
+};
 use crate::{
     LoadedEntry, PricingMap, Result,
     cli::{CostMode, SharedArgs},
@@ -150,7 +152,7 @@ fn load_entries_from_database(
                 let Ok(data) = statement.read::<String, _>(2) else {
                     continue;
                 };
-                let Ok(value) = serde_json::from_str::<Value>(&data) else {
+                let Ok(value) = serde_json::from_str::<OpenCodeMessage>(&data) else {
                     continue;
                 };
                 if let Some(entry) =
@@ -178,8 +180,8 @@ fn read_message_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<Option<LoadedEntry>> {
-    let content = fs::read_to_string(path)?;
-    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+    let content = fs::read(path)?;
+    let Ok(value) = serde_json::from_slice::<OpenCodeMessage>(&content) else {
         return Ok(None);
     };
     Ok(message_value_to_entry(
