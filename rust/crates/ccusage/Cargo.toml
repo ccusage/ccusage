@@ -23,7 +23,6 @@ jiff = { version = "0.2.24", default-features = false, features = [
 ] }
 memchr = "2"
 compact_str = "0.9"
-phf = { version = "0.13", features = ["macros"] }
 rustc-hash = "2"
 schemars = "0.8"
 serde = { version = "1", features = ["derive"] }

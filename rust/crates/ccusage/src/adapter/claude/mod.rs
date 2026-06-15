@@ -480,21 +480,23 @@ pub(super) fn has_unsupported_null_field(line: &[u8]) -> bool {
 }
 
 fn is_unsupported_nullable_field(field: &[u8]) -> bool {
-    static FIELDS: phf::Set<&'static str> = phf::phf_set! {
-        "id",
-        "cwd",
-        "model",
-        "speed",
-        "costUSD",
-        "version",
-        "sessionId",
-        "requestId",
-        "isApiErrorMessage",
-        "cache_read_input_tokens",
-        "cache_creation_input_tokens",
-    };
-
-    std::str::from_utf8(field).is_ok_and(|field| FIELDS.contains(field))
+    // Match the raw field bytes directly against the known set of fields that
+    // are not allowed to be `null`. Comparing byte slices lets rustc dispatch on
+    // length before comparing bytes, which avoids both UTF-8 validation and the
+    // hash computation a `phf::Set` lookup would incur on every call.
+    matches!(
+        field,
+        b"id" | b"cwd"
+            | b"model"
+            | b"speed"
+            | b"costUSD"
+            | b"version"
+            | b"sessionId"
+            | b"requestId"
+            | b"isApiErrorMessage"
+            | b"cache_read_input_tokens"
+            | b"cache_creation_input_tokens"
+    )
 }
 
 pub(super) fn is_semver_prefix(value: &str) -> bool {
