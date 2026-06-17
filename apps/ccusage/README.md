@@ -25,6 +25,19 @@
 
 ## Major Sponsors
 
+<div align="center">
+
+<a href="https://linkjolt.io/l/ryotaro-kimura-ryoppippi">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://cdn.lineman.io/logo/lineman-dark.svg">
+        <img src="https://cdn.lineman.io/logo/lineman-light.svg" alt="Lineman.io: Teams and Enterprise cost monitoring" width="320">
+    </picture>
+</a>
+
+<p align="center"><a href="https://linkjolt.io/l/ryotaro-kimura-ryoppippi">Lineman.io — a Team & Enterprise solution for Claude Code:<br />40% lower token usage, full teams spend visibility, and unauthorized-spend alerts.</a></p>
+
+</div>
+
 <p align="center">
     <a href="https://coderabbit.link/ryoppippi">
         <picture>

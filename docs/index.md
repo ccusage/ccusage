@@ -57,16 +57,25 @@ features:
   <p style="margin-bottom: 1rem;">Sponsored by</p>
 
   <div style="display: flex; justify-content: center; margin-top: 1rem;">
-    <a href="https://coderabbit.link/ryoppippi" target="_blank">
+    <div style="width: min(360px, 90vw); text-align: center;">
+      <a href="https://linkjolt.io/l/ryotaro-kimura-ryoppippi" target="_blank">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.lineman.io/logo/lineman-dark.svg">
+          <img src="https://cdn.lineman.io/logo/lineman-light.svg" alt="Lineman.io: Teams and Enterprise cost monitoring" style="display: block; width: min(320px, 80vw); height: auto; margin: 0 auto;">
+        </picture>
+      </a>
+      <p><a href="https://linkjolt.io/l/ryotaro-kimura-ryoppippi" target="_blank">Lineman.io — a Team & Enterprise solution for Claude Code:<br>40% lower token usage, full teams spend visibility, and unauthorized-spend alerts.</a></p>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 2rem; align-items: center; justify-content: center; margin-top: 1rem;">
+    <a href="https://coderabbit.link/ryoppippi" target="_blank" style="display: block;">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="/coderabbit-logo-dark.svg">
         <img src="/coderabbit-logo.svg" alt="CodeRabbit" style="display: block; width: min(320px, 80vw); height: auto;">
       </picture>
     </a>
-  </div>
-
-  <div style="display: flex; justify-content: center; margin-top: 1rem;">
-    <a href="https://blacksmith.sh" target="_blank">
+    <a href="https://blacksmith.sh" target="_blank" style="display: block;">
       <img src="/blacksmith.png" alt="Blacksmith" style="display: block; width: min(320px, 80vw); height: auto;">
     </a>
   </div>
