@@ -30,11 +30,14 @@ use crate::{
 
 pub(crate) fn run_daily(args: DailyArgs) -> Result<()> {
     let shared = args.shared.clone();
-    let mut rows = load_daily_summaries(
+    let group_by_project = args.instances || args.project.is_some();
+    let rows = load_daily_summaries(&shared, args.project.as_deref(), group_by_project)?;
+    let mut rows = crate::cache::merge_daily_summaries(
+        rows,
         &shared,
+        group_by_project,
         args.project.as_deref(),
-        args.instances || args.project.is_some(),
-    )?;
+    );
     filter_and_sort_summaries(&mut rows, &shared, |row| {
         row.date.as_deref().unwrap_or_default()
     });
@@ -69,11 +72,12 @@ pub(crate) fn run_daily(args: DailyArgs) -> Result<()> {
 
 pub(crate) fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
     let entries = load_entries(&shared, None)?;
-    let mut daily = summarize_by_key(
+    let daily = summarize_by_key(
         &entries,
         |entry| entry.date.clone(),
         |key| (key.to_string(), None),
     )?;
+    let mut daily = crate::cache::merge_daily_summaries(daily, &shared, false, None);
     filter_and_sort_summaries(&mut daily, &shared, |row| {
         row.date.as_deref().unwrap_or_default()
     });
@@ -108,11 +112,12 @@ pub(crate) fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
 pub(crate) fn run_weekly(args: WeeklyArgs) -> Result<()> {
     let shared = args.shared.clone();
     let entries = load_entries(&shared, None)?;
-    let mut daily = summarize_by_key(
+    let daily = summarize_by_key(
         &entries,
         |entry| entry.date.clone(),
         |key| (key.to_string(), None),
     )?;
+    let mut daily = crate::cache::merge_daily_summaries(daily, &shared, false, None);
     filter_and_sort_summaries(&mut daily, &shared, |row| {
         row.date.as_deref().unwrap_or_default()
     });

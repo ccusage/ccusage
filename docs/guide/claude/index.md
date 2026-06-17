@@ -31,10 +31,18 @@ ccusage reads Claude Code project logs from the standard Claude data directories
 The tool checks both locations and combines valid data. When `CLAUDE_CONFIG_DIR` is set, that value replaces the default lookup and can contain one directory or a comma-separated list of directories.
 
 ::: warning Retention
-Claude Code can retain logs for only 30 days by default. To review older Claude Code usage, change `cleanupPeriodDays` in your Claude Code settings.
+Claude Code can retain logs for only 30 days by default, deleting older session files on startup. To keep the underlying logs longer, change `cleanupPeriodDays` in your Claude Code settings.
 
 [Claude Code settings - Claude Docs](https://docs.claude.com/en/docs/claude-code/settings#settings-files)
 :::
+
+### Historical cache
+
+So that historical totals do not shrink when Claude Code prunes old logs, the `daily`, `weekly`, and `monthly` reports persist each day's computed totals to a small cache file (`<claude-dir>/ccusage/daily-cache.json`, outside the pruned `projects/` directory). On later runs, days whose logs were deleted are served from the cache, and live data always wins for days that still have logs — the cache only ever adds history back, never overrides or inflates current numbers.
+
+- Pass `--no-cache` to ignore the cache and report strictly from the logs currently on disk.
+- Set `CCUSAGE_CACHE_DIR` to store the cache somewhere other than the Claude data directory.
+- `session` and `blocks` reports always read live data and are not cached.
 
 ## Report Views
 
@@ -54,10 +62,11 @@ Claude Code exposes additional local data that enables features beyond the share
 
 ## Environment Variables
 
-| Variable            | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `CLAUDE_CONFIG_DIR` | Override the root Claude Code data directory |
-| `LOG_LEVEL`         | Adjust verbosity (0 silent ... 5 trace)      |
+| Variable            | Description                                          |
+| ------------------- | --------------------------------------------------- |
+| `CLAUDE_CONFIG_DIR` | Override the root Claude Code data directory         |
+| `CCUSAGE_CACHE_DIR` | Override where the historical usage cache is stored  |
+| `LOG_LEVEL`         | Adjust verbosity (0 silent ... 5 trace)             |
 
 ### Custom Claude Code Paths
 

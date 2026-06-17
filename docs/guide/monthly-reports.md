@@ -143,6 +143,16 @@ ccusage monthly --json
 ccusage monthly --offline
 ```
 
+### Historical Cache
+
+Claude Code deletes session logs older than `cleanupPeriodDays` (30 by default), which would otherwise make past months shrink on every run. ccusage caches each day's totals so pruned months keep showing their original cost. Use `--no-cache` to report strictly from the logs currently on disk:
+
+```bash
+ccusage monthly --no-cache
+```
+
+See [Historical cache](/guide/claude/#historical-cache) for details.
+
 ## Analysis Use Cases
 
 ### Budget Planning

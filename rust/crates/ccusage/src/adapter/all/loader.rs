@@ -262,12 +262,29 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
         });
     }
 
+    // Merge the per-agent daily rows with cached history (adding back days whose
+    // logs Claude Code has since pruned), then re-apply the date window so
+    // resurrected rows still honor --since/--until.
+    let mut rows = super::cache::merge_all_daily_rows(rows, shared);
+    retain_rows_in_date_window(&mut rows, shared);
+
     let mut aggregated = aggregate_rows(rows, kind);
     sort_rows(&mut aggregated, &shared.order);
     Ok(AllLoadResult {
         rows: aggregated,
         detected_agents,
     })
+}
+
+fn retain_rows_in_date_window(rows: &mut Vec<AllRow>, shared: &SharedArgs) {
+    if shared.since.is_none() && shared.until.is_none() {
+        return;
+    }
+    rows.retain(|row| {
+        let date = row.period.replace('-', "");
+        shared.since.as_ref().is_none_or(|since| &date >= since)
+            && shared.until.as_ref().is_none_or(|until| &date <= until)
+    });
 }
 
 pub(super) fn load_agent_rows_parallel(

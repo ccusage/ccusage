@@ -62,6 +62,7 @@ OPTIONS:
   --no-offline                         Negatable of -O, --offline
   --compact                            Force compact table layout for narrow terminals (default: false)
   --no-cost                            Hide cost information in table and JSON output (default: false)
+  --no-cache                           Disable the persistent history cache for daily, weekly, and monthly reports (default: false)
   --color                              Enable colored output. FORCE_COLOR=1 has the same effect. (default: auto)
   --no-color                           Disable colored output. NO_COLOR=1 has the same effect. (default: auto)
   --config <config>                    Path to configuration file (default: auto-discovery)

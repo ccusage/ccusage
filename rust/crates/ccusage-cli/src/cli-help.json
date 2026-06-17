@@ -103,6 +103,11 @@
 			"default": "false"
 		},
 		{
+			"flags": "--no-cache",
+			"description": "Disable the persistent history cache for daily, weekly, and monthly reports",
+			"default": "false"
+		},
+		{
 			"flags": "--color",
 			"description": "Enable colored output. FORCE_COLOR=1 has the same effect.",
 			"default": "auto"
@@ -300,6 +305,11 @@
 		{
 			"flags": "--single-thread",
 			"description": "Disable parallel JSONL file loading",
+			"default": "false"
+		},
+		{
+			"flags": "--no-cache",
+			"description": "Disable the persistent history cache for daily, weekly, and monthly reports",
 			"default": "false"
 		},
 		{

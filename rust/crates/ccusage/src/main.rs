@@ -2,6 +2,7 @@ use std::{fmt, io};
 
 mod adapter;
 mod blocks;
+mod cache;
 mod cli;
 mod commands;
 mod config;
@@ -21,7 +22,7 @@ mod types;
 mod utils;
 
 pub(crate) use adapter::claude::{
-    chunk_file_indexes_by_size, collect_files_with_extension, collect_usage_files,
+    chunk_file_indexes_by_size, claude_paths, collect_files_with_extension, collect_usage_files,
     filter_loaded_entries_by_date, load_daily_summaries, load_entries,
 };
 pub(crate) use adapter::read_files_parallel;

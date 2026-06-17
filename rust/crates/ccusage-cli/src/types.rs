@@ -52,6 +52,7 @@ pub struct SharedArgs {
     pub compact: bool,
     pub single_thread: bool,
     pub no_cost: bool,
+    pub no_cache: bool,
     pub pricing_overrides: BTreeMap<String, PricingOverride>,
 }
 

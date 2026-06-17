@@ -50,6 +50,10 @@ Empty entries, directories that do not exist, and missing explicit files are ski
 
 Specifies where ccusage should look for Claude Code data. See [Claude Code](/guide/claude/) for default paths, multiple-directory behavior, and Claude-specific examples.
 
+## CCUSAGE_CACHE_DIR
+
+Overrides where the [historical usage cache](/guide/claude/#historical-cache) is stored. By default the cache lives next to the Claude data directory. The cache lets `daily`, `weekly`, and `monthly` reports keep showing past days after Claude Code prunes their logs; pass `--no-cache` to bypass it for a single run.
+
 ## LOG_LEVEL
 
 Controls the verbosity of log output.

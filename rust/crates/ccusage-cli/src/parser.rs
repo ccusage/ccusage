@@ -602,6 +602,7 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
         "--compact" => shared.compact = true,
         "--single-thread" => shared.single_thread = true,
         "--no-cost" => shared.no_cost = true,
+        "--no-cache" => shared.no_cache = true,
         flag => return Err(format!("Unknown option '{flag}'")),
     }
     Ok(())
@@ -858,6 +859,7 @@ fn is_shared_flag(arg: &str) -> bool {
             | "--compact"
             | "--single-thread"
             | "--no-cost"
+            | "--no-cache"
     )
 }
 
