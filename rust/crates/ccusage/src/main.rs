@@ -130,6 +130,7 @@ fn main() -> Result<()> {
         Some(Command::Monthly(shared)) => commands::run_bucket(shared, BucketKind::Monthly),
         Some(Command::Weekly(args)) => commands::run_weekly(args),
         Some(Command::Session(args)) => commands::run_session(args),
+        Some(Command::Skills(args)) => adapter::claude::skills::run_skills(args),
         Some(Command::Blocks(args)) => commands::run_blocks(args),
         Some(Command::Statusline(args)) => commands::run_statusline(args),
         Some(Command::Codex(args)) => adapter::codex::run(args),

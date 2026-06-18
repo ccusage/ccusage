@@ -14,6 +14,7 @@ pub enum Command {
     Monthly(SharedArgs),
     Weekly(WeeklyArgs),
     Session(SessionArgs),
+    Skills(SkillsArgs),
     Blocks(BlocksArgs),
     Statusline(StatuslineArgs),
     Codex(AgentCommandArgs),
@@ -88,6 +89,12 @@ pub struct WeeklyArgs {
 pub struct SessionArgs {
     pub shared: SharedArgs,
     pub id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SkillsArgs {
+    pub shared: SharedArgs,
+    pub min_hours: f64,
 }
 
 #[derive(Clone)]

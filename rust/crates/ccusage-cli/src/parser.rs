@@ -5,7 +5,7 @@ use crate::help::{print_help_and_exit, print_version_and_exit};
 use crate::types::{OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS};
 use crate::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, Cli, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DailyArgs, NoConfig, SessionArgs, SharedArgs, SortOrder, StatuslineArgs,
+    CostSource, DailyArgs, NoConfig, SessionArgs, SharedArgs, SkillsArgs, SortOrder, StatuslineArgs,
     VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
@@ -113,6 +113,7 @@ fn parse_command(
         "monthly" => parse_all_command(parser, shared, AgentReportKind::Monthly, config),
         "weekly" => parse_all_command(parser, shared, AgentReportKind::Weekly, config),
         "session" => parse_top_level_session_command(parser, shared, config),
+        "skills" => parse_skills_command(parser, shared),
         "blocks" => {
             let mut args = BlocksArgs {
                 shared,
@@ -321,6 +322,28 @@ fn parse_top_level_session_command(
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
     }))
+}
+
+fn parse_skills_command(
+    parser: &mut ArgParser,
+    shared: SharedArgs,
+) -> Result<Command, String> {
+    let mut args = SkillsArgs { shared, min_hours: 8.0 };
+    while parser.peek().is_some() {
+        if parse_shared_arg_for_command(parser, &mut args.shared)? {
+            continue;
+        }
+        match parser.next_flag()?.as_str() {
+            "--min-hours" => {
+                args.min_hours = parser
+                    .value_for("--min-hours")?
+                    .parse()
+                    .map_err(|_| "Invalid value for --min-hours".to_string())?
+            }
+            flag => return Err(format!("Unknown skills option '{flag}'")),
+        }
+    }
+    Ok(Command::Skills(args))
 }
 
 fn parse_claude_daily_command(
@@ -614,6 +637,7 @@ fn is_command(arg: &str) -> bool {
             | "monthly"
             | "weekly"
             | "session"
+            | "skills"
             | "blocks"
             | "statusline"
             | "claude"
@@ -767,6 +791,7 @@ fn option_takes_value(arg: &str) -> bool {
             | "--speed"
             | "--pi-path"
             | "--open-claw-path"
+            | "--min-hours"
     )
 }
 
