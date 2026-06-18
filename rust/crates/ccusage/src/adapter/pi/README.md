@@ -1,9 +1,10 @@
 # pi-agent Source
 
-Data source:
+Data sources (auto-detected when `--pi-path`/`PI_AGENT_DIR` are unset):
 
 ```text
 ${PI_AGENT_DIR:-~/.pi/agent/sessions/}
+~/.omp/agent/sessions/   # oh-my-pi (omp), a pi fork with identical JSONL
 ```
 
 Commands:

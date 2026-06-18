@@ -22,11 +22,14 @@ pnpx ccusage pi --help
 
 The CLI reads usage data from pi-agent:
 
-| Source   | Default path            | Override                      |
-| -------- | ----------------------- | ----------------------------- |
-| pi-agent | `~/.pi/agent/sessions/` | `PI_AGENT_DIR` or `--pi-path` |
+| Source   | Default path             | Override                      |
+| -------- | ------------------------ | ----------------------------- |
+| pi-agent | `~/.pi/agent/sessions/`  | `PI_AGENT_DIR` or `--pi-path` |
+| omp      | `~/.omp/agent/sessions/` | `PI_AGENT_DIR` or `--pi-path` |
 
 Both `PI_AGENT_DIR` and `--pi-path` can be one sessions directory or a comma-separated list of sessions directories.
+
+When neither `PI_AGENT_DIR` nor `--pi-path` is set, ccusage auto-detects both `~/.pi/agent/sessions/` and `~/.omp/agent/sessions/`. [oh-my-pi](https://github.com/can1357/oh-my-pi) (omp) is a widely used pi fork that writes identical JSONL session files, so its usage is reported alongside pi-agent's. Setting `PI_AGENT_DIR` or `--pi-path` overrides this and scans only the given paths.
 
 ## Report Views
 

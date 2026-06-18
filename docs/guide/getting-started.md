@@ -169,7 +169,7 @@ If ccusage shows no data, check:
    - Droid: `${DROID_SESSIONS_DIR:-~/.factory/sessions}`
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`
    - Hermes Agent: `${HERMES_HOME:-~/.hermes}/state.db`
-   - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}`
+   - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}` (also auto-scans `~/.omp/agent/sessions` for oh-my-pi)
    - Goose: standard Goose data roots or `GOOSE_PATH_ROOT`
    - Kilo: `${KILO_DATA_DIR:-~/.local/share/kilo}`
    - Kimi: `${KIMI_DATA_DIR:-~/.kimi}`
