@@ -1,5 +1,6 @@
 mod daily;
 mod paths;
+pub(crate) mod skills;
 
 use std::{
     fs,
