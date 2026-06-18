@@ -17,6 +17,7 @@ pub(crate) mod thread;
 pub(crate) mod attribute;
 pub(crate) mod dimensions;
 pub(crate) mod report;
+#[cfg(test)] mod tests_corpus;
 
 pub(crate) fn run_skills(args: SkillsArgs) -> crate::Result<()> {
     let paths = claude_paths()?;
