@@ -163,7 +163,7 @@ fn topo_children_last(skills: &[super::thread::SkillFrame]) -> Vec<usize> {
 mod tests {
     use super::*;
     use crate::TokenUsageRaw;
-    use crate::adapter::claude::skills::thread::{SkillFrame, Thread, Turn};
+    use crate::adapter::claude::skills::thread::{SkillFrame, SubagentLink, Thread, ThreadGraph, Turn};
 
     fn u(inp: u64, out: u64, cc: u64, cr: u64) -> TokenUsageRaw {
         TokenUsageRaw {
@@ -207,7 +207,6 @@ mod tests {
 
     #[test]
     fn inclusive_rolls_up_nested_and_subagent_costs() {
-        use crate::adapter::claude::skills::thread::{SkillFrame, SubagentLink, Thread, ThreadGraph, Turn};
         let u = |o: u64| TokenUsageRaw {
             input_tokens: 0,
             output_tokens: o,
