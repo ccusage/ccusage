@@ -102,6 +102,38 @@ pub(crate) fn build_thread(records: &[Record], id: String, is_subagent: bool) ->
     Thread { id, is_subagent, skills, turns }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SubagentLink {
+    pub(crate) parent_thread: usize,
+    pub(crate) parent_skill: Option<usize>,
+    pub(crate) child_thread: usize,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ThreadGraph {
+    pub(crate) threads: Vec<Thread>,
+    pub(crate) links: Vec<SubagentLink>,
+}
+
+pub(crate) fn link_subagents(main: Thread, subagents: Vec<(String, Thread)>) -> ThreadGraph {
+    // ordered list of (spawning_skill_index, agent_id) from the main thread
+    let mut spawns: Vec<(usize, String)> = Vec::new();
+    for (si, s) in main.skills.iter().enumerate() {
+        for aid in &s.spawned_subagents {
+            spawns.push((si, aid.clone()));
+        }
+    }
+    let mut threads = vec![main];
+    let mut links = Vec::new();
+    for (i, (_child_id, child)) in subagents.into_iter().enumerate() {
+        let child_thread = threads.len();
+        threads.push(child);
+        let parent_skill = spawns.get(i).map(|(si, _)| *si);
+        links.push(SubagentLink { parent_thread: 0, parent_skill, child_thread });
+    }
+    ThreadGraph { threads, links }
+}
+
 /// Push a new skill, applying nest rule (C): nest under the deepest stack frame whose
 /// body references this skill; otherwise it is a sibling (clear the stack to root first).
 fn push_skill(skills: &mut Vec<SkillFrame>, stack: &mut Vec<usize>, name: &str) -> usize {
@@ -194,5 +226,22 @@ mod tests {
             asst(u(9,9,0,0), vec![]),  // after compaction, A is gone -> baseline
         ], "s".into(), false);
         assert_eq!(t.turns.last().unwrap().skill, None);
+    }
+
+    #[test]
+    fn links_subagents_to_spawning_skill_by_order() {
+        let mut main = Thread { id: "s".into(), is_subagent: false, skills: vec![
+            SkillFrame { name: "sdd".into(), parent: None, body: String::new(), spawned_subagents: vec!["a1".into(), "a2".into()] },
+        ], turns: vec![] };
+        // leaf skill 0 spawned a1, a2
+        let child1 = Thread { id: "sub1".into(), is_subagent: true, skills: vec![], turns: vec![] };
+        let child2 = Thread { id: "sub2".into(), is_subagent: true, skills: vec![], turns: vec![] };
+        let g = link_subagents(main.clone(), vec![("sub1".into(), child1), ("sub2".into(), child2)]);
+        assert_eq!(g.threads.len(), 3);
+        assert_eq!(g.links.len(), 2);
+        assert!(g.links.iter().all(|l| l.parent_thread == 0 && l.parent_skill == Some(0)));
+        let child_threads: Vec<usize> = g.links.iter().map(|l| l.child_thread).collect();
+        assert_eq!(child_threads, vec![1, 2]);
+        let _ = &mut main;
     }
 }
