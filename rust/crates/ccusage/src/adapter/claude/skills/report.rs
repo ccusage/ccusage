@@ -44,6 +44,7 @@ pub(crate) struct SkillsReport {
     pub(crate) baseline_tokens: u64,
     pub(crate) high_context_share: f64,
     pub(crate) subagent_share: f64,
+    pub(crate) long_session_share: f64,
     pub(crate) plugin_tokens: Vec<(String, f64)>,
 }
 
@@ -67,6 +68,7 @@ pub(crate) fn build_report(
         baseline_tokens: attr.baseline.total().round() as u64,
         high_context_share: dims.high_context_share,
         subagent_share: dims.subagent_share,
+        long_session_share: 0.0,
         plugin_tokens: dims.plugin_tokens.clone(),
     }
 }

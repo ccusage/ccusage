@@ -125,11 +125,13 @@ pub(crate) fn attribute(graph: &ThreadGraph) -> Attribution {
                 cur = graph.threads[link.parent_thread].skills[a].parent;
             }
         }
-        // if parent_skill is None the subagent has no owning skill; stays in baseline only
+        // parent_skill is None: subagent has no owning skill; its cost folds into out.baseline
     }
 
     let mut out = Attribution::default();
-    out.baseline = thread_base[0];
+    for base in &thread_base {
+        add_into(&mut out.baseline, base);
+    }
     for (ti, t) in graph.threads.iter().enumerate() {
         for (si, frame) in t.skills.iter().enumerate() {
             out.skills.push(SkillCost {

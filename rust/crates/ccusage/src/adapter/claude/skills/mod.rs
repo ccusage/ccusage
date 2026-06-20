@@ -86,7 +86,8 @@ pub(crate) fn run_skills(args: SkillsArgs) -> crate::Result<()> {
     let dims = dimensions(&all_records, &merged.skills);
     let long = long_session_share(&session_totals, args.min_hours);
 
-    let report = build_report(&merged, &dims, &model, pricing.as_ref());
+    let mut report = build_report(&merged, &dims, &model, pricing.as_ref());
+    report.long_session_share = long;
 
     if crate::wants_json(&args.shared) {
         crate::print_json_or_jq(
@@ -95,7 +96,7 @@ pub(crate) fn run_skills(args: SkillsArgs) -> crate::Result<()> {
             args.shared.no_cost,
         )?;
     } else {
-        print_table(&report, long, &args.shared);
+        print_table(&report, long, args.min_hours, &args.shared);
     }
     Ok(())
 }
@@ -128,7 +129,7 @@ fn span_and_tokens(recs: &[record::Record]) -> (f64, f64) {
     (span, toks)
 }
 
-fn print_table(report: &report::SkillsReport, long_share: f64, shared: &SharedArgs) {
+fn print_table(report: &report::SkillsReport, long_share: f64, min_hours: f64, shared: &SharedArgs) {
     crate::print_box_title("Claude Code Skill Attribution", shared);
     println!("model: {}", report.model);
     println!(
@@ -155,7 +156,7 @@ fn print_table(report: &report::SkillsReport, long_share: f64, shared: &SharedAr
         "subagent share:             {:.1}%",
         report.subagent_share * 100.0
     );
-    println!("long-session (>=8h) share:  {:.1}%", long_share * 100.0);
+    println!("long-session (>={min_hours:.0}h) share: {:.1}%", long_share * 100.0);
     println!("\nby plugin:");
     for (p, t) in &report.plugin_tokens {
         println!("  {:<24} {:>14.0}", p, t);
