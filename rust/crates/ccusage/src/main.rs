@@ -542,7 +542,7 @@ mod tests {
         let report = adapter::codex::report_json(
             &events,
             AgentReportKind::Daily,
-            None,
+            Some("UTC"),
             &pricing,
             cli::CodexSpeed::Standard,
         )

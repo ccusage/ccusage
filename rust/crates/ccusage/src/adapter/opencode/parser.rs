@@ -442,6 +442,7 @@ mod tests {
 
     #[test]
     fn snapshots_message_to_entry_variants_and_model_candidates() {
+        let tz = crate::parse_tz(Some("UTC"));
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -469,7 +470,7 @@ mod tests {
             })),
             None,
             None,
-            None,
+            tz.as_ref(),
             CostMode::Auto,
             Some(&pricing),
         )
@@ -485,7 +486,7 @@ mod tests {
             })),
             None,
             Some("explicit-session".to_string()),
-            None,
+            tz.as_ref(),
             CostMode::Display,
             None,
         )
