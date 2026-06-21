@@ -29,9 +29,14 @@ pub(crate) fn calculate_cost_for_usage(
 ) -> f64 {
     match mode {
         CostMode::Display => cost_usd.unwrap_or(0.0),
-        CostMode::Auto => {
-            cost_usd.unwrap_or_else(|| calculate_cost_from_tokens(model, usage, pricing))
-        }
+        CostMode::Auto => match cost_usd {
+            Some(cost) if cost > 0.0 => cost,
+            Some(0.0) if crate::total_usage_tokens(usage) > 0 => {
+                calculate_cost_from_tokens(model, usage, pricing)
+            }
+            Some(cost) => cost,
+            None => calculate_cost_from_tokens(model, usage, pricing),
+        },
         CostMode::Calculate => calculate_cost_from_tokens(model, usage, pricing),
     }
 }
@@ -43,7 +48,7 @@ pub(crate) fn missing_pricing_model_for_usage(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<String> {
-    if mode == CostMode::Display || (mode == CostMode::Auto && cost_usd.is_some()) {
+    if mode == CostMode::Display || (mode == CostMode::Auto && cost_usd.is_some_and(|c| c > 0.0)) {
         return None;
     }
     missing_pricing_model_for_token_total(model, crate::total_usage_tokens(usage), pricing)
