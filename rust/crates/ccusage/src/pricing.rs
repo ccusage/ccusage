@@ -982,10 +982,20 @@ impl PricingMap {
                 ..glm_base
             },
         );
+        self.entries.insert(
+            "glm-5.2".to_string(),
+            Pricing {
+                input: 1.4e-6,
+                output: 4.4e-6,
+                cache_read: 0.26e-6,
+                ..glm_base
+            },
+        );
         self.context_limits.insert("gpt-5.5".to_string(), 1_050_000);
         self.context_limits
             .insert("grok-4.3".to_string(), 1_000_000);
         self.context_limits.insert("gpt-5.4".to_string(), 1_050_000);
+        self.context_limits.insert("glm-5.2".to_string(), 1_000_000);
         for model in [
             "claude-opus-4-8",
             "claude-opus-4-7",
@@ -1306,6 +1316,14 @@ mod tests {
         assert_eq!(glm_51.cache_create, 0.0);
         assert_eq!(glm_51.cache_read, 0.26e-6);
         assert!(glm_51.cache_read_explicit);
+
+        let glm_52 = pricing.find("glm-5.2").unwrap();
+        assert_eq!(glm_52.input, 1.4e-6);
+        assert_eq!(glm_52.output, 4.4e-6);
+        assert_eq!(glm_52.cache_create, 0.0);
+        assert_eq!(glm_52.cache_read, 0.26e-6);
+        assert!(glm_52.cache_read_explicit);
+        assert_eq!(pricing.context_limit("glm-5.2"), Some(1_000_000));
 
         let glm_5 = pricing.find("glm-5").unwrap();
         assert_eq!(glm_5.input, 1.0e-6);
