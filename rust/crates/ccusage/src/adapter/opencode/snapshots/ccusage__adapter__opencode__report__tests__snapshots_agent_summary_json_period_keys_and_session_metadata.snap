@@ -76,6 +76,7 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
     "outputTokens": 50,
     "projectPath": "/workspace/api",
     "sessionId": "session-a",
+    "sessionName": "Repository discovery and explanation",
     "totalCost": 0.25,
     "totalTokens": 172
   },
@@ -93,6 +94,7 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
         ],
         "outputTokens": 50,
         "sessionId": "session-a",
+        "sessionName": "Repository discovery and explanation",
         "totalCost": 0.25,
         "totalTokens": 172
       }

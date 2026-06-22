@@ -48,6 +48,9 @@ pub(crate) fn agent_summary_json(
     if let (Some(obj), Some(message_count)) = (value.as_object_mut(), row.message_count) {
         obj.insert("messageCount".to_string(), json!(message_count));
     }
+    if let (Some(obj), Some(name)) = (value.as_object_mut(), row.session_name.as_ref()) {
+        obj.insert("sessionName".to_string(), json!(name));
+    }
     if include_session_metadata && let Some(obj) = value.as_object_mut() {
         obj.insert(
             "lastActivity".to_string(),
@@ -185,6 +188,7 @@ mod tests {
         session.date = None;
         session.week = None;
         session.month = None;
+        session.session_name = Some("Repository discovery and explanation".to_string());
 
         insta::assert_json_snapshot!(serde_json::json!({
             "daily": agent_summary_json(&daily, AgentReportKind::Daily, false),
@@ -214,6 +218,24 @@ mod tests {
         assert_eq!(
             rows[0].last_activity.as_deref(),
             Some("2026-01-03T01:00:00.000Z")
+        );
+    }
+
+    #[test]
+    fn agent_summary_json_includes_session_name_when_present() {
+        let mut row = snapshot_row();
+        row.session_name = Some("Greeting".to_string());
+        let value = agent_summary_json(&row, AgentReportKind::Session, true);
+        assert_eq!(
+            value.get("sessionName").and_then(|v| v.as_str()),
+            Some("Greeting")
+        );
+
+        let plain = snapshot_row();
+        assert!(
+            agent_summary_json(&plain, AgentReportKind::Session, true)
+                .get("sessionName")
+                .is_none()
         );
     }
 

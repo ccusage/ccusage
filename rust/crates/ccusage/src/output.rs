@@ -73,6 +73,9 @@ pub(crate) fn session_summary_json(row: &UsageSummary) -> Value {
     if let (Some(obj), Some(credits)) = (value.as_object_mut(), row.credits) {
         obj.insert("credits".to_string(), json!(credits));
     }
+    if let (Some(obj), Some(name)) = (value.as_object_mut(), row.session_name.as_ref()) {
+        obj.insert("sessionName".to_string(), json!(name));
+    }
     value
 }
 
@@ -728,6 +731,22 @@ mod tests {
         ];
 
         insta::assert_snapshot!(format_models_multiline(&models));
+    }
+
+    #[test]
+    fn session_summary_json_includes_session_name_when_present() {
+        let mut row = snapshot_summary("2026-01-02", None, None);
+        row.session_id = Some("ses_a".to_string());
+        row.session_name = Some("Greeting".to_string());
+        assert_eq!(
+            session_summary_json(&row)
+                .get("sessionName")
+                .and_then(Value::as_str),
+            Some("Greeting"),
+        );
+
+        let plain = snapshot_summary("2026-01-02", None, None);
+        assert!(session_summary_json(&plain).get("sessionName").is_none());
     }
 
     fn snapshot_summary(period: &str, project: Option<&str>, credits: Option<f64>) -> UsageSummary {
