@@ -145,28 +145,13 @@ pub(crate) fn print_json_or_jq(mut value: Value, jq: Option<&str>, no_cost: bool
     Ok(())
 }
 
-pub(crate) fn print_usage_table(
-    title: &str,
-    first_column: &str,
-    rows: &[UsageSummary],
-    shared: &SharedArgs,
-    group_projects: bool,
-    project_aliases: Option<&str>,
-) -> Result<()> {
-    if rows.is_empty() {
-        eprintln!("{}", empty_usage_table_message());
-        return Ok(());
-    }
-    let terminal_width = terminal_width();
-    let is_tty = io::stdout().is_terminal();
-    let compact = should_use_compact_layout(
-        shared,
-        is_tty,
-        terminal_width,
-        USAGE_COMPACT_WIDTH_THRESHOLD,
-    );
-    let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
-    print_box_title(title, shared);
+fn usage_table_columns<'a>(
+    first_column: &'a str,
+    compact: bool,
+    no_cost: bool,
+    include_last_activity: bool,
+    include_session_name: bool,
+) -> (Vec<&'a str>, Vec<Align>) {
     let mut headers = if compact {
         vec![first_column, "Models", "Input", "Output", "Cost (USD)"]
     } else {
@@ -201,14 +186,51 @@ pub(crate) fn print_usage_table(
             Align::Right,
         ]
     };
-    if shared.no_cost {
+    if no_cost {
         headers.pop();
         aligns.pop();
+    }
+    if include_session_name {
+        headers.insert(1, "Name");
+        aligns.insert(1, Align::Left);
     }
     if include_last_activity {
         headers.push("Last Activity");
         aligns.push(Align::Left);
     }
+    (headers, aligns)
+}
+
+pub(crate) fn print_usage_table(
+    title: &str,
+    first_column: &str,
+    rows: &[UsageSummary],
+    shared: &SharedArgs,
+    group_projects: bool,
+    project_aliases: Option<&str>,
+) -> Result<()> {
+    if rows.is_empty() {
+        eprintln!("{}", empty_usage_table_message());
+        return Ok(());
+    }
+    let terminal_width = terminal_width();
+    let is_tty = io::stdout().is_terminal();
+    let compact = should_use_compact_layout(
+        shared,
+        is_tty,
+        terminal_width,
+        USAGE_COMPACT_WIDTH_THRESHOLD,
+    );
+    let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
+    let include_session_name = rows.iter().any(|row| row.session_name.is_some());
+    print_box_title(title, shared);
+    let (headers, aligns) = usage_table_columns(
+        first_column,
+        compact,
+        shared.no_cost,
+        include_last_activity,
+        include_session_name,
+    );
     let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
         .with_terminal_width(terminal_width)
         .with_date_compaction(true);
@@ -261,6 +283,9 @@ pub(crate) fn print_usage_table(
         if shared.no_cost {
             values.pop();
         }
+        if include_session_name {
+            values.insert(1, row.session_name.clone().unwrap_or_default());
+        }
         if include_last_activity {
             values.push(truncate_rfc3339_to_date(
                 row.last_activity.as_deref().unwrap_or_default(),
@@ -268,7 +293,14 @@ pub(crate) fn print_usage_table(
         }
         table.push(values);
         if shared.breakdown {
-            push_breakdown_rows(&mut table, row, compact, include_last_activity, shared);
+            push_breakdown_rows(
+                &mut table,
+                row,
+                compact,
+                include_last_activity,
+                include_session_name,
+                shared,
+            );
         }
     }
 
@@ -320,6 +352,9 @@ pub(crate) fn print_usage_table(
     };
     if shared.no_cost {
         total_row.pop();
+    }
+    if include_session_name {
+        total_row.insert(1, String::new());
     }
     if include_last_activity {
         total_row.push(String::new());
@@ -410,6 +445,7 @@ fn push_breakdown_rows(
     row: &UsageSummary,
     compact: bool,
     include_last_activity: bool,
+    include_session_name: bool,
     shared: &SharedArgs,
 ) {
     for breakdown in &row.model_breakdowns {
@@ -455,6 +491,9 @@ fn push_breakdown_rows(
         };
         if shared.no_cost {
             values.pop();
+        }
+        if include_session_name {
+            values.insert(1, String::new());
         }
         if include_last_activity {
             values.push(String::new());
@@ -747,6 +786,23 @@ mod tests {
 
         let plain = snapshot_summary("2026-01-02", None, None);
         assert!(session_summary_json(&plain).get("sessionName").is_none());
+    }
+
+    #[test]
+    fn usage_table_columns_inserts_name_after_first_when_requested() {
+        let (headers, aligns) = usage_table_columns("Session", false, false, true, true);
+        assert_eq!(headers[0], "Session");
+        assert_eq!(headers[1], "Name");
+        assert_eq!(*headers.last().unwrap(), "Last Activity");
+        assert_eq!(headers.len(), aligns.len());
+        assert!(matches!(aligns[1], Align::Left));
+    }
+
+    #[test]
+    fn usage_table_columns_omits_name_by_default() {
+        let (headers, aligns) = usage_table_columns("Date", false, false, false, false);
+        assert!(!headers.contains(&"Name"));
+        assert_eq!(headers.len(), aligns.len());
     }
 
     fn snapshot_summary(period: &str, project: Option<&str>, credits: Option<f64>) -> UsageSummary {
