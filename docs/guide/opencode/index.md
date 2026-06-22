@@ -58,7 +58,50 @@ OPENCODE_DATA_DIR="$HOME/.local/share/opencode,/backup/opencode" ccusage opencod
 
 These views support `--json` for structured output and `--compact` for narrow terminals. See the linked ccusage documentation for detailed flag descriptions.
 
-## Session Hierarchy
+## Session Report
+
+### Session Names
+
+When OpenCode has stored a title for a session, `ccusage opencode session` shows a **Name** column immediately after the **Session** column. The name comes from OpenCode's own stored session title (its `session` table or legacy session files); ccusage does not generate it. The column appears automatically — no extra flag is needed. Sessions that have no stored title show a blank entry in that column.
+
+The column only appears in `ccusage opencode session`. Daily, weekly, and monthly reports are not affected.
+
+In `--json` output, named sessions gain a `sessionName` field alongside the standard session fields:
+
+<!-- eslint-skip -->
+
+```json
+{
+  "type": "session",
+  "data": [
+    {
+      "session": "abc123-def",
+      "sessionName": "Refactor auth module",
+      "models": ["claude-sonnet-4-5-20250929"],
+      "inputTokens": 2775,
+      "outputTokens": 186645,
+      "cacheCreationTokens": 256,
+      "cacheReadTokens": 768,
+      "totalTokens": 190444,
+      "costUSD": 98.45,
+      "lastActivity": "2026-05-15T17:30:00.000Z"
+    },
+    {
+      "session": "ghi456-jkl",
+      "models": ["claude-opus-4-1-20250805"],
+      "inputTokens": 1887,
+      "outputTokens": 183055,
+      "totalTokens": 185582,
+      "costUSD": 81.73,
+      "lastActivity": "2026-05-14T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+Sessions without a stored title omit the `sessionName` field entirely.
+
+### Session Hierarchy
 
 OpenCode supports subagent sessions. The session report displays:
 

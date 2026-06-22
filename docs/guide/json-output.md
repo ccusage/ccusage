@@ -181,6 +181,28 @@ ccusage daily --project my-frontend-app --json
 }
 ```
 
+When running `ccusage opencode session --json`, sessions that have a stored title include a `sessionName` field:
+
+<!-- eslint-skip -->
+
+```json
+{
+	"type": "session",
+	"data": [
+		{
+			"session": "abc123-def",
+			"sessionName": "Refactor auth module",
+			"models": ["claude-sonnet-4-5-20250929"],
+			"inputTokens": 2775,
+			"outputTokens": 186645,
+			"totalTokens": 190444,
+			"costUSD": 98.45,
+			"lastActivity": "2026-05-15T17:30:00.000Z"
+		}
+	]
+}
+```
+
 ### Blocks Reports
 
 ```json
@@ -240,6 +262,7 @@ ccusage daily --project my-frontend-app --json
 #### Session Reports
 
 - `session`: Session identifier
+- `sessionName`: Human-readable session title stored by the agent (present only when the session has a name; currently supported for OpenCode sessions)
 - `firstActivity`: RFC 3339 timestamp of first activity in the session
 - `lastActivity`: RFC 3339 timestamp of last activity in the session
 
