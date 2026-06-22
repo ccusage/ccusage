@@ -130,8 +130,14 @@ pub(crate) fn message_value_to_entry(
     };
     let cost =
         calculate_open_code_cost(&model, &provider, cost_usage, data.cost_usd, mode, pricing);
-    let missing_pricing_model =
-        missing_open_code_pricing(&model, &provider, cost_usage, data.cost_usd, mode, pricing);
+    // If we already have a usable positive cost (calculated or stored), skip
+    // the redundant missing-pricing check — it would iterate through the same
+    // model candidates and find nothing missing.
+    let missing_pricing_model = if cost > 0.0 {
+        None
+    } else {
+        missing_open_code_pricing(&model, &provider, cost_usage, data.cost_usd, mode, pricing)
+    };
     let loaded_session_id = data
         .session_id
         .clone()
