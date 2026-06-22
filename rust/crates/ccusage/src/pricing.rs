@@ -56,12 +56,25 @@ impl Pricing {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct PricingMap {
     entries: FxHashMap<String, Pricing>,
     context_limits: FxHashMap<String, u64>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
+    find_cache: OnceLock<Mutex<FxHashMap<String, Option<Pricing>>>>,
+}
+
+impl Default for PricingMap {
+    fn default() -> Self {
+        Self {
+            entries: FxHashMap::default(),
+            context_limits: FxHashMap::default(),
+            enable_models_dev_fallback: false,
+            enable_embedded_models_dev_fallback: false,
+            find_cache: OnceLock::new(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -298,6 +311,7 @@ impl PricingMap {
             }
             loaded_count += 1;
         }
+        self.clear_find_cache();
         loaded_count
     }
 
@@ -357,13 +371,30 @@ impl PricingMap {
             }
             loaded_count += 1;
         }
+        self.clear_find_cache();
         loaded_count
     }
 
     pub(crate) fn find(&self, model: &str) -> Option<Pricing> {
+        // Fast path: check the model-level cache first. When the same model
+        // name is looked up repeatedly (e.g. across thousands of entries with
+        // only a few dozen unique models), the cache avoids re-running the
+        // expensive fuzzy fallback on every call.
+        {
+            let cache = self
+                .find_cache
+                .get_or_init(|| Mutex::new(FxHashMap::default()));
+            let guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+            if let Some(&cached) = guard.get(model) {
+                return cached;
+            }
+        }
+        // Full lookup (dropped the lock above so concurrent callers are not
+        // serialized on the expensive fuzzy path).
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
-        self.find_entry_or_alias(model)
+        let result = self
+            .find_entry_or_alias(model)
             .or_else(|| {
                 (resolved_alias != model)
                     .then(|| self.find_entry_or_alias(resolved_alias))
@@ -384,7 +415,16 @@ impl PricingMap {
                 self.enable_embedded_models_dev_fallback
                     .then(|| embedded_models_dev_pricing().find_entry_or_alias(resolved_alias))
                     .flatten()
-            })
+            });
+        // Store the result (including None for misses) so repeated lookups
+        // for the same model that fails to match any pricing entry are also
+        // short-circuited.
+        let cache = self
+            .find_cache
+            .get_or_init(|| Mutex::new(FxHashMap::default()));
+        let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+        guard.insert(model.to_string(), result);
+        result
     }
 
     fn find_entry_or_alias(&self, model: &str) -> Option<Pricing> {
@@ -461,6 +501,7 @@ impl PricingMap {
         for (model, override_value) in overrides {
             self.apply_override(model, override_value);
         }
+        self.clear_find_cache();
     }
 
     fn apply_override(&mut self, model: &str, override_value: &PricingOverride) {
@@ -548,6 +589,13 @@ impl PricingMap {
         self.entries.insert(model.to_string(), pricing);
         if let Some(limit) = override_value.max_input_tokens {
             self.context_limits.insert(model.to_string(), limit);
+        }
+    }
+
+    fn clear_find_cache(&self) {
+        if let Some(cache) = self.find_cache.get() {
+            let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+            guard.clear();
         }
     }
 
