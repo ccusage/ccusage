@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -15,6 +15,12 @@ use crate::{
     cli::{CostMode, SharedArgs},
     collect_files_with_extension, debug_log, parse_tz, read_files_parallel,
 };
+
+#[derive(serde::Deserialize)]
+struct OpenCodeSessionInfo {
+    id: Option<String>,
+    title: Option<String>,
+}
 
 pub(crate) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
     crate::progress::track_usage_load(
@@ -217,6 +223,77 @@ fn read_message_file(
     message_value_to_entry(&value, None, None, tz, mode, pricing)
 }
 
+pub(crate) fn load_session_names(shared: &SharedArgs) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    let Ok(dirs) = paths() else {
+        return names;
+    };
+    for dir in dirs {
+        load_session_names_from_directory(&dir, &mut names, shared);
+    }
+    names
+}
+
+fn load_session_names_from_directory(
+    opencode_dir: &Path,
+    names: &mut HashMap<String, String>,
+    shared: &SharedArgs,
+) {
+    if let Some(db_path) = db_path(opencode_dir) {
+        load_session_names_from_database(&db_path, names, shared);
+    }
+
+    let session_dir = opencode_dir.join("storage").join("session");
+    let mut files = Vec::new();
+    collect_files_with_extension(&session_dir, "json", &mut files);
+    for file in files {
+        if let Ok(content) = fs::read(&file)
+            && let Ok(info) = serde_json::from_slice::<OpenCodeSessionInfo>(&content)
+            && let (Some(id), Some(title)) = (info.id, info.title)
+            && !title.is_empty()
+        {
+            names.entry(id).or_insert(title);
+        }
+    }
+}
+
+fn load_session_names_from_database(
+    db_path: &Path,
+    names: &mut HashMap<String, String>,
+    shared: &SharedArgs,
+) {
+    let Ok(connection) =
+        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
+    else {
+        debug_log(
+            shared,
+            format!("Failed to open OpenCode database: {}", db_path.display()),
+        );
+        return;
+    };
+    let Ok(mut statement) = connection.prepare("SELECT id, title FROM session") else {
+        debug_log(
+            shared,
+            format!(
+                "OpenCode database has no session table: {}",
+                db_path.display()
+            ),
+        );
+        return;
+    };
+    while let Ok(sqlite::State::Row) = statement.next() {
+        let Ok(id) = statement.read::<String, _>(0) else {
+            continue;
+        };
+        let Ok(title) = statement.read::<String, _>(1) else {
+            continue;
+        };
+        if !title.is_empty() {
+            names.insert(id, title);
+        }
+    }
+}
+
 fn entry_id(entry: &LoadedEntry) -> Option<&str> {
     entry.data.message.id.as_deref().filter(|id| !id.is_empty())
 }
@@ -383,6 +460,42 @@ mod tests {
             .expect("db-uncovered message present");
         assert_eq!(file_entry.session_id.as_ref(), "file-session");
         assert_eq!(file_entry.data.message.usage.input_tokens, 50);
+    }
+
+    fn create_db_session(path: &std::path::Path, id: &str, title: &str) {
+        let db = sqlite::open(path).unwrap();
+        db.execute("CREATE TABLE IF NOT EXISTS session (id TEXT, title TEXT)")
+            .unwrap();
+        let mut statement = db
+            .prepare("INSERT INTO session (id, title) VALUES (?1, ?2)")
+            .unwrap();
+        statement.bind((1, id)).unwrap();
+        statement.bind((2, title)).unwrap();
+        statement.next().unwrap();
+    }
+
+    #[test]
+    fn loads_session_names_db_wins_over_legacy_and_drops_empty() {
+        let fixture = fs_fixture!({
+            "storage/session/proj/ses_legacy.json": r#"{"id":"ses_legacy","title":"Legacy session"}"#,
+            "storage/session/proj/ses_a.json": r#"{"id":"ses_a","title":"Stale file title"}"#,
+        });
+        create_db_session(&fixture.path("opencode.db"), "ses_a", "Greeting");
+        create_db_session(&fixture.path("opencode.db"), "ses_empty", "");
+
+        let mut names = std::collections::HashMap::new();
+        super::load_session_names_from_directory(
+            fixture.root(),
+            &mut names,
+            &SharedArgs::default(),
+        );
+
+        assert_eq!(names.get("ses_a").map(String::as_str), Some("Greeting"));
+        assert_eq!(
+            names.get("ses_legacy").map(String::as_str),
+            Some("Legacy session")
+        );
+        assert_eq!(names.get("ses_empty"), None);
     }
 
     #[test]
