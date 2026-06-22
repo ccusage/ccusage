@@ -223,6 +223,7 @@ mod tests {
             month: Some("2026-01".to_string()),
             week: Some("2025-12-29".to_string()),
             session_id: Some("session-a".to_string()),
+            session_name: None,
             project_path: Some("/workspace/api".to_string()),
             last_activity: Some("2026-01-02T12:34:56.000Z".to_string()),
             first_activity: Some("2026-01-01T10:30:00.000Z".to_string()),

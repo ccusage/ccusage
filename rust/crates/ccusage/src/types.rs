@@ -183,6 +183,8 @@ pub(crate) struct UsageSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) session_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) project_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) last_activity: Option<String>,

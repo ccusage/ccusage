@@ -153,6 +153,7 @@ mod tests {
             month: None,
             week: None,
             session_id: Some(session_id.to_string()),
+            session_name: None,
             project_path: None,
             last_activity: Some(last_activity.to_string()),
             first_activity: None,

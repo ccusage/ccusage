@@ -43,8 +43,8 @@ pub(crate) use output::{
 };
 pub(crate) use project_names::{format_project_name, parse_project_aliases, short_model_name};
 pub(crate) use summary::{
-    BucketKind, SessionAccumulator, filter_and_sort_summaries, sort_summaries, summarize_by_key,
-    summarize_summaries_by_bucket, week_start,
+    BucketKind, SessionAccumulator, apply_session_names, filter_and_sort_summaries, sort_summaries,
+    summarize_by_key, summarize_summaries_by_bucket, week_start,
 };
 pub(crate) use types::*;
 pub(crate) use utils::{

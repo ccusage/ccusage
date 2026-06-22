@@ -197,6 +197,7 @@ fn all_rows_as_usage_summaries(rows: &[AllRow]) -> Vec<UsageSummary> {
             month: None,
             week: None,
             session_id: None,
+            session_name: None,
             project_path: None,
             last_activity: None,
             first_activity: None,

@@ -94,6 +94,7 @@ impl UsageAccumulator {
             month: None,
             week: None,
             session_id: None,
+            session_name: None,
             project_path: None,
             last_activity: None,
             first_activity: None,
@@ -202,6 +203,7 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
         month: None,
         week: None,
         session_id: None,
+        session_name: None,
         project_path: None,
         last_activity: None,
         first_activity: None,
@@ -308,6 +310,19 @@ pub(crate) fn week_start(date: &str, start: WeekDay) -> Option<String> {
     let day = date.weekday_from_sunday() as i64;
     let shift = (day - start_num + 7) % 7;
     Some(format_naive_date(date.checked_add_days(-shift)?))
+}
+
+pub(crate) fn apply_session_names(
+    rows: &mut [UsageSummary],
+    names: &std::collections::HashMap<String, String>,
+) {
+    for row in rows.iter_mut() {
+        if let Some(id) = row.session_id.as_deref()
+            && let Some(name) = names.get(id)
+        {
+            row.session_name = Some(name.clone());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -710,6 +725,7 @@ mod tests {
             month: None,
             week: None,
             session_id: None,
+            session_name: None,
             project_path: None,
             last_activity: None,
             first_activity: None,
@@ -735,5 +751,39 @@ mod tests {
             project: None,
             versions: None,
         }
+    }
+
+    #[test]
+    fn apply_session_names_sets_only_matching_rows() {
+        let mut named = summary_row(SummaryFixture {
+            date: Some("2026-01-02"),
+            model: "m",
+            cost: 1.0,
+            input_tokens: 1,
+        });
+        named.session_id = Some("ses_a".to_string());
+        let mut unnamed = summary_row(SummaryFixture {
+            date: Some("2026-01-02"),
+            model: "m",
+            cost: 1.0,
+            input_tokens: 1,
+        });
+        unnamed.session_id = Some("ses_b".to_string());
+        let mut no_id = summary_row(SummaryFixture {
+            date: Some("2026-01-02"),
+            model: "m",
+            cost: 1.0,
+            input_tokens: 1,
+        });
+        no_id.session_id = None;
+
+        let mut rows = vec![named, unnamed, no_id];
+        let mut names = std::collections::HashMap::new();
+        names.insert("ses_a".to_string(), "Greeting".to_string());
+        apply_session_names(&mut rows, &names);
+
+        assert_eq!(rows[0].session_name.as_deref(), Some("Greeting"));
+        assert_eq!(rows[1].session_name, None);
+        assert_eq!(rows[2].session_name, None);
     }
 }

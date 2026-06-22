@@ -649,6 +649,7 @@ mod tests {
             month: None,
             week: None,
             session_id: None,
+            session_name: None,
             project_path: None,
             last_activity: None,
             first_activity: None,
