@@ -22,7 +22,7 @@ ccusage daily
 
 ## Data Location
 
-The CLI reads Kimi wire JSONL files from `KIMI_DATA_DIR` (defaults to `~/.kimi`). `KIMI_DATA_DIR` can be one directory or a comma-separated list of directories.
+The CLI reads Kimi wire JSONL files from `KIMI_DATA_DIR` (defaults to `~/.kimi` and `~/.kimi-code`). `KIMI_DATA_DIR` can be one directory or a comma-separated list of directories.
 
 ```sh
 KIMI_DATA_DIR="$HOME/.kimi,/backup/kimi" ccusage kimi daily
@@ -32,6 +32,7 @@ Expected files are discovered under:
 
 ```text
 ~/.kimi/sessions/<group-id>/<session-id>/wire.jsonl
+~/.kimi-code/sessions/<workspace-id>/<session-id>/agents/<agent-id>/wire.jsonl
 ```
 
 ## Supported Reports
@@ -44,12 +45,12 @@ Expected files are discovered under:
 
 ## Token Mapping
 
-- **Input tokens** - `token_usage.input_other`
-- **Output tokens** - `token_usage.output`
-- **Cache read tokens** - `token_usage.input_cache_read`
-- **Cache creation tokens** - `token_usage.input_cache_creation`
+- **Input tokens** - `token_usage.input_other` (or `usage.inputOther` in Kimi Code logs)
+- **Output tokens** - `token_usage.output` (or `usage.output`)
+- **Cache read tokens** - `token_usage.input_cache_read` (or `usage.inputCacheRead`)
+- **Cache creation tokens** - `token_usage.input_cache_creation` (or `usage.inputCacheCreation`)
 
-Only `StatusUpdate` messages with non-zero token usage are included.
+Only `StatusUpdate` messages with non-zero token usage are included. Kimi Code logs instead emit `usage.record` lines; only turn-scoped records are counted, since session-scoped records are cumulative totals.
 
 ## Cost Calculation
 
@@ -64,5 +65,5 @@ Kimi rows do not store recorded USD cost, so ccusage estimates cost from token c
 ## Troubleshooting
 
 ::: details No Kimi usage data found
-Ensure the data directory exists at `~/.kimi/sessions/`. Set `KIMI_DATA_DIR` if your Kimi data lives elsewhere or in multiple archive roots.
+Ensure the data directory exists at `~/.kimi/sessions/` or `~/.kimi-code/sessions/`. Set `KIMI_DATA_DIR` if your Kimi data lives elsewhere or in multiple archive roots.
 :::

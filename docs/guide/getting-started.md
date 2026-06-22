@@ -172,7 +172,7 @@ If ccusage shows no data, check:
    - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}`
    - Goose: standard Goose data roots or `GOOSE_PATH_ROOT`
    - Kilo: `${KILO_DATA_DIR:-~/.local/share/kilo}`
-   - Kimi: `${KIMI_DATA_DIR:-~/.kimi}`
+   - Kimi: `${KIMI_DATA_DIR:-~/.kimi}` (also scans `~/.kimi-code`)
    - OpenClaw: `${OPENCLAW_DIR:-~/.openclaw}` (also scans `~/.clawdbot`, `~/.moltbot`, `~/.moldbot`)
    - Qwen: `${QWEN_DATA_DIR:-~/.qwen}`
    - GitHub Copilot CLI: `~/.copilot/otel/*.jsonl` or `COPILOT_OTEL_FILE_EXPORTER_PATH`

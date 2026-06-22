@@ -87,6 +87,31 @@ mod tests {
     }
 
     #[test]
+    fn loads_kimi_code_usage_record_format() {
+        let fixture = fs_fixture!({
+            "sessions/workspace/session-b/agents/agent-1/wire.jsonl": [
+                r#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{"inputOther":3064,"output":76,"inputCacheRead":14848,"inputCacheCreation":0},"usageScope":"turn","time":1782113184943}"#,
+                r#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{"inputOther":5000,"output":200,"inputCacheRead":20000,"inputCacheCreation":100},"usageScope":"session","time":1782113185000}"#,
+            ]
+            .join("\n"),
+        });
+        let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        assert_eq!(entries.len(), 1, "session-scoped record must be skipped");
+        assert_eq!(entries[0].session_id.as_ref(), "session-b");
+        assert_eq!(entries[0].model.as_deref(), Some("kimi-for-coding"));
+        assert_eq!(entries[0].data.message.usage.input_tokens, 3064);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 76);
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 14848);
+        assert_eq!(entries[0].data.message.usage.cache_creation_input_tokens, 0);
+    }
+
+    #[test]
     fn skips_malformed_and_zero_token_wire_lines() {
         let fixture = fs_fixture!({
             "sessions/group/session-a/wire.jsonl": [

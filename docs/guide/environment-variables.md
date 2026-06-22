@@ -19,7 +19,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `GOOSE_PATH_ROOT`                 | Goose        | Standard Goose data roots          |
 | `OPENCLAW_DIR`                    | OpenClaw     | `~/.openclaw`                      |
 | `KILO_DATA_DIR`                   | Kilo         | `~/.local/share/kilo`              |
-| `KIMI_DATA_DIR`                   | Kimi         | `~/.kimi`                          |
+| `KIMI_DATA_DIR`                   | Kimi         | `~/.kimi`, `~/.kimi-code`          |
 | `QWEN_DATA_DIR`                   | Qwen         | `~/.qwen`                          |
 | `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI  | Explicit `.jsonl` file             |
 | `GEMINI_DATA_DIR`                 | Gemini CLI   | `~/.gemini/tmp`                    |

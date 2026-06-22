@@ -31,9 +31,22 @@ struct KimiConfig {
 struct KimiWireLine {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     r#type: Option<String>,
+    // old format
     message: Option<KimiWireMessage>,
     #[serde(default, deserialize_with = "jsonl::lenient_f64")]
     timestamp: Option<f64>,
+    // new Kimi Code format
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    usage: Option<KimiCodeUsage>,
+    #[serde(
+        rename = "usageScope",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    usage_scope: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_i64")]
+    time: Option<i64>,
 }
 
 /// The `message` block carried by a Kimi wire line.
@@ -67,6 +80,30 @@ struct KimiTokenUsage {
     total: u64,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct KimiCodeUsage {
+    #[serde(
+        rename = "inputOther",
+        default,
+        deserialize_with = "jsonl::lenient_u64"
+    )]
+    input_other: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    output: u64,
+    #[serde(
+        rename = "inputCacheCreation",
+        default,
+        deserialize_with = "jsonl::lenient_u64"
+    )]
+    input_cache_creation: u64,
+    #[serde(
+        rename = "inputCacheRead",
+        default,
+        deserialize_with = "jsonl::lenient_u64"
+    )]
+    input_cache_read: u64,
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct KimiUsageEntry {
     timestamp: TimestampMs,
@@ -85,9 +122,8 @@ pub(super) fn read_wire_file(path: &Path) -> Result<Vec<KimiUsageEntry>> {
     let model = read_model_from_config(path);
     let fallback_timestamp = file_modified_timestamp(path);
     let content = fs::read(path)?;
-    // Usable Kimi wire lines are `StatusUpdate` records carrying a
-    // `token_usage` payload, so require both substrings before JSON parsing.
-    let prefilter = LinePrefilter::all(&[br#""StatusUpdate""#, br#""token_usage""#]);
+    // Usable Kimi wire lines carry either `token_usage` (old format) or `usage.record` (new).
+    let prefilter = LinePrefilter::any(&[br#""token_usage""#, br#""usage.record""#]);
     Ok(jsonl::records::<KimiWireLine>(&content, Some(&prefilter))
         .filter_map(|line| wire_line_to_entry(&line, path, &model, fallback_timestamp))
         .collect::<Vec<_>>())
@@ -107,12 +143,25 @@ fn read_model_from_config(file_path: &Path) -> String {
 }
 
 fn kimi_root_from_wire_path(file_path: &Path) -> Option<PathBuf> {
-    file_path
-        .parent()?
-        .parent()?
-        .parent()?
-        .parent()
-        .map(Path::to_path_buf)
+    // Old layout: root/sessions/<group>/<session>/wire.jsonl
+    // New layout: root/sessions/<ws>/<session>/agents/<agent>/wire.jsonl
+    let agent_dir = file_path.parent()?;
+    if agent_dir.parent()?.file_name()?.to_str() == Some("agents") {
+        agent_dir
+            .parent()?
+            .parent()?
+            .parent()?
+            .parent()?
+            .parent()
+            .map(Path::to_path_buf)
+    } else {
+        file_path
+            .parent()?
+            .parent()?
+            .parent()?
+            .parent()
+            .map(Path::to_path_buf)
+    }
 }
 
 fn file_modified_timestamp(path: &Path) -> TimestampMs {
@@ -131,29 +180,79 @@ fn wire_line_to_entry(
     model: &str,
     fallback_timestamp: TimestampMs,
 ) -> Option<KimiUsageEntry> {
-    if line.r#type.as_deref() == Some("metadata") {
+    match line.r#type.as_deref() {
+        Some("usage.record") => wire_line_to_entry_new(line, file_path, fallback_timestamp),
+        Some("metadata") => None,
+        _ => wire_line_to_entry_old(line, file_path, model, fallback_timestamp),
+    }
+}
+
+fn wire_line_to_entry_new(
+    line: &KimiWireLine,
+    file_path: &Path,
+    fallback_timestamp: TimestampMs,
+) -> Option<KimiUsageEntry> {
+    // Only aggregate turn-level records; session records are cumulative totals.
+    if line.usage_scope.as_deref() != Some("turn") {
         return None;
     }
+    let usage_counts = line.usage.as_ref()?;
+    let usage = TokenUsageRaw {
+        input_tokens: usage_counts.input_other,
+        output_tokens: usage_counts.output,
+        cache_creation_input_tokens: usage_counts.input_cache_creation,
+        cache_read_input_tokens: usage_counts.input_cache_read,
+        speed: None,
+        cache_creation: None,
+    };
+    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, 0);
+    if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
+        return None;
+    }
+    let timestamp = line
+        .time
+        .map(TimestampMs::from_millis)
+        .unwrap_or(fallback_timestamp);
+    let model = line.model.as_deref().unwrap_or(DEFAULT_MODEL);
+    let model = model
+        .strip_prefix("kimi-code/")
+        .unwrap_or(model)
+        .to_string();
+    Some(KimiUsageEntry {
+        timestamp,
+        timestamp_text: crate::format_rfc3339_millis(timestamp),
+        session_id: extract_session_id(file_path),
+        model,
+        message_id: None,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        cache_creation_tokens: usage.cache_creation_input_tokens,
+        cache_read_tokens: usage.cache_read_input_tokens,
+        extra_total_tokens,
+    })
+}
+
+fn wire_line_to_entry_old(
+    line: &KimiWireLine,
+    file_path: &Path,
+    model: &str,
+    fallback_timestamp: TimestampMs,
+) -> Option<KimiUsageEntry> {
     let message = line.message.as_ref()?;
     if message.r#type.as_deref() != Some("StatusUpdate") {
         return None;
     }
     let payload = message.payload.as_ref()?;
     let token_usage = payload.token_usage.as_ref()?;
-    let input_tokens = token_usage.input_other;
-    let output_tokens = token_usage.output;
-    let cache_creation_tokens = token_usage.input_cache_creation;
-    let cache_read_tokens = token_usage.input_cache_read;
-    let total_tokens = token_usage.total;
     let usage = TokenUsageRaw {
-        input_tokens,
-        output_tokens,
-        cache_creation_input_tokens: cache_creation_tokens,
-        cache_read_input_tokens: cache_read_tokens,
+        input_tokens: token_usage.input_other,
+        output_tokens: token_usage.output,
+        cache_creation_input_tokens: token_usage.input_cache_creation,
+        cache_read_input_tokens: token_usage.input_cache_read,
         speed: None,
         cache_creation: None,
     };
-    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total_tokens);
+    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, token_usage.total);
     if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
         return None;
     }
@@ -187,8 +286,20 @@ fn timestamp_from_seconds(seconds: f64) -> Option<TimestampMs> {
 }
 
 fn extract_session_id(file_path: &Path) -> String {
-    file_path
-        .parent()
+    // Old layout: sessions/<group>/<session>/wire.jsonl
+    // New layout: sessions/<ws>/<session>/agents/<agent>/wire.jsonl
+    let parent = file_path.parent();
+    let session_dir = if parent
+        .and_then(|p| p.parent())
+        .and_then(Path::file_name)
+        .and_then(|n| n.to_str())
+        == Some("agents")
+    {
+        parent.and_then(|p| p.parent()).and_then(|p| p.parent())
+    } else {
+        parent
+    };
+    session_dir
         .and_then(Path::file_name)
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
@@ -327,6 +438,22 @@ fn kimi_for_coding_pricing_model(timestamp: TimestampMs) -> &'static str {
 mod tests {
     use super::*;
     use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn kimi_root_resolves_correctly_for_both_path_layouts() {
+        let fixture = fs_fixture!({
+            "sessions/group/session-a/wire.jsonl": "",
+            "sessions/ws/session-b/agents/agent-1/wire.jsonl": "",
+        });
+        let old_path = fixture.path("sessions/group/session-a/wire.jsonl");
+        let new_path = fixture.path("sessions/ws/session-b/agents/agent-1/wire.jsonl");
+
+        let old_root = kimi_root_from_wire_path(&old_path).unwrap();
+        let new_root = kimi_root_from_wire_path(&new_path).unwrap();
+
+        assert_eq!(old_root, fixture.root().to_path_buf());
+        assert_eq!(new_root, fixture.root().to_path_buf());
+    }
 
     #[test]
     fn falls_back_to_total_tokens_when_kimi_parts_are_missing() {
