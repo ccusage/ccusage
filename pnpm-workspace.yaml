@@ -27,7 +27,7 @@ catalogs:
     get-stdin: ^10.0.0
     gunshi: ^0.31.0
     picospinner: ^3.0.0
-    type-fest: ^4.41.0
+    type-fest: ^5.7.0
     valibot: ^1.4.1
     xdg-basedir: ^5.1.0
   types:
