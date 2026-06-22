@@ -879,9 +879,13 @@ mod tests {
             missing_pricing_model: None,
         };
 
-        let report =
-            adapter::opencode::report_json(&[entry], AgentReportKind::Daily, &SortOrder::Asc)
-                .unwrap();
+        let report = adapter::opencode::report_json(
+            &[entry],
+            AgentReportKind::Daily,
+            &SortOrder::Asc,
+            &std::collections::HashMap::new(),
+        )
+        .unwrap();
 
         assert_eq!(report["daily"][0]["date"], "2026-01-02");
         assert_eq!(report["daily"][0]["inputTokens"], 100);

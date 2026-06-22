@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use serde_json::{Value, json};
 
 use crate::{
-    BucketKind, LoadedEntry, Result, SessionAccumulator,
+    BucketKind, LoadedEntry, Result, SessionAccumulator, apply_session_names,
     cli::{AgentReportKind, SortOrder, WeekDay},
     sort_summaries, summarize_by_key, summarize_summaries_by_bucket, totals_json,
 };
@@ -10,8 +12,10 @@ pub(crate) fn report_json(
     entries: &[LoadedEntry],
     kind: AgentReportKind,
     order: &SortOrder,
+    names: &HashMap<String, String>,
 ) -> Result<Value> {
     let mut rows = summarize_entries(entries, kind)?;
+    apply_session_names(&mut rows, names);
     sort_summaries(&mut rows, order, |row| summary_period(row));
     Ok(report_from_rows(&rows, kind))
 }
