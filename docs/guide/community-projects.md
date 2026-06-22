@@ -10,6 +10,7 @@ These projects are maintained independently and are not affiliated with the ccus
 - [ClaudeCode_Dashboard](https://github.com/m-sigepon/ClaudeCode_Dashboard) - Web dashboard with charts and visualizations
 - [Ccusage App](https://github.com/EthanBarlo/ccusage-app) - Native application to display ccusage data in graphs and visualizations
 - [CCOwl](https://github.com/sivchari/ccowl) - A cross-platform status bar application that monitors Claude Code usage in real-time.
+- [TokeyPal](https://www.tokeypal.com) - Swift-native token usage tracking app with an upgradeable desktop pet companion ([GitHub](https://github.com/xiewenya/tokeypal))
 
 ## Extensions & Integrations
 
