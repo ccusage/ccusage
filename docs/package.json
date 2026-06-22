@@ -17,6 +17,6 @@
 		"vitepress-plugin-llms": "catalog:docs"
 	},
 	"engines": {
-		"node": ">=22.11.0"
+		"node": ">=24.17.0"
 	}
 }

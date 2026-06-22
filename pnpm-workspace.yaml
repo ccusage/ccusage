@@ -31,7 +31,7 @@ catalogs:
     valibot: ^1.4.1
     xdg-basedir: ^5.1.0
   types:
-    '@types/node': ^24.10.1
+    '@types/node': ^24.13.2
     '@types/react': ^19.2.17
 
 enablePrePostScripts: true

@@ -34,7 +34,7 @@ catalogs:
       version: 0.0.75
   types:
     '@types/node':
-      specifier: ^24.10.1
+      specifier: ^24.13.2
       version: 24.13.2
     '@types/react':
       specifier: ^19.2.17
