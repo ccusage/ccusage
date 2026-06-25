@@ -94,6 +94,10 @@
 			{
 				"name": "openclaw",
 				"description": "Show OpenClaw usage commands"
+			},
+			{
+				"name": "cowork",
+				"description": "Show Cowork usage commands"
 			}
 		]
 	},
@@ -690,6 +694,43 @@
 			"path": ["qwen", "session"],
 			"description": "Show Qwen usage grouped by session",
 			"usage": "ccusage qwen session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["cowork"],
+			"description": "Usage reports for cowork.",
+			"usage": "ccusage cowork <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Cowork usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Cowork usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Cowork usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["cowork", "daily"],
+			"description": "Show Cowork usage grouped by date",
+			"usage": "ccusage cowork daily <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["cowork", "monthly"],
+			"description": "Show Cowork usage grouped by month",
+			"usage": "ccusage cowork monthly <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["cowork", "session"],
+			"description": "Show Cowork usage grouped by session",
+			"usage": "ccusage cowork session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
