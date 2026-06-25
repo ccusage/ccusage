@@ -34,6 +34,8 @@ static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
 static THREAD_SPAWN_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"thread_spawn"));
+static FORKED_FROM_ID_FINDER: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"forked_from_id"));
 
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_FALLBACKS_JSON: &str = include_str!("codex-auto-review-fallbacks.json");
@@ -62,7 +64,7 @@ struct CodexExecTimestamps {
     model: String,
 }
 
-fn is_codex_subagent_session(path: &Path) -> bool {
+fn is_codex_replay_session(path: &Path) -> bool {
     let Ok(mut file) = fs::File::open(path) else {
         return false;
     };
@@ -70,10 +72,10 @@ fn is_codex_subagent_session(path: &Path) -> bool {
     let Ok(n) = file.read(&mut buf) else {
         return false;
     };
-    THREAD_SPAWN_FINDER.find(&buf[..n]).is_some()
+    THREAD_SPAWN_FINDER.find(&buf[..n]).is_some() || FORKED_FROM_ID_FINDER.find(&buf[..n]).is_some()
 }
 
-fn detect_subagent_replay_second(path: &Path) -> Option<[u8; 19]> {
+fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
     let Ok(file) = fs::File::open(path) else {
         return None;
     };
@@ -138,9 +140,9 @@ pub(super) fn visit_codex_session_file(
     path: &Path,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    let is_subagent = is_codex_subagent_session(path);
-    let replay_second = is_subagent
-        .then(|| detect_subagent_replay_second(path))
+    let is_replay_session = is_codex_replay_session(path);
+    let replay_second = is_replay_session
+        .then(|| detect_replay_second(path))
         .flatten();
     let Ok(file) = fs::File::open(path) else {
         return Ok(());

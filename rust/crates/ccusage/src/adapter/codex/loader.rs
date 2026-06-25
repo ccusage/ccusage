@@ -973,6 +973,174 @@ mod tests {
     }
 
     #[test]
+    fn skips_replayed_parent_token_history_in_forked_session_files() {
+        let fixture = fs_fixture!({
+            "2026-05-12T08-00-00-parent.jsonl": [
+                json!({
+                    "timestamp": "2026-05-12T08:00:00.000Z",
+                    "type": "turn_context",
+                    "payload": {"model": "gpt-5.2"},
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-12T08:01:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 1_000,
+                                "cached_input_tokens": 100,
+                                "output_tokens": 200,
+                                "total_tokens": 1_200,
+                            },
+                            "total_token_usage": {
+                                "input_tokens": 1_000,
+                                "cached_input_tokens": 100,
+                                "output_tokens": 200,
+                                "total_tokens": 1_200,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-12T08:02:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 500,
+                                "cached_input_tokens": 50,
+                                "output_tokens": 100,
+                                "total_tokens": 600,
+                            },
+                            "total_token_usage": {
+                                "input_tokens": 1_500,
+                                "cached_input_tokens": 150,
+                                "output_tokens": 300,
+                                "total_tokens": 1_800,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+            "2026-05-12T08-03-00-fork.jsonl": [
+                json!({
+                    "timestamp": "2026-05-12T08:03:00.000Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "fork-abc",
+                        "forked_from_id": "parent-xyz",
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-12T08:03:00.000Z",
+                    "type": "session_meta",
+                    "payload": {"id": "parent-xyz"},
+                })
+                .to_string(),
+                // replayed parent history with timestamps rewritten to fork creation time
+                json!({
+                    "timestamp": "2026-05-12T08:03:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 1_000,
+                                "cached_input_tokens": 100,
+                                "output_tokens": 200,
+                                "total_tokens": 1_200,
+                            },
+                            "total_token_usage": {
+                                "input_tokens": 1_000,
+                                "cached_input_tokens": 100,
+                                "output_tokens": 200,
+                                "total_tokens": 1_200,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-12T08:03:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 500,
+                                "cached_input_tokens": 50,
+                                "output_tokens": 100,
+                                "total_tokens": 600,
+                            },
+                            "total_token_usage": {
+                                "input_tokens": 1_500,
+                                "cached_input_tokens": 150,
+                                "output_tokens": 300,
+                                "total_tokens": 1_800,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+                // fork's own entry
+                json!({
+                    "timestamp": "2026-05-12T08:04:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 10,
+                                "output_tokens": 20,
+                                "total_tokens": 120,
+                            },
+                            "total_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 10,
+                                "output_tokens": 20,
+                                "total_tokens": 120,
+                            },
+                            "model": "gpt-5.2",
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+
+        for single_thread in [true, false] {
+            let events = load_codex_events_from_directory(fixture.root(), single_thread).unwrap();
+
+            assert_eq!(
+                events.len(),
+                3,
+                "expected 3 events (2 parent + 1 fork real), got {} with single_thread={}",
+                events.len(),
+                single_thread
+            );
+
+            let fork_events: Vec<_> = events
+                .iter()
+                .filter(|event| event.session_id.contains("fork"))
+                .collect();
+            assert_eq!(fork_events.len(), 1);
+            assert_eq!(fork_events[0].input_tokens, 100);
+            assert_eq!(fork_events[0].cached_input_tokens, 10);
+            assert_eq!(fork_events[0].output_tokens, 20);
+            assert_eq!(fork_events[0].total_tokens, 120);
+        }
+    }
+
+    #[test]
     fn keeps_cumulative_baseline_when_skipping_subagent_replay() {
         let fixture = fs_fixture!({
             "2026-05-12T08-03-00-subagent.jsonl": [
