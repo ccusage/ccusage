@@ -6,11 +6,28 @@ pub(crate) fn cowork_paths() -> Result<Vec<PathBuf>> {
     if let Ok(env_paths) = std::env::var("COWORK_CONFIG_DIR") {
         return cowork_paths_from_env(&env_paths);
     }
-    let home =
-        crate::home::home_dir().ok_or_else(|| crate::cli_error("home directory is not set"))?;
-    Ok(cowork_paths_from_root(&home.join(
-        "Library/Application Support/Claude/local-agent-mode-sessions",
-    )))
+    Ok(cowork_paths_from_root(&default_sessions_root()?))
+}
+
+fn default_sessions_root() -> Result<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let local_app_data = std::env::var("LOCALAPPDATA")
+            .map_err(|_| crate::cli_error("LOCALAPPDATA environment variable is not set"))?;
+        Ok(PathBuf::from(local_app_data)
+            .join("Packages")
+            .join("Claude_pzs8sxrjxfjjc")
+            .join("LocalCache")
+            .join("Roaming")
+            .join("Claude")
+            .join("local-agent-mode-sessions"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = crate::home::home_dir()
+            .ok_or_else(|| crate::cli_error("home directory is not set"))?;
+        Ok(home.join("Library/Application Support/Claude/local-agent-mode-sessions"))
+    }
 }
 
 fn cowork_paths_from_env(env_paths: &str) -> Result<Vec<PathBuf>> {
