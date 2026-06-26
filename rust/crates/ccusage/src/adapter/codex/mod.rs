@@ -36,13 +36,13 @@ pub(crate) fn run(args: AgentCommandArgs) -> Result<()> {
         log_level() != Some(0),
         shared.pricing_overrides.iter(),
     );
-    let groups = load_groups(&shared, args.kind)?;
+    let groups = load_groups(&shared, args.kind, args.instances, args.project.as_deref())?;
     let speed = resolve_codex_speed(args.codex_speed);
     if wants_json(&shared) {
-        let output = report_from_groups(&groups, args.kind, &pricing, speed);
+        let output = report_from_groups(&groups, args.kind, &pricing, speed, args.instances);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
-    print_table_from_groups(&groups, args.kind, &pricing, speed, &shared)
+    print_table_from_groups(&groups, args.kind, &pricing, speed, &shared, args.instances)
 }
 
 #[cfg(test)]
@@ -53,8 +53,20 @@ pub(crate) fn report_json(
     pricing: &PricingMap,
     speed: CodexSpeed,
 ) -> Result<Value> {
-    let groups = aggregate_events(events, kind, timezone)?;
-    Ok(report_from_groups(&groups, kind, pricing, speed))
+    let groups = aggregate_events(events, kind, timezone, false)?;
+    Ok(report_from_groups(&groups, kind, pricing, speed, false))
+}
+
+#[cfg(test)]
+pub(crate) fn report_json_with_instances(
+    events: &[CodexTokenUsageEvent],
+    kind: AgentReportKind,
+    timezone: Option<&str>,
+    pricing: &PricingMap,
+    speed: CodexSpeed,
+) -> Result<Value> {
+    let groups = aggregate_events(events, kind, timezone, true)?;
+    Ok(report_from_groups(&groups, kind, pricing, speed, true))
 }
 
 #[cfg(test)]
@@ -84,7 +96,8 @@ mod tests {
         };
 
         let groups =
-            load_groups_from_directory(&sessions_dir, &shared, AgentReportKind::Daily).unwrap();
+            load_groups_from_directory(&sessions_dir, &shared, AgentReportKind::Daily, false, None)
+                .unwrap();
 
         assert_eq!(groups.len(), 1);
         let group = groups.get("2026-01-03").unwrap();
@@ -109,7 +122,8 @@ mod tests {
         };
 
         let groups =
-            load_groups_from_directory(&sessions_dir, &shared, AgentReportKind::Daily).unwrap();
+            load_groups_from_directory(&sessions_dir, &shared, AgentReportKind::Daily, false, None)
+                .unwrap();
 
         assert_eq!(groups.len(), 1);
         let group = groups.get("2026-01-02").unwrap();
@@ -125,6 +139,7 @@ mod tests {
         let report = report_json(
             &[CodexTokenUsageEvent {
                 session_id: "session-1".to_string(),
+                project_path: None,
                 timestamp: "2026-01-02T00:00:00.000Z".to_string(),
                 model: Some("gpt-5".to_string()),
                 input_tokens: 100,
@@ -168,6 +183,7 @@ mod tests {
             &[
                 CodexTokenUsageEvent {
                     session_id: "session-1".to_string(),
+                    project_path: None,
                     timestamp: "2026-01-02T00:00:00.000Z".to_string(),
                     model: Some("private-codex-alpha".to_string()),
                     input_tokens: 100,
@@ -179,6 +195,7 @@ mod tests {
                 },
                 CodexTokenUsageEvent {
                     session_id: "session-1".to_string(),
+                    project_path: None,
                     timestamp: "2026-01-02T00:00:01.000Z".to_string(),
                     model: Some("private-codex-beta".to_string()),
                     input_tokens: 50,
@@ -315,6 +332,7 @@ mod tests {
         let events = vec![
             CodexTokenUsageEvent {
                 session_id: "/workspace/api/session-a.jsonl".to_string(),
+                project_path: Some("/workspace/api".to_string()),
                 timestamp: "2026-01-02T00:00:00.000Z".to_string(),
                 model: Some("gpt-5.3-codex".to_string()),
                 input_tokens: 140,
@@ -326,6 +344,7 @@ mod tests {
             },
             CodexTokenUsageEvent {
                 session_id: "/workspace/api/session-a.jsonl".to_string(),
+                project_path: Some("/workspace/api".to_string()),
                 timestamp: "2026-01-02T00:05:00.000Z".to_string(),
                 model: Some("gpt-5.3-codex".to_string()),
                 input_tokens: 70,
@@ -337,6 +356,7 @@ mod tests {
             },
             CodexTokenUsageEvent {
                 session_id: "/workspace/web/session-b.jsonl".to_string(),
+                project_path: Some("/workspace/web".to_string()),
                 timestamp: "2026-01-05T23:59:59.000Z".to_string(),
                 model: Some("gpt-5-mini".to_string()),
                 input_tokens: 10,
@@ -348,6 +368,7 @@ mod tests {
             },
             CodexTokenUsageEvent {
                 session_id: "ignored-missing-model".to_string(),
+                project_path: None,
                 timestamp: "2026-01-06T00:00:00.000Z".to_string(),
                 model: None,
                 input_tokens: 999,
@@ -390,6 +411,14 @@ mod tests {
                 Some("UTC"),
                 &pricing,
                 CodexSpeed::Fast,
+            )
+            .unwrap(),
+            "dailyInstances": report_json_with_instances(
+                &events,
+                AgentReportKind::Daily,
+                Some("UTC"),
+                &pricing,
+                CodexSpeed::Standard,
             )
             .unwrap(),
         }));

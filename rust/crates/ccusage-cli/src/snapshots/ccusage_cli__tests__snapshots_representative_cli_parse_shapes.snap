@@ -1,5 +1,6 @@
 ---
-source: crates/ccusage/src/cli.rs
+source: crates/ccusage-cli/src/tests.rs
+assertion_line: 623
 expression: cases
 ---
 [
@@ -33,9 +34,11 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "instances": false,
         "kind": "Daily",
         "openClawPath": null,
         "piPath": null,
+        "project": null,
         "shared": {
           "breakdown": true,
           "color": true,
@@ -179,9 +182,11 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Fast",
+        "instances": true,
         "kind": "Monthly",
         "openClawPath": null,
         "piPath": null,
+        "project": null,
         "shared": {
           "breakdown": false,
           "color": false,
@@ -229,9 +234,11 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "instances": false,
         "kind": "Weekly",
         "openClawPath": null,
         "piPath": null,
+        "project": null,
         "shared": {
           "breakdown": false,
           "color": false,
@@ -279,9 +286,11 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "instances": false,
         "kind": "Session",
         "openClawPath": null,
         "piPath": "/tmp/pi-sessions",
+        "project": null,
         "shared": {
           "breakdown": false,
           "color": false,
@@ -329,9 +338,11 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "instances": false,
         "kind": "Session",
         "openClawPath": "/tmp/openclaw",
         "piPath": null,
+        "project": null,
         "shared": {
           "breakdown": false,
           "color": false,

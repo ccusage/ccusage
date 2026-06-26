@@ -148,6 +148,9 @@ bunx ccusage daily --timezone UTC  # Use UTC timezone
 bunx ccusage claude daily --instances  # Group Claude Code by project/instance
 bunx ccusage claude daily --project myproject  # Filter to specific Claude project
 bunx ccusage claude daily --instances --project myproject --json  # Combined usage
+bunx ccusage codex daily --instances  # Group Codex by project/instance
+bunx ccusage codex daily --project myproject  # Filter to specific Codex project
+bunx ccusage codex daily --instances --project myproject --json  # Combined usage
 
 # Compact mode for screenshots/sharing
 bunx ccusage --compact  # Force compact table mode
@@ -176,7 +179,7 @@ bunx ccusage monthly --compact  # Compact monthly report
 - 🔄 **Cache Token Support**: Tracks and displays cache creation and cache read tokens separately
 - 🌐 **Offline Mode**: Use pre-cached pricing data without network connectivity with `--offline`
 - 🧩 **Custom Pricing Overrides**: Override token pricing per raw model name in `ccusage.json` without rebuilding
-- 🏗️ **Claude Instance Support**: Group Claude Code usage by project with `--instances` and filter by specific projects
+- 🏗️ **Project Filtering**: Group Claude Code or Codex usage by project with `--instances` and filter by specific projects with `--project`
 - 🌍 **Timezone Support**: Configure timezone for date grouping with `--timezone` option
 - ⚙️ **Configuration Files**: Set defaults with JSON configuration files, complete with IDE autocomplete and validation
 

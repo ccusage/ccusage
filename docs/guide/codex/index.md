@@ -17,9 +17,15 @@ ccusage codex monthly
 
 # Codex sessions
 ccusage codex session
+
+# Filter to one Codex project
+ccusage codex daily --project ccusage
+
+# Break down Codex usage by project
+ccusage codex daily --instances
 ```
 
-Most users can start with unified reports such as `ccusage daily`. Add the `codex` namespace only when you want to focus the same report shape on Codex usage or pass Codex-specific options such as `--speed`.
+Most users can start with unified reports such as `ccusage daily`. Add the `codex` namespace only when you want to focus the same report shape on Codex usage or pass Codex-specific options such as `--speed`, `--project`, or `--instances`.
 
 ## Data Source
 
@@ -37,7 +43,11 @@ CODEX_HOME="$HOME/.codex,$HOME/.codex-work,$HOME/codex-exec-logs" ccusage codex 
 | `ccusage codex monthly` | Aggregate usage by month     | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage codex session` | Group usage by Codex session | [Session Usage](/guide/session-reports) |
 
-These views support `--json`, `--compact`, `--offline`, and `--speed auto|standard|fast`.
+These views support `--json`, `--compact`, `--offline`, `--instances`, `--project`, and `--speed auto|standard|fast`.
+
+`--project` matches the Codex `cwd` recorded in `session_meta` or `turn_context` log entries. Pass either the full project path or the final directory name, for example `--project C:\Users\alice\Projects\ccusage` or `--project ccusage`.
+
+`--instances` groups Codex daily, monthly, and session reports by that same recorded project path. In JSON mode, the default flat report shape is preserved unless `--instances` is passed; with `--instances`, output contains a `projects` object plus overall `totals`.
 
 ## Monthly Example
 
@@ -46,6 +56,7 @@ These views support `--json`, `--compact`, `--offline`, and `--speed auto|standa
 ## What Gets Calculated
 
 - **Token deltas** – Each `event_msg` with `payload.type === "token_count"` reports cumulative totals. The CLI subtracts the previous totals to recover per-turn token usage (input, cached input, output, reasoning, total).
+- **Project filtering and grouping** – Codex sessions record the workspace path as `cwd`. `--project` filters daily, monthly, and session views to matching workspace paths or final directory names. `--instances` groups those views by project path.
 - **Per-model grouping** – The `turn_context` metadata specifies the active model. We aggregate tokens per day/month and per model. Sessions lacking model metadata (seen in early September 2025 builds) are skipped.
 - **Pricing** – Rates come from LiteLLM's pricing dataset via the shared `LiteLLMPricingFetcher`. Codex's internal review label is resolved to the newest known model for the log date before pricing is calculated.
 - **Speed pricing** – `--speed auto` is the default. It reads `config.toml` from each `CODEX_HOME` root and applies fast pricing when any Codex config has `service_tier = "priority"` or legacy `service_tier = "fast"` configured. Fast mode uses the model-specific LiteLLM multiplier when available and otherwise falls back to 2x pricing. Pass `--speed fast` or `--speed standard` to override config-based detection.

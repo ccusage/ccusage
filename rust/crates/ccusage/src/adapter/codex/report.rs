@@ -15,7 +15,11 @@ pub(super) fn report_from_groups(
     kind: AgentReportKind,
     pricing: &PricingMap,
     speed: CodexSpeed,
+    group_projects: bool,
 ) -> Value {
+    if group_projects {
+        return project_report_from_groups(groups, kind, pricing, speed);
+    }
     let rows = groups
         .iter()
         .map(|(period, group)| group_json(period, group, kind, pricing, speed))
@@ -24,6 +28,32 @@ pub(super) fn report_from_groups(
     json!({
         rows_key(kind): rows,
         "totals": totals,
+    })
+}
+
+fn project_report_from_groups(
+    groups: &BTreeMap<String, CodexGroup>,
+    kind: AgentReportKind,
+    pricing: &PricingMap,
+    speed: CodexSpeed,
+) -> Value {
+    let mut projects = BTreeMap::<String, Vec<Value>>::new();
+    for (period, group) in groups {
+        let project = group
+            .project_path
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        projects.entry(project).or_default().push(group_json(
+            display_period(period, group),
+            group,
+            kind,
+            pricing,
+            speed,
+        ));
+    }
+    json!({
+        "projects": projects,
+        "totals": totals_json(groups.values(), pricing, speed),
     })
 }
 
@@ -70,6 +100,9 @@ fn group_json(
         "costUSD": json_float(cost),
         "models": models,
     });
+    if let Some(project_path) = &group.project_path {
+        row["project"] = json!(project_path);
+    }
     if kind == AgentReportKind::Session {
         row["lastActivity"] = json!(group.last_activity);
         let separator = period.rfind('/');
@@ -203,6 +236,7 @@ pub(super) fn print_table_from_groups(
     pricing: &PricingMap,
     speed: CodexSpeed,
     shared: &SharedArgs,
+    group_projects: bool,
 ) -> Result<()> {
     if groups.is_empty() {
         eprintln!("No Codex usage data found.");
@@ -259,7 +293,18 @@ pub(super) fn print_table_from_groups(
     let mut total_reasoning = 0;
     let mut total_tokens = 0;
     let mut total_cost = 0.0;
+    let mut current_project: Option<&str> = None;
     for (label, group) in groups {
+        if group_projects {
+            let project = group.project_path.as_deref().unwrap_or("unknown");
+            if current_project != Some(project) {
+                if current_project.is_some() {
+                    table.separator();
+                }
+                table.push(project_header_row(table.column_count(), project, shared));
+                current_project = Some(project);
+            }
+        }
         let input_tokens = non_cached_input_tokens(group.input_tokens, group.cached_input_tokens);
         let cost = calculate_group_cost(group, pricing, speed);
         total_input += input_tokens;
@@ -269,8 +314,9 @@ pub(super) fn print_table_from_groups(
         total_tokens += group.total_tokens;
         total_cost += cost;
         let models = format_models_multiline(&group.models.keys().cloned().collect::<Vec<_>>());
+        let label = display_period(label, group).to_string();
         let mut row = vec![
-            label.clone(),
+            label,
             models,
             format_number(input_tokens),
             format_number(group.output_tokens),
@@ -306,4 +352,21 @@ pub(super) fn print_table_from_groups(
         shared.offline,
     );
     Ok(())
+}
+
+fn display_period<'a>(label: &'a str, group: &'a CodexGroup) -> &'a str {
+    if group.project_path.is_some()
+        && let Some((_, period)) = label.split_once(super::aggregate::PROJECT_GROUP_SEPARATOR)
+    {
+        return period;
+    }
+    label
+}
+
+fn project_header_row(columns: usize, project: &str, shared: &SharedArgs) -> Vec<String> {
+    let mut row = vec![String::new(); columns];
+    if let Some(first) = row.first_mut() {
+        *first = color(shared, format!("Project: {project}"), Color::Blue);
+    }
+    row
 }

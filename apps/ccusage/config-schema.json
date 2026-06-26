@@ -2709,6 +2709,16 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"instances": {
+											"description": "Show usage breakdown by Codex project instance.",
+											"markdownDescription": "Show usage breakdown by Codex project instance.",
+											"type": "boolean"
+										},
+										"project": {
+											"description": "Filter to a Codex project name or path.",
+											"markdownDescription": "Filter to a Codex project name or path.",
+											"type": "string"
+										},
 										"speed": {
 											"default": "auto",
 											"description": "Codex speed normalization strategy.",
@@ -2868,6 +2878,16 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"instances": {
+											"description": "Show usage breakdown by Codex project instance.",
+											"markdownDescription": "Show usage breakdown by Codex project instance.",
+											"type": "boolean"
+										},
+										"project": {
+											"description": "Filter to a Codex project name or path.",
+											"markdownDescription": "Filter to a Codex project name or path.",
+											"type": "string"
+										},
 										"speed": {
 											"default": "auto",
 											"description": "Codex speed normalization strategy.",
@@ -3026,6 +3046,16 @@
 											"description": "Disable parallel file processing.",
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
+										},
+										"instances": {
+											"description": "Show usage breakdown by Codex project instance.",
+											"markdownDescription": "Show usage breakdown by Codex project instance.",
+											"type": "boolean"
+										},
+										"project": {
+											"description": "Filter to a Codex project name or path.",
+											"markdownDescription": "Filter to a Codex project name or path.",
+											"type": "string"
 										},
 										"speed": {
 											"default": "auto",
@@ -3188,6 +3218,16 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"instances": {
+									"description": "Show usage breakdown by Codex project instance.",
+									"markdownDescription": "Show usage breakdown by Codex project instance.",
+									"type": "boolean"
+								},
+								"project": {
+									"description": "Filter to a Codex project name or path.",
+									"markdownDescription": "Filter to a Codex project name or path.",
+									"type": "string"
 								},
 								"speed": {
 									"default": "auto",

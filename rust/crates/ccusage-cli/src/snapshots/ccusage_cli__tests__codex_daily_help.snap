@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage-cli/src/tests.rs
+assertion_line: 483
 expression: "help_text_for_args(&[\"ccusage\".to_string(), \"codex\".to_string(),\n\"daily\".to_string(),])"
 ---
 Show Codex token usage grouped by day
@@ -15,6 +16,8 @@ OPTIONS:
   -O, --offline                        Use cached pricing data instead of fetching from LiteLLM (default: false)
   --no-offline                         Negatable of -O, --offline
   --speed [speed]                      Cost speed tier: auto reads Codex config.toml service_tier; use standard or fast to override (default: auto, choices: auto | standard | fast)
+  -i, --instances                      Show usage breakdown by Codex project instance (default: false)
+  -p, --project <project>              Filter to a Codex project name or path
   --compact                            Force compact table layout for narrow terminals (default: false)
   --no-cost                            Hide cost information in table and JSON output (default: false)
   --color                              Enable colored output. FORCE_COLOR=1 has the same effect. (default: auto)

@@ -356,12 +356,24 @@ pub(crate) fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config:
 
 pub(crate) fn apply_config_to_agent_args(
     codex_speed: &mut CodexSpeed,
+    mut instances: Option<&mut bool>,
+    mut project: Option<&mut Option<String>>,
     mut pi_path: Option<&mut Option<String>>,
     mut open_claw_path: Option<&mut Option<String>>,
     config: &ConfigContext,
 ) {
     for options in config.option_maps() {
         let codex_options = CodexOptions::from_map(options);
+        if let Some(instances) = instances.as_deref_mut()
+            && let Some(value) = codex_options.instances
+        {
+            *instances = value;
+        }
+        if let Some(project) = project.as_deref_mut()
+            && let Some(value) = codex_options.project
+        {
+            *project = Some(value);
+        }
         if let Some(speed) = codex_options.speed {
             *codex_speed = speed.into();
         }
@@ -402,10 +414,19 @@ impl crate::cli::CliConfig for ConfigContext {
     fn apply_agent_args(
         &self,
         codex_speed: &mut CodexSpeed,
+        instances: Option<&mut bool>,
+        project: Option<&mut Option<String>>,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
     ) {
-        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, self);
+        apply_config_to_agent_args(
+            codex_speed,
+            instances,
+            project,
+            pi_path,
+            open_claw_path,
+            self,
+        );
     }
 }
 
@@ -776,14 +797,20 @@ mod tests {
         assert_eq!(weekly.start_of_week, WeekDay::Monday);
 
         let mut speed = CodexSpeed::Auto;
+        let mut instances = false;
+        let mut project = None;
         apply_config_to_agent_args(
             &mut speed,
+            Some(&mut instances),
+            Some(&mut project),
             None,
             None,
             &context(
                 json!({
                     "codex": {
                         "defaults": {
+                            "instances": true,
+                            "project": "ccusage",
                             "speed": "fast"
                         }
                     }
@@ -795,11 +822,15 @@ mod tests {
         );
 
         assert_eq!(speed, CodexSpeed::Fast);
+        assert!(instances);
+        assert_eq!(project.as_deref(), Some("ccusage"));
 
         let mut speed = CodexSpeed::Auto;
         let mut pi_path = None;
         apply_config_to_agent_args(
             &mut speed,
+            None,
+            None,
             Some(&mut pi_path),
             None,
             &context(
@@ -822,6 +853,8 @@ mod tests {
         let mut open_claw_path = None;
         apply_config_to_agent_args(
             &mut speed,
+            None,
+            None,
             None,
             Some(&mut open_claw_path),
             &context(

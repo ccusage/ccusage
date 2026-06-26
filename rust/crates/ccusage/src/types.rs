@@ -140,6 +140,7 @@ pub(crate) struct CodexRawUsage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CodexTokenUsageEvent {
     pub(crate) session_id: String,
+    pub(crate) project_path: Option<String>,
     pub(crate) timestamp: String,
     pub(crate) model: Option<String>,
     pub(crate) input_tokens: u64,
@@ -162,6 +163,7 @@ pub(crate) struct CodexModelUsage {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CodexGroup {
+    pub(crate) project_path: Option<String>,
     pub(crate) input_tokens: u64,
     pub(crate) cached_input_tokens: u64,
     pub(crate) output_tokens: u64,

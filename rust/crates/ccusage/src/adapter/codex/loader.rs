@@ -128,6 +128,7 @@ fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
         seen.insert((
             CompactString::new(&event.timestamp),
             event.model.as_deref().map(CompactString::new),
+            event.project_path.as_deref().map(CompactString::new),
             event.input_tokens,
             event.cached_input_tokens,
             event.output_tokens,
@@ -149,6 +150,7 @@ mod tests {
     fn codex_event(session_id: &str) -> CodexTokenUsageEvent {
         CodexTokenUsageEvent {
             session_id: session_id.to_string(),
+            project_path: None,
             timestamp: "2026-01-02T00:00:00.000Z".to_string(),
             model: Some("gpt-5".to_string()),
             input_tokens: 100,
@@ -311,6 +313,53 @@ mod tests {
         assert_eq!(events[2].output_tokens, 4);
         assert_eq!(events[2].reasoning_output_tokens, 1);
         assert_eq!(events[2].total_tokens, 14);
+    }
+
+    #[test]
+    fn loads_codex_project_path_from_session_metadata() {
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({
+                    "timestamp": "2026-01-02T00:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "session",
+                        "cwd": "/workspace/api",
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-01-02T00:00:01.000Z",
+                    "type": "turn_context",
+                    "payload": {
+                        "model": "gpt-5",
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-01-02T00:00:02.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 10,
+                                "output_tokens": 50,
+                                "total_tokens": 150,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].project_path.as_deref(), Some("/workspace/api"));
     }
 
     #[test]

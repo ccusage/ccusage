@@ -181,6 +181,15 @@
 			"choices": ["auto", "standard", "fast"]
 		},
 		{
+			"flags": "-i, --instances",
+			"description": "Show usage breakdown by Codex project instance",
+			"default": "false"
+		},
+		{
+			"flags": "-p, --project <project>",
+			"description": "Filter to a Codex project name or path"
+		},
+		{
 			"flags": "--compact",
 			"description": "Force compact table layout for narrow terminals",
 			"default": "false"

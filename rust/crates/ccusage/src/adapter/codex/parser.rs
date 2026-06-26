@@ -19,6 +19,8 @@ use super::types::{
 
 static EVENT_MSG_TYPE_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""type":"event_msg""#));
+static SESSION_META_TYPE_FINDER: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(br#""type":"session_meta""#));
 static TURN_CONTEXT_TYPE_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""type":"turn_context""#));
 static TOKEN_COUNT_TYPE_FINDER: LazyLock<Finder<'static>> =
@@ -151,6 +153,7 @@ pub(super) fn visit_codex_session_file(
     let mut previous_totals: Option<CodexRawUsage> = None;
     let mut current_model: Option<String> = None;
     let mut current_model_is_fallback = false;
+    let mut current_project_path: Option<String> = None;
     let fallback_timestamp = file_modified_timestamp(path);
     let mut skip_replay = replay_second.is_some();
 
@@ -205,6 +208,7 @@ pub(super) fn visit_codex_session_file(
                     &mut previous_totals,
                     &mut current_model,
                     &mut current_model_is_fallback,
+                    &mut current_project_path,
                     &mut visit,
                 )?;
             }
@@ -216,6 +220,7 @@ pub(super) fn visit_codex_session_file(
                         &fallback_timestamp,
                         &mut current_model,
                         &mut current_model_is_fallback,
+                        &mut current_project_path,
                         &mut visit,
                     )?;
                 } else {
@@ -225,6 +230,7 @@ pub(super) fn visit_codex_session_file(
                         &fallback_timestamp,
                         &mut current_model,
                         &mut current_model_is_fallback,
+                        &mut current_project_path,
                         &mut visit,
                     )?;
                 };
@@ -241,9 +247,18 @@ fn visit_codex_session_entry(
     previous_totals: &mut Option<CodexRawUsage>,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
+    current_project_path: &mut Option<String>,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let entry_type = value.entry_type.as_deref();
+    if matches!(entry_type, Some("session_meta" | "turn_context")) {
+        if let Some(project_path) = value.payload.as_ref().and_then(codex_project_from_payload) {
+            *current_project_path = Some(project_path);
+        }
+    }
+    if entry_type == Some("session_meta") {
+        return Ok(());
+    }
     if entry_type == Some("turn_context") {
         if let Some(model) = value.payload.as_ref().and_then(codex_model_from_payload) {
             *current_model = Some(model);
@@ -297,6 +312,7 @@ fn visit_codex_session_entry(
 
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
+        project_path: current_project_path.clone(),
         timestamp,
         model,
         input_tokens: raw_usage.input_tokens,
@@ -314,6 +330,7 @@ fn add_codex_exec_event(
     fallback_timestamp: &str,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
+    current_project_path: &mut Option<String>,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let Some(raw_usage) = normalize_headless_codex_usage(value) else {
@@ -332,6 +349,7 @@ fn add_codex_exec_event(
         timestamps,
         current_model,
         current_model_is_fallback,
+        current_project_path,
         visit,
     )
 }
@@ -342,6 +360,7 @@ fn add_codex_exec_event_from_value(
     fallback_timestamp: &str,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
+    current_project_path: &mut Option<String>,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let Ok(value) = serde_json::from_slice::<Value>(line) else {
@@ -364,6 +383,7 @@ fn add_codex_exec_event_from_value(
         timestamps,
         current_model,
         current_model_is_fallback,
+        current_project_path,
         visit,
     )
 }
@@ -375,6 +395,7 @@ fn visit_codex_exec_usage_event(
     timestamps: CodexExecTimestamps,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
+    current_project_path: &mut Option<String>,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let (model, is_fallback_model) = resolve_codex_usage_model(
@@ -385,6 +406,7 @@ fn visit_codex_exec_usage_event(
     );
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
+        project_path: current_project_path.clone(),
         timestamp: timestamps.event,
         model,
         input_tokens: raw_usage.input_tokens,
@@ -397,6 +419,9 @@ fn visit_codex_exec_usage_event(
 }
 
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
+    if SESSION_META_TYPE_FINDER.find(line).is_some() {
+        return Some(CodexLineKind::Session);
+    }
     let has_event_msg = EVENT_MSG_TYPE_FINDER.find(line).is_some();
     let has_token_count = has_event_msg && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
     if TURN_CONTEXT_TYPE_FINDER.find(line).is_some() || has_token_count {
@@ -443,7 +468,7 @@ fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool) {
         has_turn_context |= json_string_value_matches(line, cursor, b"turn_context");
         has_event_msg |= json_string_value_matches(line, cursor, b"event_msg");
         has_token_count |= json_string_value_matches(line, cursor, b"token_count");
-        if has_turn_context || (has_event_msg && has_token_count) {
+        if has_turn_context || has_event_msg && has_token_count {
             return (has_turn_context, has_event_msg, has_token_count);
         }
         start = cursor.saturating_add(1);
@@ -592,6 +617,10 @@ fn codex_model_from_payload(value: &CodexPayload<'_>) -> Option<String> {
         value.model_name.as_ref(),
         value.metadata.as_ref(),
     )
+}
+
+fn codex_project_from_payload(value: &CodexPayload<'_>) -> Option<String> {
+    non_empty_cow_string(value.cwd.as_ref())
 }
 
 fn codex_model_from_info(value: &CodexInfo<'_>) -> Option<String> {

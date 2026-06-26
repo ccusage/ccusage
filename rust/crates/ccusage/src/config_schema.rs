@@ -447,6 +447,10 @@ pub(crate) struct StatuslineSpecificOptions {
 pub(crate) struct CodexOptions {
     #[serde(flatten)]
     pub(crate) shared: SharedOptions,
+    /// Show usage breakdown by Codex project instance.
+    pub(crate) instances: Option<bool>,
+    /// Filter to a Codex project name or path.
+    pub(crate) project: Option<String>,
     /// Codex speed normalization strategy.
     pub(crate) speed: Option<ConfigCodexSpeed>,
 }
@@ -615,6 +619,8 @@ impl CodexOptions {
     pub(crate) fn from_map(map: &Map<String, Value>) -> Self {
         Self {
             shared: SharedOptions::from_map(map),
+            instances: bool_option(map, "instances"),
+            project: string_option(map, "project"),
             speed: enum_option(map, "speed"),
         }
     }
@@ -1040,7 +1046,7 @@ mod tests {
         assert_schema_properties(
             &schema,
             &["codex", "defaults"],
-            &with_keys(&shared, &["speed"]),
+            &with_keys(&shared, &["instances", "project", "speed"]),
         );
         assert_schema_properties(
             &schema,
@@ -1059,6 +1065,7 @@ mod tests {
         let schema = generated_schema();
 
         assert!(schema_property(&schema, &["codex", "defaults", "speed"]).is_some());
+        assert!(schema_property(&schema, &["codex", "defaults", "project"]).is_some());
         assert!(schema_property(&schema, &["opencode", "defaults", "speed"]).is_none());
         assert!(schema_property(&schema, &["amp", "defaults", "speed"]).is_none());
         assert!(schema_property(&schema, &["droid", "defaults", "speed"]).is_none());
@@ -1151,6 +1158,7 @@ mod tests {
             "codex": {
                 "commands": {
                     "monthly": {
+                        "project": "ccusage",
                         "speed": "standard",
                         "since": "20260101"
                     }

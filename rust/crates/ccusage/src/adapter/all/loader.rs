@@ -425,7 +425,7 @@ fn load_codex_rows(
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
     if shared.since.is_none() && shared.until.is_none() {
-        let groups = codex::load_groups(shared, kind)?;
+        let groups = codex::load_groups(shared, kind, false, None)?;
         let detected = !groups.is_empty();
         let speed = codex::resolve_codex_speed(CodexSpeed::Auto);
         return Ok(AgentRows {
@@ -440,7 +440,7 @@ fn load_codex_rows(
     let mut events = codex::load_codex_events(shared)?;
     let detected = !events.is_empty();
     codex::filter_events_by_date(&mut events, shared)?;
-    let groups = codex::aggregate_events(&events, kind, shared.timezone.as_deref())?;
+    let groups = codex::aggregate_events(&events, kind, shared.timezone.as_deref(), false)?;
     let speed = codex::resolve_codex_speed(CodexSpeed::Auto);
     Ok(AgentRows {
         rows: groups

@@ -41,6 +41,8 @@ struct TestConfig {
     statusline_cost_source: Option<CostSource>,
     statusline_refresh_interval: Option<u64>,
     codex_speed: Option<CodexSpeed>,
+    codex_instances: Option<bool>,
+    codex_project: Option<&'static str>,
     pi_path: Option<&'static str>,
     open_claw_path: Option<&'static str>,
 }
@@ -97,11 +99,19 @@ impl CliConfig for TestConfig {
     fn apply_agent_args(
         &self,
         codex_speed: &mut CodexSpeed,
+        instances: Option<&mut bool>,
+        project: Option<&mut Option<String>>,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
     ) {
         if let Some(speed) = self.codex_speed {
             *codex_speed = speed;
+        }
+        if let (Some(value), Some(instances)) = (self.codex_instances, instances) {
+            *instances = value;
+        }
+        if let (Some(value), Some(project)) = (self.codex_project, project) {
+            *project = Some(value.to_string());
         }
         if let (Some(path), Some(pi_path)) = (self.pi_path, pi_path) {
             *pi_path = Some(path.to_string());
@@ -210,6 +220,8 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
         "type": agent,
         "shared": shared_snapshot(&args.shared),
         "kind": format!("{:?}", args.kind),
+        "instances": args.instances,
+        "project": args.project,
         "piPath": args.pi_path,
         "openClawPath": args.open_claw_path,
         "codexSpeed": format!("{:?}", args.codex_speed),
@@ -267,6 +279,20 @@ fn applies_agent_namespace_config_to_codex_speed() {
         panic!("expected codex command");
     };
     assert_eq!(args.codex_speed, CodexSpeed::Fast);
+}
+
+#[test]
+fn applies_agent_namespace_config_to_codex_instances() {
+    let config = TestConfig {
+        codex_instances: Some(true),
+        ..TestConfig::default()
+    };
+
+    let cli = parse_with_config(&["ccusage", "codex", "daily"], &config);
+    let Some(Command::Codex(args)) = cli.command else {
+        panic!("expected codex command");
+    };
+    assert!(args.instances);
 }
 
 #[test]
@@ -534,6 +560,7 @@ fn snapshots_representative_cli_parse_shapes() {
                 "codex",
                 "monthly",
                 "--speed=fast",
+                "--instances",
             ])),
         }),
         json!({
@@ -753,6 +780,24 @@ fn parses_codex_speed_option() {
         panic!("expected codex command");
     };
     assert_eq!(args.codex_speed, CodexSpeed::Fast);
+}
+
+#[test]
+fn parses_codex_project_option() {
+    let cli = parse(&["ccusage", "codex", "daily", "--project", "ccusage"]);
+    let Some(Command::Codex(args)) = cli.command else {
+        panic!("expected codex command");
+    };
+    assert_eq!(args.project.as_deref(), Some("ccusage"));
+}
+
+#[test]
+fn parses_codex_instances_option() {
+    let cli = parse(&["ccusage", "codex", "daily", "--instances"]);
+    let Some(Command::Codex(args)) = cli.command else {
+        panic!("expected codex command");
+    };
+    assert!(args.instances);
 }
 
 #[test]

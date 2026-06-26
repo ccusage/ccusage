@@ -1,6 +1,7 @@
 ---
 source: crates/ccusage/src/adapter/codex/mod.rs
-expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, AgentReportKind::Daily, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"weekly\":\n    report_json(&events, AgentReportKind::Weekly, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"monthly\":\n    report_json(&events, AgentReportKind::Monthly, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"sessionFast\":\n    report_json(&events, AgentReportKind::Session, Some(\"UTC\"), &pricing,\n    CodexSpeed::Fast,).unwrap(),\n})"
+assertion_line: 383
+expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, AgentReportKind::Daily, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"weekly\":\n    report_json(&events, AgentReportKind::Weekly, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"monthly\":\n    report_json(&events, AgentReportKind::Monthly, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"sessionFast\":\n    report_json(&events, AgentReportKind::Session, Some(\"UTC\"), &pricing,\n    CodexSpeed::Fast,).unwrap(), \"dailyInstances\":\n    report_json_with_instances(&events, AgentReportKind::Daily, Some(\"UTC\"),\n    &pricing, CodexSpeed::Standard,).unwrap(),\n})"
 ---
 {
   "daily": {
@@ -48,6 +49,67 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "totalTokens": 12
       }
     ],
+    "totals": {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 110,
+      "costUSD": 0.00041075,
+      "inputTokens": 110,
+      "outputTokens": 17,
+      "reasoningOutputTokens": 2,
+      "totalTokens": 239
+    }
+  },
+  "dailyInstances": {
+    "projects": {
+      "/workspace/api": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 110,
+          "costUSD": 0.00040425,
+          "date": "2026-01-02",
+          "inputTokens": 100,
+          "models": {
+            "gpt-5.3-codex": {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 110,
+              "inputTokens": 100,
+              "isFallback": true,
+              "outputTokens": 15,
+              "reasoningOutputTokens": 2,
+              "totalTokens": 227
+            }
+          },
+          "outputTokens": 15,
+          "project": "/workspace/api",
+          "reasoningOutputTokens": 2,
+          "totalTokens": 227
+        }
+      ],
+      "/workspace/web": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "costUSD": 0.0000065,
+          "date": "2026-01-05",
+          "inputTokens": 10,
+          "models": {
+            "gpt-5-mini": {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "inputTokens": 10,
+              "isFallback": false,
+              "outputTokens": 2,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 12
+            }
+          },
+          "outputTokens": 2,
+          "project": "/workspace/web",
+          "reasoningOutputTokens": 0,
+          "totalTokens": 12
+        }
+      ]
+    },
     "totals": {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 110,

@@ -1,6 +1,6 @@
 ---
 source: crates/ccusage/src/config_schema.rs
-assertion_line: 1293
+assertion_line: 1359
 expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n    definition_properties(&schema, \"ccusage-config\"),\n    \"rootAdditionalProperties\":\n    schema[\"definitions\"][\"ccusage-config\"][\"additionalProperties\"],\n    \"defaults\": schema_node(&schema, &[\"defaults\"]), \"rootDaily\":\n    schema_node(&schema, &[\"commands\", \"daily\"]), \"claudeStatusline\":\n    schema_node(&schema, &[\"claude\", \"commands\", \"statusline\"]),\n    \"codexDefaults\": schema_node(&schema, &[\"codex\", \"defaults\"]),\n    \"opencodeWeekly\":\n    schema_node(&schema, &[\"opencode\", \"commands\", \"weekly\"]), \"piDefaults\":\n    schema_node(&schema, &[\"pi\", \"defaults\"]), \"openclawDefaults\":\n    schema_node(&schema, &[\"openclaw\", \"defaults\"]),\n})"
 ---
 {
@@ -136,6 +136,11 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "minimum": 0.0,
         "type": "integer"
       },
+      "instances": {
+        "description": "Show usage breakdown by Codex project instance.",
+        "markdownDescription": "Show usage breakdown by Codex project instance.",
+        "type": "boolean"
+      },
       "jq": {
         "description": "jq filter to apply to JSON output.",
         "markdownDescription": "jq filter to apply to JSON output.",
@@ -236,6 +241,11 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "description": "Runtime pricing overrides keyed by raw model name.",
         "markdownDescription": "Runtime pricing overrides keyed by raw model name.",
         "type": "object"
+      },
+      "project": {
+        "description": "Filter to a Codex project name or path.",
+        "markdownDescription": "Filter to a Codex project name or path.",
+        "type": "string"
       },
       "since": {
         "description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",

@@ -69,6 +69,8 @@ pub(super) enum CodexTimestamp<'a> {
 pub(super) struct CodexPayload<'a> {
     #[serde(rename = "type", borrow, default)]
     pub(super) payload_type: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    pub(super) cwd: Option<Cow<'a, str>>,
     #[serde(
         borrow,
         default,

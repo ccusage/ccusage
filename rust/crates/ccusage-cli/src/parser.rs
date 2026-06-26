@@ -284,6 +284,8 @@ fn parse_all_command(
     Ok(Command::All(AgentCommandArgs {
         shared,
         kind,
+        instances: false,
+        project: None,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -317,6 +319,8 @@ fn parse_top_level_session_command(
     Ok(Command::All(AgentCommandArgs {
         shared: args.shared,
         kind: AgentReportKind::Session,
+        instances: false,
+        project: None,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -458,12 +462,22 @@ fn parse_codex_command(
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, "codex", STANDARD_AGENT_REPORTS)?;
     let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, None, None);
+    let mut instances = false;
+    let mut project = None;
+    config.apply_agent_args(
+        &mut codex_speed,
+        Some(&mut instances),
+        Some(&mut project),
+        None,
+        None,
+    );
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
+            "-i" | "--instances" => instances = true,
+            "-p" | "--project" => project = Some(parser.value_for("--project")?),
             "--speed" => codex_speed = parse_codex_speed(&parser.value_for("--speed")?)?,
             flag => return Err(format!("Unknown codex option '{flag}'")),
         }
@@ -471,6 +485,8 @@ fn parse_codex_command(
     Ok(Command::Codex(AgentCommandArgs {
         shared,
         kind,
+        instances,
+        project,
         pi_path: None,
         open_claw_path: None,
         codex_speed,
@@ -485,7 +501,7 @@ fn parse_pi_command(
     let kind = parse_agent_report_kind(parser, "pi", STANDARD_AGENT_REPORTS)?;
     let mut pi_path = None;
     let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, Some(&mut pi_path), None);
+    config.apply_agent_args(&mut codex_speed, None, None, Some(&mut pi_path), None);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -498,6 +514,8 @@ fn parse_pi_command(
     Ok(Command::Pi(AgentCommandArgs {
         shared,
         kind,
+        instances: false,
+        project: None,
         pi_path,
         open_claw_path: None,
         codex_speed,
@@ -512,7 +530,13 @@ fn parse_openclaw_command(
     let kind = parse_agent_report_kind(parser, "openclaw", STANDARD_AGENT_REPORTS)?;
     let mut open_claw_path = None;
     let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, None, Some(&mut open_claw_path));
+    config.apply_agent_args(
+        &mut codex_speed,
+        None,
+        None,
+        None,
+        Some(&mut open_claw_path),
+    );
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -525,6 +549,8 @@ fn parse_openclaw_command(
     Ok(Command::OpenClaw(AgentCommandArgs {
         shared,
         kind,
+        instances: false,
+        project: None,
         pi_path: None,
         open_claw_path,
         codex_speed,
@@ -553,6 +579,8 @@ fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommand
     AgentCommandArgs {
         shared,
         kind,
+        instances: false,
+        project: None,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,

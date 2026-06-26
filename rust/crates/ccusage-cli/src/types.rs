@@ -120,6 +120,8 @@ pub struct StatuslineArgs {
 pub struct AgentCommandArgs {
     pub shared: SharedArgs,
     pub kind: AgentReportKind,
+    pub instances: bool,
+    pub project: Option<String>,
     pub pi_path: Option<String>,
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,
@@ -244,6 +246,8 @@ pub trait CliConfig {
     fn apply_agent_args(
         &self,
         _codex_speed: &mut CodexSpeed,
+        _instances: Option<&mut bool>,
+        _project: Option<&mut Option<String>>,
         _pi_path: Option<&mut Option<String>>,
         _open_claw_path: Option<&mut Option<String>>,
     ) {

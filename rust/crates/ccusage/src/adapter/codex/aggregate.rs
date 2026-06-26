@@ -21,6 +21,8 @@ use super::{parser, paths};
 type CodexEventKey = (
     u64,
     usize,
+    u64,
+    usize,
     crate::TimestampMs,
     u64,
     usize,
@@ -31,6 +33,7 @@ type CodexEventKey = (
     u64,
 );
 type CodexDedupeShards = [Mutex<FxHashSet<CodexEventKey>>];
+pub(super) const PROJECT_GROUP_SEPARATOR: char = '\u{1f}';
 
 struct CodexAggregation {
     groups: BTreeMap<String, CodexGroup>,
@@ -40,25 +43,43 @@ struct CodexAggregation {
 pub(crate) fn load_groups(
     shared: &SharedArgs,
     kind: AgentReportKind,
+    group_projects: bool,
+    project_filter: Option<&str>,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let sources = paths::codex_usage_sources()?;
     if sources.len() == 1 && !wants_json(shared) {
-        return load_groups_from_directory(&sources[0].dir, shared, kind);
+        return load_groups_from_directory(
+            &sources[0].dir,
+            shared,
+            kind,
+            group_projects,
+            project_filter,
+        );
     }
-    load_groups_from_sources(&sources, shared, kind)
+    load_groups_from_sources(&sources, shared, kind, group_projects, project_filter)
 }
 
 fn load_groups_from_sources(
     sources: &[paths::CodexUsageSource],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    group_projects: bool,
+    project_filter: Option<&str>,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let mut groups = BTreeMap::new();
     let seen = create_dedupe_shards();
     for group in paths::collect_deduped_codex_usage_files(sources) {
         merge_groups(
             &mut groups,
-            aggregate_files_with_dedupe(&group.dir, &group.files, shared, kind, &seen)?,
+            aggregate_files_with_dedupe(
+                &group.dir,
+                &group.files,
+                shared,
+                kind,
+                group_projects,
+                project_filter,
+                &seen,
+            )?,
         );
     }
     Ok(groups)
@@ -68,13 +89,30 @@ pub(super) fn load_groups_from_directory(
     sessions_dir: &Path,
     shared: &SharedArgs,
     kind: AgentReportKind,
+    group_projects: bool,
+    project_filter: Option<&str>,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let files = paths::collect_codex_usage_files(sessions_dir);
     if shared.single_thread {
-        return aggregate_files_local(sessions_dir, &files, shared, kind);
+        return aggregate_files_local(
+            sessions_dir,
+            &files,
+            shared,
+            kind,
+            group_projects,
+            project_filter,
+        );
     }
     let seen = create_dedupe_shards();
-    aggregate_files_parallel(sessions_dir, &files, shared, kind, &seen)
+    aggregate_files_parallel(
+        sessions_dir,
+        &files,
+        shared,
+        kind,
+        group_projects,
+        project_filter,
+        &seen,
+    )
 }
 
 fn aggregate_files_with_dedupe(
@@ -82,12 +120,30 @@ fn aggregate_files_with_dedupe(
     files: &[PathBuf],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    group_projects: bool,
+    project_filter: Option<&str>,
     seen: &CodexDedupeShards,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     if shared.single_thread {
-        return aggregate_files(sessions_dir, files, shared, kind, seen);
+        return aggregate_files(
+            sessions_dir,
+            files,
+            shared,
+            kind,
+            group_projects,
+            project_filter,
+            seen,
+        );
     }
-    aggregate_files_parallel(sessions_dir, files, shared, kind, seen)
+    aggregate_files_parallel(
+        sessions_dir,
+        files,
+        shared,
+        kind,
+        group_projects,
+        project_filter,
+        seen,
+    )
 }
 
 fn aggregate_files(
@@ -95,6 +151,8 @@ fn aggregate_files(
     files: &[PathBuf],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    group_projects: bool,
+    project_filter: Option<&str>,
     seen: &CodexDedupeShards,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let mut groups = BTreeMap::new();
@@ -106,6 +164,8 @@ fn aggregate_files(
             kind,
             timezone.as_ref(),
             shared,
+            group_projects,
+            project_filter,
             seen,
             &mut groups,
         )?;
@@ -118,6 +178,8 @@ fn aggregate_files_parallel(
     files: &[PathBuf],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    group_projects: bool,
+    project_filter: Option<&str>,
     seen: &CodexDedupeShards,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let worker_count = thread::available_parallelism()
@@ -125,7 +187,15 @@ fn aggregate_files_parallel(
         .unwrap_or(1)
         .min(files.len());
     if worker_count <= 1 {
-        return aggregate_files(sessions_dir, files, shared, kind, seen);
+        return aggregate_files(
+            sessions_dir,
+            files,
+            shared,
+            kind,
+            group_projects,
+            project_filter,
+            seen,
+        );
     }
 
     let chunks = crate::chunk_file_indexes_by_size(files, worker_count);
@@ -143,6 +213,8 @@ fn aggregate_files_parallel(
                         kind,
                         timezone.as_ref(),
                         shared,
+                        group_projects,
+                        project_filter,
                         seen,
                         &mut groups,
                     )?;
@@ -170,11 +242,22 @@ fn aggregate_file(
     kind: AgentReportKind,
     timezone: Option<&JiffTimeZone>,
     shared: &SharedArgs,
+    group_projects: bool,
+    project_filter: Option<&str>,
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
     parser::visit_codex_session_file(sessions_dir, file, |event| {
-        add_event_to_groups(&event, kind, timezone, shared, seen, groups)
+        add_event_to_groups(
+            &event,
+            kind,
+            timezone,
+            shared,
+            group_projects,
+            project_filter,
+            seen,
+            groups,
+        )
     })
 }
 
@@ -183,8 +266,18 @@ fn aggregate_files_local(
     files: &[PathBuf],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    group_projects: bool,
+    project_filter: Option<&str>,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    Ok(aggregate_files_local_with_seen(sessions_dir, files, shared, kind)?.groups)
+    Ok(aggregate_files_local_with_seen(
+        sessions_dir,
+        files,
+        shared,
+        kind,
+        group_projects,
+        project_filter,
+    )?
+    .groups)
 }
 
 fn aggregate_files_local_with_seen(
@@ -192,6 +285,8 @@ fn aggregate_files_local_with_seen(
     files: &[PathBuf],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    group_projects: bool,
+    project_filter: Option<&str>,
 ) -> Result<CodexAggregation> {
     let mut aggregation = CodexAggregation {
         groups: BTreeMap::new(),
@@ -205,6 +300,8 @@ fn aggregate_files_local_with_seen(
             kind,
             timezone.as_ref(),
             shared,
+            group_projects,
+            project_filter,
             &mut aggregation,
         )?;
     }
@@ -217,10 +314,20 @@ fn aggregate_file_local(
     kind: AgentReportKind,
     timezone: Option<&JiffTimeZone>,
     shared: &SharedArgs,
+    group_projects: bool,
+    project_filter: Option<&str>,
     aggregation: &mut CodexAggregation,
 ) -> Result<()> {
     parser::visit_codex_session_file(sessions_dir, file, |event| {
-        add_event_to_groups_local(&event, kind, timezone, shared, aggregation)
+        add_event_to_groups_local(
+            &event,
+            kind,
+            timezone,
+            shared,
+            group_projects,
+            project_filter,
+            aggregation,
+        )
     })
 }
 
@@ -229,9 +336,14 @@ fn add_event_to_groups(
     kind: AgentReportKind,
     timezone: Option<&JiffTimeZone>,
     shared: &SharedArgs,
+    group_projects: bool,
+    project_filter: Option<&str>,
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
+    if !codex_event_matches_project(event, project_filter) {
+        return Ok(());
+    }
     let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
         return Ok(());
     };
@@ -248,6 +360,7 @@ fn add_event_to_groups(
         kind,
         timezone,
         shared,
+        group_projects,
         groups,
     )
 }
@@ -257,8 +370,13 @@ fn add_event_to_groups_local(
     kind: AgentReportKind,
     timezone: Option<&JiffTimeZone>,
     shared: &SharedArgs,
+    group_projects: bool,
+    project_filter: Option<&str>,
     aggregation: &mut CodexAggregation,
 ) -> Result<()> {
+    if !codex_event_matches_project(event, project_filter) {
+        return Ok(());
+    }
     let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
         return Ok(());
     };
@@ -278,6 +396,7 @@ fn add_event_to_groups_local(
         kind,
         timezone,
         shared,
+        group_projects,
         &mut aggregation.groups,
     )
 }
@@ -289,6 +408,7 @@ fn add_deduped_event_to_groups(
     kind: AgentReportKind,
     timezone: Option<&JiffTimeZone>,
     shared: &SharedArgs,
+    group_projects: bool,
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
     let date = format_date_tz(timestamp, timezone);
@@ -306,9 +426,30 @@ fn add_deduped_event_to_groups(
         AgentReportKind::Monthly => date[..7].to_string(),
         AgentReportKind::Session => event.session_id.clone(),
     };
-    let group = groups.entry(period).or_default();
+    let project_path = event
+        .project_path
+        .as_deref()
+        .filter(|project| !project.trim().is_empty());
+    let key = codex_group_key(&period, project_path, group_projects);
+    let group = groups.entry(key).or_default();
+    if group_projects && group.project_path.is_none() {
+        group.project_path = Some(project_path.unwrap_or("unknown").to_string());
+    }
     accumulate_codex_event_into_group(group, event, model);
     Ok(())
+}
+
+fn codex_group_key(period: &str, project_path: Option<&str>, group_projects: bool) -> String {
+    if group_projects {
+        format!(
+            "{}{}{}",
+            project_path.unwrap_or("unknown"),
+            PROJECT_GROUP_SEPARATOR,
+            period
+        )
+    } else {
+        period.to_string()
+    }
 }
 
 fn accumulate_codex_event_into_group(
@@ -372,9 +513,16 @@ fn codex_event_key(
     } else {
         (0, 0)
     };
+    let (project_hash, project_len) = event
+        .project_path
+        .as_deref()
+        .map(|project| (hash_text(project), project.len()))
+        .unwrap_or((0, 0));
     (
         session_hash,
         session_len,
+        project_hash,
+        project_len,
         timestamp,
         hash_text(model),
         model.len(),
@@ -392,10 +540,43 @@ fn hash_text(value: &str) -> u64 {
     hasher.finish()
 }
 
+fn codex_event_matches_project(event: &CodexTokenUsageEvent, project_filter: Option<&str>) -> bool {
+    let Some(filter) = project_filter.filter(|filter| !filter.trim().is_empty()) else {
+        return true;
+    };
+    let Some(project_path) = event.project_path.as_deref() else {
+        return false;
+    };
+    codex_project_matches(project_path, filter)
+}
+
+fn codex_project_matches(project_path: &str, filter: &str) -> bool {
+    let project = normalize_project_path(project_path);
+    let filter = normalize_project_path(filter);
+    if project == filter {
+        return true;
+    }
+    project
+        .rsplit('/')
+        .next()
+        .is_some_and(|name| name == filter.as_str())
+}
+
+fn normalize_project_path(value: &str) -> String {
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_string()
+}
+
 fn merge_groups(target: &mut BTreeMap<String, CodexGroup>, source: BTreeMap<String, CodexGroup>) {
     for (period, group) in source {
         let target_group = target.entry(period).or_default();
         target_group.input_tokens += group.input_tokens;
+        if target_group.project_path.is_none() {
+            target_group.project_path = group.project_path;
+        }
         target_group.cached_input_tokens += group.cached_input_tokens;
         target_group.output_tokens += group.output_tokens;
         target_group.reasoning_output_tokens += group.reasoning_output_tokens;
@@ -424,6 +605,7 @@ pub(crate) fn aggregate_events(
     events: &[CodexTokenUsageEvent],
     kind: AgentReportKind,
     timezone: Option<&str>,
+    group_projects: bool,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let mut groups = BTreeMap::new();
     let timezone = parse_tz(timezone).or_else(|| Some(JiffTimeZone::system()));
@@ -441,7 +623,15 @@ pub(crate) fn aggregate_events(
             AgentReportKind::Monthly => date[..7].to_string(),
             AgentReportKind::Session => event.session_id.clone(),
         };
-        let group = groups.entry(period).or_insert_with(CodexGroup::default);
+        let project_path = event
+            .project_path
+            .as_deref()
+            .filter(|project| !project.trim().is_empty());
+        let key = codex_group_key(&period, project_path, group_projects);
+        let group = groups.entry(key).or_insert_with(CodexGroup::default);
+        if group_projects && group.project_path.is_none() {
+            group.project_path = Some(project_path.unwrap_or("unknown").to_string());
+        }
         let model = crate::model_aliases::resolve_model_name(model);
         accumulate_codex_event_into_group(group, event, model.as_ref());
     }
@@ -518,6 +708,8 @@ mod tests {
                 &fixture.path("sessions"),
                 &shared,
                 AgentReportKind::Daily,
+                false,
+                None,
             )
             .unwrap();
 
@@ -585,6 +777,8 @@ mod tests {
                 &fixture.path("sessions"),
                 &shared,
                 AgentReportKind::Daily,
+                false,
+                None,
             )
             .unwrap();
 
@@ -630,6 +824,8 @@ mod tests {
                 &fixture.path("sessions"),
                 &shared,
                 AgentReportKind::Session,
+                false,
+                None,
             )
             .unwrap();
 
@@ -637,6 +833,137 @@ mod tests {
             assert_eq!(groups["root"].input_tokens, 1_000);
             assert_eq!(groups["goal"].input_tokens, 1_000);
         }
+    }
+
+    #[test]
+    fn filters_codex_usage_by_project_path_or_name() {
+        let session = |cwd: &str, input_tokens: u64| {
+            [
+                json!({
+                    "timestamp": "2026-05-29T08:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "session",
+                        "cwd": cwd,
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-29T08:00:01.000Z",
+                    "type": "turn_context",
+                    "payload": {
+                        "cwd": cwd,
+                        "model": "gpt-5.2",
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-29T08:01:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": input_tokens,
+                                "cached_input_tokens": 0,
+                                "output_tokens": 10,
+                                "total_tokens": input_tokens + 10,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n")
+        };
+        let fixture = fs_fixture!({
+            "sessions/api.jsonl": session("/workspace/api", 100),
+            "sessions/web.jsonl": session("/workspace/web", 200),
+        });
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let groups = load_groups_from_directory(
+            &fixture.path("sessions"),
+            &shared,
+            AgentReportKind::Daily,
+            false,
+            Some("api"),
+        )
+        .unwrap();
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups["2026-05-29"].input_tokens, 100);
+    }
+
+    #[test]
+    fn groups_codex_usage_by_project_when_instances_enabled() {
+        let session = |cwd: &str, input_tokens: u64| {
+            [
+                json!({
+                    "timestamp": "2026-05-29T08:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "session",
+                        "cwd": cwd,
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-29T08:01:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "model": "gpt-5.2",
+                            "last_token_usage": {
+                                "input_tokens": input_tokens,
+                                "cached_input_tokens": 0,
+                                "output_tokens": 10,
+                                "total_tokens": input_tokens + 10,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n")
+        };
+        let fixture = fs_fixture!({
+            "sessions/api.jsonl": session("/workspace/api", 100),
+            "sessions/web.jsonl": session("/workspace/web", 200),
+        });
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let groups = load_groups_from_directory(
+            &fixture.path("sessions"),
+            &shared,
+            AgentReportKind::Daily,
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(
+            groups["/workspace/api\u{1f}2026-05-29"]
+                .project_path
+                .as_deref(),
+            Some("/workspace/api")
+        );
+        assert_eq!(groups["/workspace/api\u{1f}2026-05-29"].input_tokens, 100);
+        assert_eq!(
+            groups["/workspace/web\u{1f}2026-05-29"]
+                .project_path
+                .as_deref(),
+            Some("/workspace/web")
+        );
+        assert_eq!(groups["/workspace/web\u{1f}2026-05-29"].input_tokens, 200);
     }
 
     #[test]
@@ -746,7 +1073,8 @@ mod tests {
                 ),
             ];
             let groups =
-                load_groups_from_sources(&sources, &shared, AgentReportKind::Daily).unwrap();
+                load_groups_from_sources(&sources, &shared, AgentReportKind::Daily, false, None)
+                    .unwrap();
 
             assert_eq!(groups.len(), 2);
             assert_eq!(groups["2026-05-12"].input_tokens, 111);
