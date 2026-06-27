@@ -98,7 +98,7 @@ in
               "-ignore"
               "shellcheck reported issue in this script: SC2016:info:"
               # `background:` and `wait-all:` are new parallel-step keys
-              # (GitHub Actions 2026-06-25) that actionlint does not yet recognise.
+              # (GitHub Actions 2026-06-25) that actionlint does not yet recognize.
               "-ignore"
               ''unexpected key "background" for step''
               "-ignore"
