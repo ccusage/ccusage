@@ -21,16 +21,6 @@ jobs:
       - id: detect
         uses: ./.github/actions/detect-code-changes
 
-  check:
-    needs: changes
-    if: needs.changes.outputs.code-changed == 'true'
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: ./.github/actions/setup-nix-cache
-      - run: nix flake check --print-build-logs
-
   test:
     needs: changes
     if: needs.changes.outputs.code-changed == 'true'
@@ -46,6 +36,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+      # `nix flake check` only needs the checkout and Nix, so kick it off in the
+      # background right away. It then overlaps the JS toolchain install and the
+      # test runs below instead of occupying a separate runner with its own
+      # checkout and Nix cache restore.
+      - name: Run nix flake check
+        background: true
+        run: nix flake check --print-build-logs
       # Node tests need the JS toolchain; the Rust tests run via `nix build`. Install
       # just pnpm/node/just instead of realizing the full dev shell, which drags
       # in every linter, formatter, and the pre-commit hook closure and dominated
@@ -416,7 +413,6 @@ jobs:
   action-timeline:
     needs:
       - changes
-      - check
       - test
       - build-native-packages
       - npm-publish-dry-run-and-upload-pkg-pr-now
