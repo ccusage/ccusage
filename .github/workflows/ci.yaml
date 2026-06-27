@@ -61,7 +61,7 @@ jobs:
       - name: Run Node tests
         background: true
         run: just test-node
-      - wait-all:
+      - wait-all: # actionlint:ignore:syntax-check
 
   build-native-packages:
     needs: changes

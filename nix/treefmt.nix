@@ -97,12 +97,12 @@ in
               ''unknown permission scope "code-quality"''
               "-ignore"
               "shellcheck reported issue in this script: SC2016:info:"
-              # `background:` and `wait-all:` are new parallel-step keys
-              # (GitHub Actions 2026-06-25) that actionlint does not yet recognize.
+              # `background:` is a new parallel-step key (GitHub Actions 2026-06-25)
+              # that actionlint does not yet recognize.
+              # `wait-all:` is suppressed with an inline actionlint:ignore comment
+              # in the workflow file itself, keeping the global ignore narrow.
               "-ignore"
               ''unexpected key "background" for step''
-              "-ignore"
-              "step must run script with .run. section or run action with .uses. section"
             ];
             includes = [
               ".github/workflows/*.yaml"
