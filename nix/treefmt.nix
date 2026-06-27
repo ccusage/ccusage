@@ -97,6 +97,10 @@ in
               ''unknown permission scope "code-quality"''
               "-ignore"
               "shellcheck reported issue in this script: SC2016:info:"
+              # `background:` is a new parallel-step key (GitHub Actions 2026-06-25)
+              # that actionlint does not yet recognise.
+              "-ignore"
+              ''unexpected key "background" for step''
             ];
             includes = [
               ".github/workflows/*.yaml"
