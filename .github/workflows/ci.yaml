@@ -57,10 +57,19 @@ jobs:
         run: |
           mkdir -p "$HOME/.claude/projects"
           mkdir -p "$HOME/.config/claude/projects"
+      # The Node tests (`just test-node`, mostly single-threaded) and the Rust
+      # test build (`nix build`, CPU-heavy) are independent and have different
+      # resource profiles, so run them as concurrent background steps and join
+      # with `wait-all`. This overlaps them instead of paying their wall time
+      # back-to-back on the same runner.
+      # https://github.blog/changelog/2026-06-25-actions-steps-can-now-be-run-in-parallel/
       - name: Run Node tests
+        background: true
         run: just test-node
       - name: Run Rust tests
+        background: true
         run: nix build .#ccusage-tests --print-build-logs
+      - wait-all:
 
   build-native-packages:
     needs: changes
