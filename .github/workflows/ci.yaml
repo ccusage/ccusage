@@ -61,7 +61,6 @@ jobs:
       - name: Run Node tests
         background: true
         run: just test-node
-      # actionlint:ignore:syntax-check - wait-all is a new parallel-step join key (2026-06-25), not a run/uses step
       - wait-all:
 
   build-native-packages:
