@@ -108,7 +108,7 @@ in
               "-ignore"
               ''unexpected key "background" for step''
               "-ignore"
-              ''ci\.yaml.*step must run script with .run. section or run action with .uses. section''
+              "ci.yaml.*step must run script with .run. section or run action with .uses. section"
             ];
             includes = [
               ".github/workflows/*.yaml"
