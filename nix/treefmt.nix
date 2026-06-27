@@ -101,13 +101,14 @@ in
               # GitHub Actions on 2026-06-25 that actionlint does not yet recognize.
               # actionlint:ignore inline comments cannot suppress syntax-check errors
               # (only expression-evaluation and job-dependency errors support that),
-              # so a global -ignore pattern is the only available mechanism.
-              # The risk is bounded: any step genuinely missing run:/uses: would
-              # fail immediately at GitHub Actions runtime.
+              # so a -ignore pattern is the only available mechanism.
+              # The wait-all ignore is scoped to ci.yaml (via the file path prefix in
+              # the regex) so missing run:/uses: errors in other workflow files are
+              # still caught.
               "-ignore"
               ''unexpected key "background" for step''
               "-ignore"
-              "step must run script with .run. section or run action with .uses. section"
+              ''ci\.yaml.*step must run script with .run. section or run action with .uses. section''
             ];
             includes = [
               ".github/workflows/*.yaml"
