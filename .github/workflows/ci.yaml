@@ -36,17 +36,21 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      # `nix flake check` only needs the checkout and Nix, so kick it off in the
-      # background right away. It then overlaps the JS toolchain install and the
-      # test runs below instead of occupying a separate runner with its own
-      # checkout and Nix cache restore.
+      # `nix flake check` and the Rust test build (`nix build .#ccusage-tests`)
+      # only need the checkout and Nix — neither touches the JS toolchain — so
+      # start both as background steps right away. They run concurrently while
+      # the JS-only setup (toolchain install + pnpm install) happens below, and
+      # the Node tests join them afterwards via `wait-all`.
+      # https://github.blog/changelog/2026-06-25-actions-steps-can-now-be-run-in-parallel/
       - name: Run nix flake check
         background: true
         run: nix flake check --print-build-logs
-      # Node tests need the JS toolchain; the Rust tests run via `nix build`. Install
-      # just pnpm/node/just instead of realizing the full dev shell, which drags
-      # in every linter, formatter, and the pre-commit hook closure and dominated
-      # this job's wall time.
+      - name: Run Rust tests
+        background: true
+        run: nix build .#ccusage-tests --print-build-logs
+      # Node tests need the JS toolchain. Install just pnpm/node/just instead of
+      # realizing the full dev shell, which drags in every linter, formatter, and
+      # the pre-commit hook closure and dominated this job's wall time.
       - name: Install JS tooling
         run: nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs nixpkgs#just
       - run: pnpm install --frozen-lockfile
@@ -54,18 +58,9 @@ jobs:
         run: |
           mkdir -p "$HOME/.claude/projects"
           mkdir -p "$HOME/.config/claude/projects"
-      # The Node tests (`just test-node`, mostly single-threaded) and the Rust
-      # test build (`nix build`, CPU-heavy) are independent and have different
-      # resource profiles, so run them as concurrent background steps and join
-      # with `wait-all`. This overlaps them instead of paying their wall time
-      # back-to-back on the same runner.
-      # https://github.blog/changelog/2026-06-25-actions-steps-can-now-be-run-in-parallel/
       - name: Run Node tests
         background: true
         run: just test-node
-      - name: Run Rust tests
-        background: true
-        run: nix build .#ccusage-tests --print-build-logs
       - wait-all:
 
   build-native-packages:
