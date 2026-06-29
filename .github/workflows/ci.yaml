@@ -21,8 +21,106 @@ jobs:
       - id: detect
         uses: ./.github/actions/detect-code-changes
 
+  # Security gate: scan the repository with tirith (https://tirith.sh/docs/ci/)
+  # before any of the real CI work runs. This is wired on `pull_request` (not
+  # `pull_request_target`), so fork PRs only ever get a read-only token and
+  # cannot leak secrets while we scan their code. The downstream jobs `needs`
+  # this job, so they are skipped unless tirith passes. tirith is installed from
+  # the flake's pinned nixpkgs so CI matches the dev shell.
+  tirith-scan:
+    name: tirith security scan
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Publish SARIF to the Security tab. Only effective for same-repo PRs and
+      # pushes to main; fork PRs get a read-only token, so the upload is gated
+      # to non-fork events below (the scan and gate still run for forks).
+      security-events: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+      - name: Install tirith
+        run: nix profile install --inputs-from . nixpkgs#tirith
+      # One pass produces the SARIF report and sets the gate exit code. tirith's
+      # `--ci` exit code is: 0 = no findings, 1 = findings at/above --fail-on,
+      # 2 = findings present but all below it. We capture it (rather than letting
+      # it abort the step) so the SARIF still uploads before the gate decides.
+      #
+      # `*.snap` are excluded: they are terminal snapshot test fixtures that
+      # intentionally contain ANSI escape sequences, so the `ansi_escapes` rule
+      # (High) fires on them as a false positive. The rule stays active for real
+      # source files; we only skip the test data.
+      - name: Scan repository with tirith
+        id: scan
+        run: |
+          set +e
+          tirith scan --ci --fail-on high --exclude '*.snap' --format sarif ./ > results.sarif
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          echo "tirith exited ${code}"
+      - name: Summarize findings
+        if: always()
+        run: |
+          count="$(jq '[.runs[].results[]?] | length' results.sarif 2>/dev/null || echo 0)"
+          echo "tirith reported ${count} finding(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -r '.runs[].results[]? | "- [\(.level // "warning")] \(.ruleId): \(.locations[0].physicalLocation.artifactLocation.uri)"' \
+            results.sarif 2>/dev/null | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload SARIF to the Security tab
+        if: ${{ always() && !github.event.pull_request.head.repo.fork }}
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: results.sarif
+          category: tirith
+      - name: Gate CI on tirith findings
+        if: always()
+        env:
+          SCAN_EXIT: ${{ steps.scan.outputs.exit_code }}
+        run: |
+          case "$SCAN_EXIT" in
+            0 | 2)
+              echo "tirith gate passed (exit ${SCAN_EXIT}: no findings, or all below 'high')"
+              ;;
+            1)
+              echo "::error::tirith found findings at or above the 'high' threshold; blocking downstream CI"
+              exit 1
+              ;;
+            *)
+              echo "::error::tirith scan errored (exit ${SCAN_EXIT}); blocking downstream CI"
+              exit 1
+              ;;
+          esac
+
+  # Fast, unconditional fail-fast gate for the cheap-but-high-signal checks:
+  # secret detection (gitleaks) and workflow/format lint (the treefmt check,
+  # which runs actionlint + zizmor with the repo's exact ignore config). Runs in
+  # parallel with tirith-scan and is NOT gated on `changes`, so secrets and
+  # workflow regressions are caught even on docs-only PRs and on fork PRs (where
+  # local git hooks never run). Both are existing flake checks, so this reuses
+  # their exact behavior instead of re-specifying flags here. The heavy test job
+  # re-runs them inside `nix flake check`; that is intentional duplication so the
+  # gate can fail fast before any build/test work starts.
+  preflight:
+    name: security & lint preflight
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+      - name: Secret scan and workflow lint
+        run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt
+
   test:
-    needs: changes
+    needs: [changes, tirith-scan, preflight]
     if: needs.changes.outputs.code-changed == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -50,7 +148,7 @@ jobs:
               just test-node
 
   build-native-packages:
-    needs: changes
+    needs: [changes, tirith-scan, preflight]
     if: needs.changes.outputs.code-changed == 'true'
     name: ${{ matrix.name }}
     permissions:
@@ -394,6 +492,8 @@ jobs:
   action-timeline:
     needs:
       - changes
+      - tirith-scan
+      - preflight
       - test
       - build-native-packages
       - npm-publish-dry-run-and-upload-pkg-pr-now
