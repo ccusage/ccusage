@@ -31,12 +31,12 @@ jobs:
     name: tirith security scan
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 15
+    # Read-only: this job executes PR-controlled code (the local action, the PR
+    # flake, the installed tirith), so it must hold no write scopes. The SARIF
+    # is published from the separate `tirith-sarif-upload` job, which never runs
+    # PR code, keeping the elevated `security-events: write` away from the scan.
     permissions:
       contents: read
-      # Publish SARIF to the Security tab. Only effective for same-repo PRs and
-      # pushes to main; fork PRs get a read-only token, so the upload is gated
-      # to non-fork events below (the scan and gate still run for forks).
-      security-events: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -70,12 +70,16 @@ jobs:
           echo "tirith reported ${count} finding(s)" | tee -a "$GITHUB_STEP_SUMMARY"
           jq -r '.runs[].results[]? | "- [\(.level // "warning")] \(.ruleId): \(.locations[0].physicalLocation.artifactLocation.uri)"' \
             results.sarif 2>/dev/null | tee -a "$GITHUB_STEP_SUMMARY" || true
-      - name: Upload SARIF to the Security tab
-        if: ${{ always() && !github.event.pull_request.head.repo.fork }}
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+      # Hand the SARIF to the privileged upload job as an artifact. Uploaded
+      # before the gate step so findings reach the Security tab even when the
+      # gate then blocks the PR.
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          sarif_file: results.sarif
-          category: tirith
+          name: tirith-sarif
+          path: results.sarif
+          if-no-files-found: error
       - name: Gate CI on tirith findings
         if: always()
         env:
@@ -94,6 +98,35 @@ jobs:
               exit 1
               ;;
           esac
+
+  # Publish the tirith SARIF to the Security tab. Split from the scan so the
+  # `security-events: write` scope lives in a job that never executes
+  # PR-controlled code: it only downloads the artifact and runs trusted, pinned
+  # actions. `always()` so findings are published even when the gate blocked the
+  # PR; skipped for fork PRs, whose token is read-only and cannot upload.
+  tirith-sarif-upload:
+    name: tirith SARIF upload
+    needs: tirith-scan
+    if: ${{ always() && !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      # Checkout only places files for path mapping; no PR code is executed in
+      # this privileged job.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tirith-sarif
+      - uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: results.sarif
+          category: tirith
 
   # Fast, unconditional fail-fast gate for the cheap-but-high-signal checks:
   # secret detection (gitleaks) and workflow/format lint (the treefmt check,
@@ -493,6 +526,7 @@ jobs:
     needs:
       - changes
       - tirith-scan
+      - tirith-sarif-upload
       - preflight
       - test
       - build-native-packages
