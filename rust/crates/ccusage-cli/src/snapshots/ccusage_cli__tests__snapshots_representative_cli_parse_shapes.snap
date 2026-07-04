@@ -1,5 +1,6 @@
 ---
-source: crates/ccusage/src/cli.rs
+source: crates/ccusage-cli/src/tests.rs
+assertion_line: 752
 expression: cases
 ---
 [
@@ -32,10 +33,12 @@ expression: cases
     "case": "root daily with shared flags",
     "cli": {
       "command": {
+        "byAgent": false,
         "codexSpeed": "Auto",
         "kind": "Daily",
         "openClawPath": null,
         "piPath": null,
+        "sections": null,
         "shared": {
           "breakdown": true,
           "color": true,
@@ -178,10 +181,12 @@ expression: cases
     "case": "codex monthly fast",
     "cli": {
       "command": {
+        "byAgent": false,
         "codexSpeed": "Fast",
         "kind": "Monthly",
         "openClawPath": null,
         "piPath": null,
+        "sections": null,
         "shared": {
           "breakdown": false,
           "color": false,
@@ -228,10 +233,12 @@ expression: cases
     "case": "opencode weekly",
     "cli": {
       "command": {
+        "byAgent": false,
         "codexSpeed": "Auto",
         "kind": "Weekly",
         "openClawPath": null,
         "piPath": null,
+        "sections": null,
         "shared": {
           "breakdown": false,
           "color": false,
@@ -278,10 +285,12 @@ expression: cases
     "case": "pi session path",
     "cli": {
       "command": {
+        "byAgent": false,
         "codexSpeed": "Auto",
         "kind": "Session",
         "openClawPath": null,
         "piPath": "/tmp/pi-sessions",
+        "sections": null,
         "shared": {
           "breakdown": false,
           "color": false,
@@ -328,10 +337,12 @@ expression: cases
     "case": "openclaw session path",
     "cli": {
       "command": {
+        "byAgent": false,
         "codexSpeed": "Auto",
         "kind": "Session",
         "openClawPath": "/tmp/openclaw",
         "piPath": null,
+        "sections": null,
         "shared": {
           "breakdown": false,
           "color": false,

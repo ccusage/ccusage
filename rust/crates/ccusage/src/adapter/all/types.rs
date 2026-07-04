@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use crate::{ModelBreakdown, fast::FxHashMap};
+use crate::{ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
 
 #[derive(Debug, Clone)]
 pub(super) struct AllRow {
@@ -23,6 +23,11 @@ pub(super) struct AllRow {
 
 pub(super) struct AllLoadResult {
     pub(super) rows: Vec<AllRow>,
+    pub(super) detected_agents: Vec<&'static str>,
+}
+
+pub(super) struct AllSectionsLoadResult {
+    pub(super) sections: Vec<(AgentReportKind, Vec<AllRow>)>,
     pub(super) detected_agents: Vec<&'static str>,
 }
 

@@ -120,6 +120,8 @@ pub struct StatuslineArgs {
 pub struct AgentCommandArgs {
     pub shared: SharedArgs,
     pub kind: AgentReportKind,
+    pub sections: Option<Vec<AgentReportKind>>,
+    pub by_agent: bool,
     pub pi_path: Option<String>,
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,

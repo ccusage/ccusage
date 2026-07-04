@@ -15,6 +15,39 @@ enum ControlArg {
     Version,
 }
 
+#[derive(Default)]
+struct RootAllOptions {
+    sections: Option<Vec<AgentReportKind>>,
+    by_agent: bool,
+    first_flag: Option<&'static str>,
+}
+
+impl RootAllOptions {
+    fn mark_used(&mut self, flag: &'static str) {
+        self.first_flag.get_or_insert(flag);
+    }
+
+    fn is_used(&self) -> bool {
+        self.first_flag.is_some()
+    }
+
+    fn first_flag(&self) -> &'static str {
+        self.first_flag.unwrap_or("--sections")
+    }
+
+    fn into_agent_args(self, shared: SharedArgs, kind: AgentReportKind) -> AgentCommandArgs {
+        AgentCommandArgs {
+            shared,
+            kind,
+            sections: self.sections,
+            by_agent: self.by_agent,
+            pi_path: None,
+            open_claw_path: None,
+            codex_speed: CodexSpeed::Auto,
+        }
+    }
+}
+
 impl Cli {
     pub fn parse() -> Self {
         Self::parse_from(env::args_os()).unwrap_or_else(|message| {
@@ -58,6 +91,7 @@ impl Cli {
         }
         let mut shared = SharedArgs::with_defaults();
         config.apply_shared(&mut shared);
+        let mut root_all_options = RootAllOptions::default();
         while let Some(arg) = parser.peek() {
             if is_command(arg) {
                 break;
@@ -65,10 +99,16 @@ impl Cli {
             if !arg.starts_with('-') {
                 return Err(format!("Unknown command '{arg}'"));
             }
+            if parse_root_all_arg(&mut parser, &mut root_all_options)? {
+                continue;
+            }
             parse_shared_arg(&mut parser, &mut shared)?;
         }
 
         let command = match parser.next() {
+            None if root_all_options.is_used() => Some(Command::All(
+                root_all_options.into_agent_args(shared.clone(), AgentReportKind::Daily),
+            )),
             None => None,
             Some(command) => Some(parse_command(
                 &command,
@@ -76,6 +116,7 @@ impl Cli {
                 shared.clone(),
                 config,
                 default_session_duration_hours,
+                root_all_options,
             )?),
         };
         if let Some(extra) = parser.next() {
@@ -107,12 +148,37 @@ fn parse_command(
     shared: SharedArgs,
     config: &dyn CliConfig,
     default_session_duration_hours: f64,
+    root_all_options: RootAllOptions,
 ) -> Result<Command, String> {
+    if root_all_options.is_used() && !accepts_root_all_options(command) {
+        return Err(format!(
+            "Unknown option '{}'",
+            root_all_options.first_flag()
+        ));
+    }
     match command {
-        "daily" => parse_all_command(parser, shared, AgentReportKind::Daily, config),
-        "monthly" => parse_all_command(parser, shared, AgentReportKind::Monthly, config),
-        "weekly" => parse_all_command(parser, shared, AgentReportKind::Weekly, config),
-        "session" => parse_top_level_session_command(parser, shared, config),
+        "daily" => parse_all_command(
+            parser,
+            shared,
+            AgentReportKind::Daily,
+            config,
+            root_all_options,
+        ),
+        "monthly" => parse_all_command(
+            parser,
+            shared,
+            AgentReportKind::Monthly,
+            config,
+            root_all_options,
+        ),
+        "weekly" => parse_all_command(
+            parser,
+            shared,
+            AgentReportKind::Weekly,
+            config,
+            root_all_options,
+        ),
+        "session" => parse_top_level_session_command(parser, shared, config, root_all_options),
         "blocks" => {
             let mut args = BlocksArgs {
                 shared,
@@ -268,15 +334,56 @@ fn parse_command(
     }
 }
 
+fn accepts_root_all_options(command: &str) -> bool {
+    matches!(command, "daily" | "monthly" | "weekly" | "session")
+}
+
+fn parse_root_all_arg(
+    parser: &mut ArgParser,
+    options: &mut RootAllOptions,
+) -> Result<bool, String> {
+    if matches!(parser.peek(), Some("--all")) {
+        parser.next();
+        options.mark_used("--all");
+        return Ok(true);
+    }
+    if matches!(parser.peek_name(), Some("--sections")) {
+        parser.next_flag()?;
+        options.mark_used("--sections");
+        options.sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
+        return Ok(true);
+    }
+    if matches!(parser.peek(), Some("--by-agent")) {
+        parser.next();
+        options.mark_used("--by-agent");
+        options.by_agent = true;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 fn parse_all_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
     kind: AgentReportKind,
     _config: &dyn CliConfig,
+    initial_options: RootAllOptions,
 ) -> Result<Command, String> {
+    let mut sections = initial_options.sections;
+    let mut by_agent = initial_options.by_agent;
     while parser.peek().is_some() {
         if matches!(parser.peek(), Some("--all")) {
             parser.next();
+            continue;
+        }
+        if matches!(parser.peek_name(), Some("--sections")) {
+            parser.next_flag()?;
+            sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
+            continue;
+        }
+        if matches!(parser.peek(), Some("--by-agent")) {
+            parser.next();
+            by_agent = true;
             continue;
         }
         parse_shared_arg(parser, &mut shared)?;
@@ -284,6 +391,8 @@ fn parse_all_command(
     Ok(Command::All(AgentCommandArgs {
         shared,
         kind,
+        sections,
+        by_agent,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -294,11 +403,24 @@ fn parse_top_level_session_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     _config: &dyn CliConfig,
+    initial_options: RootAllOptions,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
+    let mut sections = initial_options.sections;
+    let mut by_agent = initial_options.by_agent;
     while parser.peek().is_some() {
         if matches!(parser.peek(), Some("--all")) {
             parser.next();
+            continue;
+        }
+        if matches!(parser.peek_name(), Some("--sections")) {
+            parser.next_flag()?;
+            sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
+            continue;
+        }
+        if matches!(parser.peek(), Some("--by-agent")) {
+            parser.next();
+            by_agent = true;
             continue;
         }
         if parse_shared_arg_for_command(parser, &mut args.shared)? {
@@ -311,12 +433,20 @@ fn parse_top_level_session_command(
     }
 
     if args.id.is_some() {
+        if sections.is_some() || by_agent {
+            return Err(
+                "The --sections and --by-agent options cannot be used with session --id."
+                    .to_string(),
+            );
+        }
         return Ok(Command::Session(args));
     }
 
     Ok(Command::All(AgentCommandArgs {
         shared: args.shared,
         kind: AgentReportKind::Session,
+        sections,
+        by_agent,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -432,6 +562,7 @@ fn parse_claude_command(
             shared,
             config,
             default_session_duration_hours,
+            RootAllOptions::default(),
         ),
         _ => unreachable!("claude command is prevalidated"),
     }
@@ -471,6 +602,8 @@ fn parse_codex_command(
     Ok(Command::Codex(AgentCommandArgs {
         shared,
         kind,
+        sections: None,
+        by_agent: false,
         pi_path: None,
         open_claw_path: None,
         codex_speed,
@@ -498,6 +631,8 @@ fn parse_pi_command(
     Ok(Command::Pi(AgentCommandArgs {
         shared,
         kind,
+        sections: None,
+        by_agent: false,
         pi_path,
         open_claw_path: None,
         codex_speed,
@@ -525,6 +660,8 @@ fn parse_openclaw_command(
     Ok(Command::OpenClaw(AgentCommandArgs {
         shared,
         kind,
+        sections: None,
+        by_agent: false,
         pi_path: None,
         open_claw_path,
         codex_speed,
@@ -553,6 +690,8 @@ fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommand
     AgentCommandArgs {
         shared,
         kind,
+        sections: None,
+        by_agent: false,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -767,6 +906,7 @@ fn option_takes_value(arg: &str) -> bool {
             | "--speed"
             | "--pi-path"
             | "--open-claw-path"
+            | "--sections"
     )
 }
 
@@ -876,6 +1016,36 @@ fn parse_sort_order(value: &str) -> Result<SortOrder, String> {
         "desc" => Ok(SortOrder::Desc),
         _ => Err(format!("Invalid sort order '{value}'")),
     }
+}
+
+fn parse_report_sections(value: &str) -> Result<Vec<AgentReportKind>, String> {
+    let mut sections = Vec::new();
+    for token in value.split(',') {
+        let token = token.trim();
+        if token.is_empty() {
+            continue;
+        }
+        let kind = match token {
+            "daily" => AgentReportKind::Daily,
+            "weekly" => AgentReportKind::Weekly,
+            "monthly" => AgentReportKind::Monthly,
+            "session" => AgentReportKind::Session,
+            _ => {
+                return Err(format!(
+                    "Invalid --sections value '{token}'. Expected one or more of: daily, weekly, monthly, session."
+                ));
+            }
+        };
+        if !sections.contains(&kind) {
+            sections.push(kind);
+        }
+    }
+    if sections.is_empty() {
+        return Err(format!(
+            "Invalid --sections value '{value}'. Expected one or more of: daily, weekly, monthly, session."
+        ));
+    }
+    Ok(sections)
 }
 
 fn parse_week_day(value: &str) -> Result<WeekDay, String> {

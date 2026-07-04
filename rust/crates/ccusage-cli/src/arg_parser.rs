@@ -26,6 +26,11 @@ impl ArgParser {
         self.args.get(self.index).map(String::as_str)
     }
 
+    pub(crate) fn peek_name(&self) -> Option<&str> {
+        self.peek()
+            .map(|arg| arg.split_once('=').map_or(arg, |(name, _)| name))
+    }
+
     pub(crate) fn next(&mut self) -> Option<String> {
         let value = self.args.get(self.index)?.clone();
         self.index += 1;

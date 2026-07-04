@@ -13,7 +13,7 @@ use assert_fs::{
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn env_lock() -> MutexGuard<'static, ()> {
-    ENV_LOCK.lock().unwrap()
+    ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner())
 }
 
 pub struct EnvVarGuard {
@@ -40,6 +40,40 @@ impl Drop for EnvVarGuard {
         match self.previous.take() {
             Some(value) => unsafe { std::env::set_var(self.key, value) },
             None => unsafe { std::env::remove_var(self.key) },
+        }
+    }
+}
+
+pub struct EnvVarsGuard {
+    previous: Vec<(&'static str, Option<OsString>)>,
+    _guard: MutexGuard<'static, ()>,
+}
+
+impl EnvVarsGuard {
+    pub fn set_many(vars: impl IntoIterator<Item = (&'static str, Option<OsString>)>) -> Self {
+        let guard = env_lock();
+        let mut previous = Vec::new();
+        for (key, value) in vars {
+            previous.push((key, std::env::var_os(key)));
+            match value {
+                Some(value) => unsafe { std::env::set_var(key, value) },
+                None => unsafe { std::env::remove_var(key) },
+            }
+        }
+        Self {
+            previous,
+            _guard: guard,
+        }
+    }
+}
+
+impl Drop for EnvVarsGuard {
+    fn drop(&mut self) {
+        for (key, value) in self.previous.drain(..).rev() {
+            match value {
+                Some(value) => unsafe { std::env::set_var(key, value) },
+                None => unsafe { std::env::remove_var(key) },
+            }
         }
     }
 }

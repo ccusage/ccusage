@@ -150,6 +150,8 @@ fn main() -> Result<()> {
             let args = AgentCommandArgs {
                 shared: cli.shared,
                 kind: AgentReportKind::Daily,
+                sections: None,
+                by_agent: false,
                 pi_path: None,
                 open_claw_path: None,
                 codex_speed: cli::CodexSpeed::Auto,
