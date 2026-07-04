@@ -56,6 +56,9 @@ impl Cli {
         if let Some(message) = unsupported_agent_report_error(&parser.args) {
             return Err(message);
         }
+        if let Some(message) = config.config_error() {
+            return Err(message.to_string());
+        }
         let mut shared = SharedArgs::with_defaults();
         config.apply_shared(&mut shared);
         while let Some(arg) = parser.peek() {

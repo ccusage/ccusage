@@ -53,6 +53,7 @@ pub struct SharedArgs {
     pub single_thread: bool,
     pub no_cost: bool,
     pub pricing_overrides: BTreeMap<String, PricingOverride>,
+    pub pi_stores: Vec<NamedPiStore>,
 }
 
 impl SharedArgs {
@@ -123,6 +124,12 @@ pub struct AgentCommandArgs {
     pub pi_path: Option<String>,
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NamedPiStore {
+    pub name: String,
+    pub path: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -231,6 +238,10 @@ pub struct PricingOverride {
 }
 
 pub trait CliConfig {
+    fn config_error(&self) -> Option<&str> {
+        None
+    }
+
     fn apply_shared(&self, _shared: &mut SharedArgs) {}
 
     fn apply_daily_args(&self, _args: &mut DailyArgs) {}

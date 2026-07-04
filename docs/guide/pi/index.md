@@ -28,6 +28,24 @@ The CLI reads usage data from pi-agent:
 
 Both `PI_AGENT_DIR` and `--pi-path` can be one sessions directory or a comma-separated list of sessions directories.
 
+Tools built on the pi session format can also be declared as named stores in the config file for unified reports:
+
+```json
+{
+	"$schema": "https://ccusage.com/config-schema.json",
+	"pi": {
+		"stores": [
+			{
+				"name": "omp",
+				"path": "~/.omp/agent/sessions"
+			}
+		]
+	}
+}
+```
+
+Named stores are loaded in addition to the default `pi` agent when running `ccusage daily`, `ccusage monthly`, `ccusage weekly`, or `ccusage session`. The example above appears as agent `omp` in unified report metadata and prefixes model labels with `[omp] `. A named store path can also be a comma-separated list of sessions directories; missing paths are treated as empty, while paths that fully overlap the default `pi` store or another named store are rejected to avoid double-counting. It does not add a `ccusage omp` command; use `ccusage pi ...` for the default pi-agent store.
+
 ## Report Views
 
 ```bash

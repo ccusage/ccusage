@@ -8,6 +8,8 @@ use serde_json::{Map, Value, json};
 
 use schemars::{JsonSchema, r#gen::SchemaSettings};
 
+pub(crate) const NAMED_PI_STORE_NAME_PATTERN: &str = "^[a-z][a-z0-9_-]{0,31}$";
+
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CcusageConfig {
@@ -173,8 +175,20 @@ pub(crate) struct HermesCommandsConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PiConfig {
+    /// Additional named pi-format session stores included in all-agent reports.
+    pub(crate) stores: Option<Vec<PiStoreConfig>>,
     pub(crate) defaults: Option<PiOptions>,
     pub(crate) commands: Option<PiCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PiStoreConfig {
+    /// Agent name to use for this pi-format store in all-agent reports.
+    #[schemars(regex(pattern = "^[a-z][a-z0-9_-]{0,31}$"))]
+    pub(crate) name: String,
+    /// Path to this pi-format sessions directory. Comma-separated lists are supported.
+    pub(crate) path: String,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -690,6 +704,14 @@ pub(crate) fn generate_config_schema_json() -> String {
                             "speed": "auto"
                         }
                     },
+                    "pi": {
+                        "stores": [
+                            {
+                                "name": "omp",
+                                "path": "~/.omp/agent/sessions"
+                            }
+                        ]
+                    },
                     "gemini": {
                         "defaults": {
                             "offline": true
@@ -1047,6 +1069,7 @@ mod tests {
             &["pi", "defaults"],
             &with_keys(&shared, &["piPath"]),
         );
+        assert!(schema_property(&schema, &["pi", "stores"]).is_some());
         assert_schema_properties(
             &schema,
             &["openclaw", "defaults"],
@@ -1064,6 +1087,7 @@ mod tests {
         assert!(schema_property(&schema, &["droid", "defaults", "speed"]).is_none());
         assert!(schema_property(&schema, &["codebuff", "defaults", "speed"]).is_none());
         assert!(schema_property(&schema, &["pi", "defaults", "piPath"]).is_some());
+        assert!(schema_property(&schema, &["pi", "stores"]).is_some());
         assert!(schema_property(&schema, &["goose", "defaults", "piPath"]).is_none());
         assert!(schema_property(&schema, &["openclaw", "defaults", "openClawPath"]).is_some());
         assert!(schema_property(&schema, &["kilo", "defaults", "openClawPath"]).is_none());
@@ -1185,6 +1209,12 @@ mod tests {
                 }
             },
             "pi": {
+                "stores": [
+                    {
+                        "name": "omp",
+                        "path": "~/.omp/agent/sessions"
+                    }
+                ],
                 "commands": {
                     "daily": {
                         "piPath": "/tmp/pi-sessions"
@@ -1305,6 +1335,27 @@ mod tests {
         assert_eq!(
             property_default(&schema, &["codex", "defaults", "speed"]),
             Some(&json!("auto"))
+        );
+    }
+
+    #[test]
+    fn generated_schema_exposes_named_pi_stores() {
+        let schema = generated_schema();
+        let stores = schema_property(&schema, &["pi", "stores"]).unwrap();
+
+        assert_eq!(stores["type"], json!("array"));
+        assert_eq!(
+            stores["items"]["properties"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            ["name", "path"].into_iter().collect::<BTreeSet<_>>()
+        );
+        assert_eq!(
+            stores["items"]["properties"]["name"]["pattern"],
+            json!("^[a-z][a-z0-9_-]{0,31}$")
         );
     }
 

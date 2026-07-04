@@ -387,6 +387,10 @@ impl PricingMap {
             })
     }
 
+    pub(crate) fn find_exact(&self, model: &str) -> Option<Pricing> {
+        self.entries.get(model).copied()
+    }
+
     fn find_entry_or_alias(&self, model: &str) -> Option<Pricing> {
         self.find_entry(model)
             .or_else(|| pricing_alias(model).and_then(|alias| self.find_entry(alias)))

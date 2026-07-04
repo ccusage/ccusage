@@ -13,6 +13,7 @@ mod home;
 mod logger;
 mod model_aliases;
 mod output;
+mod path_utils;
 mod pricing;
 mod progress;
 mod project_names;
@@ -30,8 +31,9 @@ pub(crate) use blocks::{
     identify_session_blocks, print_active_block_detail, print_blocks_table, sort_blocks,
 };
 pub(crate) use cost::{
-    calculate_cost, calculate_cost_for_usage, missing_pricing_model_for_candidates,
-    missing_pricing_model_for_token_total, missing_pricing_model_for_usage,
+    calculate_cost, calculate_cost_for_usage, calculate_cost_from_pricing,
+    missing_pricing_model_for_candidates, missing_pricing_model_for_token_total,
+    missing_pricing_model_for_usage,
 };
 pub(crate) use date_utils::*;
 pub(crate) use logger::{debug_log, log_level};
@@ -54,7 +56,7 @@ pub(crate) use utils::{
 pub(crate) use ccusage_terminal::{Align, Color, SimpleTable};
 use ccusage_terminal::{TerminalStyle, terminal_width};
 use cli::{AgentCommandArgs, AgentReportKind, Command};
-use pricing::PricingMap;
+use pricing::{Pricing, PricingMap};
 
 #[cfg(all(target_os = "linux", target_env = "musl"))]
 #[global_allocator]
@@ -767,13 +769,13 @@ mod tests {
             .join("\n"),
         });
 
-        let entries = adapter::pi::read_session_file(
-            &fixture.path("sessions/project-a/prefix_session-a.jsonl"),
-            parse_tz(Some("UTC")).as_ref(),
-            CostMode::Display,
-            None,
-        )
-        .unwrap();
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            mode: CostMode::Display,
+            ..SharedArgs::default()
+        };
+        let sessions_path = fixture.path("sessions");
+        let entries = adapter::pi::load_entries(&shared, sessions_path.to_str(), None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-04-22");

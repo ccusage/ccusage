@@ -5,9 +5,9 @@ use serde::Deserialize;
 
 use super::super::jsonl;
 use crate::{
-    LoadedEntry, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, missing_pricing_model_for_usage,
+    LoadedEntry, Pricing, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
+    apply_total_token_fallback, calculate_cost_for_usage, calculate_cost_from_pricing,
+    cli::CostMode, fast::LinePrefilter, format_date_tz, missing_pricing_model_for_usage,
 };
 
 /// A single parsed pi session record. Only the fields ccusage consumes are
@@ -71,8 +71,103 @@ pub(crate) fn read_session_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
+    read_session_file_with_context(path, tz, mode, pricing, PiStoreContext::Default)
+}
+
+pub(super) fn read_session_file_for_store(
+    path: &Path,
+    store_root: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    store_name: &str,
+) -> Result<Vec<LoadedEntry>> {
+    read_session_file_with_context(
+        path,
+        tz,
+        mode,
+        pricing,
+        PiStoreContext::Named {
+            root: store_root,
+            name: store_name,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+enum PiStoreContext<'a> {
+    Default,
+    Named { root: &'a Path, name: &'a str },
+}
+
+impl<'a> PiStoreContext<'a> {
+    fn store_name(self) -> &'a str {
+        match self {
+            Self::Default => "pi",
+            Self::Named { name, .. } => name,
+        }
+    }
+
+    fn project(self, path: &Path) -> String {
+        match self {
+            Self::Default => extract_project(path),
+            Self::Named { root, .. } => extract_project_for_store(path, root),
+        }
+    }
+
+    fn cost(
+        self,
+        raw_model: Option<&str>,
+        display_model: Option<&str>,
+        usage: TokenUsageRaw,
+        display_cost: Option<f64>,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> f64 {
+        match self {
+            Self::Default => {
+                calculate_cost_for_usage(display_model, usage, display_cost, mode, pricing)
+            }
+            Self::Named { .. } => {
+                calculate_store_cost(raw_model, display_model, usage, display_cost, mode, pricing)
+            }
+        }
+    }
+
+    fn missing_pricing_model(
+        self,
+        raw_model: Option<&str>,
+        display_model: Option<&str>,
+        usage: TokenUsageRaw,
+        display_cost: Option<f64>,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> Option<String> {
+        match self {
+            Self::Default => {
+                missing_pricing_model_for_usage(display_model, usage, display_cost, mode, pricing)
+            }
+            Self::Named { .. } => missing_store_pricing_model(
+                raw_model,
+                display_model,
+                usage,
+                display_cost,
+                mode,
+                pricing,
+            ),
+        }
+    }
+}
+
+fn read_session_file_with_context(
+    path: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    context: PiStoreContext<'_>,
+) -> Result<Vec<LoadedEntry>> {
     let content = fs::read(path)?;
-    let project = extract_project(path);
+    let project = context.project(path);
     let session_id = extract_session_id(path);
     // Usable pi lines carry token counts under a `usage` key nested in a
     // `message` object, so require both substrings before JSON parsing.
@@ -112,11 +207,27 @@ pub(crate) fn read_session_file(
         if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
             continue;
         }
-        let model = message.model.clone().map(|model| format!("[pi] {model}"));
+        let raw_model = message.model.clone();
+        let model = raw_model
+            .as_ref()
+            .map(|model| format!("[{}] {model}", context.store_name()));
         let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
-        let cost = calculate_cost_for_usage(model.as_deref(), usage, display_cost, mode, pricing);
-        let missing_pricing_model =
-            missing_pricing_model_for_usage(model.as_deref(), usage, display_cost, mode, pricing);
+        let cost = context.cost(
+            raw_model.as_deref(),
+            model.as_deref(),
+            usage,
+            display_cost,
+            mode,
+            pricing,
+        );
+        let missing_pricing_model = context.missing_pricing_model(
+            raw_model.as_deref(),
+            model.as_deref(),
+            usage,
+            display_cost,
+            mode,
+            pricing,
+        );
         let data = UsageEntry {
             session_id: Some(session_id.clone()),
             timestamp: timestamp_text,
@@ -187,9 +298,84 @@ fn extract_project(path: &Path) -> String {
     "unknown".to_string()
 }
 
+fn extract_project_for_store(path: &Path, store_root: &Path) -> String {
+    if let Ok(relative) = path.strip_prefix(store_root)
+        && let Some(project) = relative.components().next()
+    {
+        return project.as_os_str().to_string_lossy().into_owned();
+    }
+    extract_project(path)
+}
+
 pub(super) fn entry_id(entry: &LoadedEntry) -> String {
+    entry_id_for_store("pi", entry)
+}
+
+fn calculate_store_cost(
+    raw_model: Option<&str>,
+    display_model: Option<&str>,
+    usage: TokenUsageRaw,
+    display_cost: Option<f64>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> f64 {
+    match mode {
+        CostMode::Display => display_cost.unwrap_or(0.0),
+        CostMode::Auto => display_cost.unwrap_or_else(|| {
+            calculate_store_cost_from_tokens(raw_model, display_model, usage, pricing)
+        }),
+        CostMode::Calculate => {
+            calculate_store_cost_from_tokens(raw_model, display_model, usage, pricing)
+        }
+    }
+}
+
+fn calculate_store_cost_from_tokens(
+    raw_model: Option<&str>,
+    display_model: Option<&str>,
+    usage: TokenUsageRaw,
+    pricing: Option<&PricingMap>,
+) -> f64 {
+    let Some(pricing) = store_pricing(raw_model, display_model, pricing) else {
+        return 0.0;
+    };
+    calculate_cost_from_pricing(usage, pricing)
+}
+
+fn missing_store_pricing_model(
+    raw_model: Option<&str>,
+    display_model: Option<&str>,
+    usage: TokenUsageRaw,
+    display_cost: Option<f64>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Option<String> {
+    if mode == CostMode::Display || (mode == CostMode::Auto && display_cost.is_some()) {
+        return None;
+    }
+    if crate::total_usage_tokens(usage) == 0 {
+        return None;
+    }
+    let raw_model = raw_model?;
+    store_pricing(Some(raw_model), display_model, pricing)
+        .is_none()
+        .then(|| crate::model_aliases::resolve_model_name(raw_model).into_owned())
+}
+
+fn store_pricing(
+    raw_model: Option<&str>,
+    display_model: Option<&str>,
+    pricing: Option<&PricingMap>,
+) -> Option<Pricing> {
+    let pricing = pricing?;
+    display_model
+        .and_then(|model| pricing.find_exact(model))
+        .or_else(|| raw_model.and_then(|model| pricing.find(model)))
+}
+
+pub(super) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> String {
     [
-        "pi",
+        store_name,
         entry.project.as_ref(),
         entry.session_id.as_ref(),
         entry.data.timestamp.as_str(),
@@ -247,6 +433,110 @@ mod tests {
     }
 
     #[test]
+    fn named_store_name_does_not_price_unknown_models() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"totally-unknown-model","usage":{"input":1000000,"output":1000000}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "o3": {
+                    "input_cost_per_token": 0.000002,
+                    "output_cost_per_token": 0.000008
+                }
+            }"#,
+        );
+
+        let entries = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+            "o3",
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 0.0);
+        assert_eq!(
+            entries[0].missing_pricing_model.as_deref(),
+            Some("totally-unknown-model")
+        );
+    }
+
+    #[test]
+    fn named_store_name_does_not_outmatch_real_model_pricing() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"o3","usage":{"input":1000,"output":2000}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "o3": {
+                    "input_cost_per_token": 0.000002,
+                    "output_cost_per_token": 0.000008
+                },
+                "deepseek-chat": {
+                    "input_cost_per_token": 0.001,
+                    "output_cost_per_token": 0.001
+                }
+            }"#,
+        );
+
+        let entries = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+            "deepseek-chat",
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 0.018000000000000002);
+        assert_eq!(entries[0].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn named_store_prefixed_pricing_override_wins_before_unprefixed_lookup() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5.4","usage":{"input":1000,"output":2000}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gpt-5.4": {
+                    "input_cost_per_token": 0.001,
+                    "output_cost_per_token": 0.001
+                },
+                "[omp] gpt-5.4": {
+                    "input_cost_per_token": 0.000002,
+                    "output_cost_per_token": 0.000008
+                }
+            }"#,
+        );
+
+        let entries = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+            "omp",
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 0.018000000000000002);
+        assert_eq!(entries[0].missing_pricing_model, None);
+    }
+
+    #[test]
     fn no_missing_pricing_model_in_display_mode() {
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"unknown-model-xyz","usage":{"input":100,"output":200}}}"#,
@@ -289,5 +579,56 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);
         assert_eq!(entries[0].data.message.usage.output_tokens, 200);
+    }
+
+    #[test]
+    fn prefixes_named_store_models_with_store_name() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":100,"output":200}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+
+        let entries = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Display,
+            None,
+            "omp",
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[omp] gpt-5"));
+        assert_eq!(
+            entries[0].data.message.model.as_deref(),
+            Some("[omp] gpt-5")
+        );
+    }
+
+    #[test]
+    fn includes_named_store_in_dedupe_identity() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":100,"output":200}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+
+        let pi = read_session_file(&file, None, CostMode::Display, None)
+            .unwrap()
+            .pop()
+            .unwrap();
+        let omp = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Display,
+            None,
+            "omp",
+        )
+        .unwrap()
+        .pop()
+        .unwrap();
+
+        assert_ne!(entry_id(&pi), entry_id_for_store("omp", &omp));
     }
 }

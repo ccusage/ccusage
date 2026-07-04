@@ -11185,6 +11185,29 @@
 								}
 							},
 							"type": "object"
+						},
+						"stores": {
+							"description": "Additional named pi-format session stores included in all-agent reports.",
+							"items": {
+								"additionalProperties": false,
+								"properties": {
+									"name": {
+										"description": "Agent name to use for this pi-format store in all-agent reports.",
+										"markdownDescription": "Agent name to use for this pi-format store in all-agent reports.",
+										"pattern": "^[a-z][a-z0-9_-]{0,31}$",
+										"type": "string"
+									},
+									"path": {
+										"description": "Path to this pi-format sessions directory. Comma-separated lists are supported.",
+										"markdownDescription": "Path to this pi-format sessions directory. Comma-separated lists are supported.",
+										"type": "string"
+									}
+								},
+								"required": ["name", "path"],
+								"type": "object"
+							},
+							"markdownDescription": "Additional named pi-format session stores included in all-agent reports.",
+							"type": "array"
 						}
 					},
 					"type": "object"
@@ -11907,6 +11930,14 @@
 				"defaults": {
 					"offline": true
 				}
+			},
+			"pi": {
+				"stores": [
+					{
+						"name": "omp",
+						"path": "~/.omp/agent/sessions"
+					}
+				]
 			}
 		}
 	],

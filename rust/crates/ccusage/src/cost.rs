@@ -1,6 +1,6 @@
 use crate::{
     cli::CostMode,
-    pricing::PricingMap,
+    pricing::{Pricing, PricingMap},
     types::{Speed, UsageEntry},
 };
 
@@ -97,6 +97,10 @@ fn calculate_cost_from_tokens(
     } else {
         1.0
     };
+    calculate_cost_from_pricing(usage, pricing) * multiplier
+}
+
+pub(crate) fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing) -> f64 {
     let (cache_create_5m_tokens, cache_create_1h_tokens) =
         if let Some(breakdown) = usage.cache_creation {
             (
@@ -110,7 +114,7 @@ fn calculate_cost_from_tokens(
     let cache_create_1h_cost_above_200k = pricing
         .input_above_200k
         .map(|c| c * CACHE_CREATE_1H_INPUT_MULTIPLIER);
-    (tiered_cost(usage.input_tokens, pricing.input, pricing.input_above_200k)
+    tiered_cost(usage.input_tokens, pricing.input, pricing.input_above_200k)
         + tiered_cost(
             usage.output_tokens,
             pricing.output,
@@ -130,8 +134,7 @@ fn calculate_cost_from_tokens(
             usage.cache_read_input_tokens,
             pricing.cache_read,
             pricing.cache_read_above_200k,
-        ))
-        * multiplier
+        )
 }
 
 pub(crate) fn tiered_cost(tokens: u64, base: f64, above: Option<f64>) -> f64 {

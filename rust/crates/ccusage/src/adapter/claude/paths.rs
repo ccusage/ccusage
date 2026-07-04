@@ -6,7 +6,7 @@ use std::{
 #[cfg(test)]
 use memchr::memmem;
 
-use crate::{Result, cli_error, fast::FxHashSet, home};
+use crate::{Result, cli_error, fast::FxHashSet, home, path_utils::expand_home_path};
 #[cfg(test)]
 use crate::{TimestampMs, parse_ts_timestamp};
 
@@ -50,20 +50,6 @@ fn normalize_claude_config_path(raw: &str) -> PathBuf {
         return path.parent().map(Path::to_path_buf).unwrap_or(path);
     }
     path
-}
-
-fn expand_home_path(raw: &str) -> PathBuf {
-    if raw == "~"
-        && let Some(home) = home::home_dir()
-    {
-        return home;
-    }
-    if let Some(rest) = raw.strip_prefix("~/")
-        && let Some(home) = home::home_dir()
-    {
-        return home.join(rest);
-    }
-    PathBuf::from(raw)
 }
 
 pub(crate) fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathBuf> {
