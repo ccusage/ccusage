@@ -42,13 +42,14 @@ pub(super) fn load_sections(
         .then(|| load_base_rows(AgentReportKind::Session, shared, &pricing))
         .transpose()?;
 
-    let mut detected_agents = Vec::new();
-    if let Some(base) = daily_base.as_ref() {
-        append_detected_agents(&mut detected_agents, &base.detected_agents);
-    }
-    if let Some(base) = session_base.as_ref() {
-        append_detected_agents(&mut detected_agents, &base.detected_agents);
-    }
+    let daily_detected_agents = daily_base
+        .as_ref()
+        .map(|base| base.detected_agents.clone())
+        .unwrap_or_default();
+    let session_detected_agents = session_base
+        .as_ref()
+        .map(|base| base.detected_agents.clone())
+        .unwrap_or_default();
 
     let mut sections = Vec::with_capacity(kinds.len());
     for kind in kinds {
@@ -68,7 +69,8 @@ pub(super) fn load_sections(
 
     Ok(AllSectionsLoadResult {
         sections,
-        detected_agents,
+        daily_detected_agents,
+        session_detected_agents,
     })
 }
 
@@ -406,17 +408,6 @@ fn append_agent_rows(
         detected_agents.push(agent);
     }
     rows.extend(agent_rows.rows);
-}
-
-fn append_detected_agents(
-    detected_agents: &mut Vec<&'static str>,
-    additional_agents: &[&'static str],
-) {
-    for agent in additional_agents {
-        if !detected_agents.contains(agent) {
-            detected_agents.push(agent);
-        }
-    }
 }
 
 fn load_summary_agent_rows(

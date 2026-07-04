@@ -28,7 +28,19 @@ pub(super) struct AllLoadResult {
 
 pub(super) struct AllSectionsLoadResult {
     pub(super) sections: Vec<(AgentReportKind, Vec<AllRow>)>,
-    pub(super) detected_agents: Vec<&'static str>,
+    pub(super) daily_detected_agents: Vec<&'static str>,
+    pub(super) session_detected_agents: Vec<&'static str>,
+}
+
+impl AllSectionsLoadResult {
+    pub(super) fn detected_agents_for(&self, kind: AgentReportKind) -> &[&'static str] {
+        match kind {
+            AgentReportKind::Session => &self.session_detected_agents,
+            AgentReportKind::Daily | AgentReportKind::Weekly | AgentReportKind::Monthly => {
+                &self.daily_detected_agents
+            }
+        }
+    }
 }
 
 pub(super) struct AgentRows {

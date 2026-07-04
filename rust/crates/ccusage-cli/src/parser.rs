@@ -342,24 +342,35 @@ fn parse_root_all_arg(
     parser: &mut ArgParser,
     options: &mut RootAllOptions,
 ) -> Result<bool, String> {
-    if matches!(parser.peek(), Some("--all")) {
-        parser.next();
-        options.mark_used("--all");
-        return Ok(true);
-    }
-    if matches!(parser.peek_name(), Some("--sections")) {
-        parser.next_flag()?;
-        options.mark_used("--sections");
-        options.sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
-        return Ok(true);
-    }
-    if matches!(parser.peek(), Some("--by-agent")) {
-        parser.next();
-        options.mark_used("--by-agent");
-        options.by_agent = true;
+    if let Some(flag) =
+        parse_unified_report_arg(parser, &mut options.sections, &mut options.by_agent)?
+    {
+        options.mark_used(flag);
         return Ok(true);
     }
     Ok(false)
+}
+
+fn parse_unified_report_arg(
+    parser: &mut ArgParser,
+    sections: &mut Option<Vec<AgentReportKind>>,
+    by_agent: &mut bool,
+) -> Result<Option<&'static str>, String> {
+    if matches!(parser.peek(), Some("--all")) {
+        parser.next();
+        return Ok(Some("--all"));
+    }
+    if matches!(parser.peek_name(), Some("--sections")) {
+        parser.next_flag()?;
+        *sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
+        return Ok(Some("--sections"));
+    }
+    if matches!(parser.peek(), Some("--by-agent")) {
+        parser.next();
+        *by_agent = true;
+        return Ok(Some("--by-agent"));
+    }
+    Ok(None)
 }
 
 fn parse_all_command(
@@ -372,18 +383,7 @@ fn parse_all_command(
     let mut sections = initial_options.sections;
     let mut by_agent = initial_options.by_agent;
     while parser.peek().is_some() {
-        if matches!(parser.peek(), Some("--all")) {
-            parser.next();
-            continue;
-        }
-        if matches!(parser.peek_name(), Some("--sections")) {
-            parser.next_flag()?;
-            sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
-            continue;
-        }
-        if matches!(parser.peek(), Some("--by-agent")) {
-            parser.next();
-            by_agent = true;
+        if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
             continue;
         }
         parse_shared_arg(parser, &mut shared)?;
@@ -409,18 +409,7 @@ fn parse_top_level_session_command(
     let mut sections = initial_options.sections;
     let mut by_agent = initial_options.by_agent;
     while parser.peek().is_some() {
-        if matches!(parser.peek(), Some("--all")) {
-            parser.next();
-            continue;
-        }
-        if matches!(parser.peek_name(), Some("--sections")) {
-            parser.next_flag()?;
-            sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
-            continue;
-        }
-        if matches!(parser.peek(), Some("--by-agent")) {
-            parser.next();
-            by_agent = true;
+        if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
             continue;
         }
         if parse_shared_arg_for_command(parser, &mut args.shared)? {

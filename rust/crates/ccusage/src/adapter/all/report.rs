@@ -130,18 +130,10 @@ impl Serialize for OrderedJsonMap {
 }
 
 fn row_json(row: &AllRow, include_agents: bool) -> Value {
-    let mut value = json!({
-        "period": row.period,
-        "agent": row.agent,
-        "modelsUsed": row.models_used,
-        "inputTokens": row.input_tokens,
-        "outputTokens": row.output_tokens,
-        "cacheCreationTokens": row.cache_creation_tokens,
-        "cacheReadTokens": row.cache_read_tokens,
-        "totalTokens": row.total_tokens,
-        "totalCost": json_float(row.total_cost),
-        "modelBreakdowns": row.model_breakdowns,
-    });
+    let mut value = agent_json(row);
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("period".to_string(), json!(row.period));
+    }
     if let (Some(obj), Some(agents)) = (value.as_object_mut(), row.metadata_agents.as_ref()) {
         obj.insert(
             "metadata".to_string(),

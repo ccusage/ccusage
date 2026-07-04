@@ -24,8 +24,13 @@ pub(crate) fn run(args: AgentCommandArgs) -> Result<()> {
                 shared.no_cost,
             );
         }
-        for (section_kind, rows) in result.sections {
-            report::print_table(&rows, section_kind, &shared, &result.detected_agents)?;
+        for (section_kind, rows) in &result.sections {
+            report::print_table(
+                rows,
+                *section_kind,
+                &shared,
+                result.detected_agents_for(*section_kind),
+            )?;
         }
         return Ok(());
     }
