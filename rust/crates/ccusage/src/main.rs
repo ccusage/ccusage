@@ -839,6 +839,17 @@ mod tests {
         assert_eq!(report["daily"][0]["totalTokens"], 180);
         assert_eq!(report["daily"][0]["totalCost"], json!(0.05));
         assert_eq!(report["daily"][0]["modelsUsed"], json!(["[pi] gpt-5.4"]));
+        assert_eq!(
+            report["daily"][0]["modelBreakdowns"],
+            json!([{
+                "modelName": "[pi] gpt-5.4",
+                "inputTokens": 100,
+                "outputTokens": 50,
+                "cacheCreationTokens": 20,
+                "cacheReadTokens": 10,
+                "cost": 0.05
+            }])
+        );
     }
 
     #[test]

@@ -269,6 +269,17 @@ mod tests {
         assert_eq!(report["daily"][0]["outputTokens"], 50);
         assert_eq!(report["daily"][0]["totalTokens"], 175);
         assert_eq!(report["daily"][0]["totalCost"], 300.0);
+        assert_eq!(
+            report["daily"][0]["modelBreakdowns"],
+            json!([{
+                "modelName": "test-model",
+                "inputTokens": 90,
+                "outputTokens": 50,
+                "cacheCreationTokens": 20,
+                "cacheReadTokens": 10,
+                "cost": 300.0
+            }])
+        );
     }
 
     #[test]
