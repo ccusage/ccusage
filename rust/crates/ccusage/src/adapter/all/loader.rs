@@ -374,9 +374,8 @@ fn load_session_capable_summary_agent_rows(
     let mut entries = load_entries(shared, None, Some(pricing))?;
     let detected = !entries.is_empty();
     let summaries = if kind == AgentReportKind::Session {
-        let mut summaries = summarize_entry_sessions(&entries)?;
-        filter_session_summaries(&mut summaries, shared);
-        summaries
+        filter_loaded_entries_by_date(&mut entries, shared);
+        summarize_entry_sessions(&entries)?
     } else {
         filter_loaded_entries_by_date(&mut entries, shared);
         summarize_entries(&entries, kind)?
@@ -642,6 +641,7 @@ pub(super) fn aggregate_rows(rows: Vec<AllRow>, kind: AgentReportKind) -> Vec<Al
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     fn usage_summary(date: &str, input_tokens: u64) -> UsageSummary {
         UsageSummary {
@@ -685,5 +685,69 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].date.as_deref(), Some("2026-01-02"));
         assert_eq!(rows[0].input_tokens, 20);
+    }
+
+    fn usage_fingerprint(rows: &[AllRow]) -> Vec<(String, u64, u64, u64, u64, u64)> {
+        rows.iter()
+            .map(|row| {
+                (
+                    row.period.clone(),
+                    row.input_tokens,
+                    row.output_tokens,
+                    row.cache_creation_tokens,
+                    row.cache_read_tokens,
+                    row.total_tokens,
+                )
+            })
+            .collect()
+    }
+
+    fn pi_path_subcommand_rows(
+        store_path: &str,
+        shared: &SharedArgs,
+        pricing: &PricingMap,
+    ) -> Result<Vec<AllRow>> {
+        let mut entries = pi::load_entries(shared, Some(store_path), Some(pricing))?;
+        filter_loaded_entries_by_date(&mut entries, shared);
+        let summaries = pi::summarize_entries(&entries, AgentReportKind::Session)?;
+        Ok(summary_rows("pi", summaries))
+    }
+
+    #[test]
+    fn default_pi_unified_session_window_keeps_until_day_like_pi_path() {
+        let fixture = fs_fixture!({
+            "pi/sessions/project-a/agent_until-day.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+            "pi/sessions/project-a/agent_after-day.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
+        });
+        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("pi/sessions"));
+        let shared = SharedArgs {
+            json: true,
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            timezone: Some("America/Boise".to_string()),
+            since: Some("20260704".to_string()),
+            until: Some("20260704".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(AgentReportKind::Session, &shared).unwrap();
+        let pi_rows = result
+            .rows
+            .iter()
+            .filter(|row| row.agent == "pi")
+            .cloned()
+            .collect::<Vec<_>>();
+        let pi_path_rows = pi_path_subcommand_rows(
+            fixture.path("pi/sessions").to_str().unwrap(),
+            &shared,
+            &PricingMap::default(),
+        )
+        .unwrap();
+
+        assert_eq!(usage_fingerprint(&pi_rows), usage_fingerprint(&pi_path_rows));
+        assert_eq!(
+            usage_fingerprint(&pi_rows),
+            vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
+        );
     }
 }
