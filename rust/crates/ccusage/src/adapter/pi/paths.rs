@@ -25,21 +25,22 @@ pub(crate) fn named_store_paths(raw: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn existing_path_list(raw: &str) -> Vec<PathBuf> {
-    let mut seen = HashSet::new();
-    raw.split(',')
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .filter(|path| path.is_dir() && seen.insert(path.clone()))
-        .collect()
+    // `--pi-path` / `PI_AGENT_DIR` deliberately keep their pre-existing
+    // no-`~`-expansion semantics; named store paths expand `~` like other
+    // config paths.
+    existing_paths(raw, |path| PathBuf::from(path))
 }
 
 fn existing_named_store_path_list(raw: &str) -> Vec<PathBuf> {
+    existing_paths(raw, expand_home_path)
+}
+
+fn existing_paths(raw: &str, to_path: impl Fn(&str) -> PathBuf) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
     raw.split(',')
         .map(str::trim)
         .filter(|path| !path.is_empty())
-        .map(expand_home_path)
+        .map(to_path)
         .filter(|path| path.is_dir() && seen.insert(path.clone()))
         .collect()
 }

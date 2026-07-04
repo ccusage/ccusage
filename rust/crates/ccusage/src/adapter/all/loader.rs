@@ -386,17 +386,21 @@ fn resolve_named_pi_store_paths(stores: &[NamedPiStore]) -> Result<Vec<ResolvedN
         let mut collision_owners = BTreeSet::new();
         for path in pi::named_store_paths(&store.path)? {
             let key = path_key(&path);
-            if let Some(owner) = owners.get(&key) {
-                collision_owners.insert(owner.clone());
+            if let Some(owner) = owners
+                .iter()
+                .find(|(owned, _)| paths_overlap(&key, owned))
+                .map(|(_, owner)| owner.clone())
+            {
+                collision_owners.insert(owner);
                 continue;
             }
             owners.insert(key, format!("pi.stores name '{}'", store.name));
             paths.push(path);
         }
 
-        if !collision_owners.is_empty() && paths.is_empty() {
+        if !collision_owners.is_empty() {
             return Err(crate::cli_error(format!(
-                "Invalid ccusage config: pi.stores name '{}' paths fully overlap {}",
+                "Invalid ccusage config: pi.stores name '{}' paths overlap {}",
                 store.name,
                 collision_owners.into_iter().collect::<Vec<_>>().join(", ")
             )));
@@ -412,6 +416,14 @@ fn resolve_named_pi_store_paths(stores: &[NamedPiStore]) -> Result<Vec<ResolvedN
 
 fn path_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Session files are collected recursively, so a store rooted at an ancestor
+/// of another store (or of the default pi store) would ingest the same files
+/// twice under different dedupe identities. Treat equal and nested paths as
+/// overlapping.
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    left == right || left.starts_with(right) || right.starts_with(left)
 }
 
 fn load_summary_agent_rows(
@@ -1120,6 +1132,77 @@ mod tests {
 
         let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
             panic!("expected named pi store path collision");
+        };
+
+        assert!(error.to_string().contains("Invalid ccusage config"));
+        assert!(error.to_string().contains("fork"));
+        assert!(error.to_string().contains("omp"));
+    }
+
+    #[test]
+    fn load_rows_rejects_named_pi_store_nested_inside_default_pi_path() {
+        let fixture = fs_fixture!({
+            ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
+        });
+        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path(".pi/agent/sessions"));
+        let shared = SharedArgs {
+            json: true,
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            since: Some("20990102".to_string()),
+            until: Some("20990102".to_string()),
+            pi_stores: vec![NamedPiStore {
+                name: "omp".to_string(),
+                path: fixture
+                    .path(".pi/agent/sessions/project-a")
+                    .to_string_lossy()
+                    .into_owned(),
+            }],
+            ..SharedArgs::default()
+        };
+
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+            panic!("expected nested default pi path collision");
+        };
+
+        assert!(error.to_string().contains("Invalid ccusage config"));
+        assert!(error.to_string().contains("omp"));
+        assert!(error.to_string().contains("default pi"));
+    }
+
+    #[test]
+    fn load_rows_rejects_named_pi_store_partially_overlapping_another_store() {
+        let fixture = fs_fixture!({
+            "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
+        });
+        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("empty-default"));
+        let shared_path = fixture
+            .path("shared/sessions")
+            .to_string_lossy()
+            .into_owned();
+        let distinct = fixture.create_dir_all("fork-only/sessions");
+        let shared = SharedArgs {
+            json: true,
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            since: Some("20990102".to_string()),
+            until: Some("20990102".to_string()),
+            pi_stores: vec![
+                NamedPiStore {
+                    name: "omp".to_string(),
+                    path: shared_path.clone(),
+                },
+                NamedPiStore {
+                    name: "fork".to_string(),
+                    path: format!("{}, {}", distinct.display(), shared_path),
+                },
+            ],
+            ..SharedArgs::default()
+        };
+
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+            panic!("expected partial named pi store path collision");
         };
 
         assert!(error.to_string().contains("Invalid ccusage config"));
