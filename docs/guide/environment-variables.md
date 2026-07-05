@@ -18,6 +18,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `PI_AGENT_DIR`                    | pi-agent     | `~/.pi/agent/sessions`             |
 | `GOOSE_PATH_ROOT`                 | Goose        | Standard Goose data roots          |
 | `OPENCLAW_DIR`                    | OpenClaw     | `~/.openclaw`                      |
+| `DEVIN_DATA_DIR`                  | Devin        | `~/.local/share/devin/cli`         |
 | `KILO_DATA_DIR`                   | Kilo         | `~/.local/share/kilo`              |
 | `KIMI_DATA_DIR`                   | Kimi         | `~/.kimi`                          |
 | `QWEN_DATA_DIR`                   | Qwen         | `~/.qwen`                          |
@@ -36,6 +37,7 @@ export HERMES_HOME="/path/to/hermes,/archive/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions,/archive/pi/sessions"
 export GOOSE_PATH_ROOT="/path/to/goose,/archive/goose"
 export OPENCLAW_DIR="/path/to/openclaw,/archive/openclaw"
+export DEVIN_DATA_DIR="/path/to/devin/cli,/archive/devin/cli"
 export KILO_DATA_DIR="/path/to/kilo,/archive/kilo"
 export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
@@ -210,7 +212,7 @@ To see which environment variables are being used:
 
 ```bash
 # Show all environment variables
-env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|CCUSAGE|LOG_LEVEL"
+env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|DEVIN|KILO|KIMI|QWEN|COPILOT|GEMINI|CCUSAGE|LOG_LEVEL"
 
 # Debug mode shows environment variable usage
 LOG_LEVEL=4 ccusage daily --debug

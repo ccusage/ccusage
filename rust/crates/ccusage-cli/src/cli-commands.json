@@ -6,7 +6,8 @@
 		"claude_session_options": ["shared_claude_options", "session_options"],
 		"claude_weekly_options": ["shared_claude_options", "weekly_options"],
 		"openclaw_combined_options": ["agent_options", "openclaw_options"],
-		"pi_combined_options": ["agent_options", "pi_options"]
+		"pi_combined_options": ["agent_options", "pi_options"],
+		"devin_combined_options": ["agent_options", "devin_options"]
 	},
 	"root": {
 		"usage": ["ccusage [daily] <OPTIONS>", "ccusage <COMMANDS>"],
@@ -94,6 +95,10 @@
 			{
 				"name": "openclaw",
 				"description": "Show OpenClaw usage commands"
+			},
+			{
+				"name": "devin",
+				"description": "Show Devin usage commands"
 			}
 		]
 	},
@@ -728,6 +733,53 @@
 			"description": "Show OpenClaw usage grouped by session",
 			"usage": "ccusage openclaw session <OPTIONS>",
 			"options": "openclaw_combined_options"
+		},
+		{
+			"path": ["devin"],
+			"description": "Usage reports for devin.",
+			"usage": "ccusage devin <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Devin usage grouped by date"
+				},
+				{
+					"name": "weekly",
+					"description": "Show Devin usage grouped by week"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Devin usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Devin usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["devin", "daily"],
+			"description": "Show Devin usage grouped by date",
+			"usage": "ccusage devin daily <OPTIONS>",
+			"options": "devin_combined_options"
+		},
+		{
+			"path": ["devin", "weekly"],
+			"description": "Show Devin usage grouped by week",
+			"usage": "ccusage devin weekly <OPTIONS>",
+			"options": "devin_combined_options"
+		},
+		{
+			"path": ["devin", "monthly"],
+			"description": "Show Devin usage grouped by month",
+			"usage": "ccusage devin monthly <OPTIONS>",
+			"options": "devin_combined_options"
+		},
+		{
+			"path": ["devin", "session"],
+			"description": "Show Devin usage grouped by session",
+			"usage": "ccusage devin session <OPTIONS>",
+			"options": "devin_combined_options"
 		}
 	]
 }

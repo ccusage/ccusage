@@ -235,6 +235,12 @@
 			"description": "Path or comma-separated paths to pi-agent sessions directories"
 		}
 	],
+	"devin_options": [
+		{
+			"flags": "--devin-path <devin-path>",
+			"description": "Path or comma-separated paths to Devin CLI data directories"
+		}
+	],
 	"openclaw_options": [
 		{
 			"flags": "--open-claw-path <open-claw-path>",

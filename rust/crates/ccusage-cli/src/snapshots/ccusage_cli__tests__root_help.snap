@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage-cli/src/tests.rs
+assertion_line: 459
 expression: help_text()
 ---
 USAGE:
@@ -28,6 +29,7 @@ COMMANDS:
   kimi                       Show Kimi usage commands
   qwen                       Show Qwen usage commands
   openclaw                   Show OpenClaw usage commands
+  devin                      Show Devin usage commands
 
 For more info, run any command with the `--help` flag:
   ccusage daily --help
@@ -51,6 +53,7 @@ For more info, run any command with the `--help` flag:
   ccusage kimi --help
   ccusage qwen --help
   ccusage openclaw --help
+  ccusage devin --help
 
 OPTIONS:
   -j, --json                           Output in JSON format (default: false)

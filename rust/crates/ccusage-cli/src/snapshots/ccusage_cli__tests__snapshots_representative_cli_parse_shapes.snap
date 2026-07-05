@@ -1,5 +1,6 @@
 ---
-source: crates/ccusage/src/cli.rs
+source: crates/ccusage-cli/src/tests.rs
+assertion_line: 603
 expression: cases
 ---
 [
@@ -33,6 +34,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "devinPath": null,
         "kind": "Daily",
         "openClawPath": null,
         "piPath": null,
@@ -179,6 +181,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Fast",
+        "devinPath": null,
         "kind": "Monthly",
         "openClawPath": null,
         "piPath": null,
@@ -229,6 +232,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "devinPath": null,
         "kind": "Weekly",
         "openClawPath": null,
         "piPath": null,
@@ -279,6 +283,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "devinPath": null,
         "kind": "Session",
         "openClawPath": null,
         "piPath": "/tmp/pi-sessions",
@@ -329,6 +334,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "devinPath": null,
         "kind": "Session",
         "openClawPath": "/tmp/openclaw",
         "piPath": null,
@@ -352,6 +358,57 @@ expression: cases
           "until": null
         },
         "type": "openclaw"
+      },
+      "shared": {
+        "breakdown": false,
+        "color": false,
+        "compact": false,
+        "config": null,
+        "debug": false,
+        "debugSamples": 5,
+        "jq": null,
+        "json": false,
+        "mode": "Auto",
+        "noColor": false,
+        "noOffline": false,
+        "offline": false,
+        "order": "Asc",
+        "since": null,
+        "singleThread": false,
+        "timezone": null,
+        "until": null
+      }
+    }
+  },
+  {
+    "case": "devin weekly",
+    "cli": {
+      "command": {
+        "codexSpeed": "Auto",
+        "devinPath": null,
+        "kind": "Weekly",
+        "openClawPath": null,
+        "piPath": null,
+        "shared": {
+          "breakdown": false,
+          "color": false,
+          "compact": false,
+          "config": null,
+          "debug": false,
+          "debugSamples": 5,
+          "jq": null,
+          "json": true,
+          "mode": "Auto",
+          "noColor": false,
+          "noOffline": false,
+          "offline": false,
+          "order": "Asc",
+          "since": null,
+          "singleThread": false,
+          "timezone": null,
+          "until": null
+        },
+        "type": "devin"
       },
       "shared": {
         "breakdown": false,

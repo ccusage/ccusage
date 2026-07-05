@@ -48,6 +48,8 @@ pub(crate) struct CcusageConfig {
     pub(crate) kimi: Option<KimiConfig>,
     /// Qwen configuration.
     pub(crate) qwen: Option<QwenConfig>,
+    /// Devin configuration.
+    pub(crate) devin: Option<DevinConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -292,6 +294,22 @@ pub(crate) struct QwenCommandsConfig {
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct DevinConfig {
+    pub(crate) defaults: Option<DevinOptions>,
+    pub(crate) commands: Option<DevinCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DevinCommandsConfig {
+    pub(crate) daily: Option<DevinOptions>,
+    pub(crate) weekly: Option<DevinOptions>,
+    pub(crate) monthly: Option<DevinOptions>,
+    pub(crate) session: Option<DevinOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SharedOptions {
     /// Filter from date (YYYY-MM-DD or YYYYMMDD).
     pub(crate) since: Option<String>,
@@ -469,6 +487,15 @@ pub(crate) struct OpenClawOptions {
     pub(crate) open_claw_path: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DevinOptions {
+    #[serde(flatten)]
+    pub(crate) shared: SharedOptions,
+    /// Path or comma-separated paths to Devin CLI data directories.
+    pub(crate) devin_path: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ConfigCostMode {
@@ -634,6 +661,15 @@ impl OpenClawOptions {
         Self {
             shared: SharedOptions::from_map(map),
             open_claw_path: string_option(map, "openClawPath"),
+        }
+    }
+}
+
+impl DevinOptions {
+    pub(crate) fn from_map(map: &Map<String, Value>) -> Self {
+        Self {
+            shared: SharedOptions::from_map(map),
+            devin_path: string_option(map, "devinPath"),
         }
     }
 }
@@ -1103,8 +1139,8 @@ mod tests {
             "ccusage-config",
             &[
                 "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
-                "gemini", "goose", "hermes", "kilo", "kimi", "opencode", "openclaw", "pi", "qwen",
-                "droid",
+                "devin", "gemini", "goose", "hermes", "kilo", "kimi", "opencode", "openclaw", "pi",
+                "qwen", "droid",
             ],
         );
         assert!(

@@ -14,8 +14,8 @@ use crate::{
     config_schema::{
         BlocksSpecificOptions, CodexOptions, ConfigCodexSpeed, ConfigCostMode, ConfigCostSource,
         ConfigPricingOverride, ConfigSortOrder, ConfigVisualBurnRate, ConfigWeekDay,
-        DailySpecificOptions, OpenClawOptions, PiOptions, SharedOptions, StatuslineSpecificOptions,
-        WeeklySpecificOptions,
+        DailySpecificOptions, DevinOptions, OpenClawOptions, PiOptions, SharedOptions,
+        StatuslineSpecificOptions, WeeklySpecificOptions,
     },
 };
 
@@ -358,6 +358,7 @@ pub(crate) fn apply_config_to_agent_args(
     codex_speed: &mut CodexSpeed,
     mut pi_path: Option<&mut Option<String>>,
     mut open_claw_path: Option<&mut Option<String>>,
+    mut devin_path: Option<&mut Option<String>>,
     config: &ConfigContext,
 ) {
     for options in config.option_maps() {
@@ -374,6 +375,11 @@ pub(crate) fn apply_config_to_agent_args(
             && let Some(path) = OpenClawOptions::from_map(options).open_claw_path
         {
             *open_claw_path = Some(path);
+        }
+        if let Some(devin_path) = devin_path.as_deref_mut()
+            && let Some(path) = DevinOptions::from_map(options).devin_path
+        {
+            *devin_path = Some(path);
         }
     }
 }
@@ -404,8 +410,9 @@ impl crate::cli::CliConfig for ConfigContext {
         codex_speed: &mut CodexSpeed,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
+        devin_path: Option<&mut Option<String>>,
     ) {
-        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, self);
+        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, devin_path, self);
     }
 }
 
@@ -780,6 +787,7 @@ mod tests {
             &mut speed,
             None,
             None,
+            None,
             &context(
                 json!({
                     "codex": {
@@ -801,6 +809,7 @@ mod tests {
         apply_config_to_agent_args(
             &mut speed,
             Some(&mut pi_path),
+            None,
             None,
             &context(
                 json!({
@@ -824,6 +833,7 @@ mod tests {
             &mut speed,
             None,
             Some(&mut open_claw_path),
+            None,
             &context(
                 json!({
                     "openclaw": {
@@ -839,6 +849,29 @@ mod tests {
         );
 
         assert_eq!(open_claw_path.as_deref(), Some("/tmp/openclaw"));
+
+        let mut speed = CodexSpeed::Auto;
+        let mut devin_path = None;
+        apply_config_to_agent_args(
+            &mut speed,
+            None,
+            None,
+            Some(&mut devin_path),
+            &context(
+                json!({
+                    "devin": {
+                        "defaults": {
+                            "devinPath": "/tmp/devin"
+                        }
+                    }
+                }),
+                "devin daily",
+                Some("devin"),
+                "daily",
+            ),
+        );
+
+        assert_eq!(devin_path.as_deref(), Some("/tmp/devin"));
     }
 
     #[test]

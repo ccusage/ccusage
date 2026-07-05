@@ -146,12 +146,14 @@ fn main() -> Result<()> {
         Some(Command::Gemini(args)) => adapter::gemini::run(args),
         Some(Command::Kimi(args)) => adapter::kimi::run(args),
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
+        Some(Command::Devin(args)) => adapter::devin::run(args),
         None => {
             let args = AgentCommandArgs {
                 shared: cli.shared,
                 kind: AgentReportKind::Daily,
                 pi_path: None,
                 open_claw_path: None,
+                devin_path: None,
                 codex_speed: cli::CodexSpeed::Auto,
             };
             adapter::all::run(args)

@@ -43,6 +43,7 @@ struct TestConfig {
     codex_speed: Option<CodexSpeed>,
     pi_path: Option<&'static str>,
     open_claw_path: Option<&'static str>,
+    devin_path: Option<&'static str>,
 }
 
 impl CliConfig for TestConfig {
@@ -99,6 +100,7 @@ impl CliConfig for TestConfig {
         codex_speed: &mut CodexSpeed,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
+        devin_path: Option<&mut Option<String>>,
     ) {
         if let Some(speed) = self.codex_speed {
             *codex_speed = speed;
@@ -108,6 +110,9 @@ impl CliConfig for TestConfig {
         }
         if let (Some(path), Some(open_claw_path)) = (self.open_claw_path, open_claw_path) {
             *open_claw_path = Some(path.to_string());
+        }
+        if let (Some(path), Some(devin_path)) = (self.devin_path, devin_path) {
+            *devin_path = Some(path.to_string());
         }
     }
 }
@@ -202,6 +207,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
+        Some(Command::Devin(args)) => agent_command_snapshot("devin", args),
     }
 }
 
@@ -212,6 +218,7 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
         "kind": format!("{:?}", args.kind),
         "piPath": args.pi_path,
         "openClawPath": args.open_claw_path,
+        "devinPath": args.devin_path,
         "codexSpeed": format!("{:?}", args.codex_speed),
     })
 }
@@ -358,7 +365,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw",
+        "copilot", "gemini", "kimi", "qwen", "openclaw", "devin",
     ];
 
     for agent in agents {
@@ -558,6 +565,10 @@ fn snapshots_representative_cli_parse_shapes() {
                 "session",
                 "--open-claw-path=/tmp/openclaw",
             ])),
+        }),
+        json!({
+            "case": "devin weekly",
+            "cli": cli_snapshot(parse(&["ccusage", "devin", "weekly", "--json"])),
         }),
         json!({
             "case": "blocks active recent",
@@ -946,4 +957,32 @@ fn parses_openclaw_session_options() {
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
     assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+}
+
+#[test]
+fn parses_devin_session_options() {
+    let cli = parse(&[
+        "ccusage",
+        "devin",
+        "session",
+        "--json",
+        "--devin-path",
+        "/tmp/devin",
+    ]);
+    let Some(Command::Devin(args)) = cli.command else {
+        panic!("expected devin command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Session);
+    assert!(args.shared.json);
+    assert_eq!(args.devin_path.as_deref(), Some("/tmp/devin"));
+}
+
+#[test]
+fn parses_devin_weekly_options() {
+    let cli = parse(&["ccusage", "devin", "weekly", "--json"]);
+    let Some(Command::Devin(args)) = cli.command else {
+        panic!("expected devin command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert!(args.shared.json);
 }

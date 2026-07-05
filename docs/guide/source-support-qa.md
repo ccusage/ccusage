@@ -35,10 +35,12 @@ Grok CLI was investigated, but its local SQLite data did not contain usable toke
 Estimating tokens from message text would ignore provider-side context, hidden prompts, tool-call payloads, cached input, and tokenizer differences, so ccusage does not do that.
 :::
 
-::: details Why is Devin CLI not supported?
-Devin CLI usage information appears to live in Devin's cloud service rather than in a local usage log that ccusage can read. The locally available data did not provide direct access to historical token usage or costs.
+::: details Was Devin CLI investigated before it was supported?
+Yes. Devin CLI was investigated and found to write ATIF (Agent Trajectory Interchange Format) trajectory files after every turn. These files include per-step token usage, model identifiers, and committed credit costs — everything ccusage needs to produce accurate reports.
 
-ccusage is a local, read-only analyzer. It does not scrape private cloud services or depend on undocumented authenticated APIs for user usage history. If Devin adds a local export with timestamps, sessions, models, and token counts, support can be revisited.
+ccusage reads these transcripts from `~/.local/share/devin/cli/transcripts/` (Linux/macOS) or `%APPDATA%\devin\cli\transcripts\` (Windows), and enriches them with `sessions.db` when present.
+
+See the [Devin guide](/guide/devin/) for usage examples.
 :::
 
 ## Can These Be Added Later?

@@ -48,3 +48,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # generated local agent skills
 .claude/skills
+
+# local ccusage config (personal pricing overrides, etc.)
+.ccusage/
