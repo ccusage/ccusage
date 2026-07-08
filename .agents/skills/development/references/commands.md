@@ -9,8 +9,12 @@ just fmt
 just typecheck
 just build
 just check
-just release
 ```
+
+Releases are managed by [tagpr](https://github.com/Songmu/tagpr): merging the
+auto-generated release PR tags the merge commit and triggers the publish
+workflow. The bump is patch by default; label merged PRs with `minor` or
+`major` to raise it.
 
 Useful main CLI commands:
 
