@@ -72,6 +72,10 @@
 				"description": "Show Goose usage commands"
 			},
 			{
+				"name": "buzz",
+				"description": "Show Buzz usage commands"
+			},
+			{
 				"name": "kilo",
 				"description": "Show Kilo usage commands"
 			},
@@ -505,6 +509,43 @@
 			"path": ["goose", "session"],
 			"description": "Show Goose usage grouped by session",
 			"usage": "ccusage goose session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["buzz"],
+			"description": "Usage reports for buzz.",
+			"usage": "ccusage buzz <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Buzz usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Buzz usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Buzz usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["buzz", "daily"],
+			"description": "Show Buzz usage grouped by date",
+			"usage": "ccusage buzz daily <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["buzz", "monthly"],
+			"description": "Show Buzz usage grouped by month",
+			"usage": "ccusage buzz monthly <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["buzz", "session"],
+			"description": "Show Buzz usage grouped by session",
+			"usage": "ccusage buzz session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{

@@ -22,6 +22,7 @@ COMMANDS:
   hermes                     Show Hermes usage commands
   pi                         Show pi-agent usage commands
   goose                      Show Goose usage commands
+  buzz                       Show Buzz usage commands
   kilo                       Show Kilo usage commands
   copilot                    Show GitHub Copilot CLI usage commands
   gemini                     Show Gemini CLI usage commands
@@ -45,6 +46,7 @@ For more info, run any command with the `--help` flag:
   ccusage hermes --help
   ccusage pi --help
   ccusage goose --help
+  ccusage buzz --help
   ccusage kilo --help
   ccusage copilot --help
   ccusage gemini --help

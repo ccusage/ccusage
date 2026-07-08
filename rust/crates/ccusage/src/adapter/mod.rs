@@ -5,6 +5,7 @@ use std::{
 
 pub(crate) mod all;
 pub(crate) mod amp;
+pub(crate) mod buzz;
 pub(crate) mod claude;
 pub(crate) mod codebuff;
 pub(crate) mod codex;

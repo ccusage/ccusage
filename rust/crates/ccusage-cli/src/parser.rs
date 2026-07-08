@@ -199,6 +199,13 @@ fn parse_command(
         "amp" => {
             parse_basic_agent_command(parser, shared, "amp", STANDARD_AGENT_REPORTS, Command::Amp)
         }
+        "buzz" => parse_basic_agent_command(
+            parser,
+            shared,
+            "buzz",
+            STANDARD_AGENT_REPORTS,
+            Command::Buzz,
+        ),
         "droid" => parse_basic_agent_command(
             parser,
             shared,
@@ -620,6 +627,7 @@ fn is_command(arg: &str) -> bool {
             | "codex"
             | "opencode"
             | "amp"
+            | "buzz"
             | "droid"
             | "codebuff"
             | "hermes"
@@ -777,6 +785,7 @@ fn is_agent_command(command: &str) -> bool {
             | "codex"
             | "opencode"
             | "amp"
+            | "buzz"
             | "droid"
             | "codebuff"
             | "hermes"
@@ -800,7 +809,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "kimi" | "qwen" | "openclaw" => {
+        | "gemini" | "kimi" | "qwen" | "openclaw" | "buzz" => {
             matches!(report, "daily" | "monthly" | "session")
         }
         _ => false,
@@ -818,6 +827,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "hermes" => "Hermes",
         "pi" => "pi-agent",
         "goose" => "Goose",
+        "buzz" => "Buzz",
         "kilo" => "Kilo",
         "copilot" => "GitHub Copilot CLI",
         "gemini" => "Gemini CLI",

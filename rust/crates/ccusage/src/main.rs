@@ -135,6 +135,7 @@ fn main() -> Result<()> {
         Some(Command::Codex(args)) => adapter::codex::run(args),
         Some(Command::OpenCode(args)) => adapter::opencode::run(args),
         Some(Command::Amp(args)) => adapter::amp::run(args),
+        Some(Command::Buzz(args)) => adapter::buzz::run(args),
         Some(Command::Droid(args)) => adapter::droid::run(args),
         Some(Command::Codebuff(args)) => adapter::codebuff::run(args),
         Some(Command::Hermes(args)) => adapter::hermes::run(args),

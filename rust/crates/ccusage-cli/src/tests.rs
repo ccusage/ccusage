@@ -191,6 +191,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Codex(args)) => agent_command_snapshot("codex", args),
         Some(Command::OpenCode(args)) => agent_command_snapshot("opencode", args),
         Some(Command::Amp(args)) => agent_command_snapshot("amp", args),
+        Some(Command::Buzz(args)) => agent_command_snapshot("buzz", args),
         Some(Command::Droid(args)) => agent_command_snapshot("droid", args),
         Some(Command::Codebuff(args)) => agent_command_snapshot("codebuff", args),
         Some(Command::Hermes(args)) => agent_command_snapshot("hermes", args),
@@ -357,8 +358,8 @@ fn applies_schema_documented_config_file_options() {
 fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
-        "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw",
+        "claude", "codex", "opencode", "amp", "buzz", "droid", "codebuff", "hermes", "pi", "goose",
+        "kilo", "copilot", "gemini", "kimi", "qwen", "openclaw",
     ];
 
     for agent in agents {
@@ -946,4 +947,42 @@ fn parses_openclaw_session_options() {
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
     assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+}
+
+#[test]
+fn parses_buzz_daily_command() {
+    let cli = parse(&["ccusage", "buzz", "daily", "--json"]);
+    let Some(Command::Buzz(args)) = cli.command else {
+        panic!("expected buzz command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Daily);
+    assert!(args.shared.json);
+}
+
+#[test]
+fn parses_buzz_session_command() {
+    let cli = parse(&["ccusage", "buzz", "session", "--json"]);
+    let Some(Command::Buzz(args)) = cli.command else {
+        panic!("expected buzz command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Session);
+    assert!(args.shared.json);
+}
+
+#[test]
+fn parses_buzz_monthly_command() {
+    let cli = parse(&["ccusage", "buzz", "monthly"]);
+    let Some(Command::Buzz(args)) = cli.command else {
+        panic!("expected buzz command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Monthly);
+}
+
+#[test]
+fn rejects_unsupported_buzz_weekly_report() {
+    let error = parse_error(&["ccusage", "buzz", "weekly"]);
+    assert!(
+        error.contains("weekly") && error.contains("buzz"),
+        "unexpected error: {error}"
+    );
 }

@@ -5,8 +5,8 @@ use serde_json::{Value, json};
 use crate::{
     CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result, SessionAccumulator, UsageSummary,
     adapter::{
-        amp, claude, codebuff, codex, copilot, droid, gemini, goose, hermes, kilo, kimi, openclaw,
-        opencode, pi, qwen,
+        amp, buzz, claude, codebuff, codex, copilot, droid, gemini, goose, hermes, kilo, kimi,
+        openclaw, opencode, pi, qwen,
     },
     cli::{AgentReportKind, CodexSpeed, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -160,6 +160,21 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
             },
             AgentLoadSpec {
                 index: 9,
+                agent: "buzz",
+                progress_agent: crate::progress::UsageLoadAgent::Buzz,
+                load: Box::new(|| {
+                    load_priced_summary_agent_rows(
+                        "buzz",
+                        load_kind,
+                        &loader_shared,
+                        &pricing,
+                        buzz::load_entries,
+                        buzz::summarize_entries,
+                    )
+                }),
+            },
+            AgentLoadSpec {
+                index: 10,
                 agent: "openclaw",
                 progress_agent: crate::progress::UsageLoadAgent::OpenClaw,
                 load: Box::new(|| {
@@ -173,7 +188,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                 }),
             },
             AgentLoadSpec {
-                index: 10,
+                index: 11,
                 agent: "kilo",
                 progress_agent: crate::progress::UsageLoadAgent::Kilo,
                 load: Box::new(|| {
@@ -188,7 +203,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                 }),
             },
             AgentLoadSpec {
-                index: 11,
+                index: 12,
                 agent: "copilot",
                 progress_agent: crate::progress::UsageLoadAgent::Copilot,
                 load: Box::new(|| {
@@ -203,7 +218,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                 }),
             },
             AgentLoadSpec {
-                index: 12,
+                index: 13,
                 agent: "gemini",
                 progress_agent: crate::progress::UsageLoadAgent::Gemini,
                 load: Box::new(|| {
@@ -218,7 +233,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                 }),
             },
             AgentLoadSpec {
-                index: 13,
+                index: 14,
                 agent: "kimi",
                 progress_agent: crate::progress::UsageLoadAgent::Kimi,
                 load: Box::new(|| {
@@ -233,7 +248,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                 }),
             },
             AgentLoadSpec {
-                index: 14,
+                index: 15,
                 agent: "qwen",
                 progress_agent: crate::progress::UsageLoadAgent::Qwen,
                 load: Box::new(|| load_qwen_rows(load_kind, &loader_shared)),
