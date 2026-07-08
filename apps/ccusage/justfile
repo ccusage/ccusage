@@ -39,6 +39,8 @@ test-statusline-all:
     just test-statusline-opus4
     @echo 'Testing Sonnet 4.1:'
     just test-statusline-sonnet41
+    @echo 'Testing Fable 5:'
+    just test-statusline-fable5
 
 test-statusline-opus4:
     just test-statusline-file test/statusline-test-opus4.json --offline
@@ -48,6 +50,9 @@ test-statusline-sonnet4:
 
 test-statusline-sonnet41:
     just test-statusline-file test/statusline-test-sonnet41.json --offline
+
+test-statusline-fable5:
+    just test-statusline-file test/statusline-test-fable5.json --offline
 
 test-statusline-file file *args:
     cargo run --manifest-path ../../rust/Cargo.toml --bin ccusage -- statusline {{args}} < {{file}}
