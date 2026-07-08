@@ -10,6 +10,16 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
     "date": "2026-01-02",
     "inputTokens": 100,
     "messageCount": 3,
+    "modelBreakdowns": [
+      {
+        "cacheCreationTokens": 10,
+        "cacheReadTokens": 5,
+        "cost": 0.25,
+        "inputTokens": 100,
+        "modelName": "gpt-5.2-codex",
+        "outputTokens": 50
+      }
+    ],
     "modelsUsed": [
       "gpt-5.2-codex",
       "claude-sonnet-4-20250514"
@@ -27,6 +37,16 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
         "date": "2026-01-02",
         "inputTokens": 100,
         "messageCount": 3,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 10,
+            "cacheReadTokens": 5,
+            "cost": 0.25,
+            "inputTokens": 100,
+            "modelName": "gpt-5.2-codex",
+            "outputTokens": 50
+          }
+        ],
         "modelsUsed": [
           "gpt-5.2-codex",
           "claude-sonnet-4-20250514"
@@ -52,6 +72,16 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
     "credits": 1.5,
     "inputTokens": 100,
     "messageCount": 3,
+    "modelBreakdowns": [
+      {
+        "cacheCreationTokens": 10,
+        "cacheReadTokens": 5,
+        "cost": 0.25,
+        "inputTokens": 100,
+        "modelName": "gpt-5.2-codex",
+        "outputTokens": 50
+      }
+    ],
     "modelsUsed": [
       "gpt-5.2-codex",
       "claude-sonnet-4-20250514"
@@ -69,6 +99,16 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
     "inputTokens": 100,
     "lastActivity": "2026-01-02T12:34:56.000Z",
     "messageCount": 3,
+    "modelBreakdowns": [
+      {
+        "cacheCreationTokens": 10,
+        "cacheReadTokens": 5,
+        "cost": 0.25,
+        "inputTokens": 100,
+        "modelName": "gpt-5.2-codex",
+        "outputTokens": 50
+      }
+    ],
     "modelsUsed": [
       "gpt-5.2-codex",
       "claude-sonnet-4-20250514"
@@ -87,6 +127,16 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
         "credits": 1.5,
         "inputTokens": 100,
         "messageCount": 3,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 10,
+            "cacheReadTokens": 5,
+            "cost": 0.25,
+            "inputTokens": 100,
+            "modelName": "gpt-5.2-codex",
+            "outputTokens": 50
+          }
+        ],
         "modelsUsed": [
           "gpt-5.2-codex",
           "claude-sonnet-4-20250514"
@@ -113,6 +163,16 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
     "credits": 1.5,
     "inputTokens": 100,
     "messageCount": 3,
+    "modelBreakdowns": [
+      {
+        "cacheCreationTokens": 10,
+        "cacheReadTokens": 5,
+        "cost": 0.25,
+        "inputTokens": 100,
+        "modelName": "gpt-5.2-codex",
+        "outputTokens": 50
+      }
+    ],
     "modelsUsed": [
       "gpt-5.2-codex",
       "claude-sonnet-4-20250514"

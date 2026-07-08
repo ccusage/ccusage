@@ -23,6 +23,15 @@ The `--all` flag is accepted for compatibility, but it is optional because unifi
 ccusage daily --all
 ```
 
+For automation, unified JSON reports can emit several report sections from one load:
+
+```bash
+ccusage daily --sections daily,monthly,session --json
+ccusage daily --by-agent --json
+```
+
+`--sections` accepts `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included, and table output prints each requested section as a separate table. `--by-agent` adds an `agents` array to daily, weekly, and monthly JSON rows; session rows are already source-specific.
+
 ## How Unified Views Work
 
 ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI. The same daily, weekly, monthly, and session views can run in two modes:

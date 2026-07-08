@@ -41,6 +41,7 @@ pub(crate) fn agent_summary_json(
         "totalTokens": row.total_tokens(),
         "totalCost": row.total_cost,
         "modelsUsed": row.models_used,
+        "modelBreakdowns": row.model_breakdowns,
     });
     if let (Some(obj), Some(credits)) = (value.as_object_mut(), row.credits) {
         obj.insert("credits".to_string(), json!(credits));

@@ -1,36 +1,139 @@
-use std::{collections::BTreeSet, io::IsTerminal};
+use std::{
+    collections::BTreeSet,
+    io::{BufWriter, IsTerminal, Write},
+};
 
+use serde::{
+    Serialize,
+    ser::{SerializeMap, Serializer},
+};
 use serde_json::{Value, json};
 
 use crate::{
     Align, Color, ModelBreakdown, Result, SimpleTable, UsageSummary,
     cli::{AgentReportKind, SharedArgs, SortOrder},
-    color, format_currency, format_models_multiline, format_number, json_float, print_box_title,
-    short_model_name, should_use_compact_layout,
+    cli_error, color, format_currency, format_models_multiline, format_number, json_float,
+    output::strip_cost_json,
+    print_box_title, short_model_name, should_use_compact_layout,
 };
 
 use super::types::AllRow;
 
+#[cfg(test)]
 pub(super) fn report_json(rows: &[AllRow], kind: AgentReportKind) -> Value {
+    report_json_with_agents(rows, kind, false)
+}
+
+pub(super) fn report_json_with_agents(
+    rows: &[AllRow],
+    kind: AgentReportKind,
+    include_agents: bool,
+) -> Value {
     json!({
-        rows_key(kind): rows.iter().map(row_json).collect::<Vec<_>>(),
+        rows_key(kind): rows.iter().map(|row| row_json(row, include_agents)).collect::<Vec<_>>(),
         "totals": totals_json(rows),
     })
 }
 
-fn row_json(row: &AllRow) -> Value {
-    let mut value = json!({
-        "period": row.period,
-        "agent": row.agent,
-        "modelsUsed": row.models_used,
-        "inputTokens": row.input_tokens,
-        "outputTokens": row.output_tokens,
-        "cacheCreationTokens": row.cache_creation_tokens,
-        "cacheReadTokens": row.cache_read_tokens,
-        "totalTokens": row.total_tokens,
-        "totalCost": json_float(row.total_cost),
-        "modelBreakdowns": row.model_breakdowns,
-    });
+pub(super) fn sections_report_json(
+    sections: &[(AgentReportKind, Vec<AllRow>)],
+    command_kind: AgentReportKind,
+    include_agents: bool,
+) -> OrderedJsonMap {
+    let mut fields = Vec::with_capacity(sections.len() + 1);
+    for (kind, rows) in sections {
+        fields.push((
+            rows_key(*kind),
+            Value::Array(
+                rows.iter()
+                    .map(|row| row_json(row, include_agents))
+                    .collect(),
+            ),
+        ));
+    }
+    let command_rows = sections
+        .iter()
+        .find_map(|(kind, rows)| (*kind == command_kind).then_some(rows.as_slice()))
+        .unwrap_or(&[]);
+    fields.push(("totals", totals_json(command_rows)));
+    OrderedJsonMap { fields }
+}
+
+pub(super) fn print_sections_report_json(
+    sections: &[(AgentReportKind, Vec<AllRow>)],
+    command_kind: AgentReportKind,
+    include_agents: bool,
+    jq: Option<&str>,
+    no_cost: bool,
+) -> Result<()> {
+    let mut report = sections_report_json(sections, command_kind, include_agents);
+    if no_cost {
+        report.strip_costs();
+    }
+    if let Some(filter) = jq {
+        let mut child = std::process::Command::new("jq")
+            .arg(filter)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::inherit())
+            .spawn()
+            .map_err(|error| cli_error(format!("failed to run jq: {error}")))?;
+        if let Some(stdin) = child.stdin.take() {
+            let mut stdin = BufWriter::new(stdin);
+            serde_json::to_writer(&mut stdin, &report)?;
+            stdin.write_all(b"\n")?;
+            stdin.flush()?;
+        }
+        let status = child.wait()?;
+        if !status.success() {
+            return Err(cli_error("jq failed"));
+        }
+    } else {
+        let stdout = std::io::stdout();
+        let mut stdout = BufWriter::new(stdout.lock());
+        serde_json::to_writer_pretty(&mut stdout, &report)?;
+        stdout.write_all(b"\n")?;
+        stdout.flush()?;
+    }
+    Ok(())
+}
+
+pub(super) struct OrderedJsonMap {
+    fields: Vec<(&'static str, Value)>,
+}
+
+impl OrderedJsonMap {
+    #[cfg(test)]
+    pub(super) fn get(&self, key: &str) -> Option<&Value> {
+        self.fields
+            .iter()
+            .find_map(|(field, value)| (*field == key).then_some(value))
+    }
+
+    fn strip_costs(&mut self) {
+        for (_, value) in &mut self.fields {
+            strip_cost_json(value);
+        }
+    }
+}
+
+impl Serialize for OrderedJsonMap {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.fields.len()))?;
+        for (key, value) in &self.fields {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+fn row_json(row: &AllRow, include_agents: bool) -> Value {
+    let mut value = agent_json(row);
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("period".to_string(), json!(row.period));
+    }
     if let (Some(obj), Some(agents)) = (value.as_object_mut(), row.metadata_agents.as_ref()) {
         obj.insert(
             "metadata".to_string(),
@@ -41,7 +144,30 @@ fn row_json(row: &AllRow) -> Value {
     } else if let (Some(obj), Some(metadata)) = (value.as_object_mut(), row.metadata.as_ref()) {
         obj.insert("metadata".to_string(), metadata.clone());
     }
+    if include_agents
+        && let (Some(obj), Some(agent_breakdowns)) =
+            (value.as_object_mut(), row.agent_breakdowns.as_ref())
+    {
+        obj.insert(
+            "agents".to_string(),
+            Value::Array(agent_breakdowns.iter().map(agent_json).collect()),
+        );
+    }
     value
+}
+
+fn agent_json(row: &AllRow) -> Value {
+    json!({
+        "agent": row.agent,
+        "modelsUsed": row.models_used,
+        "inputTokens": row.input_tokens,
+        "outputTokens": row.output_tokens,
+        "cacheCreationTokens": row.cache_creation_tokens,
+        "cacheReadTokens": row.cache_read_tokens,
+        "totalTokens": row.total_tokens,
+        "totalCost": json_float(row.total_cost),
+        "modelBreakdowns": row.model_breakdowns,
+    })
 }
 
 fn totals_json(rows: &[AllRow]) -> Value {

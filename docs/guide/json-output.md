@@ -29,6 +29,230 @@ ccusage blocks --json --no-cost
 
 This removes cost fields such as `totalCost`, `costUSD`, and nested `cost` values while keeping token, model, date, block, burn-rate, and projection fields.
 
+Unified reports also support JSON-oriented flags for dashboard-style consumers:
+
+```bash
+ccusage daily --sections daily,monthly,session --by-agent --json
+```
+
+`--sections` emits each requested unified section from one load. The invoked command's section is always included, and the top-level `totals` object remains the total for that invoked section. JSON keys are emitted with the invoked section first, then remaining sections in `daily`, `weekly`, `monthly`, `session` order, with `totals` last. `--by-agent` adds an `agents` array to daily, weekly, and monthly rows; session rows are already per-agent.
+
+```json
+{
+	"daily": [
+		{
+			"agent": "all",
+			"agents": [
+				{
+					"agent": "claude",
+					"cacheCreationTokens": 20,
+					"cacheReadTokens": 30,
+					"inputTokens": 500,
+					"modelBreakdowns": [
+						{
+							"cacheCreationTokens": 20,
+							"cacheReadTokens": 30,
+							"cost": 0.02,
+							"inputTokens": 500,
+							"modelName": "claude-sonnet-4-20250514",
+							"outputTokens": 100
+						}
+					],
+					"modelsUsed": ["claude-sonnet-4-20250514"],
+					"outputTokens": 100,
+					"totalCost": 0.02,
+					"totalTokens": 650
+				},
+				{
+					"agent": "codex",
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 100,
+					"inputTokens": 900,
+					"modelBreakdowns": [
+						{
+							"cacheCreationTokens": 0,
+							"cacheReadTokens": 100,
+							"cost": 0.0031375,
+							"inputTokens": 900,
+							"modelName": "gpt-5",
+							"outputTokens": 200
+						}
+					],
+					"modelsUsed": ["gpt-5"],
+					"outputTokens": 200,
+					"totalCost": 0.0031375,
+					"totalTokens": 1200
+				}
+			],
+			"cacheCreationTokens": 20,
+			"cacheReadTokens": 130,
+			"inputTokens": 1400,
+			"metadata": {
+				"agents": ["claude", "codex"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 20,
+					"cacheReadTokens": 30,
+					"cost": 0.02,
+					"inputTokens": 500,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 100
+				},
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 100,
+					"cost": 0.0031375,
+					"inputTokens": 900,
+					"modelName": "gpt-5",
+					"outputTokens": 200
+				}
+			],
+			"modelsUsed": ["claude-sonnet-4-20250514", "gpt-5"],
+			"outputTokens": 300,
+			"period": "2026-01-02",
+			"totalCost": 0.023137500000000002,
+			"totalTokens": 1850
+		}
+	],
+	"monthly": [
+		{
+			"agent": "all",
+			"agents": [
+				{
+					"agent": "claude",
+					"cacheCreationTokens": 20,
+					"cacheReadTokens": 30,
+					"inputTokens": 500,
+					"modelBreakdowns": [
+						{
+							"cacheCreationTokens": 20,
+							"cacheReadTokens": 30,
+							"cost": 0.02,
+							"inputTokens": 500,
+							"modelName": "claude-sonnet-4-20250514",
+							"outputTokens": 100
+						}
+					],
+					"modelsUsed": ["claude-sonnet-4-20250514"],
+					"outputTokens": 100,
+					"totalCost": 0.02,
+					"totalTokens": 650
+				},
+				{
+					"agent": "codex",
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 100,
+					"inputTokens": 900,
+					"modelBreakdowns": [
+						{
+							"cacheCreationTokens": 0,
+							"cacheReadTokens": 100,
+							"cost": 0.0031375,
+							"inputTokens": 900,
+							"modelName": "gpt-5",
+							"outputTokens": 200
+						}
+					],
+					"modelsUsed": ["gpt-5"],
+					"outputTokens": 200,
+					"totalCost": 0.0031375,
+					"totalTokens": 1200
+				}
+			],
+			"cacheCreationTokens": 20,
+			"cacheReadTokens": 130,
+			"inputTokens": 1400,
+			"metadata": {
+				"agents": ["claude", "codex"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 20,
+					"cacheReadTokens": 30,
+					"cost": 0.02,
+					"inputTokens": 500,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 100
+				},
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 100,
+					"cost": 0.0031375,
+					"inputTokens": 900,
+					"modelName": "gpt-5",
+					"outputTokens": 200
+				}
+			],
+			"modelsUsed": ["claude-sonnet-4-20250514", "gpt-5"],
+			"outputTokens": 300,
+			"period": "2026-01",
+			"totalCost": 0.023137500000000002,
+			"totalTokens": 1850
+		}
+	],
+	"session": [
+		{
+			"agent": "claude",
+			"cacheCreationTokens": 20,
+			"cacheReadTokens": 30,
+			"inputTokens": 500,
+			"metadata": {
+				"lastActivity": "2026-01-02T10:00:00.000Z"
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 20,
+					"cacheReadTokens": 30,
+					"cost": 0.02,
+					"inputTokens": 500,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 100
+				}
+			],
+			"modelsUsed": ["claude-sonnet-4-20250514"],
+			"outputTokens": 100,
+			"period": "claude-session",
+			"totalCost": 0.02,
+			"totalTokens": 650
+		},
+		{
+			"agent": "codex",
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 100,
+			"inputTokens": 900,
+			"metadata": {
+				"lastActivity": "2026-01-02T11:00:00.000Z",
+				"reasoningOutputTokens": 20
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 100,
+					"cost": 0.0031375,
+					"inputTokens": 900,
+					"modelName": "gpt-5",
+					"outputTokens": 200
+				}
+			],
+			"modelsUsed": ["gpt-5"],
+			"outputTokens": 200,
+			"period": "codex-session",
+			"totalCost": 0.0031375,
+			"totalTokens": 1200
+		}
+	],
+	"totals": {
+		"cacheCreationTokens": 20,
+		"cacheReadTokens": 130,
+		"inputTokens": 1400,
+		"outputTokens": 300,
+		"totalCost": 0.023137500000000002,
+		"totalTokens": 1850
+	}
+}
+```
+
 ## JSON Structure
 
 ### Daily Reports (Standard)

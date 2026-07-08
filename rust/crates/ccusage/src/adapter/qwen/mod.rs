@@ -126,6 +126,17 @@ mod tests {
             report["daily"][0]["modelsUsed"],
             json!(["qwen3-coder-plus"])
         );
+        assert_eq!(
+            report["daily"][0]["modelBreakdowns"],
+            json!([{
+                "modelName": "qwen3-coder-plus",
+                "inputTokens": 100,
+                "outputTokens": 50,
+                "cacheCreationTokens": 0,
+                "cacheReadTokens": 5,
+                "cost": 0.0
+            }])
+        );
     }
 
     #[test]

@@ -19,7 +19,10 @@ use crate::{
 
 use super::{
     report::sort_rows,
-    types::{AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllRow, LoadedAgentRows},
+    types::{
+        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllRow, AllSectionsLoadResult,
+        LoadedAgentRows,
+    },
 };
 
 pub(crate) const BUILT_IN_AGENT_NAMES: &[&str] = &[
@@ -28,6 +31,81 @@ pub(crate) const BUILT_IN_AGENT_NAMES: &[&str] = &[
 ];
 
 pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AllLoadResult> {
+    let pricing = load_pricing(shared);
+    let load_kind = load_kind_for_report(kind);
+    let loaded = load_base_rows(load_kind, shared, &pricing)?;
+    Ok(AllLoadResult {
+        rows: finish_rows(kind, loaded.rows, shared),
+        detected_agents: loaded.detected_agents,
+    })
+}
+
+pub(super) fn load_sections(
+    kinds: &[AgentReportKind],
+    shared: &SharedArgs,
+) -> Result<AllSectionsLoadResult> {
+    let pricing = load_pricing(shared);
+    let daily_base = needs_daily_family(kinds)
+        .then(|| load_base_rows(AgentReportKind::Daily, shared, &pricing))
+        .transpose()?;
+    let session_base = needs_session(kinds)
+        .then(|| load_base_rows(AgentReportKind::Session, shared, &pricing))
+        .transpose()?;
+
+    let daily_detected_agents = daily_base
+        .as_ref()
+        .map(|base| base.detected_agents.clone())
+        .unwrap_or_default();
+    let session_detected_agents = session_base
+        .as_ref()
+        .map(|base| base.detected_agents.clone())
+        .unwrap_or_default();
+
+    let mut sections = Vec::with_capacity(kinds.len());
+    for kind in kinds {
+        let rows = if *kind == AgentReportKind::Session {
+            session_base
+                .as_ref()
+                .map(|base| finish_rows(*kind, base.rows.clone(), shared))
+                .unwrap_or_default()
+        } else {
+            daily_base
+                .as_ref()
+                .map(|base| finish_rows(*kind, base.rows.clone(), shared))
+                .unwrap_or_default()
+        };
+        sections.push((*kind, rows));
+    }
+
+    Ok(AllSectionsLoadResult {
+        sections,
+        daily_detected_agents,
+        session_detected_agents,
+    })
+}
+
+fn load_pricing(shared: &SharedArgs) -> PricingMap {
+    PricingMap::load_with_overrides(
+        shared.offline,
+        crate::log_level() != Some(0),
+        shared.pricing_overrides.iter(),
+    )
+}
+
+fn load_kind_for_report(kind: AgentReportKind) -> AgentReportKind {
+    match kind {
+        AgentReportKind::Session => AgentReportKind::Session,
+        AgentReportKind::Daily | AgentReportKind::Weekly | AgentReportKind::Monthly => {
+            AgentReportKind::Daily
+        }
+    }
+}
+
+fn load_base_rows(
+    load_kind: AgentReportKind,
+    shared: &SharedArgs,
+    pricing: &PricingMap,
+) -> Result<AllLoadResult> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
             && crate::progress::should_show_usage_load_progress(
@@ -35,17 +113,6 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                 crate::progress::usage_load_output_is_tty(),
             ),
     );
-    let pricing = PricingMap::load_with_overrides(
-        shared.offline,
-        crate::log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    );
-    let load_kind = match kind {
-        AgentReportKind::Session => AgentReportKind::Session,
-        AgentReportKind::Daily | AgentReportKind::Weekly | AgentReportKind::Monthly => {
-            AgentReportKind::Daily
-        }
-    };
     let loader_shared = SharedArgs {
         json: true,
         ..shared.clone()
@@ -61,7 +128,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
             index: 1,
             agent: BUILT_IN_AGENT_NAMES[1],
             progress_agent: crate::progress::UsageLoadAgent::Codex,
-            load: Box::new(|| load_codex_rows(load_kind, &loader_shared, &pricing)),
+            load: Box::new(|| load_codex_rows(load_kind, &loader_shared, pricing)),
         },
         AgentLoadSpec {
             index: 2,
@@ -86,7 +153,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "amp",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     amp::load_entries,
                     amp::summarize_entries,
                 )
@@ -101,7 +168,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "droid",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     droid::load_entries,
                     droid::summarize_entries,
                 )
@@ -116,7 +183,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "codebuff",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     codebuff::load_entries,
                     codebuff::summarize_entries,
                 )
@@ -131,7 +198,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "hermes",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     hermes::load_entries,
                     hermes::summarize_entries,
                 )
@@ -142,7 +209,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
             agent: BUILT_IN_AGENT_NAMES[7],
             progress_agent: crate::progress::UsageLoadAgent::Pi,
             load: Box::new(|| {
-                load_pi_format_agent_rows("pi", None, load_kind, &loader_shared, &pricing)
+                load_pi_format_agent_rows("pi", None, load_kind, &loader_shared, pricing)
             }),
         },
         AgentLoadSpec {
@@ -154,7 +221,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "goose",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     goose::load_entries,
                     goose::summarize_entries,
                 )
@@ -169,7 +236,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "openclaw",
                     load_kind,
                     &loader_shared,
-                    || openclaw::load_entries(&loader_shared, None, Some(&pricing)),
+                    || openclaw::load_entries(&loader_shared, None, Some(pricing)),
                     openclaw::summarize_entries,
                 )
             }),
@@ -183,7 +250,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "kilo",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     kilo::load_entries,
                     kilo::summarize_entries,
                 )
@@ -198,7 +265,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "copilot",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     copilot::load_entries,
                     copilot::summarize_entries,
                 )
@@ -213,7 +280,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "gemini",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     gemini::load_entries,
                     gemini::summarize_entries,
                 )
@@ -228,7 +295,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                     "kimi",
                     load_kind,
                     &loader_shared,
-                    &pricing,
+                    pricing,
                     kimi::load_entries,
                     kimi::summarize_entries,
                 )
@@ -247,7 +314,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
         let paths = store.paths;
         let index = specs.len();
         let loader_shared_ref = &loader_shared;
-        let pricing_ref = &pricing;
+        let pricing_ref = pricing;
         specs.push(AgentLoadSpec {
             index,
             agent,
@@ -274,23 +341,24 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
             loaded.agent_rows,
         );
     }
+    Ok(AllLoadResult {
+        rows,
+        detected_agents,
+    })
+}
+
+fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs) -> Vec<AllRow> {
     if kind == AgentReportKind::Session {
         for row in &mut rows {
             row.metadata_agents = None;
         }
         sort_rows(&mut rows, &shared.order);
-        return Ok(AllLoadResult {
-            rows,
-            detected_agents,
-        });
+        return rows;
     }
 
     let mut aggregated = aggregate_rows(rows, kind);
     sort_rows(&mut aggregated, &shared.order);
-    Ok(AllLoadResult {
-        rows: aggregated,
-        detected_agents,
-    })
+    aggregated
 }
 
 pub(super) fn load_agent_rows_parallel(
@@ -453,9 +521,8 @@ fn load_pi_format_agent_rows(
     let mut entries = pi::load_entries(shared, custom_path, Some(pricing))?;
     let detected = !entries.is_empty();
     let summaries = if kind == AgentReportKind::Session {
-        let mut summaries = summarize_entry_sessions(&entries)?;
-        filter_session_summaries(&mut summaries, shared);
-        summaries
+        filter_loaded_entries_by_date(&mut entries, shared);
+        summarize_entry_sessions(&entries)?
     } else {
         filter_loaded_entries_by_date(&mut entries, shared);
         pi::summarize_entries(&entries, kind)?
@@ -617,6 +684,14 @@ fn summarize_entry_sessions(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>
         .into_values()
         .map(|group| group.into_summary())
         .collect()
+}
+
+fn needs_daily_family(kinds: &[AgentReportKind]) -> bool {
+    kinds.iter().any(|kind| *kind != AgentReportKind::Session)
+}
+
+fn needs_session(kinds: &[AgentReportKind]) -> bool {
+    kinds.contains(&AgentReportKind::Session)
 }
 
 fn filter_session_summaries(rows: &mut Vec<UsageSummary>, shared: &SharedArgs) {
@@ -915,9 +990,10 @@ mod tests {
     }
 
     #[test]
-    fn default_pi_unified_session_window_pins_main_until_day_drop_bug() {
+    fn default_pi_unified_session_window_keeps_until_day_like_pi_path() {
         let fixture = fs_fixture!({
             "pi/sessions/project-a/agent_until-day.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+            "pi/sessions/project-a/agent_after-day.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
         });
         let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("pi/sessions"));
         let shared = SharedArgs {
@@ -935,6 +1011,7 @@ mod tests {
             .rows
             .iter()
             .filter(|row| row.agent == "pi")
+            .cloned()
             .collect::<Vec<_>>();
         let pi_path_rows = pi_path_subcommand_rows(
             fixture.path("pi/sessions").to_str().unwrap(),
@@ -944,12 +1021,12 @@ mod tests {
         )
         .unwrap();
 
-        // Known pre-existing main bug: unified default pi filters session rows by
-        // RFC3339 lastActivity, so sessions on the inclusive --until day are
-        // dropped even though `ccusage pi session --pi-path` keeps them.
-        assert!(pi_rows.is_empty());
         assert_eq!(
-            usage_fingerprint(&pi_path_rows),
+            usage_fingerprint(&pi_rows),
+            usage_fingerprint(&pi_path_rows)
+        );
+        assert_eq!(
+            usage_fingerprint(&pi_rows),
             vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
         );
     }

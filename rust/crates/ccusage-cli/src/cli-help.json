@@ -84,6 +84,15 @@
 			"default": "false"
 		},
 		{
+			"flags": "--sections <sections>",
+			"description": "Emit multiple unified report sections from one load (daily, weekly, monthly, session)"
+		},
+		{
+			"flags": "--by-agent",
+			"description": "Include per-agent JSON breakdowns in unified report rows",
+			"default": "false"
+		},
+		{
 			"flags": "-O, --offline",
 			"description": "Use cached pricing data where supported",
 			"default": "false"

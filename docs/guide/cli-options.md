@@ -129,6 +129,20 @@ ccusage monthly --config /path/to/team-config.json
 
 ## Command-Specific Options
 
+### Unified Report Options
+
+These options apply to `ccusage daily`, `ccusage weekly`, `ccusage monthly`, and `ccusage session` when they are aggregating all detected sources:
+
+```bash
+# Emit several JSON report sections from one source load
+ccusage daily --sections daily,monthly,session --json
+
+# Add per-agent breakdowns to daily, weekly, and monthly JSON rows
+ccusage daily --by-agent --json
+```
+
+`--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. For table output, each requested section is printed as a separate table. `--by-agent` is JSON-only; session rows are already per-agent.
+
 ### Daily Command
 
 Additional options for daily reports:
