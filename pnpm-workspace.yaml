@@ -16,7 +16,6 @@ catalogs:
   llm-docs:
     '@gunshi/docs': ^0.31.0
   release:
-    bumpp: ^11.1.0
     changelogithub: ^14.0.0
     pkg-pr-new: ^0.0.75
   runtime:

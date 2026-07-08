@@ -69,11 +69,6 @@ update-models-dev-pricing:
     just gen-models-dev-pricing
     just check
 
-# Bump every package version (Rust included via bump.config.ts), then commit, tag, push
-release: ccusage::typecheck ccusage::build
-    pnpm bumpp -r
-    git checkout -- $(git ls-files '*package.json')
-
 # Sync the Rust workspace version (Cargo.toml + Cargo.lock) to apps/ccusage/package.json; run by tagpr's postVersionCommand
 sync-rust-version:
     cargo set-version --manifest-path rust/Cargo.toml --workspace "$(jq -r .version apps/ccusage/package.json)"
