@@ -11,6 +11,9 @@ on:
 jobs:
   build-native-packages:
     name: ${{ matrix.name }}
+    # Only release from tag refs. The push trigger is tag-only, and tagpr.yaml
+    # dispatches with --ref <tag>, so a manual branch dispatch must not publish.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -74,6 +77,7 @@ jobs:
   npm:
     needs:
       - build-native-packages
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     permissions:
@@ -109,6 +113,7 @@ jobs:
   release:
     needs:
       - npm
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: blacksmith-32vcpu-ubuntu-2404-arm
     permissions:
       contents: write
