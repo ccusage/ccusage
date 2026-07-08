@@ -744,7 +744,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(usage_fingerprint(&pi_rows), usage_fingerprint(&pi_path_rows));
+        assert_eq!(
+            usage_fingerprint(&pi_rows),
+            usage_fingerprint(&pi_path_rows)
+        );
         assert_eq!(
             usage_fingerprint(&pi_rows),
             vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
