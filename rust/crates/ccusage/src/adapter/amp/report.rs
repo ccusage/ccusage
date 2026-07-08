@@ -4,8 +4,8 @@ use std::io::IsTerminal;
 use crate::{
     Align, BucketKind, Color, LoadedEntry, Result, SimpleTable, adapter::opencode,
     cli::AgentReportKind, cli::SharedArgs, cli::WeekDay, format_currency, format_models_multiline,
-    format_number, json_value_u64, print_box_title, should_use_compact_layout, summarize_by_key,
-    summarize_summaries_by_bucket, totals_json,
+    format_number, json_value_u64, print_box_title, short_model_name, should_use_compact_layout,
+    summarize_by_key, summarize_summaries_by_bucket, totals_json,
 };
 
 pub(crate) fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
@@ -169,7 +169,7 @@ pub(crate) fn print_table_for_agent(
             .unwrap_or("");
         let models = format_models_multiline(&row.models_used);
         if compact {
-            let mut row = vec![
+            let mut row_cells = vec![
                 label.to_string(),
                 models,
                 format_number(row.input_tokens),
@@ -178,11 +178,11 @@ pub(crate) fn print_table_for_agent(
                 format_currency(row.total_cost),
             ];
             if shared.no_cost {
-                row.pop();
+                row_cells.pop();
             }
-            table.push(row);
+            table.push(row_cells);
         } else {
-            let mut row = vec![
+            let mut row_cells = vec![
                 label.to_string(),
                 models,
                 format_number(row.input_tokens),
@@ -199,9 +199,14 @@ pub(crate) fn print_table_for_agent(
                 format_currency(row.total_cost),
             ];
             if shared.no_cost {
-                row.pop();
+                row_cells.pop();
             }
-            table.push(row);
+            table.push(row_cells);
+        }
+
+        // Emit per-model breakdown sub-rows when --breakdown is set.
+        if shared.breakdown {
+            push_agent_breakdown_rows(&mut table, row, compact, shared);
         }
     }
 
@@ -277,6 +282,73 @@ pub(crate) fn print_table_for_agent(
     }
     table.print()?;
     Ok(())
+}
+
+/// Emit `└─ <model>` sub-rows for each model in `row.model_breakdowns`.
+///
+/// Column layout must match `print_table_for_agent` exactly:
+/// - compact (with cost):    label | models | input | output | credits | cost
+/// - compact (no_cost):      label | models | input | output | credits
+/// - full (with cost):       label | models | input | output | cache_create | cache_read | total | credits | cost
+/// - full (no_cost):         label | models | input | output | cache_create | cache_read | total | credits
+///
+/// Breakdown rows use the label col for the model indicator, leave the models
+/// col blank, and show per-model token counts + cost. Credits is left blank
+/// (agents don't track credits per-model).
+fn push_agent_breakdown_rows(
+    table: &mut SimpleTable,
+    row: &crate::UsageSummary,
+    compact: bool,
+    shared: &SharedArgs,
+) {
+    for breakdown in &row.model_breakdowns {
+        let total = breakdown.input_tokens
+            + breakdown.output_tokens
+            + breakdown.cache_creation_tokens
+            + breakdown.cache_read_tokens;
+        let mut values = if compact {
+            vec![
+                crate::color(
+                    shared,
+                    format!("  └─ {}", short_model_name(&breakdown.model_name)),
+                    Color::Grey,
+                ),
+                String::new(), // models col — blank for sub-rows
+                crate::color(shared, format_number(breakdown.input_tokens), Color::Grey),
+                crate::color(shared, format_number(breakdown.output_tokens), Color::Grey),
+                String::new(), // credits — not tracked per-model
+                crate::color(shared, format_currency(breakdown.cost), Color::Grey),
+            ]
+        } else {
+            vec![
+                crate::color(
+                    shared,
+                    format!("  └─ {}", short_model_name(&breakdown.model_name)),
+                    Color::Grey,
+                ),
+                String::new(), // models col — blank for sub-rows
+                crate::color(shared, format_number(breakdown.input_tokens), Color::Grey),
+                crate::color(shared, format_number(breakdown.output_tokens), Color::Grey),
+                crate::color(
+                    shared,
+                    format_number(breakdown.cache_creation_tokens),
+                    Color::Grey,
+                ),
+                crate::color(
+                    shared,
+                    format_number(breakdown.cache_read_tokens),
+                    Color::Grey,
+                ),
+                crate::color(shared, format_number(total), Color::Grey),
+                String::new(), // credits — not tracked per-model
+                crate::color(shared, format_currency(breakdown.cost), Color::Grey),
+            ]
+        };
+        if shared.no_cost {
+            values.pop();
+        }
+        table.push(values);
+    }
 }
 
 fn agent_report_label(kind: AgentReportKind) -> &'static str {
