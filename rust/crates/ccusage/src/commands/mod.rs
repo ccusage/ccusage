@@ -402,6 +402,19 @@ fn resolve_model_label<'a>(
         .unwrap_or(display_name)
 }
 
+/// Format the model segment of the statusline.
+///
+/// Appends the reasoning effort level reported by Claude Code (e.g.
+/// `Fable 5 (high)`) when present. Claude Code omits the `effort` field for
+/// models without the effort parameter, so the segment falls back to the bare
+/// model label in that case.
+fn format_model_segment(model_label: &str, effort: Option<&HookEffort>) -> String {
+    match effort {
+        Some(effort) if !effort.level.is_empty() => format!("{model_label} ({})", effort.level),
+        _ => model_label.to_string(),
+    }
+}
+
 fn render_statusline(
     hook: &StatuslineHook,
     args: &StatuslineArgs,
@@ -518,10 +531,11 @@ fn render_statusline(
     };
 
     let model_label = resolve_model_label(&args.model_label_aliases, &hook.model.display_name);
+    let model_segment = format_model_segment(model_label, hook.effort.as_ref());
 
     Ok(format!(
         "🤖 {} | 💰 {} session / {} today / {}{} | 🧠 {}",
-        model_label,
+        model_segment,
         session_display,
         format_currency(today_cost),
         block_info,
@@ -801,12 +815,18 @@ struct StatuslineHook {
     model: HookModel,
     cost: Option<HookCost>,
     context_window: Option<HookContext>,
+    effort: Option<HookEffort>,
 }
 
 #[derive(Debug, Deserialize)]
 struct HookModel {
     id: Option<String>,
     display_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct HookEffort {
+    level: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -993,5 +1013,54 @@ mod tests {
         let aliases = std::collections::HashMap::new();
 
         assert_eq!(resolve_model_label(&aliases, "Opus 4.1"), "Opus 4.1");
+    }
+
+    #[test]
+    fn appends_effort_level_to_model_segment() {
+        let effort = HookEffort {
+            level: "high".to_string(),
+        };
+
+        assert_eq!(
+            format_model_segment("Fable 5", Some(&effort)),
+            "Fable 5 (high)"
+        );
+    }
+
+    #[test]
+    fn omits_effort_from_model_segment_when_absent_or_empty() {
+        let empty = HookEffort {
+            level: String::new(),
+        };
+
+        assert_eq!(format_model_segment("Fable 5", None), "Fable 5");
+        assert_eq!(format_model_segment("Fable 5", Some(&empty)), "Fable 5");
+    }
+
+    #[test]
+    fn parses_statusline_hook_with_and_without_effort() {
+        let with_effort: StatuslineHook = serde_json::from_str(
+            r#"{
+                "session_id": "session",
+                "transcript_path": "/tmp/transcript.jsonl",
+                "model": {"id": "claude-fable-5", "display_name": "Fable 5"},
+                "effort": {"level": "xhigh"}
+            }"#,
+        )
+        .unwrap();
+        let without_effort: StatuslineHook = serde_json::from_str(
+            r#"{
+                "session_id": "session",
+                "transcript_path": "/tmp/transcript.jsonl",
+                "model": {"id": "claude-sonnet-4-20250514", "display_name": "Sonnet 4"}
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            with_effort.effort.map(|effort| effort.level).as_deref(),
+            Some("xhigh")
+        );
+        assert!(without_effort.effort.is_none());
     }
 }
