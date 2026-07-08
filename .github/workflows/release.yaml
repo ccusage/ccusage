@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - '*'
+  # Dispatched by tagpr.yaml with --ref <tag>, because tags pushed with
+  # GITHUB_TOKEN do not trigger the `push: tags` event
+  workflow_dispatch:
 
 jobs:
   build-native-packages:

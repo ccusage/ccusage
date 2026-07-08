@@ -1,0 +1,7 @@
+[tagpr]
+	releaseBranch = main
+	vPrefix = true
+	changelog = false
+	release = false
+	versionFile = package.json,apps/ccusage/package.json,docs/package.json,packages/ccusage-darwin-arm64/package.json,packages/ccusage-darwin-x64/package.json,packages/ccusage-linux-arm64/package.json,packages/ccusage-linux-x64/package.json,packages/ccusage-win32-arm64/package.json,packages/ccusage-win32-x64/package.json
+	postVersionCommand = nix develop --command just sync-rust-version
