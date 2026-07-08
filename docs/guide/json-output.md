@@ -58,9 +58,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 							"outputTokens": 100
 						}
 					],
-					"modelsUsed": [
-						"claude-sonnet-4-20250514"
-					],
+					"modelsUsed": ["claude-sonnet-4-20250514"],
 					"outputTokens": 100,
 					"totalCost": 0.02,
 					"totalTokens": 650
@@ -80,9 +78,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 							"outputTokens": 200
 						}
 					],
-					"modelsUsed": [
-						"gpt-5"
-					],
+					"modelsUsed": ["gpt-5"],
 					"outputTokens": 200,
 					"totalCost": 0.0031375,
 					"totalTokens": 1200
@@ -92,10 +88,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 			"cacheReadTokens": 130,
 			"inputTokens": 1400,
 			"metadata": {
-				"agents": [
-					"claude",
-					"codex"
-				]
+				"agents": ["claude", "codex"]
 			},
 			"modelBreakdowns": [
 				{
@@ -115,10 +108,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 					"outputTokens": 200
 				}
 			],
-			"modelsUsed": [
-				"claude-sonnet-4-20250514",
-				"gpt-5"
-			],
+			"modelsUsed": ["claude-sonnet-4-20250514", "gpt-5"],
 			"outputTokens": 300,
 			"period": "2026-01-02",
 			"totalCost": 0.023137500000000002,
@@ -144,9 +134,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 							"outputTokens": 100
 						}
 					],
-					"modelsUsed": [
-						"claude-sonnet-4-20250514"
-					],
+					"modelsUsed": ["claude-sonnet-4-20250514"],
 					"outputTokens": 100,
 					"totalCost": 0.02,
 					"totalTokens": 650
@@ -166,9 +154,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 							"outputTokens": 200
 						}
 					],
-					"modelsUsed": [
-						"gpt-5"
-					],
+					"modelsUsed": ["gpt-5"],
 					"outputTokens": 200,
 					"totalCost": 0.0031375,
 					"totalTokens": 1200
@@ -178,10 +164,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 			"cacheReadTokens": 130,
 			"inputTokens": 1400,
 			"metadata": {
-				"agents": [
-					"claude",
-					"codex"
-				]
+				"agents": ["claude", "codex"]
 			},
 			"modelBreakdowns": [
 				{
@@ -201,10 +184,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 					"outputTokens": 200
 				}
 			],
-			"modelsUsed": [
-				"claude-sonnet-4-20250514",
-				"gpt-5"
-			],
+			"modelsUsed": ["claude-sonnet-4-20250514", "gpt-5"],
 			"outputTokens": 300,
 			"period": "2026-01",
 			"totalCost": 0.023137500000000002,
@@ -230,9 +210,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 					"outputTokens": 100
 				}
 			],
-			"modelsUsed": [
-				"claude-sonnet-4-20250514"
-			],
+			"modelsUsed": ["claude-sonnet-4-20250514"],
 			"outputTokens": 100,
 			"period": "claude-session",
 			"totalCost": 0.02,
@@ -257,9 +235,7 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 					"outputTokens": 200
 				}
 			],
-			"modelsUsed": [
-				"gpt-5"
-			],
+			"modelsUsed": ["gpt-5"],
 			"outputTokens": 200,
 			"period": "codex-session",
 			"totalCost": 0.0031375,
