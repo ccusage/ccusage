@@ -64,7 +64,7 @@ impl SimpleTable {
         Ok(())
     }
 
-    fn render_lines(&self) -> Vec<String> {
+    pub fn render_lines(&self) -> Vec<String> {
         let widths = self.column_widths();
         let mut lines = Vec::new();
         lines.push(border('┌', '┬', '┐', &widths));

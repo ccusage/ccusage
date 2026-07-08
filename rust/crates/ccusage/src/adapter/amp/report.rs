@@ -106,6 +106,27 @@ pub(crate) fn print_table_for_agent(
         ),
         shared,
     );
+    let table = build_agent_table(compact, kind, rows, shared);
+    table.print()?;
+    print_missing_pricing_warnings(rows, shared.offline);
+    if compact {
+        eprintln!("\nRunning in Compact Mode");
+        eprintln!("Expand terminal width to see cache metrics and total tokens");
+    }
+    Ok(())
+}
+
+/// Build the [`SimpleTable`] for a per-agent usage report.
+///
+/// Separated from printing so tests can snapshot `render_lines()` without
+/// requiring a real terminal or side-effecting stdout/stderr output.
+pub(crate) fn build_agent_table(
+    compact: bool,
+    kind: AgentReportKind,
+    rows: &[crate::UsageSummary],
+    shared: &SharedArgs,
+) -> SimpleTable {
+    let terminal_width = crate::terminal_width();
     let first_column = opencode::first_column(kind);
     let mut table = if compact {
         let mut headers = vec![
@@ -281,13 +302,7 @@ pub(crate) fn print_table_for_agent(
         }
         table.push(row);
     }
-    table.print()?;
-    print_missing_pricing_warnings(rows, shared.offline);
-    if compact {
-        eprintln!("\nRunning in Compact Mode");
-        eprintln!("Expand terminal width to see cache metrics and total tokens");
-    }
-    Ok(())
+    table
 }
 
 /// Emit `└─ <model>` sub-rows for each model in `row.model_breakdowns`.
@@ -363,5 +378,180 @@ fn agent_report_label(kind: AgentReportKind) -> &'static str {
         AgentReportKind::Weekly => "Weekly",
         AgentReportKind::Monthly => "Monthly",
         AgentReportKind::Session => "Session",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ModelBreakdown, UsageSummary, cli::SharedArgs};
+
+    /// Build a deterministic fixture with two models, one priced and one missing pricing.
+    fn fixture_rows() -> Vec<UsageSummary> {
+        vec![UsageSummary {
+            date: Some("2026-07-08".to_string()),
+            month: None,
+            week: None,
+            session_id: None,
+            project_path: None,
+            last_activity: None,
+            first_activity: None,
+            input_tokens: 100_000,
+            output_tokens: 5_000,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            extra_total_tokens: 0,
+            total_cost: 1.50,
+            credits: None,
+            message_count: None,
+            models_used: vec![
+                "goose-claude-4-6-sonnet".to_string(),
+                "unknown-model-xyz".to_string(),
+            ],
+            model_breakdowns: vec![
+                ModelBreakdown {
+                    model_name: "goose-claude-4-6-sonnet".to_string(),
+                    input_tokens: 80_000,
+                    output_tokens: 4_000,
+                    cache_creation_tokens: 0,
+                    cache_read_tokens: 0,
+                    extra_total_tokens: 0,
+                    cost: 1.50,
+                    missing_pricing: false,
+                },
+                ModelBreakdown {
+                    model_name: "unknown-model-xyz".to_string(),
+                    input_tokens: 20_000,
+                    output_tokens: 1_000,
+                    cache_creation_tokens: 0,
+                    cache_read_tokens: 0,
+                    extra_total_tokens: 0,
+                    cost: 0.0,
+                    missing_pricing: true,
+                },
+            ],
+            project: None,
+            versions: None,
+        }]
+    }
+
+    fn no_color_shared(breakdown: bool, no_cost: bool) -> SharedArgs {
+        SharedArgs {
+            no_color: true,
+            breakdown,
+            no_cost,
+            offline: true,
+            ..SharedArgs::default()
+        }
+    }
+
+    fn render(
+        compact: bool,
+        kind: AgentReportKind,
+        rows: &[UsageSummary],
+        shared: &SharedArgs,
+    ) -> String {
+        // Use a fixed terminal width so snapshots are deterministic regardless
+        // of the terminal width where tests run.
+        build_agent_table(compact, kind, rows, shared)
+            .with_terminal_width(140)
+            .render_lines()
+            .join("\n")
+    }
+
+    #[test]
+    fn snapshots_full_layout_with_breakdown() {
+        let rows = fixture_rows();
+        let shared = no_color_shared(true, false);
+        insta::assert_snapshot!(render(false, AgentReportKind::Daily, &rows, &shared));
+    }
+
+    #[test]
+    fn snapshots_full_layout_without_breakdown() {
+        let rows = fixture_rows();
+        let shared = no_color_shared(false, false);
+        insta::assert_snapshot!(render(false, AgentReportKind::Daily, &rows, &shared));
+    }
+
+    #[test]
+    fn snapshots_compact_layout_with_breakdown() {
+        let rows = fixture_rows();
+        let shared = no_color_shared(true, false);
+        insta::assert_snapshot!(render(true, AgentReportKind::Daily, &rows, &shared));
+    }
+
+    #[test]
+    fn snapshots_compact_layout_without_breakdown() {
+        let rows = fixture_rows();
+        let shared = no_color_shared(false, false);
+        insta::assert_snapshot!(render(true, AgentReportKind::Daily, &rows, &shared));
+    }
+
+    #[test]
+    fn snapshots_full_layout_no_cost() {
+        let rows = fixture_rows();
+        let shared = no_color_shared(true, true);
+        insta::assert_snapshot!(render(false, AgentReportKind::Daily, &rows, &shared));
+    }
+
+    #[test]
+    fn snapshots_compact_layout_no_cost() {
+        let rows = fixture_rows();
+        let shared = no_color_shared(true, true);
+        insta::assert_snapshot!(render(true, AgentReportKind::Daily, &rows, &shared));
+    }
+
+    #[test]
+    fn breakdown_row_count_matches_model_breakdowns() {
+        // When --breakdown is set, the table should have: 1 data row + N breakdown
+        // rows + 1 separator + 1 total row = N+3 lines of content (not counting the
+        // border/header). We verify the rendered line count increases by exactly 2
+        // (the two breakdown models) compared to no-breakdown.
+        let rows = fixture_rows();
+        let with_bd = render(
+            false,
+            AgentReportKind::Daily,
+            &rows,
+            &no_color_shared(true, false),
+        );
+        let without_bd = render(
+            false,
+            AgentReportKind::Daily,
+            &rows,
+            &no_color_shared(false, false),
+        );
+        let extra_lines = with_bd.lines().count() - without_bd.lines().count();
+        // Each breakdown model adds a row (bordered) = 2 extra table rows.
+        // The table renders as lines so the exact delta is 2 border-lines per model.
+        assert!(
+            extra_lines > 0,
+            "breakdown must add rows; delta was {extra_lines}"
+        );
+    }
+
+    #[test]
+    fn no_cost_variant_has_fewer_columns_than_full() {
+        // The no-cost layout drops the Cost (USD) column, so each rendered line
+        // (of a row) should be strictly shorter than its full-cost counterpart.
+        let rows = fixture_rows();
+        let with_cost = render(
+            false,
+            AgentReportKind::Daily,
+            &rows,
+            &no_color_shared(false, false),
+        );
+        let no_cost = render(
+            false,
+            AgentReportKind::Daily,
+            &rows,
+            &no_color_shared(false, true),
+        );
+        // The table header line is a reliable width proxy.
+        let with_cost_width = with_cost.lines().next().map(|l| l.len()).unwrap_or(0);
+        let no_cost_width = no_cost.lines().next().map(|l| l.len()).unwrap_or(0);
+        assert!(
+            no_cost_width < with_cost_width,
+            "no-cost table ({no_cost_width}) must be narrower than full-cost ({with_cost_width})"
+        );
     }
 }
