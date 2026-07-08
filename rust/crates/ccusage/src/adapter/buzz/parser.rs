@@ -21,6 +21,8 @@ struct TurnTokens {
 #[serde(rename_all = "camelCase")]
 struct AgentTurnMetricPayload {
     #[serde(default)]
+    harness: Option<String>,
+    #[serde(default)]
     model: Option<String>,
     #[serde(default)]
     session_id: Option<String>,
@@ -46,22 +48,30 @@ pub(super) fn payload_to_entry(
 ) -> Option<LoadedEntry> {
     let payload = serde_json::from_str::<AgentTurnMetricPayload>(raw_json).ok()?;
 
+    // FIX 1: Only process buzz-agent frames. Other harnesses (e.g. "goose") also
+    // land in the NIP-AM archive but have their own native adapters — including them
+    // here would double-count in unified all-agent reports.
+    if payload.harness.as_deref() != Some("buzz-agent") {
+        return None;
+    }
+
     let timestamp = crate::parse_ts_timestamp(payload.timestamp.trim())?;
-    let turn_seq = payload.turn_seq.unwrap_or(0);
 
     // Accounting rule:
     //   - turn present → use turn tokens (per-turn delta)
-    //   - turn null + turnSeq == 1 → use cumulative (it IS the first turn)
-    //   - turn null + turnSeq  > 1 → SKIP (dropping avoids double-count)
+    //   - turn null + turnSeq == Some(1) → use cumulative (it IS the first turn)
+    //   - turn null + turnSeq == None or >1 → SKIP (dropping avoids double-count)
     let (input_tokens, output_tokens) = match &payload.turn {
         Some(t) => (t.input_tokens.unwrap_or(0), t.output_tokens.unwrap_or(0)),
         None => {
-            if turn_seq <= 1 {
-                // First turn: cumulative == this turn's usage.
+            if payload.turn_seq == Some(1) {
+                // FIX 2: Only count cumulative when turnSeq is explicitly 1.
+                // Missing turnSeq (None) or >1 both skip — don't treat absent
+                // turnSeq as first-turn cumulative.
                 let c = payload.cumulative.as_ref()?;
                 (c.input_tokens.unwrap_or(0), c.output_tokens.unwrap_or(0))
             } else {
-                // turnSeq > 1 with no per-turn delta: skip.
+                // turnSeq None, or >1 with no per-turn delta: skip.
                 return None;
             }
         }
@@ -309,5 +319,70 @@ mod tests {
             entry.cost
         );
         assert_eq!(entry.missing_pricing_model, None);
+    }
+
+    // --- FIX 1: harness filtering ---
+
+    #[test]
+    fn drops_goose_harness_row_even_with_valid_tokens() {
+        // A "goose"-harness frame that lives in the NIP-AM archive must be dropped
+        // so unified all-agent reports don't double-count it against the native
+        // goose adapter.
+        let raw = r#"{
+            "harness":"goose","model":"goose-claude-4-6-sonnet",
+            "sessionId":"20260707_1","turnSeq":2,"timestamp":"2026-07-07T10:00:00.000Z",
+            "turn":{"inputTokens":50000,"outputTokens":2000,"totalTokens":null,"costUsd":null},
+            "cumulative":{"inputTokens":100000,"outputTokens":4000,"totalTokens":null,"costUsd":null},
+            "deltaReliable":true,"stopReason":"end_turn"
+        }"#;
+        let pricing = make_pricing();
+        let result = payload_to_entry("evt-goose", raw, None, &pricing);
+
+        assert!(
+            result.is_none(),
+            "goose-harness row must be dropped, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn drops_row_with_missing_harness() {
+        // A frame with no harness field (None) must also be dropped — we only
+        // accept explicitly-labelled buzz-agent frames.
+        let raw = r#"{
+            "model":"goose-claude-4-6-sonnet",
+            "sessionId":"ses_unknown","turnSeq":1,"timestamp":"2026-07-07T10:00:00.000Z",
+            "turn":{"inputTokens":5000,"outputTokens":200,"totalTokens":null,"costUsd":null},
+            "deltaReliable":true,"stopReason":"end_turn"
+        }"#;
+        let pricing = make_pricing();
+        let result = payload_to_entry("evt-no-harness", raw, None, &pricing);
+
+        assert!(
+            result.is_none(),
+            "missing-harness row must be dropped, got {result:?}"
+        );
+    }
+
+    // --- FIX 2: missing turnSeq must skip, not count as first-turn ---
+
+    #[test]
+    fn skips_null_turn_with_missing_turn_seq() {
+        // A cumulative-only frame with absent turnSeq must be skipped — treating
+        // None as 0 (unwrap_or(0)) would incorrectly count it as first-turn
+        // cumulative data.
+        let raw = r#"{
+            "harness":"buzz-agent","model":"goose-claude-4-6-sonnet",
+            "sessionId":"ses_abc","timestamp":"2026-07-07T09:00:00.000Z",
+            "turn":null,
+            "cumulative":{"inputTokens":99999,"outputTokens":9999,"totalTokens":null,"costUsd":null},
+            "deltaReliable":false,"stopReason":"end_turn"
+        }"#;
+        let pricing = make_pricing();
+        let result = payload_to_entry("evt-no-seq", raw, None, &pricing);
+
+        assert!(
+            result.is_none(),
+            "null-turn with missing turnSeq must be skipped, got {result:?}"
+        );
     }
 }
