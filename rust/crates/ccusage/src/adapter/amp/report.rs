@@ -4,8 +4,9 @@ use std::io::IsTerminal;
 use crate::{
     Align, BucketKind, Color, LoadedEntry, Result, SimpleTable, adapter::opencode,
     cli::AgentReportKind, cli::SharedArgs, cli::WeekDay, format_currency, format_models_multiline,
-    format_number, json_value_u64, print_box_title, short_model_name, should_use_compact_layout,
-    summarize_by_key, summarize_summaries_by_bucket, totals_json,
+    format_number, json_value_u64, print_box_title, print_missing_pricing_warnings,
+    short_model_name, should_use_compact_layout, summarize_by_key, summarize_summaries_by_bucket,
+    totals_json,
 };
 
 pub(crate) fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
@@ -281,6 +282,11 @@ pub(crate) fn print_table_for_agent(
         table.push(row);
     }
     table.print()?;
+    print_missing_pricing_warnings(rows, shared.offline);
+    if compact {
+        eprintln!("\nRunning in Compact Mode");
+        eprintln!("Expand terminal width to see cache metrics and total tokens");
+    }
     Ok(())
 }
 
