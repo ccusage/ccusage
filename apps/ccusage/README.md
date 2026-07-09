@@ -244,12 +244,12 @@ The scheduled `update pricing` workflow runs the same update and validation, the
 
 ## Star History
 
-<a href="https://www.star-history.com/#ccusage/ccusage&Date">
-    <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ccusage/ccusage&type=Date&theme=dark" />
-        <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ccusage/ccusage&type=Date" />
-        <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ccusage/ccusage&type=Date" />
-    </picture>
+<a href="https://www.star-history.com/?repos=ccusage%2Fccusage&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=ccusage/ccusage&type=date&theme=dark&legend=top-left&sealed_token=bC4-7Zs63nsOam9kdlCTUCbyCn7QuItb4yy4h8Ot0SrOeDlb5y2saMUc1CAOskhB1fl3RSZZuUmFyjAOICGnniL5wqbvTmHrbqqiIH5mpn8spRFPfjLK_w" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=ccusage/ccusage&type=date&legend=top-left&sealed_token=bC4-7Zs63nsOam9kdlCTUCbyCn7QuItb4yy4h8Ot0SrOeDlb5y2saMUc1CAOskhB1fl3RSZZuUmFyjAOICGnniL5wqbvTmHrbqqiIH5mpn8spRFPfjLK_w" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=ccusage/ccusage&type=date&legend=top-left&sealed_token=bC4-7Zs63nsOam9kdlCTUCbyCn7QuItb4yy4h8Ot0SrOeDlb5y2saMUc1CAOskhB1fl3RSZZuUmFyjAOICGnniL5wqbvTmHrbqqiIH5mpn8spRFPfjLK_w" />
+ </picture>
 </a>
 
 ## License
