@@ -6,8 +6,9 @@
 #     glibc-dynamic with a runpath into `/nix/store`, so it is fast for local
 #     work but NOT portable to end-user machines.
 #   * `ccusage-static` (this file) cross-compiles to musl and links fully
-#     statically, producing the portable binary that `release.yaml` ships to
-#     npm. The release matrix runs `nix build .#ccusage-static` for Linux;
+#     statically, producing the portable binary that the release jobs in
+#     `tagpr.yaml` ship to npm. The release matrix runs
+#     `nix build .#ccusage-static` for Linux;
 #     macOS arm64 uses the native Nix build, while macOS x64 and Windows fall
 #     back to `cargo build` because Nix cannot target those runners.
 #
