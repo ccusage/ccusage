@@ -80,6 +80,10 @@ in
           };
         };
 
+        # The tagpr PR template is a Go text/template, and oxfmt's markdown
+        # rewrites break its <details> block and nested list structure.
+        settings.global.excludes = [ ".github/tagpr-template.md" ];
+
         settings.formatter = {
           deadnix.priority = 1;
           statix.priority = 2;
