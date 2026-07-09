@@ -1,6 +1,6 @@
 [package]
 name = "ccusage"
-version = "20.0.15"
+version = "20.0.16"
 edition = "2024"
 build = "build.rs"
 
