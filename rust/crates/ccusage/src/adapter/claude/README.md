@@ -37,3 +37,13 @@ The term `session` has two meanings in this codebase:
 - True Claude Code session ID may also appear in each JSONL entry's `sessionId` field.
 
 Malformed JSONL lines are skipped during parsing.
+
+Advisor entries:
+
+- Advisor usage is stored in `message.usage.iterations` records whose type is
+  `advisor_message`.
+- ccusage counts each advisor record separately under the record's own model.
+  The top-level usage remains attributed only to the main model, and other
+  iteration types are not added again.
+- Advisor costs are calculated from their token counts because the iteration
+  does not include a precomputed `costUSD`.

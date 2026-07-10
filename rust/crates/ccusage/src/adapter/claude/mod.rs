@@ -12,10 +12,11 @@ use std::{
 use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 use rustc_hash::FxHasher;
+use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, UsageEntry, UsageSummary,
-    calculate_cost,
+    LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
+    UsageSummary, calculate_cost, calculate_cost_for_usage,
     cli::{CostMode, SharedArgs},
     debug_log,
     fast::{FxHashMap, SmallIndexVec, byte_lines, suffix_string},
@@ -385,7 +386,7 @@ fn read_usage_file(
                 Some(model.clone())
             }
         });
-        loaded_file.entries.push(LoadedEntry {
+        let entry = LoadedEntry {
             data,
             timestamp,
             date,
@@ -399,9 +400,105 @@ fn read_usage_file(
             model,
             usage_limit_reset_time,
             missing_pricing_model,
-        });
+        };
+        let mut advisor_entries = Vec::new();
+        for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
+            let mut advisor_data = entry.data.clone();
+            advisor_data.message.id = advisor_data
+                .message
+                .id
+                .map(|message_id| format!("{message_id}:advisor:{index}"));
+            advisor_data.message.model = Some(advisor.model.clone());
+            advisor_data.message.usage = advisor.usage;
+            advisor_data.cost_usd = None;
+            let missing_pricing_model = missing_pricing_model_for_usage(
+                Some(&advisor.model),
+                advisor.usage,
+                None,
+                mode,
+                pricing,
+            );
+            advisor_entries.push(LoadedEntry {
+                data: advisor_data,
+                timestamp,
+                date: entry.date.clone(),
+                project: Arc::clone(&project),
+                session_id: Arc::clone(&session_id),
+                project_path: Arc::clone(&project_path),
+                cost: calculate_cost_for_usage(
+                    Some(&advisor.model),
+                    advisor.usage,
+                    None,
+                    mode,
+                    pricing,
+                ),
+                extra_total_tokens: 0,
+                credits: None,
+                message_count: None,
+                model: Some(advisor.model),
+                usage_limit_reset_time,
+                missing_pricing_model,
+            });
+        }
+        loaded_file.entries.push(entry);
+        loaded_file.entries.extend(advisor_entries);
     }
     loaded_file
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageIterationsEnvelope {
+    message: UsageIterationsMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageIterationsMessage {
+    usage: UsageIterations,
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageIterations {
+    #[serde(default)]
+    iterations: Vec<UsageIteration>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UsageIteration {
+    #[serde(rename = "type")]
+    kind: String,
+    model: Option<String>,
+    #[serde(flatten)]
+    usage: TokenUsageRaw,
+}
+
+pub(super) struct AdvisorUsage {
+    pub(super) model: String,
+    pub(super) usage: TokenUsageRaw,
+}
+
+pub(super) fn advisor_usages_from_line(line: &[u8]) -> Vec<AdvisorUsage> {
+    if memmem::find(line, br#""advisor_message""#).is_none() {
+        return Vec::new();
+    }
+    let Ok(envelope) = serde_json::from_slice::<UsageIterationsEnvelope>(line) else {
+        return Vec::new();
+    };
+    envelope
+        .message
+        .usage
+        .iterations
+        .into_iter()
+        .filter_map(|iteration| {
+            (iteration.kind == "advisor_message")
+                .then_some(iteration.model)
+                .flatten()
+                .filter(|model| !model.is_empty())
+                .map(|model| AdvisorUsage {
+                    model,
+                    usage: iteration.usage,
+                })
+        })
+        .collect()
 }
 
 fn update_loaded_file_timestamp(loaded_file: &mut LoadedFile, timestamp: TimestampMs) {
@@ -563,9 +660,12 @@ mod tests {
 
     use super::{
         extract_session_parts, has_unsupported_null_field, paths::is_project_path_segment,
-        push_deduped_entry, usage_files,
+        push_deduped_entry, read_usage_file, usage_files,
     };
-    use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage};
+    use crate::{
+        LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+        cli::CostMode,
+    };
     use ccusage_test_support::fs_fixture;
 
     #[test]
@@ -651,6 +751,38 @@ mod tests {
         assert!(!has_unsupported_null_field(
             br#"{"message":{"content":null,"usage":{"input_tokens":0}}}"#
         ));
+    }
+
+    #[test]
+    fn calculates_advisor_cost_with_the_advisor_model() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg-parent","model":"main-model","usage":{"input_tokens":1,"output_tokens":2,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}]}},"requestId":"req-parent","costUSD":1.23}"#,
+        });
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "main-model": {
+                    "input_cost_per_token": 100,
+                    "output_cost_per_token": 100
+                },
+                "advisor-model": {
+                    "input_cost_per_token": 2,
+                    "output_cost_per_token": 3
+                }
+            }"#,
+        );
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Auto,
+            Some(&pricing),
+        );
+
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[0].cost, 1.23);
+        assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
+        assert_eq!(loaded.entries[1].cost, 26.0);
     }
 
     #[test]

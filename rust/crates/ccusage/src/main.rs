@@ -364,6 +364,57 @@ mod tests {
     }
 
     #[test]
+    fn loads_advisor_usage_as_a_separate_model_entry() {
+        let fixture = fs_fixture!({
+            "projects/project1/session1/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","version":"1.2.3","sessionId":"session1","advisorModel":"claude-opus-4-20250514","message":{"id":"msg_123","model":"claude-sonnet-4-20250514","usage":{"input_tokens":2,"output_tokens":491,"cache_creation_input_tokens":7853,"cache_read_input_tokens":226584,"iterations":[{"type":"message","input_tokens":1,"output_tokens":45,"cache_creation_input_tokens":7192,"cache_read_input_tokens":109696},{"type":"advisor_message","model":"claude-opus-4-20250514","input_tokens":159419,"output_tokens":7805,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},{"type":"message","input_tokens":1,"output_tokens":446,"cache_creation_input_tokens":661,"cache_read_input_tokens":116888}]}},"requestId":"req_456","costUSD":1.23}"#,
+        });
+
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            ..SharedArgs::default()
+        };
+        let entries = load_entries(&shared, None).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0].model.as_deref(),
+            Some("claude-sonnet-4-20250514")
+        );
+        assert_eq!(entries[0].data.message.usage.input_tokens, 2);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 491);
+        assert_eq!(entries[1].model.as_deref(), Some("claude-opus-4-20250514"));
+        assert_eq!(entries[1].data.message.usage.input_tokens, 159_419);
+        assert_eq!(entries[1].data.message.usage.output_tokens, 7_805);
+    }
+
+    #[test]
+    fn includes_advisor_usage_in_daily_summaries() {
+        let fixture = fs_fixture!({
+            "projects/project1/session1/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","version":"1.2.3","sessionId":"session1","advisorModel":"claude-opus-4-20250514","message":{"id":"msg_123","model":"claude-sonnet-4-20250514","usage":{"input_tokens":2,"output_tokens":491,"cache_creation_input_tokens":7853,"cache_read_input_tokens":226584,"iterations":[{"type":"message","input_tokens":1,"output_tokens":45,"cache_creation_input_tokens":7192,"cache_read_input_tokens":109696},{"type":"advisor_message","model":"claude-opus-4-20250514","input_tokens":159419,"output_tokens":7805,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},{"type":"message","input_tokens":1,"output_tokens":446,"cache_creation_input_tokens":661,"cache_read_input_tokens":116888}]}},"requestId":"req_456","costUSD":1.23}"#,
+        });
+
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let daily = load_daily_summaries(&shared, None, false).unwrap();
+
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].input_tokens, 159_421);
+        assert_eq!(daily[0].output_tokens, 8_296);
+        assert_eq!(
+            daily[0].models_used,
+            vec![
+                "claude-sonnet-4-20250514".to_string(),
+                "claude-opus-4-20250514".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn loads_daily_summaries_like_loaded_entry_aggregation() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": [

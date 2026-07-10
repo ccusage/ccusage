@@ -19,7 +19,8 @@ use crate::{
 };
 
 use super::{
-    chunk_file_indexes_by_size, has_unsupported_null_field, is_semver_prefix,
+    advisor_usages_from_line, chunk_file_indexes_by_size, has_unsupported_null_field,
+    is_semver_prefix,
     paths::{claude_paths, extract_project, usage_files},
     usage_dedupe_hash,
 };
@@ -299,8 +300,11 @@ fn read_daily_usage_file(
                 Some(model.clone())
             }
         });
+        let date = format_date_tz(timestamp, tz);
+        let message_id = data.message.id.clone();
+        let request_id = data.request_id.clone();
         loaded_file.entries.push(DailyLoadedEntry {
-            date: format_date_tz(timestamp, tz),
+            date: date.clone(),
             project: Arc::clone(&project),
             usage,
             cost,
@@ -310,6 +314,34 @@ fn read_daily_usage_file(
             request_id: data.request_id,
             is_sidechain: data.is_sidechain,
         });
+        for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
+            let missing_pricing_model = missing_pricing_model_for_usage(
+                Some(&advisor.model),
+                advisor.usage,
+                None,
+                mode,
+                pricing,
+            );
+            loaded_file.entries.push(DailyLoadedEntry {
+                date: date.clone(),
+                project: Arc::clone(&project),
+                usage: advisor.usage,
+                cost: calculate_cost_for_usage(
+                    Some(&advisor.model),
+                    advisor.usage,
+                    None,
+                    mode,
+                    pricing,
+                ),
+                model: Some(advisor.model),
+                missing_pricing_model,
+                message_id: message_id
+                    .as_ref()
+                    .map(|message_id| format!("{message_id}:advisor:{index}")),
+                request_id: request_id.clone(),
+                is_sidechain: data.is_sidechain,
+            });
+        }
     }
     loaded_file
 }
