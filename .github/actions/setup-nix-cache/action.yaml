@@ -39,8 +39,10 @@ runs:
         # the newest prior entry to warm the deps. The cache backend is
         # effectively unlimited, so one entry per commit is fine and `purge`
         # rolls off the old ones.
-        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'package.json', 'nix/**/*.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-${{ github.sha }}
-        restore-prefixes-first-match: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'package.json', 'nix/**/*.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
+        # package.json only supplies the final binary version. It is excluded
+        # because release bumps do not change the deps-only Crane derivation.
+        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/**/*.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-${{ github.sha }}
+        restore-prefixes-first-match: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/**/*.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
         purge: true
         purge-prefixes: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-
         purge-created: 172800

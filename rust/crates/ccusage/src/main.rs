@@ -177,6 +177,19 @@ mod tests {
     };
 
     #[test]
+    fn compiled_version_matches_release_package() {
+        let package = serde_json::from_str::<serde_json::Value>(include_str!(
+            "../../../../package.json"
+        ))
+        .unwrap();
+
+        assert_eq!(
+            env!("CCUSAGE_VERSION"),
+            package["version"].as_str().unwrap()
+        );
+    }
+
+    #[test]
     fn formats_numbers_with_commas() {
         assert_eq!(format_number(1_234_567), "1,234,567");
     }

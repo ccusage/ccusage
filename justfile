@@ -68,7 +68,3 @@ update-models-dev-pricing:
     nix flake update models-dev
     just gen-models-dev-pricing
     just check
-
-# Sync the Rust workspace version (Cargo.toml + Cargo.lock) to apps/ccusage/package.json; run by tagpr's postVersionCommand
-sync-rust-version:
-    cargo set-version --manifest-path rust/Cargo.toml --workspace "$(jq -r .version apps/ccusage/package.json)"
