@@ -458,16 +458,34 @@ pub(crate) fn format_models_multiline(models: &[String]) -> String {
         .join("\n")
 }
 
+/// Format token/count values for table display.
+///
+/// Large values are abbreviated so multi-model rows stay readable:
+/// `1500 -> 1.5K`, `1_473_687 -> 1.5M`, `2_000_000_000 -> 2B`.
+/// Values under 1,000 stay exact.
 pub(crate) fn format_number(value: u64) -> String {
-    let s = value.to_string();
-    let mut out = String::with_capacity(s.len() + s.len() / 3);
-    for (i, ch) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            out.push(',');
-        }
-        out.push(ch);
+    if value < 1_000 {
+        return value.to_string();
     }
-    out.chars().rev().collect()
+
+    // Prefer the largest unit that still keeps a readable one-decimal value.
+    // Promote on round-up: 999_950 is "1M", not "1000.0K".
+    if value >= 999_950_000 {
+        return format_compact_scaled(value as f64 / 1_000_000_000.0, "B");
+    }
+    if value >= 999_950 {
+        return format_compact_scaled(value as f64 / 1_000_000.0, "M");
+    }
+    format_compact_scaled(value as f64 / 1_000.0, "K")
+}
+
+fn format_compact_scaled(value: f64, suffix: &str) -> String {
+    let rounded = (value * 10.0).round() / 10.0;
+    if (rounded - rounded.floor()).abs() < f64::EPSILON {
+        format!("{}{suffix}", rounded as u64)
+    } else {
+        format!("{rounded:.1}{suffix}")
+    }
 }
 
 pub(crate) fn format_currency(value: f64) -> String {
@@ -614,6 +632,23 @@ mod tests {
         ];
 
         insta::assert_snapshot!(format_models_multiline(&models));
+    }
+
+    #[test]
+    fn formats_token_counts_with_compact_abbreviations() {
+        assert_eq!(format_number(0), "0");
+        assert_eq!(format_number(999), "999");
+        assert_eq!(format_number(1_000), "1K");
+        assert_eq!(format_number(1_500), "1.5K");
+        assert_eq!(format_number(12_345), "12.3K");
+        assert_eq!(format_number(999_949), "999.9K");
+        assert_eq!(format_number(999_950), "1M");
+        assert_eq!(format_number(1_000_000), "1M");
+        assert_eq!(format_number(1_473_687), "1.5M");
+        assert_eq!(format_number(15_781_737), "15.8M");
+        assert_eq!(format_number(999_949_999), "999.9M");
+        assert_eq!(format_number(999_950_000), "1B");
+        assert_eq!(format_number(2_000_000_000), "2B");
     }
 
     fn snapshot_summary(period: &str, project: Option<&str>, credits: Option<f64>) -> UsageSummary {
