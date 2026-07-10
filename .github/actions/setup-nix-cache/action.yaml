@@ -41,8 +41,10 @@ runs:
         # rolls off the old ones.
         # package.json only supplies the final binary version. It is excluded
         # because release bumps do not change the deps-only Crane derivation.
-        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/**/*.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-${{ github.sha }}
-        restore-prefixes-first-match: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/**/*.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
+        # Likewise, checks and developer-tooling modules do not affect Cargo
+        # artifacts; only package modules participate in this key.
+        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-${{ github.sha }}
+        restore-prefixes-first-match: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
         purge: true
         purge-prefixes: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-
         purge-created: 172800
