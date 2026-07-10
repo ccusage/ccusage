@@ -93,7 +93,9 @@ pub(super) fn print_table(
         if let Some(agent_breakdowns) = row.agent_breakdowns.as_ref() {
             for breakdown in agent_breakdowns {
                 table.push(all_table_row(breakdown, compact, true));
-                if shared.breakdown && !breakdown.model_breakdowns.is_empty() {
+                // Always expand multi-model agent rows so each model shows its
+                // own tokens/cost instead of only the summed agent totals.
+                if should_expand_model_breakdowns(shared, &breakdown.model_breakdowns) {
                     push_model_breakdown_rows(
                         &mut table,
                         &breakdown.model_breakdowns,
@@ -102,7 +104,7 @@ pub(super) fn print_table(
                     );
                 }
             }
-        } else if shared.breakdown && !row.model_breakdowns.is_empty() {
+        } else if should_expand_model_breakdowns(shared, &row.model_breakdowns) {
             push_model_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared);
         }
     }
@@ -298,6 +300,10 @@ fn table_total_tokens(row: &AllRow) -> u64 {
         .saturating_add(row.output_tokens)
         .saturating_add(row.cache_creation_tokens)
         .saturating_add(row.cache_read_tokens)
+}
+
+fn should_expand_model_breakdowns(shared: &SharedArgs, breakdowns: &[ModelBreakdown]) -> bool {
+    !breakdowns.is_empty() && (shared.breakdown || breakdowns.len() > 1)
 }
 
 fn push_model_breakdown_rows(

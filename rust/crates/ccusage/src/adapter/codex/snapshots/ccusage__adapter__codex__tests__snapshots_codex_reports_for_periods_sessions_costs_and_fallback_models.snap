@@ -13,6 +13,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "models": {
           "gpt-5.3-codex": {
             "cachedInputTokens": 110,
+            "costUSD": 0.00040425,
             "inputTokens": 100,
             "isFallback": true,
             "outputTokens": 15,
@@ -32,6 +33,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "models": {
           "gpt-5-mini": {
             "cachedInputTokens": 0,
+            "costUSD": 0.0000065,
             "inputTokens": 10,
             "isFallback": false,
             "outputTokens": 2,
@@ -62,6 +64,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "models": {
           "gpt-5-mini": {
             "cachedInputTokens": 0,
+            "costUSD": 0.0000065,
             "inputTokens": 10,
             "isFallback": false,
             "outputTokens": 2,
@@ -70,6 +73,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
           },
           "gpt-5.3-codex": {
             "cachedInputTokens": 110,
+            "costUSD": 0.00040425,
             "inputTokens": 100,
             "isFallback": true,
             "outputTokens": 15,
@@ -103,6 +107,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "models": {
           "gpt-5.3-codex": {
             "cachedInputTokens": 110,
+            "costUSD": 0.0008085,
             "inputTokens": 100,
             "isFallback": true,
             "outputTokens": 15,
@@ -125,6 +130,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "models": {
           "gpt-5-mini": {
             "cachedInputTokens": 0,
+            "costUSD": 0.000013,
             "inputTokens": 10,
             "isFallback": false,
             "outputTokens": 2,
@@ -165,6 +171,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "models": {
           "gpt-5.3-codex": {
             "cachedInputTokens": 110,
+            "costUSD": 0.00040425,
             "inputTokens": 100,
             "isFallback": true,
             "outputTokens": 15,
@@ -184,6 +191,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "models": {
           "gpt-5-mini": {
             "cachedInputTokens": 0,
+            "costUSD": 0.0000065,
             "inputTokens": 10,
             "isFallback": false,
             "outputTokens": 2,

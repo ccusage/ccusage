@@ -242,6 +242,92 @@ mod tests {
     }
 
     #[test]
+    fn expands_multi_model_codex_rows_with_per_model_stats() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gpt-5.4": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000010,
+                    "cache_read_input_token_cost": 0.0000001
+                },
+                "gpt-5.5": {
+                    "input_cost_per_token": 0.000002,
+                    "output_cost_per_token": 0.000020,
+                    "cache_read_input_token_cost": 0.0000002
+                }
+            }"#,
+        );
+        let mut group = crate::CodexGroup {
+            input_tokens: 300,
+            cached_input_tokens: 100,
+            output_tokens: 30,
+            reasoning_output_tokens: 5,
+            total_tokens: 335,
+            last_activity: None,
+            models: BTreeMap::new(),
+        };
+        group.models.insert(
+            "gpt-5.4".to_string(),
+            CodexModelUsage {
+                input_tokens: 100,
+                cached_input_tokens: 40,
+                output_tokens: 10,
+                reasoning_output_tokens: 2,
+                total_tokens: 112,
+                is_fallback: false,
+            },
+        );
+        group.models.insert(
+            "gpt-5.5".to_string(),
+            CodexModelUsage {
+                input_tokens: 200,
+                cached_input_tokens: 60,
+                output_tokens: 20,
+                reasoning_output_tokens: 3,
+                total_tokens: 223,
+                is_fallback: false,
+            },
+        );
+        let groups = BTreeMap::from([("2026-07-10".to_string(), group)]);
+        let report = super::report::report_from_groups(
+            &groups,
+            AgentReportKind::Daily,
+            &pricing,
+            CodexSpeed::Standard,
+        );
+
+        assert_eq!(
+            report["daily"][0]["models"]["gpt-5.5"]["costUSD"]
+                .as_f64()
+                .unwrap_or_default(),
+            calculate_codex_model_cost(
+                "gpt-5.5",
+                groups["2026-07-10"].models.get("gpt-5.5").unwrap(),
+                &pricing,
+                CodexSpeed::Standard,
+            )
+        );
+        assert_eq!(report["daily"][0]["models"]["gpt-5.4"]["inputTokens"], 60);
+        assert_eq!(report["daily"][0]["models"]["gpt-5.5"]["inputTokens"], 140);
+
+        let shared = SharedArgs {
+            no_color: true,
+            ..SharedArgs::default()
+        };
+        // Multi-model table expansion is exercised here so regressions panic
+        // instead of silently collapsing per-model stats again.
+        super::report::print_table_from_groups(
+            &groups,
+            AgentReportKind::Daily,
+            &pricing,
+            CodexSpeed::Standard,
+            &shared,
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn snapshots_codex_reports_for_periods_sessions_costs_and_fallback_models() {
         let mut pricing = PricingMap::default();
         pricing.load_json(

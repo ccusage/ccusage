@@ -252,7 +252,9 @@ pub(crate) fn print_usage_table(
             values.push(row.last_activity.clone().unwrap_or_default());
         }
         table.push(values);
-        if shared.breakdown {
+        // Multi-model periods should show per-model stats by default; keep the
+        // explicit --breakdown path for single-model rows too.
+        if shared.breakdown || row.model_breakdowns.len() > 1 {
             push_breakdown_rows(&mut table, row, compact, include_last_activity, shared);
         }
     }

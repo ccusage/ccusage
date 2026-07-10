@@ -6,8 +6,8 @@ use crate::{
     cli::{AgentReportKind, CodexSpeed, SharedArgs},
     color, format_currency, format_models_multiline, format_number, json_float,
     missing_pricing_model_for_token_total, print_box_title,
-    print_missing_pricing_warnings_for_models, Align, CodexGroup, CodexModelUsage, Color,
-    PricingMap, Result, SimpleTable,
+    print_missing_pricing_warnings_for_models, short_model_name, Align, CodexGroup, CodexModelUsage,
+    Color, PricingMap, Result, SimpleTable,
 };
 
 pub(super) fn report_from_groups(
@@ -57,7 +57,7 @@ fn group_json(
     let models = group
         .models
         .iter()
-        .map(|(model, usage)| (model.clone(), model_usage_json(usage)))
+        .map(|(model, usage)| (model.clone(), model_usage_json(model, usage, pricing, speed)))
         .collect::<BTreeMap<_, _>>();
     let mut row = json!({
         period_key(kind): period,
@@ -82,13 +82,14 @@ pub(crate) fn non_cached_input_tokens(input_tokens: u64, cached_input_tokens: u6
     input_tokens.saturating_sub(cached_input_tokens)
 }
 
-fn model_usage_json(usage: &CodexModelUsage) -> Value {
+fn model_usage_json(model: &str, usage: &CodexModelUsage, pricing: &PricingMap, speed: CodexSpeed) -> Value {
     json!({
         "inputTokens": non_cached_input_tokens(usage.input_tokens, usage.cached_input_tokens),
         "cachedInputTokens": usage.cached_input_tokens,
         "outputTokens": usage.output_tokens,
         "reasoningOutputTokens": usage.reasoning_output_tokens,
         "totalTokens": usage.total_tokens,
+        "costUSD": json_float(calculate_codex_model_cost(model, usage, pricing, speed)),
         "isFallback": usage.is_fallback,
     })
 }
@@ -194,6 +195,38 @@ pub(crate) fn codex_missing_pricing_models(
     models.into_iter().collect()
 }
 
+fn push_codex_model_row(
+    table: &mut SimpleTable,
+    model: &str,
+    usage: &CodexModelUsage,
+    cost: f64,
+    shared: &SharedArgs,
+) {
+    let input_tokens = non_cached_input_tokens(usage.input_tokens, usage.cached_input_tokens);
+    table.push(vec![
+        String::new(),
+        color(
+            shared,
+            format!("- {}", short_model_name(model)),
+            Color::Grey,
+        ),
+        color(shared, format_number(input_tokens), Color::Grey),
+        color(shared, format_number(usage.output_tokens), Color::Grey),
+        color(
+            shared,
+            format_number(usage.reasoning_output_tokens),
+            Color::Grey,
+        ),
+        color(
+            shared,
+            format_number(usage.cached_input_tokens),
+            Color::Grey,
+        ),
+        color(shared, format_number(usage.total_tokens), Color::Grey),
+        color(shared, format_currency(cost), Color::Grey),
+    ]);
+}
+
 pub(super) fn print_table_from_groups(
     groups: &BTreeMap<String, CodexGroup>,
     kind: AgentReportKind,
@@ -263,17 +296,51 @@ pub(super) fn print_table_from_groups(
         total_reasoning += group.reasoning_output_tokens;
         total_tokens += group.total_tokens;
         total_cost += cost;
-        let models = format_models_multiline(&group.models.keys().cloned().collect::<Vec<_>>());
-        table.push(vec![
-            label.clone(),
-            models,
-            format_number(input_tokens),
-            format_number(group.output_tokens),
-            format_number(group.reasoning_output_tokens),
-            format_number(group.cached_input_tokens),
-            format_number(group.total_tokens),
-            format_currency(cost),
-        ]);
+
+        let mut model_rows = group
+            .models
+            .iter()
+            .map(|(model, usage)| {
+                (
+                    model,
+                    usage,
+                    calculate_codex_model_cost(model, usage, pricing, speed),
+                )
+            })
+            .collect::<Vec<_>>();
+        model_rows.sort_by(|a, b| b.2.total_cmp(&a.2).then_with(|| a.0.cmp(b.0)));
+
+        // Multi-model periods used to dump every model name into one cell while
+        // only showing the summed token/cost totals. Expand them so each model
+        // gets its own stats row.
+        if model_rows.len() > 1 {
+            table.push(vec![
+                label.clone(),
+                String::new(),
+                format_number(input_tokens),
+                format_number(group.output_tokens),
+                format_number(group.reasoning_output_tokens),
+                format_number(group.cached_input_tokens),
+                format_number(group.total_tokens),
+                format_currency(cost),
+            ]);
+            for (model, usage, model_cost) in model_rows {
+                push_codex_model_row(&mut table, model, usage, model_cost, shared);
+            }
+        } else {
+            let models =
+                format_models_multiline(&group.models.keys().cloned().collect::<Vec<_>>());
+            table.push(vec![
+                label.clone(),
+                models,
+                format_number(input_tokens),
+                format_number(group.output_tokens),
+                format_number(group.reasoning_output_tokens),
+                format_number(group.cached_input_tokens),
+                format_number(group.total_tokens),
+                format_currency(cost),
+            ]);
+        }
     }
     table.separator();
     table.push(vec![
