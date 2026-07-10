@@ -794,19 +794,8 @@ fn snapshots_cli_parse_error_guidance() {
 }
 
 #[test]
-fn cargo_version_matches_npm_package_version() {
-    let package_json = serde_json::from_str::<serde_json::Value>(include_str!(
-        "../../../../apps/ccusage/package.json"
-    ))
-    .unwrap();
-
-    assert_eq!(
-        env!("CARGO_PKG_VERSION"),
-        package_json
-            .get("version")
-            .and_then(serde_json::Value::as_str)
-            .unwrap()
-    );
+fn cargo_version_is_independent_from_release_version() {
+    assert_eq!(env!("CARGO_PKG_VERSION"), "0.0.0");
 }
 
 #[test]
