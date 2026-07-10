@@ -1,6 +1,6 @@
 [package]
 name = "ccusage-terminal"
-version = "20.0.16"
+version = "20.0.17"
 edition = "2024"
 
 [dependencies]
