@@ -45,5 +45,6 @@ Advisor entries:
 - ccusage counts each advisor record separately under the record's own model.
   The top-level usage remains attributed only to the main model, and other
   iteration types are not added again.
-- Advisor costs are calculated from their token counts because the iteration
-  does not include a precomputed `costUSD`.
+- Advisor iterations do not include a precomputed `costUSD`, so `auto` and
+  `calculate` modes price their tokens separately while `display` mode reports
+  zero cost for them.
