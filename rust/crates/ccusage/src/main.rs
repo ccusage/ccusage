@@ -178,10 +178,9 @@ mod tests {
 
     #[test]
     fn compiled_version_matches_release_package() {
-        let package = serde_json::from_str::<serde_json::Value>(include_str!(
-            "../../../../package.json"
-        ))
-        .unwrap();
+        let package =
+            serde_json::from_str::<serde_json::Value>(include_str!("../../../../package.json"))
+                .unwrap();
 
         assert_eq!(
             env!("CCUSAGE_VERSION"),

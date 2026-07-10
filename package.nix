@@ -57,16 +57,19 @@ let
       "version"
     ] path
     && craneLib.filters.cargoTomlConservative path;
-  depsOnlyArgs = builtins.removeAttrs commonArgs [
-    "CCUSAGE_PRICING_JSON_PATH"
-    "CCUSAGE_VERSION"
-  ] // {
-    version = "0.0.0";
-    dummySrc = craneLib.mkDummySrc {
-      inherit src;
-      cleanCargoTomlFilter = cargoTomlFilter;
+  depsOnlyArgs =
+    builtins.removeAttrs commonArgs [
+      "CCUSAGE_PRICING_JSON_PATH"
+      "CCUSAGE_VERSION"
+      "src"
+    ]
+    // {
+      version = "0.0.0";
+      dummySrc = craneLib.mkDummySrc {
+        inherit src;
+        cleanCargoTomlFilter = cargoTomlFilter;
+      };
     };
-  };
   cargoArtifacts = craneLib.buildDepsOnly depsOnlyArgs;
 in
 craneLib.buildPackage (
