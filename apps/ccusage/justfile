@@ -32,6 +32,10 @@ start *args:
 test-statusline:
     just test-statusline-file test/statusline-test.json
 
+# Run focused tests for the Babashka performance harness.
+test-performance-harness:
+    scripts/compare-pr-performance_test.clj
+
 test-statusline-all:
     @echo 'Testing Sonnet 4:'
     just test-statusline-sonnet4
