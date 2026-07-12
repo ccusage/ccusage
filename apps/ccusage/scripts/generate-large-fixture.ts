@@ -2,7 +2,6 @@
 /*
 #! nix shell --inputs-from ../../.. nixpkgs#bun -c bun
 */
-import { $ } from 'bun';
 import { dirname, join, resolve } from 'node:path';
 
 const MIB = 1024 * 1024;
@@ -190,7 +189,7 @@ async function generateFixture(
 		format === 'claude' ? '--output-dir' : '--codex-output-dir',
 	);
 	const fileSizeTargets = createFileSizeTargets(sizeMib * MIB);
-	await $`rm -rf ${directory}`;
+	await Bun.$`rm -rf ${directory}`;
 
 	let totalBytes = 0;
 	let lineIndex = 0;
@@ -205,7 +204,7 @@ async function generateFixture(
 			format === 'claude'
 				? join(directory, 'projects', projectName, `${sessionId}.jsonl`)
 				: join(directory, 'sessions', projectName, `${sessionId}.jsonl`);
-		await $`mkdir -p ${dirname(filePath)}`;
+		await Bun.$`mkdir -p ${dirname(filePath)}`;
 
 		const writer = Bun.file(filePath).writer();
 		let fileBytes = 0;
