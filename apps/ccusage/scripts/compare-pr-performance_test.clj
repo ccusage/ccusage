@@ -81,6 +81,18 @@
   (is (= :local (base-source-decision {:base-dir "/repo"})))
   (is (= :skip (base-source-decision {:base-package-url "https://example.test/pkg"}))))
 
+(deftest platform-normalization
+  (is (= "darwin" (normalize-platform-name "Mac OS X")))
+  (is (= "linux" (normalize-platform-name "Linux")))
+  (is (= "win32" (normalize-platform-name "Windows 11")))
+  (is (= "freebsd" (normalize-platform-name "FreeBSD"))))
+
+(deftest packed-tarball-path-resolution
+  (is (= "/tmp/pack/ccusage.tgz"
+         (packed-tarball-path "/tmp/pack" "ccusage.tgz")))
+  (is (= "/var/tmp/ccusage.tgz"
+         (packed-tarball-path "/tmp/pack" "/var/tmp/ccusage.tgz"))))
+
 (deftest skipped-markdown-rendering
   (let [markdown (render-skipped-markdown
                   {:base-package-url "https://pkg.pr.new/x/ccusage@abcdef0123456789"

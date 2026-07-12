@@ -16,8 +16,13 @@
                {:kind :child-command-failed :argv argv :dir (:dir options)
                 :exit (:exit result) :stderr (:err result)}))))
 
-(defn platform-name [] ({"Mac OS X" "darwin" "Linux" "linux" "Windows" "win32"}
-                         (System/getProperty "os.name") (str/lower-case (System/getProperty "os.name"))))
+(defn normalize-platform-name [os-name]
+  (cond
+    (= os-name "Mac OS X") "darwin"
+    (= os-name "Linux") "linux"
+    (str/starts-with? os-name "Windows") "win32"
+    :else (str/lower-case os-name)))
+(defn platform-name [] (normalize-platform-name (System/getProperty "os.name")))
 (defn arch-name [] ({"aarch64" "arm64" "x86_64" "x64" "amd64" "x64"}
                      (System/getProperty "os.arch") (System/getProperty "os.arch")))
 (defn path [& parts] (str (apply fs/path parts)))
@@ -90,6 +95,9 @@
 (defn base-source-decision [{:keys [package-install base-dir base-package-url]}]
   (cond package-install :installed base-dir :local base-package-url :skip))
 
+(defn packed-tarball-path [destination filename]
+  (if (fs/absolute? filename) filename (path destination filename)))
+
 (defn packed-tarball-size [repo-dir]
   (let [package-dir (path repo-dir "apps" "ccusage")
         package-json-path (path package-dir "package.json")
@@ -106,7 +114,7 @@
               filename (:filename pack-result)]
           (when-not filename
             (fail! "pnpm pack did not report a tarball filename" {:kind :malformed-pack-output}))
-          (optional-file-size filename)))
+          (optional-file-size (packed-tarball-path destination filename))))
       (finally (spit package-json-path original) (fs/delete-tree destination)))))
 
 (defn remote-tarball-size [url]
