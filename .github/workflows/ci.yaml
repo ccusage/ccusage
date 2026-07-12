@@ -179,6 +179,8 @@ jobs:
               mkdir -p "$HOME/.claude/projects"
               mkdir -p "$HOME/.config/claude/projects"
               just test-node
+          - name: Babashka performance harness test
+            run: apps/ccusage/scripts/compare-pr-performance_test.clj
 
   build-native-packages:
     needs: [changes, tirith-scan, preflight]
