@@ -27,6 +27,7 @@
 		"prepack": "pnpm run build"
 	},
 	"devDependencies": {
+		"@types/bun": "latest",
 		"@types/node": "catalog:types",
 		"publint": "catalog:lint"
 	},

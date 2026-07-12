@@ -223,7 +223,7 @@ async function generateFixture(
 				lineIndex += 1;
 			}
 			const chunkBytes = Buffer.byteLength(chunk);
-			writer.write(chunk);
+			await writer.write(chunk);
 			fileBytes += chunkBytes;
 			totalBytes += chunkBytes;
 		}

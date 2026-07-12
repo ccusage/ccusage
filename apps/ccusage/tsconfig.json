@@ -9,7 +9,7 @@
 		// Bundler mode
 		"moduleResolution": "bundler",
 		"resolveJsonModule": true,
-		"types": ["node"],
+		"types": ["bun", "node"],
 		"allowImportingTsExtensions": true,
 		"allowJs": true,
 		// Best practices
