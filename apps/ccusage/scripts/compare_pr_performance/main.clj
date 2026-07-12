@@ -43,12 +43,22 @@
                                                 :title "Large real-world-shaped fixture performance" :runs (:large-runs context) :warmup (:large-warmup context)})))]
     (cond-> [committed] large (conj large))))
 
+(defn base-package-size-source [context]
+  (if (:base-package-install context) :remote :local))
+
+(defn head-package-size-source [context]
+  (if (:head-package-install context) :remote :local))
+
 (defn sizes-for [context]
   {:base-native-package-binary (optional-file-size (:base-native-bin-entry context))
-   :base-package (if (:base-package-url context) (remote-tarball-size (:base-package-url context)) (packed-tarball-size (:base-dir context)))
+   :base-package (if (= :remote (base-package-size-source context))
+                   (remote-tarball-size (:base-package-url context))
+                   (packed-tarball-size (:base-dir context)))
    :base-rust-binary (when (:base-dir context) (optional-file-size (rust-binary-entry (:base-dir context))))
    :head-native-package-binary (optional-file-size (:head-native-bin-entry context))
-   :head-package (if (:head-package-url context) (remote-tarball-size (:head-package-url context)) (packed-tarball-size (:head-dir context)))
+   :head-package (if (= :remote (head-package-size-source context))
+                   (remote-tarball-size (:head-package-url context))
+                   (packed-tarball-size (:head-dir context)))
    :head-rust-binary (optional-file-size (rust-binary-entry (:head-dir context)))})
 
 (defn -main [& argv]

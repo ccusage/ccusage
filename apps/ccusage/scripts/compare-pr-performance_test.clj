@@ -79,7 +79,13 @@
 (deftest fallback-decisions
   (is (= :installed (base-source-decision {:package-install {:bin-entry "bin"}})))
   (is (= :local (base-source-decision {:base-dir "/repo"})))
-  (is (= :skip (base-source-decision {:base-package-url "https://example.test/pkg"}))))
+  (is (= :skip (base-source-decision {:base-package-url "https://example.test/pkg"})))
+  (is (= :remote (base-package-size-source {:base-package-install {:bin-entry "bin"}})))
+  (is (= :local (base-package-size-source {:base-dir "/repo"
+                                           :base-package-url "https://example.test/pkg"})))
+  (is (= :remote (head-package-size-source {:head-package-install {:bin-entry "bin"}})))
+  (is (= :local (head-package-size-source {:head-dir "/repo"
+                                           :head-package-url "https://example.test/pkg"}))))
 
 (deftest platform-normalization
   (is (= "darwin" (normalize-platform-name "Mac OS X")))
