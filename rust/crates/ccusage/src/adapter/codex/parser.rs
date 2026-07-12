@@ -59,6 +59,56 @@ struct CodexExecTimestamps {
     model: String,
 }
 
+pub(super) fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
+    let Ok(file) = fs::File::open(path) else {
+        return None;
+    };
+    let mut reader = BufReader::new(file);
+    let mut line = Vec::new();
+    let mut first_second: Option<[u8; 19]> = None;
+
+    loop {
+        line.clear();
+        let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
+            return None;
+        };
+        if bytes_read == 0 {
+            return None;
+        }
+        let Some(CodexLineKind::Session) = codex_line_usage_kind(&line) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
+            continue;
+        };
+        let info = value.payload.as_ref().and_then(|payload| {
+            (value.entry_type.as_deref() == Some("event_msg")
+                && payload.payload_type.as_deref() == Some("token_count"))
+            .then_some(payload.info.as_ref())
+            .flatten()
+        });
+        if info
+            .is_none_or(|info| info.last_token_usage.is_none() && info.total_token_usage.is_none())
+        {
+            continue;
+        }
+        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
+            continue;
+        };
+        let Some(second) = timestamp
+            .as_bytes()
+            .get(..19)
+            .and_then(|second| second.try_into().ok())
+        else {
+            continue;
+        };
+        match first_second {
+            None => first_second = Some(second),
+            Some(first) => return (first == second).then_some(first),
+        }
+    }
+}
+
 pub(super) fn visit_codex_session_file(
     sessions_dir: &Path,
     path: &Path,

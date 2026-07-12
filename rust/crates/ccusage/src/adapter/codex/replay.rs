@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{CodexRawUsage, chunk_file_indexes_by_size};
 
-use super::parser::visit_codex_session_file;
+use super::parser::{detect_replay_second, visit_codex_session_file};
 
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, PathBuf>,
@@ -149,22 +149,10 @@ fn read_usage_events(sessions_dir: &Path, path: &Path) -> Vec<(String, CodexRawU
 }
 
 fn replayed_usage_from_first_second(sessions_dir: &Path, path: &Path) -> Vec<CodexRawUsage> {
-    let usage = read_usage_events(sessions_dir, path);
-    let Some(first_second): Option<[u8; 19]> = usage
-        .first()
-        .and_then(|(timestamp, _)| timestamp.as_bytes().get(..19))
-        .and_then(|second| second.try_into().ok())
-    else {
+    let Some(first_second) = detect_replay_second(path) else {
         return Vec::new();
     };
-    if usage
-        .get(1)
-        .and_then(|(timestamp, _)| timestamp.as_bytes().get(..19))
-        != Some(first_second.as_slice())
-    {
-        return Vec::new();
-    }
-    usage
+    read_usage_events(sessions_dir, path)
         .into_iter()
         .take_while(|(timestamp, _)| {
             timestamp.as_bytes().get(..19) == Some(first_second.as_slice())

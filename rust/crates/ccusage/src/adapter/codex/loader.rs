@@ -236,6 +236,52 @@ mod tests {
     }
 
     #[test]
+    fn skips_missing_parent_replay_when_duplicate_snapshot_is_suppressed() {
+        fn token_count(timestamp: &str, input: u64, total_input: u64) -> String {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": input,
+                            "output_tokens": 1,
+                            "total_tokens": input + 1,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": total_input,
+                            "output_tokens": 1,
+                            "total_tokens": total_input + 1,
+                        },
+                        "model": "gpt-5.5",
+                    },
+                },
+            })
+            .to_string()
+        }
+
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                json!({
+                    "type": "session_meta",
+                    "payload": {"id": "child", "forked_from_id": "missing-parent"},
+                })
+                .to_string(),
+                token_count("2026-07-10T08:00:00.100Z", 100, 100),
+                token_count("2026-07-10T08:00:00.200Z", 100, 100),
+                token_count("2026-07-10T08:00:01.000Z", 50, 50),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 50);
+    }
+
+    #[test]
     fn skips_nested_replays_against_immutable_parent_streams() {
         fn metadata(id: &str, parent: Option<&str>) -> String {
             json!({
