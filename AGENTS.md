@@ -33,6 +33,10 @@ Check the nearest package-specific `AGENTS.md` before editing package code:
 ## Always-On Reminders
 
 - The canonical user-facing CLI is `ccusage` with agent subcommands such as `ccusage amp`, `ccusage codex`, `ccusage opencode`, and `ccusage pi`.
+- Use Nushell for small structured automation that primarily orchestrates external commands, files, HTTP, and JSON.
+- Use Babashka when automation develops a reusable data model, multiple transformation stages, substantial reporting logic, or focused unit tests.
+- Use Rust for production binaries and CPU- or memory-intensive tooling.
+- Use TypeScript when the implementation directly benefits from the npm and JavaScript ecosystem or exposes a JavaScript API.
 - Standalone agent wrapper packages have been removed. Do not add docs, tests, or features that promote `ccusage-amp`, `ccusage-codex`, `ccusage-opencode`, or `ccusage-pi`.
 - Runtime libraries for bundled packages belong in `devDependencies` unless explicitly requested otherwise.
 - When initializing this repository environment, run `direnv allow` so the pinned Nix dev shell is activated.
