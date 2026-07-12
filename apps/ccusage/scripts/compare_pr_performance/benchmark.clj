@@ -25,17 +25,17 @@
     nil))
 (defn measure-memory [command {:keys [runs label]}]
   (when (pos? runs)
-    (let [samples (keep (fn [_]
-                          (if-let [argv (timed-command command)]
+    (if-let [argv (timed-command command)]
+      (let [samples (keep (fn [_]
                             (let [result (run-process argv {:env (:env command)})]
                               (if (zero? (:exit result))
                                 (try (parse-peak-rss (:err result))
                                      (catch Exception e (write-progress (str label " peak RSS skipped: " (ex-message e))) nil))
-                                (do (write-progress (format "%s peak RSS skipped after exit %d: %s" label (:exit result) (:err result))) nil)))
-                            (fail! (str "Peak RSS measurement is not supported on " (platform-name)) {:kind :unsupported-platform})))
-                        (range runs))]
-      (when (seq samples)
-        {:peak-rss-bytes (nth (vec (sort samples)) (quot (count samples) 2)) :samples (count samples)}))))
+                                (do (write-progress (format "%s peak RSS skipped after exit %d: %s" label (:exit result) (:err result))) nil))))
+                          (range runs))]
+        (when (seq samples)
+          {:peak-rss-bytes (nth (vec (sort samples)) (quot (count samples) 2)) :samples (count samples)}))
+      (do (write-progress (str label " peak RSS skipped: not supported on " (platform-name))) nil))))
 
 (defn read-hyperfine-results [export-path expected]
   (let [data (try (json/parse-string (slurp export-path) true)

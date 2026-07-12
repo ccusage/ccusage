@@ -1,12 +1,19 @@
 (defn run-process
   ([argv] (run-process argv {}))
-  ([argv {:keys [dir env inherit?] :or {env {}}}]
+  ([argv {:keys [dir env inherit? timeout-ms] :or {env {}}}]
    (let [opts (cond-> {:env (merge (into {} (System/getenv)) env)}
                 dir (assoc :dir (str dir))
                 inherit? (assoc :out :inherit :err :inherit)
                 (not inherit?) (assoc :out :string :err :string))
-         result @(process/process argv opts)]
-     {:exit (:exit result) :out (or (:out result) "") :err (or (:err result) "")})))
+         proc (process/process argv opts)
+         result (if (and timeout-ms (pos? timeout-ms))
+                  (let [outcome (deref proc timeout-ms ::timeout)]
+                    (if (= outcome ::timeout)
+                      (do (process/destroy-tree proc) (deref proc) {:exit 124 :timed-out? true})
+                      outcome))
+                  @proc)]
+     (cond-> {:exit (:exit result) :out (or (:out result) "") :err (or (:err result) "")}
+       (:timed-out? result) (assoc :timed-out? true :err (str "timed out after " timeout-ms "ms"))))))
 
 (defn run-checked [argv options label]
   (let [result (run-process argv options)]
@@ -62,10 +69,12 @@
         bin))))
 
 (defn write-progress [message] (binding [*out* *err*] (println (str "[ccusage-perf] " message))))
-(defn git-sha [directory]
-  (str/trim (:out (run-checked ["git" "rev-parse" "HEAD"] {:dir directory} "git rev-parse HEAD"))))
+(def curl-timeout-flags ["--connect-timeout" "10" "--max-time" "60"])
+(defn git-sha [directory timeout-ms]
+  (str/trim (:out (run-checked ["git" "rev-parse" "HEAD"] {:dir directory :timeout-ms timeout-ms} "git rev-parse HEAD"))))
 (defn package-url-ready? [url]
-  (zero? (:exit (run-process ["curl" "--fail" "--head" "--location" "--silent" "--output" "/dev/null" url]))))
+  (zero? (:exit (run-process (into ["curl" "--fail" "--head" "--location" "--silent"]
+                                   (concat curl-timeout-flags ["--output" "/dev/null" url]))))))
 (defn wait-for-package-url [url timeout-ms]
   (let [deadline (+ (System/currentTimeMillis) timeout-ms)]
     (loop []
@@ -83,7 +92,7 @@
             (json/generate-string {:private true :dependencies {:ccusage url}} {:pretty true}))
       (write-progress (str label " package install started: " url))
       (let [started (System/currentTimeMillis)
-            result (run-process ["bun" "install" "--no-progress"] {:dir install-dir})
+            result (run-process ["bun" "install" "--no-progress"] {:dir install-dir :timeout-ms timeout-ms})
             elapsed (- (System/currentTimeMillis) started)]
         (when-not (zero? (:exit result))
           (fail! (str label " package install failed: "
@@ -98,13 +107,13 @@
 (defn packed-tarball-path [destination filename]
   (if (fs/absolute? filename) filename (path destination filename)))
 
-(defn packed-tarball-size [repo-dir]
+(defn packed-tarball-size [repo-dir timeout-ms]
   (let [package-dir (path repo-dir "apps" "ccusage")
         package-json-path (path package-dir "package.json")
         original (slurp package-json-path)
         destination (temp-dir "ccusage-pack.")]
     (try
-      (let [result (run-process ["pnpm" "pack" "--json" "--pack-destination" (str destination)] {:dir package-dir})]
+      (let [result (run-process ["pnpm" "pack" "--json" "--pack-destination" (str destination)] {:dir package-dir :timeout-ms timeout-ms})]
         (when-not (zero? (:exit result))
           (fail! (str "pnpm pack failed: " (str/trim (or (not-empty (:err result)) (:out result))))
                  {:kind :package-metadata-failed :exit (:exit result)}))
@@ -120,7 +129,8 @@
 (defn remote-tarball-size [url]
   (let [output (fs/create-temp-file {:prefix "ccusage-package."})]
     (try
-      (run-checked ["curl" "--fail" "--location" "--silent" "--output" (str output) url]
+      (run-checked (into ["curl" "--fail" "--location" "--silent"]
+                         (concat curl-timeout-flags ["--output" (str output) url]))
                    {} (str "Failed to fetch " url))
       (optional-file-size output)
       (finally (fs/delete-if-exists output)))))

@@ -123,6 +123,18 @@
     (is (.contains markdown
                    "| Command | Input | Base median | PR median | PR vs base | Base peak RSS | PR peak RSS | PR&#x2f;base RSS | Base throughput | PR throughput |"))))
 
+(deftest process-timeout
+  (testing "a stalled child is terminated and reported as timed out"
+    (let [result (run-process ["sleep" "10"] {:timeout-ms 200})]
+      (is (:timed-out? result))
+      (is (not (zero? (:exit result))))
+      (is (.contains (:err result) "timed out")))))
+
+(deftest memory-skips-on-unsupported-platform
+  (testing "unsupported platforms warn and skip instead of aborting the run"
+    (with-redefs [platform-name (constantly "win32")]
+      (is (nil? (measure-memory {:argv ["true"] :env {}} {:runs 1 :label "test"}))))))
+
 (let [{:keys [fail error]} (apply run-tests ['compare-pr-performance-test])]
   (when (pos? (+ fail error))
     (System/exit 1)))

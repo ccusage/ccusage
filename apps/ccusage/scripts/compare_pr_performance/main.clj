@@ -11,7 +11,7 @@
       {:skip-reason (str "Base package URL was not ready before " (format-duration (:package-runner-timeout-ms options))
                          ". Fixture performance comparison requires a base package when --base-dir is not provided.")
        :base-package-url (:base-package-url options) :base-sha (:base-sha options)
-       :head-runtime (parse-head-runtime (:head-runtime options)) :head-sha (git-sha head-dir)}
+       :head-runtime (parse-head-runtime (:head-runtime options)) :head-sha (git-sha head-dir (:package-runner-timeout-ms options))}
       (let [base-native (when base-install (installed-native-package-bin-entry (path install-root "base-package")))
             head-native (when head-install (installed-native-package-bin-entry (path install-root "head-package")))
             runtime (parse-head-runtime (:head-runtime options))]
@@ -26,7 +26,8 @@
                 :base-runtime-description (when base-install "Base runs the published `ccusage` package from `pkg.pr.new`, installed before measurement")
                 :head-runtime-description (cond (and (= runtime "rust") head-native) "PR runs the published native `ccusage` binary from `pkg.pr.new`, installed before measurement"
                                                 (and (= runtime "package") head-install) "PR runs the published `ccusage` package from `pkg.pr.new`, installed before measurement")
-                :base-sha (or (:base-sha options) (when base-dir (git-sha base-dir))) :head-sha (git-sha head-dir)})))))
+                :base-sha (or (:base-sha options) (when base-dir (git-sha base-dir (:package-runner-timeout-ms options))))
+                :head-sha (git-sha head-dir (:package-runner-timeout-ms options))})))))
 
 (defn run-benchmark-suites [context]
   (let [common (select-keys context [:base-bin-entry :base-runtime-description :base-sha :head-bin-entry :head-dir
@@ -53,12 +54,12 @@
   {:base-native-package-binary (optional-file-size (:base-native-bin-entry context))
    :base-package (if (= :remote (base-package-size-source context))
                    (remote-tarball-size (:base-package-url context))
-                   (packed-tarball-size (:base-dir context)))
+                   (packed-tarball-size (:base-dir context) (:package-runner-timeout-ms context)))
    :base-rust-binary (when (:base-dir context) (optional-file-size (rust-binary-entry (:base-dir context))))
    :head-native-package-binary (optional-file-size (:head-native-bin-entry context))
    :head-package (if (= :remote (head-package-size-source context))
                    (remote-tarball-size (:head-package-url context))
-                   (packed-tarball-size (:head-dir context)))
+                   (packed-tarball-size (:head-dir context) (:package-runner-timeout-ms context)))
    :head-rust-binary (optional-file-size (rust-binary-entry (:head-dir context)))})
 
 (defn -main [& argv]
