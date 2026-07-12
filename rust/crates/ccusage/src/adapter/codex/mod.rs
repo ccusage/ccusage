@@ -2,6 +2,7 @@ mod aggregate;
 mod loader;
 mod parser;
 mod paths;
+mod replay;
 mod report;
 mod speed;
 mod types;

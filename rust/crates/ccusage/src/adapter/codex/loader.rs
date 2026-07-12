@@ -16,6 +16,7 @@ use super::{
         CodexUsageSource, codex_usage_sources, collect_codex_usage_files,
         collect_deduped_codex_usage_files,
     },
+    replay::CodexReplayPlan,
 };
 
 pub(crate) fn load_codex_events_from_directory(
@@ -23,13 +24,14 @@ pub(crate) fn load_codex_events_from_directory(
     single_thread: bool,
 ) -> Result<Vec<CodexTokenUsageEvent>> {
     let files = collect_codex_usage_files(sessions_dir);
+    let replay_plan = CodexReplayPlan::new([(sessions_dir, files.as_slice())], single_thread);
     let mut events = if single_thread {
         files
             .iter()
-            .flat_map(|file| read_codex_session_file(sessions_dir, file))
+            .flat_map(|file| read_codex_session_file(sessions_dir, file, &replay_plan))
             .collect::<Vec<_>>()
     } else {
-        read_codex_session_files_parallel(sessions_dir, &files)
+        read_codex_session_files_parallel(sessions_dir, &files, &replay_plan)
     };
     dedupe_codex_events(&mut events);
     Ok(events)
@@ -53,16 +55,23 @@ fn load_codex_events_from_sources(
         return load_codex_events_from_directory(&source.dir, single_thread);
     }
 
+    let groups = collect_deduped_codex_usage_files(sources);
+    let replay_plan = CodexReplayPlan::new(
+        groups
+            .iter()
+            .map(|group| (group.dir.as_path(), group.files.as_slice())),
+        single_thread,
+    );
     let mut events = Vec::new();
-    for group in collect_deduped_codex_usage_files(sources) {
+    for group in groups {
         let mut source_events = if single_thread {
             group
                 .files
                 .iter()
-                .flat_map(|file| read_codex_session_file(&group.dir, file))
+                .flat_map(|file| read_codex_session_file(&group.dir, file, &replay_plan))
                 .collect::<Vec<_>>()
         } else {
-            read_codex_session_files_parallel(&group.dir, &group.files)
+            read_codex_session_files_parallel(&group.dir, &group.files, &replay_plan)
         };
         events.append(&mut source_events);
     }
@@ -73,6 +82,7 @@ fn load_codex_events_from_sources(
 fn read_codex_session_files_parallel(
     sessions_dir: &Path,
     files: &[PathBuf],
+    replay_plan: &CodexReplayPlan,
 ) -> Vec<CodexTokenUsageEvent> {
     let worker_count = thread::available_parallelism()
         .map(usize::from)
@@ -81,7 +91,7 @@ fn read_codex_session_files_parallel(
     if worker_count <= 1 {
         return files
             .iter()
-            .flat_map(|file| read_codex_session_file(sessions_dir, file))
+            .flat_map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
             .collect();
     }
 
@@ -92,7 +102,12 @@ fn read_codex_session_files_parallel(
             handles.push(scope.spawn(move || {
                 chunk
                     .into_iter()
-                    .map(|index| (index, read_codex_session_file(sessions_dir, &files[index])))
+                    .map(|index| {
+                        (
+                            index,
+                            read_codex_session_file(sessions_dir, &files[index], replay_plan),
+                        )
+                    })
                     .collect::<Vec<_>>()
             }));
         }
@@ -113,12 +128,21 @@ fn read_codex_session_files_parallel(
     })
 }
 
-fn read_codex_session_file(sessions_dir: &Path, path: &Path) -> Vec<CodexTokenUsageEvent> {
+fn read_codex_session_file(
+    sessions_dir: &Path,
+    path: &Path,
+    replay_plan: &CodexReplayPlan,
+) -> Vec<CodexTokenUsageEvent> {
     let mut events = Vec::new();
-    let _ = visit_codex_session_file(sessions_dir, path, |event| {
-        events.push(event);
-        Ok(())
-    });
+    let _ = visit_codex_session_file(
+        sessions_dir,
+        path,
+        replay_plan.parent_usage(path),
+        |event| {
+            events.push(event);
+            Ok(())
+        },
+    );
     events
 }
 
@@ -168,6 +192,108 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].session_id, "session-a");
+    }
+
+    #[test]
+    fn skips_repeated_last_usage_when_cumulative_total_is_unchanged() {
+        let usage = json!({
+            "last_token_usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 20,
+                "output_tokens": 10,
+                "total_tokens": 110,
+            },
+            "total_token_usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 20,
+                "output_tokens": 10,
+                "total_tokens": 110,
+            },
+            "model": "gpt-5.5",
+        });
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({
+                    "timestamp": "2026-07-10T08:00:00.000Z",
+                    "type": "event_msg",
+                    "payload": {"type": "token_count", "info": usage.clone()},
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-07-10T08:00:01.000Z",
+                    "type": "event_msg",
+                    "payload": {"type": "token_count", "info": usage},
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].total_tokens, 110);
+    }
+
+    #[test]
+    fn skips_nested_replays_against_immutable_parent_streams() {
+        fn metadata(id: &str, parent: Option<&str>) -> String {
+            json!({
+                "type": "session_meta",
+                "payload": {"id": id, "forked_from_id": parent},
+            })
+            .to_string()
+        }
+
+        fn token_count(timestamp: &str, input: u64) -> String {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "model": "gpt-5.2",
+                        "last_token_usage": {
+                            "input_tokens": input,
+                            "output_tokens": 1,
+                            "total_tokens": input + 1,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        }
+
+        let fixture = fs_fixture!({
+            "01-root.jsonl": [
+                metadata("root", None),
+                token_count("2026-07-10T08:01:00.000Z", 100),
+            ]
+            .join("\n"),
+            "02-parent.jsonl": [
+                metadata("parent", Some("root")),
+                token_count("2026-07-10T09:00:00.000Z", 100),
+                token_count("2026-07-10T09:01:00.000Z", 50),
+            ]
+            .join("\n"),
+            "03-child.jsonl": [
+                metadata("child", Some("parent")),
+                token_count("2026-07-10T10:00:00.000Z", 100),
+                token_count("2026-07-10T10:00:01.000Z", 50),
+                token_count("2026-07-10T10:01:00.000Z", 25),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (event.session_id.as_str(), event.input_tokens))
+                .collect::<Vec<_>>(),
+            [("01-root", 100), ("02-parent", 50), ("03-child", 25)]
+        );
     }
 
     #[test]

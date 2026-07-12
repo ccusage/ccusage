@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     fs,
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader},
     path::Path,
     sync::LazyLock,
 };
@@ -32,11 +32,6 @@ static INPUT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""input_tokens":"#));
 static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
-static THREAD_SPAWN_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"thread_spawn"));
-static FORKED_FROM_ID_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"forked_from_id"));
-
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_FALLBACKS_JSON: &str = include_str!("codex-auto-review-fallbacks.json");
 
@@ -64,86 +59,12 @@ struct CodexExecTimestamps {
     model: String,
 }
 
-fn is_codex_replay_session(path: &Path) -> bool {
-    let Ok(mut file) = fs::File::open(path) else {
-        return false;
-    };
-    let mut buf = [0u8; 16 * 1024];
-    let Ok(n) = file.read(&mut buf) else {
-        return false;
-    };
-    THREAD_SPAWN_FINDER.find(&buf[..n]).is_some() || FORKED_FROM_ID_FINDER.find(&buf[..n]).is_some()
-}
-
-fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
-    let Ok(file) = fs::File::open(path) else {
-        return None;
-    };
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
-    let mut first_second: Option<[u8; 19]> = None;
-
-    loop {
-        line.clear();
-        let Ok(n) = reader.read_until(b'\n', &mut line) else {
-            return None;
-        };
-        if n == 0 {
-            break;
-        }
-        let Some(kind) = codex_line_usage_kind(&line) else {
-            continue;
-        };
-        if !matches!(kind, CodexLineKind::Session) {
-            continue;
-        }
-        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
-            continue;
-        };
-        if value.entry_type.as_deref() != Some("event_msg") {
-            continue;
-        }
-        let Some(payload) = value.payload.as_ref() else {
-            continue;
-        };
-        if payload.payload_type.as_deref() != Some("token_count") {
-            continue;
-        }
-        let info = payload.info.as_ref();
-        if info.and_then(|i| i.last_token_usage.as_ref()).is_none()
-            && info.and_then(|i| i.total_token_usage.as_ref()).is_none()
-        {
-            continue;
-        }
-        let Some(ts) = codex_session_timestamp(value.timestamp.as_ref()) else {
-            continue;
-        };
-        let ts_bytes = ts.as_bytes();
-        let ts_second: [u8; 19] = ts_bytes.get(0..19).and_then(|s| s.try_into().ok())?;
-        match first_second {
-            None => {
-                first_second = Some(ts_second);
-            }
-            Some(ref first) => {
-                if first == &ts_second {
-                    return Some(ts_second);
-                }
-                return None;
-            }
-        }
-    }
-    None
-}
-
 pub(super) fn visit_codex_session_file(
     sessions_dir: &Path,
     path: &Path,
+    replayed_prefix: Option<&[CodexRawUsage]>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    let is_replay_session = is_codex_replay_session(path);
-    let replay_second = is_replay_session
-        .then(|| detect_replay_second(path))
-        .flatten();
     let Ok(file) = fs::File::open(path) else {
         return Ok(());
     };
@@ -154,7 +75,25 @@ pub(super) fn visit_codex_session_file(
     let mut current_model: Option<String> = None;
     let mut current_model_is_fallback = false;
     let fallback_timestamp = file_modified_timestamp(path);
-    let mut skip_replay = replay_second.is_some();
+    let mut replay_index = 0;
+    let mut matching_replay = replayed_prefix.is_some();
+    let mut visit_filtered = |event: CodexTokenUsageEvent| {
+        if matching_replay {
+            let usage = CodexRawUsage {
+                input_tokens: event.input_tokens,
+                cached_input_tokens: event.cached_input_tokens,
+                output_tokens: event.output_tokens,
+                reasoning_output_tokens: event.reasoning_output_tokens,
+                total_tokens: event.total_tokens,
+            };
+            if replayed_prefix.and_then(|prefix| prefix.get(replay_index)) == Some(&usage) {
+                replay_index += 1;
+                return Ok(());
+            }
+            matching_replay = false;
+        }
+        visit(event)
+    };
 
     loop {
         line.clear();
@@ -172,42 +111,13 @@ pub(super) fn visit_codex_session_file(
                 let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
                     continue;
                 };
-                if let Some(ref replay_ts) = replay_second
-                    && skip_replay
-                    && value.entry_type.as_deref() == Some("event_msg")
-                    && value
-                        .payload
-                        .as_ref()
-                        .is_some_and(|p| p.payload_type.as_deref() == Some("token_count"))
-                {
-                    let Some(ts) = codex_session_timestamp(value.timestamp.as_ref()) else {
-                        continue;
-                    };
-                    let matches_replay = ts
-                        .as_bytes()
-                        .get(0..19)
-                        .is_some_and(|sec| sec.len() == 19 && sec == replay_ts.as_slice());
-                    if matches_replay {
-                        if let Some(total_usage) = value
-                            .payload
-                            .as_ref()
-                            .and_then(|payload| payload.info.as_ref())
-                            .and_then(|info| info.total_token_usage.as_ref())
-                            .copied()
-                        {
-                            previous_totals.replace(total_usage);
-                        }
-                        continue;
-                    }
-                    skip_replay = false;
-                }
                 visit_codex_session_entry(
                     &session_id,
                     value,
                     &mut previous_totals,
                     &mut current_model,
                     &mut current_model_is_fallback,
-                    &mut visit,
+                    &mut visit_filtered,
                 )?;
             }
             CodexLineKind::Headless => {
@@ -218,7 +128,7 @@ pub(super) fn visit_codex_session_file(
                         &fallback_timestamp,
                         &mut current_model,
                         &mut current_model_is_fallback,
-                        &mut visit,
+                        &mut visit_filtered,
                     )?;
                 } else {
                     add_codex_exec_event_from_value(
@@ -227,7 +137,7 @@ pub(super) fn visit_codex_session_file(
                         &fallback_timestamp,
                         &mut current_model,
                         &mut current_model_is_fallback,
-                        &mut visit,
+                        &mut visit_filtered,
                     )?;
                 };
             }
@@ -267,8 +177,12 @@ fn visit_codex_session_entry(
     }
     let info = payload.info.as_ref();
     let total_usage = info.and_then(|info| info.total_token_usage.as_ref().copied());
+    let cumulative_advanced = total_usage
+        .as_ref()
+        .is_none_or(|total_usage| previous_totals.as_ref() != Some(total_usage));
     let raw_usage = info
         .and_then(|info| info.last_token_usage.as_ref().copied())
+        .filter(|_| cumulative_advanced)
         .or_else(|| {
             total_usage
                 .as_ref()
