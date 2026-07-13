@@ -49,6 +49,7 @@ Unified tables include an **Agent** column so you can compare sources in one vie
 | pi-agent     | `pi`       | `ccusage pi monthly`      |
 | Goose        | `goose`    | `ccusage goose daily`     |
 | OpenClaw     | `openclaw` | `ccusage openclaw daily`  |
+| Grok Build   | `grok`     | `ccusage grok daily`      |
 | Kilo         | `kilo`     | `ccusage kilo daily`      |
 | Kimi         | `kimi`     | `ccusage kimi daily`      |
 | Qwen         | `qwen`     | `ccusage qwen daily`      |
@@ -68,6 +69,7 @@ ccusage droid session
 ccusage codebuff daily
 ccusage pi session --pi-path /path/to/sessions
 ccusage openclaw daily --open-claw-path /path/to/openclaw
+ccusage grok daily --grok-path /path/to/.grok
 ccusage kilo session
 ccusage qwen daily
 ccusage copilot daily --json

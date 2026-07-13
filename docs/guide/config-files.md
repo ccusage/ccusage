@@ -391,7 +391,7 @@ ccusage blocks --config /path/to/team-config.json
 
 ## Pricing Overrides
 
-ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the binary, optionally refreshed at runtime (or skipped with `--offline`). When a model is missing from LiteLLM (private deployments, internal wrappers like Pi's `[pi] gpt-5.4`, custom proxies), or when the snapshot price differs from your contract, set `pricingOverrides` under `defaults` to supply per-model values.
+ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the binary, optionally refreshed at runtime (or skipped with `--offline`). Calculated costs are estimates from public USD token-list rates, not invoice-real costs. When a model is missing from LiteLLM (private deployments, internal wrappers like Pi's `[pi] gpt-5.4`, custom proxies), or when the snapshot price differs from your contract, set `pricingOverrides` under `defaults` to supply per-model values.
 
 ```json
 {
@@ -415,12 +415,16 @@ ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the bin
 
 ### Raw Model Names
 
-Keys in `pricingOverrides` must match the **raw model name** as recorded in the source logs, including any adapter prefix:
+Keys in `pricingOverrides` must match a pricing candidate derived from the source log:
 
 | Adapter                                | Prefix  | Example key                    |
 | -------------------------------------- | ------- | ------------------------------ |
-| Pi                                     | `[pi] ` | `[pi] gpt-5.4`                 |
+| Pi                                     | `[pi] ` | `[pi] gpt-5.4` or `gpt-5.4`    |
 | Others (Claude, Codex, OpenCode, etc.) | none    | `claude-sonnet-4-5`, `gpt-5.5` |
+
+For Pi, an exact displayed key such as `[pi] gpt-5.4` wins over the raw key.
+Use the raw key when the same underlying model should share one override across
+Pi and non-Pi sources.
 
 To find the exact name, run `ccusage <agent> daily --json` and look at the `model` field in the per-row breakdown.
 

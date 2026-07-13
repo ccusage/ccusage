@@ -180,6 +180,11 @@ When calculating costs from tokens, ccusage uses:
 - **Automatic updates** - Pricing refreshed regularly
 - **Multiple models** - Supports Claude Opus 4.1, Sonnet 4.5, and other models
 
+Token-based costs are estimates from public USD token-list rates. They are not
+invoice-real costs and do not include subscription amortization, negotiated
+discounts, credits, taxes, or dynamic router decisions unless the source log
+records a deterministic underlying model or pre-calculated cost.
+
 #### Token Types
 
 ```typescript

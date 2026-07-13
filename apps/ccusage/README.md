@@ -60,6 +60,7 @@ ccusage reads local usage data from coding agent CLIs and turns it into daily, w
 | pi-agent           | `ccusage pi daily`       |
 | Goose              | `ccusage goose daily`    |
 | OpenClaw           | `ccusage openclaw daily` |
+| Grok Build CLI     | `ccusage grok daily`     |
 | Kilo               | `ccusage kilo daily`     |
 | Kimi               | `ccusage kimi daily`     |
 | Qwen               | `ccusage qwen daily`     |
@@ -114,6 +115,7 @@ bunx ccusage codebuff daily
 bunx ccusage hermes daily
 bunx ccusage goose daily
 bunx ccusage openclaw daily
+bunx ccusage grok daily
 bunx ccusage kilo daily
 bunx ccusage kimi daily
 bunx ccusage qwen daily

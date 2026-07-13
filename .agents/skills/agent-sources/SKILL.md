@@ -44,6 +44,7 @@ flags:
 - OpenCode: `rust/crates/ccusage/src/adapter/opencode/README.md`
 - Amp: `rust/crates/ccusage/src/adapter/amp/README.md`
 - pi-agent: `rust/crates/ccusage/src/adapter/pi/README.md`
+- Grok Build CLI: `rust/crates/ccusage/src/adapter/grok/README.md`
 
 ## Implementation Notes
 

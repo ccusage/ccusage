@@ -29,10 +29,12 @@ The CLI log files include operational events such as conversation creation, stre
 Because the local files do not expose the token accounting needed for ccusage reports, Antigravity CLI is not supported right now.
 :::
 
-::: details Why is Grok CLI not supported?
-Grok CLI was investigated, but its local SQLite data did not contain usable token accounting. Without token counts, model usage, or recorded costs in the local database, ccusage has nothing reliable to aggregate.
+::: details Is Grok Build CLI supported?
+Yes. Grok Build CLI (current local session layout under `~/.grok/sessions`) writes per-turn usage on `turn_completed` events in `updates.jsonl`, including input, output, cache-read, and reasoning tokens per model.
 
-Estimating tokens from message text would ignore provider-side context, hidden prompts, tool-call payloads, cached input, and tokenizer differences, so ccusage does not do that.
+Use `ccusage grok daily|monthly|session` or the unified `ccusage daily` report when Grok data is present. See the [Grok guide](/guide/grok/) for paths, `GROK_HOME`, `--grok-path`, and cost notes.
+
+Older investigations that looked only at SQLite without turn usage no longer apply to the JSONL session updates layout.
 :::
 
 ::: details Why is Devin CLI not supported?
