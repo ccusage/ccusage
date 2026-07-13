@@ -12,6 +12,7 @@ pub(crate) mod copilot;
 pub(crate) mod droid;
 pub(crate) mod gemini;
 pub(crate) mod goose;
+pub(crate) mod grok;
 pub(crate) mod hermes;
 pub(crate) mod jsonl;
 pub(crate) mod kilo;
