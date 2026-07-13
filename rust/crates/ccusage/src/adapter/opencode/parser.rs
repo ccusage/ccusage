@@ -6,7 +6,8 @@ use serde::Deserialize;
 use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    calculate_cost_for_usage, cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
+    calculate_cost_for_pricing_candidates, cli::CostMode, format_date_tz,
+    missing_pricing_model_for_pricing_candidates,
 };
 
 /// A single parsed OpenCode message. Only the fields ccusage consumes are
@@ -164,14 +165,14 @@ fn calculate_open_code_cost(
     if let Some(cost) = cost_usd.filter(|cost| *cost > 0.0) {
         return cost;
     }
-    for candidate in open_code_model_candidates(model, provider) {
-        let cost =
-            calculate_cost_for_usage(Some(&candidate), usage, None, CostMode::Calculate, pricing);
-        if cost > 0.0 {
-            return cost;
-        }
-    }
-    0.0
+    let candidates = open_code_model_candidates(model, provider);
+    calculate_cost_for_pricing_candidates(
+        candidates.iter().map(String::as_str),
+        usage,
+        None,
+        CostMode::Calculate,
+        pricing,
+    )
 }
 
 fn missing_open_code_pricing(
@@ -185,10 +186,13 @@ fn missing_open_code_pricing(
     if mode == CostMode::Display || cost_usd.is_some_and(|cost| cost > 0.0) {
         return None;
     }
-    missing_pricing_model_for_candidates(
+    let candidates = open_code_model_candidates(model, provider);
+    missing_pricing_model_for_pricing_candidates(
         model,
-        open_code_model_candidates(model, provider),
+        candidates.iter().map(String::as_str),
         crate::total_usage_tokens(usage),
+        cost_usd.filter(|cost| *cost > 0.0),
+        mode,
         pricing,
     )
 }
@@ -438,6 +442,51 @@ mod tests {
         .unwrap();
 
         assert_eq!(entry.cost, 0.000143);
+    }
+
+    #[test]
+    fn exact_provider_override_wins_over_builtin_raw_model_pricing() {
+        let mut pricing = PricingMap::load_embedded();
+        let overrides = std::collections::BTreeMap::from([(
+            "deepseek/deepseek-v4-pro".to_string(),
+            ccusage_cli::PricingOverride {
+                input_cost_per_token: Some(1.0),
+                output_cost_per_token: Some(0.0),
+                cache_creation_input_token_cost: Some(0.0),
+                cache_read_input_token_cost: Some(0.0),
+                input_cost_per_token_above_200k_tokens: None,
+                output_cost_per_token_above_200k_tokens: None,
+                cache_creation_input_token_cost_above_200k_tokens: None,
+                cache_read_input_token_cost_above_200k_tokens: None,
+                max_input_tokens: None,
+                fast_multiplier: None,
+            },
+        )]);
+        pricing.apply_overrides(overrides.iter());
+
+        let entry = message_value_to_entry(
+            &message(json!({
+                "id": "message-a",
+                "sessionID": "session-a",
+                "providerID": "deepseek",
+                "modelID": "deepseek-v4-pro",
+                "time": { "created": 0 },
+                "tokens": {
+                    "input": 100,
+                    "output": 10,
+                    "cache": { "read": 50 }
+                },
+                "cost": 0
+            })),
+            None,
+            None,
+            None,
+            CostMode::Auto,
+            Some(&pricing),
+        )
+        .unwrap();
+
+        assert_eq!(entry.cost, 100.0);
     }
 
     #[test]

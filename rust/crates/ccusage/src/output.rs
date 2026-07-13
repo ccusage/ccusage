@@ -369,17 +369,40 @@ pub(crate) fn missing_pricing_warnings_for_models<'a>(
     models
         .into_iter()
         .map(|model| {
-            if offline {
+            if is_dynamic_router_model(model) {
                 format!(
-                    "WARN  Missing embedded pricing for {model}; cost excludes this model. Run without --offline or update ccusage after pricing is added."
+                    "WARN  No deterministic token rate for dynamic model router {model}; cost excludes this usage. Configure pricingOverrides only if your logs expose the resolved underlying model."
+                )
+            } else if is_unsupported_or_undetected_model(model) {
+                format!(
+                    "WARN  Unsupported or undetected usage source for {model}; cost excludes this usage. Capture a real-log fixture with the resolved model before adding pricing."
+                )
+            } else if offline {
+                format!(
+                    "WARN  Missing embedded pricing for fixed model {model}; cost excludes this model. Run without --offline, update ccusage, or configure pricingOverrides."
                 )
             } else {
                 format!(
-                    "WARN  Missing pricing for {model}; cost excludes this model. Update pricing or run again after LiteLLM has the model."
+                    "WARN  Missing pricing for fixed model {model}; cost excludes this model. Update pricing or configure pricingOverrides."
                 )
             }
         })
         .collect()
+}
+
+fn is_dynamic_router_model(model: &str) -> bool {
+    model == "openrouter/auto"
+        || model == "ark-code-latest"
+        || model == "antigravity-gemini-3-flash"
+        || model.starts_with("openrouter/fusion")
+        || model.starts_with("fusion-")
+}
+
+fn is_unsupported_or_undetected_model(model: &str) -> bool {
+    matches!(
+        model,
+        "unknown" | "unknown-model" | "unknown-model-xyz" | "<unknown>"
+    )
 }
 
 pub(crate) fn json_float(value: f64) -> Value {
@@ -662,8 +685,43 @@ mod tests {
         assert_eq!(
             missing_pricing_warnings(&[row], false),
             vec![
-                "WARN  Missing pricing for claude-sonnet-4-20250514; cost excludes this model. Update pricing or run again after LiteLLM has the model.",
-                "WARN  Missing pricing for gpt-5.2-codex; cost excludes this model. Update pricing or run again after LiteLLM has the model.",
+                "WARN  Missing pricing for fixed model claude-sonnet-4-20250514; cost excludes this model. Update pricing or configure pricingOverrides.",
+                "WARN  Missing pricing for fixed model gpt-5.2-codex; cost excludes this model. Update pricing or configure pricingOverrides.",
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_pricing_warnings_explain_dynamic_routers() {
+        assert_eq!(
+            missing_pricing_warnings_for_models(
+                [
+                    "openrouter/auto",
+                    "openrouter/fusion",
+                    "openrouter/fusion-alpha",
+                    "fusion-router",
+                    "ark-code-latest",
+                    "antigravity-gemini-3-flash",
+                ],
+                false,
+            ),
+            vec![
+                "WARN  No deterministic token rate for dynamic model router antigravity-gemini-3-flash; cost excludes this usage. Configure pricingOverrides only if your logs expose the resolved underlying model.",
+                "WARN  No deterministic token rate for dynamic model router ark-code-latest; cost excludes this usage. Configure pricingOverrides only if your logs expose the resolved underlying model.",
+                "WARN  No deterministic token rate for dynamic model router fusion-router; cost excludes this usage. Configure pricingOverrides only if your logs expose the resolved underlying model.",
+                "WARN  No deterministic token rate for dynamic model router openrouter/auto; cost excludes this usage. Configure pricingOverrides only if your logs expose the resolved underlying model.",
+                "WARN  No deterministic token rate for dynamic model router openrouter/fusion; cost excludes this usage. Configure pricingOverrides only if your logs expose the resolved underlying model.",
+                "WARN  No deterministic token rate for dynamic model router openrouter/fusion-alpha; cost excludes this usage. Configure pricingOverrides only if your logs expose the resolved underlying model.",
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_pricing_warnings_explain_unsupported_or_undetected_sources() {
+        assert_eq!(
+            missing_pricing_warnings_for_models(["unknown"], false),
+            vec![
+                "WARN  Unsupported or undetected usage source for unknown; cost excludes this usage. Capture a real-log fixture with the resolved model before adding pricing.",
             ]
         );
     }
@@ -676,7 +734,7 @@ mod tests {
         assert_eq!(
             missing_pricing_warnings(&[row], true),
             vec![
-                "WARN  Missing embedded pricing for gpt-5.2-codex; cost excludes this model. Run without --offline or update ccusage after pricing is added.",
+                "WARN  Missing embedded pricing for fixed model gpt-5.2-codex; cost excludes this model. Run without --offline, update ccusage, or configure pricingOverrides.",
             ]
         );
     }

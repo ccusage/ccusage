@@ -36,6 +36,21 @@ pub(crate) fn calculate_cost_for_usage(
     }
 }
 
+pub(crate) fn calculate_cost_for_pricing_candidates<'a>(
+    candidates: impl IntoIterator<Item = &'a str>,
+    usage: crate::TokenUsageRaw,
+    cost_usd: Option<f64>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> f64 {
+    match mode {
+        CostMode::Display => cost_usd.unwrap_or(0.0),
+        CostMode::Auto => cost_usd
+            .unwrap_or_else(|| calculate_cost_from_candidate_tokens(candidates, usage, pricing)),
+        CostMode::Calculate => calculate_cost_from_candidate_tokens(candidates, usage, pricing),
+    }
+}
+
 pub(crate) fn missing_pricing_model_for_usage(
     model: Option<&str>,
     usage: crate::TokenUsageRaw,
@@ -47,6 +62,27 @@ pub(crate) fn missing_pricing_model_for_usage(
         return None;
     }
     missing_pricing_model_for_token_total(model, crate::total_usage_tokens(usage), pricing)
+}
+
+pub(crate) fn missing_pricing_model_for_pricing_candidates<'a>(
+    display_model: &str,
+    candidates: impl IntoIterator<Item = &'a str>,
+    total_tokens: u64,
+    cost_usd: Option<f64>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Option<String> {
+    if total_tokens == 0
+        || mode == CostMode::Display
+        || (mode == CostMode::Auto && cost_usd.is_some())
+    {
+        return None;
+    }
+    let pricing = pricing?;
+    pricing
+        .find_for_candidates(candidates)
+        .is_none()
+        .then(|| crate::model_aliases::resolve_model_name(display_model).into_owned())
 }
 
 pub(crate) fn missing_pricing_model_for_token_total(
@@ -92,6 +128,24 @@ fn calculate_cost_from_tokens(
     let Some(pricing) = pricing.and_then(|pricing| pricing.find(model)) else {
         return 0.0;
     };
+    calculate_cost_from_pricing(usage, pricing)
+}
+
+fn calculate_cost_from_candidate_tokens<'a>(
+    candidates: impl IntoIterator<Item = &'a str>,
+    usage: crate::TokenUsageRaw,
+    pricing: Option<&PricingMap>,
+) -> f64 {
+    let Some(pricing) = pricing.and_then(|pricing| pricing.find_for_candidates(candidates)) else {
+        return 0.0;
+    };
+    calculate_cost_from_pricing(usage, pricing)
+}
+
+fn calculate_cost_from_pricing(
+    usage: crate::TokenUsageRaw,
+    pricing: crate::pricing::Pricing,
+) -> f64 {
     let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
         pricing.fast_multiplier
     } else {

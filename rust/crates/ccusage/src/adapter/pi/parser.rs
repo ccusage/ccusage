@@ -6,8 +6,8 @@ use serde::Deserialize;
 use super::super::jsonl;
 use crate::{
     LoadedEntry, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, missing_pricing_model_for_usage,
+    apply_total_token_fallback, calculate_cost_for_pricing_candidates, cli::CostMode,
+    fast::LinePrefilter, format_date_tz, missing_pricing_model_for_pricing_candidates,
 };
 
 /// A single parsed pi session record. Only the fields ccusage consumes are
@@ -112,11 +112,27 @@ pub(crate) fn read_session_file(
         if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
             continue;
         }
-        let model = message.model.clone().map(|model| format!("[pi] {model}"));
+        let raw_model = message.model.clone();
+        let model = raw_model.as_ref().map(|model| format!("[pi] {model}"));
         let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
-        let cost = calculate_cost_for_usage(model.as_deref(), usage, display_cost, mode, pricing);
-        let missing_pricing_model =
-            missing_pricing_model_for_usage(model.as_deref(), usage, display_cost, mode, pricing);
+        let pricing_candidates = pi_pricing_candidates(model.as_deref(), raw_model.as_deref());
+        let cost = calculate_cost_for_pricing_candidates(
+            pricing_candidates.iter().map(String::as_str),
+            usage,
+            display_cost,
+            mode,
+            pricing,
+        );
+        let missing_pricing_model = model.as_deref().and_then(|model| {
+            missing_pricing_model_for_pricing_candidates(
+                model,
+                pricing_candidates.iter().map(String::as_str),
+                crate::total_usage_tokens(usage),
+                display_cost,
+                mode,
+                pricing,
+            )
+        });
         let data = UsageEntry {
             session_id: Some(session_id.clone()),
             timestamp: timestamp_text,
@@ -185,6 +201,18 @@ fn extract_project(path: &Path) -> String {
         previous_was_sessions = segment == "sessions";
     }
     "unknown".to_string()
+}
+
+fn pi_pricing_candidates(display_model: Option<&str>, raw_model: Option<&str>) -> Vec<String> {
+    let mut candidates = Vec::new();
+    if let Some(display_model) = display_model {
+        candidates.push(display_model.to_string());
+    }
+    if let Some(raw_model) = raw_model {
+        candidates.push(raw_model.to_string());
+    }
+    candidates.dedup();
+    candidates
 }
 
 pub(super) fn entry_id(entry: &LoadedEntry) -> String {
@@ -289,5 +317,55 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);
         assert_eq!(entries[0].data.message.usage.output_tokens, 200);
+    }
+
+    #[test]
+    fn prices_glm_52_from_raw_model_key_but_keeps_pi_display_label() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"glm-5.2","usage":{"input":1000000,"output":1000000,"cacheRead":1000000}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let pricing = PricingMap::load_embedded();
+
+        let entries = read_session_file(&file, None, CostMode::Calculate, Some(&pricing)).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[pi] glm-5.2"));
+        assert_eq!(
+            entries[0].missing_pricing_model.as_deref(),
+            None,
+            "raw GLM-5.2 pricing should be usable without warning"
+        );
+        assert!((entries[0].cost - 6.06).abs() < 1e-9);
+    }
+
+    #[test]
+    fn exact_pi_display_override_wins_over_raw_model_override() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"glm-5.2","usage":{"input":100}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let overrides = std::collections::BTreeMap::from([
+            (
+                "glm-5.2".to_string(),
+                ccusage_cli::PricingOverride {
+                    input_cost_per_token: Some(1.0),
+                    ..ccusage_cli::PricingOverride::default()
+                },
+            ),
+            (
+                "[pi] glm-5.2".to_string(),
+                ccusage_cli::PricingOverride {
+                    input_cost_per_token: Some(2.0),
+                    ..ccusage_cli::PricingOverride::default()
+                },
+            ),
+        ]);
+        let mut pricing = PricingMap::default();
+        pricing.apply_overrides(overrides.iter());
+
+        let entries = read_session_file(&file, None, CostMode::Calculate, Some(&pricing)).unwrap();
+
+        assert_eq!(entries[0].cost, 200.0);
     }
 }

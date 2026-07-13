@@ -9,7 +9,7 @@ use ccusage_cli::PricingOverride;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::fast::FxHashMap;
+use crate::fast::{FxHashMap, FxHashSet};
 
 const BUILD_TIME_PRICING_JSON: &str =
     include_str!(concat!(env!("OUT_DIR"), "/litellm-pricing.json"));
@@ -60,6 +60,7 @@ impl Pricing {
 pub(crate) struct PricingMap {
     entries: FxHashMap<String, Pricing>,
     context_limits: FxHashMap<String, u64>,
+    override_keys: FxHashSet<String>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
 }
@@ -387,6 +388,62 @@ impl PricingMap {
             })
     }
 
+    pub(crate) fn find_for_candidates<'a>(
+        &self,
+        candidates: impl IntoIterator<Item = &'a str>,
+    ) -> Option<Pricing> {
+        let candidates = candidates.into_iter().collect::<Vec<_>>();
+        candidates
+            .iter()
+            .find_map(|candidate| self.find_override_entry(candidate))
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find_map(|candidate| self.entries.get(*candidate).copied())
+            })
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find_map(|candidate| self.find_entry_or_alias(candidate))
+            })
+            .or_else(|| {
+                candidates.iter().find_map(|candidate| {
+                    let alias = crate::model_aliases::resolve_model_name(candidate);
+                    let resolved_alias = alias.as_ref();
+                    (resolved_alias != *candidate)
+                        .then(|| self.find_entry_or_alias(resolved_alias))
+                        .flatten()
+                })
+            })
+            .or_else(|| {
+                self.enable_models_dev_fallback
+                    .then(|| {
+                        models_dev_pricing().and_then(|pricing| {
+                            candidates
+                                .iter()
+                                .find_map(|candidate| pricing.find_entry_or_alias(candidate))
+                        })
+                    })
+                    .flatten()
+            })
+            .or_else(|| {
+                self.enable_embedded_models_dev_fallback
+                    .then(|| {
+                        candidates.iter().find_map(|candidate| {
+                            embedded_models_dev_pricing().find_entry_or_alias(candidate)
+                        })
+                    })
+                    .flatten()
+            })
+    }
+
+    fn find_override_entry(&self, model: &str) -> Option<Pricing> {
+        self.override_keys
+            .contains(model)
+            .then(|| self.entries.get(model).copied())
+            .flatten()
+    }
+
     fn find_entry_or_alias(&self, model: &str) -> Option<Pricing> {
         self.find_entry(model)
             .or_else(|| pricing_alias(model).and_then(|alias| self.find_entry(alias)))
@@ -546,6 +603,7 @@ impl PricingMap {
         };
 
         self.entries.insert(model.to_string(), pricing);
+        self.override_keys.insert(model.to_string());
         if let Some(limit) = override_value.max_input_tokens {
             self.context_limits.insert(model.to_string(), limit);
         }
@@ -781,21 +839,59 @@ impl PricingMap {
                     .unwrap_or(1.0),
             },
         );
+        let fixed_cached_input_pricing = |input: f64, output: f64, cache_read: f64| Pricing {
+            input,
+            output,
+            cache_create: input,
+            cache_read,
+            cache_read_explicit: true,
+            input_above_200k: None,
+            output_above_200k: None,
+            cache_create_above_200k: None,
+            cache_read_above_200k: None,
+            fast_multiplier: 1.0,
+        };
+        // Source: https://docs.x.ai/developers/pricing
+        self.entries.insert(
+            "grok-build-0.1".to_string(),
+            fixed_cached_input_pricing(1.0e-6, 2.0e-6, 0.2e-6),
+        );
         self.entries.insert(
             "grok-4.3".to_string(),
-            Pricing {
-                input: 1.25e-6,
-                output: 2.5e-6,
-                cache_create: 1.25e-6,
-                cache_read: 0.125e-6,
-                cache_read_explicit: false,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                fast_multiplier: 1.0,
-            },
+            fixed_cached_input_pricing(1.25e-6, 2.5e-6, 0.2e-6),
         );
+        // Source: OpenRouter / LiteLLM list rates for x-ai/grok-4.5 (2026-07-13):
+        // $2/M input, $6/M output, $0.50/M cache read.
+        let grok_45 = fixed_cached_input_pricing(2.0e-6, 6.0e-6, 0.5e-6);
+        self.entries.insert("grok-4.5".to_string(), grok_45);
+        self.entries.insert("xai/grok-4.5".to_string(), grok_45);
+        self.entries.insert("x-ai/grok-4.5".to_string(), grok_45);
+        // Provisional: no public list price for grok-composer-2.5-fast at implement
+        // time; aligned with LiteLLM xai/grok-code-fast rates ($0.20/$1.50/$0.02 per M).
+        let grok_composer = fixed_cached_input_pricing(0.2e-6, 1.5e-6, 0.02e-6);
+        self.entries
+            .insert("grok-composer-2.5-fast".to_string(), grok_composer);
+        self.entries
+            .insert("xai/grok-composer-2.5-fast".to_string(), grok_composer);
+        self.entries
+            .insert("x-ai/grok-composer-2.5-fast".to_string(), grok_composer);
+        // Source: https://api-docs.deepseek.com/quick_start/pricing
+        let deepseek_v4_flash = fixed_cached_input_pricing(0.14e-6, 0.28e-6, 0.0028e-6);
+        self.entries
+            .insert("deepseek-v4-flash".to_string(), deepseek_v4_flash);
+        self.entries
+            .insert("deepseek/deepseek-v4-flash".to_string(), deepseek_v4_flash);
+        let deepseek_v4_pro = fixed_cached_input_pricing(0.435e-6, 0.87e-6, 0.003625e-6);
+        self.entries
+            .insert("deepseek-v4-pro".to_string(), deepseek_v4_pro);
+        self.entries
+            .insert("deepseek/deepseek-v4-pro".to_string(), deepseek_v4_pro);
+        // Source: https://platform.minimax.io/docs/guides/pricing-paygo
+        let minimax_m25 = fixed_cached_input_pricing(0.3e-6, 1.2e-6, 0.03e-6);
+        self.entries.insert("MiniMax-M2.5".to_string(), minimax_m25);
+        self.entries.insert("minimax-m2.5".to_string(), minimax_m25);
+        self.entries
+            .insert("minimax/minimax-m2.5".to_string(), minimax_m25);
         // Source: https://platform.kimi.ai/docs/pricing/chat-k25
         self.entries.insert(
             "moonshot/kimi-k2.5".to_string(),
@@ -982,9 +1078,21 @@ impl PricingMap {
                 ..glm_base
             },
         );
+        let glm_52 = Pricing {
+            input: 1.4e-6,
+            output: 4.4e-6,
+            cache_read: 0.26e-6,
+            ..glm_base
+        };
+        self.entries.insert("glm-5.2".to_string(), glm_52);
+        self.entries.insert("zai/glm-5.2".to_string(), glm_52);
         self.context_limits.insert("gpt-5.5".to_string(), 1_050_000);
         self.context_limits
             .insert("grok-4.3".to_string(), 1_000_000);
+        // OpenRouter context_length for x-ai/grok-4.5.
+        self.context_limits.insert("grok-4.5".to_string(), 500_000);
+        self.context_limits
+            .insert("grok-composer-2.5-fast".to_string(), 256_000);
         self.context_limits.insert("gpt-5.4".to_string(), 1_050_000);
         for model in [
             "claude-opus-4-8",
@@ -1153,6 +1261,7 @@ fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
 fn pricing_alias(model: &str) -> Option<&'static str> {
     match model {
         "gpt-5.3-spark" => Some("gpt-5.3-codex-spark"),
+        "minimax-m2.5" => Some("MiniMax-M2.5"),
         _ => None,
     }
 }
@@ -1300,6 +1409,13 @@ mod tests {
     fn embedded_pricing_includes_z_ai_glm_models_for_offline_reports() {
         let pricing = PricingMap::load_embedded();
 
+        let glm_52 = pricing.find("glm-5.2").unwrap();
+        assert_eq!(glm_52.input, 1.4e-6);
+        assert_eq!(glm_52.output, 4.4e-6);
+        assert_eq!(glm_52.cache_create, 0.0);
+        assert_eq!(glm_52.cache_read, 0.26e-6);
+        assert!(glm_52.cache_read_explicit);
+
         let glm_51 = pricing.find("glm-5.1").unwrap();
         assert_eq!(glm_51.input, 1.4e-6);
         assert_eq!(glm_51.output, 4.4e-6);
@@ -1344,6 +1460,54 @@ mod tests {
         assert_eq!(zai_glm_45.cache_create, 0.0);
         assert_eq!(zai_glm_45.cache_read, 0.11e-6);
         assert_eq!(pricing.context_limit("zai/glm-4.5"), Some(128_000));
+    }
+
+    #[test]
+    fn embedded_pricing_includes_deterministic_coding_model_rates() {
+        let pricing = PricingMap::load_embedded();
+
+        let deepseek_flash = pricing.find("deepseek-v4-flash").unwrap();
+        assert_eq!(deepseek_flash.input, 0.14e-6);
+        assert_eq!(deepseek_flash.output, 0.28e-6);
+        assert_eq!(deepseek_flash.cache_read, 0.0028e-6);
+        assert!(deepseek_flash.cache_read_explicit);
+
+        let deepseek_pro = pricing.find("deepseek-v4-pro").unwrap();
+        assert_eq!(deepseek_pro.input, 0.435e-6);
+        assert_eq!(deepseek_pro.output, 0.87e-6);
+        assert_eq!(deepseek_pro.cache_read, 0.003625e-6);
+        assert!(deepseek_pro.cache_read_explicit);
+
+        let grok_build = pricing.find("grok-build-0.1").unwrap();
+        assert_eq!(grok_build.input, 1.0e-6);
+        assert_eq!(grok_build.output, 2.0e-6);
+        assert_eq!(grok_build.cache_read, 0.2e-6);
+        assert!(grok_build.cache_read_explicit);
+
+        let grok_43 = pricing.find("grok-4.3").unwrap();
+        assert_eq!(grok_43.input, 1.25e-6);
+        assert_eq!(grok_43.output, 2.5e-6);
+        assert_eq!(grok_43.cache_read, 0.2e-6);
+        assert!(grok_43.cache_read_explicit);
+
+        let grok_45 = pricing.find("grok-4.5").unwrap();
+        assert_eq!(grok_45.input, 2.0e-6);
+        assert_eq!(grok_45.output, 6.0e-6);
+        assert_eq!(grok_45.cache_read, 0.5e-6);
+        assert!(grok_45.cache_read_explicit);
+        assert_eq!(pricing.find("xai/grok-4.5").unwrap().input, grok_45.input);
+
+        let grok_composer = pricing.find("grok-composer-2.5-fast").unwrap();
+        assert_eq!(grok_composer.input, 0.2e-6);
+        assert_eq!(grok_composer.output, 1.5e-6);
+        assert_eq!(grok_composer.cache_read, 0.02e-6);
+
+        let minimax = pricing.find("MiniMax-M2.5").unwrap();
+        assert_eq!(minimax.input, 0.3e-6);
+        assert_eq!(minimax.output, 1.2e-6);
+        assert_eq!(minimax.cache_read, 0.03e-6);
+        assert!(minimax.cache_read_explicit);
+        assert_eq!(pricing.find("minimax-m2.5").unwrap().input, minimax.input);
     }
 
     #[test]
@@ -1796,7 +1960,12 @@ mod tests {
     fn embedded_pricing_includes_gpt_5_5_for_offline_codex_reports() {
         let pricing = PricingMap::load_embedded();
         let gpt_55 = pricing.find("gpt-5.5").unwrap();
+        let gpt_54 = pricing.find("gpt-5.4").unwrap();
 
+        assert_eq!(gpt_54.input, 2.5e-6);
+        assert_eq!(gpt_54.output, 15e-6);
+        assert_eq!(gpt_54.cache_read, 0.25e-6);
+        assert!(gpt_54.cache_read_explicit);
         assert_eq!(gpt_55.input, 5e-6);
         assert_eq!(gpt_55.output, 30e-6);
         assert_eq!(gpt_55.cache_read, 0.5e-6);
