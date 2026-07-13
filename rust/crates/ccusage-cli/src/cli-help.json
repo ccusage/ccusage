@@ -178,7 +178,11 @@
 			"flags": "--speed [speed]",
 			"description": "Cost speed tier: auto reads Codex config.toml service_tier; use standard or fast to override",
 			"default": "auto",
-			"choices": ["auto", "standard", "fast"]
+			"choices": [
+				"auto",
+				"standard",
+				"fast"
+			]
 		},
 		{
 			"flags": "--compact",
@@ -265,7 +269,11 @@
 			"flags": "-m, --mode [mode]",
 			"description": "Cost calculation mode",
 			"default": "auto",
-			"choices": ["auto", "calculate", "display"]
+			"choices": [
+				"auto",
+				"calculate",
+				"display"
+			]
 		},
 		{
 			"flags": "-d, --debug",
@@ -281,7 +289,10 @@
 			"flags": "-o, --order [order]",
 			"description": "Sort order",
 			"default": "asc",
-			"choices": ["desc", "asc"]
+			"choices": [
+				"desc",
+				"asc"
+			]
 		},
 		{
 			"flags": "-b, --breakdown",
@@ -350,13 +361,23 @@
 			"flags": "-B, --visual-burn-rate [visual-burn-rate]",
 			"description": "Controls the visualization of the burn rate status",
 			"default": "off",
-			"choices": ["off", "emoji", "text", "emoji-text"]
+			"choices": [
+				"off",
+				"emoji",
+				"text",
+				"emoji-text"
+			]
 		},
 		{
 			"flags": "--cost-source [cost-source]",
 			"description": "Session cost source",
 			"default": "auto",
-			"choices": ["auto", "ccusage", "cc", "both"]
+			"choices": [
+				"auto",
+				"ccusage",
+				"cc",
+				"both"
+			]
 		},
 		{
 			"flags": "--cache",
@@ -410,7 +431,21 @@
 			"flags": "-w, --start-of-week [start-of-week]",
 			"description": "Start day of the week",
 			"default": "sunday",
-			"choices": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+			"choices": [
+				"sunday",
+				"monday",
+				"tuesday",
+				"wednesday",
+				"thursday",
+				"friday",
+				"saturday"
+			]
+		}
+	],
+	"grok_options": [
+		{
+			"flags": "--grok-path <grok-path>",
+			"description": "Path or comma-separated paths to Grok home directories (default: ~/.grok)"
 		}
 	]
 }

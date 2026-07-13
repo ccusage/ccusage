@@ -38,6 +38,8 @@ pub(crate) struct CcusageConfig {
     pub(crate) goose: Option<GooseConfig>,
     /// OpenClaw configuration.
     pub(crate) openclaw: Option<OpenClawConfig>,
+    /// Grok Build CLI configuration.
+    pub(crate) grok: Option<GrokConfig>,
     /// Kilo configuration.
     pub(crate) kilo: Option<KiloConfig>,
     /// GitHub Copilot CLI configuration.
@@ -213,6 +215,21 @@ pub(crate) struct OpenClawCommandsConfig {
     pub(crate) daily: Option<OpenClawOptions>,
     pub(crate) monthly: Option<OpenClawOptions>,
     pub(crate) session: Option<OpenClawOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrokConfig {
+    pub(crate) defaults: Option<GrokOptions>,
+    pub(crate) commands: Option<GrokCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrokCommandsConfig {
+    pub(crate) daily: Option<GrokOptions>,
+    pub(crate) monthly: Option<GrokOptions>,
+    pub(crate) session: Option<GrokOptions>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -469,6 +486,15 @@ pub(crate) struct OpenClawOptions {
     pub(crate) open_claw_path: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrokOptions {
+    #[serde(flatten)]
+    pub(crate) shared: SharedOptions,
+    /// Path or comma-separated paths to Grok home directories (default: ~/.grok).
+    pub(crate) grok_path: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ConfigCostMode {
@@ -634,6 +660,15 @@ impl OpenClawOptions {
         Self {
             shared: SharedOptions::from_map(map),
             open_claw_path: string_option(map, "openClawPath"),
+        }
+    }
+}
+
+impl GrokOptions {
+    pub(crate) fn from_map(map: &Map<String, Value>) -> Self {
+        Self {
+            shared: SharedOptions::from_map(map),
+            grok_path: string_option(map, "grokPath"),
         }
     }
 }
@@ -1103,8 +1138,8 @@ mod tests {
             "ccusage-config",
             &[
                 "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
-                "gemini", "goose", "hermes", "kilo", "kimi", "opencode", "openclaw", "pi", "qwen",
-                "droid",
+                "gemini", "goose", "grok", "hermes", "kilo", "kimi", "opencode", "openclaw", "pi",
+                "qwen", "droid",
             ],
         );
         assert!(

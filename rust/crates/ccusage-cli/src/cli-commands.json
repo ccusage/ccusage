@@ -1,15 +1,43 @@
 {
 	"combinedOptions": {
-		"all_agent_session_options": ["all_agent_options", "session_options"],
-		"blocks_combined_options": ["shared_claude_options", "blocks_options"],
-		"claude_daily_options": ["shared_claude_options", "daily_options"],
-		"claude_session_options": ["shared_claude_options", "session_options"],
-		"claude_weekly_options": ["shared_claude_options", "weekly_options"],
-		"openclaw_combined_options": ["agent_options", "openclaw_options"],
-		"pi_combined_options": ["agent_options", "pi_options"]
+		"all_agent_session_options": [
+			"all_agent_options",
+			"session_options"
+		],
+		"blocks_combined_options": [
+			"shared_claude_options",
+			"blocks_options"
+		],
+		"claude_daily_options": [
+			"shared_claude_options",
+			"daily_options"
+		],
+		"claude_session_options": [
+			"shared_claude_options",
+			"session_options"
+		],
+		"claude_weekly_options": [
+			"shared_claude_options",
+			"weekly_options"
+		],
+		"openclaw_combined_options": [
+			"agent_options",
+			"openclaw_options"
+		],
+		"pi_combined_options": [
+			"agent_options",
+			"pi_options"
+		],
+		"grok_combined_options": [
+			"agent_options",
+			"grok_options"
+		]
 	},
 	"root": {
-		"usage": ["ccusage [daily] <OPTIONS>", "ccusage <COMMANDS>"],
+		"usage": [
+			"ccusage [daily] <OPTIONS>",
+			"ccusage <COMMANDS>"
+		],
 		"commands": [
 			{
 				"name": "daily",
@@ -94,48 +122,66 @@
 			{
 				"name": "openclaw",
 				"description": "Show OpenClaw usage commands"
+			},
+			{
+				"name": "grok",
+				"description": "Show Grok Build CLI usage commands"
 			}
 		]
 	},
 	"pages": [
 		{
-			"path": ["daily"],
+			"path": [
+				"daily"
+			],
 			"description": "Show all detected coding (agent) CLI usage grouped by date",
 			"usage": "ccusage daily <OPTIONS>",
 			"options": "all_agent_options"
 		},
 		{
-			"path": ["monthly"],
+			"path": [
+				"monthly"
+			],
 			"description": "Show all detected coding (agent) CLI usage grouped by month",
 			"usage": "ccusage monthly <OPTIONS>",
 			"options": "all_agent_options"
 		},
 		{
-			"path": ["weekly"],
+			"path": [
+				"weekly"
+			],
 			"description": "Show all detected coding (agent) CLI usage grouped by week",
 			"usage": "ccusage weekly <OPTIONS>",
 			"options": "all_agent_options"
 		},
 		{
-			"path": ["session"],
+			"path": [
+				"session"
+			],
 			"description": "Show all detected coding (agent) CLI usage grouped by session",
 			"usage": "ccusage session <OPTIONS>",
 			"options": "all_agent_session_options"
 		},
 		{
-			"path": ["blocks"],
+			"path": [
+				"blocks"
+			],
 			"description": "Show usage report grouped by session billing blocks",
 			"usage": "ccusage blocks <OPTIONS>",
 			"options": "blocks_combined_options"
 		},
 		{
-			"path": ["statusline"],
+			"path": [
+				"statusline"
+			],
 			"description": "Display compact status line for Claude Code hooks with hybrid time+file caching (Beta)",
 			"usage": "ccusage statusline <OPTIONS>",
 			"options": "statusline_options"
 		},
 		{
-			"path": ["claude"],
+			"path": [
+				"claude"
+			],
 			"description": "Usage reports for claude.",
 			"usage": "ccusage claude <COMMANDS>",
 			"commands": [
@@ -166,43 +212,63 @@
 			]
 		},
 		{
-			"path": ["claude", "daily"],
+			"path": [
+				"claude",
+				"daily"
+			],
 			"description": "Show usage report grouped by date",
 			"usage": "ccusage claude daily <OPTIONS>",
 			"options": "claude_daily_options"
 		},
 		{
-			"path": ["claude", "monthly"],
+			"path": [
+				"claude",
+				"monthly"
+			],
 			"description": "Show usage report grouped by month",
 			"usage": "ccusage claude monthly <OPTIONS>",
 			"options": "shared_claude_options"
 		},
 		{
-			"path": ["claude", "weekly"],
+			"path": [
+				"claude",
+				"weekly"
+			],
 			"description": "Show usage report grouped by week",
 			"usage": "ccusage claude weekly <OPTIONS>",
 			"options": "claude_weekly_options"
 		},
 		{
-			"path": ["claude", "session"],
+			"path": [
+				"claude",
+				"session"
+			],
 			"description": "Show usage report grouped by conversation session",
 			"usage": "ccusage claude session <OPTIONS>",
 			"options": "claude_session_options"
 		},
 		{
-			"path": ["claude", "blocks"],
+			"path": [
+				"claude",
+				"blocks"
+			],
 			"description": "Show usage report grouped by session billing blocks",
 			"usage": "ccusage claude blocks <OPTIONS>",
 			"options": "blocks_combined_options"
 		},
 		{
-			"path": ["claude", "statusline"],
+			"path": [
+				"claude",
+				"statusline"
+			],
 			"description": "Display compact status line for Claude Code hooks with hybrid time+file caching (Beta)",
 			"usage": "ccusage claude statusline <OPTIONS>",
 			"options": "statusline_options"
 		},
 		{
-			"path": ["codex"],
+			"path": [
+				"codex"
+			],
 			"description": "Usage reports for codex.",
 			"usage": "ccusage codex <COMMANDS>",
 			"commands": [
@@ -221,25 +287,36 @@
 			]
 		},
 		{
-			"path": ["codex", "daily"],
+			"path": [
+				"codex",
+				"daily"
+			],
 			"description": "Show Codex token usage grouped by day",
 			"usage": "ccusage codex daily <OPTIONS>",
 			"options": "codex_options"
 		},
 		{
-			"path": ["codex", "monthly"],
+			"path": [
+				"codex",
+				"monthly"
+			],
 			"description": "Show Codex token usage grouped by month",
 			"usage": "ccusage codex monthly <OPTIONS>",
 			"options": "codex_options"
 		},
 		{
-			"path": ["codex", "session"],
+			"path": [
+				"codex",
+				"session"
+			],
 			"description": "Show Codex token usage grouped by session",
 			"usage": "ccusage codex session <OPTIONS>",
 			"options": "codex_options"
 		},
 		{
-			"path": ["opencode"],
+			"path": [
+				"opencode"
+			],
 			"description": "Usage reports for opencode.",
 			"usage": "ccusage opencode <COMMANDS>",
 			"commands": [
@@ -262,31 +339,45 @@
 			]
 		},
 		{
-			"path": ["opencode", "daily"],
+			"path": [
+				"opencode",
+				"daily"
+			],
 			"description": "Show OpenCode token usage grouped by day",
 			"usage": "ccusage opencode daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["opencode", "weekly"],
+			"path": [
+				"opencode",
+				"weekly"
+			],
 			"description": "Show OpenCode token usage grouped by week",
 			"usage": "ccusage opencode weekly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["opencode", "monthly"],
+			"path": [
+				"opencode",
+				"monthly"
+			],
 			"description": "Show OpenCode token usage grouped by month",
 			"usage": "ccusage opencode monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["opencode", "session"],
+			"path": [
+				"opencode",
+				"session"
+			],
 			"description": "Show OpenCode token usage grouped by session",
 			"usage": "ccusage opencode session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["amp"],
+			"path": [
+				"amp"
+			],
 			"description": "Usage reports for amp.",
 			"usage": "ccusage amp <COMMANDS>",
 			"commands": [
@@ -305,25 +396,36 @@
 			]
 		},
 		{
-			"path": ["amp", "daily"],
+			"path": [
+				"amp",
+				"daily"
+			],
 			"description": "Show Amp token usage grouped by day",
 			"usage": "ccusage amp daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["amp", "monthly"],
+			"path": [
+				"amp",
+				"monthly"
+			],
 			"description": "Show Amp token usage grouped by month",
 			"usage": "ccusage amp monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["amp", "session"],
+			"path": [
+				"amp",
+				"session"
+			],
 			"description": "Show Amp token usage grouped by session",
 			"usage": "ccusage amp session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["droid"],
+			"path": [
+				"droid"
+			],
 			"description": "Usage reports for droid.",
 			"usage": "ccusage droid <COMMANDS>",
 			"commands": [
@@ -342,25 +444,36 @@
 			]
 		},
 		{
-			"path": ["droid", "daily"],
+			"path": [
+				"droid",
+				"daily"
+			],
 			"description": "Show Droid usage grouped by date",
 			"usage": "ccusage droid daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["droid", "monthly"],
+			"path": [
+				"droid",
+				"monthly"
+			],
 			"description": "Show Droid usage grouped by month",
 			"usage": "ccusage droid monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["droid", "session"],
+			"path": [
+				"droid",
+				"session"
+			],
 			"description": "Show Droid usage grouped by session",
 			"usage": "ccusage droid session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["codebuff"],
+			"path": [
+				"codebuff"
+			],
 			"description": "Usage reports for codebuff.",
 			"usage": "ccusage codebuff <COMMANDS>",
 			"commands": [
@@ -379,25 +492,36 @@
 			]
 		},
 		{
-			"path": ["codebuff", "daily"],
+			"path": [
+				"codebuff",
+				"daily"
+			],
 			"description": "Show Codebuff usage grouped by date",
 			"usage": "ccusage codebuff daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["codebuff", "monthly"],
+			"path": [
+				"codebuff",
+				"monthly"
+			],
 			"description": "Show Codebuff usage grouped by month",
 			"usage": "ccusage codebuff monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["codebuff", "session"],
+			"path": [
+				"codebuff",
+				"session"
+			],
 			"description": "Show Codebuff usage grouped by session",
 			"usage": "ccusage codebuff session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["hermes"],
+			"path": [
+				"hermes"
+			],
 			"description": "Usage reports for hermes.",
 			"usage": "ccusage hermes <COMMANDS>",
 			"commands": [
@@ -416,25 +540,36 @@
 			]
 		},
 		{
-			"path": ["hermes", "daily"],
+			"path": [
+				"hermes",
+				"daily"
+			],
 			"description": "Show Hermes usage grouped by date",
 			"usage": "ccusage hermes daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["hermes", "monthly"],
+			"path": [
+				"hermes",
+				"monthly"
+			],
 			"description": "Show Hermes usage grouped by month",
 			"usage": "ccusage hermes monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["hermes", "session"],
+			"path": [
+				"hermes",
+				"session"
+			],
 			"description": "Show Hermes usage grouped by session",
 			"usage": "ccusage hermes session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["pi"],
+			"path": [
+				"pi"
+			],
 			"description": "Usage reports for pi.",
 			"usage": "ccusage pi <COMMANDS>",
 			"commands": [
@@ -453,25 +588,36 @@
 			]
 		},
 		{
-			"path": ["pi", "daily"],
+			"path": [
+				"pi",
+				"daily"
+			],
 			"description": "Show pi-agent usage grouped by date",
 			"usage": "ccusage pi daily <OPTIONS>",
 			"options": "pi_combined_options"
 		},
 		{
-			"path": ["pi", "monthly"],
+			"path": [
+				"pi",
+				"monthly"
+			],
 			"description": "Show pi-agent usage grouped by month",
 			"usage": "ccusage pi monthly <OPTIONS>",
 			"options": "pi_combined_options"
 		},
 		{
-			"path": ["pi", "session"],
+			"path": [
+				"pi",
+				"session"
+			],
 			"description": "Show pi-agent usage grouped by session",
 			"usage": "ccusage pi session <OPTIONS>",
 			"options": "pi_combined_options"
 		},
 		{
-			"path": ["goose"],
+			"path": [
+				"goose"
+			],
 			"description": "Usage reports for goose.",
 			"usage": "ccusage goose <COMMANDS>",
 			"commands": [
@@ -490,25 +636,36 @@
 			]
 		},
 		{
-			"path": ["goose", "daily"],
+			"path": [
+				"goose",
+				"daily"
+			],
 			"description": "Show Goose usage grouped by date",
 			"usage": "ccusage goose daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["goose", "monthly"],
+			"path": [
+				"goose",
+				"monthly"
+			],
 			"description": "Show Goose usage grouped by month",
 			"usage": "ccusage goose monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["goose", "session"],
+			"path": [
+				"goose",
+				"session"
+			],
 			"description": "Show Goose usage grouped by session",
 			"usage": "ccusage goose session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["kilo"],
+			"path": [
+				"kilo"
+			],
 			"description": "Usage reports for kilo.",
 			"usage": "ccusage kilo <COMMANDS>",
 			"commands": [
@@ -527,25 +684,36 @@
 			]
 		},
 		{
-			"path": ["kilo", "daily"],
+			"path": [
+				"kilo",
+				"daily"
+			],
 			"description": "Show Kilo usage grouped by date",
 			"usage": "ccusage kilo daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["kilo", "monthly"],
+			"path": [
+				"kilo",
+				"monthly"
+			],
 			"description": "Show Kilo usage grouped by month",
 			"usage": "ccusage kilo monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["kilo", "session"],
+			"path": [
+				"kilo",
+				"session"
+			],
 			"description": "Show Kilo usage grouped by session",
 			"usage": "ccusage kilo session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["copilot"],
+			"path": [
+				"copilot"
+			],
 			"description": "Usage reports for copilot.",
 			"usage": "ccusage copilot <COMMANDS>",
 			"commands": [
@@ -564,25 +732,36 @@
 			]
 		},
 		{
-			"path": ["copilot", "daily"],
+			"path": [
+				"copilot",
+				"daily"
+			],
 			"description": "Show GitHub Copilot CLI usage grouped by date",
 			"usage": "ccusage copilot daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["copilot", "monthly"],
+			"path": [
+				"copilot",
+				"monthly"
+			],
 			"description": "Show GitHub Copilot CLI usage grouped by month",
 			"usage": "ccusage copilot monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["copilot", "session"],
+			"path": [
+				"copilot",
+				"session"
+			],
 			"description": "Show GitHub Copilot CLI usage grouped by session",
 			"usage": "ccusage copilot session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["gemini"],
+			"path": [
+				"gemini"
+			],
 			"description": "Usage reports for gemini.",
 			"usage": "ccusage gemini <COMMANDS>",
 			"commands": [
@@ -601,25 +780,36 @@
 			]
 		},
 		{
-			"path": ["gemini", "daily"],
+			"path": [
+				"gemini",
+				"daily"
+			],
 			"description": "Show Gemini CLI usage grouped by date",
 			"usage": "ccusage gemini daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["gemini", "monthly"],
+			"path": [
+				"gemini",
+				"monthly"
+			],
 			"description": "Show Gemini CLI usage grouped by month",
 			"usage": "ccusage gemini monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["gemini", "session"],
+			"path": [
+				"gemini",
+				"session"
+			],
 			"description": "Show Gemini CLI usage grouped by session",
 			"usage": "ccusage gemini session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["kimi"],
+			"path": [
+				"kimi"
+			],
 			"description": "Usage reports for kimi.",
 			"usage": "ccusage kimi <COMMANDS>",
 			"commands": [
@@ -638,25 +828,36 @@
 			]
 		},
 		{
-			"path": ["kimi", "daily"],
+			"path": [
+				"kimi",
+				"daily"
+			],
 			"description": "Show Kimi usage grouped by date",
 			"usage": "ccusage kimi daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["kimi", "monthly"],
+			"path": [
+				"kimi",
+				"monthly"
+			],
 			"description": "Show Kimi usage grouped by month",
 			"usage": "ccusage kimi monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["kimi", "session"],
+			"path": [
+				"kimi",
+				"session"
+			],
 			"description": "Show Kimi usage grouped by session",
 			"usage": "ccusage kimi session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["qwen"],
+			"path": [
+				"qwen"
+			],
 			"description": "Usage reports for qwen.",
 			"usage": "ccusage qwen <COMMANDS>",
 			"commands": [
@@ -675,25 +876,36 @@
 			]
 		},
 		{
-			"path": ["qwen", "daily"],
+			"path": [
+				"qwen",
+				"daily"
+			],
 			"description": "Show Qwen usage grouped by date",
 			"usage": "ccusage qwen daily <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["qwen", "monthly"],
+			"path": [
+				"qwen",
+				"monthly"
+			],
 			"description": "Show Qwen usage grouped by month",
 			"usage": "ccusage qwen monthly <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["qwen", "session"],
+			"path": [
+				"qwen",
+				"session"
+			],
 			"description": "Show Qwen usage grouped by session",
 			"usage": "ccusage qwen session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{
-			"path": ["openclaw"],
+			"path": [
+				"openclaw"
+			],
 			"description": "Usage reports for openclaw.",
 			"usage": "ccusage openclaw <COMMANDS>",
 			"commands": [
@@ -712,22 +924,79 @@
 			]
 		},
 		{
-			"path": ["openclaw", "daily"],
+			"path": [
+				"openclaw",
+				"daily"
+			],
 			"description": "Show OpenClaw usage grouped by date",
 			"usage": "ccusage openclaw daily <OPTIONS>",
 			"options": "openclaw_combined_options"
 		},
 		{
-			"path": ["openclaw", "monthly"],
+			"path": [
+				"openclaw",
+				"monthly"
+			],
 			"description": "Show OpenClaw usage grouped by month",
 			"usage": "ccusage openclaw monthly <OPTIONS>",
 			"options": "openclaw_combined_options"
 		},
 		{
-			"path": ["openclaw", "session"],
+			"path": [
+				"openclaw",
+				"session"
+			],
 			"description": "Show OpenClaw usage grouped by session",
 			"usage": "ccusage openclaw session <OPTIONS>",
 			"options": "openclaw_combined_options"
+		},
+		{
+			"path": [
+				"grok"
+			],
+			"description": "Usage reports for Grok Build CLI.",
+			"usage": "ccusage grok <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Grok usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Grok usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Grok usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": [
+				"grok",
+				"daily"
+			],
+			"description": "Show Grok usage grouped by date",
+			"usage": "ccusage grok daily <OPTIONS>",
+			"options": "grok_combined_options"
+		},
+		{
+			"path": [
+				"grok",
+				"monthly"
+			],
+			"description": "Show Grok usage grouped by month",
+			"usage": "ccusage grok monthly <OPTIONS>",
+			"options": "grok_combined_options"
+		},
+		{
+			"path": [
+				"grok",
+				"session"
+			],
+			"description": "Show Grok usage grouped by session",
+			"usage": "ccusage grok session <OPTIONS>",
+			"options": "grok_combined_options"
 		}
 	]
 }

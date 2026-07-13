@@ -30,6 +30,7 @@ pub(crate) enum UsageLoadAgent {
     Gemini,
     Kimi,
     OpenClaw,
+    Grok,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,6 +61,7 @@ fn agent_label(agent: UsageLoadAgent) -> &'static str {
         UsageLoadAgent::Gemini => "Gemini CLI",
         UsageLoadAgent::Kimi => "Kimi",
         UsageLoadAgent::OpenClaw => "OpenClaw",
+        UsageLoadAgent::Grok => "Grok",
     }
 }
 

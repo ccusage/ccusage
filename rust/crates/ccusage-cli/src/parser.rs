@@ -264,6 +264,7 @@ fn parse_command(
             Command::Qwen,
         ),
         "openclaw" => parse_openclaw_command(parser, shared, config),
+        "grok" => parse_grok_command(parser, shared, config),
         _ => Err(format!("Unknown command '{command}'")),
     }
 }
@@ -286,6 +287,7 @@ fn parse_all_command(
         kind,
         pi_path: None,
         open_claw_path: None,
+        grok_path: None,
         codex_speed: CodexSpeed::Auto,
     }))
 }
@@ -319,6 +321,7 @@ fn parse_top_level_session_command(
         kind: AgentReportKind::Session,
         pi_path: None,
         open_claw_path: None,
+        grok_path: None,
         codex_speed: CodexSpeed::Auto,
     }))
 }
@@ -458,7 +461,7 @@ fn parse_codex_command(
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, "codex", STANDARD_AGENT_REPORTS)?;
     let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, None, None);
+    config.apply_agent_args(&mut codex_speed, None, None, None);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -473,6 +476,7 @@ fn parse_codex_command(
         kind,
         pi_path: None,
         open_claw_path: None,
+        grok_path: None,
         codex_speed,
     }))
 }
@@ -485,7 +489,7 @@ fn parse_pi_command(
     let kind = parse_agent_report_kind(parser, "pi", STANDARD_AGENT_REPORTS)?;
     let mut pi_path = None;
     let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, Some(&mut pi_path), None);
+    config.apply_agent_args(&mut codex_speed, Some(&mut pi_path), None, None);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -500,6 +504,7 @@ fn parse_pi_command(
         kind,
         pi_path,
         open_claw_path: None,
+        grok_path: None,
         codex_speed,
     }))
 }
@@ -512,7 +517,7 @@ fn parse_openclaw_command(
     let kind = parse_agent_report_kind(parser, "openclaw", STANDARD_AGENT_REPORTS)?;
     let mut open_claw_path = None;
     let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, None, Some(&mut open_claw_path));
+    config.apply_agent_args(&mut codex_speed, None, Some(&mut open_claw_path), None);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -527,6 +532,35 @@ fn parse_openclaw_command(
         kind,
         pi_path: None,
         open_claw_path,
+        grok_path: None,
+        codex_speed,
+    }))
+}
+
+fn parse_grok_command(
+    parser: &mut ArgParser,
+    mut shared: SharedArgs,
+    config: &dyn CliConfig,
+) -> Result<Command, String> {
+    let kind = parse_agent_report_kind(parser, "grok", STANDARD_AGENT_REPORTS)?;
+    let mut grok_path = None;
+    let mut codex_speed = CodexSpeed::Auto;
+    config.apply_agent_args(&mut codex_speed, None, None, Some(&mut grok_path));
+    while parser.peek().is_some() {
+        if parse_shared_arg_for_command(parser, &mut shared)? {
+            continue;
+        }
+        match parser.next_flag()?.as_str() {
+            "--grok-path" => grok_path = Some(parser.value_for("--grok-path")?),
+            flag => return Err(format!("Unknown grok option '{flag}'")),
+        }
+    }
+    Ok(Command::Grok(AgentCommandArgs {
+        shared,
+        kind,
+        pi_path: None,
+        open_claw_path: None,
+        grok_path,
         codex_speed,
     }))
 }
@@ -555,6 +589,7 @@ fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommand
         kind,
         pi_path: None,
         open_claw_path: None,
+        grok_path: None,
         codex_speed: CodexSpeed::Auto,
     }
 }
@@ -631,6 +666,7 @@ fn is_command(arg: &str) -> bool {
             | "gemini"
             | "kimi"
             | "qwen"
+            | "grok"
     )
 }
 
@@ -767,6 +803,7 @@ fn option_takes_value(arg: &str) -> bool {
             | "--speed"
             | "--pi-path"
             | "--open-claw-path"
+            | "--grok-path"
     )
 }
 
@@ -788,6 +825,7 @@ fn is_agent_command(command: &str) -> bool {
             | "kimi"
             | "qwen"
             | "openclaw"
+            | "grok"
     )
 }
 
@@ -800,7 +838,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "kimi" | "qwen" | "openclaw" => {
+        | "gemini" | "kimi" | "qwen" | "openclaw" | "grok" => {
             matches!(report, "daily" | "monthly" | "session")
         }
         _ => false,
@@ -824,6 +862,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "kimi" => "Kimi",
         "qwen" => "Qwen",
         "openclaw" => "OpenClaw",
+        "grok" => "Grok",
         _ => unreachable!("agent is prevalidated"),
     }
 }

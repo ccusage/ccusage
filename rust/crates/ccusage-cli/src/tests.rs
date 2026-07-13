@@ -43,6 +43,7 @@ struct TestConfig {
     codex_speed: Option<CodexSpeed>,
     pi_path: Option<&'static str>,
     open_claw_path: Option<&'static str>,
+    grok_path: Option<&'static str>,
 }
 
 impl CliConfig for TestConfig {
@@ -99,6 +100,7 @@ impl CliConfig for TestConfig {
         codex_speed: &mut CodexSpeed,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
+        grok_path: Option<&mut Option<String>>,
     ) {
         if let Some(speed) = self.codex_speed {
             *codex_speed = speed;
@@ -108,6 +110,9 @@ impl CliConfig for TestConfig {
         }
         if let (Some(path), Some(open_claw_path)) = (self.open_claw_path, open_claw_path) {
             *open_claw_path = Some(path.to_string());
+        }
+        if let (Some(path), Some(grok_path)) = (self.grok_path, grok_path) {
+            *grok_path = Some(path.to_string());
         }
     }
 }
@@ -202,6 +207,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
+        Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
     }
 }
 
@@ -212,6 +218,7 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
         "kind": format!("{:?}", args.kind),
         "piPath": args.pi_path,
         "openClawPath": args.open_claw_path,
+        "grokPath": args.grok_path,
         "codexSpeed": format!("{:?}", args.codex_speed),
     })
 }
@@ -947,3 +954,23 @@ fn parses_openclaw_session_options() {
     assert!(args.shared.json);
     assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
 }
+
+#[test]
+fn parses_grok_session_options() {
+    let cli = parse(&[
+        "ccusage",
+        "grok",
+        "session",
+        "--json",
+        "--grok-path",
+        "/tmp/grok",
+    ]);
+    let Some(Command::Grok(args)) = cli.command else {
+        panic!("expected grok command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Session);
+    assert!(args.shared.json);
+    assert_eq!(args.grok_path.as_deref(), Some("/tmp/grok"));
+}
+
+

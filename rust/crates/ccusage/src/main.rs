@@ -30,7 +30,8 @@ pub(crate) use blocks::{
     identify_session_blocks, print_active_block_detail, print_blocks_table, sort_blocks,
 };
 pub(crate) use cost::{
-    calculate_cost, calculate_cost_for_usage, missing_pricing_model_for_candidates,
+    calculate_cost, calculate_cost_for_pricing_candidates, calculate_cost_for_usage,
+    missing_pricing_model_for_candidates, missing_pricing_model_for_pricing_candidates,
     missing_pricing_model_for_token_total, missing_pricing_model_for_usage,
 };
 pub(crate) use date_utils::*;
@@ -146,12 +147,14 @@ fn main() -> Result<()> {
         Some(Command::Gemini(args)) => adapter::gemini::run(args),
         Some(Command::Kimi(args)) => adapter::kimi::run(args),
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
+        Some(Command::Grok(args)) => adapter::grok::run(args),
         None => {
             let args = AgentCommandArgs {
                 shared: cli.shared,
                 kind: AgentReportKind::Daily,
                 pi_path: None,
                 open_claw_path: None,
+                grok_path: None,
                 codex_speed: cli::CodexSpeed::Auto,
             };
             adapter::all::run(args)

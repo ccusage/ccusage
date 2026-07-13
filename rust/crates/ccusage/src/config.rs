@@ -14,8 +14,8 @@ use crate::{
     config_schema::{
         BlocksSpecificOptions, CodexOptions, ConfigCodexSpeed, ConfigCostMode, ConfigCostSource,
         ConfigPricingOverride, ConfigSortOrder, ConfigVisualBurnRate, ConfigWeekDay,
-        DailySpecificOptions, OpenClawOptions, PiOptions, SharedOptions, StatuslineSpecificOptions,
-        WeeklySpecificOptions,
+        DailySpecificOptions, GrokOptions, OpenClawOptions, PiOptions, SharedOptions,
+        StatuslineSpecificOptions, WeeklySpecificOptions,
     },
 };
 
@@ -249,6 +249,7 @@ fn is_agent_command(command: &str) -> bool {
             | "gemini"
             | "kimi"
             | "openclaw"
+            | "grok"
     )
 }
 
@@ -358,6 +359,7 @@ pub(crate) fn apply_config_to_agent_args(
     codex_speed: &mut CodexSpeed,
     mut pi_path: Option<&mut Option<String>>,
     mut open_claw_path: Option<&mut Option<String>>,
+    mut grok_path: Option<&mut Option<String>>,
     config: &ConfigContext,
 ) {
     for options in config.option_maps() {
@@ -374,6 +376,11 @@ pub(crate) fn apply_config_to_agent_args(
             && let Some(path) = OpenClawOptions::from_map(options).open_claw_path
         {
             *open_claw_path = Some(path);
+        }
+        if let Some(grok_path) = grok_path.as_deref_mut()
+            && let Some(path) = GrokOptions::from_map(options).grok_path
+        {
+            *grok_path = Some(path);
         }
     }
 }
@@ -404,8 +411,9 @@ impl crate::cli::CliConfig for ConfigContext {
         codex_speed: &mut CodexSpeed,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
+        grok_path: Option<&mut Option<String>>,
     ) {
-        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, self);
+        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, grok_path, self);
     }
 }
 
@@ -780,6 +788,7 @@ mod tests {
             &mut speed,
             None,
             None,
+            None,
             &context(
                 json!({
                     "codex": {
@@ -801,6 +810,7 @@ mod tests {
         apply_config_to_agent_args(
             &mut speed,
             Some(&mut pi_path),
+            None,
             None,
             &context(
                 json!({
@@ -824,6 +834,7 @@ mod tests {
             &mut speed,
             None,
             Some(&mut open_claw_path),
+            None,
             &context(
                 json!({
                     "openclaw": {

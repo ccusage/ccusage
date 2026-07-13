@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/cli.rs
+source: crates/ccusage-cli/src/tests.rs
 expression: cases
 ---
 [
@@ -33,6 +33,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "grokPath": null,
         "kind": "Daily",
         "openClawPath": null,
         "piPath": null,
@@ -179,6 +180,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Fast",
+        "grokPath": null,
         "kind": "Monthly",
         "openClawPath": null,
         "piPath": null,
@@ -229,6 +231,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "grokPath": null,
         "kind": "Weekly",
         "openClawPath": null,
         "piPath": null,
@@ -279,6 +282,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "grokPath": null,
         "kind": "Session",
         "openClawPath": null,
         "piPath": "/tmp/pi-sessions",
@@ -329,6 +333,7 @@ expression: cases
     "cli": {
       "command": {
         "codexSpeed": "Auto",
+        "grokPath": null,
         "kind": "Session",
         "openClawPath": "/tmp/openclaw",
         "piPath": null,
