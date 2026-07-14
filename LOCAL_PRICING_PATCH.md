@@ -5,13 +5,31 @@ pricing. It is used by the normal `ccusage` command on this machine.
 
 ## Normal Command Path
 
-The shell command resolves through the user wrapper:
+The shell command resolves through the user wrapper to a **stable** binary
+outside the git worktree (so branch switches cannot remove Grok support):
+
+```sh
+/Users/rk/bin/ccusage
+-> /Users/rk/bin/tools/claude-code-tools/ccusage   # wrapper (--mode calculate)
+-> ~/.local/lib/ccusage/ccusage                  # copied release binary
+```
+
+Legacy shims also point at the same wrapper:
 
 ```sh
 /Users/rk/bin/.links/ccusage
--> /Users/rk/bin/claude-code-tools/ccusage
--> /Volumes/Projects/ccusage-custom-fixes/rust/target/release/ccusage
+/Users/rk/bin/claude-code-tools/ccusage
 ```
+
+Reinstall / refresh after building a Grok-capable release:
+
+```sh
+~/bin/tools/claude-code-tools/install-ccusage-local
+# or force rebuild from CCUSAGE_REPO (default: this checkout):
+~/bin/tools/claude-code-tools/install-ccusage-local --rebuild
+```
+
+Override binary for one-off tests: `CCUSAGE_BIN=/path/to/ccusage ccusage ...`.
 
 The wrapper runs the local binary with `--mode calculate` unless an explicit
 `--mode` or `-m` argument is supplied. That means normal commands use calculated
@@ -63,11 +81,11 @@ Current locally added deterministic rates:
 `xai/grok-code-fast` until a public list price is published.
 
 The Grok Build CLI adapter lives at `rust/crates/ccusage/src/adapter/grok/`.
-After pricing or adapter changes, rebuild the release binary used by the local
-wrapper:
+After pricing or adapter changes, rebuild and reinstall the stable binary:
 
 ```sh
 cargo +stable build --manifest-path rust/Cargo.toml --locked -p ccusage --release
+~/bin/tools/claude-code-tools/install-ccusage-local
 ```
 
 ## Adapter Behavior
@@ -119,10 +137,11 @@ If a provider changes its public rates:
    cargo +stable test --manifest-path rust/Cargo.toml --locked -p ccusage
    ```
 
-3. Rebuild the local binary:
+3. Rebuild and reinstall the stable binary:
 
    ```sh
    cargo +stable build --manifest-path rust/Cargo.toml --locked -p ccusage --release
+   ~/bin/tools/claude-code-tools/install-ccusage-local
    ```
 
 4. Verify the normal command still points at the local binary:
@@ -137,10 +156,11 @@ If a provider changes its public rates:
    ```sh
    ccusage pi daily --since 2026-07-07 --until 2026-07-07 --breakdown --json
    ccusage opencode daily --since 2026-07-07 --until 2026-07-07 --breakdown --json
+   ccusage grok daily --since 2026-07-13 --until 2026-07-14
    ```
 
-The wrapper points directly at `rust/target/release/ccusage`, so rebuilding that
-binary is enough for normal `ccusage` commands to use the new rates.
+The wrapper points at `~/.local/lib/ccusage/ccusage`. Rebuild +
+`install-ccusage-local` is required for normal `ccusage` to pick up new rates.
 
 ## Validation Evidence From This Patch
 
