@@ -311,6 +311,18 @@ ccusage daily --mode auto
 ccusage daily --mode calculate
 ```
 
+**Cause**: The online pricing fetch fails behind a TLS-intercepting proxy (Cloudflare WARP, Zscaler, and similar), so a model missing from the embedded pricing snapshot is costed at $0
+
+**Solution**:
+
+```bash
+# Point ccusage at a CA bundle that includes your proxy CA
+export SSL_CERT_FILE="/etc/ssl/cert.pem"
+ccusage daily --mode calculate
+```
+
+See [Environment Variables](/guide/environment-variables#ssl_cert_file) for details.
+
 ### Issue: Inconsistent cost calculations
 
 **Cause**: Mixed use of different modes or pricing changes

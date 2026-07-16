@@ -1461,10 +1461,12 @@ fn fetch_models_dev_json() -> std::io::Result<String> {
 }
 
 fn fetch_json_url(url: &str) -> std::io::Result<String> {
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)))
-        .build()
-        .new_agent();
+    let mut config = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)));
+    if let Some(tls_config) = ssl_cert_file_tls_config()? {
+        config = config.tls_config(tls_config);
+    }
+    let agent = config.build().new_agent();
     let mut response = agent
         .get(url)
         .call()
@@ -1481,6 +1483,41 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
         .limit(PRICING_FETCH_MAX_BYTES)
         .read_to_string()
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))
+}
+
+/// Trust the CA bundle from `SSL_CERT_FILE` instead of the embedded Mozilla
+/// roots, so pricing fetches work behind TLS-intercepting proxies whose CA is
+/// not publicly trusted.
+fn ssl_cert_file_tls_config() -> std::io::Result<Option<ureq::tls::TlsConfig>> {
+    let Some(path) = std::env::var_os("SSL_CERT_FILE") else {
+        return Ok(None);
+    };
+    let path = std::path::PathBuf::from(path);
+    let pem = std::fs::read(&path)?;
+    let mut certs = Vec::new();
+    for item in ureq::tls::parse_pem(&pem) {
+        match item {
+            Ok(ureq::tls::PemItem::Certificate(cert)) => certs.push(cert),
+            Ok(_) => {}
+            Err(error) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid PEM in SSL_CERT_FILE {}: {error}", path.display()),
+                ));
+            }
+        }
+    }
+    if certs.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("no certificates in SSL_CERT_FILE {}", path.display()),
+        ));
+    }
+    Ok(Some(
+        ureq::tls::TlsConfig::builder()
+            .root_certs(ureq::tls::RootCerts::new_with_certs(&certs))
+            .build(),
+    ))
 }
 
 #[cfg(test)]

@@ -122,6 +122,17 @@ export CCUSAGE_OFFLINE=1
 ccusage daily  # Runs in offline mode
 ```
 
+### SSL_CERT_FILE
+
+Trust a custom CA bundle (PEM format) for the online pricing fetch instead of the built-in Mozilla root certificates. Set this when ccusage runs behind a TLS-intercepting proxy (Cloudflare WARP, Zscaler, Netskope, and similar corporate setups) whose CA is not publicly trusted:
+
+```bash
+export SSL_CERT_FILE="/etc/ssl/cert.pem"  # bundle that includes your proxy CA
+ccusage daily
+```
+
+If the fetch still fails, ccusage falls back to the pricing snapshot embedded in the binary.
+
 ### NO_COLOR
 
 Disable colored output (standard CLI convention):
@@ -210,7 +221,7 @@ To see which environment variables are being used:
 
 ```bash
 # Show all environment variables
-env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|CCUSAGE|LOG_LEVEL"
+env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|CCUSAGE|LOG_LEVEL|SSL_CERT_FILE"
 
 # Debug mode shows environment variable usage
 LOG_LEVEL=4 ccusage daily --debug
