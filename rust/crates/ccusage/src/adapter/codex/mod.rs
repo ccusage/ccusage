@@ -96,7 +96,7 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_matching_grouped_codex_usage_events_from_distinct_sessions() {
+    fn keeps_matching_grouped_codex_usage_events_from_distinct_sessions() {
         let usage_line = r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150}}}}"#;
         let fixture = fs_fixture!({
             "sessions/session-a.jsonl": usage_line,
@@ -113,10 +113,10 @@ mod tests {
 
         assert_eq!(groups.len(), 1);
         let group = groups.get("2026-01-02").unwrap();
-        assert_eq!(group.input_tokens, 100);
-        assert_eq!(group.cached_input_tokens, 10);
-        assert_eq!(group.output_tokens, 50);
-        assert_eq!(group.total_tokens, 150);
+        assert_eq!(group.input_tokens, 200);
+        assert_eq!(group.cached_input_tokens, 20);
+        assert_eq!(group.output_tokens, 100);
+        assert_eq!(group.total_tokens, 300);
     }
 
     #[test]

@@ -125,7 +125,10 @@ fn read_codex_session_file(sessions_dir: &Path, path: &Path) -> Vec<CodexTokenUs
 fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
     let mut seen = FxHashSet::default();
     events.retain(|event| {
+        // Fork replay is removed structurally while parsing, so value-based
+        // dedupe only applies within the same session.
         seen.insert((
+            CompactString::new(&event.session_id),
             CompactString::new(&event.timestamp),
             event.model.as_deref().map(CompactString::new),
             event.input_tokens,
@@ -161,18 +164,27 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_matching_codex_usage_events_from_distinct_sessions() {
+    fn keeps_matching_codex_usage_events_from_distinct_sessions() {
         let mut events = vec![codex_event("session-a"), codex_event("session-b")];
 
         dedupe_codex_events(&mut events);
 
-        assert_eq!(events.len(), 1);
+        assert_eq!(events.len(), 2);
         assert_eq!(events[0].session_id, "session-a");
+        assert_eq!(events[1].session_id, "session-b");
     }
 
     #[test]
-    fn dedupes_copied_branch_history_across_session_files() {
+    fn counts_copied_parent_history_once_across_session_files() {
         let parent_history = [
+            json!({
+                "timestamp": "2026-05-12T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "parent",
+                },
+            })
+            .to_string(),
             json!({
                 "timestamp": "2026-05-12T08:00:00.000Z",
                 "type": "turn_context",
@@ -201,8 +213,67 @@ mod tests {
         ]
         .join("\n");
         let branch_history = [
-            parent_history.as_str(),
-            &json!({
+            json!({
+                "timestamp": "2026-05-12T08:02:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "branch",
+                    "forked_from_id": "parent",
+                },
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "parent",
+                },
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:02:00.000Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "task_started",
+                    "started_at": 1_778_572_800_u64,
+                },
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:00:00.000Z",
+                "type": "turn_context",
+                "payload": {
+                    "model": "gpt-5.2",
+                },
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:01:00.000Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 1_000,
+                            "cached_input_tokens": 100,
+                            "output_tokens": 200,
+                            "reasoning_output_tokens": 20,
+                            "total_tokens": 1_200,
+                        },
+                    },
+                },
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-05-12T08:02:00.000Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "task_started",
+                    "started_at": 1_778_572_920_u64,
+                },
+            })
+            .to_string(),
+            json!({
                 "timestamp": "2026-05-12T08:02:00.000Z",
                 "type": "event_msg",
                 "payload": {

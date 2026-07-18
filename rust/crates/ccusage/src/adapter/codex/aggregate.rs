@@ -238,7 +238,7 @@ fn add_event_to_groups(
     let model = crate::model_aliases::resolve_model_name(model);
     let timestamp = parse_ts_timestamp(&event.timestamp)
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
-    if !insert_event_key(event, timestamp, model.as_ref(), kind, seen) {
+    if !insert_event_key(event, timestamp, model.as_ref(), seen) {
         return Ok(());
     }
     add_deduped_event_to_groups(
@@ -267,7 +267,7 @@ fn add_event_to_groups_local(
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
     if !aggregation
         .seen
-        .insert(codex_event_key(event, timestamp, model.as_ref(), kind))
+        .insert(codex_event_key(event, timestamp, model.as_ref()))
     {
         return Ok(());
     }
@@ -361,10 +361,9 @@ fn insert_event_key(
     event: &CodexTokenUsageEvent,
     timestamp: crate::TimestampMs,
     model: &str,
-    kind: AgentReportKind,
     seen: &CodexDedupeShards,
 ) -> bool {
-    let key = codex_event_key(event, timestamp, model, kind);
+    let key = codex_event_key(event, timestamp, model);
     let mut hasher = FxHasher::default();
     key.hash(&mut hasher);
     let shard_index = hasher.finish() as usize % seen.len();
@@ -375,16 +374,12 @@ fn codex_event_key(
     event: &CodexTokenUsageEvent,
     timestamp: crate::TimestampMs,
     model: &str,
-    kind: AgentReportKind,
 ) -> CodexEventKey {
-    let (session_hash, session_len) = if kind == AgentReportKind::Session {
-        (hash_text(&event.session_id), event.session_id.len())
-    } else {
-        (0, 0)
-    };
+    // The parser removes structurally proven fork replay. Equal usage from
+    // distinct sessions remains independent in every report kind.
     (
-        session_hash,
-        session_len,
+        hash_text(&event.session_id),
+        event.session_id.len(),
         timestamp,
         hash_text(model),
         model.len(),
@@ -497,8 +492,8 @@ mod tests {
     };
 
     #[test]
-    fn dedupes_copied_token_usage_across_session_files() {
-        let usage_line = json!({
+    fn counts_copied_parent_history_once() {
+        let parent_usage = json!({
             "timestamp": "2026-05-29T08:01:00.000Z",
             "type": "event_msg",
             "payload": {
@@ -516,9 +511,80 @@ mod tests {
             },
         })
         .to_string();
+        let fork_usage = json!({
+            "timestamp": "2026-05-29T08:04:00.000Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 10,
+                        "output_tokens": 20,
+                        "reasoning_output_tokens": 2,
+                        "total_tokens": 120,
+                    },
+                    "total_token_usage": {
+                        "input_tokens": 1_100,
+                        "cached_input_tokens": 110,
+                        "output_tokens": 220,
+                        "reasoning_output_tokens": 22,
+                        "total_tokens": 1_320,
+                    },
+                },
+            },
+        })
+        .to_string();
         let fixture = fs_fixture!({
-            "sessions/root.jsonl": &usage_line,
-            "sessions/goal.jsonl": &usage_line,
+            "sessions/parent.jsonl": [
+                json!({
+                    "timestamp": "2026-05-29T08:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": {"id": "parent"},
+                })
+                .to_string(),
+                parent_usage.clone(),
+            ]
+            .join("\n"),
+            "sessions/fork.jsonl": [
+                json!({
+                    "timestamp": "2026-05-29T08:03:00.000Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "fork",
+                        "forked_from_id": "parent",
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-29T08:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": {"id": "parent"},
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-05-29T08:03:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "task_started",
+                        "started_at": 1_780_041_660_u64,
+                    },
+                })
+                .to_string(),
+                parent_usage.clone(),
+                json!({
+                    "timestamp": "2026-05-29T08:03:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "task_started",
+                        "started_at": 1_780_041_780_u64,
+                    },
+                })
+                .to_string(),
+                fork_usage,
+            ]
+            .join("\n"),
         });
         for single_thread in [true, false] {
             let shared = SharedArgs {
@@ -536,11 +602,11 @@ mod tests {
 
             assert_eq!(groups.len(), 1);
             let group = groups.get("2026-05-29").unwrap();
-            assert_eq!(group.input_tokens, 1_000);
-            assert_eq!(group.cached_input_tokens, 100);
-            assert_eq!(group.output_tokens, 200);
-            assert_eq!(group.reasoning_output_tokens, 20);
-            assert_eq!(group.total_tokens, 1_200);
+            assert_eq!(group.input_tokens, 1_100);
+            assert_eq!(group.cached_input_tokens, 110);
+            assert_eq!(group.output_tokens, 220);
+            assert_eq!(group.reasoning_output_tokens, 22);
+            assert_eq!(group.total_tokens, 1_320);
         }
     }
 
@@ -592,7 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_copied_token_usage_after_model_alias_resolution() {
+    fn keeps_matching_usage_from_distinct_sessions_after_model_alias_resolution() {
         let _aliases = set_model_aliases_for_tests([("private-alpha", "gpt-5.2")]);
         let private_usage_line = json!({
             "timestamp": "2026-05-29T08:01:00.000Z",
@@ -649,14 +715,14 @@ mod tests {
             .unwrap();
 
             let group = groups.get("2026-05-29").unwrap();
-            assert_eq!(group.input_tokens, 1_000);
+            assert_eq!(group.input_tokens, 2_000);
             assert_eq!(group.models.len(), 1);
-            assert_eq!(group.models["gpt-5.2"].input_tokens, 1_000);
+            assert_eq!(group.models["gpt-5.2"].input_tokens, 2_000);
         }
     }
 
     #[test]
-    fn keeps_matching_token_usage_in_distinct_session_groups() {
+    fn daily_and_session_reports_reconcile_for_matching_independent_sessions() {
         let usage_line = json!({
             "timestamp": "2026-05-29T08:01:00.000Z",
             "type": "event_msg",
@@ -686,16 +752,33 @@ mod tests {
                 ..SharedArgs::default()
             };
 
-            let groups = load_groups_from_directory(
+            let daily_groups = load_groups_from_directory(
+                &fixture.path("sessions"),
+                &shared,
+                AgentReportKind::Daily,
+            )
+            .unwrap();
+            let session_groups = load_groups_from_directory(
                 &fixture.path("sessions"),
                 &shared,
                 AgentReportKind::Session,
             )
             .unwrap();
 
-            assert_eq!(groups.len(), 2);
-            assert_eq!(groups["root"].input_tokens, 1_000);
-            assert_eq!(groups["goal"].input_tokens, 1_000);
+            let daily = &daily_groups["2026-05-29"];
+            assert_eq!(daily.input_tokens, 2_000);
+            assert_eq!(daily.cached_input_tokens, 200);
+            assert_eq!(daily.output_tokens, 400);
+            assert_eq!(daily.reasoning_output_tokens, 40);
+            assert_eq!(daily.total_tokens, 2_400);
+            assert_eq!(session_groups.len(), 2);
+            assert_eq!(
+                session_groups
+                    .values()
+                    .map(|group| group.total_tokens)
+                    .sum::<u64>(),
+                daily.total_tokens
+            );
         }
     }
 
