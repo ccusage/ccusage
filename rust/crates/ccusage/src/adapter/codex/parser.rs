@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     fs,
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader},
     path::Path,
     sync::LazyLock,
 };
@@ -32,10 +32,8 @@ static INPUT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""input_tokens":"#));
 static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
-static THREAD_SPAWN_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"thread_spawn"));
-static FORKED_FROM_ID_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"forked_from_id"));
+static TASK_STARTED_FINDER: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"task_started"));
 
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_FALLBACKS_JSON: &str = include_str!("codex-auto-review-fallbacks.json");
@@ -64,24 +62,65 @@ struct CodexExecTimestamps {
     model: String,
 }
 
-fn is_codex_replay_session(path: &Path) -> bool {
-    let Ok(mut file) = fs::File::open(path) else {
-        return false;
-    };
-    let mut buf = [0u8; 16 * 1024];
-    let Ok(n) = file.read(&mut buf) else {
-        return false;
-    };
-    THREAD_SPAWN_FINDER.find(&buf[..n]).is_some() || FORKED_FROM_ID_FINDER.find(&buf[..n]).is_some()
+#[derive(Deserialize)]
+struct CodexReplayLogEntry<'a> {
+    #[serde(rename = "type", borrow, default)]
+    entry_type: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    timestamp: Option<CodexTimestamp<'a>>,
+    #[serde(borrow, default)]
+    payload: Option<CodexReplayPayload<'a>>,
 }
 
-fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
+#[derive(Default, Deserialize)]
+struct CodexReplayPayload<'a> {
+    #[serde(rename = "type", borrow, default)]
+    payload_type: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    id: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    forked_from_id: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    started_at: Option<CodexTimestamp<'a>>,
+    #[serde(default)]
+    source: Option<Value>,
+}
+
+#[derive(Clone, Copy)]
+enum CodexReplayBoundary {
+    NativeLine(usize),
+    // Older rollout streams omit task_started after adjacent ancestry metadata,
+    // and early thread_spawn streams can omit the copied parent session_meta.
+    // Limit those compatibility cases to the leaf creation second.
+    LegacyCreationSecond(i64),
+}
+
+impl CodexReplayBoundary {
+    fn contains_token_event(
+        self,
+        line_index: usize,
+        timestamp: Option<&CodexTimestamp<'_>>,
+    ) -> bool {
+        match self {
+            Self::NativeLine(boundary) => line_index < boundary,
+            Self::LegacyCreationSecond(second) => {
+                codex_timestamp_epoch_second(timestamp) == Some(second)
+            }
+        }
+    }
+}
+
+fn detect_replay_boundary(path: &Path) -> Option<CodexReplayBoundary> {
     let Ok(file) = fs::File::open(path) else {
         return None;
     };
     let mut reader = BufReader::new(file);
     let mut line = Vec::new();
-    let mut first_second: Option<[u8; 19]> = None;
+    let mut parent_id: Option<String> = None;
+    let mut leaf_creation_second = None;
+    let mut explicit_thread_spawn = false;
+    let mut replay_candidate = false;
+    let mut line_index = 0;
 
     loop {
         line.clear();
@@ -91,48 +130,118 @@ fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
         if n == 0 {
             break;
         }
-        let Some(kind) = codex_line_usage_kind(&line) else {
-            continue;
-        };
-        if !matches!(kind, CodexLineKind::Session) {
+        if line_index > 1 && TASK_STARTED_FINDER.find(&line).is_none() {
+            line_index += 1;
             continue;
         }
-        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
-            continue;
+        let Ok(value) = serde_json::from_slice::<CodexReplayLogEntry<'_>>(&line) else {
+            if replay_candidate {
+                line_index += 1;
+                continue;
+            }
+            return None;
         };
-        if value.entry_type.as_deref() != Some("event_msg") {
-            continue;
-        }
         let Some(payload) = value.payload.as_ref() else {
-            continue;
-        };
-        if payload.payload_type.as_deref() != Some("token_count") {
-            continue;
-        }
-        let info = payload.info.as_ref();
-        if info.and_then(|i| i.last_token_usage.as_ref()).is_none()
-            && info.and_then(|i| i.total_token_usage.as_ref()).is_none()
-        {
-            continue;
-        }
-        let Some(ts) = codex_session_timestamp(value.timestamp.as_ref()) else {
-            continue;
-        };
-        let ts_bytes = ts.as_bytes();
-        let ts_second: [u8; 19] = ts_bytes.get(0..19).and_then(|s| s.try_into().ok())?;
-        match first_second {
-            None => {
-                first_second = Some(ts_second);
+            if replay_candidate {
+                line_index += 1;
+                continue;
             }
-            Some(ref first) => {
-                if first == &ts_second {
-                    return Some(ts_second);
+            return None;
+        };
+        match line_index {
+            0 if value.entry_type.as_deref() == Some("session_meta") => {
+                let (candidate_parent_id, has_thread_spawn) = codex_replay_parent(payload)?;
+                parent_id = Some(candidate_parent_id.to_string());
+                explicit_thread_spawn = has_thread_spawn;
+                replay_candidate = explicit_thread_spawn;
+                leaf_creation_second = codex_timestamp_epoch_second(value.timestamp.as_ref());
+            }
+            1 => {
+                let ancestor_id = payload
+                    .id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty());
+                let has_adjacent_parent = value.entry_type.as_deref() == Some("session_meta")
+                    && ancestor_id == parent_id.as_deref();
+                // Canonical fork replay is proved by leaf/ancestor session_meta
+                // adjacency. Explicit thread_spawn is the narrow compatibility
+                // signal for older subagent streams that omit the ancestor row.
+                if !has_adjacent_parent && !explicit_thread_spawn {
+                    return None;
                 }
-                return None;
+                replay_candidate = true;
+                if codex_is_native_task_start(&value, payload) {
+                    return Some(CodexReplayBoundary::NativeLine(line_index));
+                }
             }
+            0 => return None,
+            _ => {
+                if replay_candidate && codex_is_native_task_start(&value, payload) {
+                    return Some(CodexReplayBoundary::NativeLine(line_index));
+                }
+            }
+        }
+        line_index += 1;
+    }
+    if !replay_candidate {
+        return None;
+    }
+    leaf_creation_second.map(CodexReplayBoundary::LegacyCreationSecond)
+}
+
+fn codex_replay_parent<'a>(payload: &'a CodexReplayPayload<'_>) -> Option<(&'a str, bool)> {
+    let forked_from_id = payload
+        .forked_from_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    let thread_spawn_parent_id = payload
+        .source
+        .as_ref()
+        .and_then(|source| source.get("subagent"))
+        .and_then(|subagent| subagent.get("thread_spawn"))
+        .and_then(|thread_spawn| thread_spawn.get("parent_thread_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if forked_from_id.is_some()
+        && thread_spawn_parent_id.is_some()
+        && forked_from_id != thread_spawn_parent_id
+    {
+        return None;
+    }
+    forked_from_id
+        .or(thread_spawn_parent_id)
+        .map(|parent_id| (parent_id, thread_spawn_parent_id.is_some()))
+}
+
+fn codex_is_native_task_start(
+    value: &CodexReplayLogEntry<'_>,
+    payload: &CodexReplayPayload<'_>,
+) -> bool {
+    if value.entry_type.as_deref() != Some("event_msg")
+        || payload.payload_type.as_deref() != Some("task_started")
+    {
+        return false;
+    }
+    let started_at = codex_timestamp_epoch_second(payload.started_at.as_ref());
+    started_at.is_some() && started_at == codex_timestamp_epoch_second(value.timestamp.as_ref())
+}
+
+fn codex_timestamp_epoch_second(timestamp: Option<&CodexTimestamp<'_>>) -> Option<i64> {
+    match timestamp? {
+        CodexTimestamp::String(text) => crate::parse_ts_timestamp(text.trim())
+            .map(|timestamp| timestamp.as_millis().div_euclid(1_000)),
+        CodexTimestamp::Number(raw) => {
+            let raw = (*raw).min(i64::MAX as u64) as i64;
+            Some(if raw > 10_000_000_000 {
+                raw / 1_000
+            } else {
+                raw
+            })
         }
     }
-    None
 }
 
 pub(super) fn visit_codex_session_file(
@@ -140,10 +249,7 @@ pub(super) fn visit_codex_session_file(
     path: &Path,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    let is_replay_session = is_codex_replay_session(path);
-    let replay_second = is_replay_session
-        .then(|| detect_replay_second(path))
-        .flatten();
+    let replay_boundary = detect_replay_boundary(path);
     let Ok(file) = fs::File::open(path) else {
         return Ok(());
     };
@@ -154,7 +260,7 @@ pub(super) fn visit_codex_session_file(
     let mut current_model: Option<String> = None;
     let mut current_model_is_fallback = false;
     let fallback_timestamp = file_modified_timestamp(path);
-    let mut skip_replay = replay_second.is_some();
+    let mut line_index = 0;
 
     loop {
         line.clear();
@@ -164,6 +270,8 @@ pub(super) fn visit_codex_session_file(
         if bytes_read == 0 {
             break;
         }
+        let current_line_index = line_index;
+        line_index += 1;
         let Some(line_kind) = codex_line_usage_kind(&line) else {
             continue;
         };
@@ -172,34 +280,26 @@ pub(super) fn visit_codex_session_file(
                 let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
                     continue;
                 };
-                if let Some(ref replay_ts) = replay_second
-                    && skip_replay
-                    && value.entry_type.as_deref() == Some("event_msg")
+                let is_token_count = value.entry_type.as_deref() == Some("event_msg")
                     && value
                         .payload
                         .as_ref()
-                        .is_some_and(|p| p.payload_type.as_deref() == Some("token_count"))
+                        .is_some_and(|p| p.payload_type.as_deref() == Some("token_count"));
+                if is_token_count
+                    && replay_boundary.is_some_and(|boundary| {
+                        boundary.contains_token_event(current_line_index, value.timestamp.as_ref())
+                    })
                 {
-                    let Some(ts) = codex_session_timestamp(value.timestamp.as_ref()) else {
-                        continue;
-                    };
-                    let matches_replay = ts
-                        .as_bytes()
-                        .get(0..19)
-                        .is_some_and(|sec| sec.len() == 19 && sec == replay_ts.as_slice());
-                    if matches_replay {
-                        if let Some(total_usage) = value
-                            .payload
-                            .as_ref()
-                            .and_then(|payload| payload.info.as_ref())
-                            .and_then(|info| info.total_token_usage.as_ref())
-                            .copied()
-                        {
-                            previous_totals.replace(total_usage);
-                        }
-                        continue;
+                    if let Some(total_usage) = value
+                        .payload
+                        .as_ref()
+                        .and_then(|payload| payload.info.as_ref())
+                        .and_then(|info| info.total_token_usage.as_ref())
+                        .copied()
+                    {
+                        previous_totals.replace(total_usage);
                     }
-                    skip_replay = false;
+                    continue;
                 }
                 visit_codex_session_entry(
                     &session_id,
@@ -982,6 +1082,110 @@ fn subtract_codex_raw_usage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn codex_fixture_events(file_name: &str) -> Vec<CodexTokenUsageEvent> {
+        let sessions_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex");
+        let path = sessions_dir.join(file_name);
+        let mut events = Vec::new();
+
+        visit_codex_session_file(&sessions_dir, &path, |event| {
+            events.push(event);
+            Ok(())
+        })
+        .expect("Codex fixture should parse");
+
+        events
+    }
+
+    #[test]
+    fn skips_multisecond_inherited_prefix_with_last_token_usage() {
+        let events = codex_fixture_events("replay-multisecond-modern.jsonl");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 5_000);
+        assert_eq!(events[0].cached_input_tokens, 3_000);
+        assert_eq!(events[0].output_tokens, 500);
+        assert_eq!(events[0].reasoning_output_tokens, 50);
+        assert_eq!(events[0].total_tokens, 5_500);
+    }
+
+    #[test]
+    fn skips_multisecond_inherited_prefix_with_cumulative_usage() {
+        let events = codex_fixture_events("replay-multisecond-legacy.jsonl");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 5_000);
+        assert_eq!(events[0].cached_input_tokens, 3_000);
+        assert_eq!(events[0].output_tokens, 500);
+        assert_eq!(events[0].reasoning_output_tokens, 50);
+        assert_eq!(events[0].total_tokens, 5_500);
+    }
+
+    #[test]
+    fn keeps_same_second_fork_local_last_token_usage() {
+        let events = codex_fixture_events("fork-local-same-second-modern.jsonl");
+
+        assert_eq!(events.len(), 3);
+        assert_eq!(
+            events.iter().map(|event| event.input_tokens).sum::<u64>(),
+            3_000
+        );
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.cached_input_tokens)
+                .sum::<u64>(),
+            2_400
+        );
+        assert_eq!(
+            events.iter().map(|event| event.output_tokens).sum::<u64>(),
+            120
+        );
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.reasoning_output_tokens)
+                .sum::<u64>(),
+            30
+        );
+        assert_eq!(
+            events.iter().map(|event| event.total_tokens).sum::<u64>(),
+            3_120
+        );
+    }
+
+    #[test]
+    fn keeps_same_second_fork_local_cumulative_usage() {
+        let events = codex_fixture_events("fork-local-same-second-legacy.jsonl");
+
+        assert_eq!(events.len(), 3);
+        assert_eq!(
+            events.iter().map(|event| event.input_tokens).sum::<u64>(),
+            3_000
+        );
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.cached_input_tokens)
+                .sum::<u64>(),
+            2_400
+        );
+        assert_eq!(
+            events.iter().map(|event| event.output_tokens).sum::<u64>(),
+            120
+        );
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.reasoning_output_tokens)
+                .sum::<u64>(),
+            30
+        );
+        assert_eq!(
+            events.iter().map(|event| event.total_tokens).sum::<u64>(),
+            3_120
+        );
+    }
 
     #[test]
     fn loads_codex_auto_review_fallbacks_from_models_dev_snapshot() {

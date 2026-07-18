@@ -1,0 +1,8 @@
+{"timestamp":"2026-06-08T11:39:04.000Z","type":"session_meta","payload":{"id":"multi-leaf","forked_from_id":"multi-parent","source":"vscode"}}
+{"timestamp":"2026-06-08T11:39:04.001Z","type":"session_meta","payload":{"id":"multi-parent","source":"vscode"}}
+{"timestamp":"2026-06-08T11:39:04.100Z","type":"event_msg","payload":{"type":"task_started","turn_id":"old-turn-one","started_at":1775001600}}
+{"timestamp":"2026-06-08T11:39:04.900Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100000000,"cached_input_tokens":80000000,"output_tokens":1000000,"reasoning_output_tokens":100000,"total_tokens":101000000}}}}
+{"timestamp":"2026-06-08T11:39:05.200Z","type":"event_msg","payload":{"type":"task_started","turn_id":"old-turn-two","started_at":1775005200}}
+{"timestamp":"2026-06-08T11:39:06.100Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":236700000,"cached_input_tokens":200000000,"output_tokens":2000000,"reasoning_output_tokens":200000,"total_tokens":238700000}}}}
+{"timestamp":"2026-06-08T12:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"multi-live-turn","started_at":1780920000}}
+{"timestamp":"2026-06-08T12:01:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":236705000,"cached_input_tokens":200003000,"output_tokens":2000500,"reasoning_output_tokens":200050,"total_tokens":238705500}}}}
