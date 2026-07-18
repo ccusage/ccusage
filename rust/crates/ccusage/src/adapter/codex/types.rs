@@ -190,10 +190,11 @@ impl<'de> Deserialize<'de> for CodexRawUsage {
                 .unwrap_or(0),
             output_tokens: output,
             reasoning_output_tokens: reasoning,
-            total_tokens: fields
-                .total_tokens
-                .filter(|total| *total > 0 || input + output + reasoning == 0)
-                .unwrap_or(input + output + reasoning),
+            total_tokens: match fields.total_tokens {
+                None => input + output,
+                Some(0) => input + output + reasoning,
+                Some(total) => total,
+            },
         })
     }
 }
@@ -379,4 +380,38 @@ where
     }
 
     deserializer.deserialize_any(OptionalU64Visitor)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derives_total_tokens_without_double_counting_reasoning() {
+        let usage: CodexRawUsage = serde_json::from_str(
+            r#"{
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "reasoning_output_tokens": 20
+            }"#,
+        )
+        .expect("usage should deserialize");
+
+        assert_eq!(usage.total_tokens, 150);
+    }
+
+    #[test]
+    fn derives_explicit_zero_total_tokens_from_all_nonzero_components() {
+        let usage: CodexRawUsage = serde_json::from_str(
+            r#"{
+                "input_tokens": 9,
+                "output_tokens": 4,
+                "reasoning_output_tokens": 1,
+                "total_tokens": 0
+            }"#,
+        )
+        .expect("usage should deserialize");
+
+        assert_eq!(usage.total_tokens, 14);
+    }
 }
