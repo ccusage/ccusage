@@ -1,6 +1,6 @@
 {
 	"name": "ccusage",
-	"version": "20.0.17",
+	"version": "20.0.18",
 	"description": "Analyze coding (agent) CLI token usage and costs from local data",
 	"homepage": "https://github.com/ccusage/ccusage#readme",
 	"bugs": {

@@ -1,6 +1,6 @@
 {
 	"name": "@ccusage/ccusage-win32-x64",
-	"version": "20.0.17",
+	"version": "20.0.18",
 	"description": "Native ccusage binary for Windows x64",
 	"license": "MIT",
 	"repository": {

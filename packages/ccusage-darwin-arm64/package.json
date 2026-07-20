@@ -1,6 +1,6 @@
 {
 	"name": "@ccusage/ccusage-darwin-arm64",
-	"version": "20.0.17",
+	"version": "20.0.18",
 	"description": "Native ccusage binary for macOS arm64",
 	"license": "MIT",
 	"repository": {
