@@ -26,6 +26,7 @@ These projects are maintained independently and are not affiliated with the ccus
 - [viberank](https://viberank.app) - A community-driven leaderboard for Claude Code usage. ([GitHub](https://github.com/sculptdotfun/viberank))
 - [CCWarriors](https://ccwarriors.xyz) - Live leaderboard of AI coding spend across Claude Code, Codex, Gemini, and other ccusage-readable agents, with per-tool filters and real-time updates. ([GitHub](https://github.com/distroinfinity/ccwarriors))
 - [Token Battle](https://tokenbattle.vercel.app) - AI coding cost leaderboard for comparing monthly ccusage exports from Claude Code, Codex CLI, and Gemini CLI, with dashboard uploads, public rankings, and shareable profiles.
+- [TokenTab](https://tokentab-two.vercel.app) - Turns a `ccusage --json` export into a cost report broken down by model and by CLI agent, plus a shareable link — built for sending clients or teammates a bill, not a leaderboard. Runs entirely client-side; no signup or upload.
 
 ## Contributing
 
