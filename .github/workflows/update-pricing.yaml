@@ -97,7 +97,7 @@ jobs:
       - name: Skip lock-only models.dev updates
         run: |
           # Only the compacted snapshot affects the build; if a models.dev bump
-          # leaves the Anthropic pricing unchanged, drop the lock-only churn.
+          # leaves embedded pricing unchanged, drop the lock-only churn.
           if git diff --quiet -- rust/crates/ccusage/src/models-dev-pricing.json; then
             echo "models.dev pricing snapshot is unchanged; skipping PR."
             git checkout -- flake.lock rust/crates/ccusage/src/models-dev-pricing.json

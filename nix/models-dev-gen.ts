@@ -4,13 +4,13 @@
  * models.dev ships per-model TOML sources rather than a prebuilt catalog, so we
  * reuse its own `generateCatalog` routine (the same code that backs
  * https://models.dev/api.json) and then compact the result down to the
- * Anthropic-relevant models and the few pricing fields ccusage consumes. The
- * embedded output is a flat map keyed by runtime model id. The output is
- * committed to the repository and embedded at build time, so every platform
- * ships the identical, pinned data without any build-time network access. The
- * same pinned catalog also generates the Codex auto-review fallback metadata
- * used by the Rust parser. Run via `just gen-models-dev-pricing` (see
- * `nix/models-dev-pricing.nix`).
+ * Anthropic- and Kimi/Moonshot-relevant models and the few pricing fields
+ * ccusage consumes. The embedded output is a flat map keyed by runtime model
+ * id. The output is committed to the repository and embedded at build time, so
+ * every platform ships the identical, pinned data without any build-time
+ * network access. The same pinned catalog also generates the Codex auto-review
+ * fallback metadata used by the Rust parser. Run via `just gen-models-dev-pricing`
+ * (see `nix/models-dev-pricing.nix`).
  */
 import { generateCatalog } from './packages/core/src/generate.ts';
 import {
@@ -20,8 +20,12 @@ import {
 	shouldReplaceModelsDevPricingCandidate,
 } from './models-dev-compact.ts';
 
-/** Model ids/keys we keep; ccusage is Claude-first, so we embed Anthropic models. */
-const KEEP = /claude|anthropic/i;
+/**
+ * Model ids/keys we keep in the committed snapshot.
+ * Claude remains first-class; Kimi/Moonshot is included so offline pricing can
+ * cover models LiteLLM has not published yet (for example kimi-k3).
+ */
+const KEEP = /claude|anthropic|kimi|moonshot/i;
 
 type Cost = {
 	input?: number | null;
@@ -59,7 +63,11 @@ for (const [providerId, provider] of sortedEntries(providers)) {
 		}
 		const cost = model.cost ?? {};
 		// Skip entries without the base prices the runtime loader requires.
+		// Also drop all-zero placeholder costs (for example kimi-for-coding/k3).
 		if (cost.input == null || cost.output == null) {
+			continue;
+		}
+		if (cost.input === 0 && cost.output === 0) {
 			continue;
 		}
 		const pricingKey = selectModelsDevPricingKey(modelId, model.id);

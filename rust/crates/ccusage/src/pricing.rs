@@ -1534,6 +1534,29 @@ mod tests {
     }
 
     #[test]
+    fn offline_prices_kimi_k3_from_embedded_models_dev() {
+        // LiteLLM may lag new Moonshot releases; offline pricing should still
+        // resolve from the embedded models.dev snapshot (see #1462).
+        let pricing = PricingMap::load_embedded();
+        let kimi_k3 = pricing.find("moonshot/kimi-k3").unwrap_or_else(|| {
+            pricing
+                .find("kimi-k3")
+                .expect("embedded models.dev should include kimi-k3 pricing")
+        });
+
+        assert_eq!(kimi_k3.input, 3e-6);
+        assert_eq!(kimi_k3.output, 15e-6);
+        assert_eq!(kimi_k3.cache_read, 0.3e-6);
+        assert!(kimi_k3.cache_read_explicit);
+        assert!(
+            pricing
+                .context_limit("moonshot/kimi-k3")
+                .or_else(|| pricing.context_limit("kimi-k3"))
+                == Some(1_048_576)
+        );
+    }
+
+    #[test]
     fn embedded_pricing_includes_z_ai_glm_models_for_offline_reports() {
         let pricing = PricingMap::load_embedded();
 

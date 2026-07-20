@@ -42,10 +42,23 @@ function compareModelsDevPricingCandidates(
 }
 
 function candidateProviderPriority(candidate: ModelsDevPricingCandidate): number {
-	if (candidate.sourceProviderId === 'anthropic') {
+	// Prefer first-party provider catalogs when several resellers publish the
+	// same pricing key (for example moonshotai vs venice for kimi-k3).
+	if (
+		candidate.sourceProviderId === 'anthropic' ||
+		candidate.sourceProviderId === 'moonshotai' ||
+		candidate.sourceProviderId === 'moonshot'
+	) {
 		return 2;
 	}
-	return candidate.sourceModelId.includes('anthropic') ? 1 : 0;
+	if (
+		candidate.sourceModelId.includes('anthropic') ||
+		candidate.sourceModelId.includes('moonshot') ||
+		candidate.sourceModelId.includes('kimi')
+	) {
+		return 1;
+	}
+	return 0;
 }
 
 function compareNumber(left: number, right: number): number {
