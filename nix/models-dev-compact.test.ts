@@ -59,6 +59,28 @@ void it('prefers Anthropic provider pricing over duplicate aliases', () => {
 	);
 });
 
+void it('prefers MoonshotAI provider pricing over reseller duplicates', () => {
+	assert.equal(
+		shouldReplaceModelsDevPricingCandidate(
+			{
+				sourceProviderId: 'venice',
+				sourceModelId: 'kimi-k3',
+				hasContextLimit: true,
+				hasExplicitCacheRead: true,
+				hasExplicitCacheWrite: false,
+			},
+			{
+				sourceProviderId: 'moonshotai',
+				sourceModelId: 'kimi-k3',
+				hasContextLimit: true,
+				hasExplicitCacheRead: true,
+				hasExplicitCacheWrite: false,
+			},
+		),
+		true,
+	);
+});
+
 void it('uses a stable source ordering tie-break for duplicate aliases', () => {
 	assert.equal(
 		shouldReplaceModelsDevPricingCandidate(

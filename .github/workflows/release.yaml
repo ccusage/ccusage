@@ -4,11 +4,22 @@ on:
   push:
     branches:
       - main
+  # Toggling tagpr:minor / tagpr:major labels on the release PR should update
+  # its proposed version right away, instead of waiting for the next push to
+  # main to make tagpr recompute it.
+  pull_request:
+    types:
+      - labeled
+      - unlabeled
+  workflow_dispatch:
 
 concurrency: tagpr
 
 jobs:
   tagpr:
+    # Label events only matter on tagpr's own release PR; skip the rest so
+    # ordinary PR labeling doesn't spend runner time.
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'tagpr-from-')
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
@@ -19,8 +30,11 @@ jobs:
       tag: ${{ steps.tagpr.outputs.tag }}
     steps:
       # persist-credentials stays on (default) so tagpr can push the release PR and tag
+      # ref: main because on pull_request events the default checkout is the
+      # PR merge ref, while tagpr always operates on the release branch.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: main
           fetch-depth: 0
       - id: tagpr
         uses: Songmu/tagpr@e84001bd5dac8defa0c75b3913937d284a3b3660 # v1.20.0
