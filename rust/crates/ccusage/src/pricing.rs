@@ -948,6 +948,23 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
+        // Source: https://platform.kimi.ai/docs/pricing/chat-k3
+        self.entries.insert(
+            "moonshot/kimi-k3".to_string(),
+            Pricing {
+                input: 3e-6,
+                output: 15e-6,
+                cache_create: 0.0,
+                cache_read: 0.3e-6,
+                cache_read_explicit: true,
+                input_above_200k: None,
+                output_above_200k: None,
+                cache_create_above_200k: None,
+                cache_read_above_200k: None,
+                long_context_threshold: None,
+                fast_multiplier: 1.0,
+            },
+        );
         let gpt_5_1_pricing = Pricing {
             input: 1.25e-6,
             output: 10e-6,
@@ -1156,6 +1173,8 @@ impl PricingMap {
             .insert("moonshot/kimi-k2.5".to_string(), 262_144);
         self.context_limits
             .insert("moonshot/kimi-k2.6".to_string(), 262_144);
+        self.context_limits
+            .insert("moonshot/kimi-k3".to_string(), 1_048_576);
 
         for model in [
             "claude-opus-4-5",
@@ -1520,6 +1539,7 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let kimi_k25 = pricing.find("moonshot/kimi-k2.5").unwrap();
         let kimi_k26 = pricing.find("moonshot/kimi-k2.6").unwrap();
+        let kimi_k3 = pricing.find("moonshot/kimi-k3").unwrap();
 
         assert_eq!(kimi_k25.input, 0.6e-6);
         assert_eq!(kimi_k25.output, 3e-6);
@@ -1529,8 +1549,13 @@ mod tests {
         assert_eq!(kimi_k26.output, 4e-6);
         assert_eq!(kimi_k26.cache_read, 0.16e-6);
         assert!(kimi_k26.cache_read_explicit);
+        assert_eq!(kimi_k3.input, 3e-6);
+        assert_eq!(kimi_k3.output, 15e-6);
+        assert_eq!(kimi_k3.cache_read, 0.3e-6);
+        assert!(kimi_k3.cache_read_explicit);
         assert_eq!(pricing.context_limit("moonshot/kimi-k2.5"), Some(262_144));
         assert_eq!(pricing.context_limit("moonshot/kimi-k2.6"), Some(262_144));
+        assert_eq!(pricing.context_limit("moonshot/kimi-k3"), Some(1_048_576));
     }
 
     #[test]
