@@ -45,11 +45,9 @@ def main [] {
     }
 }
 def required_env [name: string] {
-    let value = ($env | get --optional $name)
+    let value = $env | get --optional $name
     if $value == null or ($value | is-empty) {
-        error make {
-            msg: $"($name) is required"
-        }
+        error make {msg: $"($name) is required"}
     }
     $value
 }
@@ -63,7 +61,13 @@ def gh_api_json [args: list<string>] {
     $result.stdout | from json
 }
 def create_comment [repository: string, pr_number: string, body: string] {
-    let result = (gh_api_with_body 'POST' $"repos/($repository)/issues/($pr_number)/comments" $body)
+    let result = (
+        (gh_api_with_body
+            'POST'
+            $"repos/($repository)/issues/($pr_number)/comments"
+            $body
+        )
+    )
     if $result.exit_code != 0 {
         if (is_comment_write_auth_failure $result.stderr) {
             print --stderr $"Skipping PR comment because GitHub token cannot write comments: ($result.stderr | str trim)"
@@ -75,36 +79,26 @@ def create_comment [repository: string, pr_number: string, body: string] {
     }
 }
 def try_update_comment [repository: string, comment_id: int, body: string] {
-    let result = (gh_api_with_body 'PATCH' $"repos/($repository)/issues/comments/($comment_id)" $body)
+    let result = (
+        (gh_api_with_body
+            'PATCH'
+            $"repos/($repository)/issues/comments/($comment_id)"
+            $body
+        )
+    )
     if $result.exit_code == 0 {
-        return {
-            status: 'ok'
-            result: $result
-            stderr: $result.stderr
-        }
+        return {status: 'ok', result: $result, stderr: $result.stderr}
     }
-    if ($result.stderr =~ 'HTTP 404') {
-        return {
-            status: 'missing'
-            result: $result
-            stderr: $result.stderr
-        }
+    if $result.stderr =~ 'HTTP 404' {
+        return {status: 'missing', result: $result, stderr: $result.stderr}
     }
     if (is_comment_write_auth_failure $result.stderr) {
-        return {
-            status: 'auth'
-            result: $result
-            stderr: $result.stderr
-        }
+        return {status: 'auth', result: $result, stderr: $result.stderr}
     }
-    {
-        status: 'error'
-        result: $result
-        stderr: $result.stderr
-    }
+    {status: 'error', result: $result, stderr: $result.stderr}
 }
 def gh_api_with_body [method: string, endpoint: string, body: string] {
-    let payload = (mktemp -t ccusage-pr-comment.XXXXXX | str trim)
+    let payload = mktemp -t ccusage-pr-comment.XXXXXX | str trim
     {body: $body} | to json | save --force $payload
     let args = [
         --method

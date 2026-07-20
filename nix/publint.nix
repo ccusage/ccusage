@@ -97,8 +97,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       src
       ;
     inherit pnpm;
-    fetcherVersion = 3;
-    hash = "sha256-TSLDCjiXj131uLlLNegm6M4cFEgJtjmhNtHDtoHKm6E=";
+    fetcherVersion = 4;
+    hash = "sha256-/XJ8DP7884qt1ZrVpJdixIizanQPLUaYyCucwt/SzXc=";
   };
 
   dontBuild = true;

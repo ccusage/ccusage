@@ -10,18 +10,16 @@ const package_dirs = {
 }
 def main [--platform: string, --arch: string, --binary: string] {
     let key = $"($platform)-($arch)"
-    let package_dir = ($package_dirs | get -o $key)
+    let package_dir = $package_dirs | get -o $key
     if $package_dir == null {
-        error make {
-            msg: $"Unsupported native package target: ($key)"
-        }
+        error make {msg: $"Unsupported native package target: ($key)"}
     }
-    let script_dir = ($env.CURRENT_FILE | path dirname)
-    let repo_root = ([$script_dir, '..', '..', '..'] | path join | path expand)
+    let script_dir = $env.CURRENT_FILE | path dirname
+    let repo_root = [$script_dir, '..', '..', '..'] | path join | path expand
     let binary_name = if $platform == 'win32' { 'ccusage.exe' } else { 'ccusage' }
-    let source = ($binary | path expand)
-    let target_dir = ([$repo_root, 'packages', $package_dir, 'bin'] | path join)
-    let target = ([$target_dir, $binary_name] | path join)
+    let source = $binary | path expand
+    let target_dir = [$repo_root, 'packages', $package_dir, 'bin'] | path join
+    let target = [$target_dir, $binary_name] | path join
     mkdir $target_dir
     cp -f $source $target
     if $platform != 'win32' {
@@ -33,22 +31,21 @@ def main [--platform: string, --arch: string, --binary: string] {
     print $target
 }
 def rewrite_darwin_system_libraries [binary_path: string] {
-    let linked = (run-external otool '-L' $binary_path | complete)
+    let linked = run-external otool '-L' $binary_path | complete
     if $linked.exit_code != 0 {
-        error make {
-            msg: $"otool failed for ($binary_path)\n($linked.stderr)"
-        }
+        error make {msg: $"otool failed for ($binary_path)\n($linked.stderr)"}
     }
     for line in ($linked.stdout | lines | skip 1) {
         let library = (
             $line | str trim | split row --regex '\s+' | first
         )
         if $library =~ '^/nix/store/[^/]+-libiconv-[^/]+/lib/libiconv\.2\.dylib$' {
-            let rewrite = (run-external install_name_tool '-change' $library /usr/lib/libiconv.2.dylib $binary_path | complete)
+            let rewrite = (
+                run-external install_name_tool '-change' $library /usr/lib/libiconv.2.dylib $binary_path
+                | complete
+            )
             if $rewrite.exit_code != 0 {
-                error make {
-                    msg: $"install_name_tool failed for ($library)\n($rewrite.stderr)"
-                }
+                error make {msg: $"install_name_tool failed for ($library)\n($rewrite.stderr)"}
             }
         }
     }
