@@ -1394,6 +1394,70 @@ mod tests {
     }
 
     #[test]
+    fn keeps_child_usage_matching_parent_event_after_fork() {
+        fn metadata(timestamp: &str, id: &str, parent: Option<&str>) -> String {
+            json!({
+                "timestamp": timestamp,
+                "type": "session_meta",
+                "payload": {"id": id, "forked_from_id": parent},
+            })
+            .to_string()
+        }
+
+        fn token_count(timestamp: &str, input_tokens: u64) -> String {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": 1,
+                            "total_tokens": input_tokens + 1,
+                        },
+                        "model": "gpt-5.2",
+                    },
+                },
+            })
+            .to_string()
+        }
+
+        let fixture = fs_fixture!({
+            "parent.jsonl": [
+                metadata("2026-05-12T08:00:00.000Z", "parent", None),
+                token_count("2026-05-12T08:01:00.000Z", 100),
+                // Written after the child forked.
+                token_count("2026-05-12T08:03:00.000Z", 50),
+            ]
+            .join("\n"),
+            "child.jsonl": [
+                metadata(
+                    "2026-05-12T08:02:00.000Z",
+                    "child",
+                    Some("parent"),
+                ),
+                // Replayed parent state at the fork.
+                token_count("2026-05-12T08:02:00.000Z", 100),
+                // Real child usage that happens to equal the parent's next event.
+                token_count("2026-05-12T08:04:00.000Z", 50),
+            ]
+            .join("\n"),
+        });
+
+        for single_thread in [true, false] {
+            let events = load_codex_events_from_directory(fixture.root(), single_thread).unwrap();
+            let child_events = events
+                .iter()
+                .filter(|event| event.session_id == "child")
+                .collect::<Vec<_>>();
+
+            assert_eq!(child_events.len(), 1, "single_thread={single_thread}");
+            assert_eq!(child_events[0].input_tokens, 50);
+        }
+    }
+
+    #[test]
     fn skips_replayed_history_across_multiple_subagent_files() {
         let parent_line = json!({
             "timestamp": "2026-05-12T08:01:00.000Z",

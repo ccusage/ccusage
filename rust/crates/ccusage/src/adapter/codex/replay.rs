@@ -8,13 +8,23 @@ use std::{
 
 use serde_json::Value;
 
-use crate::{CodexRawUsage, chunk_file_indexes_by_size};
+use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_timestamp};
 
 use super::parser::{detect_replay_second, visit_codex_session_file};
 
 pub(super) struct CodexReplayPlan {
-    parent_by_child: HashMap<PathBuf, PathBuf>,
-    usage_by_parent: HashMap<PathBuf, Vec<CodexRawUsage>>,
+    parent_by_child: HashMap<PathBuf, ParentReplay>,
+    usage_by_parent: HashMap<PathBuf, ParentUsage>,
+}
+
+struct ParentReplay {
+    path: PathBuf,
+    forked_at: Option<TimestampMs>,
+}
+
+struct ParentUsage {
+    timestamps: Vec<Option<TimestampMs>>,
+    usage: Vec<CodexRawUsage>,
 }
 
 impl CodexReplayPlan {
@@ -48,13 +58,22 @@ impl CodexReplayPlan {
             .iter()
             .filter_map(|(child, _, metadata)| {
                 metadata.parent_id.as_deref().and_then(|parent_id| {
-                    files_by_session_id
-                        .get(parent_id)
-                        .map(|parent| (child.clone(), parent.clone()))
+                    files_by_session_id.get(parent_id).map(|parent| {
+                        (
+                            child.clone(),
+                            ParentReplay {
+                                path: parent.clone(),
+                                forked_at: metadata.timestamp,
+                            },
+                        )
+                    })
                 })
             })
             .collect::<HashMap<_, _>>();
-        let parent_paths = parent_by_child.values().cloned().collect::<HashSet<_>>();
+        let parent_paths = parent_by_child
+            .values()
+            .map(|parent| parent.path.clone())
+            .collect::<HashSet<_>>();
         let parents = metadata
             .iter()
             .filter(|(path, _, _)| parent_paths.contains(path))
@@ -65,8 +84,20 @@ impl CodexReplayPlan {
             if metadata.parent_id.is_some() && !parent_by_child.contains_key(child) {
                 let replayed_usage = replayed_usage_from_first_second(sessions_dir, child);
                 if !replayed_usage.is_empty() {
-                    parent_by_child.insert(child.clone(), child.clone());
-                    usage_by_parent.insert(child.clone(), replayed_usage);
+                    parent_by_child.insert(
+                        child.clone(),
+                        ParentReplay {
+                            path: child.clone(),
+                            forked_at: None,
+                        },
+                    );
+                    usage_by_parent.insert(
+                        child.clone(),
+                        ParentUsage {
+                            timestamps: vec![None; replayed_usage.len()],
+                            usage: replayed_usage,
+                        },
+                    );
                 }
             }
         }
@@ -78,17 +109,23 @@ impl CodexReplayPlan {
     }
 
     pub(super) fn parent_usage(&self, child: &Path) -> Option<&[CodexRawUsage]> {
-        self.parent_by_child
-            .get(child)
-            .and_then(|parent| self.usage_by_parent.get(parent))
-            .map(Vec::as_slice)
+        let parent = self.parent_by_child.get(child)?;
+        let stream = self.usage_by_parent.get(&parent.path)?;
+        let replay_len = parent.forked_at.map_or(stream.usage.len(), |forked_at| {
+            stream
+                .timestamps
+                .iter()
+                .position(|timestamp| timestamp.is_some_and(|timestamp| timestamp > forked_at))
+                .unwrap_or(stream.usage.len())
+        });
+        Some(&stream.usage[..replay_len])
     }
 }
 
 fn read_parent_usage(
     parents: &[(PathBuf, &Path)],
     single_thread: bool,
-) -> HashMap<PathBuf, Vec<CodexRawUsage>> {
+) -> HashMap<PathBuf, ParentUsage> {
     if parents.is_empty() {
         return HashMap::new();
     }
@@ -114,11 +151,11 @@ fn read_parent_usage(
                         .into_iter()
                         .map(|index| {
                             let (path, sessions_dir) = &parents[index];
-                            let usage = read_usage_events(sessions_dir, path)
+                            let (timestamps, usage) = read_usage_events(sessions_dir, path)
                                 .into_iter()
-                                .map(|(_, usage)| usage)
-                                .collect();
-                            (path.clone(), usage)
+                                .map(|(timestamp, usage)| (parse_ts_timestamp(&timestamp), usage))
+                                .unzip();
+                            (path.clone(), ParentUsage { timestamps, usage })
                         })
                         .collect::<Vec<_>>()
                 })
@@ -165,6 +202,7 @@ fn replayed_usage_from_first_second(sessions_dir: &Path, path: &Path) -> Vec<Cod
 struct CodexSessionMetadata {
     session_id: Option<String>,
     parent_id: Option<String>,
+    timestamp: Option<TimestampMs>,
 }
 
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
@@ -186,6 +224,10 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
         .then_some(value.get("payload"))
         .flatten();
     CodexSessionMetadata {
+        timestamp: value
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .and_then(parse_ts_timestamp),
         session_id: payload
             .and_then(|payload| payload.get("id"))
             .and_then(Value::as_str)
