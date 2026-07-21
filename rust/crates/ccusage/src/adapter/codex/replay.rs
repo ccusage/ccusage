@@ -226,8 +226,18 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     CodexSessionMetadata {
         timestamp: value
             .get("timestamp")
-            .and_then(Value::as_str)
-            .and_then(parse_ts_timestamp),
+            .and_then(|timestamp| match timestamp {
+                Value::String(timestamp) => parse_ts_timestamp(timestamp),
+                Value::Number(timestamp) => timestamp.as_u64().and_then(|raw| {
+                    let millis = if raw > 10_000_000_000 {
+                        raw
+                    } else {
+                        raw.checked_mul(1_000)?
+                    };
+                    Some(TimestampMs::from_millis(millis.min(i64::MAX as u64) as i64))
+                }),
+                _ => None,
+            }),
         session_id: payload
             .and_then(|payload| payload.get("id"))
             .and_then(Value::as_str)
