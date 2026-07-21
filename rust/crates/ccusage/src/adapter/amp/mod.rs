@@ -2,6 +2,7 @@ mod loader;
 mod parser;
 mod paths;
 mod report;
+mod server;
 
 use crate::{
     PricingMap, Result, adapter::opencode, cli::AgentCommandArgs, filter_loaded_entries_by_date,
@@ -20,7 +21,7 @@ pub(crate) fn run(args: AgentCommandArgs) -> Result<()> {
         crate::log_level() != Some(0),
         shared.pricing_overrides.iter(),
     );
-    let mut entries = load_entries(&shared, &pricing)?;
+    let mut entries = loader::load_entries_for_amp_command(&shared, &pricing)?;
     filter_loaded_entries_by_date(&mut entries, &shared);
     let mut rows = summarize_entries(&entries, args.kind)?;
     sort_summaries(&mut rows, &shared.order, |row| {

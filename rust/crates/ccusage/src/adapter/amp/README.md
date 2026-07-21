@@ -1,12 +1,20 @@
 # Amp Source
 
-Data source:
+Data sources:
 
 ```text
-${AMP_DATA_DIR:-~/.local/share/amp}/threads/
+amp threads list --include-archived --json
+amp threads export <thread-id>
+${AMP_DATA_DIR:-~/.local/share/amp}/threads/ (legacy)
 ```
 
-Each thread is a JSON file named `T-{uuid}.json`.
+By default, ccusage loads legacy local JSON files first, then uses the installed
+and authenticated Amp CLI to discover and export server-backed threads. Remote
+server snapshots older than the local history are skipped. Threads
+updated after local history stopped are merged by usage identity so ccusage can
+include newer messages without duplicating legacy usage or losing its credits.
+Setting `AMP_DATA_DIR` explicitly selects only those local archive roots and
+disables server discovery.
 
 Usage comes from:
 
@@ -19,7 +27,9 @@ Usage comes from:
   `cacheReadInputTokens`, and `totalTokens` fields. `totalTokens` is only used
   as a fallback when the split fields are missing.
 
-Amp also reports `credits`; display credits alongside USD estimates when the command/report supports it.
+Legacy Amp ledgers also report `credits`; display credits alongside USD
+estimates when the command/report supports it. Current server exports do not
+include credits.
 
 Commands:
 

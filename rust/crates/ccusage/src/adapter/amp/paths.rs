@@ -4,6 +4,10 @@ use crate::Result;
 
 const AMP_DATA_DIR_ENV: &str = "AMP_DATA_DIR";
 
+pub(super) fn uses_default_source() -> bool {
+    env::var_os(AMP_DATA_DIR_ENV).is_none()
+}
+
 pub(super) fn paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();

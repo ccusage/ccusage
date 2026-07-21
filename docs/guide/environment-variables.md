@@ -6,6 +6,8 @@ ccusage supports several environment variables for configuration and customizati
 
 ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; the Copilot variable points at one explicit JSONL export file:
 
+For Amp, leaving `AMP_DATA_DIR` unset combines server-backed threads from the authenticated Amp CLI with legacy files in `~/.local/share/amp`. Setting it switches Amp to local-archive-only mode and disables server discovery.
+
 | Variable                          | Agent        | Default                            |
 | --------------------------------- | ------------ | ---------------------------------- |
 | `CLAUDE_CONFIG_DIR`               | Claude Code  | `~/.config/claude` and `~/.claude` |

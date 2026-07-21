@@ -75,11 +75,45 @@ pub(crate) fn read_thread_file(
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
     let content = fs::read(path)?;
-    let Ok(thread) = serde_json::from_slice::<AmpThread>(&content) else {
+    parse_thread(&content, tz, mode, pricing)
+}
+
+pub(super) fn parse_thread(
+    content: &[u8],
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Result<Vec<LoadedEntry>> {
+    let Ok(thread) = serde_json::from_slice::<AmpThread>(content) else {
         return Ok(Vec::new());
     };
+    Ok(parse_deserialized_thread(thread, tz, mode, pricing))
+}
+
+pub(super) fn parse_server_thread(
+    content: &[u8],
+    expected_thread_id: &str,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Result<Vec<LoadedEntry>> {
+    let thread = serde_json::from_slice::<AmpThread>(content)?;
+    if thread.id.as_deref() != Some(expected_thread_id) {
+        return Err(crate::cli_error(format!(
+            "Amp exported an unexpected thread ID (expected {expected_thread_id})"
+        )));
+    }
+    Ok(parse_deserialized_thread(thread, tz, mode, pricing))
+}
+
+fn parse_deserialized_thread(
+    thread: AmpThread,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Vec<LoadedEntry> {
     let Some(thread_id) = thread.id else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let messages = &thread.messages;
 
@@ -87,17 +121,10 @@ pub(crate) fn read_thread_file(
         && let Some(events) = ledger.events.as_ref()
     {
         let cache_tokens = cache_tokens_by_message_id(messages);
-        return Ok(parse_ledger_events(
-            events,
-            &cache_tokens,
-            &thread_id,
-            tz,
-            mode,
-            pricing,
-        ));
+        return parse_ledger_events(events, &cache_tokens, &thread_id, tz, mode, pricing);
     }
 
-    Ok(parse_message_usage(messages, &thread_id, tz, mode, pricing))
+    parse_message_usage(messages, &thread_id, tz, mode, pricing)
 }
 
 fn parse_ledger_events(
@@ -339,6 +366,46 @@ fn json_value_f64(value: Option<&Value>) -> Option<f64> {
 mod tests {
     use super::*;
     use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn reads_usage_from_server_export() {
+        let export = br#"{
+            "id":"T-server-thread",
+            "messages":[
+                {"role":"user","content":"hi","messageId":1},
+                {"role":"assistant","messageId":2,"usage":{
+                    "model":"claude-sonnet-4-20250514",
+                    "inputTokens":12,
+                    "outputTokens":34,
+                    "cacheCreationInputTokens":56,
+                    "cacheReadInputTokens":78,
+                    "totalInputTokens":146,
+                    "timestamp":"2026-07-20T10:11:12.000Z"
+                }}
+            ]
+        }"#;
+
+        let entries = parse_thread(export, None, CostMode::Auto, None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "T-server-thread");
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("2"));
+        assert_eq!(entries[0].data.message.usage.input_tokens, 12);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 34);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            56
+        );
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 78);
+    }
+
+    #[test]
+    fn rejects_invalid_server_export() {
+        let error = parse_server_thread(b"not json", "T-server-thread", None, CostMode::Auto, None)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("expected"));
+    }
 
     #[test]
     fn falls_back_to_total_tokens_when_amp_parts_are_missing() {

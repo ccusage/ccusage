@@ -21,7 +21,7 @@
     <img src="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/screenshot.png" alt="ccusage terminal report screenshot">
 </div>
 
-> Analyze coding (agent) CLI token usage and costs from local data.
+> Analyze coding (agent) CLI token usage and costs.
 
 ## Major Sponsors
 
@@ -59,7 +59,7 @@ npx ccusage@latest
 
 ## Supported Sources
 
-ccusage reads local usage data from coding agent CLIs and turns it into daily, weekly, monthly, and session reports.
+ccusage reads usage data from coding agent CLIs and turns it into daily, weekly, monthly, and session reports. Most sources use local files; current Amp threads are exported through the authenticated Amp CLI.
 
 | Source             | Focused command example  |
 | ------------------ | ------------------------ |

@@ -165,7 +165,7 @@ If ccusage shows no data, check:
    - Claude Code: `~/.config/claude/projects/` or `~/.claude/projects/`
    - Codex: `${CODEX_HOME:-~/.codex}`
    - OpenCode: `${OPENCODE_DATA_DIR:-~/.local/share/opencode}`
-   - Amp: `${AMP_DATA_DIR:-~/.local/share/amp}`
+   - Amp: authenticated `amp threads` commands plus legacy files in `${AMP_DATA_DIR:-~/.local/share/amp}`
    - Droid: `${DROID_SESSIONS_DIR:-~/.factory/sessions}`
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`
    - Hermes Agent: `${HERMES_HOME:-~/.hermes}/state.db`
@@ -197,6 +197,8 @@ export KIMI_DATA_DIR="/path/to/kimi"
 export QWEN_DATA_DIR="/path/to/qwen"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 ```
+
+Setting `AMP_DATA_DIR` selects local-archive-only mode. Leave it unset to combine the authenticated Amp CLI's server-backed threads with legacy files from the default directory.
 
 Each source-specific path variable can also contain comma-separated directories:
 

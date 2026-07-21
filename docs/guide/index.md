@@ -77,7 +77,7 @@ ccusage reads from local coding CLI data directories:
 | Claude Code  | `claude`   | `~/.config/claude/projects/`, `~/.claude/`        |
 | Codex        | `codex`    | `${CODEX_HOME:-~/.codex}`                         |
 | OpenCode     | `opencode` | `${OPENCODE_DATA_DIR:-~/.local/share/opencode}`   |
-| Amp          | `amp`      | `${AMP_DATA_DIR:-~/.local/share/amp}`             |
+| Amp          | `amp`      | Amp CLI server exports + `~/.local/share/amp`     |
 | Droid        | `droid`    | `${DROID_SESSIONS_DIR:-~/.factory/sessions}`      |
 | Codebuff     | `codebuff` | `${CODEBUFF_DATA_DIR:-~/.config/manicode}`        |
 | Hermes Agent | `hermes`   | `${HERMES_HOME:-~/.hermes}/state.db`              |

@@ -52,11 +52,12 @@ ccusage daily --mode display --timezone UTC
 export CODEX_HOME="$HOME/.codex"
 export GEMINI_DATA_DIR="$HOME/.gemini/tmp"
 export OPENCODE_DATA_DIR="$HOME/.local/share/opencode"
-export AMP_DATA_DIR="$HOME/.local/share/amp"
 export PI_AGENT_DIR="$HOME/.pi/agent/sessions"
 export KILO_DATA_DIR="$HOME/.local/share/kilo"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="$HOME/.copilot/otel/copilot-otel.jsonl"
 ```
+
+Leave `AMP_DATA_DIR` unset for current server-backed Amp threads. Set it only when you want Amp reports to read local archives without server discovery.
 
 Use comma-separated directories when you want reports to combine multiple profiles or archives:
 
