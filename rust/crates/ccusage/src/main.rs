@@ -148,6 +148,7 @@ fn main() -> Result<()> {
         Some(Command::Gemini(args)) => adapter::gemini::run(args),
         Some(Command::Kimi(args)) => adapter::kimi::run(args),
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
+        Some(Command::Antigravity(args)) => adapter::antigravity::run(args),
         None => {
             let args = AgentCommandArgs {
                 shared: cli.shared,
@@ -919,6 +920,58 @@ mod tests {
                 "cost": 0.05
             }])
         );
+    }
+
+    #[test]
+    fn builds_antigravity_daily_json_report() {
+        let entry = LoadedEntry {
+            data: UsageEntry {
+                session_id: Some("conv-1".to_string()),
+                timestamp: "2026-01-02T00:00:00.429Z".to_string(),
+                version: None,
+                message: UsageMessage {
+                    usage: TokenUsageRaw {
+                        input_tokens: 7357,
+                        output_tokens: 604,
+                        cache_creation_input_tokens: 0,
+                        cache_read_input_tokens: 36491,
+                        speed: None,
+                        cache_creation: None,
+                    },
+                    model: Some("gemini-3.1-pro".to_string()),
+                    id: Some("resp-1".to_string()),
+                },
+                cost_usd: None,
+                request_id: None,
+                is_api_error_message: None,
+                is_sidechain: None,
+            },
+            timestamp: parse_ts_timestamp("2026-01-02T00:00:00.429Z").unwrap(),
+            date: "2026-01-02".to_string(),
+            project: Arc::from("app"),
+            session_id: Arc::from("conv-1"),
+            project_path: Arc::from("/Users/test/app"),
+            cost: 0.01,
+            extra_total_tokens: 117,
+            credits: None,
+            message_count: None,
+            model: Some("gemini-3.1-pro".to_string()),
+            usage_limit_reset_time: None,
+            missing_pricing_model: None,
+        };
+
+        let rows =
+            adapter::antigravity::summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
+        let report = adapter::antigravity::report_from_rows(&rows, AgentReportKind::Daily);
+
+        assert_eq!(report["daily"][0]["date"], "2026-01-02");
+        assert_eq!(report["daily"][0]["inputTokens"], 7357);
+        assert_eq!(report["daily"][0]["outputTokens"], 604);
+        assert_eq!(report["daily"][0]["cacheCreationTokens"], 0);
+        assert_eq!(report["daily"][0]["cacheReadTokens"], 36491);
+        assert_eq!(report["daily"][0]["totalTokens"], 7357 + 604 + 36491 + 117);
+        assert_eq!(report["daily"][0]["totalCost"], json!(0.01));
+        assert_eq!(report["daily"][0]["modelsUsed"], json!(["gemini-3.1-pro"]));
     }
 
     #[test]

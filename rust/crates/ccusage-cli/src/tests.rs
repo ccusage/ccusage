@@ -202,6 +202,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
+        Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
     }
 }
 
@@ -1091,4 +1092,14 @@ fn parses_openclaw_session_options() {
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
     assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+}
+
+#[test]
+fn parses_antigravity_session_options() {
+    let cli = parse(&["ccusage", "antigravity", "session", "--json"]);
+    let Some(Command::Antigravity(args)) = cli.command else {
+        panic!("expected antigravity command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Session);
+    assert!(args.shared.json);
 }

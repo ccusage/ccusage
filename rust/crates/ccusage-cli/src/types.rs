@@ -30,6 +30,7 @@ pub enum Command {
     Kimi(AgentCommandArgs),
     Qwen(AgentCommandArgs),
     OpenClaw(AgentCommandArgs),
+    Antigravity(AgentCommandArgs),
 }
 
 #[derive(Clone, Debug, Default)]
