@@ -38,7 +38,12 @@ def comment_body [comment: record] {
         _ => ''
     }
 }
-def update_or_recreate_comment [repository: string, pr_number: string, comment_id: int, body: string] {
+def update_or_recreate_comment [
+    repository: string
+    pr_number: string
+    comment_id: int
+    body: string
+] {
     let update = (try_update_comment $repository $comment_id $body)
     match $update.status {
         'ok' => null
@@ -46,7 +51,9 @@ def update_or_recreate_comment [repository: string, pr_number: string, comment_i
             print --stderr 'Existing PR comment was missing; creating a new comment instead.'
             create_comment $repository $pr_number $body
         }
-        'auth' => (print --stderr $"Skipping PR comment because GitHub token cannot update comments: ($update.stderr | str trim)")
+        'auth' => (
+            print --stderr $"Skipping PR comment because GitHub token cannot update comments: ($update.stderr | str trim)"
+        )
         _ => (error make {
             msg: (format_gh_error ['update comment'] $update.result)
         })
@@ -78,7 +85,9 @@ def create_comment [repository: string, pr_number: string, body: string] {
     )
     match $result.exit_code {
         0 => null
-        _ if (is_comment_write_auth_failure $result.stderr) => (print --stderr $"Skipping PR comment because GitHub token cannot write comments: ($result.stderr | str trim)")
+        _ if (is_comment_write_auth_failure $result.stderr) => (
+            print --stderr $"Skipping PR comment because GitHub token cannot write comments: ($result.stderr | str trim)"
+        )
         _ => (error make {
             msg: (format_gh_error ['create comment'] $result)
         })
