@@ -71,7 +71,9 @@ def native_package_includes_binary [package_root, binary_name: string] {
     }
 }
 def manifest_lists_binary [package_json_path: path, binary_name: string] {
-    ($package_json_path | path exists) and (list_contains (open $package_json_path | get --optional files) $"bin/($binary_name)")
+    ($package_json_path | path exists) and (
+        list_contains (open $package_json_path | get --optional files) $"bin/($binary_name)"
+    )
 }
 def is_portable_binary [target_platform: string, binary] {
     match [$target_platform, $binary] {
@@ -106,7 +108,12 @@ def has_expected_version [binary, version: string] {
 def reported_version [binary: path] {
     let result = run-external $binary '--version' | complete
     match $result.exit_code {
-        0 => ($result.stdout | str trim | split row --regex '\s+' | last)
+        0 => (
+            $result.stdout
+            | str trim
+            | split row --regex '\s+'
+            | last
+        )
         _ => null
     }
 }

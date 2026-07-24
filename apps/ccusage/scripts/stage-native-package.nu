@@ -18,7 +18,10 @@ def main [--platform: string, --arch: string, --binary: string] {
     let repo_root = [$script_dir, '..', '..', '..'] | path join | path expand
     let source = $binary | path expand
     let target_dir = [$repo_root, 'packages', $package_dir, 'bin'] | path join
-    let target = [$target_dir, (binary_name $platform)] | path join
+    let target = [
+        $target_dir
+        (binary_name $platform)
+    ] | path join
     mkdir $target_dir
     cp -f $source $target
     finalize_target $platform $target
@@ -59,6 +62,8 @@ def rewrite_darwin_system_libraries [binary_path: string] {
     )
     match $failed_rewrite {
         null => null
-        $attempt => (error make {msg: $"install_name_tool failed for ($attempt.library)\n($attempt.rewrite.stderr)"})
+        $attempt => (
+            error make {msg: $"install_name_tool failed for ($attempt.library)\n($attempt.rewrite.stderr)"}
+        )
     }
 }

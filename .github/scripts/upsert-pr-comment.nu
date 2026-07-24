@@ -18,7 +18,9 @@ def find_existing_comment [repository: string, pr_number: string, marker: string
     ]
     | flatten
     | where {|comment|
-        ((comment_login $comment) == 'github-actions[bot]') and ((comment_body $comment) | str contains $marker)
+        let login = comment_login $comment
+        let body = comment_body $comment
+        $login == 'github-actions[bot]' and ($body | str contains $marker)
     }
     | sort-by created_at
     | reverse
