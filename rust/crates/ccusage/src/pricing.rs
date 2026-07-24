@@ -2404,7 +2404,9 @@ mod tests {
 
         assert!(pricing.find("claude-opus-4-8-20270898").is_some());
         assert!(pricing.find("claude-opus-4-9").is_none());
-        assert!(pricing.find("claude-opus-5").is_none());
+        // claude-opus-5 is priced by the embedded models.dev snapshot; use a
+        // version no source publishes yet for the unknown-version assertion.
+        assert!(pricing.find("claude-opus-6").is_none());
     }
 
     #[test]

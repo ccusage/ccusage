@@ -533,6 +533,17 @@
 			"context": 1000000
 		}
 	},
+	"anthropic.claude-opus-5": {
+		"cost": {
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"input": 5,
+			"output": 25
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"anthropic.claude-sonnet-4-5-20250929-v1:0": {
 		"cost": {
 			"cache_read": 0.3,
@@ -1156,6 +1167,17 @@
 			"context": 1000000
 		}
 	},
+	"au.anthropic.claude-opus-5": {
+		"cost": {
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"input": 5,
+			"output": 25
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"au.anthropic.claude-sonnet-4-5-20250929-v1:0": {
 		"cost": {
 			"cache_read": 0.3,
@@ -1629,17 +1651,6 @@
 			"context": 1000000
 		}
 	},
-	"claude-opus-4-7-fast": {
-		"cost": {
-			"cache_read": 3.6,
-			"cache_write": 45,
-			"input": 36,
-			"output": 180
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
 	"claude-opus-4-7-think": {
 		"cost": {
 			"cache_read": 0.5,
@@ -1804,6 +1815,28 @@
 		},
 		"limit": {
 			"context": 200000
+		}
+	},
+	"claude-opus-5": {
+		"cost": {
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"input": 5,
+			"output": 25
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"claude-opus-5@default": {
+		"cost": {
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"input": 5,
+			"output": 25
+		},
+		"limit": {
+			"context": 1000000
 		}
 	},
 	"claude-opus4-5": {
@@ -2050,6 +2083,36 @@
 			"context": 1000000
 		}
 	},
+	"cline-pass/kimi-k2.6": {
+		"cost": {
+			"cache_read": 0.16,
+			"input": 0.95,
+			"output": 4
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"cline-pass/kimi-k2.7-code": {
+		"cost": {
+			"cache_read": 0.19,
+			"input": 0.95,
+			"output": 4
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"cline-pass/kimi-k3": {
+		"cost": {
+			"cache_read": 0.3,
+			"input": 3,
+			"output": 15
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"databricks-claude-haiku-4-5": {
 		"cost": {
 			"cache_read": 0.1,
@@ -2138,6 +2201,66 @@
 			"context": 1000000
 		}
 	},
+	"databricks-gemini-2-5-flash": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"databricks-gemini-2-5-pro": {
+		"cost": {
+			"cache_read": 0.125,
+			"input": 1.25,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"databricks-gemini-3-1-flash-lite": {
+		"cost": {
+			"cache_read": 0.025,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"databricks-gemini-3-1-pro": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"databricks-gemini-3-flash": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.5,
+			"output": 3
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"databricks-gemini-3-pro": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"databricks-kimi-k2-7-code": {
 		"cost": {
 			"cache_read": 0.19,
@@ -2223,6 +2346,17 @@
 			"context": 1000000
 		}
 	},
+	"eu.anthropic.claude-opus-5": {
+		"cost": {
+			"cache_read": 0.55,
+			"cache_write": 6.875,
+			"input": 5.5,
+			"output": 27.5
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"eu.anthropic.claude-sonnet-4-5-20250929-v1:0": {
 		"cost": {
 			"cache_read": 0.33,
@@ -2254,6 +2388,725 @@
 		},
 		"limit": {
 			"context": 1000000
+		}
+	},
+	"gemini-2-5-flash": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2-5-pro": {
+		"cost": {
+			"cache_read": 0.125,
+			"input": 1.25,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2.0-flash": {
+		"cost": {
+			"cache_read": 0.025,
+			"input": 0.1,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2.0-flash-001": {
+		"cost": {
+			"input": 0.1003,
+			"output": 0.408
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-2.0-flash-exp-image-generation": {
+		"cost": {
+			"input": 0.2,
+			"output": 0.8
+		},
+		"limit": {
+			"context": 32767
+		}
+	},
+	"gemini-2.0-flash-lite": {
+		"cost": {
+			"input": 0.075,
+			"output": 0.3
+		},
+		"limit": {
+			"context": 2000000
+		}
+	},
+	"gemini-2.0-flash-thinking-exp-01-21": {
+		"cost": {
+			"input": 0.306,
+			"output": 1.003
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-2.0-flash-thinking-exp-1219": {
+		"cost": {
+			"input": 0.1003,
+			"output": 0.408
+		},
+		"limit": {
+			"context": 32767
+		}
+	},
+	"gemini-2.0-pro-exp-02-05": {
+		"cost": {
+			"input": 1.989,
+			"output": 7.956
+		},
+		"limit": {
+			"context": 2097152
+		}
+	},
+	"gemini-2.0-pro-reasoner": {
+		"cost": {
+			"input": 1.292,
+			"output": 4.998
+		},
+		"limit": {
+			"context": 128000
+		}
+	},
+	"gemini-2.5-computer-use-preview-10-2025": {
+		"cost": {
+			"input": 1.25,
+			"output": 10
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"gemini-2.5-flash": {
+		"cost": {
+			"cache_read": 0.075,
+			"cache_write": 0.383,
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2.5-flash-image": {
+		"cost": {
+			"cache_read": 0.075,
+			"input": 0.3,
+			"output": 30
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
+	"gemini-2.5-flash-lite": {
+		"cost": {
+			"cache_read": 0.024999999999999998,
+			"cache_write": 0.09999999999999999,
+			"input": 0.09999999999999999,
+			"output": 0.39999999999999997
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2.5-flash-lite-preview-06-17": {
+		"cost": {
+			"input": 0.09,
+			"output": 0.36
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2.5-flash-lite-preview-09-2025": {
+		"cost": {
+			"input": 0.1,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-2.5-flash-lite-preview-09-2025-thinking": {
+		"cost": {
+			"input": 0.1,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"gemini-2.5-flash-nothink": {
+		"cost": {
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-2.5-flash-nothinking": {
+		"cost": {
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"gemini-2.5-flash-preview-04-17": {
+		"cost": {
+			"input": 0.15,
+			"output": 0.6
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"gemini-2.5-flash-preview-04-17:thinking": {
+		"cost": {
+			"input": 0.15,
+			"output": 3.5
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"gemini-2.5-flash-preview-05-20": {
+		"cost": {
+			"input": 0.135,
+			"output": 3.15
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2.5-flash-preview-05-20:thinking": {
+		"cost": {
+			"input": 0.15,
+			"output": 3.5
+		},
+		"limit": {
+			"context": 1048000
+		}
+	},
+	"gemini-2.5-flash-preview-09-2025": {
+		"cost": {
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-2.5-flash-preview-09-2025-thinking": {
+		"cost": {
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"gemini-2.5-flash-preview-tts": {
+		"cost": {
+			"input": 0.5,
+			"output": 10
+		},
+		"limit": {
+			"context": 8192
+		}
+	},
+	"gemini-2.5-flash-tts": {
+		"cost": {
+			"input": 0.5,
+			"output": 10
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
+	"gemini-2.5-pro": {
+		"cost": {
+			"cache_read": 0.3125,
+			"cache_write": 1.25,
+			"input": 1.25,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2.5-pro-exp-03-25": {
+		"cost": {
+			"input": 2.5,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"gemini-2.5-pro-preview-03-25": {
+		"cost": {
+			"input": 2.5,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"gemini-2.5-pro-preview-05-06": {
+		"cost": {
+			"input": 2.5,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"gemini-2.5-pro-preview-06-05": {
+		"cost": {
+			"input": 1.125,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-2.5-pro-preview-tts": {
+		"cost": {
+			"input": 1,
+			"output": 20
+		},
+		"limit": {
+			"context": 8192
+		}
+	},
+	"gemini-2.5-pro-tts": {
+		"cost": {
+			"input": 1,
+			"output": 20
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
+	"gemini-3-1-flash-lite": {
+		"cost": {
+			"cache_read": 0.025,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3-1-pro": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3-1-pro-preview": {
+		"cost": {
+			"cache_read": 0.5,
+			"cache_write": 0.5,
+			"input": 2.5,
+			"output": 15
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-3-5-flash": {
+		"cost": {
+			"cache_read": 0.155,
+			"cache_write": 0.086,
+			"input": 1.55,
+			"output": 9.45
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-3-5-flash-lite": {
+		"cost": {
+			"cache_read": 0.0375,
+			"input": 0.375,
+			"output": 3.125
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-3-6-flash": {
+		"cost": {
+			"cache_read": 0.1875,
+			"input": 1.875,
+			"output": 9.375
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"gemini-3-flash": {
+		"cost": {
+			"cache_read": 0.05,
+			"cache_write": 0.083333,
+			"input": 0.5,
+			"output": 3
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3-flash-preview": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.5,
+			"output": 3
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3-pro": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3-pro-image": {
+		"cost": {
+			"input": 2,
+			"output": 120
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"gemini-3-pro-image-preview": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 65536
+		}
+	},
+	"gemini-3-pro-preview": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3.1-flash-image": {
+		"cost": {
+			"input": 0.5,
+			"output": 60
+		},
+		"limit": {
+			"context": 65536
+		}
+	},
+	"gemini-3.1-flash-image-preview": {
+		"cost": {
+			"input": 0.5,
+			"output": 60
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"gemini-3.1-flash-lite": {
+		"cost": {
+			"cache_read": 0.025,
+			"cache_write": 1,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3.1-flash-lite-image": {
+		"cost": {
+			"input": 0.25,
+			"output": 30
+		},
+		"limit": {
+			"context": 65536
+		}
+	},
+	"gemini-3.1-flash-lite-preview": {
+		"cost": {
+			"cache_read": 0.025,
+			"cache_write": 1,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3.1-flash-live-preview": {
+		"cost": {
+			"input": 0.75,
+			"output": 4.5
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"gemini-3.1-flash-tts-preview": {
+		"cost": {
+			"input": 1,
+			"output": 20
+		},
+		"limit": {
+			"context": 8192
+		}
+	},
+	"gemini-3.1-pro": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3.1-pro-preview": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3.1-pro-preview-customtools": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3.5-flash": {
+		"cost": {
+			"cache_read": 0.15,
+			"cache_write": 0.08333,
+			"input": 1.5,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3.5-flash-lite": {
+		"cost": {
+			"cache_read": 0.03,
+			"cache_write": 0.08333,
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-3.5-live-translate-preview": {
+		"cost": {
+			"input": 3.5,
+			"output": 21
+		},
+		"limit": {
+			"context": 16384
+		}
+	},
+	"gemini-3.6-flash": {
+		"cost": {
+			"cache_read": 0.15,
+			"cache_write": 0.08333,
+			"input": 1.5,
+			"output": 7.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-embedding-001": {
+		"cost": {
+			"input": 0.15,
+			"output": 0
+		},
+		"limit": {
+			"context": 2048
+		}
+	},
+	"gemini-embedding-2": {
+		"cost": {
+			"input": 0.2,
+			"output": 0
+		},
+		"limit": {
+			"context": 8192
+		}
+	},
+	"gemini-exp-1206": {
+		"cost": {
+			"input": 1.258,
+			"output": 4.998
+		},
+		"limit": {
+			"context": 2097152
+		}
+	},
+	"gemini-flash-latest": {
+		"cost": {
+			"cache_read": 0.15,
+			"input": 1.5,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-flash-lite-latest": {
+		"cost": {
+			"cache_read": 0.025,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-omni-flash-preview": {
+		"cost": {
+			"input": 1.5,
+			"output": 17.5
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"gemini-pro-latest": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini-robotics-er-1.6-preview": {
+		"cost": {
+			"input": 1,
+			"output": 5
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"gemini/gemini-2.5-flash": {
+		"cost": {
+			"cache_read": 0.03,
+			"cache_write": 0.3,
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini/gemini-2.5-flash-lite": {
+		"cost": {
+			"cache_read": 0.01,
+			"cache_write": 0.1,
+			"input": 0.1,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini/gemini-2.5-pro": {
+		"cost": {
+			"cache_read": 0.125,
+			"cache_write": 1.25,
+			"input": 1.25,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini/gemini-3-flash-preview": {
+		"cost": {
+			"cache_read": 0.05,
+			"cache_write": 0.5,
+			"input": 0.5,
+			"output": 3
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini/gemini-3.1-pro-preview": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"gemini/gemini-3.5-flash": {
+		"cost": {
+			"cache_read": 0.15,
+			"cache_write": 1.5,
+			"input": 1.5,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"global.anthropic.claude-fable-5": {
@@ -2322,6 +3175,17 @@
 			"context": 1000000
 		}
 	},
+	"global.anthropic.claude-opus-5": {
+		"cost": {
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"input": 5,
+			"output": 25
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"global.anthropic.claude-sonnet-4-5-20250929-v1:0": {
 		"cost": {
 			"cache_read": 0.3,
@@ -2353,6 +3217,398 @@
 		},
 		"limit": {
 			"context": 1000000
+		}
+	},
+	"google/gemini-2.0-flash": {
+		"cost": {
+			"input": 0.1,
+			"output": 0.42
+		},
+		"limit": {
+			"context": 990000
+		}
+	},
+	"google/gemini-2.0-flash-001": {
+		"cost": {
+			"cache_read": 0.025,
+			"cache_write": 0.083333,
+			"input": 0.1,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-2.0-flash-lite": {
+		"cost": {
+			"input": 0.052,
+			"output": 0.21
+		},
+		"limit": {
+			"context": 990000
+		}
+	},
+	"google/gemini-2.0-flash-lite-001": {
+		"cost": {
+			"input": 0.075,
+			"output": 0.3
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-2.5-flash": {
+		"cost": {
+			"cache_read": 0.03,
+			"cache_write": 0.083333,
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-2.5-flash-image": {
+		"cost": {
+			"cache_read": 0.03,
+			"cache_write": 0.083333,
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
+	"google/gemini-2.5-flash-lite": {
+		"cost": {
+			"cache_read": 0.01,
+			"cache_write": 0.083333,
+			"input": 0.1,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-2.5-flash-lite-preview-09-2025": {
+		"cost": {
+			"cache_read": 0.01,
+			"cache_write": 0.083333,
+			"input": 0.1,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-2.5-pro": {
+		"cost": {
+			"cache_read": 0.125,
+			"cache_write": 0.375,
+			"input": 1.25,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-2.5-pro-preview": {
+		"cost": {
+			"cache_read": 0.125,
+			"cache_write": 0.375,
+			"input": 1.25,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-2.5-pro-preview-05-06": {
+		"cost": {
+			"cache_read": 0.125,
+			"cache_write": 0.375,
+			"input": 1.25,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3-flash": {
+		"cost": {
+			"cache_read": 0.04,
+			"input": 0.4,
+			"output": 2.4
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3-flash-preview": {
+		"cost": {
+			"cache_read": 0.05,
+			"cache_write": 0.083333,
+			"input": 0.5,
+			"output": 3
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3-flash-preview-thinking": {
+		"cost": {
+			"input": 0.5,
+			"output": 3
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"google/gemini-3-pro": {
+		"cost": {
+			"cache_read": 0,
+			"input": 1.25,
+			"output": 15
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3-pro-image": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"google/gemini-3-pro-image-preview": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 65536
+		}
+	},
+	"google/gemini-3-pro-preview": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 4.5,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.1-flash-image": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.5,
+			"output": 3
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"google/gemini-3.1-flash-image-preview": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.5,
+			"output": 3
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"google/gemini-3.1-flash-lite": {
+		"cost": {
+			"cache_read": 0.025,
+			"cache_write": 0.08333,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.1-flash-lite-image": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 65536
+		}
+	},
+	"google/gemini-3.1-flash-lite-preview": {
+		"cost": {
+			"cache_read": 0.025,
+			"cache_write": 0.083333,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.1-pro": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.1-pro-preview": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.1-pro-preview-customtools": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.1-pro-preview-high": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"google/gemini-3.1-pro-preview-low": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048756
+		}
+	},
+	"google/gemini-3.5-flash": {
+		"cost": {
+			"cache_read": 0.15,
+			"cache_write": 0.08333,
+			"input": 1.5,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.5-flash-lite": {
+		"cost": {
+			"cache_read": 0.03,
+			"cache_write": 0.083333,
+			"input": 0.3,
+			"output": 2.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.5-flash-thinking": {
+		"cost": {
+			"cache_read": 0.15,
+			"input": 1.5,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-3.6-flash": {
+		"cost": {
+			"cache_read": 0.15,
+			"cache_write": 0.083333,
+			"input": 1.5,
+			"output": 7.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-deep-research": {
+		"cost": {
+			"input": 1.6,
+			"output": 9.6
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-flash-1.5": {
+		"cost": {
+			"input": 0.0748,
+			"output": 0.306
+		},
+		"limit": {
+			"context": 2000000
+		}
+	},
+	"google/gemini-flash-latest": {
+		"cost": {
+			"cache_read": 0.15,
+			"input": 1.5,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-flash-lite-latest": {
+		"cost": {
+			"cache_read": 0.025,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"google/gemini-omni-flash-preview": {
+		"cost": {
+			"input": 1.5,
+			"output": 9
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"google/gemini-pro-latest": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048756
 		}
 	},
 	"hf:moonshotai/Kimi-K2.7-Code": {
@@ -2388,6 +3644,17 @@
 		}
 	},
 	"jp.anthropic.claude-opus-4-8": {
+		"cost": {
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"input": 5,
+			"output": 25
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"jp.anthropic.claude-opus-5": {
 		"cost": {
 			"cache_read": 0.5,
 			"cache_write": 6.25,
@@ -2641,6 +3908,15 @@
 			"cache_read": 0.19,
 			"input": 0.95,
 			"output": 4
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"kimi-k2.7-code-1100b": {
+		"cost": {
+			"input": 0.86,
+			"output": 3
 		},
 		"limit": {
 			"context": 262144
@@ -3025,10 +4301,10 @@
 	},
 	"moonshotai/kimi-k2.7-code": {
 		"cost": {
-			"cache_read": 0.17,
+			"cache_read": 0.15,
 			"cache_write": 0,
-			"input": 0.85,
-			"output": 3.8
+			"input": 0.82,
+			"output": 3.75
 		},
 		"limit": {
 			"context": 262144
@@ -3204,6 +4480,17 @@
 			"context": 1000000
 		}
 	},
+	"us.anthropic.claude-opus-5": {
+		"cost": {
+			"cache_read": 0.5,
+			"cache_write": 6.25,
+			"input": 5,
+			"output": 25
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"us.anthropic.claude-sonnet-4-5-20250929-v1:0": {
 		"cost": {
 			"cache_read": 0.3,
@@ -3299,6 +4586,28 @@
 		},
 		"limit": {
 			"context": 1000000
+		}
+	},
+	"~google/gemini-flash-latest": {
+		"cost": {
+			"cache_read": 0.15,
+			"cache_write": 0.08333333333333334,
+			"input": 1.5,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"~google/gemini-pro-latest": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 2,
+			"output": 12
+		},
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"~moonshotai/kimi-latest": {

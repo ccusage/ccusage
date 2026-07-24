@@ -23,9 +23,11 @@ import {
 /**
  * Model ids/keys we keep in the committed snapshot.
  * Claude remains first-class; Kimi/Moonshot is included so offline pricing can
- * cover models LiteLLM has not published yet (for example kimi-k3).
+ * cover models LiteLLM has not published yet (for example kimi-k3). Gemini is
+ * included for the same reason: Antigravity reports Gemini models (for example
+ * gemini-3.6-flash) that LiteLLM has not published yet.
  */
-const KEEP = /claude|anthropic|kimi|moonshot/i;
+const KEEP = /claude|anthropic|kimi|moonshot|gemini/i;
 
 type Cost = {
 	input?: number | null;
