@@ -1,0 +1,9 @@
+{
+	"name": "changelogithub-nix",
+	"version": "14.0.0",
+	"private": true,
+	"description": "Dependency manifest for the Nix-built changelogithub CLI used by the release workflow.",
+	"dependencies": {
+		"changelogithub": "14.0.0"
+	}
+}

@@ -16,7 +16,6 @@ catalogs:
   llm-docs:
     '@gunshi/docs': ^0.31.0
   release:
-    changelogithub: ^14.0.0
     pkg-pr-new: ^0.0.75
   runtime:
     '@antfu/utils': ^9.2.1
@@ -47,9 +46,6 @@ strictDepBuilds: true
 blockExoticSubdeps: true
 
 trustPolicy: no-downgrade
-
-overrides:
-  'changelogithub>c12': 3.3.4
 
 # Explicitly allow build scripts for packages that require them
 # (replaces onlyBuiltDependencies)

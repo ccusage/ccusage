@@ -166,6 +166,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      - run: nix develop --command pnpm changelogithub
+      - run: nix run .#changelogithub
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
