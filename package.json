@@ -13,8 +13,7 @@
 	},
 	"dependencies": {},
 	"devDependencies": {
-		"@types/node": "catalog:types",
-		"pkg-pr-new": "catalog:release"
+		"@types/node": "catalog:types"
 	},
 	"packageManager": "pnpm@11.6.0"
 }
