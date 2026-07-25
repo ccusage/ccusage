@@ -27,13 +27,20 @@ in
           ;
       };
       ccusageProgram = pkgs.lib.getExe' ccusage "ccusage";
+      # Shared builder for the `nix/tools/*` dependency manifests; see
+      # nix/bun-node-modules.nix.
+      bunNodeModules = pkgs.callPackage ../nix/bun-node-modules.nix {
+        bun2nix = inputs.bun2nix.packages.${system}.default;
+      };
       # Regeneration-only output for committed models.dev snapshots;
       # `just gen-models-dev-pricing` builds this and copies them into the source
       # tree. It is not part of the ccusage build, which embeds the committed files.
       models-dev-pricing = pkgs.callPackage ../nix/models-dev-pricing.nix {
         modelsDevSrc = inputs.models-dev;
       };
-      publint = pkgs.callPackage ../nix/publint.nix { };
+      publint = pkgs.callPackage ../nix/tools/publint {
+        inherit bunNodeModules;
+      };
     in
     {
       apps = {

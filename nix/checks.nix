@@ -137,7 +137,9 @@ in
               pkgs.nodejs
             ]
             ''
-              mapfile -t packageManifests < <(fd --type f '^package\.json$' .)
+              # nix/tools/*/package.json are dependency manifests for Nix-built
+              # JS tooling, not publishable packages, so they are out of scope.
+              mapfile -t packageManifests < <(fd --type f '^package\.json$' . --exclude nix/tools)
 
               node - "''${packageManifests[@]}" <<'EOF'
               const fs = require("node:fs");
