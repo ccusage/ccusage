@@ -20,5 +20,5 @@
 		"skipLibCheck": true
 	},
 	"include": ["*.ts", "nix/**/*.ts"],
-	"exclude": ["node_modules", "nix/models-dev-gen.ts"]
+	"exclude": ["node_modules", "nix/tools/models-dev-gen/gen.ts"]
 }

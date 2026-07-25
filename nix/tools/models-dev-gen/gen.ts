@@ -10,7 +10,7 @@
  * every platform ships the identical, pinned data without any build-time
  * network access. The same pinned catalog also generates the Codex auto-review
  * fallback metadata used by the Rust parser. Run via `just gen-models-dev-pricing`
- * (see `nix/models-dev-pricing.nix`).
+ * (see the sibling `default.nix`).
  */
 import { generateCatalog } from './packages/core/src/generate.ts';
 import {
@@ -18,7 +18,7 @@ import {
 	type ModelsDevPricingCandidate,
 	selectModelsDevPricingKey,
 	shouldReplaceModelsDevPricingCandidate,
-} from './models-dev-compact.ts';
+} from './compact.ts';
 
 /**
  * Model ids/keys we keep in the committed snapshot.

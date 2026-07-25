@@ -4,7 +4,7 @@ import {
 	formatDuplicateModelsDevPricingKeyWarning,
 	shouldReplaceModelsDevPricingCandidate,
 	selectModelsDevPricingKey,
-} from './models-dev-compact.ts';
+} from './compact.ts';
 
 void it('falls back to the source model id when the catalog id is empty', () => {
 	assert.equal(

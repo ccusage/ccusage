@@ -35,7 +35,8 @@ in
       # Regeneration-only output for committed models.dev snapshots;
       # `just gen-models-dev-pricing` builds this and copies them into the source
       # tree. It is not part of the ccusage build, which embeds the committed files.
-      models-dev-pricing = pkgs.callPackage ../nix/models-dev-pricing.nix {
+      models-dev-pricing = pkgs.callPackage ../nix/tools/models-dev-gen {
+        inherit bunNodeModules;
         modelsDevSrc = inputs.models-dev;
       };
       publint = pkgs.callPackage ../nix/tools/publint {
