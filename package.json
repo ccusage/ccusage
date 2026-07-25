@@ -12,8 +12,5 @@
 		"preinstall": "npx only-allow pnpm"
 	},
 	"dependencies": {},
-	"devDependencies": {
-		"@types/node": "catalog:types"
-	},
 	"packageManager": "pnpm@11.6.0"
 }

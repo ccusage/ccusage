@@ -19,6 +19,8 @@
 		"erasableSyntaxOnly": true,
 		"skipLibCheck": true
 	},
-	"include": ["*.ts", "nix/**/*.ts"],
-	"exclude": ["node_modules", "nix/tools/models-dev-gen/gen.ts"]
+	"include": ["*.ts"],
+	// gen.ts runs inside a copy of the upstream models.dev worktree and imports
+	// `./packages/core/src/generate.ts` from there, so it cannot resolve here.
+	"exclude": ["node_modules", "gen.ts"]
 }

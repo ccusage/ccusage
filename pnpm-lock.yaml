@@ -32,11 +32,7 @@ catalogs:
 
 importers:
 
-  .:
-    devDependencies:
-      '@types/node':
-        specifier: catalog:types
-        version: 24.13.3
+  .: {}
 
   apps/ccusage:
     devDependencies:

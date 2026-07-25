@@ -6,5 +6,8 @@
 	"dependencies": {
 		"remeda": "2.33.7",
 		"zod": "3.24.2"
+	},
+	"devDependencies": {
+		"@types/node": "24.13.3"
 	}
 }
