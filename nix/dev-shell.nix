@@ -22,6 +22,8 @@ in
           (with pkgs; [
             nodejs
             pnpm
+            bun
+            inputs.bun2nix.packages.${system}.default
             nushell
             config.packages.publint
 

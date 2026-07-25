@@ -50,6 +50,16 @@ check:
 schema:
     nix run .#generate-schema
 
+# Re-resolve the Nix-built JS tools under nix/tools and regenerate their bun.nix
+gen-bun-nix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for lockfile in nix/tools/*/bun.lock; do
+        toolDir="$(dirname "$lockfile")"
+        echo "Regenerating $toolDir"
+        (cd "$toolDir" && bun install && bun2nix -o bun.nix)
+    done
+
 # Update the locked LiteLLM pricing snapshot and validate the result
 update-litellm-pricing:
     nix flake update litellm

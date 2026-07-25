@@ -96,6 +96,28 @@ in
 
             touch "$out"
           '';
+      # Fail `nix flake check` when a tool's committed `bun.nix` no longer matches
+      # what `bun2nix` derives from its `bun.lock`. Renovate bumps `bun.lock`
+      # without knowing about `bun.nix`, and a stale pair would otherwise only
+      # surface as a confusing sandbox install failure. `bun2nix` only parses the
+      # lockfile, so this needs no network access.
+      bun-nix =
+        mkRepoCheck "bun-nix-check"
+          [
+            inputs.bun2nix.packages.${system}.default
+            pkgs.diffutils
+          ]
+          ''
+            for lockfile in nix/tools/*/bun.lock; do
+              toolDir="$(dirname "$lockfile")"
+              (cd "$toolDir" && bun2nix -o generated.nix)
+              if ! diff -u "$toolDir/bun.nix" "$toolDir/generated.nix"; then
+                echo "ERROR: $toolDir/bun.nix is out of sync with $lockfile." >&2
+                echo "Run 'just gen-bun-nix' and commit the result." >&2
+                exit 1
+              fi
+            done
+          '';
       mkRepoCheck =
         name: nativeBuildInputs: command:
         pkgs.runCommand name
@@ -119,7 +141,12 @@ in
       # optimized native package here too only duplicated a ~70s release compile
       # on cache-cold runners.
       checks = {
-        inherit ccusage-clippy ccusage-fmt config-schema;
+        inherit
+          bun-nix
+          ccusage-clippy
+          ccusage-fmt
+          config-schema
+          ;
         oxlint = mkRepoCheck "oxlint-check" [ pkgs.oxlint ] ''
           oxlint --config nix/oxlint-check.json .
         '';
