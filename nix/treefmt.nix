@@ -158,6 +158,12 @@ in
               "--fix"
               "--config"
               "nix/oxlint-check.json"
+              # treefmt batches the files it matched and hands them over as
+              # arguments, so a batch can consist entirely of paths that
+              # oxlint-check.json ignores. oxlint treats "nothing left to lint"
+              # as an error, which surfaces as a formatter failure for a file
+              # that was deliberately excluded.
+              "--no-error-on-unmatched-pattern"
             ];
             includes = [
               "*.cjs"
