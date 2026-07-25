@@ -384,6 +384,41 @@ mod tests {
     }
 
     #[test]
+    fn bounds_the_replay_at_a_numeric_fork_timestamp() {
+        let fixture = fs_fixture!({
+            "01-parent.jsonl": [
+                replay_metadata("2026-07-10T08:00:00.000Z", "parent", None),
+                replay_token_count("2026-07-10T08:01:00.000Z", 100),
+                // Written after the child forked.
+                replay_token_count("2026-07-10T08:03:00.000Z", 50),
+            ]
+            .join("\n"),
+            "02-child.jsonl": [
+                json!({
+                    // Epoch seconds for 2026-07-10T08:02:00Z.
+                    "timestamp": 1_783_670_520_u64,
+                    "type": "session_meta",
+                    "payload": {"id": "child", "forked_from_id": "parent"},
+                })
+                .to_string(),
+                replay_token_count("2026-07-10T08:02:00.000Z", 100),
+                // Real child usage that happens to equal the parent's next event.
+                replay_token_count("2026-07-10T08:04:00.000Z", 50),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [
+                ("01-parent".to_string(), 100),
+                ("01-parent".to_string(), 50),
+                ("02-child".to_string(), 50),
+            ]
+        );
+    }
+
+    #[test]
     fn keeps_usage_of_a_session_that_lists_itself_as_its_own_parent() {
         let fixture = fs_fixture!({
             "self.jsonl": [

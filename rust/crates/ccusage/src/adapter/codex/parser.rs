@@ -904,6 +904,14 @@ fn raw_or_normalized_value_timestamp(value: Option<&Value>) -> Option<String> {
     normalize_value_timestamp(Some(value))
 }
 
+/// Reads a Codex timestamp field that can hold an RFC3339 string or an epoch
+/// number, using the same normalization as session events.
+pub(super) fn codex_value_timestamp(value: Option<&Value>) -> Option<TimestampMs> {
+    normalize_value_timestamp(value)
+        .as_deref()
+        .and_then(crate::parse_ts_timestamp)
+}
+
 fn normalize_value_timestamp(value: Option<&Value>) -> Option<String> {
     let value = value?;
     if let Some(text) = value.as_str() {

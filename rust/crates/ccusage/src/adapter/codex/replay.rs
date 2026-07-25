@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_timestamp};
 
-use super::parser::visit_codex_session_file;
+use super::parser::{codex_value_timestamp, visit_codex_session_file};
 
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
@@ -240,10 +240,7 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
         .then_some(value.get("payload"))
         .flatten();
     CodexSessionMetadata {
-        timestamp: value
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .and_then(parse_ts_timestamp),
+        timestamp: codex_value_timestamp(value.get("timestamp")),
         session_id: payload
             .and_then(|payload| payload.get("id"))
             .and_then(Value::as_str)
