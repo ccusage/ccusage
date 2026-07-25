@@ -43,7 +43,12 @@ runs:
         # Likewise, checks and developer-tooling modules do not affect Cargo
         # artifacts; only package modules participate in this key.
         primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-${{ github.sha }}
-        restore-prefixes-first-match: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
+        # First prefix prefers the current deps hash. The second drops the hash so
+        # a flake change that only adds developer tooling still restores the newest
+        # prior store instead of starting from a cold cache.
+        restore-prefixes-first-match: |
+          nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
+          nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-
 
     - name: Fix single-user Nix store ownership
       if: runner.os != 'Windows'
