@@ -19,6 +19,19 @@ mod rust
 default:
     @just --list
 
+# Install the JS dependencies needed to work in this repository
+install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pnpm install --frozen-lockfile
+    # Tool directories under nix/tools are outside the pnpm workspace. Nix builds
+    # their dependencies itself, so only the ones carrying a tsconfig need a local
+    # node_modules — `just typecheck` resolves their types out of it.
+    for tsconfig in nix/tools/*/tsconfig.json; do
+        toolDir="$(dirname "$tsconfig")"
+        (cd "$toolDir" && bun install --frozen-lockfile)
+    done
+
 # Build every workspace package
 build: ccusage::build docs::build
 

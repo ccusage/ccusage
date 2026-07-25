@@ -80,7 +80,7 @@ in
 
           # Set up direnv and JS dependencies whenever `git wt` creates a new
           # worktree, so worktrees are usable without a manual step.
-          git config --replace-all wt.hook "direnv allow || true; pnpm install --frozen-lockfile || true"
+          git config --replace-all wt.hook "direnv allow || true; just install || true"
 
           # Move deleted worktree directories to the trash instead of `rm -rf`,
           # which is noticeably slower on large node_modules and target trees.
