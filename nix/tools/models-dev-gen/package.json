@@ -2,7 +2,7 @@
 	"name": "models-dev-gen-nix",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Runtime dependencies for nix/models-dev-gen.ts, which runs models.dev's own generateCatalog under Bun. Keep these versions matching the `remeda` and `zod` entries in the pinned models-dev input's bun.lock.",
+	"description": "Runtime dependencies for the sibling gen.ts, which runs models.dev's own generateCatalog under Bun. Keep these versions matching the `remeda` and `zod` entries in the pinned models-dev input's bun.lock.",
 	"dependencies": {
 		"remeda": "2.33.7",
 		"zod": "3.24.2"
