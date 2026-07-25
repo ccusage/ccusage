@@ -1553,52 +1553,20 @@ mod tests {
 
     #[test]
     fn keeps_child_usage_matching_parent_event_after_fork() {
-        fn metadata(timestamp: &str, id: &str, parent: Option<&str>) -> String {
-            json!({
-                "timestamp": timestamp,
-                "type": "session_meta",
-                "payload": {"id": id, "forked_from_id": parent},
-            })
-            .to_string()
-        }
-
-        fn token_count(timestamp: &str, input_tokens: u64) -> String {
-            json!({
-                "timestamp": timestamp,
-                "type": "event_msg",
-                "payload": {
-                    "type": "token_count",
-                    "info": {
-                        "last_token_usage": {
-                            "input_tokens": input_tokens,
-                            "output_tokens": 1,
-                            "total_tokens": input_tokens + 1,
-                        },
-                        "model": "gpt-5.2",
-                    },
-                },
-            })
-            .to_string()
-        }
-
         let fixture = fs_fixture!({
             "parent.jsonl": [
-                metadata("2026-05-12T08:00:00.000Z", "parent", None),
-                token_count("2026-05-12T08:01:00.000Z", 100),
+                replay_metadata("2026-05-12T08:00:00.000Z", "parent", None),
+                replay_token_count("2026-05-12T08:01:00.000Z", 100),
                 // Written after the child forked.
-                token_count("2026-05-12T08:03:00.000Z", 50),
+                replay_token_count("2026-05-12T08:03:00.000Z", 50),
             ]
             .join("\n"),
             "child.jsonl": [
-                metadata(
-                    "2026-05-12T08:02:00.000Z",
-                    "child",
-                    Some("parent"),
-                ),
+                replay_metadata("2026-05-12T08:02:00.000Z", "child", Some("parent")),
                 // Replayed parent state at the fork.
-                token_count("2026-05-12T08:02:00.000Z", 100),
+                replay_token_count("2026-05-12T08:02:00.000Z", 100),
                 // Real child usage that happens to equal the parent's next event.
-                token_count("2026-05-12T08:04:00.000Z", 50),
+                replay_token_count("2026-05-12T08:04:00.000Z", 50),
             ]
             .join("\n"),
         });
