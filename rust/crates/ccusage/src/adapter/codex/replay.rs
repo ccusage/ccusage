@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_timestamp};
 
-use super::parser::{detect_replay_second, visit_codex_session_file};
+use super::parser::visit_codex_session_file;
 
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
@@ -18,7 +18,8 @@ pub(super) struct CodexReplayPlan {
 }
 
 struct ParentReplay {
-    path: PathBuf,
+    /// `None` when the referenced parent log is not part of the scanned files.
+    path: Option<PathBuf>,
     forked_at: Option<TimestampMs>,
 }
 
@@ -32,85 +33,73 @@ impl CodexReplayPlan {
         groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         single_thread: bool,
     ) -> Self {
-        let groups = groups.into_iter().collect::<Vec<_>>();
-        let metadata = groups
-            .iter()
+        let files = groups
+            .into_iter()
             .flat_map(|(sessions_dir, files)| {
-                files.iter().map(|path| {
-                    (
-                        path.clone(),
-                        *sessions_dir,
-                        read_codex_session_metadata(path),
-                    )
-                })
+                files.iter().map(move |path| (path.clone(), sessions_dir))
             })
             .collect::<Vec<_>>();
-        let files_by_session_id = metadata
+        let metadata = read_session_metadata(&files, single_thread);
+        // The same session can be reachable from more than one source directory,
+        // so keep the first file and stay independent of source ordering.
+        let mut files_by_session_id = HashMap::new();
+        for ((path, _), metadata) in files.iter().zip(&metadata) {
+            if let Some(session_id) = metadata.session_id.as_deref() {
+                files_by_session_id.entry(session_id).or_insert(path);
+            }
+        }
+        let parent_by_child = files
             .iter()
-            .filter_map(|(path, _, metadata)| {
-                metadata
-                    .session_id
-                    .as_ref()
-                    .map(|session_id| (session_id.as_str(), path.clone()))
-            })
-            .collect::<HashMap<_, _>>();
-        let mut parent_by_child = metadata
-            .iter()
-            .filter_map(|(child, _, metadata)| {
-                metadata.parent_id.as_deref().and_then(|parent_id| {
-                    files_by_session_id.get(parent_id).map(|parent| {
-                        (
-                            child.clone(),
-                            ParentReplay {
-                                path: parent.clone(),
-                                forked_at: metadata.timestamp,
-                            },
-                        )
-                    })
-                })
+            .zip(&metadata)
+            .filter_map(|((child, _), metadata)| {
+                let parent_id = metadata.parent_id.as_deref()?;
+                let path = files_by_session_id
+                    .get(parent_id)
+                    // A session listing itself as its own parent would match its
+                    // whole stream and drop every event it recorded.
+                    .filter(|parent| **parent != child)
+                    .map(|parent| (*parent).clone());
+                Some((
+                    child.clone(),
+                    ParentReplay {
+                        path,
+                        forked_at: metadata.timestamp,
+                    },
+                ))
             })
             .collect::<HashMap<_, _>>();
         let parent_paths = parent_by_child
             .values()
-            .map(|parent| parent.path.clone())
+            .filter_map(|parent| parent.path.clone())
             .collect::<HashSet<_>>();
-        let parents = metadata
+        let parents = files
             .iter()
-            .filter(|(path, _, _)| parent_paths.contains(path))
-            .map(|(path, sessions_dir, _)| (path.clone(), *sessions_dir))
+            .filter(|(path, _)| parent_paths.contains(path))
+            .cloned()
             .collect::<Vec<_>>();
-        let mut usage_by_parent = read_parent_usage(&parents, single_thread);
-        for (child, sessions_dir, metadata) in &metadata {
-            if metadata.parent_id.is_some() && !parent_by_child.contains_key(child) {
-                let replayed_usage = replayed_usage_from_first_second(sessions_dir, child);
-                if !replayed_usage.is_empty() {
-                    parent_by_child.insert(
-                        child.clone(),
-                        ParentReplay {
-                            path: child.clone(),
-                            forked_at: None,
-                        },
-                    );
-                    usage_by_parent.insert(
-                        child.clone(),
-                        ParentUsage {
-                            timestamps: vec![None; replayed_usage.len()],
-                            usage: replayed_usage,
-                        },
-                    );
-                }
-            }
-        }
 
         Self {
             parent_by_child,
-            usage_by_parent,
+            usage_by_parent: read_parent_usage(&parents, single_thread),
         }
     }
 
-    pub(super) fn parent_usage(&self, child: &Path) -> Option<&[CodexRawUsage]> {
+    /// Usage history that `child` replayed from the session it forked from.
+    ///
+    /// Returns `None` for sessions that are not forks. Forked sessions whose
+    /// parent log is unavailable return an empty slice, which tells the parser
+    /// to fall back to the rewritten-second heuristic.
+    pub(super) fn replay_prefix(&self, child: &Path) -> Option<&[CodexRawUsage]> {
         let parent = self.parent_by_child.get(child)?;
-        let stream = self.usage_by_parent.get(&parent.path)?;
+        let Some(stream) = parent
+            .path
+            .as_ref()
+            .and_then(|path| self.usage_by_parent.get(path))
+        else {
+            return Some(&[]);
+        };
+        // Usage the parent recorded after the fork was never replayed, so it must
+        // not mask the child's own events.
         let replay_len = parent.forked_at.map_or(stream.usage.len(), |forked_at| {
             stream
                 .timestamps
@@ -122,6 +111,53 @@ impl CodexReplayPlan {
     }
 }
 
+fn replay_worker_count(files: usize, single_thread: bool) -> usize {
+    if single_thread || files <= 1 {
+        return 1;
+    }
+    thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(files)
+}
+
+fn read_session_metadata(
+    files: &[(PathBuf, &Path)],
+    single_thread: bool,
+) -> Vec<CodexSessionMetadata> {
+    let worker_count = replay_worker_count(files.len(), single_thread);
+    if worker_count <= 1 {
+        return files
+            .iter()
+            .map(|(path, _)| read_codex_session_metadata(path))
+            .collect();
+    }
+    // Every file costs one open plus one line, so split by count instead of by
+    // size, and keep chunks in order so duplicate session ids resolve the same
+    // way as the single-threaded pass.
+    let chunk_size = files.len().div_ceil(worker_count);
+    thread::scope(|scope| {
+        files
+            .chunks(chunk_size)
+            .map(|chunk| {
+                scope.spawn(|| {
+                    chunk
+                        .iter()
+                        .map(|(path, _)| read_codex_session_metadata(path))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flat_map(|handle| {
+                handle
+                    .join()
+                    .expect("codex replay metadata worker panicked")
+            })
+            .collect()
+    })
+}
+
 fn read_parent_usage(
     parents: &[(PathBuf, &Path)],
     single_thread: bool,
@@ -129,14 +165,7 @@ fn read_parent_usage(
     if parents.is_empty() {
         return HashMap::new();
     }
-    let worker_count = if single_thread {
-        1
-    } else {
-        thread::available_parallelism()
-            .map(usize::from)
-            .unwrap_or(1)
-            .min(parents.len())
-    };
+    let worker_count = replay_worker_count(parents.len(), single_thread);
     let paths = parents
         .iter()
         .map(|(path, _)| path.clone())
@@ -185,19 +214,6 @@ fn read_usage_events(sessions_dir: &Path, path: &Path) -> Vec<(String, CodexRawU
     usage
 }
 
-fn replayed_usage_from_first_second(sessions_dir: &Path, path: &Path) -> Vec<CodexRawUsage> {
-    let Some(first_second) = detect_replay_second(path) else {
-        return Vec::new();
-    };
-    read_usage_events(sessions_dir, path)
-        .into_iter()
-        .take_while(|(timestamp, _)| {
-            timestamp.as_bytes().get(..19) == Some(first_second.as_slice())
-        })
-        .map(|(_, usage)| usage)
-        .collect()
-}
-
 #[derive(Default)]
 struct CodexSessionMetadata {
     session_id: Option<String>,
@@ -226,18 +242,8 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     CodexSessionMetadata {
         timestamp: value
             .get("timestamp")
-            .and_then(|timestamp| match timestamp {
-                Value::String(timestamp) => parse_ts_timestamp(timestamp),
-                Value::Number(timestamp) => timestamp.as_u64().and_then(|raw| {
-                    let millis = if raw > 10_000_000_000 {
-                        raw
-                    } else {
-                        raw.checked_mul(1_000)?
-                    };
-                    Some(TimestampMs::from_millis(millis.min(i64::MAX as u64) as i64))
-                }),
-                _ => None,
-            }),
+            .and_then(Value::as_str)
+            .and_then(parse_ts_timestamp),
         session_id: payload
             .and_then(|payload| payload.get("id"))
             .and_then(Value::as_str)

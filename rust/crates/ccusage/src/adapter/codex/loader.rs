@@ -137,7 +137,7 @@ fn read_codex_session_file(
     let _ = visit_codex_session_file(
         sessions_dir,
         path,
-        replay_plan.parent_usage(path),
+        replay_plan.replay_prefix(path),
         |event| {
             events.push(event);
             Ok(())
@@ -279,6 +279,129 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].input_tokens, 50);
+    }
+
+    fn replay_metadata(timestamp: &str, id: &str, parent: Option<&str>) -> String {
+        json!({
+            "timestamp": timestamp,
+            "type": "session_meta",
+            "payload": {"id": id, "forked_from_id": parent},
+        })
+        .to_string()
+    }
+
+    fn replay_token_count(timestamp: &str, input_tokens: u64) -> String {
+        json!({
+            "timestamp": timestamp,
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": 1,
+                        "total_tokens": input_tokens + 1,
+                    },
+                },
+            },
+        })
+        .to_string()
+    }
+
+    fn replay_input_tokens_by_session(dir: &Path) -> Vec<(String, u64)> {
+        load_codex_events_from_directory(dir, true)
+            .unwrap()
+            .iter()
+            .map(|event| (event.session_id.clone(), event.input_tokens))
+            .collect()
+    }
+
+    #[test]
+    fn keeps_full_parent_stream_when_the_parent_itself_replayed_a_missing_session() {
+        let fixture = fs_fixture!({
+            // The grandparent log is gone, so this session falls back to skipping
+            // its own rewritten second.
+            "01-parent.jsonl": [
+                replay_metadata("2026-07-10T08:00:00.000Z", "parent", Some("missing-grandparent")),
+                replay_token_count("2026-07-10T08:00:00.100Z", 100),
+                replay_token_count("2026-07-10T08:00:00.200Z", 200),
+                replay_token_count("2026-07-10T08:01:00.000Z", 300),
+                replay_token_count("2026-07-10T08:02:00.000Z", 400),
+            ]
+            .join("\n"),
+            "02-child.jsonl": [
+                replay_metadata("2026-07-10T09:00:00.000Z", "child", Some("parent")),
+                replay_token_count("2026-07-10T09:00:00.100Z", 100),
+                replay_token_count("2026-07-10T09:00:00.200Z", 200),
+                replay_token_count("2026-07-10T09:00:00.300Z", 300),
+                replay_token_count("2026-07-10T09:00:00.400Z", 400),
+                replay_token_count("2026-07-10T09:05:00.000Z", 500),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [
+                ("01-parent".to_string(), 300),
+                ("01-parent".to_string(), 400),
+                ("02-child".to_string(), 500),
+            ]
+        );
+    }
+
+    #[test]
+    fn falls_back_to_rewritten_second_when_the_replay_starts_mid_parent_stream() {
+        let fixture = fs_fixture!({
+            "01-parent.jsonl": [
+                replay_metadata("2026-07-10T08:00:00.000Z", "parent", None),
+                replay_token_count("2026-07-10T08:01:00.000Z", 100),
+                replay_token_count("2026-07-10T08:02:00.000Z", 200),
+                replay_token_count("2026-07-10T08:03:00.000Z", 300),
+            ]
+            .join("\n"),
+            // Codex replayed a compacted history, so it does not line up with the
+            // start of the parent stream.
+            "02-child.jsonl": [
+                replay_metadata("2026-07-10T09:00:00.000Z", "child", Some("parent")),
+                replay_token_count("2026-07-10T09:00:00.100Z", 200),
+                replay_token_count("2026-07-10T09:00:00.200Z", 300),
+                replay_token_count("2026-07-10T09:05:00.000Z", 400),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [
+                ("01-parent".to_string(), 100),
+                ("01-parent".to_string(), 200),
+                ("01-parent".to_string(), 300),
+                ("02-child".to_string(), 400),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_usage_of_a_session_that_lists_itself_as_its_own_parent() {
+        let fixture = fs_fixture!({
+            "self.jsonl": [
+                json!({
+                    "type": "session_meta",
+                    "payload": {"id": "self", "forked_from_id": "self"},
+                })
+                .to_string(),
+                replay_token_count("2026-07-10T08:01:00.000Z", 100),
+                replay_token_count("2026-07-10T08:02:00.000Z", 200),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [("self".to_string(), 100), ("self".to_string(), 200)]
+        );
     }
 
     #[test]

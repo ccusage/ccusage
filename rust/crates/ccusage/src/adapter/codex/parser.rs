@@ -59,7 +59,22 @@ struct CodexExecTimestamps {
     model: String,
 }
 
-pub(super) fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
+/// Tracks how far a forked session's leading events still match the history it
+/// replayed from its parent.
+enum CodexReplayState<'a> {
+    /// Comparing the child's leading usage against the parent's usage prefix.
+    MatchingParent {
+        prefix: &'a [CodexRawUsage],
+        index: usize,
+    },
+    /// The parent stream could not anchor the replay, so skip the leading burst
+    /// that Codex rewrote into a single second.
+    SkippingSecond([u8; 19]),
+    /// Past the replayed history: every remaining event is the child's own usage.
+    Done,
+}
+
+fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
     let Ok(file) = fs::File::open(path) else {
         return None;
     };
@@ -109,6 +124,11 @@ pub(super) fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
     }
 }
 
+/// Visits every usage event in a Codex session log.
+///
+/// `replayed_prefix` carries the usage a forked session copied from its parent so
+/// it is not counted twice: `None` for sessions that are not forks, and an empty
+/// slice for forks whose parent log is unavailable.
 pub(super) fn visit_codex_session_file(
     sessions_dir: &Path,
     path: &Path,
@@ -125,24 +145,47 @@ pub(super) fn visit_codex_session_file(
     let mut current_model: Option<String> = None;
     let mut current_model_is_fallback = false;
     let fallback_timestamp = file_modified_timestamp(path);
-    let mut replay_index = 0;
-    let mut matching_replay = replayed_prefix.is_some();
+    let mut replay = match replayed_prefix {
+        Some(prefix) => CodexReplayState::MatchingParent { prefix, index: 0 },
+        None => CodexReplayState::Done,
+    };
     let mut visit_filtered = |event: CodexTokenUsageEvent| {
-        if matching_replay {
-            let usage = CodexRawUsage {
-                input_tokens: event.input_tokens,
-                cached_input_tokens: event.cached_input_tokens,
-                output_tokens: event.output_tokens,
-                reasoning_output_tokens: event.reasoning_output_tokens,
-                total_tokens: event.total_tokens,
-            };
-            if replayed_prefix.and_then(|prefix| prefix.get(replay_index)) == Some(&usage) {
-                replay_index += 1;
-                return Ok(());
+        // Each arm either returns or advances the state toward `Done`, so this
+        // loop only re-runs to apply the event to the state it switched to.
+        loop {
+            match replay {
+                CodexReplayState::MatchingParent { prefix, index } => {
+                    let usage = CodexRawUsage {
+                        input_tokens: event.input_tokens,
+                        cached_input_tokens: event.cached_input_tokens,
+                        output_tokens: event.output_tokens,
+                        reasoning_output_tokens: event.reasoning_output_tokens,
+                        total_tokens: event.total_tokens,
+                    };
+                    if prefix.get(index) == Some(&usage) {
+                        replay = CodexReplayState::MatchingParent {
+                            prefix,
+                            index: index + 1,
+                        };
+                        return Ok(());
+                    }
+                    // Nothing matched, so the parent stream cannot anchor this
+                    // replay: the log is unavailable, or Codex rewrote the copied
+                    // history. Fall back to the same-second burst instead.
+                    replay = (index == 0)
+                        .then(|| detect_replay_second(path))
+                        .flatten()
+                        .map_or(CodexReplayState::Done, CodexReplayState::SkippingSecond);
+                }
+                CodexReplayState::SkippingSecond(second) => {
+                    if event.timestamp.as_bytes().get(..19) == Some(second.as_slice()) {
+                        return Ok(());
+                    }
+                    replay = CodexReplayState::Done;
+                }
+                CodexReplayState::Done => return visit(event),
             }
-            matching_replay = false;
         }
-        visit(event)
     };
 
     loop {
