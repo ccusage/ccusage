@@ -1,11 +1,11 @@
 use std::io::IsTerminal;
 
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::{
-    Align, BLOCKS_COMPACT_WIDTH_THRESHOLD, BLOCKS_WARNING_THRESHOLD, BurnRate, Color, LoadedEntry,
-    MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Projection, Result, SessionBlock, SimpleTable, TimestampMs,
-    TokenCounts, am_pm,
+    Align, Color, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Result, SimpleTable,
+    TimestampMs, TokenCounts, am_pm,
     cli::{SharedArgs, SortOrder},
     color,
     fast::FxHashSet,
@@ -13,6 +13,42 @@ use crate::{
     format_utc_second, hour_12, json_float, local_parts, print_box_title,
     should_use_compact_layout, terminal_width, utc_now,
 };
+
+/// A block is warned about once it passes this share of the token limit.
+const BLOCKS_WARNING_THRESHOLD: f64 = 0.8;
+/// Terminal width below which the blocks table drops columns.
+const BLOCKS_COMPACT_WIDTH_THRESHOLD: usize = 120;
+
+#[derive(Debug, Clone)]
+pub struct SessionBlock {
+    pub id: String,
+    pub start_time: TimestampMs,
+    pub end_time: TimestampMs,
+    pub actual_end_time: Option<TimestampMs>,
+    pub is_active: bool,
+    pub is_gap: bool,
+    pub entries: Vec<LoadedEntry>,
+    pub token_counts: TokenCounts,
+    pub cost_usd: f64,
+    pub models: Vec<String>,
+    pub usage_limit_reset_time: Option<TimestampMs>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BurnRate {
+    pub tokens_per_minute: f64,
+    pub tokens_per_minute_for_indicator: f64,
+    pub cost_per_hour: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Projection {
+    pub total_tokens: u64,
+    pub total_cost: f64,
+    pub remaining_minutes: u64,
+}
 
 pub fn identify_session_blocks(
     mut entries: Vec<LoadedEntry>,

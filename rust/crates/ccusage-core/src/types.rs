@@ -172,34 +172,3 @@ impl UsageSummary {
             + self.extra_total_tokens
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct SessionBlock {
-    pub id: String,
-    pub start_time: TimestampMs,
-    pub end_time: TimestampMs,
-    pub actual_end_time: Option<TimestampMs>,
-    pub is_active: bool,
-    pub is_gap: bool,
-    pub entries: Vec<LoadedEntry>,
-    pub token_counts: TokenCounts,
-    pub cost_usd: f64,
-    pub models: Vec<String>,
-    pub usage_limit_reset_time: Option<TimestampMs>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BurnRate {
-    pub tokens_per_minute: f64,
-    pub tokens_per_minute_for_indicator: f64,
-    pub cost_per_hour: f64,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Projection {
-    pub total_tokens: u64,
-    pub total_cost: f64,
-    pub remaining_minutes: u64,
-}

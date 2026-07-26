@@ -1,7 +1,6 @@
 use std::{fmt, io};
 
 pub mod agent_report;
-pub mod blocks;
 pub mod config;
 pub mod config_schema;
 pub mod cost;
@@ -24,10 +23,6 @@ pub mod cli {
 }
 
 pub use agent_report::{agent_summary_json, first_column, summary_period};
-pub use blocks::{
-    block_json, calculate_burn_rate, filter_blocks_by_date, format_remaining_time,
-    identify_session_blocks, print_active_block_detail, print_blocks_table, sort_blocks,
-};
 pub use cost::{
     calculate_cost, calculate_cost_for_usage, calculate_cost_from_pricing,
     missing_pricing_model_for_candidates, missing_pricing_model_for_token_total,
@@ -56,9 +51,7 @@ pub use ccusage_terminal::{Align, Color, SimpleTable, TerminalStyle, terminal_wi
 
 pub const DEFAULT_SESSION_DURATION_HOURS: f64 = 5.0;
 pub const DEFAULT_RECENT_DAYS: i64 = 3;
-pub const BLOCKS_WARNING_THRESHOLD: f64 = 0.8;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;
-pub const BLOCKS_COMPACT_WIDTH_THRESHOLD: usize = 120;
 
 pub const BUILT_IN_AGENT_NAMES: &[&str] = &[
     "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "openclaw",

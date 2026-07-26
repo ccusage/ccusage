@@ -1,10 +1,15 @@
 mod adapter;
+mod blocks;
 mod cli;
 mod commands;
 
 pub(crate) use adapter::claude::{load_daily_summaries, load_entries};
 #[cfg(test)]
 pub(crate) use adapter::codex::CodexTokenUsageEvent;
+pub(crate) use blocks::{
+    block_json, calculate_burn_rate, filter_blocks_by_date, format_remaining_time,
+    identify_session_blocks, print_active_block_detail, print_blocks_table, sort_blocks,
+};
 #[cfg(test)]
 pub(crate) use ccusage_adapter_common::chunk_file_indexes_by_size;
 pub(crate) use ccusage_core::*;
