@@ -45,6 +45,10 @@ pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &Sh
 }
 
 pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<Vec<usize>> {
+    // Callers derive the count from available_parallelism, which can be 0 for a
+    // caller that clamps against an empty file list; one chunk still returns
+    // every index rather than indexing an empty vector.
+    let chunk_count = chunk_count.max(1);
     let mut weighted_indexes = Vec::with_capacity(files.len());
     for (index, file) in files.iter().enumerate() {
         let size = fs::metadata(file).map_or(0, |metadata| metadata.len());
@@ -121,7 +125,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::read_files_parallel;
+    use super::{chunk_file_indexes_by_size, read_files_parallel};
     use ccusage_test_support::Fixture;
 
     #[test]
@@ -144,6 +148,14 @@ mod tests {
 
         assert_eq!(single, expected);
         assert_eq!(multi, expected);
+    }
+
+    #[test]
+    fn treats_a_zero_chunk_count_as_one_chunk() {
+        let fixture = Fixture::new();
+        let files = vec![fixture.write_file("only.txt", "body")];
+
+        assert_eq!(chunk_file_indexes_by_size(&files, 0), vec![vec![0]]);
     }
 
     #[test]
