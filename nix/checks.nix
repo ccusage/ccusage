@@ -22,6 +22,7 @@ in
         version
         ;
       nixFilter = inputs.nix-filter.lib;
+      rustSrc = import ./rust-src.nix { inherit nixFilter root; };
       repoSrc = nixFilter {
         inherit root;
         exclude = [
@@ -34,7 +35,7 @@ in
       ccusage-clippy = craneLib.cargoClippy (
         commonArgs
         // {
-          src = repoSrc;
+          src = rustSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
           inherit cargoArtifacts;
@@ -45,7 +46,7 @@ in
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
-        src = repoSrc;
+        src = rustSrc;
         sourceRoot = "source/rust";
         cargoExtraArgs = "--all";
       };
