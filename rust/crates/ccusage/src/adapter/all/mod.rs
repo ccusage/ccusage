@@ -1,3 +1,4 @@
+mod from_json;
 mod loader;
 mod report;
 mod types;
@@ -12,6 +13,10 @@ pub(crate) fn run(args: AgentCommandArgs) -> Result<()> {
     let kind = args.kind;
     let shared = args.shared;
     let include_agents = args.by_agent;
+    if let Some(path) = args.from_json.as_deref() {
+        let rows = from_json::load(path)?;
+        return report::print_table(&rows, AgentReportKind::Daily, &shared, &[]);
+    }
     if let Some(sections) = args.sections {
         let sections = requested_sections(kind, sections);
         let result = loader::load_sections(&sections, &shared)?;

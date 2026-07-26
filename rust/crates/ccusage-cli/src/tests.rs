@@ -26,6 +26,32 @@ fn parse_error(args: &[&str]) -> String {
     }
 }
 
+#[test]
+fn parses_daily_from_json_option() {
+    let cli = parse(&["ccusage", "daily", "--from-json", "fleet-report.json"]);
+
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected unified daily command");
+    };
+    assert_eq!(
+        args.from_json,
+        Some(std::path::PathBuf::from("fleet-report.json"))
+    );
+}
+
+#[test]
+fn rejects_json_output_when_rendering_from_json() {
+    let error = parse_error(&[
+        "ccusage",
+        "daily",
+        "--from-json",
+        "fleet-report.json",
+        "--json",
+    ]);
+
+    assert_eq!("--from-json cannot be combined with --json", error);
+}
+
 #[derive(Default)]
 struct TestConfig {
     shared_json: Option<bool>,
@@ -206,7 +232,11 @@ fn command_snapshot(command: Option<Command>) -> Value {
 }
 
 fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
-    json!({
+    let from_json = args
+        .from_json
+        .as_ref()
+        .map(|path| path.to_string_lossy().to_string());
+    let mut snapshot = json!({
         "type": agent,
         "shared": shared_snapshot(&args.shared),
         "kind": format!("{:?}", args.kind),
@@ -218,7 +248,11 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
         "piPath": args.pi_path,
         "openClawPath": args.open_claw_path,
         "codexSpeed": format!("{:?}", args.codex_speed),
-    })
+    });
+    if let Some(from_json) = from_json {
+        snapshot["fromJson"] = json!(from_json);
+    }
+    snapshot
 }
 
 #[test]
@@ -586,6 +620,13 @@ fn contextual_all_agent_help_lists_color_options() {
 
     assert!(help.contains("--color"));
     assert!(help.contains("--no-color"));
+}
+
+#[test]
+fn contextual_daily_help_lists_from_json_option() {
+    let help = help_text_for_args(&["ccusage".to_string(), "daily".to_string()]);
+
+    assert!(help.contains("--from-json <file>"));
 }
 
 #[test]

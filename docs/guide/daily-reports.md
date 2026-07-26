@@ -124,28 +124,41 @@ Export data as JSON for further analysis:
 ccusage daily --json
 ```
 
+Render a previously exported or externally combined ccusage daily report with
+the normal responsive table renderer:
+
+```bash
+ccusage daily --from-json fleet-report.json
+```
+
+The input file must use the same `daily` and `totals` structure emitted by
+`ccusage daily --json`. This makes it possible to merge reports outside
+ccusage, then retain its standard colors, compact layout, model breakdowns, and
+totals display.
+
 ```json
 {
-	"type": "daily",
-	"data": [
+	"daily": [
 		{
-			"date": "2026-05-16",
-			"models": ["claude-opus-4-1-20250805", "claude-sonnet-4-5-20250929"],
+			"agent": "all",
+			"modelsUsed": ["claude-opus-4-1-20250805", "claude-sonnet-4-5-20250929"],
 			"inputTokens": 277,
 			"outputTokens": 31456,
 			"cacheCreationTokens": 512,
 			"cacheReadTokens": 1024,
 			"totalTokens": 33269,
-			"costUSD": 17.58
+			"totalCost": 17.58,
+			"modelBreakdowns": [],
+			"period": "2026-05-16"
 		}
 	],
-	"summary": {
-		"totalInputTokens": 277,
-		"totalOutputTokens": 31456,
-		"totalCacheCreationTokens": 512,
-		"totalCacheReadTokens": 1024,
+	"totals": {
+		"inputTokens": 277,
+		"outputTokens": 31456,
+		"cacheCreationTokens": 512,
+		"cacheReadTokens": 1024,
 		"totalTokens": 33269,
-		"totalCostUSD": 17.58
+		"totalCost": 17.58
 	}
 }
 ```

@@ -433,7 +433,7 @@ fn append_agent_rows(
     rows.extend(agent_rows.rows);
 }
 
-fn leak_agent_name(name: &str) -> &'static str {
+pub(super) fn leak_agent_name(name: &str) -> &'static str {
     Box::leak(name.to_string().into_boxed_str())
 }
 

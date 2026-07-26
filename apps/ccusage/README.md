@@ -143,6 +143,7 @@ bunx ccusage daily --by-agent --json
 # Filters and options
 bunx ccusage daily --since 2026-04-25 --until 2026-05-16
 bunx ccusage daily --json  # JSON output
+bunx ccusage daily --from-json report.json  # Render an existing ccusage daily JSON report
 bunx ccusage daily --no-cost  # Hide cost columns and JSON cost fields
 bunx ccusage daily --timezone UTC  # Use UTC timezone
 

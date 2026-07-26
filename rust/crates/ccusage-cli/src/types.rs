@@ -121,6 +121,7 @@ pub struct StatuslineArgs {
 pub struct AgentCommandArgs {
     pub shared: SharedArgs,
     pub kind: AgentReportKind,
+    pub from_json: Option<PathBuf>,
     pub sections: Option<Vec<AgentReportKind>>,
     pub by_agent: bool,
     pub pi_path: Option<String>,

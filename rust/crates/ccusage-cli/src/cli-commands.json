@@ -1,5 +1,6 @@
 {
 	"combinedOptions": {
+		"all_daily_options": ["all_agent_options", "from_json_options"],
 		"all_agent_session_options": ["all_agent_options", "session_options"],
 		"blocks_combined_options": ["shared_claude_options", "blocks_options"],
 		"claude_daily_options": ["shared_claude_options", "daily_options"],
@@ -102,7 +103,7 @@
 			"path": ["daily"],
 			"description": "Show all detected coding (agent) CLI usage grouped by date",
 			"usage": "ccusage daily <OPTIONS>",
-			"options": "all_agent_options"
+			"options": "all_daily_options"
 		},
 		{
 			"path": ["monthly"],

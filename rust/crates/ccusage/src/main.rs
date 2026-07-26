@@ -152,6 +152,7 @@ fn main() -> Result<()> {
             let args = AgentCommandArgs {
                 shared: cli.shared,
                 kind: AgentReportKind::Daily,
+                from_json: None,
                 sections: None,
                 by_agent: false,
                 pi_path: None,

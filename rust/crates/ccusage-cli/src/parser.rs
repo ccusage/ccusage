@@ -39,6 +39,7 @@ impl RootAllOptions {
         AgentCommandArgs {
             shared,
             kind,
+            from_json: None,
             sections: self.sections,
             by_agent: self.by_agent,
             pi_path: None,
@@ -385,15 +386,28 @@ fn parse_all_command(
 ) -> Result<Command, String> {
     let mut sections = initial_options.sections;
     let mut by_agent = initial_options.by_agent;
+    let mut from_json = None;
     while parser.peek().is_some() {
         if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
             continue;
         }
+        if kind == AgentReportKind::Daily && matches!(parser.peek_name(), Some("--from-json")) {
+            parser.next_flag()?;
+            from_json = Some(PathBuf::from(parser.value_for("--from-json")?));
+            continue;
+        }
         parse_shared_arg(parser, &mut shared)?;
+    }
+    if from_json.is_some() && shared.json {
+        return Err("--from-json cannot be combined with --json".to_string());
+    }
+    if from_json.is_some() && sections.is_some() {
+        return Err("--from-json cannot be combined with --sections".to_string());
     }
     Ok(Command::All(AgentCommandArgs {
         shared,
         kind,
+        from_json,
         sections,
         by_agent,
         pi_path: None,
@@ -437,6 +451,7 @@ fn parse_top_level_session_command(
     Ok(Command::All(AgentCommandArgs {
         shared: args.shared,
         kind: AgentReportKind::Session,
+        from_json: None,
         sections,
         by_agent,
         pi_path: None,
@@ -594,6 +609,7 @@ fn parse_codex_command(
     Ok(Command::Codex(AgentCommandArgs {
         shared,
         kind,
+        from_json: None,
         sections: None,
         by_agent: false,
         pi_path: None,
@@ -623,6 +639,7 @@ fn parse_pi_command(
     Ok(Command::Pi(AgentCommandArgs {
         shared,
         kind,
+        from_json: None,
         sections: None,
         by_agent: false,
         pi_path,
@@ -652,6 +669,7 @@ fn parse_openclaw_command(
     Ok(Command::OpenClaw(AgentCommandArgs {
         shared,
         kind,
+        from_json: None,
         sections: None,
         by_agent: false,
         pi_path: None,
@@ -682,6 +700,7 @@ fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommand
     AgentCommandArgs {
         shared,
         kind,
+        from_json: None,
         sections: None,
         by_agent: false,
         pi_path: None,
