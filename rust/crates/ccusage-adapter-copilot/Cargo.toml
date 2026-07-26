@@ -21,7 +21,6 @@ rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = "1"
-sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
 
 [dev-dependencies]
 ccusage-test-support = { path = "../ccusage-test-support" }

@@ -9,7 +9,6 @@ ccusage-adapter-common = { path = "../ccusage-adapter-common" }
 ccusage-cli = { path = "../ccusage-cli" }
 ccusage-core = { path = "../ccusage-core" }
 ccusage-terminal = { path = "../ccusage-terminal" }
-ccusage-adapter-amp = { path = "../ccusage-adapter-amp" }
 compact_str = "0.9"
 jiff = { version = "0.2.24", default-features = false, features = [
 	"std",

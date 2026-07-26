@@ -17,7 +17,7 @@ use crate::{
 pub use loader::load_entries;
 #[doc(hidden)]
 pub use parser::read_thread_file;
-pub use report::{print_table_for_agent, report_from_rows, summarize_entries};
+pub use report::{report_from_rows, summarize_entries};
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;

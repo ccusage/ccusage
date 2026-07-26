@@ -8,19 +8,14 @@ publish = false
 ccusage-adapter-common = { path = "../ccusage-adapter-common" }
 ccusage-cli = { path = "../ccusage-cli" }
 ccusage-core = { path = "../ccusage-core" }
-ccusage-terminal = { path = "../ccusage-terminal" }
-compact_str = "0.9"
 jiff = { version = "0.2.24", default-features = false, features = [
 	"std",
 	"tz-system",
 	"tzdb-zoneinfo",
 	"tzdb-bundle-platform",
 ] }
-memchr = "2"
-rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-smallvec = "1"
 sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
 
 [dev-dependencies]

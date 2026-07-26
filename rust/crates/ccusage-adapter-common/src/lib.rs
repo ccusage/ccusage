@@ -7,6 +7,9 @@ use std::{
 use ccusage_core::{LoadedEntry, cli::SharedArgs};
 
 pub mod jsonl;
+pub mod report;
+
+pub use report::print_table_for_agent;
 
 pub fn collect_usage_files(dir: &Path, files: &mut Vec<PathBuf>) {
     collect_files_with_extension(dir, "jsonl", files);

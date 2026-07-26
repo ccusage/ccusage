@@ -34,6 +34,6 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
             shared.no_cost,
         );
     }
-    ccusage_adapter_amp::print_table_for_agent("Codebuff", args.kind, &rows, &shared)?;
+    ccusage_adapter_common::print_table_for_agent("Codebuff", args.kind, &rows, &shared)?;
     Ok(())
 }

@@ -211,7 +211,6 @@ dependencies = [
 name = "ccusage-adapter-codebuff"
 version = "0.0.0"
 dependencies = [
- "ccusage-adapter-amp",
  "ccusage-adapter-common",
  "ccusage-cli",
  "ccusage-core",
@@ -275,7 +274,6 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "sqlite",
 ]
 
 [[package]]
@@ -315,14 +313,12 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "sqlite",
 ]
 
 [[package]]
 name = "ccusage-adapter-goose"
 version = "0.0.0"
 dependencies = [
- "ccusage-adapter-amp",
  "ccusage-adapter-common",
  "ccusage-cli",
  "ccusage-core",
@@ -346,16 +342,11 @@ dependencies = [
  "ccusage-adapter-common",
  "ccusage-cli",
  "ccusage-core",
- "ccusage-terminal",
  "ccusage-test-support",
- "compact_str",
  "insta",
  "jiff",
- "memchr",
- "rustc-hash",
  "serde",
  "serde_json",
- "smallvec",
  "sqlite",
 ]
 
@@ -416,7 +407,6 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "sqlite",
 ]
 
 [[package]]
@@ -476,7 +466,6 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "sqlite",
 ]
 
 [[package]]

@@ -121,23 +121,12 @@ let
       packages = [ (adapterCrate name) ];
       sources = foundationCrates ++ [ (adapterCrate name) ];
     };
-  mkAmpAdapter =
-    name:
-    mkArtifacts {
-      name = "ccusage-adapter-${name}";
-      cargoArtifacts = amp;
-      packages = [ (adapterCrate name) ];
-      sources = foundationCrates ++ [
-        "ccusage-adapter-amp"
-        (adapterCrate name)
-      ];
-    };
   adapterArtifacts = {
     inherit amp opencode;
     claude = mkFoundationAdapter "claude";
     codex = mkFoundationAdapter "codex";
-    codebuff = mkAmpAdapter "codebuff";
-    goose = mkAmpAdapter "goose";
+    codebuff = mkFoundationAdapter "codebuff";
+    goose = mkFoundationAdapter "goose";
     copilot = mkFoundationAdapter "copilot";
     droid = mkFoundationAdapter "droid";
     gemini = mkFoundationAdapter "gemini";
