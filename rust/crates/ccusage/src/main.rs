@@ -2,6 +2,7 @@ mod adapter;
 mod blocks;
 mod cli;
 mod commands;
+mod http;
 
 pub(crate) use adapter::claude::{load_daily_summaries, load_entries};
 #[cfg(test)]
@@ -22,6 +23,7 @@ use pricing::PricingMap;
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
+    pricing::set_json_fetcher(http::fetch_json);
     let cli = cli::parse();
     match cli.command {
         Some(Command::All(args)) => adapter::all::run(args),

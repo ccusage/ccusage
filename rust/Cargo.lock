@@ -138,6 +138,7 @@ dependencies = [
  "mimalloc",
  "serde",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]
@@ -411,7 +412,6 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "ureq",
 ]
 
 [[package]]

@@ -18,8 +18,6 @@ const FAST_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("fast-multiplier-overr
 const LITELLM_PRICING_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
-const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
-const PRICING_FETCH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const MODELS_DEV_FAILURE_RETRY_AFTER: Duration = Duration::from_secs(60);
 // Anthropic date-suffixed model aliases use YYYYMMDD, while other numeric
 // suffixes are treated as distinct model versions.
@@ -1477,27 +1475,28 @@ fn fetch_models_dev_json() -> std::io::Result<String> {
     fetch_json_url(MODELS_DEV_API_URL)
 }
 
+/// Fetches a JSON document over HTTP for the pricing refresh.
+pub type JsonFetcher = fn(&str) -> std::io::Result<String>;
+
+static JSON_FETCHER: OnceLock<JsonFetcher> = OnceLock::new();
+
+/// Installs the HTTP client used to refresh pricing.
+///
+/// The client lives with the binary rather than here so that its TLS stack is not
+/// a dependency of the crate every adapter builds against. Without one installed,
+/// a refresh reports that it is unavailable and the embedded snapshots are used,
+/// which is what `--offline` already does.
+pub fn set_json_fetcher(fetcher: JsonFetcher) {
+    let _ = JSON_FETCHER.set(fetcher);
+}
+
 fn fetch_json_url(url: &str) -> std::io::Result<String> {
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)))
-        .build()
-        .new_agent();
-    let mut response = agent
-        .get(url)
-        .call()
-        .map_err(|error| std::io::Error::other(error.to_string()))?;
-    if response.status().as_u16() != 200 {
-        return Err(std::io::Error::other(format!(
-            "HTTP {}",
-            response.status().as_u16()
-        )));
-    }
-    response
-        .body_mut()
-        .with_config()
-        .limit(PRICING_FETCH_MAX_BYTES)
-        .read_to_string()
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))
+    let Some(fetch) = JSON_FETCHER.get() else {
+        return Err(std::io::Error::other(
+            "no HTTP client installed for pricing refresh",
+        ));
+    };
+    fetch(url)
 }
 
 #[cfg(test)]
