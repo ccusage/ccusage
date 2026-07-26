@@ -133,17 +133,24 @@ pub(crate) fn has_source(opencode_dir: &Path) -> bool {
     has_json_file(&opencode_dir.join("storage").join("message"))
 }
 
+// Mirrors `collect_files_with_extension`: judge entries by `file_type()` so
+// symlinks are neither followed nor counted. Following them would let detection
+// claim files the collection pass then refuses to read, and a symlinked cycle
+// would recurse until the stack gives out.
 fn has_json_file(dir: &Path) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
     entries.filter_map(std::result::Result::ok).any(|entry| {
+        let Ok(file_type) = entry.file_type() else {
+            return false;
+        };
         let path = entry.path();
-        if path.is_dir() {
-            has_json_file(&path)
-        } else {
+        if file_type.is_file() {
             path.extension()
                 .is_some_and(|extension| extension == "json")
+        } else {
+            file_type.is_dir() && has_json_file(&path)
         }
     })
 }
@@ -309,15 +316,23 @@ fn entry_id(entry: &LoadedEntry) -> Option<&str> {
 
 /// Pulls `time.created` millis from raw JSON to skip rows before a full parse.
 ///
-/// Anything but the canonical `"time":{"created":<millis>}` returns `None`, and
-/// the caller falls back to a full parse, so a missed scan slows down, not drops.
+/// Only the canonical `"time": { ... "created": <digits> ... }` shape is
+/// recognized, and the search for `created` never leaves that object, so a
+/// `time` object belonging to something else in the payload cannot contribute a
+/// number. Everything else returns `None` and the caller falls back to a full
+/// parse: a scan that gives up costs time, whereas a scan that guesses wrong
+/// would silently drop an in-range entry.
 fn extract_message_timestamp(data: &str) -> Option<i64> {
-    let time_start = data.find("\"time\"")?;
-    let time_section = &data[time_start..];
-    let created_start = time_section.find("\"created\":")?;
-    let after_key = time_section[created_start + "\"created\":".len()..].trim_start();
+    const TIME_KEY: &str = "\"time\":";
+    const CREATED_KEY: &str = "\"created\":";
+
+    let time_object = data[data.find(TIME_KEY)? + TIME_KEY.len()..]
+        .trim_start()
+        .strip_prefix('{')?;
+    let time_object = &time_object[..time_object.find('}')?];
+    let after_key = time_object[time_object.find(CREATED_KEY)? + CREATED_KEY.len()..].trim_start();
     let end = after_key
-        .find(|c: char| !c.is_ascii_digit())
+        .find(|character: char| !character.is_ascii_digit())
         .unwrap_or(after_key.len());
     after_key[..end].parse::<i64>().ok()
 }
@@ -1123,10 +1138,29 @@ mod tests {
             super::extract_message_timestamp(PRETTY_PRINTED_MESSAGE),
             Some(1_767_312_000_000)
         );
-        // Digits running to the end of the input, without a closing brace.
+        // Digits running to the end of the object, without a trailing comma.
         assert_eq!(
-            super::extract_message_timestamp(r#""time":{"created": 42"#),
+            super::extract_message_timestamp(r#"{"time":{"created": 42}}"#),
             Some(42)
+        );
+    }
+
+    #[test]
+    fn ignores_a_time_object_that_is_not_the_messages_own() {
+        // The scan must not reach past the first `time` object for a `created`
+        // key: guessing wrong here would drop an in-range message, while giving
+        // up only costs a full parse.
+        assert_eq!(
+            super::extract_message_timestamp(
+                r#"{"parts":[{"time":{"start":1}}],"time":{"created":1767312000000}}"#
+            ),
+            None
+        );
+        // A quoted `"time"` that is a value rather than a key is not followed by
+        // a colon, so it cannot start a match either.
+        assert_eq!(
+            super::extract_message_timestamp(r#"{"unit":"time","created":1767312000000}"#),
+            None
         );
     }
 
