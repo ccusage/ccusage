@@ -5,17 +5,17 @@ into the usage entries the reports render.
 
 ## Owns
 
-- `paths.rs` — the environment variables and default directories below.
+- `loader.rs` — reading the source, dedupe, and date filtering.
 - `parser.rs` — raw record parsing, token mapping, and model naming.
-- `loader.rs` — discovery, dedupe, and date filtering.
-- `report.rs` — the JSON and table shapes when they differ from the shared ones.
+- `paths.rs` — environment variables, default directories, and file discovery.
+- `report.rs` — the JSON and table shapes where they differ from the shared ones.
 
 Anything that is not specific to this source belongs in `ccusage-core` or
 `ccusage-adapter-common` instead.
 
 ## Data source
 
-- `${PI_AGENT_DIR:-~/.pi/agent}`, plus any `pi.stores[]` entries in `ccusage.json`
+- `${PI_AGENT_DIR:-~/.pi/agent/sessions}`, plus any `pi.stores[]` entries in `ccusage.json`
 
 Record shapes, token mapping, and cost rules are documented in [`src/README.md`](src/README.md).
 

@@ -5,10 +5,8 @@ into the usage entries the reports render.
 
 ## Owns
 
-- `paths.rs` — the environment variables and default directories below.
-- `parser.rs` — raw record parsing, token mapping, and model naming.
-- `loader.rs` — discovery, dedupe, and date filtering.
-- `report.rs` — the JSON and table shapes when they differ from the shared ones.
+- `daily.rs` — the daily report path, which reads the same files with a narrower parser.
+- `paths.rs` — environment variables, default directories, and file discovery.
 
 Anything that is not specific to this source belongs in `ccusage-core` or
 `ccusage-adapter-common` instead.

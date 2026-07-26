@@ -5,10 +5,14 @@ into the usage entries the reports render.
 
 ## Owns
 
-- `paths.rs` — the environment variables and default directories below.
+- `aggregate.rs` — grouping events into report periods, including cross-session dedupe.
+- `loader.rs` — reading the source, dedupe, and date filtering.
 - `parser.rs` — raw record parsing, token mapping, and model naming.
-- `loader.rs` — discovery, dedupe, and date filtering.
-- `report.rs` — the JSON and table shapes when they differ from the shared ones.
+- `paths.rs` — environment variables, default directories, and file discovery.
+- `replay.rs` — detecting history that a forked or subagent session replays.
+- `report.rs` — the JSON and table shapes where they differ from the shared ones.
+- `speed.rs` — resolving the service tier that priced each request.
+- `types.rs` — types that stay inside this adapter.
 
 Anything that is not specific to this source belongs in `ccusage-core` or
 `ccusage-adapter-common` instead.

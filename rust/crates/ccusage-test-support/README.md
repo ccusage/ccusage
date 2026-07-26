@@ -24,4 +24,4 @@ at runtime.
 
 ## Build layer
 
-Built in the `foundation` Crane artifact layer, so a change here recompiles every adapter., so test fixtures compile once for the whole workspace.
+Built in the `foundation` Crane artifact layer, so a change here recompiles every adapter. It is a dev-dependency only, so it never reaches the shipped binary.
