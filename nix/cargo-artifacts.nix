@@ -1,3 +1,18 @@
+# Crane artifact layers for the workspace, on top of the dependency-only cache.
+#
+# The layers are a linear chain — dependencies -> foundation -> adapters -> final
+# binary — rather than one derivation per adapter. Each layer only extends the
+# previous one, so Crane's full-archive install works everywhere, including
+# Darwin, where it cannot install incremental archives
+# (https://github.com/rust-lang/rust/issues/115982) and merging sibling archives
+# would overwrite shared path-crate artifacts with incompatible variants.
+#
+# The adapters share one layer because they are mutually independent: a single
+# `cargoBuild` with one `-p` per crate lets Cargo compile them concurrently, so
+# the layer's wall clock is roughly the slowest single adapter. Splitting them
+# into sibling derivations instead adds several serial Nix round-trips — sandbox
+# setup, unpacking the dependency target directory, and writing a store archive
+# per layer — which costs more than recompiling the unchanged adapters.
 {
   cargoArtifacts,
   cargoTargetArgs ? "",
@@ -33,8 +48,7 @@ let
     "pi"
     "qwen"
   ];
-  adapterCrate = name: "ccusage-adapter-${name}";
-  allAdapterCrates = map adapterCrate agentNames;
+  adapterCrates = map (name: "ccusage-adapter-${name}") agentNames ++ [ "ccusage-adapter-all" ];
 
   crateSource = name: craneLib.fileset.commonCargoSources (rustRoot + "/crates/${name}");
   extraSourcesFor =
@@ -101,106 +115,31 @@ let
     packages = foundationCrates;
     sources = foundationCrates;
   };
-  opencode = mkArtifacts {
-    name = "ccusage-adapter-opencode";
+  adapters = mkArtifacts {
+    name = "ccusage-adapters";
     cargoArtifacts = foundation;
-    packages = [ "ccusage-adapter-opencode" ];
-    sources = foundationCrates ++ [ "ccusage-adapter-opencode" ];
+    packages = adapterCrates;
+    sources = foundationCrates ++ adapterCrates;
   };
-  amp = mkArtifacts {
-    name = "ccusage-adapter-amp";
-    cargoArtifacts = foundation;
-    packages = [ "ccusage-adapter-amp" ];
-    sources = foundationCrates ++ [ "ccusage-adapter-amp" ];
-  };
-  mkFoundationAdapter =
-    name:
-    mkArtifacts {
-      name = "ccusage-adapter-${name}";
-      cargoArtifacts = foundation;
-      packages = [ (adapterCrate name) ];
-      sources = foundationCrates ++ [ (adapterCrate name) ];
-    };
-  adapterArtifacts = {
-    inherit amp opencode;
-    claude = mkFoundationAdapter "claude";
-    codex = mkFoundationAdapter "codex";
-    codebuff = mkFoundationAdapter "codebuff";
-    goose = mkFoundationAdapter "goose";
-    copilot = mkFoundationAdapter "copilot";
-    droid = mkFoundationAdapter "droid";
-    gemini = mkFoundationAdapter "gemini";
-    hermes = mkFoundationAdapter "hermes";
-    kilo = mkFoundationAdapter "kilo";
-    kimi = mkFoundationAdapter "kimi";
-    openclaw = mkFoundationAdapter "openclaw";
-    pi = mkFoundationAdapter "pi";
-    qwen = mkFoundationAdapter "qwen";
-  };
-  merged =
-    pkgs.runCommand "ccusage-adapter-artifacts-merged"
-      {
-        nativeBuildInputs = [
-          craneLib.inheritCargoArtifactsHook
-          craneLib.installCargoArtifactsHook
-          pkgs.coreutils
-          pkgs.findutils
-          pkgs.gnutar
-          pkgs.rsync
-          pkgs.zstd
-        ];
-      }
-      ''
-        export CARGO_TARGET_DIR="$TMPDIR/target"
-        export doCompressAndInstallFullArchive=1
-        mkdir -p "$CARGO_TARGET_DIR"
-        inheritCargoArtifacts ${foundation}
-        inheritCargoArtifactDelta() {
-          echo "decompressing cargo artifact delta from $1"
-          zstd -d "$1/target.tar.zst" --stdout | tar -x -C "$CARGO_TARGET_DIR"
-        }
-        ${lib.concatMapStringsSep "\n" (artifacts: "inheritCargoArtifactDelta ${artifacts}") (
-          lib.attrValues adapterArtifacts
-        )}
-        prepareAndInstallCargoArtifactsDir "$out" "$CARGO_TARGET_DIR" "use-zstd" ""
-      '';
-  all = mkArtifacts {
-    name = "ccusage-adapter-all";
-    cargoArtifacts = merged;
-    packages = [ "ccusage-adapter-all" ];
-    sources = foundationCrates ++ allAdapterCrates ++ [ "ccusage-adapter-all" ];
-  };
-  cacheRoot = pkgs.linkFarm "ccusage-cargo-artifact-cache-root" (
-    [
-      {
-        name = "dependencies";
-        path = cargoArtifacts;
-      }
-      {
-        name = "foundation";
-        path = foundation;
-      }
-      {
-        name = "merged";
-        path = merged;
-      }
-      {
-        name = "all";
-        path = all;
-      }
-    ]
-    ++ lib.mapAttrsToList (name: path: {
-      name = "adapter-${name}";
-      inherit path;
-    }) adapterArtifacts
-  );
+  cacheRoot = pkgs.linkFarm "ccusage-cargo-artifact-cache-root" [
+    {
+      name = "dependencies";
+      path = cargoArtifacts;
+    }
+    {
+      name = "foundation";
+      path = foundation;
+    }
+    {
+      name = "adapters";
+      path = adapters;
+    }
+  ];
 in
 {
   inherit
-    adapterArtifacts
-    all
+    adapters
     cacheRoot
     foundation
-    merged
     ;
 }

@@ -77,7 +77,7 @@ in
             cargoArtifacts = staticDependencyArtifacts;
             cargoTargetArgs = "--target ${linuxStaticTarget}";
           };
-          staticCargoArtifacts = staticWorkspaceArtifacts.all;
+          staticCargoArtifacts = staticWorkspaceArtifacts.adapters;
         in
         staticCraneLib.buildPackage (
           staticCommonArgs

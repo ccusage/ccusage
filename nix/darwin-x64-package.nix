@@ -55,14 +55,25 @@ in
             buildInputs = crossBuildInputs;
           };
           crossDependencyArtifacts = crossCraneLib.buildDepsOnly crossDepsOnlyArgs;
-          # Crane uses full (rather than incremental) artifact archives on
-          # Darwin, so sibling workspace layers cannot be merged safely.
-          crossCargoArtifacts = crossDependencyArtifacts;
+          crossWorkspaceArtifacts = import ./cargo-artifacts.nix {
+            inherit root pkgs;
+            craneLib = crossCraneLib;
+            inherit (pkgs) lib;
+            commonArgs = crossCommonArgs;
+            cargoArtifacts = crossDependencyArtifacts;
+            cargoTargetArgs = "--target ${target}";
+          };
+          crossCargoArtifacts = crossWorkspaceArtifacts.adapters;
         in
         crossCraneLib.buildPackage (
           crossCommonArgs
           // {
             cargoArtifacts = crossCargoArtifacts;
+            passthru = {
+              cargoArtifacts = crossCargoArtifacts;
+              dependencyArtifacts = crossDependencyArtifacts;
+              workspaceArtifacts = crossWorkspaceArtifacts;
+            };
             # End-user Intel Macs have no /nix/store, so fail the build if the
             # binary links anything outside the macOS system paths.
             postInstall = ''

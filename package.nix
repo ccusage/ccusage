@@ -82,10 +82,7 @@ let
       ;
     cargoArtifacts = dependencyArtifacts;
   };
-  # Crane cannot install incremental artifact archives on Darwin. Merging its
-  # full sibling archives can overwrite shared path-crate artifacts with
-  # incompatible variants, so macOS keeps the dependency-only cache.
-  cargoArtifacts = if stdenv.isDarwin then dependencyArtifacts else workspaceArtifacts.all;
+  cargoArtifacts = workspaceArtifacts.adapters;
 in
 craneLib.buildPackage (
   commonArgs
@@ -115,10 +112,8 @@ craneLib.buildPackage (
         dependencyArtifacts
         depsOnlyArgs
         version
+        workspaceArtifacts
         ;
-    }
-    // lib.optionalAttrs (!stdenv.isDarwin) {
-      inherit workspaceArtifacts;
     };
     meta = {
       description = "Analyze coding agent CLI token usage and costs from local data";
