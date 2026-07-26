@@ -276,9 +276,11 @@ pub(crate) fn filter_and_sort_summaries<F>(
 {
     if shared.since.is_some() || shared.until.is_some() {
         rows.retain(|row| {
-            let date = date_fn(row).replace('-', "");
-            shared.since.as_ref().is_none_or(|since| &date >= since)
-                && shared.until.as_ref().is_none_or(|until| &date <= until)
+            crate::date_within_range(
+                date_fn(row),
+                shared.since.as_deref(),
+                shared.until.as_deref(),
+            )
         });
     }
     sort_summaries(rows, &shared.order, date_fn);

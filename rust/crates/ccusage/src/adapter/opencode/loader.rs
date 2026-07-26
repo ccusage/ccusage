@@ -11,9 +11,9 @@ use super::{
     paths::paths,
 };
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs,
+    LoadedEntry, PricingMap, Result,
     cli::{CostMode, SharedArgs},
-    collect_files_with_extension, debug_log, format_date_tz, parse_tz, read_files_parallel,
+    collect_files_with_extension, date_range_bounds_ms, debug_log, parse_tz, read_files_parallel,
 };
 
 pub(crate) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
@@ -55,12 +55,18 @@ pub(crate) fn load_entries_from_directory(
         ))
     };
     let tz = parse_tz(shared.timezone.as_deref());
+    let window = DateWindow::from_shared(shared, tz.as_ref());
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     if let Some(db_path) = db_path(opencode_dir) {
-        for entry in
-            load_entries_from_database(&db_path, tz.as_ref(), shared.mode, pricing.as_ref(), shared)
-        {
+        for entry in load_entries_from_database(
+            &db_path,
+            tz.as_ref(),
+            shared.mode,
+            pricing.as_ref(),
+            shared,
+            window,
+        ) {
             if let Some(id) = entry_id(&entry)
                 && !seen.insert(id.to_string())
             {
@@ -92,7 +98,14 @@ pub(crate) fn load_entries_from_directory(
     // over the results in their original file order so parallelism never changes
     // which duplicate survives.
     let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_message_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared)
+        read_message_file(
+            file,
+            tz.as_ref(),
+            shared.mode,
+            pricing.as_ref(),
+            shared,
+            window,
+        )
     });
     for entry in loaded.into_iter().flatten() {
         if let Some(id) = entry_id(&entry)
@@ -141,6 +154,7 @@ fn load_entries_from_database(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     shared: &SharedArgs,
+    window: DateWindow,
 ) -> Vec<LoadedEntry> {
     let Ok(connection) =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
@@ -151,57 +165,39 @@ fn load_entries_from_database(
         );
         return Vec::new();
     };
-    let (since_ms, until_ms) = since_until_ms_with_slack(shared);
-    let sql = match (since_ms, until_ms) {
-        (Some(_), Some(_)) => {
-            "SELECT id, session_id, data FROM message \
-             WHERE time_created >= ?1 AND time_created < ?2"
-        }
-        (Some(_), None) => "SELECT id, session_id, data FROM message WHERE time_created >= ?1",
-        (None, Some(_)) => "SELECT id, session_id, data FROM message WHERE time_created < ?1",
-        (None, None) => "SELECT id, session_id, data FROM message",
+    // Only push the window into SQL once the column is known to hold the same
+    // millisecond scale as the payload; the payload check in the loop stays
+    // authoritative either way.
+    let pushdown = if window.is_unbounded() || time_created_is_millis(&connection) {
+        window
+    } else {
+        debug_log(
+            shared,
+            format!(
+                "OpenCode time_created is not millisecond-scale; scanning unfiltered: {}",
+                db_path.display()
+            ),
+        );
+        DateWindow::UNBOUNDED
     };
-    let mut statement = match connection.prepare(sql) {
-        Ok(mut statement) => {
-            let bind_result = match (since_ms, until_ms) {
-                (Some(s), Some(u)) => statement.bind((1, s)).and_then(|()| statement.bind((2, u))),
-                (Some(s), None) => statement.bind((1, s)),
-                (None, Some(u)) => statement.bind((1, u)),
-                (None, None) => Ok(()),
-            };
-            if bind_result.is_err() {
-                debug_log(
-                    shared,
-                    format!(
-                        "Failed to bind date range to OpenCode query: {}",
-                        db_path.display()
-                    ),
-                );
-                return Vec::new();
-            }
-            statement
-        }
-        Err(_) => {
-            // Schema without `time_created` fails to prepare the filtered
-            // query. Fall back to an unfiltered scan instead of returning no
-            // rows; the in-loop date check below keeps results correct.
-            debug_log(
-                shared,
-                format!(
-                    "OpenCode database lacks a time_created column; scanning unfiltered: {}",
-                    db_path.display()
-                ),
-            );
-            let Ok(statement) = connection.prepare("SELECT id, session_id, data FROM message")
-            else {
-                debug_log(
-                    shared,
-                    format!("Failed to read OpenCode database: {}", db_path.display()),
-                );
-                return Vec::new();
-            };
-            statement
-        }
+    let statement = prepare_message_query(&connection, pushdown).or_else(|| {
+        // A pre-SQLite-era schema has no `time_created` column, so the filtered
+        // query cannot prepare. Scan unfiltered rather than return nothing.
+        debug_log(
+            shared,
+            format!(
+                "Failed to prepare filtered OpenCode query; scanning unfiltered: {}",
+                db_path.display()
+            ),
+        );
+        prepare_message_query(&connection, DateWindow::UNBOUNDED)
+    });
+    let Some(mut statement) = statement else {
+        debug_log(
+            shared,
+            format!("Failed to read OpenCode database: {}", db_path.display()),
+        );
+        return Vec::new();
     };
     let mut entries = Vec::new();
     loop {
@@ -216,8 +212,9 @@ fn load_entries_from_database(
                 let Ok(data) = statement.read::<String, _>(2) else {
                     continue;
                 };
-                if let Some(millis) = extract_message_timestamp(&data)
-                    && !timestamp_within_range(millis, tz, shared)
+                if !window.is_unbounded()
+                    && let Some(millis) = extract_message_timestamp(&data)
+                    && !window.contains(millis)
                 {
                     continue;
                 }
@@ -249,6 +246,7 @@ fn read_message_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     shared: &SharedArgs,
+    window: DateWindow,
 ) -> Option<LoadedEntry> {
     let content = match fs::read(path) {
         Ok(content) => content,
@@ -265,9 +263,10 @@ fn read_message_file(
     };
     // Skip out-of-range entries before the full parse. Extraction works on the
     // raw text and fails open (non-UTF-8 or missing timestamp -> full parse).
-    if let Ok(text) = std::str::from_utf8(&content)
+    if !window.is_unbounded()
+        && let Ok(text) = std::str::from_utf8(&content)
         && let Some(millis) = extract_message_timestamp(text)
-        && !timestamp_within_range(millis, tz, shared)
+        && !window.contains(millis)
     {
         return None;
     }
@@ -279,63 +278,103 @@ fn entry_id(entry: &LoadedEntry) -> Option<&str> {
     entry.data.message.id.as_deref().filter(|id| !id.is_empty())
 }
 
-// Pull `time.created` millis from raw JSON to skip rows before a full parse.
-// Anything but the canonical `"time":{"created":<millis>}` returns `None`, and
-// the caller falls back to a full parse, so a missed scan slows down, not drops.
+/// Pulls `time.created` millis from raw JSON to skip rows before a full parse.
+///
+/// Anything but the canonical `"time":{"created":<millis>}` returns `None`, and
+/// the caller falls back to a full parse, so a missed scan slows down, not drops.
 fn extract_message_timestamp(data: &str) -> Option<i64> {
     let time_start = data.find("\"time\"")?;
     let time_section = &data[time_start..];
     let created_start = time_section.find("\"created\":")?;
     let after_key = time_section[created_start + "\"created\":".len()..].trim_start();
-    let end = after_key.find(|c: char| !c.is_ascii_digit())?;
+    let end = after_key
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(after_key.len());
     after_key[..end].parse::<i64>().ok()
 }
 
-fn timestamp_within_range(millis: i64, tz: Option<&JiffTimeZone>, shared: &SharedArgs) -> bool {
-    if shared.since.is_none() && shared.until.is_none() {
-        return true;
-    }
-    let timestamp = TimestampMs::from_millis(millis);
-    let date = format_date_tz(timestamp, tz).replace('-', "");
-    shared
-        .since
-        .as_ref()
-        .is_none_or(|since| date.as_str() >= since.as_str())
-        && shared
-            .until
-            .as_ref()
-            .is_none_or(|until| date.as_str() <= until.as_str())
+/// Half-open millisecond window derived from `--since`/`--until`, used to skip
+/// rows and files before they are parsed.
+///
+/// A `None` bound is not narrowed, either because the option was absent or
+/// because it is not a full date. The window is deliberately equivalent to the
+/// authoritative `date_within_range` check applied to loaded entries: both
+/// resolve the bounds in the reporting timezone, so pre-filtering can never drop
+/// an entry the report would have kept.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct DateWindow {
+    start: Option<i64>,
+    end: Option<i64>,
 }
 
-const MS_PER_DAY: i64 = 86_400_000;
+impl DateWindow {
+    const UNBOUNDED: Self = Self {
+        start: None,
+        end: None,
+    };
 
-// SQL bounds for the indexed `time_created` pre-filter, widened by slack:
-// `since` down one day, `until` up two (one for inclusive end-of-day, one for
-// TZ skew). The pre-filter stays wider than the authoritative per-entry check,
-// which then narrows results to the exact payload date, so no kept row is
-// dropped. (`time_created` matches the payload `time.created` in practice.)
-fn since_until_ms_with_slack(shared: &SharedArgs) -> (Option<i64>, Option<i64>) {
-    let since_ms = shared
-        .since
-        .as_deref()
-        .and_then(parse_yyyymmdd_to_millis)
-        .map(|ms| ms - MS_PER_DAY);
-    let until_ms = shared
-        .until
-        .as_deref()
-        .and_then(parse_yyyymmdd_to_millis)
-        .map(|ms| ms + 2 * MS_PER_DAY);
-    (since_ms, until_ms)
+    fn from_shared(shared: &SharedArgs, tz: Option<&JiffTimeZone>) -> Self {
+        let (start, end) =
+            date_range_bounds_ms(shared.since.as_deref(), shared.until.as_deref(), tz);
+        Self { start, end }
+    }
+
+    fn is_unbounded(self) -> bool {
+        self == Self::UNBOUNDED
+    }
+
+    fn contains(self, millis: i64) -> bool {
+        self.start.is_none_or(|start| millis >= start) && self.end.is_none_or(|end| millis < end)
+    }
 }
 
-fn parse_yyyymmdd_to_millis(date_str: &str) -> Option<i64> {
-    if date_str.len() != 8 {
-        return None;
+/// Prepares the `message` scan, narrowed to `window` where its bounds are set.
+///
+/// Returns `None` when the statement cannot be prepared, which is what a schema
+/// without a `time_created` column looks like.
+fn prepare_message_query(
+    connection: &sqlite::Connection,
+    window: DateWindow,
+) -> Option<sqlite::Statement<'_>> {
+    let sql = match (window.start, window.end) {
+        (Some(_), Some(_)) => {
+            "SELECT id, session_id, data FROM message \
+             WHERE time_created >= ?1 AND time_created < ?2"
+        }
+        (Some(_), None) => "SELECT id, session_id, data FROM message WHERE time_created >= ?1",
+        (None, Some(_)) => "SELECT id, session_id, data FROM message WHERE time_created < ?1",
+        (None, None) => "SELECT id, session_id, data FROM message",
+    };
+    let mut statement = connection.prepare(sql).ok()?;
+    for (index, bound) in [window.start, window.end].into_iter().flatten().enumerate() {
+        statement.bind((index + 1, bound)).ok()?;
     }
-    let year: i32 = date_str[0..4].parse().ok()?;
-    let month: u32 = date_str[4..6].parse().ok()?;
-    let day: u32 = date_str[6..8].parse().ok()?;
-    Some(crate::days_from_civil(year, month, day) * MS_PER_DAY)
+    Some(statement)
+}
+
+/// Smallest value treated as millisecond scale: any Unix timestamp after 1973
+/// needs at least 12 digits, while second-scale values stay far below it.
+const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
+
+/// Reports whether `message.time_created` holds Unix milliseconds like the
+/// payload's `time.created` does.
+///
+/// Sampling a few rows stays cheap on databases tens of gigabytes in size. A
+/// build that stored seconds, or left the column at zero, would otherwise have
+/// every row excluded by millisecond bounds, so an unrecognized scale disables
+/// the push-down and leaves the payload check to filter.
+fn time_created_is_millis(connection: &sqlite::Connection) -> bool {
+    let Ok(mut statement) = connection
+        .prepare("SELECT max(time_created) FROM (SELECT time_created FROM message LIMIT 8)")
+    else {
+        return false;
+    };
+    match statement.next() {
+        Ok(sqlite::State::Row) => statement
+            .read::<i64, _>(0)
+            .is_ok_and(|max| max >= MIN_MILLIS_SCALE),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -346,21 +385,18 @@ mod tests {
     use crate::cli::{CostMode, SharedArgs};
     use ccusage_test_support::fs_fixture;
 
+    // Mirrors the real OpenCode schema, where `time_created` repeats the
+    // payload's `time.created`, so tests exercise the range push-down.
     fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
-        let db = sqlite::open(path).unwrap();
-        db.execute("CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)")
-            .unwrap();
-        let mut statement = db
-            .prepare("INSERT INTO message (id, session_id, data) VALUES (?1, ?2, ?3)")
-            .unwrap();
-        statement.bind((1, id)).unwrap();
-        statement.bind((2, session_id)).unwrap();
-        statement.bind((3, data)).unwrap();
-        statement.next().unwrap();
+        let created = serde_json::from_str::<serde_json::Value>(data)
+            .ok()
+            .and_then(|value| value["time"]["created"].as_i64())
+            .expect("test message payload needs time.created");
+        create_db_message_with_time(path, id, session_id, created, data);
     }
 
-    // Schema WITH `time_created`, so the filtered SQL query prepares and the
-    // push-down is exercised (unlike `create_db_message`).
+    // Schema with `time_created` set independently of the payload, for the cases
+    // where the column and the payload have to disagree.
     fn create_db_message_with_time(
         path: &Path,
         id: &str,
@@ -383,6 +419,21 @@ mod tests {
         statement.bind((2, session_id)).unwrap();
         statement.bind((3, time_created_ms)).unwrap();
         statement.bind((4, data)).unwrap();
+        statement.next().unwrap();
+    }
+
+    // Pre-SQLite-era layout: no `time_created` column, so the filtered query
+    // cannot prepare and the loader has to fall back to an unfiltered scan.
+    fn create_db_message_legacy_schema(path: &Path, id: &str, session_id: &str, data: &str) {
+        let db = sqlite::open(path).unwrap();
+        db.execute("CREATE TABLE IF NOT EXISTS message (id TEXT, session_id TEXT, data TEXT)")
+            .unwrap();
+        let mut statement = db
+            .prepare("INSERT INTO message (id, session_id, data) VALUES (?1, ?2, ?3)")
+            .unwrap();
+        statement.bind((1, id)).unwrap();
+        statement.bind((2, session_id)).unwrap();
+        statement.bind((3, data)).unwrap();
         statement.next().unwrap();
     }
 
@@ -658,9 +709,9 @@ mod tests {
     }
 
     #[test]
-    fn prepare_failure_falls_back_to_unfiltered_scan() {
+    fn legacy_schema_without_time_created_still_returns_in_range_rows() {
         let fixture = fs_fixture!({});
-        create_db_message(
+        create_db_message_legacy_schema(
             &fixture.path("opencode.db"),
             "msg-in-range",
             "session-a",
@@ -682,9 +733,9 @@ mod tests {
     }
 
     #[test]
-    fn fallback_scan_still_applies_date_filter_in_loop() {
+    fn legacy_schema_without_time_created_still_drops_out_of_range_rows() {
         let fixture = fs_fixture!({});
-        create_db_message(
+        create_db_message_legacy_schema(
             &fixture.path("opencode.db"),
             "msg-out-of-range",
             "session-a",
@@ -861,5 +912,162 @@ mod tests {
         let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-pretty"));
+    }
+
+    // 2026-01-01 12:00 UTC, which is 2026-01-02 in UTC+14 and therefore only
+    // kept when the lower bound is resolved in the reporting timezone.
+    const NOON_UTC_2026_01_01: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767268800000},"tokens":{"input":1,"output":1}}"#;
+
+    // 2026-01-02 06:00 UTC, which is still 2026-01-01 in UTC-12.
+    const EARLY_UTC_2026_01_02: &str = r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767333600000},"tokens":{"input":1,"output":1}}"#;
+
+    #[test]
+    fn since_bound_follows_local_midnight_in_the_reporting_timezone() {
+        let fixture = fs_fixture!({});
+        create_db_message(
+            &fixture.path("opencode.db"),
+            "msg-utc-plus-14",
+            "session-a",
+            NOON_UTC_2026_01_01,
+        );
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("Pacific/Kiritimati".to_string()),
+            since: Some("20260102".to_string()),
+            until: Some("20260102".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+
+        assert_eq!(
+            entries.len(),
+            1,
+            "a UTC+14 local date of 2026-01-02 must survive since=until=20260102"
+        );
+        assert_eq!(entries[0].date, "2026-01-02");
+    }
+
+    #[test]
+    fn until_bound_follows_local_midnight_in_the_reporting_timezone() {
+        let fixture = fs_fixture!({});
+        create_db_message(
+            &fixture.path("opencode.db"),
+            "msg-utc-minus-12",
+            "session-a",
+            EARLY_UTC_2026_01_02,
+        );
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("Etc/GMT+12".to_string()),
+            until: Some("20260101".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+
+        assert_eq!(
+            entries.len(),
+            1,
+            "a UTC-12 local date of 2026-01-01 must survive until=20260101"
+        );
+        assert_eq!(entries[0].date, "2026-01-01");
+    }
+
+    #[test]
+    fn second_scale_time_created_disables_the_range_pushdown() {
+        let fixture = fs_fixture!({});
+        // The payload is on 2026-01-02, but the column holds seconds. Comparing
+        // it against millisecond bounds would exclude the row outright.
+        create_db_message_with_time(
+            &fixture.path("opencode.db"),
+            "msg-seconds",
+            "session-a",
+            1_767_312_000,
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
+        );
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            since: Some("20260101".to_string()),
+            until: Some("20260103".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+
+        assert_eq!(
+            entries.len(),
+            1,
+            "an unrecognized time_created scale must fall back to scanning, not drop rows"
+        );
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-seconds"));
+    }
+
+    #[test]
+    fn non_ascii_date_bounds_leave_filtering_to_the_report() {
+        let fixture = fs_fixture!({});
+        create_db_message(
+            &fixture.path("opencode.db"),
+            "msg-1",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
+        );
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            // Multi-byte bound: 8 bytes long, but not 8 ASCII digits.
+            since: Some("abあcde".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+
+        assert_eq!(
+            entries.len(),
+            1,
+            "a bound with no instant must not pre-filter; the report's string filter decides"
+        );
+        assert!(!crate::date_within_range(
+            &entries[0].date,
+            shared.since.as_deref(),
+            None
+        ));
+    }
+
+    #[test]
+    fn extracts_timestamp_from_minified_and_pretty_printed_payloads() {
+        assert_eq!(
+            super::extract_message_timestamp(r#"{"time":{"created":1767312000000}}"#),
+            Some(1_767_312_000_000)
+        );
+        assert_eq!(
+            super::extract_message_timestamp(PRETTY_PRINTED_MESSAGE),
+            Some(1_767_312_000_000)
+        );
+        // Digits running to the end of the input, without a closing brace.
+        assert_eq!(
+            super::extract_message_timestamp(r#""time":{"created": 42"#),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn declines_to_extract_timestamps_it_cannot_trust() {
+        // Quoted numbers, negative values and missing keys all fail open so the
+        // full parse decides.
+        assert_eq!(
+            super::extract_message_timestamp(r#"{"time":{"created":"1767312000000"}}"#),
+            None
+        );
+        assert_eq!(
+            super::extract_message_timestamp(r#"{"time":{"created":-5}}"#),
+            None
+        );
+        assert_eq!(
+            super::extract_message_timestamp(r#"{"time":{"completed":1767312000000}}"#),
+            None
+        );
+        assert_eq!(super::extract_message_timestamp(r#"{"id":"msg-1"}"#), None);
     }
 }

@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use jiff::{Timestamp as JiffTimestamp, tz::TimeZone as JiffTimeZone};
+use jiff::{Timestamp as JiffTimestamp, civil::Date as JiffDate, tz::TimeZone as JiffTimeZone};
 
 pub(crate) const MILLIS_PER_SECOND: i64 = 1_000;
 pub(crate) const MILLIS_PER_MINUTE: i64 = 60 * MILLIS_PER_SECOND;
@@ -166,6 +166,75 @@ pub(crate) fn parse_iso_date(value: &str) -> Option<IsoDate> {
     IsoDate::from_ymd(year, month, day)
 }
 
+/// Parses a compact `YYYYMMDD` date, the normalized form of the `--since` and
+/// `--until` bounds.
+///
+/// Returns `None` for anything that is not a full valid date, including partial
+/// bounds such as `202601` that callers still compare lexicographically.
+pub(crate) fn parse_compact_date(value: &str) -> Option<IsoDate> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 8 {
+        return None;
+    }
+    let year = parse_digits(&bytes[0..4])? as i32;
+    let month = parse_digits(&bytes[4..6])?;
+    let day = parse_digits(&bytes[6..8])?;
+    IsoDate::from_ymd(year, month, day)
+}
+
+/// Reports whether a `YYYY-MM-DD` date falls inside the `--since`/`--until`
+/// window.
+///
+/// Both bounds are inclusive and compared as compact `YYYYMMDD` text, so
+/// partial bounds such as `2026` keep working. This is the authoritative window
+/// check shared by every report and loader.
+pub(crate) fn date_within_range(date: &str, since: Option<&str>, until: Option<&str>) -> bool {
+    if since.is_none() && until.is_none() {
+        return true;
+    }
+    let compact = date.replace('-', "");
+    since.is_none_or(|since| compact.as_str() >= since)
+        && until.is_none_or(|until| compact.as_str() <= until)
+}
+
+/// Resolves the `--since`/`--until` window to half-open Unix millisecond bounds
+/// `[since 00:00, the day after until 00:00)` in `timezone`.
+///
+/// A `None` bound means that side must not be narrowed: either the option was
+/// absent, or it is not a full `YYYYMMDD` date and therefore has no instant to
+/// compare against. Callers pair these bounds with [`date_within_range`], which
+/// stays authoritative for the exact per-entry decision.
+pub(crate) fn date_range_bounds_ms(
+    since: Option<&str>,
+    until: Option<&str>,
+    timezone: Option<&JiffTimeZone>,
+) -> (Option<i64>, Option<i64>) {
+    let start = since
+        .and_then(parse_compact_date)
+        .and_then(|date| start_of_day_ms(date, timezone));
+    let end = until
+        .and_then(parse_compact_date)
+        .and_then(|date| date.checked_add_days(1))
+        .and_then(|date| start_of_day_ms(date, timezone));
+    (start, end)
+}
+
+/// First instant of `date` in `timezone`, as Unix milliseconds.
+///
+/// Days whose midnight does not exist because of a spring-forward transition
+/// resolve to the first instant that does, so a bound never lands in the
+/// neighboring day.
+fn start_of_day_ms(date: IsoDate, timezone: Option<&JiffTimeZone>) -> Option<i64> {
+    let civil = JiffDate::new(
+        i16::try_from(date.year).ok()?,
+        i8::try_from(date.month).ok()?,
+        i8::try_from(date.day).ok()?,
+    )
+    .ok()?;
+    let timezone = timezone.cloned().unwrap_or_else(JiffTimeZone::system);
+    Some(civil.to_zoned(timezone).ok()?.timestamp().as_millisecond())
+}
+
 pub(crate) fn parse_digits(bytes: &[u8]) -> Option<u32> {
     let mut value = 0;
     for byte in bytes {
@@ -304,4 +373,96 @@ pub(crate) fn hour_12(hour: u32) -> u32 {
 
 pub(crate) fn am_pm(hour: u32) -> &'static str {
     if hour < 12 { "AM" } else { "PM" }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date, parse_tz,
+    };
+
+    // 2026-01-02 00:00:00 UTC
+    const JAN_2_UTC: i64 = 1_767_312_000_000;
+
+    #[test]
+    fn parses_full_compact_dates_only() {
+        let date = parse_compact_date("20260102").unwrap();
+        assert_eq!((date.year, date.month, date.day), (2026, 1, 2));
+        assert!(parse_compact_date("202601").is_none());
+        assert!(parse_compact_date("2026010200").is_none());
+        assert!(parse_compact_date("20260231").is_none(), "invalid day");
+        assert!(parse_compact_date("2026-01-02").is_none());
+    }
+
+    #[test]
+    fn parses_multi_byte_bounds_without_panicking() {
+        // Eight bytes, but the character boundaries do not line up with the
+        // year/month/day fields.
+        assert!(parse_compact_date("abあcde").is_none());
+        assert!(parse_compact_date("ああ").is_none());
+        assert!(parse_compact_date("２０２６０１０２").is_none());
+    }
+
+    #[test]
+    fn resolves_bounds_to_local_midnight() {
+        let utc = parse_tz(Some("UTC"));
+        let (start, end) = date_range_bounds_ms(Some("20260102"), Some("20260102"), utc.as_ref());
+        assert_eq!(start, Some(JAN_2_UTC));
+        assert_eq!(
+            end,
+            Some(JAN_2_UTC + 24 * MILLIS_PER_HOUR),
+            "until is inclusive, so the bound is the start of the next day"
+        );
+
+        // UTC+14 reaches a given local date fourteen hours before UTC does.
+        let kiritimati = parse_tz(Some("Pacific/Kiritimati"));
+        let (start, _) = date_range_bounds_ms(Some("20260102"), None, kiritimati.as_ref());
+        assert_eq!(start, Some(JAN_2_UTC - 14 * MILLIS_PER_HOUR));
+    }
+
+    #[test]
+    fn spans_twenty_three_hours_across_a_spring_forward_day() {
+        let new_york = parse_tz(Some("America/New_York"));
+        let (start, end) =
+            date_range_bounds_ms(Some("20260308"), Some("20260308"), new_york.as_ref());
+        assert_eq!(
+            end.unwrap() - start.unwrap(),
+            23 * MILLIS_PER_HOUR,
+            "the day the clocks move forward is an hour short"
+        );
+    }
+
+    #[test]
+    fn leaves_bounds_open_when_they_have_no_instant() {
+        let utc = parse_tz(Some("UTC"));
+        assert_eq!(
+            date_range_bounds_ms(Some("202601"), Some("abあcde"), utc.as_ref()),
+            (None, None)
+        );
+        assert_eq!(date_range_bounds_ms(None, None, utc.as_ref()), (None, None));
+    }
+
+    #[test]
+    fn treats_both_window_ends_as_inclusive() {
+        assert!(date_within_range("2026-01-02", Some("20260102"), None));
+        assert!(date_within_range("2026-01-02", None, Some("20260102")));
+        assert!(date_within_range(
+            "2026-01-02",
+            Some("20260101"),
+            Some("20260103")
+        ));
+        assert!(!date_within_range("2026-01-02", Some("20260103"), None));
+        assert!(!date_within_range("2026-01-02", None, Some("20260101")));
+        assert!(date_within_range("2026-01-02", None, None));
+    }
+
+    #[test]
+    fn compares_partial_bounds_lexicographically() {
+        assert!(date_within_range(
+            "2026-01-02",
+            Some("2026"),
+            Some("202602")
+        ));
+        assert!(!date_within_range("2025-12-31", Some("2026"), None));
+    }
 }
