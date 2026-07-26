@@ -205,7 +205,7 @@ fn load_entries_from_database(
     // millisecond scale as the payload; the payload check in the loop stays
     // authoritative either way.
     let pushdown = if window.is_unbounded() || time_created_is_millis(&connection) {
-        window
+        window.widened_for_pushdown()
     } else {
         debug_log(
             shared,
@@ -365,6 +365,21 @@ impl DateWindow {
 
     fn is_unbounded(self) -> bool {
         self == Self::UNBOUNDED
+    }
+
+    /// Same window, widened by a day on each side for the SQL push-down.
+    ///
+    /// SQL filters on `message.time_created` while the report filters on the
+    /// payload's `time.created`. They hold the same value on every OpenCode
+    /// build checked here, but the column is only a proxy for the payload, so
+    /// the pushed-down window is kept loose: a column that drifts from its
+    /// payload then costs a few extra rows to scan instead of excluding a row
+    /// the report wanted. The exact window is still applied per row below.
+    fn widened_for_pushdown(self) -> Self {
+        Self {
+            start: self.start.map(|start| start - crate::MILLIS_PER_DAY),
+            end: self.end.map(|end| end + crate::MILLIS_PER_DAY),
+        }
     }
 
     fn contains(self, millis: i64) -> bool {
@@ -1029,6 +1044,36 @@ mod tests {
             "a UTC-12 local date of 2026-01-01 must survive until=20260101"
         );
         assert_eq!(entries[0].date, "2026-01-01");
+    }
+
+    #[test]
+    fn pushdown_margin_keeps_rows_whose_column_drifts_from_the_payload() {
+        let fixture = fs_fixture!({});
+        // Payload lands on 2026-01-02, but the column sits 26 hours later, which
+        // an exact SQL window would push past its upper bound.
+        create_db_message_with_time(
+            &fixture.path("opencode.db"),
+            "msg-drifted",
+            "session-a",
+            1_767_312_000_000 + 26 * 60 * 60 * 1000,
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
+        );
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            since: Some("20260102".to_string()),
+            until: Some("20260102".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+
+        assert_eq!(
+            entries.len(),
+            1,
+            "the payload decides the window, so a drifting column must not exclude the row"
+        );
+        assert_eq!(entries[0].date, "2026-01-02");
     }
 
     #[test]
