@@ -57,7 +57,11 @@ When changing pricing:
 - For Nix builds, pass the locked LiteLLM `model_prices_and_context_window.json`
   to `build.rs` through `CCUSAGE_PRICING_JSON_PATH`.
 - For non-Nix Cargo builds, have `build.rs` read the same `litellm` revision from
-  `flake.lock` and fetch that pinned raw JSON at build time.
+  `flake.lock` and fetch that pinned raw JSON at build time. That download lives
+  behind the off-by-default `fetch-litellm-pricing` feature, because its rustls
+  stack is the most expensive build-dependency in the workspace: the dev shell
+  and every Nix package set `CCUSAGE_PRICING_JSON_PATH` instead, and only the
+  Windows release build enables the feature.
 - Do not check generated LiteLLM pricing snapshots into the repository.
 - Keep pricing JSON filtering and compacting in `build.rs` so runtime code loads
   the generated build-time snapshot first, then built-in model overrides, then
