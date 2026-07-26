@@ -332,17 +332,30 @@ impl DateWindow {
 ///
 /// Returns `None` when the statement cannot be prepared, which is what a schema
 /// without a `time_created` column looks like.
+///
+/// The bounds are applied through a subquery that selects only `id`. OpenCode's
+/// index is `(session_id, time_created, id)`, so a bare `time_created` range
+/// cannot seek it and scans the table, reading every `data` blob on the way. The
+/// subquery is answered from that index alone, leaving only in-range rows to be
+/// fetched by primary key — the difference is what keeps a narrow window off the
+/// gigabytes of payload it does not need.
 fn prepare_message_query(
     connection: &sqlite::Connection,
     window: DateWindow,
 ) -> Option<sqlite::Statement<'_>> {
     let sql = match (window.start, window.end) {
         (Some(_), Some(_)) => {
-            "SELECT id, session_id, data FROM message \
-             WHERE time_created >= ?1 AND time_created < ?2"
+            "SELECT id, session_id, data FROM message WHERE id IN \
+             (SELECT id FROM message WHERE time_created >= ?1 AND time_created < ?2)"
         }
-        (Some(_), None) => "SELECT id, session_id, data FROM message WHERE time_created >= ?1",
-        (None, Some(_)) => "SELECT id, session_id, data FROM message WHERE time_created < ?1",
+        (Some(_), None) => {
+            "SELECT id, session_id, data FROM message WHERE id IN \
+             (SELECT id FROM message WHERE time_created >= ?1)"
+        }
+        (None, Some(_)) => {
+            "SELECT id, session_id, data FROM message WHERE id IN \
+             (SELECT id FROM message WHERE time_created < ?1)"
+        }
         (None, None) => "SELECT id, session_id, data FROM message",
     };
     let mut statement = connection.prepare(sql).ok()?;
