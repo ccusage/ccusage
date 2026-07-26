@@ -38,7 +38,7 @@ pub fn load_codex_events_from_directory(
 }
 
 pub fn load_codex_events(shared: &SharedArgs) -> Result<Vec<CodexTokenUsageEvent>> {
-    progress::track_usage_load(progress::UsageLoadAgent::Codex, shared.json, || {
+    progress::track_usage_load(progress::UsageLoadAgent("Codex"), shared.json, || {
         load_codex_events_inner(shared)
     })
 }

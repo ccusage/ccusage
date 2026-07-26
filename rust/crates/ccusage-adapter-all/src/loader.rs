@@ -117,19 +117,19 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 0,
             agent: BUILT_IN_AGENT_NAMES[0],
-            progress_agent: crate::progress::UsageLoadAgent::Claude,
+            progress_agent: crate::progress::UsageLoadAgent("Claude"),
             load: Box::new(|| load_claude_rows(load_kind, &loader_shared)),
         },
         AgentLoadSpec {
             index: 1,
             agent: BUILT_IN_AGENT_NAMES[1],
-            progress_agent: crate::progress::UsageLoadAgent::Codex,
+            progress_agent: crate::progress::UsageLoadAgent("Codex"),
             load: Box::new(|| load_codex_rows(load_kind, &loader_shared, pricing)),
         },
         AgentLoadSpec {
             index: 2,
             agent: BUILT_IN_AGENT_NAMES[2],
-            progress_agent: crate::progress::UsageLoadAgent::OpenCode,
+            progress_agent: crate::progress::UsageLoadAgent("OpenCode"),
             load: Box::new(|| {
                 load_summary_agent_rows(
                     "opencode",
@@ -143,7 +143,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 3,
             agent: BUILT_IN_AGENT_NAMES[3],
-            progress_agent: crate::progress::UsageLoadAgent::Amp,
+            progress_agent: crate::progress::UsageLoadAgent("Amp"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "amp",
@@ -158,7 +158,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 4,
             agent: BUILT_IN_AGENT_NAMES[4],
-            progress_agent: crate::progress::UsageLoadAgent::Droid,
+            progress_agent: crate::progress::UsageLoadAgent("Droid"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "droid",
@@ -173,7 +173,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 5,
             agent: BUILT_IN_AGENT_NAMES[5],
-            progress_agent: crate::progress::UsageLoadAgent::Codebuff,
+            progress_agent: crate::progress::UsageLoadAgent("Codebuff"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "codebuff",
@@ -188,7 +188,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 6,
             agent: BUILT_IN_AGENT_NAMES[6],
-            progress_agent: crate::progress::UsageLoadAgent::Hermes,
+            progress_agent: crate::progress::UsageLoadAgent("Hermes"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "hermes",
@@ -203,7 +203,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 7,
             agent: BUILT_IN_AGENT_NAMES[7],
-            progress_agent: crate::progress::UsageLoadAgent::Pi,
+            progress_agent: crate::progress::UsageLoadAgent("pi-agent"),
             load: Box::new(|| {
                 load_pi_format_agent_rows("pi", None, load_kind, &loader_shared, pricing)
             }),
@@ -211,7 +211,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 8,
             agent: BUILT_IN_AGENT_NAMES[8],
-            progress_agent: crate::progress::UsageLoadAgent::Goose,
+            progress_agent: crate::progress::UsageLoadAgent("Goose"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "goose",
@@ -226,7 +226,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 9,
             agent: BUILT_IN_AGENT_NAMES[9],
-            progress_agent: crate::progress::UsageLoadAgent::OpenClaw,
+            progress_agent: crate::progress::UsageLoadAgent("OpenClaw"),
             load: Box::new(|| {
                 load_summary_agent_rows(
                     "openclaw",
@@ -240,7 +240,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 10,
             agent: BUILT_IN_AGENT_NAMES[10],
-            progress_agent: crate::progress::UsageLoadAgent::Kilo,
+            progress_agent: crate::progress::UsageLoadAgent("Kilo"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "kilo",
@@ -255,7 +255,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 11,
             agent: BUILT_IN_AGENT_NAMES[11],
-            progress_agent: crate::progress::UsageLoadAgent::Copilot,
+            progress_agent: crate::progress::UsageLoadAgent("GitHub Copilot CLI"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "copilot",
@@ -270,7 +270,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 12,
             agent: BUILT_IN_AGENT_NAMES[12],
-            progress_agent: crate::progress::UsageLoadAgent::Gemini,
+            progress_agent: crate::progress::UsageLoadAgent("Gemini CLI"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "gemini",
@@ -285,7 +285,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 13,
             agent: BUILT_IN_AGENT_NAMES[13],
-            progress_agent: crate::progress::UsageLoadAgent::Kimi,
+            progress_agent: crate::progress::UsageLoadAgent("Kimi"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
                     "kimi",
@@ -300,7 +300,7 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 14,
             agent: BUILT_IN_AGENT_NAMES[14],
-            progress_agent: crate::progress::UsageLoadAgent::Qwen,
+            progress_agent: crate::progress::UsageLoadAgent("Qwen"),
             load: Box::new(|| load_qwen_rows(load_kind, &loader_shared)),
         },
     ];
@@ -314,7 +314,7 @@ fn load_base_rows(
         specs.push(AgentLoadSpec {
             index,
             agent,
-            progress_agent: crate::progress::UsageLoadAgent::PiStore(agent),
+            progress_agent: crate::progress::UsageLoadAgent(agent),
             load: Box::new(move || {
                 load_named_pi_store_rows_from_paths(
                     agent,

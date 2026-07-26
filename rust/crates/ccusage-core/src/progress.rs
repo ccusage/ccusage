@@ -13,25 +13,12 @@ thread_local! {
     static ACTIVE_PROGRESS: RefCell<Option<ProgressController>> = const { RefCell::new(None) };
 }
 
+/// Display label for one agent's load step.
+///
+/// A newtype rather than an enum so the roster lives with the adapters: adding
+/// an agent does not touch this crate, which every adapter depends on.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UsageLoadAgent {
-    Claude,
-    Codex,
-    OpenCode,
-    Amp,
-    Droid,
-    Codebuff,
-    Hermes,
-    Pi,
-    PiStore(&'static str),
-    Goose,
-    Kilo,
-    Qwen,
-    Copilot,
-    Gemini,
-    Kimi,
-    OpenClaw,
-}
+pub struct UsageLoadAgent(pub &'static str);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LoadProgressState {
@@ -45,24 +32,7 @@ pub fn should_show_usage_load_progress(json: bool, output_is_tty: bool) -> bool 
 }
 
 fn agent_label(agent: UsageLoadAgent) -> &'static str {
-    match agent {
-        UsageLoadAgent::Claude => "Claude",
-        UsageLoadAgent::Codex => "Codex",
-        UsageLoadAgent::OpenCode => "OpenCode",
-        UsageLoadAgent::Amp => "Amp",
-        UsageLoadAgent::Droid => "Droid",
-        UsageLoadAgent::Codebuff => "Codebuff",
-        UsageLoadAgent::Hermes => "Hermes",
-        UsageLoadAgent::Pi => "pi-agent",
-        UsageLoadAgent::PiStore(store) => store,
-        UsageLoadAgent::Goose => "Goose",
-        UsageLoadAgent::Kilo => "Kilo",
-        UsageLoadAgent::Qwen => "Qwen",
-        UsageLoadAgent::Copilot => "GitHub Copilot CLI",
-        UsageLoadAgent::Gemini => "Gemini CLI",
-        UsageLoadAgent::Kimi => "Kimi",
-        UsageLoadAgent::OpenClaw => "OpenClaw",
-    }
+    agent.0
 }
 
 fn format_usage_load_progress_text(
@@ -329,9 +299,9 @@ mod tests {
     #[test]
     fn renders_active_agent_progress_with_completed_count() {
         let states = [
-            (UsageLoadAgent::Claude, LoadProgressState::Succeeded),
-            (UsageLoadAgent::Codex, LoadProgressState::Loading),
-            (UsageLoadAgent::OpenCode, LoadProgressState::Loading),
+            (UsageLoadAgent("Claude"), LoadProgressState::Succeeded),
+            (UsageLoadAgent("Codex"), LoadProgressState::Loading),
+            (UsageLoadAgent("OpenCode"), LoadProgressState::Loading),
         ];
 
         assert_eq!(
@@ -343,8 +313,8 @@ mod tests {
     #[test]
     fn includes_pricing_status_in_progress_text() {
         let states = [
-            (UsageLoadAgent::Claude, LoadProgressState::Loading),
-            (UsageLoadAgent::Codex, LoadProgressState::Loading),
+            (UsageLoadAgent("Claude"), LoadProgressState::Loading),
+            (UsageLoadAgent("Codex"), LoadProgressState::Loading),
         ];
 
         assert_eq!(

@@ -15,7 +15,7 @@ pub fn load_entries(
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
     crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent::OpenClaw,
+        crate::progress::UsageLoadAgent("OpenClaw"),
         shared.json,
         || load_entries_inner(shared, custom_path, pricing),
     )

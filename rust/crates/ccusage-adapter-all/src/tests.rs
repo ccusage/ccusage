@@ -43,8 +43,8 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
 fn loads_agent_rows_concurrently() {
     let active_loaders = Arc::new(AtomicUsize::new(0));
     let specs = [
-        ("claude", crate::progress::UsageLoadAgent::Claude),
-        ("codex", crate::progress::UsageLoadAgent::Codex),
+        ("claude", crate::progress::UsageLoadAgent("Claude")),
+        ("codex", crate::progress::UsageLoadAgent("Codex")),
     ]
     .into_iter()
     .enumerate()

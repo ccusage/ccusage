@@ -12,9 +12,11 @@ pub fn load_entries(
     custom_path: Option<&str>,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(crate::progress::UsageLoadAgent::Pi, shared.json, || {
-        load_entries_inner(shared, custom_path, pricing)
-    })
+    crate::progress::track_usage_load(
+        crate::progress::UsageLoadAgent("pi-agent"),
+        shared.json,
+        || load_entries_inner(shared, custom_path, pricing),
+    )
 }
 
 fn load_entries_inner(

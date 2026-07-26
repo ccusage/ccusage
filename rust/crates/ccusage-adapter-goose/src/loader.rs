@@ -26,9 +26,11 @@ WHERE model_config_json IS NOT NULL
 "#;
 
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(crate::progress::UsageLoadAgent::Goose, shared.json, || {
-        load_entries_inner(shared, pricing)
-    })
+    crate::progress::track_usage_load(
+        crate::progress::UsageLoadAgent("Goose"),
+        shared.json,
+        || load_entries_inner(shared, pricing),
+    )
 }
 
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {

@@ -18,7 +18,7 @@ use crate::{
 
 pub fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
     crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent::OpenCode,
+        crate::progress::UsageLoadAgent("OpenCode"),
         shared.json,
         || load_entries_inner(shared),
     )

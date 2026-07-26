@@ -17,7 +17,7 @@ pub fn load_entries(
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
     crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent::Copilot,
+        crate::progress::UsageLoadAgent("GitHub Copilot CLI"),
         shared.json,
         || load_entries_inner(shared, pricing),
     )

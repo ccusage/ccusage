@@ -31,7 +31,7 @@ pub use paths::timestamp_from_line;
 pub use paths::{claude_paths, extract_project, extract_session_parts, usage_files};
 
 pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result<Vec<LoadedEntry>> {
-    progress::track_usage_load(progress::UsageLoadAgent::Claude, shared.json, || {
+    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
         load_entries_inner(shared, project_filter)
     })
 }
@@ -41,7 +41,7 @@ pub fn load_daily_summaries(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
-    progress::track_usage_load(progress::UsageLoadAgent::Claude, shared.json, || {
+    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
         daily::load_daily_summaries_inner(shared, project_filter, group_by_project)
     })
 }

@@ -13,7 +13,7 @@ use crate::{
 
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent::Codebuff,
+        crate::progress::UsageLoadAgent("Codebuff"),
         shared.json,
         || load_entries_inner(shared, pricing),
     )
