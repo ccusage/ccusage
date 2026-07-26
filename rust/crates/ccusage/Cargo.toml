@@ -12,6 +12,11 @@ path = "src/main.rs"
 name = "generate-config-schema"
 path = "src/bin/generate_config_schema.rs"
 
+[features]
+# Enabled by the Windows release build, which cannot get the pricing snapshot
+# from the pinned Nix input the way every other platform does.
+fetch-litellm-pricing = ["ccusage-core/fetch-litellm-pricing"]
+
 [dependencies]
 ccusage-adapter-all = { path = "../ccusage-adapter-all" }
 ccusage-adapter-amp = { path = "../ccusage-adapter-amp" }

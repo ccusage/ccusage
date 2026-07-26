@@ -3,9 +3,11 @@ use std::{env, fs, path::PathBuf};
 use serde_json::{Map, Value};
 
 const FLAKE_LOCK_JSON: &str = "../../../flake.lock";
+#[cfg(feature = "fetch-litellm-pricing")]
 const LITELLM_PRICING_JSON: &str = "model_prices_and_context_window.json";
 const OUT_PRICING_JSON: &str = "litellm-pricing.json";
 const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
+#[cfg(feature = "fetch-litellm-pricing")]
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 
 fn main() {
@@ -18,7 +20,7 @@ fn main() {
         fs::read_to_string(path).expect("read pricing snapshot from CCUSAGE_PRICING_JSON_PATH")
     } else {
         println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
-        fetch_pricing_json().expect("fetch LiteLLM pricing for embed")
+        fetch_pricing_json()
     };
     let pricing_json = compact_pricing_json(&pricing_json).expect("compact LiteLLM pricing JSON");
 
@@ -29,7 +31,29 @@ fn out_dir_path(file_name: &str) -> PathBuf {
     PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by cargo")).join(file_name)
 }
 
-fn fetch_pricing_json() -> std::io::Result<String> {
+// The snapshot is normally handed to the build by CCUSAGE_PRICING_JSON_PATH, which
+// every Nix build sets from the pinned litellm input — and which is the only way
+// to get the snapshot inside the network-free Nix sandbox. Downloading it is for
+// plain `cargo build` on platforms Nix cannot target, so the HTTPS client that
+// download needs is behind this feature instead of on every build's critical
+// path: rustls and its C crypto backend are the single most expensive
+// build-dependency in the workspace.
+#[cfg(not(feature = "fetch-litellm-pricing"))]
+fn fetch_pricing_json() -> String {
+    panic!(
+        "no LiteLLM pricing snapshot available: set {PRICING_JSON_PATH_ENV} to a \
+         model_prices_and_context_window.json, or build with \
+         --features fetch-litellm-pricing to download it"
+    );
+}
+
+#[cfg(feature = "fetch-litellm-pricing")]
+fn fetch_pricing_json() -> String {
+    download_pricing_json().expect("fetch LiteLLM pricing for embed")
+}
+
+#[cfg(feature = "fetch-litellm-pricing")]
+fn download_pricing_json() -> std::io::Result<String> {
     let response = minreq::get(litellm_pricing_url()?)
         .with_timeout(PRICING_FETCH_TIMEOUT_SECONDS)
         .send()
@@ -46,6 +70,7 @@ fn fetch_pricing_json() -> std::io::Result<String> {
         .to_string())
 }
 
+#[cfg(feature = "fetch-litellm-pricing")]
 fn litellm_pricing_url() -> std::io::Result<String> {
     let flake_lock = fs::read_to_string(FLAKE_LOCK_JSON)?;
     let Value::Object(root) = serde_json::from_str::<Value>(&flake_lock)
@@ -76,6 +101,7 @@ fn litellm_pricing_url() -> std::io::Result<String> {
     ))
 }
 
+#[cfg(feature = "fetch-litellm-pricing")]
 fn required_flake_lock_string_field(
     object: &Map<String, Value>,
     field: &str,

@@ -18,6 +18,11 @@ in
     in
     {
       devShells.default = pkgs.mkShell {
+        # Hand cargo the pinned LiteLLM snapshot the way the Nix packages do, so
+        # `cargo build` in the dev shell stays offline and does not need the
+        # fetch-litellm-pricing feature's rustls stack.
+        CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}/model_prices_and_context_window.json";
+
         buildInputs =
           (with pkgs; [
             nodejs

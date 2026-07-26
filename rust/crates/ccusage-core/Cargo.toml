@@ -22,8 +22,16 @@ serde_json = "1"
 smallvec = "1"
 ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
 
+[features]
+# Off by default: the pricing snapshot normally arrives through
+# CCUSAGE_PRICING_JSON_PATH, and minreq's rustls stack is the workspace's most
+# expensive build-dependency. See build.rs.
+fetch-litellm-pricing = ["dep:minreq"]
+
 [build-dependencies]
-minreq = { version = "3.0.0-rc.1", default-features = false, features = ["https-rustls"] }
+minreq = { version = "3.0.0-rc.1", default-features = false, features = [
+	"https-rustls",
+], optional = true }
 serde_json = "1"
 
 [dev-dependencies]
