@@ -37,6 +37,7 @@ source in its own `ccusage-adapter-*` crate.
 - `ccusage-adapter-qwen`
 - `ccusage-cli`
 - `ccusage-cli-parser`
+- `ccusage-config`
 - `ccusage-core`
 - `serde`
 - `serde_json`

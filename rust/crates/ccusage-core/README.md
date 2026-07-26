@@ -1,7 +1,9 @@
 # ccusage-core
 
 The runtime every adapter and the binary share: pricing, cost calculation,
-report shaping, table output, configuration, and the date and progress helpers.
+report shaping, table output, and the date and progress helpers. Configuration
+lives in `ccusage-config` and the billing-block report in the binary, because
+neither has a consumer outside it.
 
 ## Owns
 
@@ -10,9 +12,6 @@ report shaping, table output, configuration, and the date and progress helpers.
 - `cost.rs` — cost calculation and missing-pricing detection.
 - `summary.rs`, `agent_report.rs`, `output.rs` — row aggregation, period labels,
   JSON shaping, and table rendering.
-- `config.rs`, `config_schema.rs` — `ccusage.json` loading, validation, and the
-  JSON Schema the editor integration uses.
-- `blocks.rs` — 5-hour billing blocks and burn rate.
 - `date_utils.rs`, `fast.rs`, `home.rs`, `path_utils.rs`, `utils.rs` — timestamp
   parsing, byte-level line scanning, and small shared helpers.
 - `progress.rs` — the load progress indicator.
@@ -30,7 +29,6 @@ report shaping, table output, configuration, and the date and progress helpers.
 - `jiff`
 - `memchr`
 - `rustc-hash`
-- `schemars`
 - `serde`
 - `serde_json`
 - `smallvec`

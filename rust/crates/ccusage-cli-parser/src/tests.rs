@@ -1105,7 +1105,7 @@ fn named_pi_store_validation_does_not_break_statusline() {
         "--config".to_string(),
         fixture.path("ccusage.json").to_string_lossy().into_owned(),
     ];
-    let config = ccusage_core::config::ConfigContext::from_args(&args);
+    let config = ccusage_config::ConfigContext::from_args(&args);
 
     let parsed = Cli::parse_from_with_config(
         std::iter::once(std::ffi::OsString::from("ccusage")).chain(
@@ -1131,7 +1131,7 @@ fn named_pi_store_validation_does_not_break_agent_commands() {
         "--config".to_string(),
         fixture.path("ccusage.json").to_string_lossy().into_owned(),
     ];
-    let config = ccusage_core::config::ConfigContext::from_args(&args);
+    let config = ccusage_config::ConfigContext::from_args(&args);
 
     let parsed = Cli::parse_from_with_config(
         std::iter::once(std::ffi::OsString::from("ccusage")).chain(
@@ -1156,7 +1156,7 @@ fn reports_named_pi_store_validation_through_cli_config_error_path() {
         "--config".to_string(),
         fixture.path("ccusage.json").to_string_lossy().into_owned(),
     ];
-    let config = ccusage_core::config::ConfigContext::from_args(&args);
+    let config = ccusage_config::ConfigContext::from_args(&args);
 
     let result = Cli::parse_from_with_config(
         std::iter::once(std::ffi::OsString::from("ccusage")).chain(

@@ -132,6 +132,7 @@ dependencies = [
  "ccusage-adapter-qwen",
  "ccusage-cli",
  "ccusage-cli-parser",
+ "ccusage-config",
  "ccusage-core",
  "ccusage-test-support",
  "mimalloc",
@@ -375,9 +376,23 @@ name = "ccusage-cli-parser"
 version = "0.0.0"
 dependencies = [
  "ccusage-cli",
+ "ccusage-config",
  "ccusage-core",
  "ccusage-test-support",
  "insta",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-config"
+version = "0.0.0"
+dependencies = [
+ "ccusage-cli",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
+ "schemars",
+ "serde",
  "serde_json",
 ]
 
@@ -393,7 +408,6 @@ dependencies = [
  "memchr",
  "minreq",
  "rustc-hash",
- "schemars",
  "serde",
  "serde_json",
  "smallvec",
