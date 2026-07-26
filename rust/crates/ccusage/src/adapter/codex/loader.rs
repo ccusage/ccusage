@@ -258,6 +258,77 @@ mod tests {
         assert_eq!(events[3].service_tier, Some(crate::CodexServiceTier::Fast));
     }
 
+    /// Codex emits `thread_settings_applied` without a `service_tier` key for
+    /// auto-review threads. Such an event says nothing about the tier, so usage
+    /// after it keeps the tier the rollout already recorded. A tier that is
+    /// present but unrecognized is the opposite case and clears it.
+    #[test]
+    fn keeps_recorded_service_tier_when_a_later_settings_event_omits_it() {
+        let settings = |timestamp: &str, thread_settings: serde_json::Value| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "thread_settings_applied",
+                    "thread_settings": thread_settings,
+                },
+            })
+            .to_string()
+        };
+        let token_count = |timestamp: &str, input_tokens: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "model": "gpt-5.6-sol",
+                        "last_token_usage": {
+                            "input_tokens": input_tokens,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 1,
+                            "total_tokens": input_tokens + 1,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        };
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                settings("2026-07-22T00:00:00.000Z", json!({"service_tier": "priority"})),
+                token_count("2026-07-22T00:00:01.000Z", 10),
+                // Auto-review thread settings: no service_tier key at all.
+                settings("2026-07-22T00:00:02.000Z", json!({"model": "codex-auto-review"})),
+                token_count("2026-07-22T00:00:03.000Z", 20),
+                // Recognized tier again, then an unrecognized one that clears it.
+                settings("2026-07-22T00:00:04.000Z", json!({"service_tier": "standard"})),
+                token_count("2026-07-22T00:00:05.000Z", 30),
+                settings("2026-07-22T00:00:06.000Z", json!({"service_tier": "flex"})),
+                token_count("2026-07-22T00:00:07.000Z", 40),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 4);
+        assert_eq!(events[0].service_tier, Some(crate::CodexServiceTier::Fast));
+        assert_eq!(
+            events[1].service_tier,
+            Some(crate::CodexServiceTier::Fast),
+            "an omitted service_tier must not clear the recorded tier"
+        );
+        assert_eq!(
+            events[2].service_tier,
+            Some(crate::CodexServiceTier::Standard)
+        );
+        assert_eq!(
+            events[3].service_tier, None,
+            "an unrecognized service_tier must clear the recorded tier"
+        );
+    }
+
     #[test]
     fn leaves_unmarked_and_unsupported_service_tiers_unclassified() {
         let fixture = fs_fixture!({
