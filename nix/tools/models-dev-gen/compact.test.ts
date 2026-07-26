@@ -4,7 +4,7 @@ import {
 	formatDuplicateModelsDevPricingKeyWarning,
 	shouldReplaceModelsDevPricingCandidate,
 	selectModelsDevPricingKey,
-} from './models-dev-compact.ts';
+} from './compact.ts';
 
 void it('falls back to the source model id when the catalog id is empty', () => {
 	assert.equal(
@@ -53,6 +53,28 @@ void it('prefers Anthropic provider pricing over duplicate aliases', () => {
 				hasContextLimit: true,
 				hasExplicitCacheRead: true,
 				hasExplicitCacheWrite: true,
+			},
+		),
+		true,
+	);
+});
+
+void it('prefers MoonshotAI provider pricing over reseller duplicates', () => {
+	assert.equal(
+		shouldReplaceModelsDevPricingCandidate(
+			{
+				sourceProviderId: 'venice',
+				sourceModelId: 'kimi-k3',
+				hasContextLimit: true,
+				hasExplicitCacheRead: true,
+				hasExplicitCacheWrite: false,
+			},
+			{
+				sourceProviderId: 'moonshotai',
+				sourceModelId: 'kimi-k3',
+				hasContextLimit: true,
+				hasExplicitCacheRead: true,
+				hasExplicitCacheWrite: false,
 			},
 		),
 		true,

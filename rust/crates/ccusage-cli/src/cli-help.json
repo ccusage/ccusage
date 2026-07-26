@@ -185,7 +185,7 @@
 		},
 		{
 			"flags": "--speed [speed]",
-			"description": "Cost speed tier: auto reads Codex config.toml service_tier; use standard or fast to override",
+			"description": "Cost speed tier: auto uses recorded settings, then Codex config.toml; use standard or fast to override",
 			"default": "auto",
 			"choices": ["auto", "standard", "fast"]
 		},

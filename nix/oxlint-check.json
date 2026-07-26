@@ -7,6 +7,6 @@
 		"coverage",
 		".git",
 		".claude/settings.local.json",
-		"nix/models-dev-gen.ts"
+		"nix/tools/models-dev-gen/gen.ts"
 	]
 }

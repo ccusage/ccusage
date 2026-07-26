@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     fs,
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader},
     path::Path,
     sync::LazyLock,
 };
@@ -10,7 +10,7 @@ use memchr::memmem::Finder;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{CodexRawUsage, CodexTokenUsageEvent, Result, TimestampMs};
+use crate::{CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, Result, TimestampMs};
 
 use super::types::{
     CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
@@ -23,6 +23,10 @@ static TURN_CONTEXT_TYPE_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""type":"turn_context""#));
 static TOKEN_COUNT_TYPE_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""type":"token_count""#));
+static THREAD_SETTINGS_APPLIED_TYPE_FINDER: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(br#""type":"thread_settings_applied""#));
+static THREAD_SETTINGS_APPLIED_FINDER: LazyLock<Finder<'static>> =
+    LazyLock::new(|| Finder::new(b"thread_settings_applied"));
 static COMPACT_TYPE_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""type":"#));
 static TYPE_KEY_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""type""#));
@@ -32,11 +36,6 @@ static INPUT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""input_tokens":"#));
 static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
-static THREAD_SPAWN_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"thread_spawn"));
-static FORKED_FROM_ID_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"forked_from_id"));
-
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_FALLBACKS_JSON: &str = include_str!("codex-auto-review-fallbacks.json");
 
@@ -64,15 +63,19 @@ struct CodexExecTimestamps {
     model: String,
 }
 
-fn is_codex_replay_session(path: &Path) -> bool {
-    let Ok(mut file) = fs::File::open(path) else {
-        return false;
-    };
-    let mut buf = [0u8; 16 * 1024];
-    let Ok(n) = file.read(&mut buf) else {
-        return false;
-    };
-    THREAD_SPAWN_FINDER.find(&buf[..n]).is_some() || FORKED_FROM_ID_FINDER.find(&buf[..n]).is_some()
+/// Tracks how far a forked session's leading events still match the history it
+/// replayed from its parent.
+enum CodexReplayState<'a> {
+    /// Comparing the child's leading usage against the parent's usage prefix.
+    MatchingParent {
+        prefix: &'a [CodexRawUsage],
+        index: usize,
+    },
+    /// The parent stream could not anchor the replay, so skip the leading burst
+    /// that Codex rewrote into a single second.
+    SkippingSecond([u8; 19]),
+    /// Past the replayed history: every remaining event is the child's own usage.
+    Done,
 }
 
 fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
@@ -85,65 +88,57 @@ fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
 
     loop {
         line.clear();
-        let Ok(n) = reader.read_until(b'\n', &mut line) else {
+        let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
             return None;
         };
-        if n == 0 {
-            break;
+        if bytes_read == 0 {
+            return None;
         }
-        let Some(kind) = codex_line_usage_kind(&line) else {
+        let Some(CodexLineKind::Session) = codex_line_usage_kind(&line) else {
             continue;
         };
-        if !matches!(kind, CodexLineKind::Session) {
-            continue;
-        }
         let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
             continue;
         };
-        if value.entry_type.as_deref() != Some("event_msg") {
-            continue;
-        }
-        let Some(payload) = value.payload.as_ref() else {
-            continue;
-        };
-        if payload.payload_type.as_deref() != Some("token_count") {
-            continue;
-        }
-        let info = payload.info.as_ref();
-        if info.and_then(|i| i.last_token_usage.as_ref()).is_none()
-            && info.and_then(|i| i.total_token_usage.as_ref()).is_none()
+        let info = value.payload.as_ref().and_then(|payload| {
+            (value.entry_type.as_deref() == Some("event_msg")
+                && payload.payload_type.as_deref() == Some("token_count"))
+            .then_some(payload.info.as_ref())
+            .flatten()
+        });
+        if info
+            .is_none_or(|info| info.last_token_usage.is_none() && info.total_token_usage.is_none())
         {
             continue;
         }
-        let Some(ts) = codex_session_timestamp(value.timestamp.as_ref()) else {
+        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
             continue;
         };
-        let ts_bytes = ts.as_bytes();
-        let ts_second: [u8; 19] = ts_bytes.get(0..19).and_then(|s| s.try_into().ok())?;
+        let Some(second) = timestamp
+            .as_bytes()
+            .get(..19)
+            .and_then(|second| second.try_into().ok())
+        else {
+            continue;
+        };
         match first_second {
-            None => {
-                first_second = Some(ts_second);
-            }
-            Some(ref first) => {
-                if first == &ts_second {
-                    return Some(ts_second);
-                }
-                return None;
-            }
+            None => first_second = Some(second),
+            Some(first) => return (first == second).then_some(first),
         }
     }
-    None
 }
 
+/// Visits every usage event in a Codex session log.
+///
+/// `replayed_prefix` carries the usage a forked session copied from its parent so
+/// it is not counted twice: `None` for sessions that are not forks, and an empty
+/// slice for forks whose parent log is unavailable.
 pub(super) fn visit_codex_session_file(
     sessions_dir: &Path,
     path: &Path,
+    replayed_prefix: Option<&[CodexRawUsage]>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    let is_replay_session = is_codex_replay_session(path);
-    let replay_second = is_replay_session
-        .then(|| detect_replay_second(path))
-        .flatten();
     let Ok(file) = fs::File::open(path) else {
         return Ok(());
     };
@@ -153,8 +148,50 @@ pub(super) fn visit_codex_session_file(
     let mut previous_totals: Option<CodexRawUsage> = None;
     let mut current_model: Option<String> = None;
     let mut current_model_is_fallback = false;
+    let mut current_service_tier = None;
     let fallback_timestamp = file_modified_timestamp(path);
-    let mut skip_replay = replay_second.is_some();
+    let mut replay = match replayed_prefix {
+        Some(prefix) => CodexReplayState::MatchingParent { prefix, index: 0 },
+        None => CodexReplayState::Done,
+    };
+    let mut visit_filtered = |event: CodexTokenUsageEvent| {
+        // Each arm either returns or advances the state toward `Done`, so this
+        // loop only re-runs to apply the event to the state it switched to.
+        loop {
+            match replay {
+                CodexReplayState::MatchingParent { prefix, index } => {
+                    let usage = CodexRawUsage {
+                        input_tokens: event.input_tokens,
+                        cached_input_tokens: event.cached_input_tokens,
+                        output_tokens: event.output_tokens,
+                        reasoning_output_tokens: event.reasoning_output_tokens,
+                        total_tokens: event.total_tokens,
+                    };
+                    if prefix.get(index) == Some(&usage) {
+                        replay = CodexReplayState::MatchingParent {
+                            prefix,
+                            index: index + 1,
+                        };
+                        return Ok(());
+                    }
+                    // Nothing matched, so the parent stream cannot anchor this
+                    // replay: the log is unavailable, or Codex rewrote the copied
+                    // history. Fall back to the same-second burst instead.
+                    replay = (index == 0)
+                        .then(|| detect_replay_second(path))
+                        .flatten()
+                        .map_or(CodexReplayState::Done, CodexReplayState::SkippingSecond);
+                }
+                CodexReplayState::SkippingSecond(second) => {
+                    if event.timestamp.as_bytes().get(..19) == Some(second.as_slice()) {
+                        return Ok(());
+                    }
+                    replay = CodexReplayState::Done;
+                }
+                CodexReplayState::Done => return visit(event),
+            }
+        }
+    };
 
     loop {
         line.clear();
@@ -172,42 +209,14 @@ pub(super) fn visit_codex_session_file(
                 let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
                     continue;
                 };
-                if let Some(ref replay_ts) = replay_second
-                    && skip_replay
-                    && value.entry_type.as_deref() == Some("event_msg")
-                    && value
-                        .payload
-                        .as_ref()
-                        .is_some_and(|p| p.payload_type.as_deref() == Some("token_count"))
-                {
-                    let Some(ts) = codex_session_timestamp(value.timestamp.as_ref()) else {
-                        continue;
-                    };
-                    let matches_replay = ts
-                        .as_bytes()
-                        .get(0..19)
-                        .is_some_and(|sec| sec.len() == 19 && sec == replay_ts.as_slice());
-                    if matches_replay {
-                        if let Some(total_usage) = value
-                            .payload
-                            .as_ref()
-                            .and_then(|payload| payload.info.as_ref())
-                            .and_then(|info| info.total_token_usage.as_ref())
-                            .copied()
-                        {
-                            previous_totals.replace(total_usage);
-                        }
-                        continue;
-                    }
-                    skip_replay = false;
-                }
                 visit_codex_session_entry(
                     &session_id,
                     value,
                     &mut previous_totals,
                     &mut current_model,
                     &mut current_model_is_fallback,
-                    &mut visit,
+                    &mut current_service_tier,
+                    &mut visit_filtered,
                 )?;
             }
             CodexLineKind::Headless => {
@@ -218,7 +227,7 @@ pub(super) fn visit_codex_session_file(
                         &fallback_timestamp,
                         &mut current_model,
                         &mut current_model_is_fallback,
-                        &mut visit,
+                        &mut visit_filtered,
                     )?;
                 } else {
                     add_codex_exec_event_from_value(
@@ -227,7 +236,7 @@ pub(super) fn visit_codex_session_file(
                         &fallback_timestamp,
                         &mut current_model,
                         &mut current_model_is_fallback,
-                        &mut visit,
+                        &mut visit_filtered,
                     )?;
                 };
             }
@@ -243,6 +252,7 @@ fn visit_codex_session_entry(
     previous_totals: &mut Option<CodexRawUsage>,
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
+    current_service_tier: &mut Option<CodexServiceTier>,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let entry_type = value.entry_type.as_deref();
@@ -262,13 +272,32 @@ fn visit_codex_session_entry(
     let Some(payload) = value.payload.as_ref() else {
         return Ok(());
     };
+    if payload.payload_type.as_deref() == Some("thread_settings_applied") {
+        // A settings event that carries no `service_tier` at all says nothing
+        // about the tier, so the previous one stands. Codex emits such events
+        // for auto-review threads. A tier that is present but unrecognized is
+        // different: it means the tier changed to something unknown, so the
+        // stale value must not be inherited.
+        if let Some(recorded) = payload
+            .thread_settings
+            .as_ref()
+            .and_then(|settings| settings.service_tier.as_deref())
+        {
+            *current_service_tier = codex_service_tier(recorded);
+        }
+        return Ok(());
+    }
     if payload.payload_type.as_deref() != Some("token_count") {
         return Ok(());
     }
     let info = payload.info.as_ref();
     let total_usage = info.and_then(|info| info.total_token_usage.as_ref().copied());
+    let cumulative_advanced = total_usage
+        .as_ref()
+        .is_none_or(|total_usage| previous_totals.as_ref() != Some(total_usage));
     let raw_usage = info
         .and_then(|info| info.last_token_usage.as_ref().copied())
+        .filter(|_| cumulative_advanced)
         .or_else(|| {
             total_usage
                 .as_ref()
@@ -307,6 +336,7 @@ fn visit_codex_session_entry(
         reasoning_output_tokens: raw_usage.reasoning_output_tokens,
         total_tokens: raw_usage.total_tokens,
         is_fallback_model,
+        service_tier: *current_service_tier,
     })
 }
 
@@ -395,13 +425,30 @@ fn visit_codex_exec_usage_event(
         reasoning_output_tokens: raw_usage.reasoning_output_tokens,
         total_tokens: raw_usage.total_tokens,
         is_fallback_model,
+        service_tier: None,
     })
+}
+
+fn codex_service_tier(value: &str) -> Option<CodexServiceTier> {
+    match value {
+        // Both spellings mean non-priority pricing and occur in the same Codex
+        // version on the same day; which one is written depends on the client
+        // (Codex Desktop writes "standard"), not on the CLI version.
+        "default" | "standard" => Some(CodexServiceTier::Standard),
+        "fast" | "priority" => Some(CodexServiceTier::Fast),
+        _ => None,
+    }
 }
 
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     let has_event_msg = EVENT_MSG_TYPE_FINDER.find(line).is_some();
     let has_token_count = has_event_msg && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
-    if TURN_CONTEXT_TYPE_FINDER.find(line).is_some() || has_token_count {
+    let has_thread_settings_applied =
+        has_event_msg && THREAD_SETTINGS_APPLIED_TYPE_FINDER.find(line).is_some();
+    if TURN_CONTEXT_TYPE_FINDER.find(line).is_some()
+        || has_token_count
+        || has_thread_settings_applied
+    {
         return Some(CodexLineKind::Session);
     }
     let has_compact_type = COMPACT_TYPE_FIELD_FINDER.find(line).is_some();
@@ -409,9 +456,18 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
         && has_compact_type
         && line.len() < 64 * 1024
         && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
-    if has_event_msg || has_nested_token_count || !has_compact_type {
-        let (has_turn_context, has_event_msg, has_token_count) = codex_line_type_flags(line);
-        if has_turn_context || (has_event_msg && has_token_count) {
+    let has_nested_thread_settings_applied = !has_event_msg
+        && has_compact_type
+        && line.len() < 64 * 1024
+        && THREAD_SETTINGS_APPLIED_FINDER.find(line).is_some();
+    if has_event_msg
+        || has_nested_token_count
+        || has_nested_thread_settings_applied
+        || !has_compact_type
+    {
+        let (has_turn_context, has_event_msg, has_token_count, has_thread_settings_applied) =
+            codex_line_type_flags(line);
+        if has_turn_context || (has_event_msg && (has_token_count || has_thread_settings_applied)) {
             return Some(CodexLineKind::Session);
         }
     }
@@ -424,11 +480,12 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     None
 }
 
-fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool) {
+fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool) {
     let mut start = 0;
     let mut has_turn_context = false;
     let mut has_event_msg = false;
     let mut has_token_count = false;
+    let mut has_thread_settings_applied = false;
     while let Some(index) = TYPE_KEY_FINDER.find(&line[start..]) {
         let key_start = start + index;
         let mut cursor = skip_json_whitespace(line, key_start + br#""type""#.len());
@@ -445,12 +502,24 @@ fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool) {
         has_turn_context |= json_string_value_matches(line, cursor, b"turn_context");
         has_event_msg |= json_string_value_matches(line, cursor, b"event_msg");
         has_token_count |= json_string_value_matches(line, cursor, b"token_count");
-        if has_turn_context || (has_event_msg && has_token_count) {
-            return (has_turn_context, has_event_msg, has_token_count);
+        has_thread_settings_applied |=
+            json_string_value_matches(line, cursor, b"thread_settings_applied");
+        if has_turn_context || (has_event_msg && (has_token_count || has_thread_settings_applied)) {
+            return (
+                has_turn_context,
+                has_event_msg,
+                has_token_count,
+                has_thread_settings_applied,
+            );
         }
         start = cursor.saturating_add(1);
     }
-    (has_turn_context, has_event_msg, has_token_count)
+    (
+        has_turn_context,
+        has_event_msg,
+        has_token_count,
+        has_thread_settings_applied,
+    )
 }
 
 fn json_string_value_matches(line: &[u8], start: usize, value: &[u8]) -> bool {
@@ -897,6 +966,14 @@ fn raw_or_normalized_value_timestamp(value: Option<&Value>) -> Option<String> {
     normalize_value_timestamp(Some(value))
 }
 
+/// Reads a Codex timestamp field that can hold an RFC3339 string or an epoch
+/// number, using the same normalization as session events.
+pub(super) fn codex_value_timestamp(value: Option<&Value>) -> Option<TimestampMs> {
+    normalize_value_timestamp(value)
+        .as_deref()
+        .and_then(crate::parse_ts_timestamp)
+}
+
 fn normalize_value_timestamp(value: Option<&Value>) -> Option<String> {
     let value = value?;
     if let Some(text) = value.as_str() {
@@ -982,6 +1059,37 @@ fn subtract_codex_raw_usage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn maps_recorded_service_tier_spellings() {
+        for (value, expected) in [
+            ("standard", Some(CodexServiceTier::Standard)),
+            ("default", Some(CodexServiceTier::Standard)),
+            ("priority", Some(CodexServiceTier::Fast)),
+            ("fast", Some(CodexServiceTier::Fast)),
+            ("flex", None),
+            ("", None),
+        ] {
+            assert_eq!(
+                codex_service_tier(value),
+                expected,
+                "unexpected tier for {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn recognizes_thread_settings_applied_as_session_line() {
+        for line in [
+            br#"{"type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"priority"}}}"#.as_slice(),
+            br#"{ "type": "event_msg", "payload": { "type": "thread_settings_applied", "thread_settings": { "service_tier": "default" } } }"#.as_slice(),
+        ] {
+            assert!(matches!(
+                codex_line_usage_kind(line),
+                Some(CodexLineKind::Session)
+            ));
+        }
+    }
 
     #[test]
     fn loads_codex_auto_review_fallbacks_from_models_dev_snapshot() {

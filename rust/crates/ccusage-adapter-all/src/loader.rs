@@ -763,12 +763,16 @@ fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Optio
     }
 }
 
-pub(super) fn codex_group_row(
+pub(super) fn codex_group_row<S>(
     period: &str,
     group: &CodexGroup,
     pricing: &PricingMap,
-    speed: CodexSpeed,
-) -> AllRow {
+    speed: S,
+) -> AllRow
+where
+    S: Into<codex::CodexSpeedPolicy> + Copy,
+{
+    let speed = speed.into();
     let mut model_breakdowns: Vec<ModelBreakdown> = group
         .models
         .iter()
@@ -878,6 +882,47 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].date.as_deref(), Some("2026-01-02"));
         assert_eq!(rows[0].input_tokens, 20);
+    }
+
+    #[test]
+    fn unified_row_matches_focused_cost_for_mixed_recorded_tiers() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gpt-test": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002,
+                    "provider_specific_entry": { "fast": 2 }
+                }
+            }"#,
+        );
+        let usage = crate::CodexModelUsage {
+            input_tokens: 30,
+            total_tokens: 30,
+            recorded_standard_usage: codex::CodexUsageBucket {
+                input_tokens: 10,
+                ..codex::CodexUsageBucket::default()
+            },
+            recorded_fast_usage: codex::CodexUsageBucket {
+                input_tokens: 10,
+                ..codex::CodexUsageBucket::default()
+            },
+            ..crate::CodexModelUsage::default()
+        };
+        let mut group = CodexGroup {
+            input_tokens: 30,
+            total_tokens: 30,
+            ..CodexGroup::default()
+        };
+        group.models.insert("gpt-test".to_string(), usage);
+        let speed = codex::CodexSpeedPolicy::Auto(codex::CodexServiceTier::Standard);
+
+        let focused_cost = codex::calculate_group_cost(&group, &pricing, speed);
+        let unified = codex_group_row("2026-07-22", &group, &pricing, speed);
+
+        assert!((focused_cost - 40e-6).abs() < f64::EPSILON);
+        assert!((unified.total_cost - focused_cost).abs() < f64::EPSILON);
+        assert!((unified.model_breakdowns[0].cost - focused_cost).abs() < f64::EPSILON);
     }
 
     fn pi_path_subcommand_rows(

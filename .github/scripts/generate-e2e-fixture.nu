@@ -4,10 +4,10 @@ def main [out_dir: string] {
     if ($out_dir | is-empty) {
         error make {msg: 'usage: generate-e2e-fixture.nu <out-dir>'}
     }
-    let fixture_dir = ([$out_dir, projects, preview-e2e-project, preview-e2e-session] | path join)
+    let fixture_dir = [$out_dir, projects, preview-e2e-project, preview-e2e-session] | path join
     mkdir $fixture_dir
     let lines = (0..419 | each {|index|
-        let day = (($index mod 28) + 1 | into string | fill --alignment right --character '0' --width 2)
+        let day = ($index mod 28) + 1 | into string | fill --alignment right --character '0' --width 2
         [
             $"(claude_line $index $day 1 '10:00:00.000Z' 'claude-sonnet-4-20250514' 100 50 25 10 '0.12')"
             $"(claude_line $index $day 2 '12:30:00.000Z' 'claude-opus-4-20250514' 200 75 50 20 '0.34')"

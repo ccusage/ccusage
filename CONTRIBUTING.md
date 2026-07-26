@@ -44,10 +44,14 @@ Do not open a PR unless you have already been approved with `lgtm`.
 Before submitting a PR, run:
 
 ```bash
+just install
 just fmt
 just typecheck
 just test
 ```
+
+`just install` is only needed once per checkout (and after a lockfile change);
+`git wt` runs it for you when it creates a worktree.
 
 Use the canonical `ccusage` command in docs and tests. Standalone wrapper packages such as `ccusage-codex`, `ccusage-opencode`, `ccusage-amp`, and `ccusage-pi` have been removed and should not be reintroduced.
 

@@ -11,6 +11,30 @@ pub struct CodexRawUsage {
     pub total_tokens: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodexServiceTier {
+    Standard,
+    Fast,
+}
+
+pub const fn merge_codex_service_tiers(
+    current: Option<CodexServiceTier>,
+    incoming: Option<CodexServiceTier>,
+) -> Option<CodexServiceTier> {
+    // Preserve explicit metadata over an unclassified copy. If two copied
+    // records conflict, Standard keeps the cost estimate conservative and
+    // makes the result independent of file order or worker scheduling.
+    match (current, incoming) {
+        (Some(CodexServiceTier::Standard), _) | (_, Some(CodexServiceTier::Standard)) => {
+            Some(CodexServiceTier::Standard)
+        }
+        (Some(CodexServiceTier::Fast), _) | (_, Some(CodexServiceTier::Fast)) => {
+            Some(CodexServiceTier::Fast)
+        }
+        (None, None) => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexTokenUsageEvent {
     pub session_id: String,
@@ -22,6 +46,17 @@ pub struct CodexTokenUsageEvent {
     pub reasoning_output_tokens: u64,
     pub total_tokens: u64,
     pub is_fallback_model: bool,
+    pub service_tier: Option<CodexServiceTier>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CodexUsageBucket {
+    pub input_tokens: u64,
+    pub cached_input_tokens: u64,
+    pub output_tokens: u64,
+    pub long_context_input_tokens: u64,
+    pub long_context_cached_input_tokens: u64,
+    pub long_context_output_tokens: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -39,6 +74,8 @@ pub struct CodexModelUsage {
     pub long_context_input_tokens: u64,
     pub long_context_cached_input_tokens: u64,
     pub long_context_output_tokens: u64,
+    pub recorded_standard_usage: CodexUsageBucket,
+    pub recorded_fast_usage: CodexUsageBucket,
     pub is_fallback: bool,
 }
 
@@ -134,6 +171,18 @@ pub(super) struct CodexPayload<'a> {
         deserialize_with = "deserialize_optional_object_lossy"
     )]
     pub(super) metadata: Option<CodexModelMetadata<'a>>,
+    #[serde(
+        borrow,
+        default,
+        deserialize_with = "deserialize_optional_object_lossy"
+    )]
+    pub(super) thread_settings: Option<CodexThreadSettings<'a>>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct CodexThreadSettings<'a> {
+    #[serde(borrow, default)]
+    pub(super) service_tier: Option<Cow<'a, str>>,
 }
 
 #[derive(Default, Deserialize)]

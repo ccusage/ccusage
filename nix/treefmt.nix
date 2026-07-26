@@ -82,7 +82,16 @@ in
 
         # The tagpr PR template is a Go text/template, and oxfmt's markdown
         # rewrites break its <details> block and nested list structure.
-        settings.global.excludes = [ ".github/tagpr-template.md" ];
+        #
+        # `bun.lock`/`bun.nix` under nix/tools are regenerated verbatim by `bun
+        # install` and `bun2nix`. Formatting them fights the generators: oxfmt
+        # rewrites the JSONC lockfile, and deadnix strips the unused arguments
+        # that bun.nix's `callPackage` signature requires.
+        settings.global.excludes = [
+          ".github/tagpr-template.md"
+          "nix/tools/*/bun.lock"
+          "nix/tools/*/bun.nix"
+        ];
 
         settings.formatter = {
           deadnix.priority = 1;
@@ -149,6 +158,12 @@ in
               "--fix"
               "--config"
               "nix/oxlint-check.json"
+              # treefmt batches the files it matched and hands them over as
+              # arguments, so a batch can consist entirely of paths that
+              # oxlint-check.json ignores. oxlint treats "nothing left to lint"
+              # as an error, which surfaces as a formatter failure for a file
+              # that was deliberately excluded.
+              "--no-error-on-unmatched-pattern"
             ];
             includes = [
               "*.cjs"
