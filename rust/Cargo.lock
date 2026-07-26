@@ -160,7 +160,6 @@ dependencies = [
  "ccusage-adapter-qwen",
  "ccusage-cli",
  "ccusage-core",
- "ccusage-terminal",
  "ccusage-test-support",
  "insta",
  "serde",
@@ -283,17 +282,9 @@ dependencies = [
  "ccusage-adapter-common",
  "ccusage-cli",
  "ccusage-core",
- "ccusage-terminal",
  "ccusage-test-support",
- "compact_str",
- "insta",
  "jiff",
- "memchr",
- "rustc-hash",
- "serde",
  "serde_json",
- "smallvec",
- "sqlite",
 ]
 
 [[package]]
