@@ -201,10 +201,10 @@ fn load_entries_from_database(
         );
         return Vec::new();
     };
-    // Only push the window into SQL once the column is known to hold the same
-    // millisecond scale as the payload; the payload check in the loop stays
-    // authoritative either way.
-    let pushdown = if window.is_unbounded() || time_created_is_millis(&connection) {
+    // Push the window into SQL only while a sample of `time_created` still looks
+    // millisecond-scaled. The sample cannot prove the whole column is, which is
+    // why the payload check in the loop stays authoritative either way.
+    let pushdown = if window.is_unbounded() || time_created_looks_like_millis(&connection) {
         window.widened_for_pushdown()
     } else {
         debug_log(
@@ -372,9 +372,11 @@ impl DateWindow {
     /// SQL filters on `message.time_created` while the report filters on the
     /// payload's `time.created`. They hold the same value on every OpenCode
     /// build checked here, but the column is only a proxy for the payload, so
-    /// the pushed-down window is kept loose: a column that drifts from its
-    /// payload then costs a few extra rows to scan instead of excluding a row
-    /// the report wanted. The exact window is still applied per row below.
+    /// the pushed-down window is kept loose: a column drifting from its payload
+    /// by up to a day costs a few extra rows to scan instead of excluding a row
+    /// the report wanted. Drift past a day is still excluded — ruling that out
+    /// would take the full-column scan this push-down exists to avoid. The exact
+    /// window is applied per row either way.
     fn widened_for_pushdown(self) -> Self {
         Self {
             start: self.start.map(|start| start - crate::MILLIS_PER_DAY),
@@ -428,14 +430,16 @@ fn prepare_message_query(
 /// needs at least 12 digits, while second-scale values stay far below it.
 const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
 
-/// Reports whether `message.time_created` holds Unix milliseconds like the
-/// payload's `time.created` does.
+/// Reports whether a sample of `message.time_created` looks like Unix
+/// milliseconds, the scale the payload's `time.created` uses.
 ///
-/// Sampling a few rows stays cheap on databases tens of gigabytes in size. A
-/// build that stored seconds, or left the column at zero, would otherwise have
-/// every row excluded by millisecond bounds, so an unrecognized scale disables
-/// the push-down and leaves the payload check to filter.
-fn time_created_is_millis(connection: &sqlite::Connection) -> bool {
+/// Sampling keeps this cheap on databases tens of gigabytes in size, and proves
+/// nothing about the rows it did not read: a column with mixed scales can still
+/// slip through, and matching scales say nothing about matching values. What it
+/// does catch is a build that stored seconds, or left the column at zero, where
+/// millisecond bounds would otherwise exclude every row — those disable the
+/// push-down and leave the payload check to filter.
+fn time_created_looks_like_millis(connection: &sqlite::Connection) -> bool {
     let Ok(mut statement) = connection
         .prepare("SELECT max(time_created) FROM (SELECT time_created FROM message LIMIT 8)")
     else {
