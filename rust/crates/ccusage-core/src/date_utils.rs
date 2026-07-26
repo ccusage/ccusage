@@ -151,7 +151,12 @@ pub fn parse_timezone_offset(bytes: &[u8]) -> Option<i64> {
     if bytes.len() != 6 || !matches!(bytes[0], b'+' | b'-') || bytes[3] != b':' {
         return None;
     }
-    let offset = i64::from(parse_digits(&bytes[1..3])? * 60 + parse_digits(&bytes[4..6])?);
+    let hours = parse_digits(&bytes[1..3])?;
+    let minutes = parse_digits(&bytes[4..6])?;
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    let offset = i64::from(hours * 60 + minutes);
     Some(if bytes[0] == b'+' { offset } else { -offset })
 }
 
@@ -167,12 +172,12 @@ pub fn parse_iso_date(value: &str) -> Option<IsoDate> {
 }
 
 pub fn parse_digits(bytes: &[u8]) -> Option<u32> {
-    let mut value = 0;
+    let mut value: u32 = 0;
     for byte in bytes {
         if !byte.is_ascii_digit() {
             return None;
         }
-        value = value * 10 + u32::from(byte - b'0');
+        value = value.checked_mul(10)?.checked_add(u32::from(byte - b'0'))?;
     }
     Some(value)
 }
