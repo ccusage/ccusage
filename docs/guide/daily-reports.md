@@ -128,7 +128,7 @@ Render a previously exported or externally combined ccusage daily report with
 the normal responsive table renderer:
 
 ```bash
-ccusage daily --from-json fleet-report.json
+ccusage daily --from-json combined-report.json
 ```
 
 The input file must use the same `daily` and `totals` structure emitted by

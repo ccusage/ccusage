@@ -28,14 +28,14 @@ fn parse_error(args: &[&str]) -> String {
 
 #[test]
 fn parses_daily_from_json_option() {
-    let cli = parse(&["ccusage", "daily", "--from-json", "fleet-report.json"]);
+    let cli = parse(&["ccusage", "daily", "--from-json", "combined-report.json"]);
 
     let Some(Command::All(args)) = cli.command else {
         panic!("expected unified daily command");
     };
     assert_eq!(
         args.from_json,
-        Some(std::path::PathBuf::from("fleet-report.json"))
+        Some(std::path::PathBuf::from("combined-report.json"))
     );
 }
 
@@ -45,7 +45,7 @@ fn rejects_json_output_when_rendering_from_json() {
         "ccusage",
         "daily",
         "--from-json",
-        "fleet-report.json",
+        "combined-report.json",
         "--json",
     ]);
 

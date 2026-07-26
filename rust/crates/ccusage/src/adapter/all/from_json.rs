@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn loads_daily_report_from_file() {
         let fixture = fs_fixture!({
-            "fleet-report.json": r#"{
+            "combined-report.json": r#"{
                 "daily": [],
                 "totals": {
                     "inputTokens": 0,
@@ -255,7 +255,7 @@ mod tests {
             }"#,
         });
 
-        let rows = load(&fixture.path("fleet-report.json")).unwrap();
+        let rows = load(&fixture.path("combined-report.json")).unwrap();
 
         assert!(rows.is_empty());
     }
