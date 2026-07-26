@@ -26,8 +26,14 @@ runs:
       uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
       with:
         github_access_token: ${{ github.token }}
+        # nix-quick-install-action writes this file verbatim, so Nix would
+        # otherwise keep its documented default of max-jobs = 1 and build the
+        # independent Crane artifact layers one at a time. cores stays at the
+        # default 0 so the single dependency derivation, which compiles the whole
+        # third-party graph, still gets every core.
         nix_conf: |
           access-tokens = github.com=${{ github.token }}
+          max-jobs = auto
 
     # github.workflow is included so workflows that share a job id (e.g.
     # build-native-packages in both ci.yaml and release.yaml) do not collide on
