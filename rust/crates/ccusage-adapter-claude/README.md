@@ -1,0 +1,48 @@
+# ccusage-adapter-claude
+
+The Claude Code adapter: it turns the JSONL transcripts Claude Code writes per project and session
+into the usage entries the reports render.
+
+## Owns
+
+- `paths.rs` — the environment variables and default directories below.
+- `parser.rs` — raw record parsing, token mapping, and model naming.
+- `loader.rs` — discovery, dedupe, and date filtering.
+- `report.rs` — the JSON and table shapes when they differ from the shared ones.
+
+Anything that is not specific to this source belongs in `ccusage-core` or
+`ccusage-adapter-common` instead.
+
+## Data source
+
+- `~/.claude/projects/**/*.jsonl` and `~/.config/claude/projects/**/*.jsonl`
+
+Record shapes, token mapping, and cost rules are documented in [`src/README.md`](src/README.md).
+
+Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
+chunking, and ordered parallel reads.
+
+## Public surface
+
+- `paths::timestamp_from_line`
+- `paths::claude_paths`
+- `paths::extract_project`
+- `paths::extract_session_parts`
+- `paths::usage_files`
+- `load_entries`
+- `load_daily_summaries`
+- `usage_limit_reset_time_from_line`
+
+## Depends on
+
+- `ccusage-adapter-common`
+- `ccusage-core`
+- `jiff`
+- `memchr`
+- `rustc-hash`
+- `serde`
+- `serde_json`
+
+## Build layer
+
+Built in the `adapters` Crane artifact layer; the layer compiles all adapters in one Cargo invocation, so they build concurrently.
