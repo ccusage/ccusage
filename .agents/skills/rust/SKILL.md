@@ -10,7 +10,20 @@ globs: 'rust/**/*.rs,rust/**/*.toml,rust/**/build.rs'
 
 # ccusage Rust
 
-Use this skill for the native Rust CLI under `rust/crates/ccusage` and `rust/crates/ccusage-terminal`.
+Use this skill for the native Rust CLI in `rust/crates`. Every crate has a
+`README.md` stating what it owns and which Crane artifact layer it lands in; read
+the one for the crate you are about to touch, because that layer determines how
+much a change to it costs:
+
+- `ccusage` - the binary; thin dispatch only.
+- `ccusage-core` - pricing, cost, report shaping, config, dates, progress.
+- `ccusage-cli` - the plain argument types; `ccusage-cli-parser` - the parser,
+  help renderer, and embedded help JSON, which only the binary depends on.
+- `ccusage-adapter-common` - shared file discovery, parallel reads, and the shared
+  agent table; `ccusage-adapter-<agent>` - one crate per source;
+  `ccusage-adapter-all` - the unified report.
+- `ccusage-terminal` - table and color primitives; `ccusage-test-support` -
+  fixtures and environment guards.
 
 ## Source Parity
 
@@ -40,7 +53,8 @@ responsibility boundaries where practical:
 - `ccusage-adapter-<agent>/src/parser.rs` - raw record parsing and token/model mapping.
 - `ccusage-adapter-<agent>/src/loader.rs` - file walking, SQLite reads, dedupe, and date filtering entry points.
 - `ccusage-adapter-<agent>/src/report.rs` - JSON/table row shaping when agent-specific.
-- shared modules stay in `types.rs`, `summary.rs`, `output.rs`, `pricing.rs`, `progress.rs`, and `date_utils.rs`.
+- shared modules stay in `ccusage-core` (`types.rs`, `summary.rs`, `output.rs`, `pricing.rs`, `progress.rs`, `date_utils.rs`) or in `ccusage-adapter-common` when they are about reading files or rendering the shared agent table.
+- do not add a dependency from one adapter to another; move the shared part into `ccusage-adapter-common` instead.
 
 Keep public `pub(crate)` surfaces narrow. Prefer moving tests with the code they exercise instead of leaving all Rust tests in `main.rs`.
 
