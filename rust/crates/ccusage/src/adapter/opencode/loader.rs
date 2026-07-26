@@ -119,6 +119,35 @@ pub(crate) fn load_entries_from_directory(
     Ok(entries)
 }
 
+/// Reports whether `opencode_dir` holds any usage source at all: the SQLite
+/// database, or at least one message file.
+///
+/// Detection has to ignore `--since`/`--until` because the loader applies the
+/// window while reading, so an out-of-range query returns no entries even on an
+/// install full of logs. Stops at the first message file rather than collecting
+/// them all, so this stays cheap next to a large legacy dump.
+pub(crate) fn has_source(opencode_dir: &Path) -> bool {
+    if db_path(opencode_dir).is_some() {
+        return true;
+    }
+    has_json_file(&opencode_dir.join("storage").join("message"))
+}
+
+fn has_json_file(dir: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+    entries.filter_map(std::result::Result::ok).any(|entry| {
+        let path = entry.path();
+        if path.is_dir() {
+            has_json_file(&path)
+        } else {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        }
+    })
+}
+
 fn db_path(opencode_dir: &Path) -> Option<PathBuf> {
     let default_path = opencode_dir.join("opencode.db");
     if default_path.is_file() {
@@ -1046,6 +1075,42 @@ mod tests {
             shared.since.as_deref(),
             None
         ));
+    }
+
+    #[test]
+    fn detects_sources_regardless_of_the_date_window() {
+        let db_only = fs_fixture!({});
+        create_db_message(
+            &db_only.path("opencode.db"),
+            "msg-1",
+            "session-a",
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
+        );
+        assert!(super::has_source(db_only.root()));
+
+        let files_only = fs_fixture!({
+            "storage/message/session-a/msg-1.json": r#"{"id":"msg-1"}"#,
+        });
+        assert!(super::has_source(files_only.root()));
+
+        let empty = fs_fixture!({});
+        assert!(!super::has_source(empty.root()));
+
+        // A window that excludes every entry must not make the source vanish;
+        // that is what keeps OpenCode in the aggregate report's detected list.
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            since: Some("20200101".to_string()),
+            until: Some("20200102".to_string()),
+            ..SharedArgs::default()
+        };
+        assert!(
+            load_entries_from_directory(db_only.root(), &shared)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(super::has_source(db_only.root()));
     }
 
     #[test]

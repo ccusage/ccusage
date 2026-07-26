@@ -135,13 +135,19 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[2],
             progress_agent: crate::progress::UsageLoadAgent::OpenCode,
             load: Box::new(|| {
-                load_summary_agent_rows(
+                let mut rows = load_summary_agent_rows(
                     "opencode",
                     load_kind,
                     &loader_shared,
                     || opencode::loader::load_entries(&loader_shared),
                     opencode::summarize_entries,
-                )
+                )?;
+                // The OpenCode loader narrows to the date window as it reads, so
+                // an out-of-range query yields no entries and the usual
+                // "entries are non-empty" test would drop OpenCode from the
+                // report's detected agents. Ask the source instead.
+                rows.detected = rows.detected || opencode::has_data();
+                Ok(rows)
             }),
         },
         AgentLoadSpec {
