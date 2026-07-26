@@ -1,8 +1,4 @@
-#[allow(unused_imports)]
-use ccusage_adapter_common::{
-    chunk_file_indexes_by_size, collect_files_with_extension, collect_usage_files,
-    filter_loaded_entries_by_date, read_files_parallel,
-};
+use ccusage_adapter_common::{chunk_file_indexes_by_size, read_files_parallel};
 use ccusage_core::*;
 
 mod daily;
@@ -11,9 +7,8 @@ mod paths;
 use std::{
     fs,
     hash::{Hash, Hasher},
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
-    thread,
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -84,14 +79,9 @@ fn load_entries_inner(
     };
     let tz = parse_tz(shared.timezone.as_deref());
     let mode = shared.mode;
-    let loaded_files = if shared.single_thread {
-        files
-            .iter()
-            .map(|file| read_usage_file(file, tz.as_ref(), mode, pricing.as_ref()))
-            .collect::<Vec<_>>()
-    } else {
-        read_usage_files_parallel(&files, tz.as_ref(), mode, pricing.as_ref())
-    };
+    let loaded_files = read_files_parallel(&files, shared.single_thread, |file| {
+        read_usage_file(file, tz.as_ref(), mode, pricing.as_ref())
+    });
     let loaded_entry_count = loaded_files
         .iter()
         .map(|file| file.entries.len())
@@ -122,55 +112,6 @@ fn load_entries_inner(
         format!("Kept {} usage entries after deduplication", deduped.len()),
     );
     Ok(deduped)
-}
-
-fn read_usage_files_parallel(
-    files: &[PathBuf],
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Vec<LoadedFile> {
-    let worker_count = thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(files.len());
-    if worker_count <= 1 {
-        return files
-            .iter()
-            .map(|file| read_usage_file(file, tz, mode, pricing))
-            .collect();
-    }
-
-    let chunks = chunk_file_indexes_by_size(files, worker_count);
-    thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(worker_count);
-        for chunk in chunks {
-            let tz = tz.cloned();
-            handles.push(scope.spawn(move || {
-                chunk
-                    .into_iter()
-                    .map(|index| {
-                        (
-                            index,
-                            read_usage_file(&files[index], tz.as_ref(), mode, pricing),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            }));
-        }
-        let mut loaded_files = Vec::with_capacity(files.len());
-        loaded_files.resize_with(files.len(), || None);
-        for (index, file) in handles
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("usage worker panicked"))
-        {
-            loaded_files[index] = Some(file);
-        }
-        loaded_files
-            .into_iter()
-            .map(|file| file.expect("usage worker returned every file"))
-            .collect()
-    })
 }
 
 fn usage_token_total(data: &UsageEntry) -> u64 {
