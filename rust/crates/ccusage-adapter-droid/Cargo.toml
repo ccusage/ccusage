@@ -6,7 +6,6 @@ publish = false
 
 [dependencies]
 ccusage-adapter-common = { path = "../ccusage-adapter-common" }
-ccusage-cli = { path = "../ccusage-cli" }
 ccusage-core = { path = "../ccusage-core" }
 jiff = { version = "0.2.24", default-features = false, features = [
 	"std",

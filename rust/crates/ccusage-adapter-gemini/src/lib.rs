@@ -1,7 +1,5 @@
-#[allow(unused_imports)]
 use ccusage_adapter_common::{
-    chunk_file_indexes_by_size, collect_files_with_extension, collect_usage_files,
-    filter_loaded_entries_by_date, read_files_parallel,
+    collect_files_with_extension, filter_loaded_entries_by_date, read_files_parallel,
 };
 use ccusage_core::*;
 
