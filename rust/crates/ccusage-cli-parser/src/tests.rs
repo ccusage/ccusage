@@ -4,6 +4,8 @@ use serde_json::{Value, json};
 
 use crate::help::{help_text, help_text_for_args};
 use crate::*;
+use ccusage_cli::*;
+use ccusage_test_support::fs_fixture;
 
 fn parse(args: &[&str]) -> Cli {
     Cli::parse_from(args.iter().map(OsString::from)).unwrap()
@@ -1091,4 +1093,86 @@ fn parses_openclaw_session_options() {
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
     assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+}
+
+#[test]
+fn named_pi_store_validation_does_not_break_statusline() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
+    });
+    let args = vec![
+        "statusline".to_string(),
+        "--config".to_string(),
+        fixture.path("ccusage.json").to_string_lossy().into_owned(),
+    ];
+    let config = ccusage_core::config::ConfigContext::from_args(&args);
+
+    let parsed = Cli::parse_from_with_config(
+        std::iter::once(std::ffi::OsString::from("ccusage")).chain(
+            args.iter()
+                .map(|arg| std::ffi::OsString::from(arg.as_str())),
+        ),
+        &config,
+        ccusage_core::DEFAULT_SESSION_DURATION_HOURS,
+        env!("CARGO_PKG_VERSION"),
+    );
+
+    assert!(parsed.is_ok());
+}
+
+#[test]
+fn named_pi_store_validation_does_not_break_agent_commands() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
+    });
+    let args = vec![
+        "codex".to_string(),
+        "daily".to_string(),
+        "--config".to_string(),
+        fixture.path("ccusage.json").to_string_lossy().into_owned(),
+    ];
+    let config = ccusage_core::config::ConfigContext::from_args(&args);
+
+    let parsed = Cli::parse_from_with_config(
+        std::iter::once(std::ffi::OsString::from("ccusage")).chain(
+            args.iter()
+                .map(|arg| std::ffi::OsString::from(arg.as_str())),
+        ),
+        &config,
+        ccusage_core::DEFAULT_SESSION_DURATION_HOURS,
+        env!("CARGO_PKG_VERSION"),
+    );
+
+    assert!(parsed.is_ok());
+}
+
+#[test]
+fn reports_named_pi_store_validation_through_cli_config_error_path() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
+    });
+    let args = vec![
+        "daily".to_string(),
+        "--config".to_string(),
+        fixture.path("ccusage.json").to_string_lossy().into_owned(),
+    ];
+    let config = ccusage_core::config::ConfigContext::from_args(&args);
+
+    let result = Cli::parse_from_with_config(
+        std::iter::once(std::ffi::OsString::from("ccusage")).chain(
+            args.iter()
+                .map(|arg| std::ffi::OsString::from(arg.as_str())),
+        ),
+        &config,
+        ccusage_core::DEFAULT_SESSION_DURATION_HOURS,
+        env!("CARGO_PKG_VERSION"),
+    );
+    let Err(error) = result else {
+        panic!("expected config error");
+    };
+
+    assert_eq!(
+        error,
+        "Invalid ccusage config: pi.stores name 'codex' collides with a built-in agent"
+    );
 }

@@ -1,6 +1,7 @@
 use std::{env, ffi::OsString, process};
 
 pub(crate) use ccusage_cli::*;
+pub(crate) use ccusage_cli_parser::Cli;
 
 use crate::{DEFAULT_SESSION_DURATION_HOURS, config::ConfigContext};
 

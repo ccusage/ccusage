@@ -53,11 +53,7 @@ let
   crateSource = name: craneLib.fileset.commonCargoSources (rustRoot + "/crates/${name}");
   extraSourcesFor =
     names:
-    lib.optionals (lib.elem "ccusage-cli" names) [
-      (rustRoot + /crates/ccusage-cli/src/cli-help.json)
-      (rustRoot + /crates/ccusage-cli/src/cli-commands.json)
-    ]
-    ++ lib.optionals (lib.elem "ccusage-core" names) [
+    lib.optionals (lib.elem "ccusage-core" names) [
       (rustRoot + /crates/ccusage-core/src/fast-multiplier-overrides.json)
       (rustRoot + /crates/ccusage-core/src/models-dev-pricing.json)
     ]

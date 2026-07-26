@@ -3,11 +3,6 @@ use std::{
     path::PathBuf,
 };
 
-pub struct Cli {
-    pub command: Option<Command>,
-    pub shared: SharedArgs,
-}
-
 pub enum Command {
     All(AgentCommandArgs),
     Daily(DailyArgs),
@@ -57,7 +52,7 @@ pub struct SharedArgs {
 }
 
 impl SharedArgs {
-    pub(crate) fn with_defaults() -> Self {
+    pub fn with_defaults() -> Self {
         Self {
             mode: CostMode::Auto,
             debug_samples: 5,
@@ -142,13 +137,13 @@ pub enum AgentReportKind {
     Session,
 }
 
-pub(crate) const STANDARD_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
+pub const STANDARD_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
     ("daily", AgentReportKind::Daily),
     ("monthly", AgentReportKind::Monthly),
     ("session", AgentReportKind::Session),
 ];
 
-pub(crate) const OPENCODE_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
+pub const OPENCODE_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
     ("daily", AgentReportKind::Daily),
     ("weekly", AgentReportKind::Weekly),
     ("monthly", AgentReportKind::Monthly),

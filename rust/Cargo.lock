@@ -131,6 +131,7 @@ dependencies = [
  "ccusage-adapter-pi",
  "ccusage-adapter-qwen",
  "ccusage-cli",
+ "ccusage-cli-parser",
  "ccusage-core",
  "ccusage-test-support",
  "mimalloc",
@@ -368,7 +369,14 @@ dependencies = [
 [[package]]
 name = "ccusage-cli"
 version = "0.0.0"
+
+[[package]]
+name = "ccusage-cli-parser"
+version = "0.0.0"
 dependencies = [
+ "ccusage-cli",
+ "ccusage-core",
+ "ccusage-test-support",
  "insta",
  "serde_json",
 ]
