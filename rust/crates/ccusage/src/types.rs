@@ -137,6 +137,30 @@ pub(crate) struct CodexRawUsage {
     pub(crate) total_tokens: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CodexServiceTier {
+    Standard,
+    Fast,
+}
+
+pub(crate) const fn merge_codex_service_tiers(
+    current: Option<CodexServiceTier>,
+    incoming: Option<CodexServiceTier>,
+) -> Option<CodexServiceTier> {
+    // Preserve explicit metadata over an unclassified copy. If two copied
+    // records conflict, Standard keeps the cost estimate conservative and
+    // makes the result independent of file order or worker scheduling.
+    match (current, incoming) {
+        (Some(CodexServiceTier::Standard), _) | (_, Some(CodexServiceTier::Standard)) => {
+            Some(CodexServiceTier::Standard)
+        }
+        (Some(CodexServiceTier::Fast), _) | (_, Some(CodexServiceTier::Fast)) => {
+            Some(CodexServiceTier::Fast)
+        }
+        (None, None) => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CodexTokenUsageEvent {
     pub(crate) session_id: String,
@@ -148,6 +172,17 @@ pub(crate) struct CodexTokenUsageEvent {
     pub(crate) reasoning_output_tokens: u64,
     pub(crate) total_tokens: u64,
     pub(crate) is_fallback_model: bool,
+    pub(crate) service_tier: Option<CodexServiceTier>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct CodexUsageBucket {
+    pub(crate) input_tokens: u64,
+    pub(crate) cached_input_tokens: u64,
+    pub(crate) output_tokens: u64,
+    pub(crate) long_context_input_tokens: u64,
+    pub(crate) long_context_cached_input_tokens: u64,
+    pub(crate) long_context_output_tokens: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -157,6 +192,16 @@ pub(crate) struct CodexModelUsage {
     pub(crate) output_tokens: u64,
     pub(crate) reasoning_output_tokens: u64,
     pub(crate) total_tokens: u64,
+    // Portion of the sums above that came from long-context requests (input
+    // above the OpenAI 272K threshold). OpenAI decides the pricing tier per
+    // request and bills the whole request at long-context rates, so the split
+    // has to be tracked while events are aggregated; it cannot be derived
+    // from the summed totals afterwards.
+    pub(crate) long_context_input_tokens: u64,
+    pub(crate) long_context_cached_input_tokens: u64,
+    pub(crate) long_context_output_tokens: u64,
+    pub(crate) recorded_standard_usage: CodexUsageBucket,
+    pub(crate) recorded_fast_usage: CodexUsageBucket,
     pub(crate) is_fallback: bool,
 }
 

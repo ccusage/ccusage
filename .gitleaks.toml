@@ -4,3 +4,10 @@ useDefault = true
 [allowlist]
 description = "Global allowlist"
 paths = ['''pnpm-lock\.yaml$''']
+# Star History sealed tokens are public, read-only chart identifiers.
+# spellchecker:off
+regexTarget = "match"
+regexes = [
+	'''sealed_token=bC4-7Zs63nsOam9kdlCTUCbyCn7QuItb4yy4h8Ot0SrOeDlb5y2saMUc1CAOskhB1fl3RSZZuUmFyjAOICGnniL5wqbvTmHrbqqiIH5mpn8spRFPfjLK_w''',
+]
+# spellchecker:on

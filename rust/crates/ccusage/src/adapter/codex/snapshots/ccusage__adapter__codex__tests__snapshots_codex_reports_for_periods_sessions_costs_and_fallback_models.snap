@@ -130,7 +130,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
       {
         "cacheCreationTokens": 0,
         "cacheReadTokens": 0,
-        "costUSD": 0.000013,
+        "costUSD": 0.0000065,
         "directory": "/workspace/web",
         "inputTokens": 10,
         "lastActivity": "2026-01-05T23:59:59.000Z",
@@ -155,7 +155,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
     "totals": {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 110,
-      "costUSD": 0.0008215,
+      "costUSD": 0.000815,
       "inputTokens": 110,
       "outputTokens": 17,
       "reasoningOutputTokens": 2,

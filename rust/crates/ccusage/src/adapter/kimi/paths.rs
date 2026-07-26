@@ -28,9 +28,11 @@ pub(super) fn paths() -> Result<Vec<PathBuf>> {
     }
 
     if let Some(home) = crate::home::home_dir() {
-        let path = home.join(".kimi");
-        if path.is_dir() && seen.insert(path.clone()) {
-            paths.push(path);
+        for dir in [".kimi", ".kimi-code"] {
+            let path = home.join(dir);
+            if path.is_dir() && seen.insert(path.clone()) {
+                paths.push(path);
+            }
         }
     }
     Ok(paths)
@@ -60,11 +62,15 @@ fn is_kimi_wire_file(sessions_path: &Path, file_path: &Path) -> bool {
     let Ok(relative) = file_path.strip_prefix(sessions_path) else {
         return false;
     };
-    relative
-        .components()
-        .filter(|component| matches!(component, Component::Normal(_)))
-        .count()
-        == 3
+    // Old format: sessions/<group>/<session>/wire.jsonl             → 3 components
+    // New format: sessions/<workspace>/<session>/agents/<agent>/wire.jsonl → 5 components
+    matches!(
+        relative
+            .components()
+            .filter(|component| matches!(component, Component::Normal(_)))
+            .count(),
+        3 | 5
+    )
 }
 
 #[cfg(test)]
@@ -85,6 +91,25 @@ mod tests {
         assert_eq!(
             files,
             vec![fixture.path("sessions/group/session/wire.jsonl")]
+        );
+    }
+
+    #[test]
+    fn discovers_both_old_and_new_layouts_and_skips_non_wire_files() {
+        let fixture = fs_fixture!({
+            "sessions/ws/session-c/agents/agent-1/wire.jsonl": "{}\n",
+            "sessions/ws/session-c/agents/agent-1/other.jsonl": "{}\n",
+            "sessions/group/session-d/wire.jsonl": "{}\n",
+        });
+        let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
+        let files = discover_wire_files().unwrap();
+
+        assert_eq!(
+            files,
+            vec![
+                fixture.path("sessions/group/session-d/wire.jsonl"),
+                fixture.path("sessions/ws/session-c/agents/agent-1/wire.jsonl"),
+            ]
         );
     }
 }

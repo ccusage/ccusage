@@ -1,0 +1,2 @@
+# Insta snapshots are textual golden outputs, not Linux Snap packages.
+**/snapshots/*.snap -binary text eol=lf diff

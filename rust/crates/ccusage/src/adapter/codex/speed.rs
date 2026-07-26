@@ -1,19 +1,36 @@
 use std::fs;
 
-use crate::cli::CodexSpeed;
+use crate::{CodexServiceTier, cli::CodexSpeed};
 
 use super::paths;
 
-pub(crate) fn resolve_codex_speed(requested: CodexSpeed) -> CodexSpeed {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CodexSpeedPolicy {
+    Auto(CodexServiceTier),
+    Forced(CodexServiceTier),
+}
+
+impl From<CodexSpeed> for CodexSpeedPolicy {
+    fn from(speed: CodexSpeed) -> Self {
+        match speed {
+            CodexSpeed::Auto => Self::Auto(CodexServiceTier::Standard),
+            CodexSpeed::Standard => Self::Forced(CodexServiceTier::Standard),
+            CodexSpeed::Fast => Self::Forced(CodexServiceTier::Fast),
+        }
+    }
+}
+
+pub(crate) fn resolve_codex_speed(requested: CodexSpeed) -> CodexSpeedPolicy {
     match requested {
         CodexSpeed::Auto => {
             if detect_codex_fast_service_tier() {
-                CodexSpeed::Fast
+                CodexSpeedPolicy::Auto(CodexServiceTier::Fast)
             } else {
-                CodexSpeed::Standard
+                CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
             }
         }
-        speed => speed,
+        CodexSpeed::Standard => CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+        CodexSpeed::Fast => CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
     }
 }
 

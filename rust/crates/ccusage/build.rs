@@ -3,13 +3,25 @@ use std::{env, fs, path::PathBuf};
 use serde_json::{Map, Value};
 
 const FLAKE_LOCK_JSON: &str = "../../../flake.lock";
+const PACKAGE_JSON: &str = "../../../package.json";
 const LITELLM_PRICING_JSON: &str = "model_prices_and_context_window.json";
 const OUT_PRICING_JSON: &str = "litellm-pricing.json";
 const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
+const VERSION_ENV: &str = "CCUSAGE_VERSION";
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 
 fn main() {
     println!("cargo:rerun-if-env-changed={PRICING_JSON_PATH_ENV}");
+    println!("cargo:rerun-if-env-changed={VERSION_ENV}");
+    println!("cargo:rerun-if-changed={PACKAGE_JSON}");
+    let version = env::var(VERSION_ENV).unwrap_or_else(|_| {
+        let package_json = fs::read_to_string(PACKAGE_JSON).expect("read root package.json");
+        serde_json::from_str::<Value>(&package_json)
+            .ok()
+            .and_then(|package| package.get("version")?.as_str().map(str::to_owned))
+            .expect("read version from root package.json")
+    });
+    println!("cargo:rustc-env={VERSION_ENV}={version}");
 
     let out_path = out_dir_path(OUT_PRICING_JSON);
     let pricing_json = if let Some(path) = env::var_os(PRICING_JSON_PATH_ENV) {

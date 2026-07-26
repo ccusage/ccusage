@@ -5,106 +5,112 @@ def main [] {
     let pr_number = (required_env PR_NUMBER)
     let marker = (required_env COMMENT_MARKER)
     let body = (open --raw (required_env COMMENT_FILE))
-    let comments = (gh_api_json [
+    match (find_existing_comment $repository $pr_number $marker) {
+        null => (create_comment $repository $pr_number $body)
+        $existing => (update_or_recreate_comment $repository $pr_number $existing.id $body)
+    }
+}
+def find_existing_comment [repository: string, pr_number: string, marker: string] {
+    gh_api_json [
         --paginate
         --slurp
         $"repos/($repository)/issues/($pr_number)/comments?per_page=100"
-    ] | flatten)
-    let existing = (
-        $comments | where {|comment|
-			let login = if (($comment.user? | describe) =~ '^record') {
-				$comment.user.login?
-			} else {
-				null
-			}
-			let comment_body = if (($comment.body? | describe) =~ '^string') {
-				$comment.body
-			} else {
-				''
-			}
-			$login == 'github-actions[bot]' and ($comment_body | str contains $marker)
-		} | sort-by created_at | reverse | get --optional 0
-    )
-    if $existing == null {
-        create_comment $repository $pr_number $body
-    } else {
-        let update = (try_update_comment $repository $existing.id $body)
-        if $update.status == 'ok' {
-            return
-        }
-        if $update.status == 'missing' {
+    ]
+    | flatten
+    | where {|comment|
+        let login = comment_login $comment
+        let body = comment_body $comment
+        $login == 'github-actions[bot]' and ($body | str contains $marker)
+    }
+    | sort-by created_at
+    | reverse
+    | get --optional 0
+}
+def comment_login [comment: record] {
+    match ($comment | get --optional user) {
+        {login: $login} => $login
+        _ => null
+    }
+}
+def comment_body [comment: record] {
+    match ($comment | get --optional body) {
+        $body if ($body | describe) == 'string' => $body
+        _ => ''
+    }
+}
+def update_or_recreate_comment [
+    repository: string
+    pr_number: string
+    comment_id: int
+    body: string
+] {
+    let update = (try_update_comment $repository $comment_id $body)
+    match $update.status {
+        'ok' => null
+        'missing' => {
             print --stderr 'Existing PR comment was missing; creating a new comment instead.'
             create_comment $repository $pr_number $body
-        } else if $update.status == 'auth' {
-            print --stderr $"Skipping PR comment because GitHub token cannot update comments: ($update.stderr | str trim)"
-        } else {
-            error make {
-                msg: (format_gh_error ['update comment'] $update.result)
-            }
         }
+        'auth' => (
+            print --stderr $"Skipping PR comment because GitHub token cannot update comments: ($update.stderr | str trim)"
+        )
+        _ => (error make {
+            msg: (format_gh_error ['update comment'] $update.result)
+        })
     }
 }
 def required_env [name: string] {
-    let value = ($env | get --optional $name)
-    if $value == null or ($value | is-empty) {
-        error make {
-            msg: $"($name) is required"
-        }
+    match ($env | get --optional $name) {
+        null => (error make {msg: $"($name) is required"})
+        $value if ($value | is-empty) => (error make {msg: $"($name) is required"})
+        $value => $value
     }
-    $value
 }
 def gh_api_json [args: list<string>] {
     let result = (gh_api_complete $args)
-    if $result.exit_code != 0 {
-        error make {
+    match $result.exit_code {
+        0 => ($result.stdout | from json)
+        _ => (error make {
             msg: (format_gh_error $args $result)
-        }
+        })
     }
-    $result.stdout | from json
 }
 def create_comment [repository: string, pr_number: string, body: string] {
-    let result = (gh_api_with_body 'POST' $"repos/($repository)/issues/($pr_number)/comments" $body)
-    if $result.exit_code != 0 {
-        if (is_comment_write_auth_failure $result.stderr) {
+    let result = (
+        (gh_api_with_body
+            'POST'
+            $"repos/($repository)/issues/($pr_number)/comments"
+            $body
+        )
+    )
+    match $result.exit_code {
+        0 => null
+        _ if (is_comment_write_auth_failure $result.stderr) => (
             print --stderr $"Skipping PR comment because GitHub token cannot write comments: ($result.stderr | str trim)"
-        } else {
-            error make {
-                msg: (format_gh_error ['create comment'] $result)
-            }
-        }
+        )
+        _ => (error make {
+            msg: (format_gh_error ['create comment'] $result)
+        })
     }
 }
 def try_update_comment [repository: string, comment_id: int, body: string] {
-    let result = (gh_api_with_body 'PATCH' $"repos/($repository)/issues/comments/($comment_id)" $body)
-    if $result.exit_code == 0 {
-        return {
-            status: 'ok'
-            result: $result
-            stderr: $result.stderr
-        }
-    }
-    if ($result.stderr =~ 'HTTP 404') {
-        return {
-            status: 'missing'
-            result: $result
-            stderr: $result.stderr
-        }
-    }
-    if (is_comment_write_auth_failure $result.stderr) {
-        return {
-            status: 'auth'
-            result: $result
-            stderr: $result.stderr
-        }
-    }
-    {
-        status: 'error'
-        result: $result
-        stderr: $result.stderr
-    }
+    let result = (
+        (gh_api_with_body
+            'PATCH'
+            $"repos/($repository)/issues/comments/($comment_id)"
+            $body
+        )
+    )
+    let status = (match $result.exit_code {
+        0 => 'ok'
+        _ if $result.stderr =~ 'HTTP 404' => 'missing'
+        _ if (is_comment_write_auth_failure $result.stderr) => 'auth'
+        _ => 'error'
+    })
+    {status: $status, result: $result, stderr: $result.stderr}
 }
 def gh_api_with_body [method: string, endpoint: string, body: string] {
-    let payload = (mktemp -t ccusage-pr-comment.XXXXXX | str trim)
+    let payload = mktemp -t ccusage-pr-comment.XXXXXX | str trim
     {body: $body} | to json | save --force $payload
     let args = [
         --method

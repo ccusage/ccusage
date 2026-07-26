@@ -15,23 +15,19 @@ catalogs:
     publint: ^0.3.12
   llm-docs:
     '@gunshi/docs': ^0.31.0
-  release:
-    bumpp: ^11.1.0
-    changelogithub: ^14.0.0
-    pkg-pr-new: ^0.0.75
   runtime:
     '@antfu/utils': ^9.2.1
     '@praha/byethrow': ^0.11.2
     ansi-escapes: ^7.3.0
     arkregex: ^0.0.5
-    get-stdin: ^9.0.0
+    get-stdin: ^10.0.0
     gunshi: ^0.31.0
     picospinner: ^3.0.0
-    type-fest: ^4.41.0
+    type-fest: ^5.7.0
     valibot: ^1.4.1
     xdg-basedir: ^5.1.0
   types:
-    '@types/node': ^24.10.1
+    '@types/node': ^24.13.2
     '@types/react': ^19.2.17
 
 enablePrePostScripts: true
@@ -48,9 +44,6 @@ strictDepBuilds: true
 blockExoticSubdeps: true
 
 trustPolicy: no-downgrade
-
-overrides:
-  'changelogithub>c12': 3.3.4
 
 # Explicitly allow build scripts for packages that require them
 # (replaces onlyBuiltDependencies)

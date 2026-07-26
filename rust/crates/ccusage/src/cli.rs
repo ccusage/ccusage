@@ -16,7 +16,7 @@ pub(crate) fn parse() -> Cli {
         args,
         &config,
         DEFAULT_SESSION_DURATION_HOURS,
-        env!("CARGO_PKG_VERSION"),
+        env!("CCUSAGE_VERSION"),
     )
     .unwrap_or_else(|message| {
         eprintln!("{message}");

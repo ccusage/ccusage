@@ -8,9 +8,10 @@ use crate::{
     print_usage_table, sort_summaries, wants_json,
 };
 
-pub(crate) use loader::load_entries;
 #[cfg(test)]
-pub(crate) use parser::read_session_file;
+pub(crate) use loader::load_entries_for_store_path;
+pub(crate) use loader::{load_entries, load_entries_for_store_paths};
+pub(crate) use paths::{named_store_paths, paths as default_paths};
 pub(crate) use report::{report_from_rows, summarize_entries};
 
 pub(crate) fn run(args: AgentCommandArgs) -> Result<()> {

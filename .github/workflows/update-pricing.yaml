@@ -9,12 +9,12 @@ permissions: {}
 
 jobs:
   update-pricing:
-    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
@@ -79,12 +79,12 @@ jobs:
   update-models-dev-pricing:
     needs: update-pricing
     if: ${{ always() }}
-    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
@@ -97,7 +97,7 @@ jobs:
       - name: Skip lock-only models.dev updates
         run: |
           # Only the compacted snapshot affects the build; if a models.dev bump
-          # leaves the Anthropic pricing unchanged, drop the lock-only churn.
+          # leaves embedded pricing unchanged, drop the lock-only churn.
           if git diff --quiet -- rust/crates/ccusage/src/models-dev-pricing.json; then
             echo "models.dev pricing snapshot is unchanged; skipping PR."
             git checkout -- flake.lock rust/crates/ccusage/src/models-dev-pricing.json

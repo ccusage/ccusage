@@ -29,14 +29,14 @@ in
       # config edit elsewhere in the repo:
       #   * rust/build.rs           reads ../../../flake.lock
       #   * config_schema.rs tests  include_str! ../../../../ccusage.example.json
-      #   * ccusage-cli tests       include_str! ../../../../apps/ccusage/package.json
+      #   * main.rs tests           include_str! ../../../../package.json
       testSrc = nixFilter {
         inherit root;
         include = [
           "rust"
           "flake.lock"
           "ccusage.example.json"
-          "apps/ccusage/package.json"
+          "package.json"
         ];
       };
     in

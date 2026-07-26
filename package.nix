@@ -28,6 +28,7 @@ let
     doCheck = false;
     cargoExtraArgs = "-p ccusage --bin ccusage";
     CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}/model_prices_and_context_window.json";
+    CCUSAGE_VERSION = version;
     RUSTFLAGS =
       lib.optionalString stdenv.isLinux "-C link-arg=-fuse-ld=mold"
       # The nixpkgs Darwin stdenv injects -liconv even though ccusage uses no
@@ -45,10 +46,30 @@ let
     ];
   };
   # Keep the dependency artifact keyed only by inputs that affect Cargo deps.
-  # Pricing snapshots and release versions are embedded by the final package.
-  depsOnlyArgs = builtins.removeAttrs commonArgs [ "CCUSAGE_PRICING_JSON_PATH" ] // {
-    version = "0.0.0";
-  };
+  # Pricing snapshots and the npm release version are embedded by the final
+  # package. The Rust workspace packages intentionally stay at 0.0.0, and the
+  # dummy manifest filter makes that version metadata irrelevant to dependency
+  # resolution too.
+  cargoTomlFilter =
+    path:
+    !lib.lists.hasPrefix [
+      "package"
+      "version"
+    ] path
+    && craneLib.filters.cargoTomlConservative path;
+  depsOnlyArgs =
+    builtins.removeAttrs commonArgs [
+      "CCUSAGE_PRICING_JSON_PATH"
+      "CCUSAGE_VERSION"
+      "src"
+    ]
+    // {
+      version = "0.0.0";
+      dummySrc = craneLib.mkDummySrc {
+        inherit src;
+        cleanCargoTomlFilter = cargoTomlFilter;
+      };
+    };
   cargoArtifacts = craneLib.buildDepsOnly depsOnlyArgs;
 in
 craneLib.buildPackage (

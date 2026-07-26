@@ -1,5 +1,8 @@
 {
 	"exact": {
+		"gpt-5.6-sol": 2.0,
+		"gpt-5.6-terra": 2.0,
+		"gpt-5.6-luna": 2.0,
 		"gpt-5.5": 2.5,
 		"gpt-5.4": 2.0,
 		"gpt-5.3-codex": 2.0

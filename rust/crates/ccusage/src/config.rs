@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Path, PathBuf},
 };
@@ -8,14 +8,15 @@ use serde_json::{Map, Value};
 
 use crate::{
     cli::{
-        BlocksArgs, CodexSpeed, CostMode, CostSource, DailyArgs, PricingOverride, SharedArgs,
-        SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+        BlocksArgs, CodexSpeed, CostMode, CostSource, DailyArgs, NamedPiStore, PricingOverride,
+        SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
+        normalize_date_bound,
     },
     config_schema::{
         BlocksSpecificOptions, CodexOptions, ConfigCodexSpeed, ConfigCostMode, ConfigCostSource,
         ConfigPricingOverride, ConfigSortOrder, ConfigVisualBurnRate, ConfigWeekDay,
-        DailySpecificOptions, OpenClawOptions, PiOptions, SharedOptions, StatuslineSpecificOptions,
-        WeeklySpecificOptions,
+        DailySpecificOptions, NAMED_PI_STORE_NAME_PATTERN, OpenClawOptions, PiOptions,
+        SharedOptions, StatuslineSpecificOptions, WeeklySpecificOptions,
     },
 };
 
@@ -28,13 +29,26 @@ struct ConfigCommand {
 pub(crate) struct ConfigContext {
     value: Option<Value>,
     command: ConfigCommand,
+    pi_stores: Vec<NamedPiStore>,
+    error: Option<String>,
 }
 
 impl ConfigContext {
     pub(crate) fn from_args(args: &[String]) -> Self {
         let command = detect_config_command(args);
         let value = load_config_value(scan_config_path(args).as_deref());
-        Self { value, command }
+        let (pi_stores, error) = value
+            .as_ref()
+            .map(parse_named_pi_stores)
+            .transpose()
+            .map(|stores| (stores.unwrap_or_default(), None))
+            .unwrap_or_else(|error| (Vec::new(), Some(error)));
+        Self {
+            value,
+            command,
+            pi_stores,
+            error,
+        }
     }
 
     fn option_maps(&self) -> Vec<&Map<String, Value>> {
@@ -78,6 +92,113 @@ impl ConfigContext {
         }
         maps
     }
+
+    fn command_uses_named_pi_stores(&self) -> bool {
+        self.command.agent.is_none()
+            && matches!(
+                self.command.report.as_str(),
+                "daily" | "weekly" | "monthly" | "session"
+            )
+    }
+}
+
+fn parse_named_pi_stores(value: &Value) -> std::result::Result<Vec<NamedPiStore>, String> {
+    let Some(stores_value) = value
+        .as_object()
+        .and_then(|root| root.get("pi"))
+        .and_then(Value::as_object)
+        .and_then(|pi| pi.get("stores"))
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(stores) = stores_value.as_array() else {
+        return Err(config_error("pi.stores must be an array"));
+    };
+
+    let mut names = BTreeSet::new();
+    let mut parsed = Vec::with_capacity(stores.len());
+    for (index, store) in stores.iter().enumerate() {
+        let Some(store) = store.as_object() else {
+            return Err(config_error(format!(
+                "pi.stores[{index}] must contain string fields 'name' and 'path'"
+            )));
+        };
+        let Some(name) = store.get("name").and_then(Value::as_str) else {
+            return Err(config_error(format!(
+                "pi.stores[{index}] must contain string fields 'name' and 'path'"
+            )));
+        };
+        let Some(path) = store.get("path").and_then(Value::as_str) else {
+            return Err(config_error(format!(
+                "pi.stores[{index}] must contain string fields 'name' and 'path'"
+            )));
+        };
+        if path.trim().is_empty() {
+            return Err(config_error(format!(
+                "pi.stores[{index}] ('{name}'): path must be a non-empty string"
+            )));
+        }
+        validate_named_pi_store_name(name).map_err(|error| match error {
+            NamedPiStoreNameError::Pattern => config_error(format!(
+                "pi.stores[{index}].name must match {NAMED_PI_STORE_NAME_PATTERN}"
+            )),
+            NamedPiStoreNameError::Reserved => config_error(format!(
+                "pi.stores name '{name}' collides with a built-in agent"
+            )),
+        })?;
+        if !names.insert(name.to_string()) {
+            return Err(config_error(format!("duplicate pi.stores name '{name}'")));
+        }
+        parsed.push(NamedPiStore {
+            name: name.to_string(),
+            path: path.to_string(),
+        });
+    }
+    Ok(parsed)
+}
+
+fn config_error(message: impl Into<String>) -> String {
+    format!("Invalid ccusage config: {}", message.into())
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum NamedPiStoreNameError {
+    Pattern,
+    Reserved,
+}
+
+fn validate_named_pi_store_name(name: &str) -> std::result::Result<(), NamedPiStoreNameError> {
+    if !matches_named_pi_store_name_pattern(name) {
+        return Err(NamedPiStoreNameError::Pattern);
+    }
+    if reserved_named_pi_store_names().contains(&name) {
+        return Err(NamedPiStoreNameError::Reserved);
+    }
+    Ok(())
+}
+
+fn reserved_named_pi_store_names() -> Vec<&'static str> {
+    std::iter::once("all")
+        .chain(crate::adapter::all::BUILT_IN_AGENT_NAMES.iter().copied())
+        .collect()
+}
+
+fn matches_named_pi_store_name_pattern(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    let rest_len = chars
+        .by_ref()
+        .try_fold(0usize, |count, ch| {
+            (ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '_' | '-'))
+                .then_some(count + 1)
+        })
+        .unwrap_or(usize::MAX);
+    rest_len <= 31
 }
 
 fn object_at<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a Map<String, Value>> {
@@ -232,24 +353,7 @@ fn option_takes_value(arg: &str) -> bool {
 }
 
 fn is_agent_command(command: &str) -> bool {
-    matches!(
-        command,
-        "claude"
-            | "codex"
-            | "opencode"
-            | "amp"
-            | "droid"
-            | "codebuff"
-            | "hermes"
-            | "pi"
-            | "goose"
-            | "kilo"
-            | "qwen"
-            | "copilot"
-            | "gemini"
-            | "kimi"
-            | "openclaw"
-    )
+    crate::adapter::all::BUILT_IN_AGENT_NAMES.contains(&command)
 }
 
 fn is_report_command(command: &str) -> bool {
@@ -262,6 +366,9 @@ fn is_report_command(command: &str) -> bool {
 pub(crate) fn apply_config_to_shared(shared: &mut SharedArgs, config: &ConfigContext) {
     for options in config.option_maps() {
         apply_shared_options(shared, SharedOptions::from_map(options));
+    }
+    if config.error.is_none() {
+        shared.pi_stores = config.pi_stores.clone();
     }
 }
 
@@ -379,6 +486,12 @@ pub(crate) fn apply_config_to_agent_args(
 }
 
 impl crate::cli::CliConfig for ConfigContext {
+    fn config_error(&self) -> Option<&str> {
+        self.command_uses_named_pi_stores()
+            .then_some(self.error.as_deref())
+            .flatten()
+    }
+
     fn apply_shared(&self, shared: &mut SharedArgs) {
         apply_config_to_shared(shared, self);
     }
@@ -611,10 +724,11 @@ mod tests {
     use crate::{
         DEFAULT_SESSION_DURATION_HOURS,
         cli::{
-            BlocksArgs, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay,
-            WeeklyArgs,
+            BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
+            WeekDay, WeeklyArgs,
         },
     };
+    use ccusage_test_support::fs_fixture;
 
     #[test]
     fn applies_schema_backed_shared_options() {
@@ -910,6 +1024,212 @@ mod tests {
         assert_eq!(result.cache_read_input_token_cost, Some(3e-7)); // preserved
     }
 
+    #[test]
+    fn accepts_named_pi_stores_from_config() {
+        let config = config_context_from_json(
+            r#"{
+                "pi": {
+                    "stores": [
+                        { "name": "omp", "path": "~/.omp/agent/sessions" }
+                    ]
+                }
+            }"#,
+        );
+        let mut shared = SharedArgs::default();
+
+        assert_eq!(config.config_error(), None);
+        apply_config_to_shared(&mut shared, &config);
+
+        assert_eq!(shared.pi_stores.len(), 1);
+        assert_eq!(shared.pi_stores[0].name, "omp");
+        assert_eq!(shared.pi_stores[0].path, "~/.omp/agent/sessions");
+    }
+
+    #[test]
+    fn treats_empty_named_pi_store_array_as_no_op() {
+        let config = config_context_from_json(r#"{ "pi": { "stores": [] } }"#);
+        let mut shared = SharedArgs::default();
+
+        assert_eq!(config.config_error(), None);
+        apply_config_to_shared(&mut shared, &config);
+
+        assert!(shared.pi_stores.is_empty());
+    }
+
+    #[test]
+    fn rejects_named_pi_store_bad_shape() {
+        let config = config_context_from_json(r#"{ "pi": { "stores": [{ "name": "omp" }] } }"#);
+
+        assert_eq!(
+            config.config_error(),
+            Some(
+                "Invalid ccusage config: pi.stores[0] must contain string fields 'name' and 'path'"
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_named_pi_store_invalid_name() {
+        let config = config_context_from_json(
+            r#"{ "pi": { "stores": [{ "name": "Omp", "path": "/tmp/omp" }] } }"#,
+        );
+
+        assert_eq!(
+            config.config_error(),
+            Some("Invalid ccusage config: pi.stores[0].name must match ^[a-z][a-z0-9_-]{0,31}$")
+        );
+    }
+
+    #[test]
+    fn rejects_named_pi_store_builtin_agent_collision() {
+        let config = config_context_from_json(
+            r#"{ "pi": { "stores": [{ "name": "pi", "path": "/tmp/omp" }] } }"#,
+        );
+
+        assert_eq!(
+            config.config_error(),
+            Some("Invalid ccusage config: pi.stores name 'pi' collides with a built-in agent")
+        );
+    }
+
+    #[test]
+    fn rejects_named_pi_store_duplicate_name() {
+        let config = config_context_from_json(
+            r#"{
+                "pi": {
+                    "stores": [
+                        { "name": "omp", "path": "/tmp/omp-a" },
+                        { "name": "omp", "path": "/tmp/omp-b" }
+                    ]
+                }
+            }"#,
+        );
+
+        assert_eq!(
+            config.config_error(),
+            Some("Invalid ccusage config: duplicate pi.stores name 'omp'")
+        );
+    }
+
+    #[test]
+    fn rejects_named_pi_store_empty_path_with_store_name() {
+        let config = config_context_from_json(
+            r#"{ "pi": { "stores": [{ "name": "omp", "path": "  " }] } }"#,
+        );
+
+        assert_eq!(
+            config.config_error(),
+            Some("Invalid ccusage config: pi.stores[0] ('omp'): path must be a non-empty string")
+        );
+    }
+
+    #[test]
+    fn named_pi_store_validation_does_not_break_statusline() {
+        let fixture = fs_fixture!({
+            "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
+        });
+        let args = vec![
+            "statusline".to_string(),
+            "--config".to_string(),
+            fixture.path("ccusage.json").to_string_lossy().into_owned(),
+        ];
+        let config = ConfigContext::from_args(&args);
+
+        let parsed = crate::cli::Cli::parse_from_with_config(
+            std::iter::once(std::ffi::OsString::from("ccusage")).chain(
+                args.iter()
+                    .map(|arg| std::ffi::OsString::from(arg.as_str())),
+            ),
+            &config,
+            crate::DEFAULT_SESSION_DURATION_HOURS,
+            env!("CARGO_PKG_VERSION"),
+        );
+
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn named_pi_store_validation_does_not_break_agent_commands() {
+        let fixture = fs_fixture!({
+            "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
+        });
+        let args = vec![
+            "codex".to_string(),
+            "daily".to_string(),
+            "--config".to_string(),
+            fixture.path("ccusage.json").to_string_lossy().into_owned(),
+        ];
+        let config = ConfigContext::from_args(&args);
+
+        let parsed = crate::cli::Cli::parse_from_with_config(
+            std::iter::once(std::ffi::OsString::from("ccusage")).chain(
+                args.iter()
+                    .map(|arg| std::ffi::OsString::from(arg.as_str())),
+            ),
+            &config,
+            crate::DEFAULT_SESSION_DURATION_HOURS,
+            env!("CARGO_PKG_VERSION"),
+        );
+
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn reserved_named_pi_store_names_match_unified_loader_agents() {
+        let reserved = reserved_named_pi_store_names()
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let expected = std::iter::once("all")
+            .chain(crate::adapter::all::BUILT_IN_AGENT_NAMES.iter().copied())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(reserved, expected);
+    }
+
+    #[test]
+    fn named_pi_store_validation_uses_schema_pattern() {
+        assert_eq!(
+            NAMED_PI_STORE_NAME_PATTERN,
+            crate::config_schema::NAMED_PI_STORE_NAME_PATTERN
+        );
+        assert!(validate_named_pi_store_name("omp").is_ok());
+        assert!(validate_named_pi_store_name("o3-fork").is_ok());
+        assert!(validate_named_pi_store_name("Omp").is_err());
+        assert!(validate_named_pi_store_name("all").is_err());
+        assert!(validate_named_pi_store_name("codex").is_err());
+    }
+
+    #[test]
+    fn reports_named_pi_store_validation_through_cli_config_error_path() {
+        let fixture = fs_fixture!({
+            "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
+        });
+        let args = vec![
+            "daily".to_string(),
+            "--config".to_string(),
+            fixture.path("ccusage.json").to_string_lossy().into_owned(),
+        ];
+        let config = ConfigContext::from_args(&args);
+
+        let result = crate::cli::Cli::parse_from_with_config(
+            std::iter::once(std::ffi::OsString::from("ccusage")).chain(
+                args.iter()
+                    .map(|arg| std::ffi::OsString::from(arg.as_str())),
+            ),
+            &config,
+            crate::DEFAULT_SESSION_DURATION_HOURS,
+            env!("CARGO_PKG_VERSION"),
+        );
+        let Err(error) = result else {
+            panic!("expected config error");
+        };
+
+        assert_eq!(
+            error,
+            "Invalid ccusage config: pi.stores name 'codex' collides with a built-in agent"
+        );
+    }
+
     fn context(value: Value, raw: &str, agent: Option<&str>, report: &str) -> ConfigContext {
         ConfigContext {
             value: Some(value),
@@ -918,6 +1238,19 @@ mod tests {
                 agent: agent.map(ToString::to_string),
                 report: report.to_string(),
             },
+            pi_stores: Vec::new(),
+            error: None,
         }
+    }
+
+    fn config_context_from_json(raw: &str) -> ConfigContext {
+        let fixture = fs_fixture!({
+            "ccusage.json": raw,
+        });
+        ConfigContext::from_args(&[
+            "daily".to_string(),
+            "--config".to_string(),
+            fixture.path("ccusage.json").to_string_lossy().into_owned(),
+        ])
     }
 }

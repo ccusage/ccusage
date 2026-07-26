@@ -3,18 +3,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 
 use crate::{
-    Align, CodexGroup, CodexModelUsage, Color, PricingMap, Result, SimpleTable,
-    cli::{AgentReportKind, CodexSpeed, SharedArgs},
+    Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexUsageBucket, Color, PricingMap,
+    Result, SimpleTable,
+    cli::{AgentReportKind, SharedArgs},
     color, format_currency, format_models_multiline, format_number, json_float,
     missing_pricing_model_for_token_total, print_box_title,
     print_missing_pricing_warnings_for_models,
 };
 
+use super::speed::CodexSpeedPolicy;
+
 pub(super) fn report_from_groups(
     groups: &BTreeMap<String, CodexGroup>,
     kind: AgentReportKind,
     pricing: &PricingMap,
-    speed: CodexSpeed,
+    speed: CodexSpeedPolicy,
 ) -> Value {
     let rows = groups
         .iter()
@@ -50,7 +53,7 @@ fn group_json(
     group: &CodexGroup,
     kind: AgentReportKind,
     pricing: &PricingMap,
-    speed: CodexSpeed,
+    speed: CodexSpeedPolicy,
 ) -> Value {
     let cost = calculate_group_cost(group, pricing, speed);
     let input_tokens = non_cached_input_tokens(group.input_tokens, group.cached_input_tokens);
@@ -98,7 +101,7 @@ fn model_usage_json(usage: &CodexModelUsage) -> Value {
 fn totals_json<'a>(
     groups: impl Iterator<Item = &'a CodexGroup>,
     pricing: &PricingMap,
-    speed: CodexSpeed,
+    speed: CodexSpeedPolicy,
 ) -> Value {
     let mut input = 0;
     let mut cached = 0;
@@ -129,37 +132,97 @@ pub(crate) fn calculate_codex_model_cost(
     model: &str,
     usage: &CodexModelUsage,
     pricing: &PricingMap,
-    speed: CodexSpeed,
+    speed: impl Into<CodexSpeedPolicy>,
 ) -> f64 {
     let Some(pricing) = pricing.find(model) else {
         return 0.0;
     };
-    let non_cached_input = usage.input_tokens.saturating_sub(usage.cached_input_tokens);
-    let multiplier = if matches!(speed, CodexSpeed::Fast) {
-        if pricing.fast_multiplier == 1.0 {
-            2.0
-        } else {
-            pricing.fast_multiplier
+    let total_usage = model_usage_bucket(usage);
+    let standard_cost = calculate_codex_bucket_cost(&total_usage, &pricing);
+    let fast_usage = match speed.into() {
+        CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => return standard_cost,
+        CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => total_usage,
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard) => usage.recorded_fast_usage,
+        CodexSpeedPolicy::Auto(CodexServiceTier::Fast) => {
+            subtract_codex_usage_bucket(total_usage, usage.recorded_standard_usage)
         }
-    } else {
-        1.0
     };
+    standard_cost
+        + calculate_codex_bucket_cost(&fast_usage, &pricing) * (pricing.fast_multiplier - 1.0)
+}
+
+fn model_usage_bucket(usage: &CodexModelUsage) -> CodexUsageBucket {
+    CodexUsageBucket {
+        input_tokens: usage.input_tokens,
+        cached_input_tokens: usage.cached_input_tokens,
+        output_tokens: usage.output_tokens,
+        long_context_input_tokens: usage.long_context_input_tokens,
+        long_context_cached_input_tokens: usage.long_context_cached_input_tokens,
+        long_context_output_tokens: usage.long_context_output_tokens,
+    }
+}
+
+fn subtract_codex_usage_bucket(
+    total: CodexUsageBucket,
+    excluded: CodexUsageBucket,
+) -> CodexUsageBucket {
+    CodexUsageBucket {
+        input_tokens: total.input_tokens.saturating_sub(excluded.input_tokens),
+        cached_input_tokens: total
+            .cached_input_tokens
+            .saturating_sub(excluded.cached_input_tokens),
+        output_tokens: total.output_tokens.saturating_sub(excluded.output_tokens),
+        long_context_input_tokens: total
+            .long_context_input_tokens
+            .saturating_sub(excluded.long_context_input_tokens),
+        long_context_cached_input_tokens: total
+            .long_context_cached_input_tokens
+            .saturating_sub(excluded.long_context_cached_input_tokens),
+        long_context_output_tokens: total
+            .long_context_output_tokens
+            .saturating_sub(excluded.long_context_output_tokens),
+    }
+}
+
+fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricing) -> f64 {
     let cache_read = if pricing.cache_read_explicit {
         pricing.cache_read
     } else {
         pricing.input
     };
-    (non_cached_input as f64 * pricing.input
-        + usage.cached_input_tokens as f64 * cache_read
-        + usage.output_tokens as f64 * pricing.output)
-        * multiplier
+    // OpenAI bills every token of a long-context request (input above 272K
+    // tokens) at the long-context rates, so the aggregated usage is priced as
+    // two independent buckets. Models without long-context rates fall back to
+    // the flat rates, which keeps both buckets at the same price.
+    let long_input_rate = pricing.input_above_200k.unwrap_or(pricing.input);
+    let long_output_rate = pricing.output_above_200k.unwrap_or(pricing.output);
+    let long_cache_read = if pricing.cache_read_explicit {
+        pricing.cache_read_above_200k.unwrap_or(cache_read)
+    } else {
+        long_input_rate
+    };
+    let long_input = usage.long_context_input_tokens.min(usage.input_tokens);
+    let long_cached = usage
+        .long_context_cached_input_tokens
+        .min(usage.cached_input_tokens)
+        .min(long_input);
+    let long_output = usage.long_context_output_tokens.min(usage.output_tokens);
+    let short_non_cached =
+        (usage.input_tokens - long_input).saturating_sub(usage.cached_input_tokens - long_cached);
+    let long_non_cached = long_input - long_cached;
+    short_non_cached as f64 * pricing.input
+        + (usage.cached_input_tokens - long_cached) as f64 * cache_read
+        + (usage.output_tokens - long_output) as f64 * pricing.output
+        + long_non_cached as f64 * long_input_rate
+        + long_cached as f64 * long_cache_read
+        + long_output as f64 * long_output_rate
 }
 
-pub(crate) fn calculate_group_cost(
-    group: &CodexGroup,
-    pricing: &PricingMap,
-    speed: CodexSpeed,
-) -> f64 {
+pub(crate) fn calculate_group_cost<S>(group: &CodexGroup, pricing: &PricingMap, speed: S) -> f64
+where
+    S: Into<CodexSpeedPolicy> + Copy,
+{
+    let speed = speed.into();
     group
         .models
         .iter()
@@ -201,7 +264,7 @@ pub(super) fn print_table_from_groups(
     groups: &BTreeMap<String, CodexGroup>,
     kind: AgentReportKind,
     pricing: &PricingMap,
-    speed: CodexSpeed,
+    speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Result<()> {
     if groups.is_empty() {

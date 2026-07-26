@@ -7,7 +7,7 @@ description: >
   so the store never accumulates across runs the way a sticky disk did. Trimming
   before save would only delete the unrooted crane deps and force a recompile, so
   we let cache-nix-action save the whole non-substitutable set as-is and rely on
-  purge to roll off stale entries.
+  Blacksmith to evict stale entries.
 inputs:
   cache-scope:
     description: >
@@ -20,7 +20,7 @@ runs:
   using: composite
   steps:
     - name: Install Nix
-      uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
+      uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
       with:
         github_access_token: ${{ github.token }}
         nix_conf: |
@@ -28,7 +28,7 @@ runs:
 
     # github.workflow is included so workflows that share a job id (e.g.
     # build-native-packages in both ci.yaml and release.yaml) do not collide on
-    # the same primary-key / purge-prefix and evict each other's entries.
+    # the same primary-key and block each other from saving updated entries.
     - name: Cache Nix store
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
@@ -36,15 +36,19 @@ runs:
         # cache-nix-action skips saving on an exact primary-key hit, so a key that
         # only depended on the deps hash would persist the first run's store
         # forever. restore-prefixes-first-match (without the sha) then restores
-        # the newest prior entry to warm the deps. The cache backend is
-        # effectively unlimited, so one entry per commit is fine and `purge`
-        # rolls off the old ones.
-        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'package.json', 'nix/**/*.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-${{ github.sha }}
-        restore-prefixes-first-match: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'package.json', 'nix/**/*.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
-        purge: true
-        purge-prefixes: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-
-        purge-created: 172800
-        purge-primary-key: never
+        # the newest prior entry to warm the deps. Blacksmith handles stale cache
+        # eviction without the GitHub REST API used by this action's purge mode.
+        # package.json only supplies the final binary version. It is excluded
+        # because release bumps do not change the deps-only Crane derivation.
+        # Likewise, checks and developer-tooling modules do not affect Cargo
+        # artifacts; only package modules participate in this key.
+        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-${{ github.sha }}
+        # First prefix prefers the current deps hash. The second drops the hash so
+        # a flake change that only adds developer tooling still restores the newest
+        # prior store instead of starting from a cold cache.
+        restore-prefixes-first-match: |
+          nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
+          nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-
 
     - name: Fix single-user Nix store ownership
       if: runner.os != 'Windows'

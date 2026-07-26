@@ -1,13 +1,55 @@
-name: npm publish
+name: tagpr
 
 on:
   push:
-    tags:
-      - '*'
+    branches:
+      - main
+  # Toggling tagpr:minor / tagpr:major labels on the release PR should update
+  # its proposed version right away, instead of waiting for the next push to
+  # main to make tagpr recompute it.
+  pull_request:
+    types:
+      - labeled
+      - unlabeled
+  workflow_dispatch:
+
+concurrency: tagpr
 
 jobs:
+  tagpr:
+    # Label events only matter on tagpr's own release PR; skip the rest so
+    # ordinary PR labeling doesn't spend runner time.
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'tagpr-from-')
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+    outputs:
+      tag: ${{ steps.tagpr.outputs.tag }}
+    steps:
+      # persist-credentials stays on (default) so tagpr can push the release PR and tag
+      # ref: main because on pull_request events the default checkout is the
+      # PR merge ref, while tagpr always operates on the release branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - id: tagpr
+        uses: Songmu/tagpr@d1b8138b7a31075141b6cd64103de9485ced7ac9 # v1.20.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The release jobs below run in this workflow instead of a tag-triggered one
+  # because tags pushed with GITHUB_TOKEN do not trigger `on: push: tags`
+  # workflows. They run only when tagpr just tagged a release-PR merge, and
+  # check out that tag explicitly. To retry a failed release, re-run only the
+  # failed jobs: a full re-run finds no new tag and skips everything.
   build-native-packages:
     name: ${{ matrix.name }}
+    needs: tagpr
+    if: needs.tagpr.outputs.tag != ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -46,8 +88,9 @@ jobs:
             binary: rust/target/release/ccusage.exe
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.tagpr.outputs.tag }}
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/build-linux-native-package
@@ -70,19 +113,22 @@ jobs:
 
   npm:
     needs:
+      - tagpr
       - build-native-packages
+    if: needs.tagpr.outputs.tag != ''
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.tagpr.outputs.tag }}
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           registry-url: 'https://registry.npmjs.org'
           node-version: lts/*
@@ -105,16 +151,21 @@ jobs:
 
   release:
     needs:
+      - tagpr
       - npm
-    runs-on: blacksmith-32vcpu-ubuntu-2404-arm
+    if: needs.tagpr.outputs.tag != ''
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # changelogithub resolves the release tag with `git tag --points-at HEAD`,
+      # so checking out the tag is what makes it pick the right release
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.tagpr.outputs.tag }}
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      - run: nix develop --command pnpm changelogithub
+      - run: nix run .#changelogithub
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}

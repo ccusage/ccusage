@@ -85,6 +85,18 @@ pub(super) struct CodexPayload<'a> {
         deserialize_with = "deserialize_optional_object_lossy"
     )]
     pub(super) metadata: Option<CodexModelMetadata<'a>>,
+    #[serde(
+        borrow,
+        default,
+        deserialize_with = "deserialize_optional_object_lossy"
+    )]
+    pub(super) thread_settings: Option<CodexThreadSettings<'a>>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct CodexThreadSettings<'a> {
+    #[serde(borrow, default)]
+    pub(super) service_tier: Option<Cow<'a, str>>,
 }
 
 #[derive(Default, Deserialize)]
