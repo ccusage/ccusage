@@ -94,6 +94,7 @@ pub fn print_table_for_agent(
             .date
             .as_deref()
             .or(row.month.as_deref())
+            .or(row.week.as_deref())
             .or(row.session_id.as_deref())
             .unwrap_or("");
         let models = format_models_multiline(&row.models_used);
@@ -118,12 +119,7 @@ pub fn print_table_for_agent(
                 format_number(row.output_tokens),
                 format_number(row.cache_creation_tokens),
                 format_number(row.cache_read_tokens),
-                format_number(
-                    row.input_tokens
-                        + row.output_tokens
-                        + row.cache_creation_tokens
-                        + row.cache_read_tokens,
-                ),
+                format_number(row.total_tokens()),
                 format!("{:.2}", row.credits.unwrap_or_default()),
                 format_currency(row.total_cost),
             ];
@@ -184,7 +180,7 @@ pub fn print_table_for_agent(
             color(shared, format_number(cache_read), Color::Yellow),
             color(
                 shared,
-                format_number(input + output + cache_create + cache_read),
+                format_number(json_value_u64(totals.get("totalTokens"))),
                 Color::Yellow,
             ),
             color(shared, format!("{credits:.2}"), Color::Yellow),
