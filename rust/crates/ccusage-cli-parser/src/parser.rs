@@ -1,12 +1,11 @@
-use std::{env, ffi::OsString, path::PathBuf, process};
+use std::{ffi::OsString, path::PathBuf};
 
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DailyArgs, NoConfig, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS, SessionArgs,
-    SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    CostSource, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs,
+    SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 use crate::Cli;
@@ -51,19 +50,14 @@ impl RootAllOptions {
 }
 
 impl Cli {
-    pub fn parse() -> Self {
-        Self::parse_from(env::args_os()).unwrap_or_else(|message| {
-            eprintln!("{message}");
-            eprintln!("Run 'ccusage --help' for usage.");
-            process::exit(2);
-        })
-    }
-
+    // The binary parses through parse_from_with_config, since it has to hand the
+    // parser a config context; this shorthand exists for the tests.
+    #[cfg(test)]
     pub(crate) fn parse_from<I>(args: I) -> Result<Self, String>
     where
         I: IntoIterator<Item = OsString>,
     {
-        Self::parse_from_with_config(args, &NoConfig, 5.0, env!("CARGO_PKG_VERSION"))
+        Self::parse_from_with_config(args, &ccusage_cli::NoConfig, 5.0, env!("CARGO_PKG_VERSION"))
     }
 
     pub fn parse_from_with_config<I>(

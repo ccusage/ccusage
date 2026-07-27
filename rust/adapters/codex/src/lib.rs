@@ -22,9 +22,9 @@ pub use report::{
 };
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
 pub use types::{
-    CodexGroup, CodexModelUsage, CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent,
-    CodexUsageBucket, merge_codex_service_tiers,
+    CodexGroup, CodexModelUsage, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket,
 };
+pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
 use report::{print_table_from_groups, report_from_groups};
 

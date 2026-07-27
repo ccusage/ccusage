@@ -12,7 +12,8 @@ use crate::{
 };
 
 pub use loader::load_entries;
-pub use report::{report_from_rows, summarize_entries};
+pub(crate) use report::report_from_rows;
+pub use report::summarize_entries;
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;

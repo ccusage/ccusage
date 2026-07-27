@@ -28,7 +28,8 @@ use crate::{
 
 #[doc(hidden)]
 pub use paths::timestamp_from_line;
-pub use paths::{claude_paths, extract_project, extract_session_parts, usage_files};
+pub use paths::usage_files;
+pub(crate) use paths::{claude_paths, extract_project, extract_session_parts};
 
 pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result<Vec<LoadedEntry>> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-pub fn parse_project_aliases(raw: Option<&str>) -> HashMap<String, String> {
+pub(crate) fn parse_project_aliases(raw: Option<&str>) -> HashMap<String, String> {
     raw.unwrap_or_default()
         .split(',')
         .filter_map(|pair| {
