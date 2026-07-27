@@ -142,6 +142,9 @@ bunx ccusage daily --by-agent --json
 
 # Filters and options
 bunx ccusage daily --since 2026-04-25 --until 2026-05-16
+bunx ccusage daily --last 1  # Today
+bunx ccusage weekly --last 1  # This week
+bunx ccusage monthly --last 1  # This month
 bunx ccusage daily --json  # JSON output
 bunx ccusage daily --no-cost  # Hide cost columns and JSON cost fields
 bunx ccusage daily --timezone UTC  # Use UTC timezone
@@ -167,6 +170,7 @@ bunx ccusage monthly --compact  # Compact monthly report
 - 🤖 **Model Tracking**: See which models are used across supported sources
 - 📊 **Model Breakdown**: View per-model cost breakdown with `--breakdown` flag
 - 📅 **Date Filtering**: Filter reports by date range using `--since` and `--until`
+- ⏱️ **Recent Periods**: Jump to today, this week, or this month with `--last 1` on any daily, weekly, or monthly report
 - 📁 **Custom Paths**: Support for custom local data directory locations
 - 🎨 **Beautiful Output**: Colorful table-formatted display with automatic responsive layout
 - 📱 **Smart Tables**: Automatic compact mode for narrow terminals (< 100 characters) with essential columns

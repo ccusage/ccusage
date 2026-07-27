@@ -71,6 +71,21 @@ ccusage monthly --since $(date -d '6 months ago' +%Y%m%d)
 Even though you specify full dates (YYYYMMDD), monthly reports group by month. The filters determine which months to include.
 :::
 
+### Recent Months
+
+`--last` counts whole months, so the shell date arithmetic above is not needed:
+
+```bash
+# This month so far
+ccusage monthly --last 1
+
+# This month and the five before it
+ccusage monthly --last 6
+ccusage monthly -l 6
+```
+
+`--last` cannot be combined with `--since` or `--until`.
+
 ### Sort Order
 
 ```bash

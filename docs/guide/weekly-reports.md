@@ -69,6 +69,21 @@ ccusage weekly --since 20260501 --until 20260531
 ccusage weekly --since 20260420
 ```
 
+### Recent Weeks
+
+Count back in whole weeks instead of dates:
+
+```bash
+# This week so far
+ccusage weekly --last 1
+
+# This week and the three before it
+ccusage weekly --last 4
+ccusage weekly -l 4
+```
+
+The window starts on the same weekday the report buckets by, so `ccusage claude weekly --last 1 -w monday` starts on Monday. `--last` cannot be combined with `--since` or `--until`.
+
 ### Sort Order
 
 Control the order of weeks:

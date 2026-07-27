@@ -67,6 +67,21 @@ ccusage daily --since 20260510 --until 20260516
 ccusage daily --since 20260501
 ```
 
+### Recent Days
+
+Skip the date arithmetic when you only want the days just gone:
+
+```bash
+# Today
+ccusage daily --last 1
+
+# The last seven days, including today
+ccusage daily --last 7
+ccusage daily -l 7
+```
+
+`--last` cannot be combined with `--since` or `--until`. See [Command-Line Options](/guide/cli-options#recent-periods) for how it behaves on the other reports.
+
 ### Sort Order
 
 Control the order of dates:
