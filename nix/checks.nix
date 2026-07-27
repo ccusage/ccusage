@@ -44,6 +44,22 @@ in
           cargoClippyExtraArgs = "--all-targets -- -D warnings";
         }
       );
+      # hawk belongs here rather than in treefmt: it analyses the whole workspace as a
+      # closed world instead of a file at a time, and narrowing a visibility is a
+      # semantic change, not formatting. It reuses the same cargo artifacts as clippy,
+      # so the cost is its own analysis rather than another workspace build.
+      ccusage-hawk = craneLib.mkCargoDerivation (
+        commonArgs
+        // {
+          pname = "ccusage-hawk";
+          src = rustSrc;
+          sourceRoot = "source/rust";
+          cargoLock = root + /rust/Cargo.lock;
+          inherit cargoArtifacts;
+          nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ config.packages.cargo-hawk ];
+          buildPhaseCargoCommand = "cargo hawk check --manifest-path Cargo.toml -D warnings";
+        }
+      );
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
@@ -148,6 +164,7 @@ in
           bun-nix
           ccusage-clippy
           ccusage-fmt
+          ccusage-hawk
           config-schema
           ;
         oxlint = mkRepoCheck "oxlint-check" [ pkgs.oxlint ] ''

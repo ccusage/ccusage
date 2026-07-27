@@ -79,10 +79,17 @@ a source build would need the `rustc-dev` component and `RUSTC_BOOTSTRAP=1`; the
 published binary needs neither. Bumping it means changing `version` and the four
 `sha256` values, which upstream publishes beside each archive.
 
+`nix flake check` gates on it through `checks.<system>.ccusage-hawk`, so a new
+unnecessary `pub` fails CI rather than accumulating. It reuses clippy's cargo
+artifacts, and it lives there rather than in treefmt because it analyses the whole
+workspace as a closed world instead of a file at a time, and because narrowing a
+visibility is a semantic change rather than formatting.
+
 Because it links compiler internals it only runs on the toolchain it was built
 against, which is why `rust-toolchain.toml` pins 1.97.1. It is experimental - its
-README says it is "not intended for public consumption" - and no CI check runs
-it, so read its findings as suggestions and confirm each one before narrowing.
+README says it is "not intended for public consumption" - so when a finding looks
+wrong, check whether `rust/hawk.toml` is missing an entry point before narrowing
+anything.
 
 ## Pricing Embedding
 
