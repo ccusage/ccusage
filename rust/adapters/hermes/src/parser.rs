@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub(super) struct HermesEntry {
-    pub(super) timestamp: TimestampMs,
+    timestamp: TimestampMs,
     timestamp_text: String,
     pub(super) session_id: String,
     model: String,

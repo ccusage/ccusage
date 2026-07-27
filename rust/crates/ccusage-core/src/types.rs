@@ -51,9 +51,9 @@ impl TokenUsageRaw {
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct CacheCreationRaw {
     #[serde(default)]
-    pub ephemeral_5m_input_tokens: u64,
+    pub(crate) ephemeral_5m_input_tokens: u64,
     #[serde(default)]
-    pub ephemeral_1h_input_tokens: u64,
+    pub(crate) ephemeral_1h_input_tokens: u64,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -70,7 +70,7 @@ pub struct TokenCounts {
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
-    pub extra_total_tokens: u64,
+    pub(crate) extra_total_tokens: u64,
 }
 
 impl TokenCounts {

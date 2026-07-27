@@ -341,7 +341,7 @@ pub fn print_missing_pricing_warnings(rows: &[UsageSummary], offline: bool) {
     }
 }
 
-pub fn missing_pricing_warnings(rows: &[UsageSummary], offline: bool) -> Vec<String> {
+fn missing_pricing_warnings(rows: &[UsageSummary], offline: bool) -> Vec<String> {
     let models = rows
         .iter()
         .flat_map(|row| &row.model_breakdowns)
@@ -360,7 +360,7 @@ pub fn print_missing_pricing_warnings_for_models<'a>(
     }
 }
 
-pub fn missing_pricing_warnings_for_models<'a>(
+fn missing_pricing_warnings_for_models<'a>(
     models: impl IntoIterator<Item = &'a str>,
     offline: bool,
 ) -> Vec<String> {

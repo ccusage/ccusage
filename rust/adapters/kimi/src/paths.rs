@@ -7,10 +7,10 @@ use std::{
 use crate::{Result, collect_files_with_extension};
 
 pub(super) const KIMI_DATA_DIR_ENV: &str = "KIMI_DATA_DIR";
-pub(super) const KIMI_SESSIONS_DIR_NAME: &str = "sessions";
-pub(super) const KIMI_WIRE_FILE_NAME: &str = "wire.jsonl";
+const KIMI_SESSIONS_DIR_NAME: &str = "sessions";
+const KIMI_WIRE_FILE_NAME: &str = "wire.jsonl";
 
-pub(super) fn paths() -> Result<Vec<PathBuf>> {
+fn paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
     if let Ok(env_paths) = env::var(KIMI_DATA_DIR_ENV) {

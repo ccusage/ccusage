@@ -362,7 +362,7 @@ fn is_report_command(command: &str) -> bool {
     )
 }
 
-pub fn apply_config_to_shared(shared: &mut SharedArgs, config: &ConfigContext) {
+fn apply_config_to_shared(shared: &mut SharedArgs, config: &ConfigContext) {
     for options in config.option_maps() {
         apply_shared_options(shared, SharedOptions::from_map(options));
     }
@@ -371,7 +371,7 @@ pub fn apply_config_to_shared(shared: &mut SharedArgs, config: &ConfigContext) {
     }
 }
 
-pub fn apply_config_to_daily_args(args: &mut DailyArgs, config: &ConfigContext) {
+fn apply_config_to_daily_args(args: &mut DailyArgs, config: &ConfigContext) {
     for options in config.option_maps() {
         let options = DailySpecificOptions::from_map(options);
         if let Some(instances) = options.instances {
@@ -386,7 +386,7 @@ pub fn apply_config_to_daily_args(args: &mut DailyArgs, config: &ConfigContext) 
     }
 }
 
-pub fn apply_config_to_weekly_args(args: &mut WeeklyArgs, config: &ConfigContext) {
+fn apply_config_to_weekly_args(args: &mut WeeklyArgs, config: &ConfigContext) {
     for options in config.option_maps() {
         if let Some(day) = WeeklySpecificOptions::from_map(options).start_of_week {
             args.start_of_week = day.into();
@@ -394,7 +394,7 @@ pub fn apply_config_to_weekly_args(args: &mut WeeklyArgs, config: &ConfigContext
     }
 }
 
-pub fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
+fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
     for options in config.option_maps() {
         let options = BlocksSpecificOptions::from_map(options);
         if let Some(active) = options.active {
@@ -412,7 +412,7 @@ pub fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext
     }
 }
 
-pub fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigContext) {
+fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigContext) {
     for options in config.option_maps() {
         let options = StatuslineSpecificOptions::from_map(options);
         if let Some(offline) = options.offline {
@@ -460,7 +460,7 @@ pub fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &Confi
     }
 }
 
-pub fn apply_config_to_agent_args(
+fn apply_config_to_agent_args(
     codex_speed: &mut CodexSpeed,
     mut pi_path: Option<&mut Option<String>>,
     mut open_claw_path: Option<&mut Option<String>>,

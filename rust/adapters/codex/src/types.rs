@@ -4,11 +4,11 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CodexRawUsage {
-    pub input_tokens: u64,
-    pub cached_input_tokens: u64,
-    pub output_tokens: u64,
-    pub reasoning_output_tokens: u64,
-    pub total_tokens: u64,
+    pub(crate) input_tokens: u64,
+    pub(crate) cached_input_tokens: u64,
+    pub(crate) output_tokens: u64,
+    pub(crate) reasoning_output_tokens: u64,
+    pub(crate) total_tokens: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

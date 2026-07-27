@@ -171,7 +171,7 @@ fn merge_model_breakdowns(
     breakdowns
 }
 
-pub(super) fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
+fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
     let mut indexes = FxHashMap::<String, usize>::default();
     let mut breakdowns: Vec<ModelBreakdown> = Vec::new();
     for row in rows {

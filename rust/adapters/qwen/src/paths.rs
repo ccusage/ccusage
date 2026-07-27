@@ -8,7 +8,7 @@ use crate::{Result, collect_files_with_extension};
 
 const QWEN_DATA_DIR_ENV: &str = "QWEN_DATA_DIR";
 
-pub(super) fn paths() -> Result<Vec<PathBuf>> {
+fn paths() -> Result<Vec<PathBuf>> {
     let candidates = if let Ok(paths) = env::var(QWEN_DATA_DIR_ENV) {
         paths
             .split(',')

@@ -75,7 +75,7 @@ pub struct ByteLines<'a> {
 }
 
 impl<'a> ByteLines<'a> {
-    pub fn new(bytes: &'a [u8]) -> Self {
+    fn new(bytes: &'a [u8]) -> Self {
         Self { bytes }
     }
 }

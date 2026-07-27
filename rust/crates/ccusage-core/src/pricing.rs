@@ -27,31 +27,31 @@ const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 pub struct Pricing {
     pub input: f64,
     pub output: f64,
-    pub cache_create: f64,
+    pub(crate) cache_create: f64,
     pub cache_read: f64,
     pub cache_read_explicit: bool,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
-    pub cache_create_above_200k: Option<f64>,
+    pub(crate) cache_create_above_200k: Option<f64>,
     pub cache_read_above_200k: Option<f64>,
     // Token count above which the `*_above_200k` rates apply. The field names
     // keep the LiteLLM `_above_200k_tokens` suffix for JSON compatibility, but
     // some providers switch tiers at a different point (OpenAI long-context
     // pricing starts above 272K input tokens), so the threshold is per model.
-    pub long_context_threshold: Option<u64>,
+    pub(crate) long_context_threshold: Option<u64>,
     pub fast_multiplier: f64,
 }
 
 /// Default tier boundary for LiteLLM `*_above_200k_tokens` pricing fields.
-pub const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
+pub(crate) const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
 /// OpenAI long-context pricing boundary: requests with more than 272K input
 /// tokens (GPT-5's maximum short-context input size) are billed at
 /// long-context rates.
-pub const OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 272_000;
+const OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 272_000;
 
 impl Pricing {
-    pub const fn empty() -> Self {
+    const fn empty() -> Self {
         Self {
             input: 0.0,
             output: 0.0,
@@ -528,7 +528,7 @@ impl PricingMap {
         })
     }
 
-    pub fn apply_overrides<'a, I>(&mut self, overrides: I)
+    fn apply_overrides<'a, I>(&mut self, overrides: I)
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {

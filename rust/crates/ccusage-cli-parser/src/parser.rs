@@ -59,7 +59,7 @@ impl Cli {
         })
     }
 
-    pub fn parse_from<I>(args: I) -> Result<Self, String>
+    pub(crate) fn parse_from<I>(args: I) -> Result<Self, String>
     where
         I: IntoIterator<Item = OsString>,
     {

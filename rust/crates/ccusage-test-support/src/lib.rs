@@ -98,7 +98,7 @@ impl Fixture {
         self.dir.path().join(path)
     }
 
-    pub fn child(&self, path: impl AsRef<Path>) -> ChildPath {
+    fn child(&self, path: impl AsRef<Path>) -> ChildPath {
         self.dir.child(path)
     }
 

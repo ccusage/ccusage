@@ -21,10 +21,10 @@ pub(super) struct DroidEntry {
 
 #[derive(Default)]
 pub(super) struct DroidTokenUsage {
-    pub(super) input_tokens: u64,
+    input_tokens: u64,
     pub(super) output_tokens: u64,
-    pub(super) cache_creation_tokens: u64,
-    pub(super) cache_read_tokens: u64,
+    cache_creation_tokens: u64,
+    cache_read_tokens: u64,
     pub(super) thinking_tokens: u64,
 }
 

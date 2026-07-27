@@ -176,7 +176,7 @@ impl UsageLoadProgress {
         self.set_state(agent, LoadProgressState::Failed);
     }
 
-    pub fn stop(&mut self) {
+    fn stop(&mut self) {
         if !self.enabled || self.stopped {
             return;
         }
@@ -209,7 +209,7 @@ impl UsageLoadProgress {
         });
     }
 
-    pub fn set_status(&mut self, status: Option<String>) {
+    fn set_status(&mut self, status: Option<String>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -283,7 +283,11 @@ pub fn track_usage_load<T, E>(
     result
 }
 
-pub fn track_status<T>(enabled: bool, status: impl Into<String>, run: impl FnOnce() -> T) -> T {
+pub(crate) fn track_status<T>(
+    enabled: bool,
+    status: impl Into<String>,
+    run: impl FnOnce() -> T,
+) -> T {
     let mut progress = UsageLoadProgress::new(enabled);
     progress.set_status(Some(status.into()));
     let result = run();

@@ -11,12 +11,12 @@ const DEFAULT_CODEBUFF_MODEL: &str = "codebuff-unknown";
 
 #[derive(Clone, Default)]
 pub(super) struct AssistantUsage {
-    pub(super) model: Option<String>,
-    pub(super) credits: f64,
-    pub(super) input_tokens: u64,
+    model: Option<String>,
+    credits: f64,
+    input_tokens: u64,
     pub(super) output_tokens: u64,
-    pub(super) cache_creation_input_tokens: u64,
-    pub(super) cache_read_input_tokens: u64,
+    cache_creation_input_tokens: u64,
+    cache_read_input_tokens: u64,
     pub(super) extra_total_tokens: u64,
 }
 

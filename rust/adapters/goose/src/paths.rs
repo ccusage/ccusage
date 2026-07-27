@@ -2,7 +2,7 @@ use std::{collections::HashSet, env, path::PathBuf};
 
 use crate::Result;
 
-pub(super) const GOOSE_PATH_ROOT_ENV: &str = "GOOSE_PATH_ROOT";
+const GOOSE_PATH_ROOT_ENV: &str = "GOOSE_PATH_ROOT";
 pub(super) const GOOSE_DB_FILE_NAME: &str = "sessions.db";
 
 pub(super) fn goose_db_paths() -> Result<Vec<PathBuf>> {

@@ -373,8 +373,8 @@ struct UsageIteration {
 }
 
 pub(crate) struct AdvisorUsage {
-    pub(crate) model: String,
-    pub(crate) usage: TokenUsageRaw,
+    model: String,
+    usage: TokenUsageRaw,
 }
 
 pub(crate) fn advisor_usages_from_line(line: &[u8]) -> Vec<AdvisorUsage> {
@@ -410,7 +410,7 @@ fn update_loaded_file_timestamp(loaded_file: &mut LoadedFile, timestamp: Timesta
     );
 }
 
-pub(crate) fn is_valid_usage_entry(data: &UsageEntry) -> bool {
+fn is_valid_usage_entry(data: &UsageEntry) -> bool {
     if data
         .version
         .as_deref()

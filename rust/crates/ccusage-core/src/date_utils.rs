@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use jiff::{Timestamp as JiffTimestamp, tz::TimeZone as JiffTimeZone};
 
-pub const MILLIS_PER_SECOND: i64 = 1_000;
+const MILLIS_PER_SECOND: i64 = 1_000;
 pub const MILLIS_PER_MINUTE: i64 = 60 * MILLIS_PER_SECOND;
 pub const MILLIS_PER_HOUR: i64 = 60 * MILLIS_PER_MINUTE;
 pub const MILLIS_PER_DAY: i64 = 24 * MILLIS_PER_HOUR;
@@ -18,14 +18,14 @@ pub struct UtcParts {
     pub hour: u32,
     pub minute: u32,
     pub second: u32,
-    pub millisecond: u32,
+    millisecond: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct IsoDate {
-    pub year: i32,
-    pub month: u32,
-    pub day: u32,
+    year: i32,
+    month: u32,
+    day: u32,
 }
 
 impl TimestampMs {
@@ -59,7 +59,7 @@ impl TimestampMs {
         Self(self.0.div_euclid(MILLIS_PER_HOUR) * MILLIS_PER_HOUR)
     }
 
-    pub fn utc_parts(self) -> UtcParts {
+    fn utc_parts(self) -> UtcParts {
         let seconds = self.0.div_euclid(MILLIS_PER_SECOND);
         let millisecond = self.0.rem_euclid(MILLIS_PER_SECOND) as u32;
         let days = seconds.div_euclid(86_400);
@@ -78,22 +78,22 @@ impl TimestampMs {
 }
 
 impl IsoDate {
-    pub fn from_ymd(year: i32, month: u32, day: u32) -> Option<Self> {
+    fn from_ymd(year: i32, month: u32, day: u32) -> Option<Self> {
         if !(1..=12).contains(&month) || day == 0 || day > days_in_month(year, month) {
             return None;
         }
         Some(Self { year, month, day })
     }
 
-    pub fn days_since_epoch(self) -> i64 {
+    fn days_since_epoch(self) -> i64 {
         days_from_civil(self.year, self.month, self.day)
     }
 
-    pub fn weekday_from_sunday(self) -> u32 {
+    pub(crate) fn weekday_from_sunday(self) -> u32 {
         (self.days_since_epoch() + 4).rem_euclid(7) as u32
     }
 
-    pub fn checked_add_days(self, days: i64) -> Option<Self> {
+    pub(crate) fn checked_add_days(self, days: i64) -> Option<Self> {
         let days = self.days_since_epoch().checked_add(days)?;
         let (year, month, day) = civil_from_days(days);
         Some(Self { year, month, day })
@@ -144,7 +144,7 @@ pub fn parse_ts_timestamp(value: &str) -> Option<TimestampMs> {
     TimestampMs::from_millis(timestamp).checked_sub_millis(timezone_offset * MILLIS_PER_MINUTE)
 }
 
-pub fn parse_timezone_offset(bytes: &[u8]) -> Option<i64> {
+fn parse_timezone_offset(bytes: &[u8]) -> Option<i64> {
     if bytes == b"Z" {
         return Some(0);
     }
@@ -160,7 +160,7 @@ pub fn parse_timezone_offset(bytes: &[u8]) -> Option<i64> {
     Some(if bytes[0] == b'+' { offset } else { -offset })
 }
 
-pub fn parse_iso_date(value: &str) -> Option<IsoDate> {
+pub(crate) fn parse_iso_date(value: &str) -> Option<IsoDate> {
     let bytes = value.as_bytes();
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
         return None;
@@ -171,7 +171,7 @@ pub fn parse_iso_date(value: &str) -> Option<IsoDate> {
     IsoDate::from_ymd(year, month, day)
 }
 
-pub fn parse_digits(bytes: &[u8]) -> Option<u32> {
+fn parse_digits(bytes: &[u8]) -> Option<u32> {
     let mut value: u32 = 0;
     for byte in bytes {
         if !byte.is_ascii_digit() {
@@ -182,7 +182,7 @@ pub fn parse_digits(bytes: &[u8]) -> Option<u32> {
     Some(value)
 }
 
-pub fn days_in_month(year: i32, month: u32) -> u32 {
+fn days_in_month(year: i32, month: u32) -> u32 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
@@ -192,11 +192,11 @@ pub fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
-pub fn is_leap_year(year: i32) -> bool {
+fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
-pub fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
     let year = i64::from(year) - i64::from(month <= 2);
     let era = year.div_euclid(400);
     let year_of_era = year - era * 400;
@@ -206,7 +206,7 @@ pub fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
     era * 146_097 + day_of_era - 719_468
 }
 
-pub fn civil_from_days(days: i64) -> (i32, u32, u32) {
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
     let days = days + 719_468;
     let era = days.div_euclid(146_097);
     let day_of_era = days - era * 146_097;
@@ -242,16 +242,16 @@ pub fn format_date_tz(timestamp: TimestampMs, timezone: Option<&JiffTimeZone>) -
     )
 }
 
-pub fn format_utc_date(timestamp: TimestampMs) -> String {
+fn format_utc_date(timestamp: TimestampMs) -> String {
     let parts = timestamp.utc_parts();
     format_date_parts(parts.year, parts.month, parts.day)
 }
 
-pub fn format_naive_date(date: IsoDate) -> String {
+pub(crate) fn format_naive_date(date: IsoDate) -> String {
     format_date_parts(date.year, date.month, date.day)
 }
 
-pub fn format_date_parts(year: i32, month: u32, day: u32) -> String {
+fn format_date_parts(year: i32, month: u32, day: u32) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
