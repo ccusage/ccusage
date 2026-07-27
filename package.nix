@@ -11,7 +11,13 @@
   apple-sdk_15,
 }:
 let
-  inherit ((builtins.fromJSON (builtins.readFile (root + /package.json)))) version;
+  # The root manifest is the version source of truth: rust/crates/ccusage/build.rs
+  # falls back to reading it when CCUSAGE_VERSION is unset, and a test in main.rs
+  # asserts the compiled version matches it.
+  inherit (lib.importJSON (root + /package.json)) version;
+  # The published npm manifest owns the name and the user-facing metadata, so
+  # `meta` below derives from it instead of restating it in Nix.
+  cliPackageJson = lib.importJSON (root + /apps/ccusage/package.json);
   src = lib.cleanSourceWith {
     src = root + /rust;
     filter =
@@ -30,7 +36,7 @@ let
   # duplicated.
   cargoConfigEnv = (builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml))).env;
   commonArgs = {
-    pname = "ccusage";
+    pname = cliPackageJson.name;
     inherit version src;
     strictDeps = true;
     doCheck = false;
@@ -132,10 +138,9 @@ craneLib.buildPackage (
         ;
     };
     meta = {
-      description = "Analyze coding agent CLI token usage and costs from local data";
-      homepage = "https://github.com/ccusage/ccusage";
-      license = lib.licenses.mit;
-      mainProgram = "ccusage";
+      inherit (cliPackageJson) description homepage;
+      license = lib.getLicenseFromSpdxId cliPackageJson.license;
+      mainProgram = builtins.head (builtins.attrNames cliPackageJson.bin);
     };
   }
 )
