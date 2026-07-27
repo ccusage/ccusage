@@ -33,7 +33,9 @@ in
         bun2nix = inputs.bun2nix.packages.${system}.default;
       };
       bunCli = pkgs.callPackage ../nix/bun-cli.nix { inherit bunNodeModules; };
-      cargo-hawk = pkgs.callPackage ../nix/cargo-hawk.nix { };
+      cargo-hawk = pkgs.callPackage ../nix/cargo-hawk.nix {
+        rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
+      };
       changelogithub = pkgs.callPackage ../nix/tools/changelogithub { inherit bunCli; };
       # Regeneration-only output for committed models.dev snapshots;
       # `just gen-models-dev-pricing` builds this and copies them into the source

@@ -11,6 +11,7 @@
   stdenv,
   stdenvNoCC,
   autoPatchelfHook,
+  rustToolchain,
 }:
 let
   version = "0.1.10";
@@ -50,9 +51,16 @@ stdenvNoCC.mkDerivation {
   # The archive holds a single cargo-hawk-<target>/ directory.
   sourceRoot = "cargo-hawk-${archive.target}";
 
-  # The prebuilt Linux archives are ordinary glibc binaries, so they need the
-  # loader and rpath fixups; the Darwin ones run as shipped.
+  # The prebuilt Linux archives are ordinary glibc binaries, so they need the loader
+  # and rpath fixups; the Darwin ones resolve through @rpath as shipped.
   nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
+  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
+  # cargo-hawk-driver has a hard dependency on the compiler's librustc_driver, which
+  # is the concrete form of "only runs on the toolchain it was built against". The
+  # pinned toolchain carries the matching file because rust-overlay repackages the
+  # same upstream release: 1.97.1 ships librustc_driver-e03ed1db822dfa4c, which is
+  # what the published binary asks for.
+  runtimeDependencies = lib.optionals stdenv.hostPlatform.isLinux [ rustToolchain ];
 
   installPhase = ''
     runHook preInstall
