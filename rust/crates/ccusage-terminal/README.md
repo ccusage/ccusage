@@ -10,6 +10,7 @@ the table writer every report uses.
 - `style.rs` — `TerminalStyle`, color selection, and `NO_COLOR` handling.
 - `terminal.rs` — terminal width detection.
 - `title.rs` — the boxed report titles.
+- `width.rs` — ANSI-aware display width measurement and truncation.
 
 `ccusage-core` re-exports this crate's types, so adapters reach them through
 `ccusage_core` rather than depending on it directly.
@@ -23,6 +24,7 @@ the table writer every report uses.
 - `table::SimpleTable`
 - `terminal::terminal_width`
 - `title::print_box_title`
+- `width::truncate_to_width`
 
 ## Depends on
 

@@ -1,6 +1,0 @@
----
-source: crates/ccusage-terminal/src/table.rs
-assertion_line: 506
-expression: "truncate_visible(\"\\x1b[33mvery-long-value\\x1b[0m\", 8)"
----
-[33mvery-lo[0m…

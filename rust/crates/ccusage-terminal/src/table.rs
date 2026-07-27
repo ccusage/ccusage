@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use crate::{
     style::{Color, TerminalStyle, color},
     terminal::DEFAULT_TERMINAL_WIDTH,
-    width::{char_display_width, contains_ansi, visible_width, visible_width_max_line},
+    width::{truncate_to_width, visible_width, visible_width_max_line},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -245,7 +245,7 @@ fn wrap_cell_lines(cell: &str, width: usize) -> Vec<String> {
 
 fn wrap_cell_line(line: &str, width: usize) -> Vec<String> {
     if line.split_whitespace().count() <= 1 {
-        return vec![truncate_visible(line, width)];
+        return vec![truncate_to_width(line, width)];
     }
 
     let mut lines = Vec::new();
@@ -266,7 +266,7 @@ fn wrap_cell_line(line: &str, width: usize) -> Vec<String> {
                 lines.push(current);
             }
             current = if visible_width(word) > width {
-                truncate_visible(word, width)
+                truncate_to_width(word, width)
             } else {
                 word.to_string()
             };
@@ -276,51 +276,6 @@ fn wrap_cell_line(line: &str, width: usize) -> Vec<String> {
         lines.push(current);
     }
     lines
-}
-
-fn truncate_visible(value: &str, width: usize) -> String {
-    if visible_width(value) <= width {
-        return value.to_string();
-    }
-    if width <= 1 {
-        return "…".to_string();
-    }
-    let mut output = String::new();
-    let mut current_width = 0;
-    let mut index = 0;
-    let bytes = value.as_bytes();
-    while index < bytes.len() {
-        if bytes[index] == 0x1b {
-            let start = index;
-            index += 1;
-            if index < bytes.len() && bytes[index] == b'[' {
-                index += 1;
-                while index < bytes.len() && !(bytes[index] as char).is_ascii_alphabetic() {
-                    index += 1;
-                }
-                if index < bytes.len() {
-                    index += 1;
-                }
-            }
-            output.push_str(&value[start..index]);
-            continue;
-        }
-        let Some(ch) = value[index..].chars().next() else {
-            break;
-        };
-        let char_width = char_display_width(ch);
-        if current_width + char_width >= width {
-            break;
-        }
-        output.push(ch);
-        current_width += char_width;
-        index += ch.len_utf8();
-    }
-    if contains_ansi(value) && !output.ends_with("\x1b[0m") {
-        output.push_str("\x1b[0m");
-    }
-    output.push('…');
-    output
 }
 
 fn compact_date_cell(value: &str) -> Option<String> {
@@ -476,18 +431,6 @@ mod tests {
         ]);
 
         insta::assert_snapshot!(table.render_lines().join("\n"));
-    }
-
-    #[test]
-    fn truncate_visible_preserves_ansi_reset() {
-        let truncated = truncate_visible("\x1b[33mvery-long-value\x1b[0m", 8);
-
-        assert!(truncated.ends_with("\x1b[0m…"));
-    }
-
-    #[test]
-    fn snapshots_ansi_truncation_boundary() {
-        insta::assert_snapshot!(truncate_visible("\x1b[33mvery-long-value\x1b[0m", 8));
     }
 
     #[test]

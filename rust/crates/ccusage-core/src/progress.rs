@@ -6,8 +6,13 @@ use std::{
     time::Duration,
 };
 
+use ccusage_terminal::{terminal_width, truncate_to_width};
+
 const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL: Duration = Duration::from_millis(80);
+
+/// Display columns the spinner frame and the space after it take up.
+const SPINNER_PREFIX_WIDTH: usize = 2;
 
 thread_local! {
     static ACTIVE_PROGRESS: RefCell<Option<ProgressController>> = const { RefCell::new(None) };
@@ -70,6 +75,20 @@ fn format_usage_load_progress_text(
         Some(status) => format!("{status} :: {base}"),
         None => base,
     }
+}
+
+/// Shorten the status text so the spinner line always occupies a single row.
+///
+/// Each frame clears its own line with `\r\x1b[K`, which only erases the row the
+/// cursor sits on. A status wide enough to wrap therefore leaves the overflow
+/// row on screen and the redraw reads as flicker. One column is left free on top
+/// of the spinner prefix so the cursor never ends a frame in the wrap-pending
+/// state some terminals enter at the last column.
+fn fit_status_to_width(text: &str, terminal_width: usize) -> String {
+    truncate_to_width(
+        text,
+        terminal_width.saturating_sub(SPINNER_PREFIX_WIDTH + 1),
+    )
 }
 
 pub fn usage_load_output_is_tty() -> bool {
@@ -253,7 +272,10 @@ impl ProgressState {
         if !self.has_content() {
             return;
         }
-        let text = format_usage_load_progress_text(&self.states, self.status.as_deref());
+        let text = fit_status_to_width(
+            &format_usage_load_progress_text(&self.states, self.status.as_deref()),
+            terminal_width(),
+        );
         let frame = SPINNER_FRAMES[self.frame % SPINNER_FRAMES.len()];
         self.frame = self.frame.wrapping_add(1);
         let _ = write!(
@@ -336,6 +358,37 @@ mod tests {
             format_usage_load_progress_text(&[], Some("Refreshing model pricing from LiteLLM...")),
             "Refreshing model pricing from LiteLLM..."
         );
+    }
+
+    #[test]
+    fn fits_the_status_within_a_narrow_terminal() {
+        let text = format_usage_load_progress_text(
+            &[
+                (UsageLoadAgent("Claude"), LoadProgressState::Loading),
+                (UsageLoadAgent("Codex"), LoadProgressState::Loading),
+            ],
+            Some("Refreshing model pricing from LiteLLM..."),
+        );
+
+        let fitted = fit_status_to_width(&text, 80);
+
+        assert_eq!(
+            fitted,
+            "Refreshing model pricing from LiteLLM... :: Loading usage logs (0/2) :: Clau…"
+        );
+        assert_eq!(fitted.chars().count() + SPINNER_PREFIX_WIDTH, 79);
+    }
+
+    #[test]
+    fn keeps_the_status_intact_on_a_wide_terminal() {
+        let text = format_usage_load_progress_text(&[], Some("Refreshing model pricing"));
+
+        assert_eq!(fit_status_to_width(&text, 120), "Refreshing model pricing");
+    }
+
+    #[test]
+    fn fits_the_status_when_the_terminal_has_no_room_at_all() {
+        assert_eq!(fit_status_to_width("Loading usage logs", 2), "…");
     }
 
     #[test]
