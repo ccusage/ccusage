@@ -27,8 +27,7 @@
 		"prepack": "pnpm run build"
 	},
 	"devDependencies": {
-		"@types/node": "catalog:types",
-		"publint": "catalog:lint"
+		"@types/node": "catalog:types"
 	},
 	"optionalDependencies": {
 		"@ccusage/ccusage-darwin-arm64": "workspace:*",

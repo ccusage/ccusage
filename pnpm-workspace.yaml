@@ -11,8 +11,6 @@ catalogs:
     vitepress: 2.0.0-alpha.17
     vitepress-plugin-group-icons: ^1.7.2
     vitepress-plugin-llms: ^1.12.2
-  lint:
-    publint: ^0.3.12
   llm-docs:
     '@gunshi/docs': ^0.31.0
   runtime:
