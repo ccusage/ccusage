@@ -23,6 +23,12 @@ let
       || lib.hasSuffix "/models-dev-pricing.json" path
       || lib.hasSuffix "/codex-auto-review-fallbacks.json" path;
   };
+  # sqlite3-src's build script turns every SQLITE_* environment variable into a -D
+  # define for the bundled amalgamation, which is how .cargo/config.toml trims it.
+  # Cargo only reads that file when the working directory is the repository root, and
+  # no Nix build has that, so the same values are passed through here rather than
+  # duplicated.
+  cargoConfigEnv = (builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml))).env;
   commonArgs = {
     pname = "ccusage";
     inherit version src;
@@ -54,7 +60,8 @@ let
     buildInputs = lib.optionals stdenv.isDarwin [
       apple-sdk_15
     ];
-  };
+  }
+  // cargoConfigEnv;
   # Keep the dependency artifact keyed only by inputs that affect Cargo deps.
   # Pricing snapshots and the npm release version are embedded by the final
   # package. The Rust workspace packages intentionally stay at 0.0.0, and the
