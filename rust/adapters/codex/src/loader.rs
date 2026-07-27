@@ -1722,6 +1722,58 @@ mod tests {
     }
 
     #[test]
+    fn skips_a_rewritten_burst_that_straddles_a_second_boundary() {
+        let fixture = fs_fixture!({
+            // Codex writes the replayed history in a few milliseconds, so the
+            // burst lands on either side of a second tick whenever the fork
+            // happens late in a second. Measured against real logs, such a burst
+            // spans tens of milliseconds while the child's own first turn follows
+            // seconds later, so the run is what identifies it, not the second it
+            // was stamped with.
+            "child.jsonl": [
+                replay_metadata("2026-07-10T09:00:00.985Z", "child", Some("missing-parent")),
+                replay_token_count("2026-07-10T09:00:00.986Z", 100),
+                replay_token_count("2026-07-10T09:00:00.999Z", 200),
+                replay_token_count("2026-07-10T09:00:01.000Z", 300),
+                replay_token_count("2026-07-10T09:00:01.009Z", 400),
+                // The child's own first turn, after a real pause.
+                replay_token_count("2026-07-10T09:00:08.000Z", 500),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [("child".to_string(), 500)]
+        );
+    }
+
+    #[test]
+    fn keeps_fork_local_usage_recorded_after_a_rewritten_burst() {
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                replay_metadata("2026-07-10T09:00:00.000Z", "child", Some("missing-parent")),
+                replay_token_count("2026-07-10T09:00:00.100Z", 100),
+                replay_token_count("2026-07-10T09:00:00.200Z", 200),
+                // Every later turn is the child's own, however many there are.
+                replay_token_count("2026-07-10T09:00:30.000Z", 300),
+                replay_token_count("2026-07-10T09:01:00.000Z", 400),
+                replay_token_count("2026-07-10T09:01:30.000Z", 500),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [
+                ("child".to_string(), 300),
+                ("child".to_string(), 400),
+                ("child".to_string(), 500),
+            ]
+        );
+    }
+
+    #[test]
     fn keeps_child_usage_matching_parent_event_after_fork() {
         let fixture = fs_fixture!({
             "parent.jsonl": [
@@ -1841,9 +1893,11 @@ mod tests {
                     "payload": {"id": "child", "forked_from_id": "missing-parent"},
                 })
                 .to_string(),
+                // The replay repeats a snapshot, which must not end the burst.
                 token_count("2026-07-10T08:00:00.100Z", 100, 100),
                 token_count("2026-07-10T08:00:00.200Z", 100, 100),
-                token_count("2026-07-10T08:00:01.000Z", 50, 50),
+                // The child's own turn, after a real pause.
+                token_count("2026-07-10T08:00:08.000Z", 50, 50),
             ]
             .join("\n"),
         });

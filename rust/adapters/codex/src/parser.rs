@@ -10,7 +10,9 @@ use memchr::memmem::Finder;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, Result, TimestampMs};
+use crate::{
+    CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, Result, TimestampMs, parse_ts_timestamp,
+};
 
 use super::types::{
     CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
@@ -72,19 +74,37 @@ enum CodexReplayState<'a> {
         index: usize,
     },
     /// The parent stream could not anchor the replay, so skip the leading burst
-    /// that Codex rewrote into a single second.
-    SkippingSecond([u8; 19]),
+    /// that Codex rewrote to the fork instant. Carries the last skipped event so
+    /// the run can be followed however long it takes to write.
+    SkippingRewrittenBurst(TimestampMs),
     /// Past the replayed history: every remaining event is the child's own usage.
     Done,
 }
 
-fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
+/// Longest pause tolerated inside a burst of replayed usage.
+///
+/// Codex rewrites a replayed history to the fork instant and writes it in one
+/// go, so the burst is dense while the child's own first turn follows a real
+/// pause. Across the fork logs this was measured against, bursts spanned 10 to
+/// 40ms and the pause that followed ran from 5.8 to 15.3 seconds, so a second
+/// sits two orders of magnitude above the one and well below the other.
+///
+/// Bucketing by the recorded second instead would split any burst written across
+/// a second tick, leaving the remainder counted as the child's own usage.
+const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
+
+/// Start of the burst of replayed usage at the head of `path`, if it has one.
+///
+/// A session that opens with two usage events written back to back replayed a
+/// history it did not spend; one that pauses between them was recording its own
+/// turns from the start.
+fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
     let Ok(file) = fs::File::open(path) else {
         return None;
     };
     let mut reader = BufReader::new(file);
     let mut line = Vec::new();
-    let mut first_second: Option<[u8; 19]> = None;
+    let mut first: Option<TimestampMs> = None;
 
     loop {
         line.clear();
@@ -111,19 +131,19 @@ fn detect_replay_second(path: &Path) -> Option<[u8; 19]> {
         {
             continue;
         }
-        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
-            continue;
-        };
-        let Some(second) = timestamp
-            .as_bytes()
-            .get(..19)
-            .and_then(|second| second.try_into().ok())
+        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref())
+            .as_deref()
+            .and_then(parse_ts_timestamp)
         else {
             continue;
         };
-        match first_second {
-            None => first_second = Some(second),
-            Some(first) => return (first == second).then_some(first),
+        match first {
+            None => first = Some(timestamp),
+            Some(first) => {
+                return (timestamp.as_millis() - first.as_millis()
+                    <= CODEX_REWRITTEN_BURST_PAUSE_MS)
+                    .then_some(first);
+            }
         }
     }
 }
@@ -176,14 +196,21 @@ pub(super) fn visit_codex_session_file(
                     }
                     // Nothing matched, so the parent stream cannot anchor this
                     // replay: the log is unavailable, or Codex rewrote the copied
-                    // history. Fall back to the same-second burst instead.
+                    // history. Fall back to the rewritten burst instead.
                     replay = (index == 0)
-                        .then(|| detect_replay_second(path))
+                        .then(|| detect_rewritten_burst(path))
                         .flatten()
-                        .map_or(CodexReplayState::Done, CodexReplayState::SkippingSecond);
+                        .map_or(
+                            CodexReplayState::Done,
+                            CodexReplayState::SkippingRewrittenBurst,
+                        );
                 }
-                CodexReplayState::SkippingSecond(second) => {
-                    if event.timestamp.as_bytes().get(..19) == Some(second.as_slice()) {
+                CodexReplayState::SkippingRewrittenBurst(previous) => {
+                    if let Some(timestamp) = parse_ts_timestamp(&event.timestamp)
+                        && timestamp.as_millis() - previous.as_millis()
+                            <= CODEX_REWRITTEN_BURST_PAUSE_MS
+                    {
+                        replay = CodexReplayState::SkippingRewrittenBurst(timestamp);
                         return Ok(());
                     }
                     replay = CodexReplayState::Done;
