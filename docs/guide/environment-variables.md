@@ -50,6 +50,15 @@ Empty entries, directories that do not exist, and missing explicit files are ski
 
 Specifies where ccusage should look for Claude Code data. See [Claude Code](/guide/claude/) for default paths, multiple-directory behavior, and Claude-specific examples.
 
+## CCUSAGE_CLAUDE_EXTRA_DIRS
+
+Adds extra Claude Code data directories on top of the ones ccusage already resolves. Unlike `CLAUDE_CONFIG_DIR`, which replaces the default lookup, this variable is additive: the listed directories are combined with the defaults (or with `CLAUDE_CONFIG_DIR` when it is set). Accepts one directory or a comma-separated list; `~` is expanded, and entries without a `projects/` directory are skipped.
+
+```bash
+export CCUSAGE_CLAUDE_EXTRA_DIRS="~/.claude-pessoal,~/.claude-work"
+ccusage daily
+```
+
 ## LOG_LEVEL
 
 Controls the verbosity of log output.

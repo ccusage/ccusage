@@ -54,10 +54,11 @@ Claude Code exposes additional local data that enables features beyond the share
 
 ## Environment Variables
 
-| Variable            | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `CLAUDE_CONFIG_DIR` | Override the root Claude Code data directory |
-| `LOG_LEVEL`         | Adjust verbosity (0 silent ... 5 trace)      |
+| Variable                   | Description                                       |
+| -------------------------- | ------------------------------------------------- |
+| `CLAUDE_CONFIG_DIR`        | Override the root Claude Code data directory      |
+| `CCUSAGE_CLAUDE_EXTRA_DIRS`| Add extra data directories to the resolved set    |
+| `LOG_LEVEL`                | Adjust verbosity (0 silent ... 5 trace)           |
 
 ### Custom Claude Code Paths
 
@@ -75,6 +76,13 @@ export CLAUDE_CONFIG_DIR="~/.config/claude,/backup/claude-archive"
 ccusage claude monthly
 ```
 
+To keep the default locations and add more on top (for example, named Claude Code installs that each use their own `CLAUDE_CONFIG_DIR`), set `CCUSAGE_CLAUDE_EXTRA_DIRS`:
+
+```bash
+export CCUSAGE_CLAUDE_EXTRA_DIRS="~/.claude-pessoal,~/.claude-work"
+ccusage claude daily
+```
+
 For Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI data locations, use the source-specific environment variables listed in [Environment Variables](/guide/environment-variables).
 
 ### Directory Detection
@@ -84,7 +92,7 @@ When `CLAUDE_CONFIG_DIR` is not set, ccusage searches in this order:
 1. `~/.config/claude/projects/`
 2. `~/.claude/projects/`
 
-Data from all valid directories is combined automatically.
+Data from all valid directories is combined automatically. Directories listed in `CCUSAGE_CLAUDE_EXTRA_DIRS` are appended to this set.
 
 ## Troubleshooting
 

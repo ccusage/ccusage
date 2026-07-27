@@ -14,6 +14,7 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 ## Data source
 
 - `~/.claude/projects/**/*.jsonl` and `~/.config/claude/projects/**/*.jsonl`
+- `CCUSAGE_CLAUDE_EXTRA_DIRS` appends extra Claude config directories (comma-separated) to the resolved set
 
 Record shapes, token mapping, and cost rules are documented in [`src/README.md`](src/README.md).
 

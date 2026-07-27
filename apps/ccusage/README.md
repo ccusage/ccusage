@@ -81,6 +81,17 @@ ccusage reads local usage data from coding agent CLIs and turns it into daily, w
 
 Use `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session` to include every detected source in one report.
 
+### Multiple Claude Code installs
+
+ccusage reads Claude Code data from `~/.claude` and `~/.config/claude` by default. If you run several Claude Code installs that each point `CLAUDE_CONFIG_DIR` at their own directory (for example, separate work/personal profiles), register those directories so their usage is included alongside the defaults:
+
+```bash
+export CCUSAGE_CLAUDE_EXTRA_DIRS="~/.claude-pessoal,~/.claude-work"
+ccusage daily
+```
+
+`CCUSAGE_CLAUDE_EXTRA_DIRS` is additive — it combines with the default locations (and with `CLAUDE_CONFIG_DIR` when set) instead of replacing them. See [Environment Variables](https://ccusage.com/guide/environment-variables) for details.
+
 ## Installation
 
 ### Package Runners
