@@ -54,13 +54,17 @@ stdenvNoCC.mkDerivation {
   # The prebuilt Linux archives are ordinary glibc binaries, so they need the loader
   # and rpath fixups; the Darwin ones resolve through @rpath as shipped.
   nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
-  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
   # cargo-hawk-driver has a hard dependency on the compiler's librustc_driver, which
   # is the concrete form of "only runs on the toolchain it was built against". The
   # pinned toolchain carries the matching file because rust-overlay repackages the
-  # same upstream release: 1.97.1 ships librustc_driver-e03ed1db822dfa4c, which is
-  # what the published binary asks for.
-  runtimeDependencies = lib.optionals stdenv.hostPlatform.isLinux [ rustToolchain ];
+  # same upstream release, so it belongs in buildInputs rather than
+  # runtimeDependencies: the latter is written into the RUNPATH but is not part of
+  # the library set auto-patchelf resolves against, so the dependency is reported
+  # unsatisfied even once the path is on the RUNPATH.
+  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [
+    stdenv.cc.cc.lib
+    rustToolchain
+  ];
 
   installPhase = ''
     runHook preInstall
