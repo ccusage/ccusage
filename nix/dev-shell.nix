@@ -30,6 +30,7 @@ in
             bun
             inputs.bun2nix.packages.${system}.default
             nushell
+            config.packages.cargo-hawk
             config.packages.publint
 
             rustToolchain
