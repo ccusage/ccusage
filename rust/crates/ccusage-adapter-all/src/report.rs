@@ -199,6 +199,12 @@ pub(super) fn print_table(
     print_box_title(&all_report_title(kind, rows, detected_agents), shared);
     if rows.is_empty() {
         eprintln!("No usage data found.");
+        if std::env::var_os("CCUSAGE_CLAUDE_EXTRA_DIRS").is_none() {
+            eprintln!(
+                "Tip: Claude Code installs with a custom CLAUDE_CONFIG_DIR are not read by default. \
+                 List them in CCUSAGE_CLAUDE_EXTRA_DIRS (comma-separated) to include their usage."
+            );
+        }
         return Ok(());
     }
     let terminal_width = crate::terminal_width();
