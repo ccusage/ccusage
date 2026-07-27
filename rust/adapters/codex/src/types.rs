@@ -294,7 +294,7 @@ impl<'de> Deserialize<'de> for CodexRawUsage {
             total_tokens: fields
                 .total_tokens
                 .filter(|total| *total > 0)
-                .unwrap_or(input + output),
+                .unwrap_or_else(|| input.saturating_add(output)),
         })
     }
 }
@@ -517,17 +517,32 @@ mod tests {
 
     #[test]
     fn keeps_a_recorded_total() {
+        // Deliberately not input plus output, so deriving instead of preserving
+        // the recorded value cannot pass this test.
         let usage: CodexRawUsage = serde_json::from_str(
             r#"{
                 "input_tokens": 100,
                 "output_tokens": 50,
                 "reasoning_output_tokens": 20,
-                "total_tokens": 150
+                "total_tokens": 151
             }"#,
         )
         .expect("usage should deserialize");
 
-        assert_eq!(usage.total_tokens, 150);
+        assert_eq!(usage.total_tokens, 151);
+    }
+
+    #[test]
+    fn saturates_a_derived_total_instead_of_overflowing() {
+        let usage: CodexRawUsage = serde_json::from_str(
+            r#"{
+                "input_tokens": 18446744073709551615,
+                "output_tokens": 5
+            }"#,
+        )
+        .expect("usage should deserialize");
+
+        assert_eq!(usage.total_tokens, u64::MAX);
     }
 
     #[test]
