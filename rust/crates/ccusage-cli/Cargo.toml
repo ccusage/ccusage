@@ -1,14 +1,8 @@
 [package]
 name = "ccusage-cli"
-version = "0.0.0"
-edition = "2024"
-build = "build.rs"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
 
 [dependencies]
 
-[build-dependencies]
-serde_json = "1"
-
-[dev-dependencies]
-insta = { version = "1.47.2", features = ["json"] }
-serde_json = "1"

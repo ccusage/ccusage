@@ -54,12 +54,26 @@ in
             cargoExtraArgs = "-p ccusage --bin ccusage --target ${target}";
             buildInputs = crossBuildInputs;
           };
-          crossCargoArtifacts = crossCraneLib.buildDepsOnly crossDepsOnlyArgs;
+          crossDependencyArtifacts = crossCraneLib.buildDepsOnly crossDepsOnlyArgs;
+          crossWorkspaceArtifacts = import ./cargo-artifacts.nix {
+            inherit root pkgs;
+            craneLib = crossCraneLib;
+            inherit (pkgs) lib;
+            commonArgs = crossCommonArgs;
+            cargoArtifacts = crossDependencyArtifacts;
+            cargoTargetArgs = "--target ${target}";
+          };
+          crossCargoArtifacts = crossWorkspaceArtifacts.adapters;
         in
         crossCraneLib.buildPackage (
           crossCommonArgs
           // {
             cargoArtifacts = crossCargoArtifacts;
+            passthru = {
+              cargoArtifacts = crossCargoArtifacts;
+              dependencyArtifacts = crossDependencyArtifacts;
+              workspaceArtifacts = crossWorkspaceArtifacts;
+            };
             # End-user Intel Macs have no /nix/store, so fail the build if the
             # binary links anything outside the macOS system paths.
             postInstall = ''

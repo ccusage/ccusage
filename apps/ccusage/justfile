@@ -22,7 +22,7 @@ ensure-native-binary:
     scripts/ensure-native-binary.nu
 
 generate-schema:
-    cargo run --quiet --manifest-path ../../rust/Cargo.toml --bin generate-config-schema -- config-schema.json
+    cargo run --quiet --manifest-path ../../rust/Cargo.toml -p ccusage-config --bin generate-config-schema -- config-schema.json
     oxfmt --write config-schema.json
     cp config-schema.json ../../docs/public/config-schema.json
 

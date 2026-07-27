@@ -21,6 +21,7 @@ runs:
     - uses: ./.github/actions/setup-nix-cache
       with:
         cache-scope: ${{ inputs.cache-scope }}
+        gc-max-store-size-linux: 4G
 
     - name: Build Linux static binary
       shell: bash
@@ -32,6 +33,13 @@ runs:
         else
           nix build .#ccusage-static --print-build-logs
         fi
+
+    - name: Root current Crane artifacts for cache save
+      shell: bash
+      run: |
+        system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+        nix build ".#packages.$system.ccusage-static.passthru.workspaceArtifacts.cacheRoot" \
+          --out-link "$RUNNER_TEMP/ccusage-cargo-artifacts"
 
     - name: Verify Linux binary is static
       shell: bash

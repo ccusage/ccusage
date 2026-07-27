@@ -20,13 +20,17 @@ in
       };
       rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
       craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
-      inherit (config.packages.ccusage.passthru) cargoArtifacts commonArgs;
+      inherit (config.packages.ccusage.passthru) commonArgs workspaceArtifacts;
+      # The generator only needs the config layer, so it starts from the foundation
+      # artifacts rather than the adapter ones: this derivation gates the CI
+      # preflight, and waiting for 15 adapters there would delay every build job.
+      cargoArtifacts = workspaceArtifacts.foundation;
       generateConfigSchema = craneLib.buildPackage (
         commonArgs
         // {
           pname = "generate-config-schema";
           inherit cargoArtifacts;
-          cargoExtraArgs = "-p ccusage --bin generate-config-schema";
+          cargoExtraArgs = "-p ccusage-config --bin generate-config-schema";
           doCheck = false;
           meta = {
             mainProgram = "generate-config-schema";
@@ -180,8 +184,8 @@ in
             command = lib.getExe schemaGen;
             includes = [
               "apps/ccusage/config-schema.json"
-              "rust/crates/ccusage/src/config_schema.rs"
-              "rust/crates/ccusage/src/bin/generate_config_schema.rs"
+              "rust/crates/ccusage-config/src/config_schema.rs"
+              "rust/crates/ccusage-config/src/bin/generate_config_schema.rs"
             ];
             priority = 10;
           };

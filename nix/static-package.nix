@@ -67,7 +67,17 @@ in
             ];
             buildInputs = [ ];
           };
-          staticCargoArtifacts = staticCraneLib.buildDepsOnly staticDepsOnlyArgs;
+          staticDependencyArtifacts = staticCraneLib.buildDepsOnly staticDepsOnlyArgs;
+          staticWorkspaceArtifacts = import ./cargo-artifacts.nix {
+            inherit root;
+            craneLib = staticCraneLib;
+            inherit (pkgs) lib;
+            inherit pkgs;
+            commonArgs = staticCommonArgs;
+            cargoArtifacts = staticDependencyArtifacts;
+            cargoTargetArgs = "--target ${linuxStaticTarget}";
+          };
+          staticCargoArtifacts = staticWorkspaceArtifacts.adapters;
         in
         staticCraneLib.buildPackage (
           staticCommonArgs
@@ -79,6 +89,8 @@ in
             # GC-root-respecting trim drops it, forcing a full dependency rebuild.
             passthru = {
               cargoArtifacts = staticCargoArtifacts;
+              dependencyArtifacts = staticDependencyArtifacts;
+              workspaceArtifacts = staticWorkspaceArtifacts;
             };
             # A PT_INTERP header means the binary requests a dynamic loader,
             # so it would not run on end-user machines without the build-time

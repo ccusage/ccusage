@@ -1,8 +1,11 @@
 use std::{env, ffi::OsString, process};
 
 pub(crate) use ccusage_cli::*;
+pub(crate) use ccusage_cli_parser::Cli;
 
-use crate::{DEFAULT_SESSION_DURATION_HOURS, config::ConfigContext};
+use ccusage_config::ConfigContext;
+
+use crate::DEFAULT_SESSION_DURATION_HOURS;
 
 pub(crate) fn parse() -> Cli {
     let args = env::args_os().collect::<Vec<_>>();

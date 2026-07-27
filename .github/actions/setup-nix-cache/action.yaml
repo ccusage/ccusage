@@ -2,12 +2,10 @@ name: Setup Nix with action cache
 description: >
   Install Nix and restore/save the store with cache-nix-action, shared by Linux
   and macOS. cache-nix-action only caches non-substitutable paths (the crane
-  deps, not the cache.nixos.org toolchain), so the cache stays small (~900MB).
-  No gc-max-store-size: these runners are ephemeral (restore -> build -> save),
-  so the store never accumulates across runs the way a sticky disk did. Trimming
-  before save would only delete the unrooted crane deps and force a recompile, so
-  we let cache-nix-action save the whole non-substitutable set as-is and rely on
-  Blacksmith to evict stale entries.
+  deps, not the cache.nixos.org toolchain). Linux jobs root the current Crane
+  artifacts after building; garbage collection then removes superseded
+  generations before saving so restored caches do not grow on every commit.
+  Blacksmith evicts stale entries, so no purge step is needed.
 inputs:
   cache-scope:
     description: >
@@ -16,6 +14,11 @@ inputs:
       each leg separate without leaning on runner.arch. Leave empty for
       single-leg jobs, which github.job alone already distinguishes.
     default: ''
+  gc-max-store-size-linux:
+    description: >
+      Optional Linux store size limit applied before cache save. Callers must
+      root every artifact they want the garbage collector to retain.
+    default: ''
 runs:
   using: composite
   steps:
@@ -23,8 +26,14 @@ runs:
       uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
       with:
         github_access_token: ${{ github.token }}
+        # nix-quick-install-action writes this file verbatim, so Nix would
+        # otherwise keep its documented default of max-jobs = 1 and build the
+        # independent Crane artifact layers one at a time. cores stays at the
+        # default 0 so the single dependency derivation, which compiles the whole
+        # third-party graph, still gets every core.
         nix_conf: |
           access-tokens = github.com=${{ github.token }}
+          max-jobs = auto
 
     # github.workflow is included so workflows that share a job id (e.g.
     # build-native-packages in both ci.yaml and release.yaml) do not collide on
@@ -49,6 +58,7 @@ runs:
         restore-prefixes-first-match: |
           nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
           nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-
+        gc-max-store-size-linux: ${{ inputs.gc-max-store-size-linux }}
 
     - name: Fix single-user Nix store ownership
       if: runner.os != 'Windows'

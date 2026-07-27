@@ -1,0 +1,31 @@
+[package]
+name = "ccusage-adapter-all"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+ccusage-adapter-amp.workspace = true
+ccusage-adapter-claude.workspace = true
+ccusage-adapter-codebuff.workspace = true
+ccusage-adapter-codex.workspace = true
+ccusage-adapter-common.workspace = true
+ccusage-adapter-copilot.workspace = true
+ccusage-adapter-droid.workspace = true
+ccusage-adapter-gemini.workspace = true
+ccusage-adapter-goose.workspace = true
+ccusage-adapter-hermes.workspace = true
+ccusage-adapter-kilo.workspace = true
+ccusage-adapter-kimi.workspace = true
+ccusage-adapter-openclaw.workspace = true
+ccusage-adapter-opencode.workspace = true
+ccusage-adapter-pi.workspace = true
+ccusage-adapter-qwen.workspace = true
+ccusage-cli.workspace = true
+ccusage-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+ccusage-test-support.workspace = true
+insta.workspace = true

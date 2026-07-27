@@ -1,43 +1,52 @@
 [package]
 name = "ccusage"
-version = "0.0.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 build = "build.rs"
+publish.workspace = true
 
 [[bin]]
 name = "ccusage"
 path = "src/main.rs"
 
-[[bin]]
-name = "generate-config-schema"
-path = "src/bin/generate_config_schema.rs"
+[features]
+# Enabled by the Windows release build, which cannot get the pricing snapshot
+# from the pinned Nix input the way every other platform does.
+fetch-litellm-pricing = ["ccusage-core/fetch-litellm-pricing"]
 
 [dependencies]
-ccusage-cli = { path = "../ccusage-cli" }
-ccusage-terminal = { path = "../ccusage-terminal" }
-jiff = { version = "0.2.24", default-features = false, features = [
-	"std",
-	"tz-system",
-	"tzdb-zoneinfo",
-	"tzdb-bundle-platform",
-] }
-memchr = "2"
-compact_str = "0.9"
-rustc-hash = "2"
-schemars = "0.8"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-smallvec = "1"
-sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
-ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
+ccusage-adapter-all.workspace = true
+ccusage-adapter-amp.workspace = true
+ccusage-adapter-claude.workspace = true
+ccusage-adapter-codebuff.workspace = true
+ccusage-adapter-codex.workspace = true
+ccusage-adapter-common.workspace = true
+ccusage-adapter-copilot.workspace = true
+ccusage-adapter-droid.workspace = true
+ccusage-adapter-gemini.workspace = true
+ccusage-adapter-goose.workspace = true
+ccusage-adapter-hermes.workspace = true
+ccusage-adapter-kilo.workspace = true
+ccusage-adapter-kimi.workspace = true
+ccusage-adapter-openclaw.workspace = true
+ccusage-adapter-opencode.workspace = true
+ccusage-adapter-pi.workspace = true
+ccusage-adapter-qwen.workspace = true
+ccusage-cli-parser.workspace = true
+ccusage-cli.workspace = true
+ccusage-config.workspace = true
+ccusage-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
 
 [build-dependencies]
-minreq = { version = "3.0.0-rc.1", default-features = false, features = ["https-rustls"] }
-serde_json = "1"
-
-[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
-mimalloc = "0.1.50"
+serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-test-support = { path = "../ccusage-test-support" }
-insta = { version = "1.47.2", features = ["json"] }
+ccusage-test-support.workspace = true
+
+# mimalloc measurably beats the musl allocator on the static Linux build's
+# allocation-heavy JSONL parsing.
+[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
+mimalloc.workspace = true

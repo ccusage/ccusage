@@ -23,8 +23,5 @@
 	},
 	"scripts": {
 		"prepack": "../../apps/ccusage/scripts/verify-native-package.nu && publint"
-	},
-	"devDependencies": {
-		"publint": "catalog:lint"
 	}
 }

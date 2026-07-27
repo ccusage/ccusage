@@ -1,0 +1,30 @@
+[package]
+name = "ccusage-core"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+publish.workspace = true
+
+[features]
+# Off by default: the pricing snapshot normally arrives through
+# CCUSAGE_PRICING_JSON_PATH, and minreq's rustls stack is the workspace's most
+# expensive build-dependency. See build.rs.
+fetch-litellm-pricing = ["dep:minreq"]
+
+[dependencies]
+ccusage-cli.workspace = true
+ccusage-terminal.workspace = true
+jiff.workspace = true
+memchr.workspace = true
+rustc-hash.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+smallvec.workspace = true
+
+[build-dependencies]
+minreq = { workspace = true, optional = true }
+serde_json.workspace = true
+
+[dev-dependencies]
+ccusage-test-support.workspace = true
+insta.workspace = true

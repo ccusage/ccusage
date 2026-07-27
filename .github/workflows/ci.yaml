@@ -261,8 +261,9 @@ jobs:
       # Packing only repackages the native binaries restored from the build
       # matrix below (no Rust build happens here), so the full `nix develop` dev
       # shell is unnecessary. The package checks bring Nu through their Nix
-      # shebangs.
-      - run: nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs
+      # shebangs; `publint` is the flake's own pinned build, invoked by every
+      # package's prepack script.
+      - run: nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs .#publint
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:

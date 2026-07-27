@@ -113,30 +113,305 @@ dependencies = [
 name = "ccusage"
 version = "0.0.0"
 dependencies = [
+ "ccusage-adapter-all",
+ "ccusage-adapter-amp",
+ "ccusage-adapter-claude",
+ "ccusage-adapter-codebuff",
+ "ccusage-adapter-codex",
+ "ccusage-adapter-common",
+ "ccusage-adapter-copilot",
+ "ccusage-adapter-droid",
+ "ccusage-adapter-gemini",
+ "ccusage-adapter-goose",
+ "ccusage-adapter-hermes",
+ "ccusage-adapter-kilo",
+ "ccusage-adapter-kimi",
+ "ccusage-adapter-openclaw",
+ "ccusage-adapter-opencode",
+ "ccusage-adapter-pi",
+ "ccusage-adapter-qwen",
  "ccusage-cli",
- "ccusage-terminal",
+ "ccusage-cli-parser",
+ "ccusage-config",
+ "ccusage-core",
+ "ccusage-test-support",
+ "mimalloc",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
+name = "ccusage-adapter-all"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-amp",
+ "ccusage-adapter-claude",
+ "ccusage-adapter-codebuff",
+ "ccusage-adapter-codex",
+ "ccusage-adapter-common",
+ "ccusage-adapter-copilot",
+ "ccusage-adapter-droid",
+ "ccusage-adapter-gemini",
+ "ccusage-adapter-goose",
+ "ccusage-adapter-hermes",
+ "ccusage-adapter-kilo",
+ "ccusage-adapter-kimi",
+ "ccusage-adapter-openclaw",
+ "ccusage-adapter-opencode",
+ "ccusage-adapter-pi",
+ "ccusage-adapter-qwen",
+ "ccusage-cli",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-amp"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-claude"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "memchr",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-codebuff"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-codex"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
  "ccusage-test-support",
  "compact_str",
  "insta",
  "jiff",
  "memchr",
- "mimalloc",
- "minreq",
  "rustc-hash",
- "schemars",
  "serde",
  "serde_json",
- "smallvec",
+]
+
+[[package]]
+name = "ccusage-adapter-common"
+version = "0.0.0"
+dependencies = [
+ "ccusage-core",
+ "ccusage-test-support",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-copilot"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-droid"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-gemini"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-goose"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
  "sqlite",
- "ureq",
+]
+
+[[package]]
+name = "ccusage-adapter-hermes"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde_json",
+ "sqlite",
+]
+
+[[package]]
+name = "ccusage-adapter-kilo"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+ "sqlite",
+]
+
+[[package]]
+name = "ccusage-adapter-kimi"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-openclaw"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-cli",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-opencode"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
+ "jiff",
+ "serde",
+ "serde_json",
+ "sqlite",
+]
+
+[[package]]
+name = "ccusage-adapter-pi"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-qwen"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "ccusage-cli"
 version = "0.0.0"
+
+[[package]]
+name = "ccusage-cli-parser"
+version = "0.0.0"
 dependencies = [
+ "ccusage-cli",
+ "ccusage-config",
+ "ccusage-core",
+ "ccusage-test-support",
  "insta",
  "serde_json",
+]
+
+[[package]]
+name = "ccusage-config"
+version = "0.0.0"
+dependencies = [
+ "ccusage-cli",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-core"
+version = "0.0.0"
+dependencies = [
+ "ccusage-cli",
+ "ccusage-terminal",
+ "ccusage-test-support",
+ "insta",
+ "jiff",
+ "memchr",
+ "minreq",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "smallvec",
 ]
 
 [[package]]

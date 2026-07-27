@@ -18,10 +18,12 @@ in
       craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       inherit (config.packages.ccusage.passthru)
         cargoArtifacts
+        workspaceArtifacts
         commonArgs
         version
         ;
       nixFilter = inputs.nix-filter.lib;
+      rustSrc = import ./rust-src.nix { inherit nixFilter root; };
       repoSrc = nixFilter {
         inherit root;
         exclude = [
@@ -34,7 +36,7 @@ in
       ccusage-clippy = craneLib.cargoClippy (
         commonArgs
         // {
-          src = repoSrc;
+          src = rustSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
           inherit cargoArtifacts;
@@ -45,7 +47,7 @@ in
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
-        src = repoSrc;
+        src = rustSrc;
         sourceRoot = "source/rust";
         cargoExtraArgs = "--all";
       };
@@ -56,8 +58,9 @@ in
         commonArgs
         // {
           pname = "generate-config-schema";
-          inherit cargoArtifacts;
-          cargoExtraArgs = "-p ccusage --bin generate-config-schema";
+          # Only the config layer is needed, so skip the adapter artifacts.
+          cargoArtifacts = workspaceArtifacts.foundation;
+          cargoExtraArgs = "-p ccusage-config --bin generate-config-schema";
           doCheck = false;
           meta = {
             mainProgram = "generate-config-schema";
