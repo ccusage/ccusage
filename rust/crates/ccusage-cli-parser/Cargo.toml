@@ -1,21 +1,21 @@
 [package]
 name = "ccusage-cli-parser"
-version = "0.0.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 build = "build.rs"
-publish = false
+publish.workspace = true
 
 [dependencies]
-ccusage-cli = { path = "../ccusage-cli" }
+ccusage-cli.workspace = true
 
 [build-dependencies]
-serde_json = "1"
+serde_json.workspace = true
 
 [dev-dependencies]
 # The config-merge tests parse a command line against a config file, so they
 # need the config layer and a filesystem fixture.
-ccusage-config = { path = "../ccusage-config" }
-ccusage-core = { path = "../ccusage-core" }
-ccusage-test-support = { path = "../ccusage-test-support" }
-insta = { version = "1.47.2", features = ["json"] }
-serde_json = "1"
+ccusage-config.workspace = true
+ccusage-core.workspace = true
+ccusage-test-support.workspace = true
+insta.workspace = true
+serde_json.workspace = true

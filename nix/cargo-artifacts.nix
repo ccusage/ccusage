@@ -50,7 +50,18 @@ let
   ];
   adapterCrates = map (name: "ccusage-adapter-${name}") agentNames ++ [ "ccusage-adapter-all" ];
 
-  crateSource = name: craneLib.fileset.commonCargoSources (rustRoot + "/crates/${name}");
+  # The adapters and the helpers they share live in adapters/<name>; every other
+  # crate is a directory under crates/ named after itself.
+  adapterDirNames = map (agent: "ccusage-adapter-${agent}") agentNames ++ [
+    "ccusage-adapter-common"
+  ];
+  crateDir =
+    name:
+    if lib.elem name adapterDirNames then
+      "adapters/${lib.removePrefix "ccusage-adapter-" name}"
+    else
+      "crates/${name}";
+  crateSource = name: craneLib.fileset.commonCargoSources (rustRoot + "/${crateDir name}");
   extraSourcesFor =
     names:
     lib.optionals (lib.elem "ccusage-core" names) [
@@ -58,7 +69,7 @@ let
       (rustRoot + /crates/ccusage-core/src/models-dev-pricing.json)
     ]
     ++ lib.optionals (lib.elem "ccusage-adapter-codex" names) [
-      (rustRoot + /crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json)
+      (rustRoot + /adapters/codex/src/codex-auto-review-fallbacks.json)
     ];
   sourceFor =
     names:

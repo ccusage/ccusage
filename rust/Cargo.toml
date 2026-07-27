@@ -1,6 +1,65 @@
 [workspace]
-members = ["crates/*"]
+# adapters/ holds the per-source adapters plus the helpers they share; crates/ holds
+# everything that is not tied to a single source, including the unified report.
+# Both are globs so a layer can be built from a filtered source tree containing
+# only some crates — a glob that matches nothing is an error, which is why
+# ccusage-adapter-common lives with the adapters: every layer includes it.
+members = ["adapters/*", "crates/*"]
 resolver = "2"
+
+# Every workspace crate inherits these, so a version or edition bump is one edit.
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Shared dependency specs. Crates opt in with `<dep>.workspace = true`, which keeps
+# the per-crate manifests to a list of what that crate actually uses.
+[workspace.dependencies]
+ccusage-adapter-all = { path = "crates/ccusage-adapter-all" }
+ccusage-adapter-amp = { path = "adapters/amp" }
+ccusage-adapter-claude = { path = "adapters/claude" }
+ccusage-adapter-codebuff = { path = "adapters/codebuff" }
+ccusage-adapter-codex = { path = "adapters/codex" }
+ccusage-adapter-common = { path = "adapters/common" }
+ccusage-adapter-copilot = { path = "adapters/copilot" }
+ccusage-adapter-droid = { path = "adapters/droid" }
+ccusage-adapter-gemini = { path = "adapters/gemini" }
+ccusage-adapter-goose = { path = "adapters/goose" }
+ccusage-adapter-hermes = { path = "adapters/hermes" }
+ccusage-adapter-kilo = { path = "adapters/kilo" }
+ccusage-adapter-kimi = { path = "adapters/kimi" }
+ccusage-adapter-openclaw = { path = "adapters/openclaw" }
+ccusage-adapter-opencode = { path = "adapters/opencode" }
+ccusage-adapter-pi = { path = "adapters/pi" }
+ccusage-adapter-qwen = { path = "adapters/qwen" }
+ccusage-cli = { path = "crates/ccusage-cli" }
+ccusage-cli-parser = { path = "crates/ccusage-cli-parser" }
+ccusage-config = { path = "crates/ccusage-config" }
+ccusage-core = { path = "crates/ccusage-core" }
+ccusage-terminal = { path = "crates/ccusage-terminal" }
+ccusage-test-support = { path = "crates/ccusage-test-support" }
+assert_fs = "1"
+compact_str = "0.9"
+insta = { version = "1.47.2", features = ["json"] }
+jiff = { version = "0.2.24", default-features = false, features = [
+	"std",
+	"tz-system",
+	"tzdb-zoneinfo",
+	"tzdb-bundle-platform",
+] }
+memchr = "2"
+mimalloc = "0.1.50"
+minreq = { version = "3.0.0-rc.1", default-features = false, features = ["https-rustls"] }
+rustc-hash = "2"
+schemars = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smallvec = "1"
+sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
+terminal_size = "0.4.4"
+unicode-width = "0.2.2"
+ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
 
 [profile.release]
 codegen-units = 1

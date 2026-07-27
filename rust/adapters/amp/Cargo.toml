@@ -1,16 +1,15 @@
 [package]
-name = "ccusage-config"
+name = "ccusage-adapter-amp"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-ccusage-cli.workspace = true
+ccusage-adapter-common.workspace = true
 ccusage-core.workspace = true
-schemars.workspace = true
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 ccusage-test-support.workspace = true
-insta.workspace = true

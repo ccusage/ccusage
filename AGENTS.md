@@ -41,8 +41,8 @@ Check the nearest package-specific `AGENTS.md` before editing package code:
 - Runtime libraries for bundled packages belong in `devDependencies` unless explicitly requested otherwise.
 - When initializing this repository environment, run `direnv allow` so the pinned Nix dev shell is activated.
 - Prefer tools provided by the Nix dev shell before falling back to ad hoc installs: `rg`, `fd`, `fzf`, `delta`, `dust`, `jq`, `gh`, `hyperfine`, `similarity`, `ast-grep`, `typos`, and `typos-lsp`. When a missing tool would be useful for repeated agent work in this repository, add it to `flake.nix`.
-- The production CLI is Rust-first under `rust/crates/ccusage*`. Put source-specific
-  runtime behavior in `rust/crates/ccusage-adapter-<agent>` and shared behavior in
+- The production CLI is Rust-first under `rust/crates` and `rust/adapters`. Put source-specific
+  runtime behavior in `rust/adapters/<agent>` and shared behavior in
   `ccusage-core` or `ccusage-adapter-common` unless the work is specifically about
   npm packaging, generated schemas, docs tooling, or benchmark scripts.
 - For Rust code, keep modules small, keep `pub(crate)` surfaces narrow, prefer fixture-backed parser/loader tests, and run cargo checks through the `just` recipes when possible.

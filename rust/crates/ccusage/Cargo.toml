@@ -1,8 +1,9 @@
 [package]
 name = "ccusage"
-version = "0.0.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 build = "build.rs"
+publish.workspace = true
 
 [[bin]]
 name = "ccusage"
@@ -18,36 +19,38 @@ path = "src/bin/generate_config_schema.rs"
 fetch-litellm-pricing = ["ccusage-core/fetch-litellm-pricing"]
 
 [dependencies]
-ccusage-adapter-all = { path = "../ccusage-adapter-all" }
-ccusage-adapter-amp = { path = "../ccusage-adapter-amp" }
-ccusage-adapter-claude = { path = "../ccusage-adapter-claude" }
-ccusage-adapter-codebuff = { path = "../ccusage-adapter-codebuff" }
-ccusage-adapter-codex = { path = "../ccusage-adapter-codex" }
-ccusage-adapter-common = { path = "../ccusage-adapter-common" }
-ccusage-adapter-copilot = { path = "../ccusage-adapter-copilot" }
-ccusage-adapter-droid = { path = "../ccusage-adapter-droid" }
-ccusage-adapter-gemini = { path = "../ccusage-adapter-gemini" }
-ccusage-adapter-goose = { path = "../ccusage-adapter-goose" }
-ccusage-adapter-hermes = { path = "../ccusage-adapter-hermes" }
-ccusage-adapter-kilo = { path = "../ccusage-adapter-kilo" }
-ccusage-adapter-kimi = { path = "../ccusage-adapter-kimi" }
-ccusage-adapter-openclaw = { path = "../ccusage-adapter-openclaw" }
-ccusage-adapter-opencode = { path = "../ccusage-adapter-opencode" }
-ccusage-adapter-pi = { path = "../ccusage-adapter-pi" }
-ccusage-adapter-qwen = { path = "../ccusage-adapter-qwen" }
-ccusage-cli = { path = "../ccusage-cli" }
-ccusage-cli-parser = { path = "../ccusage-cli-parser" }
-ccusage-config = { path = "../ccusage-config" }
-ccusage-core = { path = "../ccusage-core" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
+ccusage-adapter-all.workspace = true
+ccusage-adapter-amp.workspace = true
+ccusage-adapter-claude.workspace = true
+ccusage-adapter-codebuff.workspace = true
+ccusage-adapter-codex.workspace = true
+ccusage-adapter-common.workspace = true
+ccusage-adapter-copilot.workspace = true
+ccusage-adapter-droid.workspace = true
+ccusage-adapter-gemini.workspace = true
+ccusage-adapter-goose.workspace = true
+ccusage-adapter-hermes.workspace = true
+ccusage-adapter-kilo.workspace = true
+ccusage-adapter-kimi.workspace = true
+ccusage-adapter-openclaw.workspace = true
+ccusage-adapter-opencode.workspace = true
+ccusage-adapter-pi.workspace = true
+ccusage-adapter-qwen.workspace = true
+ccusage-cli-parser.workspace = true
+ccusage-cli.workspace = true
+ccusage-config.workspace = true
+ccusage-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
 
 [build-dependencies]
-serde_json = "1"
-
-[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
-mimalloc = "0.1.50"
+serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-test-support = { path = "../ccusage-test-support" }
+ccusage-test-support.workspace = true
+
+# mimalloc measurably beats the musl allocator on the static Linux build's
+# allocation-heavy JSONL parsing.
+[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
+mimalloc.workspace = true

@@ -1,11 +1,12 @@
 [package]
 name = "ccusage-terminal"
-version = "0.0.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
 
 [dependencies]
-terminal_size = "0.4.4"
-unicode-width = "0.2.2"
+terminal_size.workspace = true
+unicode-width.workspace = true
 
 [dev-dependencies]
-insta = "1.47.2"
+insta.workspace = true

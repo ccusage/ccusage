@@ -39,11 +39,11 @@ Read only the relevant adapter README before changing parser behavior, token
 mappings, data directory detection, fallback models, or agent-specific CLI
 flags:
 
-- Claude Code: `rust/crates/ccusage-adapter-claude/src/README.md`
-- Codex: `rust/crates/ccusage-adapter-codex/src/README.md`
-- OpenCode: `rust/crates/ccusage-adapter-opencode/src/README.md`
-- Amp: `rust/crates/ccusage-adapter-amp/src/README.md`
-- pi-agent: `rust/crates/ccusage-adapter-pi/src/README.md`
+- Claude Code: `rust/adapters/claude/src/README.md`
+- Codex: `rust/adapters/codex/src/README.md`
+- OpenCode: `rust/adapters/opencode/src/README.md`
+- Amp: `rust/adapters/amp/src/README.md`
+- pi-agent: `rust/adapters/pi/src/README.md`
 
 ## Implementation Notes
 

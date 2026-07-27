@@ -1,31 +1,31 @@
 [package]
 name = "ccusage-adapter-all"
-version = "0.0.0"
-edition = "2024"
-publish = false
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
 
 [dependencies]
-ccusage-adapter-amp = { path = "../ccusage-adapter-amp" }
-ccusage-adapter-claude = { path = "../ccusage-adapter-claude" }
-ccusage-adapter-codebuff = { path = "../ccusage-adapter-codebuff" }
-ccusage-adapter-codex = { path = "../ccusage-adapter-codex" }
-ccusage-adapter-common = { path = "../ccusage-adapter-common" }
-ccusage-adapter-copilot = { path = "../ccusage-adapter-copilot" }
-ccusage-adapter-droid = { path = "../ccusage-adapter-droid" }
-ccusage-adapter-gemini = { path = "../ccusage-adapter-gemini" }
-ccusage-adapter-goose = { path = "../ccusage-adapter-goose" }
-ccusage-adapter-hermes = { path = "../ccusage-adapter-hermes" }
-ccusage-adapter-kilo = { path = "../ccusage-adapter-kilo" }
-ccusage-adapter-kimi = { path = "../ccusage-adapter-kimi" }
-ccusage-adapter-openclaw = { path = "../ccusage-adapter-openclaw" }
-ccusage-adapter-opencode = { path = "../ccusage-adapter-opencode" }
-ccusage-adapter-pi = { path = "../ccusage-adapter-pi" }
-ccusage-adapter-qwen = { path = "../ccusage-adapter-qwen" }
-ccusage-cli = { path = "../ccusage-cli" }
-ccusage-core = { path = "../ccusage-core" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+ccusage-adapter-amp.workspace = true
+ccusage-adapter-claude.workspace = true
+ccusage-adapter-codebuff.workspace = true
+ccusage-adapter-codex.workspace = true
+ccusage-adapter-common.workspace = true
+ccusage-adapter-copilot.workspace = true
+ccusage-adapter-droid.workspace = true
+ccusage-adapter-gemini.workspace = true
+ccusage-adapter-goose.workspace = true
+ccusage-adapter-hermes.workspace = true
+ccusage-adapter-kilo.workspace = true
+ccusage-adapter-kimi.workspace = true
+ccusage-adapter-openclaw.workspace = true
+ccusage-adapter-opencode.workspace = true
+ccusage-adapter-pi.workspace = true
+ccusage-adapter-qwen.workspace = true
+ccusage-cli.workspace = true
+ccusage-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-test-support = { path = "../ccusage-test-support" }
-insta = { version = "1.47.2", features = ["json"] }
+ccusage-test-support.workspace = true
+insta.workspace = true

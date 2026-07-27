@@ -10,7 +10,8 @@ globs: 'rust/**/*.rs,rust/**/*.toml,rust/**/build.rs'
 
 # ccusage Rust
 
-Use this skill for the native Rust CLI in `rust/crates`. Every crate has a
+Use this skill for the native Rust CLI: `rust/adapters/<agent>` holds one crate per
+usage source, `rust/crates` everything that is not tied to a single source. Every crate has a
 `README.md` stating what it owns and which Crane artifact layer it lands in; read
 the one for the crate you are about to touch, because that layer determines how
 much a change to it costs:
@@ -20,7 +21,7 @@ much a change to it costs:
 - `ccusage-cli` - the plain argument types; `ccusage-cli-parser` - the parser,
   help renderer, and embedded help JSON, which only the binary depends on.
 - `ccusage-adapter-common` - shared file discovery, parallel reads, and the shared
-  agent table; `ccusage-adapter-<agent>` - one crate per source;
+  agent table; `adapters/<agent>` - one crate per source;
   `ccusage-adapter-all` - the unified report.
 - `ccusage-terminal` - table and color primitives; `ccusage-test-support` -
   fixtures and environment guards.
@@ -32,8 +33,8 @@ the user explicitly scopes a behavior change. Before implementing or refactoring
 an agent, inspect the current Rust adapter and the agent source reference docs:
 
 ```sh
-fd . rust/crates/ccusage-adapter-<agent>
-sed -n '1,220p' rust/crates/ccusage-adapter-<agent>/src/README.md
+fd . rust/adapters/<agent>
+sed -n '1,220p' rust/adapters/<agent>/src/README.md
 ```
 
 When porting behavior from the historical TypeScript implementation, first find
@@ -48,11 +49,11 @@ Preserve report semantics, JSON fields, table columns, progress/spinner text, ag
 Do not keep growing `main.rs` or single large adapter files. Use these
 responsibility boundaries where practical:
 
-- `ccusage-adapter-<agent>/src/lib.rs` - public adapter surface and command wiring.
-- `ccusage-adapter-<agent>/src/paths.rs` - environment variables, defaults, and path discovery.
-- `ccusage-adapter-<agent>/src/parser.rs` - raw record parsing and token/model mapping.
-- `ccusage-adapter-<agent>/src/loader.rs` - file walking, SQLite reads, dedupe, and date filtering entry points.
-- `ccusage-adapter-<agent>/src/report.rs` - JSON/table row shaping when agent-specific.
+- `adapters/<agent>/src/lib.rs` - public adapter surface and command wiring.
+- `adapters/<agent>/src/paths.rs` - environment variables, defaults, and path discovery.
+- `adapters/<agent>/src/parser.rs` - raw record parsing and token/model mapping.
+- `adapters/<agent>/src/loader.rs` - file walking, SQLite reads, dedupe, and date filtering entry points.
+- `adapters/<agent>/src/report.rs` - JSON/table row shaping when agent-specific.
 - shared modules stay in `ccusage-core` (`types.rs`, `summary.rs`, `output.rs`, `pricing.rs`, `progress.rs`, `date_utils.rs`) or in `ccusage-adapter-common` when they are about reading files or rendering the shared agent table.
 - do not add a dependency from one adapter to another; move the shared part into `ccusage-adapter-common` instead.
 

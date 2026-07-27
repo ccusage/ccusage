@@ -1,24 +1,9 @@
 [package]
 name = "ccusage-core"
-version = "0.0.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 build = "build.rs"
-publish = false
-
-[dependencies]
-ccusage-cli = { path = "../ccusage-cli" }
-ccusage-terminal = { path = "../ccusage-terminal" }
-jiff = { version = "0.2.24", default-features = false, features = [
-	"std",
-	"tz-system",
-	"tzdb-zoneinfo",
-	"tzdb-bundle-platform",
-] }
-memchr = "2"
-rustc-hash = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-smallvec = "1"
+publish.workspace = true
 
 [features]
 # Off by default: the pricing snapshot normally arrives through
@@ -26,12 +11,20 @@ smallvec = "1"
 # expensive build-dependency. See build.rs.
 fetch-litellm-pricing = ["dep:minreq"]
 
+[dependencies]
+ccusage-cli.workspace = true
+ccusage-terminal.workspace = true
+jiff.workspace = true
+memchr.workspace = true
+rustc-hash.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+smallvec.workspace = true
+
 [build-dependencies]
-minreq = { version = "3.0.0-rc.1", default-features = false, features = [
-	"https-rustls",
-], optional = true }
-serde_json = "1"
+minreq = { workspace = true, optional = true }
+serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-test-support = { path = "../ccusage-test-support" }
-insta = { version = "1.47.2", features = ["json"] }
+ccusage-test-support.workspace = true
+insta.workspace = true
