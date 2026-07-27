@@ -387,8 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn fits_the_status_when_the_terminal_has_no_room_at_all() {
-        assert_eq!(fit_status_to_width("Loading usage logs", 2), "…");
+    fn drops_the_status_when_the_terminal_has_no_room_at_all() {
+        assert_eq!(fit_status_to_width("Loading usage logs", 3), "");
+        assert_eq!(fit_status_to_width("Loading usage logs", 4), "…");
     }
 
     #[test]

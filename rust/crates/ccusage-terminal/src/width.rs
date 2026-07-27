@@ -1,19 +1,28 @@
 use unicode_width::UnicodeWidthChar;
 
+/// Index of the first byte after the escape sequence starting at `index`.
+///
+/// Only CSI sequences carry parameters, so a bare `\x1b` advances by one and a
+/// `\x1b[` run consumes bytes up to and including its alphabetic final byte.
+fn skip_ansi_escape(bytes: &[u8], index: usize) -> usize {
+    let mut index = index + 1;
+    if index < bytes.len() && bytes[index] == b'[' {
+        index += 1;
+        while index < bytes.len() && !(bytes[index] as char).is_ascii_alphabetic() {
+            index += 1;
+        }
+        index += usize::from(index < bytes.len());
+    }
+    index
+}
+
 pub(crate) fn visible_width(value: &str) -> usize {
     let bytes = value.as_bytes();
     let mut width = 0;
     let mut index = 0;
     while index < bytes.len() {
         if bytes[index] == 0x1b {
-            index += 1;
-            if index < bytes.len() && bytes[index] == b'[' {
-                index += 1;
-                while index < bytes.len() && !(bytes[index] as char).is_ascii_alphabetic() {
-                    index += 1;
-                }
-                index += usize::from(index < bytes.len());
-            }
+            index = skip_ansi_escape(bytes, index);
             continue;
         }
         let Some(ch) = value[index..].chars().next() else {
@@ -39,10 +48,11 @@ pub(crate) fn visible_width_max_line(value: &str) -> usize {
 
 /// Shorten `value` to at most `width` display columns, marking the cut with `…`.
 ///
-/// Values that already fit are returned unchanged. ANSI escapes are copied
-/// through without spending width, and a reset is appended before the ellipsis
-/// so a cut inside a colored run cannot leak its style into the rest of the
-/// line.
+/// The result never exceeds `width`, so a `width` of zero yields an empty
+/// string. Values that already fit are returned unchanged. ANSI escapes are
+/// copied through without spending width, and a reset is appended before the
+/// ellipsis so a cut inside a colored run cannot leak its style into the rest of
+/// the line.
 ///
 /// # Examples
 ///
@@ -51,12 +61,17 @@ pub(crate) fn visible_width_max_line(value: &str) -> usize {
 ///
 /// assert_eq!(truncate_to_width("fits", 10), "fits");
 /// assert_eq!(truncate_to_width("Loading usage logs", 10), "Loading u…");
+/// assert_eq!(truncate_to_width("Loading usage logs", 0), "");
 /// ```
 pub fn truncate_to_width(value: &str, width: usize) -> String {
     if visible_width(value) <= width {
         return value.to_string();
     }
-    if width <= 1 {
+    // The ellipsis itself needs a column, so a zero budget can only stay silent.
+    if width == 0 {
+        return String::new();
+    }
+    if width == 1 {
         return "…".to_string();
     }
     let mut output = String::new();
@@ -66,16 +81,7 @@ pub fn truncate_to_width(value: &str, width: usize) -> String {
     while index < bytes.len() {
         if bytes[index] == 0x1b {
             let start = index;
-            index += 1;
-            if index < bytes.len() && bytes[index] == b'[' {
-                index += 1;
-                while index < bytes.len() && !(bytes[index] as char).is_ascii_alphabetic() {
-                    index += 1;
-                }
-                if index < bytes.len() {
-                    index += 1;
-                }
-            }
+            index = skip_ansi_escape(bytes, index);
             output.push_str(&value[start..index]);
             continue;
         }
@@ -119,6 +125,12 @@ mod tests {
     #[test]
     fn truncate_to_width_stays_within_the_requested_width() {
         assert_eq!(truncate_to_width("Loading usage logs", 10), "Loading u…");
+    }
+
+    #[test]
+    fn truncate_to_width_writes_nothing_when_no_column_is_available() {
+        assert_eq!(truncate_to_width("Loading usage logs", 0), "");
+        assert_eq!(truncate_to_width("Loading usage logs", 1), "…");
     }
 
     #[test]
