@@ -64,9 +64,9 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, fs, sync::Arc};
+    use std::{collections::HashMap, ffi::OsString, fs, sync::Arc};
 
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvVarGuard, EnvVarsGuard, fs_fixture};
     use serde_json::json;
 
     use super::*;
@@ -937,5 +937,88 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    fn extra_dirs_usage_line(message_id: &str) -> String {
+        format!(
+            r#"{{"timestamp":"2025-01-10T10:00:00.000Z","message":{{"id":"{message_id}","model":"claude-opus-4-6","usage":{{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}}}},"costUSD":0.001}}"#
+        )
+    }
+
+    fn display_shared_args() -> SharedArgs {
+        SharedArgs {
+            mode: CostMode::Display,
+            ..SharedArgs::default()
+        }
+    }
+
+    #[test]
+    fn adds_extra_claude_dirs_to_default_sources() {
+        let default_dir = fs_fixture!({
+            ".claude/projects/default-project/session1/chat.jsonl": extra_dirs_usage_line("msg_default"),
+        });
+        let extra_dir = fs_fixture!({
+            "projects/extra-project/session2/chat.jsonl": extra_dirs_usage_line("msg_extra"),
+        });
+
+        let _env = EnvVarsGuard::set_many([
+            ("CLAUDE_CONFIG_DIR", None),
+            ("XDG_CONFIG_HOME", None),
+            ("HOME", Some(default_dir.root().as_os_str().to_os_string())),
+            (
+                "CCUSAGE_CLAUDE_EXTRA_DIRS",
+                Some(extra_dir.root().as_os_str().to_os_string()),
+            ),
+        ]);
+        let entries = load_entries(&display_shared_args(), None).unwrap();
+
+        let mut projects: Vec<&str> = entries.iter().map(|entry| &*entry.project).collect();
+        projects.sort();
+        assert_eq!(projects, vec!["default-project", "extra-project"]);
+    }
+
+    #[test]
+    fn ignores_extra_claude_dirs_without_projects() {
+        let default_dir = fs_fixture!({
+            ".claude/projects/default-project/session1/chat.jsonl": extra_dirs_usage_line("msg_default"),
+        });
+        let invalid_extra = fs_fixture!({
+            "not-projects/extra-project/session2/chat.jsonl": extra_dirs_usage_line("msg_extra"),
+        });
+
+        let _env = EnvVarsGuard::set_many([
+            ("CLAUDE_CONFIG_DIR", None),
+            ("XDG_CONFIG_HOME", None),
+            ("HOME", Some(default_dir.root().as_os_str().to_os_string())),
+            (
+                "CCUSAGE_CLAUDE_EXTRA_DIRS",
+                Some(invalid_extra.root().as_os_str().to_os_string()),
+            ),
+        ]);
+        let entries = load_entries(&display_shared_args(), None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].project.as_ref(), "default-project");
+    }
+
+    #[test]
+    fn dedupes_extra_claude_dir_matching_default() {
+        let default_dir = fs_fixture!({
+            ".claude/projects/default-project/session1/chat.jsonl": extra_dirs_usage_line("msg_default"),
+        });
+
+        let _env = EnvVarsGuard::set_many([
+            ("CLAUDE_CONFIG_DIR", None),
+            ("XDG_CONFIG_HOME", None),
+            ("HOME", Some(default_dir.root().as_os_str().to_os_string())),
+            (
+                "CCUSAGE_CLAUDE_EXTRA_DIRS",
+                Some(OsString::from(default_dir.path(".claude"))),
+            ),
+        ]);
+        let entries = load_entries(&display_shared_args(), None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].project.as_ref(), "default-project");
     }
 }

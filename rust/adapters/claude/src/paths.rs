@@ -13,34 +13,40 @@ pub fn claude_paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = FxHashSet::default();
     if let Ok(env_paths) = env::var("CLAUDE_CONFIG_DIR") {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = normalize_claude_config_path(raw);
+        append_config_dirs(&env_paths, &mut paths, &mut seen);
+        if paths.is_empty() {
+            return Err(cli_error(format!(
+                "No valid Claude data directories found in CLAUDE_CONFIG_DIR. Expected each path to be a Claude config directory containing 'projects/', or the 'projects/' directory itself: {env_paths}"
+            )));
+        }
+    } else {
+        let home = home::home_dir().ok_or_else(|| cli_error("home directory is not set"))?;
+        let xdg = env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(&home).join(".config"));
+        for path in [xdg.join("claude"), home.join(".claude")] {
             if path.join("projects").is_dir() && seen.insert(path.clone()) {
                 paths.push(path);
             }
         }
-        if !paths.is_empty() {
-            return Ok(paths);
-        }
-        return Err(cli_error(format!(
-            "No valid Claude data directories found in CLAUDE_CONFIG_DIR. Expected each path to be a Claude config directory containing 'projects/', or the 'projects/' directory itself: {env_paths}"
-        )));
     }
+    if let Ok(extra_dirs) = env::var("CCUSAGE_CLAUDE_EXTRA_DIRS") {
+        append_config_dirs(&extra_dirs, &mut paths, &mut seen);
+    }
+    Ok(paths)
+}
 
-    let home = home::home_dir().ok_or_else(|| cli_error("home directory is not set"))?;
-    let xdg = env::var("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(&home).join(".config"));
-    for path in [xdg.join("claude"), home.join(".claude")] {
+fn append_config_dirs(raw: &str, paths: &mut Vec<PathBuf>, seen: &mut FxHashSet<PathBuf>) {
+    for entry in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        let path = normalize_claude_config_path(entry);
         if path.join("projects").is_dir() && seen.insert(path.clone()) {
             paths.push(path);
         }
     }
-    Ok(paths)
 }
 
 fn normalize_claude_config_path(raw: &str) -> PathBuf {
