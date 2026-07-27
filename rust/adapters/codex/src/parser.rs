@@ -140,8 +140,8 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
         match first {
             None => first = Some(timestamp),
             Some(first) => {
-                return (timestamp.as_millis() - first.as_millis()
-                    <= CODEX_REWRITTEN_BURST_PAUSE_MS)
+                return (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
+                    .contains(&(timestamp.as_millis() - first.as_millis()))
                     .then_some(first);
             }
         }
@@ -207,8 +207,8 @@ pub(super) fn visit_codex_session_file(
                 }
                 CodexReplayState::SkippingRewrittenBurst(previous) => {
                     if let Some(timestamp) = parse_ts_timestamp(&event.timestamp)
-                        && timestamp.as_millis() - previous.as_millis()
-                            <= CODEX_REWRITTEN_BURST_PAUSE_MS
+                        && (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
+                            .contains(&(timestamp.as_millis() - previous.as_millis()))
                     {
                         replay = CodexReplayState::SkippingRewrittenBurst(timestamp);
                         return Ok(());
