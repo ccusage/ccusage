@@ -18,6 +18,7 @@ in
       craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       inherit (config.packages.ccusage.passthru)
         cargoArtifacts
+        workspaceArtifacts
         commonArgs
         version
         ;
@@ -57,8 +58,9 @@ in
         commonArgs
         // {
           pname = "generate-config-schema";
-          inherit cargoArtifacts;
-          cargoExtraArgs = "-p ccusage --bin generate-config-schema";
+          # Only the config layer is needed, so skip the adapter artifacts.
+          cargoArtifacts = workspaceArtifacts.foundation;
+          cargoExtraArgs = "-p ccusage-config --bin generate-config-schema";
           doCheck = false;
           meta = {
             mainProgram = "generate-config-schema";
