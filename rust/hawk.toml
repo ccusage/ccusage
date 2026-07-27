@@ -1,0 +1,12 @@
+# Entry points hawk treats as the world: everything reachable from these may stay
+# `pub`, and anything else can be narrowed. Without this file hawk would assume
+# every binary target is shipped, which is true here but says nothing about why.
+[[production]]
+package = "ccusage"
+bin = "ccusage"
+reason = "the distributed CLI"
+
+[[production]]
+package = "ccusage-config"
+bin = "generate-config-schema"
+reason = "writes apps/ccusage/config-schema.json; the config-schema flake check runs it"

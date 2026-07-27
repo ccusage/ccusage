@@ -145,7 +145,7 @@ pub fn parse_ts_timestamp(value: &str) -> Option<TimestampMs> {
 }
 
 pub fn parse_timezone_offset(bytes: &[u8]) -> Option<i64> {
-    if bytes == [b'Z'] {
+    if bytes == b"Z" {
         return Some(0);
     }
     if bytes.len() != 6 || !matches!(bytes[0], b'+' | b'-') || bytes[3] != b':' {
