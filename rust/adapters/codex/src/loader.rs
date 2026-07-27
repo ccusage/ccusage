@@ -582,7 +582,7 @@ mod tests {
         assert_eq!(events[2].input_tokens, 9);
         assert_eq!(events[2].output_tokens, 4);
         assert_eq!(events[2].reasoning_output_tokens, 1);
-        assert_eq!(events[2].total_tokens, 14);
+        assert_eq!(events[2].total_tokens, 13);
     }
 
     #[test]

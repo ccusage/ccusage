@@ -288,11 +288,13 @@ impl<'de> Deserialize<'de> for CodexRawUsage {
                 .unwrap_or(0),
             output_tokens: output,
             reasoning_output_tokens: reasoning,
-            total_tokens: match fields.total_tokens {
-                None => input + output,
-                Some(0) => input + output + reasoning,
-                Some(total) => total,
-            },
+            // Codex reports reasoning as a subset of output, so a derived total
+            // must not add it on top. A recorded zero total means the field is
+            // unusable rather than that the turn spent nothing, so derive it too.
+            total_tokens: fields
+                .total_tokens
+                .filter(|total| *total > 0)
+                .unwrap_or(input + output),
         })
     }
 }
@@ -499,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn derives_explicit_zero_total_tokens_from_all_nonzero_components() {
+    fn derives_explicit_zero_total_tokens_without_double_counting_reasoning() {
         let usage: CodexRawUsage = serde_json::from_str(
             r#"{
                 "input_tokens": 9,
@@ -510,6 +512,44 @@ mod tests {
         )
         .expect("usage should deserialize");
 
-        assert_eq!(usage.total_tokens, 14);
+        assert_eq!(usage.total_tokens, 13);
+    }
+
+    #[test]
+    fn keeps_a_recorded_total() {
+        let usage: CodexRawUsage = serde_json::from_str(
+            r#"{
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "reasoning_output_tokens": 20,
+                "total_tokens": 150
+            }"#,
+        )
+        .expect("usage should deserialize");
+
+        assert_eq!(usage.total_tokens, 150);
+    }
+
+    #[test]
+    fn derives_total_tokens_from_openai_field_spellings() {
+        let usage: CodexRawUsage = serde_json::from_str(
+            r#"{
+                "prompt_tokens": 50,
+                "cached_tokens": 5,
+                "completion_tokens": 12,
+                "reasoning_tokens": 4
+            }"#,
+        )
+        .expect("usage should deserialize");
+
+        assert_eq!(usage.total_tokens, 62);
+    }
+
+    #[test]
+    fn leaves_an_empty_usage_total_at_zero() {
+        let usage: CodexRawUsage =
+            serde_json::from_str(r#"{"total_tokens": 0}"#).expect("usage should deserialize");
+
+        assert_eq!(usage.total_tokens, 0);
     }
 }
