@@ -77,7 +77,6 @@ ccusage daily --last 1
 
 # The last seven days, including today
 ccusage daily --last 7
-ccusage daily -l 7
 ```
 
 `--last` cannot be combined with `--since` or `--until`. See [Command-Line Options](/guide/cli-options#recent-periods) for how it behaves on the other reports.

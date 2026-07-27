@@ -81,7 +81,6 @@ ccusage monthly --last 1
 
 # This month and the five before it
 ccusage monthly --last 6
-ccusage monthly -l 6
 ```
 
 `--last` cannot be combined with `--since` or `--until`.

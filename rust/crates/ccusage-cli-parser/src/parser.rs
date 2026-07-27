@@ -711,7 +711,7 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
         "-u" | "--until" => {
             shared.until = Some(normalize_date_bound(&parser.value_for("--until")?))
         }
-        "-l" | "--last" => shared.last = Some(parse_last_periods(&parser.value_for("--last")?)?),
+        "--last" => shared.last = Some(parse_last_periods(&parser.value_for("--last")?)?),
         "-j" | "--json" => shared.json = true,
         "-m" | "--mode" => shared.mode = parse_cost_mode(&parser.value_for("--mode")?)?,
         "-d" | "--debug" => shared.debug = true,
@@ -868,7 +868,6 @@ fn option_takes_value(arg: &str) -> bool {
         "-s" | "--since"
             | "-u"
             | "--until"
-            | "-l"
             | "--last"
             | "-m"
             | "--mode"
@@ -968,7 +967,6 @@ fn is_shared_flag(arg: &str) -> bool {
         "-s" | "--since"
             | "-u"
             | "--until"
-            | "-l"
             | "--last"
             | "-j"
             | "--json"

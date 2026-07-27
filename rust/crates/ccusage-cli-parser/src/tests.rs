@@ -242,7 +242,7 @@ fn parses_last_periods_on_period_reports() {
     };
     assert_eq!(args.shared.last, Some(1));
 
-    let cli = parse(&["ccusage", "claude", "weekly", "-l", "2"]);
+    let cli = parse(&["ccusage", "claude", "weekly", "--last", "2"]);
     let Some(Command::Weekly(args)) = cli.command else {
         panic!("expected weekly command");
     };
@@ -269,6 +269,14 @@ fn parses_last_periods_before_the_command_name() {
     let cli = parse(&["ccusage", "--last", "1"]);
     assert!(cli.command.is_none());
     assert_eq!(cli.shared.last, Some(1));
+}
+
+#[test]
+fn leaves_the_short_alias_of_the_removed_locale_option_unused() {
+    assert_eq!(
+        parse_error(&["ccusage", "daily", "-l", "1"]),
+        "Unknown option '-l'"
+    );
 }
 
 #[test]

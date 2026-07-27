@@ -37,7 +37,7 @@ ccusage monthly --last 1
 
 # The last seven days, and the last three months
 ccusage daily --last 7
-ccusage monthly -l 3
+ccusage monthly --last 3
 ```
 
 The count is inclusive of the current period, so `--last 2` on a daily report covers yesterday and today. Weeks start on the same day the report buckets by, which is Monday everywhere except `ccusage claude weekly`, where `--start-of-week` decides.
@@ -333,17 +333,16 @@ LOG_LEVEL=0 ccusage daily --json
 
 Many options have short aliases for convenience:
 
-| Long Option   | Short | Description           |
-| ------------- | ----- | --------------------- |
-| `--json`      | `-j`  | JSON output           |
-| `--breakdown` | `-b`  | Per-model breakdown   |
-| `--offline`   | `-O`  | Offline mode          |
-| `--timezone`  | `-z`  | Set timezone          |
-| `--last`      | `-l`  | Most recent N periods |
-| `--instances` | `-i`  | Group by project      |
-| `--project`   | `-p`  | Filter project        |
-| `--active`    | `-a`  | Active block only     |
-| `--recent`    | `-r`  | Recent blocks         |
+| Long Option   | Short | Description         |
+| ------------- | ----- | ------------------- |
+| `--json`      | `-j`  | JSON output         |
+| `--breakdown` | `-b`  | Per-model breakdown |
+| `--offline`   | `-O`  | Offline mode        |
+| `--timezone`  | `-z`  | Set timezone        |
+| `--instances` | `-i`  | Group by project    |
+| `--project`   | `-p`  | Filter project      |
+| `--active`    | `-a`  | Active block only   |
+| `--recent`    | `-r`  | Recent blocks       |
 
 ## Related Documentation
 

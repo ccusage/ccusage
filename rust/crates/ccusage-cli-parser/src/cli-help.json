@@ -137,7 +137,7 @@
 	],
 	"last_options": [
 		{
-			"flags": "-l, --last <last>",
+			"flags": "--last <last>",
 			"description": "Show only the most recent N periods of the report (1 is today, this week, or this month)"
 		}
 	],
