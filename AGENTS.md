@@ -45,7 +45,7 @@ Check the nearest package-specific `AGENTS.md` before editing package code:
   runtime behavior in `rust/adapters/<agent>` and shared behavior in
   `ccusage-core` or `ccusage-adapter-common` unless the work is specifically about
   npm packaging, generated schemas, docs tooling, or benchmark scripts.
-- For Rust code, keep modules small, keep `pub(crate)` surfaces narrow, prefer fixture-backed parser/loader tests, and run cargo checks through the `just` recipes when possible.
+- For Rust code, keep modules small, use `pub` only for what another crate uses and `pub(crate)` for everything else (`just hawk` reports the difference), prefer fixture-backed parser/loader tests, and run cargo checks through the `just` recipes when possible.
 - TypeScript rules still apply to `.ts`, `.tsx`, `.js`, and `.jsx` package/tooling files. Use `typescript` there, especially `satisfies` and `as const satisfies` for typed literals.
 - For TypeScript package code, use `logger.ts` instead of `console.log`, use `.ts` extensions for local imports, and avoid dynamic imports.
 - After code changes, run `just fmt` when formatting may apply. Rely on git hooks and CI for covered checks; run `just typecheck` or `just test` manually when the change touches behavior, types, package code, or when hooks/CI do not cover the edited files. `just` is the single entry point for repo tasks (`just --list`); recipes route to the pnpm workspace or the Nix flake.

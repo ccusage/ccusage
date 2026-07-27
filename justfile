@@ -59,6 +59,10 @@ fmt:
 check:
     nix flake check
 
+# Report `pub` items in the Rust workspace that no other crate needs (needs cargo-hawk)
+hawk:
+    cargo hawk check --manifest-path rust/Cargo.toml
+
 # Regenerate apps/ccusage/config-schema.json from the Rust source
 schema:
     nix run .#generate-schema

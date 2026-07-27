@@ -57,9 +57,33 @@ responsibility boundaries where practical:
 - shared modules stay in `ccusage-core` (`types.rs`, `summary.rs`, `output.rs`, `pricing.rs`, `progress.rs`, `date_utils.rs`) or in `ccusage-adapter-common` when they are about reading files or rendering the shared agent table.
 - do not add a dependency from one adapter to another; move the shared part into `ccusage-adapter-common` instead.
 
-Keep public `pub(crate)` surfaces narrow. Prefer moving tests with the code they exercise instead of leaving all Rust tests in `main.rs`.
+Prefer moving tests with the code they exercise instead of leaving all Rust tests in `main.rs`.
 
 When splitting large Rust modules or removing duplication, use the `reduce-similarities` skill, which runs `similarity-rs` for `.rs` files.
+
+## Visibility
+
+Inside this workspace `pub` is only for what another crate actually uses.
+Everything else is `pub(crate)`, including items that other modules in the same
+crate reach through a module chain.
+
+`just hawk` runs [hawk](https://github.com/astral-sh/hawk) over the workspace and
+reports `pub` items nothing outside their crate needs. Run it after adding a
+crate and after widening a visibility. `rust/hawk.toml` lists the shipped entry
+points; anything not reachable from them can be narrowed. Adding `--fix` to the
+underlying `cargo hawk check` applies the narrowing.
+
+hawk is not in nixpkgs, so the dev shell does not provide it. Install a prebuilt
+release first:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/hawk/releases/latest/download/cargo-hawk-installer.sh | sh
+```
+
+It uses `rustc_private` and only runs on the toolchain it was built against,
+which is why `rust-toolchain.toml` pins 1.97.1. It is experimental - its README
+says it is "not intended for public consumption" - and no CI check runs it, so
+read its findings as suggestions and confirm each one before narrowing.
 
 ## Pricing Embedding
 
