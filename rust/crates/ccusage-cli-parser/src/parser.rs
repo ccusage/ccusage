@@ -121,6 +121,9 @@ impl Cli {
         if let Some(extra) = parser.next() {
             return Err(format!("Unexpected argument '{extra}'"));
         }
+        if let Some(message) = last_option_error(command.as_ref(), &shared) {
+            return Err(message);
+        }
         Ok(Self { command, shared })
     }
 }
@@ -708,6 +711,7 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
         "-u" | "--until" => {
             shared.until = Some(normalize_date_bound(&parser.value_for("--until")?))
         }
+        "-l" | "--last" => shared.last = Some(parse_last_periods(&parser.value_for("--last")?)?),
         "-j" | "--json" => shared.json = true,
         "-m" | "--mode" => shared.mode = parse_cost_mode(&parser.value_for("--mode")?)?,
         "-d" | "--debug" => shared.debug = true,
@@ -864,6 +868,8 @@ fn option_takes_value(arg: &str) -> bool {
         "-s" | "--since"
             | "-u"
             | "--until"
+            | "-l"
+            | "--last"
             | "-m"
             | "--mode"
             | "--debug-samples"
@@ -962,6 +968,8 @@ fn is_shared_flag(arg: &str) -> bool {
         "-s" | "--since"
             | "-u"
             | "--until"
+            | "-l"
+            | "--last"
             | "-j"
             | "--json"
             | "-m"
@@ -987,6 +995,60 @@ fn is_shared_flag(arg: &str) -> bool {
             | "--single-thread"
             | "--no-cost"
     )
+}
+
+fn parse_last_periods(value: &str) -> Result<u32, String> {
+    match value.parse() {
+        Ok(0) | Err(_) => Err(format!(
+            "Invalid value for --last '{value}'. Expected a whole number of periods, 1 or greater."
+        )),
+        Ok(periods) => Ok(periods),
+    }
+}
+
+/// `--last` counts the report's own calendar periods, so it only makes sense on
+/// the reports that group rows by day, week, or month.
+fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Option<String> {
+    let (shared, supported) = match command {
+        None => (root_shared, true),
+        Some(Command::All(args)) => (&args.shared, args.kind != AgentReportKind::Session),
+        Some(Command::Daily(args)) => (&args.shared, true),
+        Some(Command::Monthly(shared)) => (shared, true),
+        Some(Command::Weekly(args)) => (&args.shared, true),
+        Some(Command::Session(args)) => (&args.shared, false),
+        Some(Command::Blocks(args)) => (&args.shared, false),
+        Some(Command::Statusline(_)) => (root_shared, false),
+        Some(
+            Command::Codex(args)
+            | Command::OpenCode(args)
+            | Command::Amp(args)
+            | Command::Droid(args)
+            | Command::Codebuff(args)
+            | Command::Hermes(args)
+            | Command::Pi(args)
+            | Command::Goose(args)
+            | Command::Kilo(args)
+            | Command::Copilot(args)
+            | Command::Gemini(args)
+            | Command::Kimi(args)
+            | Command::Qwen(args)
+            | Command::OpenClaw(args),
+        ) => (&args.shared, args.kind != AgentReportKind::Session),
+    };
+    shared.last?;
+    if !supported {
+        return Some(
+            "The --last option is only available for the daily, weekly, and monthly reports."
+                .to_string(),
+        );
+    }
+    if shared.since.is_some() || shared.until.is_some() {
+        return Some("The --last option cannot be combined with --since or --until.".to_string());
+    }
+    if matches!(command, Some(Command::All(args)) if args.sections.is_some()) {
+        return Some("The --last option cannot be used with --sections.".to_string());
+    }
+    None
 }
 
 fn parse_cost_mode(value: &str) -> Result<CostMode, String> {

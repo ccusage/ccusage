@@ -235,6 +235,89 @@ fn parses_root_daily_as_all_agent_report() {
 }
 
 #[test]
+fn parses_last_periods_on_period_reports() {
+    let cli = parse(&["ccusage", "daily", "--last", "1"]);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.shared.last, Some(1));
+
+    let cli = parse(&["ccusage", "claude", "weekly", "-l", "2"]);
+    let Some(Command::Weekly(args)) = cli.command else {
+        panic!("expected weekly command");
+    };
+    assert_eq!(args.shared.last, Some(2));
+
+    let cli = parse(&["ccusage", "codex", "monthly", "--last=3"]);
+    let Some(Command::Codex(args)) = cli.command else {
+        panic!("expected codex command");
+    };
+    assert_eq!(args.shared.last, Some(3));
+}
+
+#[test]
+fn parses_last_periods_before_the_command_name() {
+    let cli = parse(&["ccusage", "--last", "1", "weekly"]);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert_eq!(args.shared.last, Some(1));
+
+    // The bare command is the unified daily report, which the binary resolves
+    // from the root shared options.
+    let cli = parse(&["ccusage", "--last", "1"]);
+    assert!(cli.command.is_none());
+    assert_eq!(cli.shared.last, Some(1));
+}
+
+#[test]
+fn rejects_last_periods_on_reports_without_a_period() {
+    for args in [
+        ["ccusage", "session", "--last", "1"],
+        ["ccusage", "blocks", "--last", "1"],
+        ["ccusage", "codex", "session", "--last=1"],
+    ] {
+        assert_eq!(
+            parse_error(&args),
+            "The --last option is only available for the daily, weekly, and monthly reports."
+        );
+    }
+}
+
+#[test]
+fn rejects_last_periods_alongside_an_explicit_date_window() {
+    assert_eq!(
+        parse_error(&["ccusage", "daily", "--last", "1", "--since", "20260101"]),
+        "The --last option cannot be combined with --since or --until."
+    );
+    assert_eq!(
+        parse_error(&["ccusage", "daily", "--last", "1", "--until", "20260101"]),
+        "The --last option cannot be combined with --since or --until."
+    );
+}
+
+#[test]
+fn rejects_last_periods_with_multi_section_reports() {
+    assert_eq!(
+        parse_error(&["ccusage", "daily", "--last", "1", "--sections", "monthly"]),
+        "The --last option cannot be used with --sections."
+    );
+}
+
+#[test]
+fn rejects_last_periods_that_are_not_positive_whole_numbers() {
+    assert_eq!(
+        parse_error(&["ccusage", "daily", "--last", "0"]),
+        "Invalid value for --last '0'. Expected a whole number of periods, 1 or greater."
+    );
+    assert_eq!(
+        parse_error(&["ccusage", "daily", "--last", "week"]),
+        "Invalid value for --last 'week'. Expected a whole number of periods, 1 or greater."
+    );
+}
+
+#[test]
 fn parses_unified_sections_and_by_agent_flags() {
     let cli = parse(&[
         "ccusage",
