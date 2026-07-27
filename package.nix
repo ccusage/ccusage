@@ -2,6 +2,7 @@
   craneLib,
   inputs,
   lib,
+  lld,
   mold,
   pkgs,
   pkg-config,
@@ -42,11 +43,14 @@ let
       # crashes non-Nix Macs (#1251). dead_strip_dylibs drops dylib load
       # commands with no referenced symbols, so the unused libiconv is removed
       # and the binary links only system dylibs.
-      + lib.optionalString stdenv.isDarwin "-C link-arg=-Wl,-dead_strip_dylibs";
+      # lld is used on Darwin for its identical-code folding, which recovers part of
+      # the duplication the crate split introduces; ld64 has no equivalent.
+      + lib.optionalString stdenv.isDarwin "-C link-arg=-Wl,-dead_strip_dylibs -C link-arg=-fuse-ld=lld -C link-arg=-Wl,--icf=all";
     nativeBuildInputs = [
       pkg-config
     ]
-    ++ lib.optionals stdenv.isLinux [ mold ];
+    ++ lib.optionals stdenv.isLinux [ mold ]
+    ++ lib.optionals stdenv.isDarwin [ lld ];
     buildInputs = lib.optionals stdenv.isDarwin [
       apple-sdk_15
     ];
