@@ -5,6 +5,7 @@ pub mod cost;
 pub mod date_utils;
 pub mod fast;
 pub mod home;
+pub mod last_window;
 pub mod logger;
 pub mod model_aliases;
 pub mod output;
@@ -27,6 +28,7 @@ pub use cost::{
     missing_pricing_model_for_usage,
 };
 pub use date_utils::*;
+pub use last_window::{PeriodUnit, last_periods_since};
 pub use logger::{debug_log, log_level};
 pub use output::{
     format_currency, format_models_multiline, format_number, group_project_output, json_float,

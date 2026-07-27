@@ -22,3 +22,4 @@ OPTIONS:
   --config <config>                    Path to configuration file (default: auto-discovery)
   -h, --help                           Display this help message
   -v, --version                        Display this version
+  --last <last>                        Show only the most recent N periods of the report (1 is today, this week, or this month)

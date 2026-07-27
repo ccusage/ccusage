@@ -1,12 +1,18 @@
 {
 	"combinedOptions": {
+		"agent_period_options": ["agent_options", "last_options"],
+		"all_agent_period_options": ["all_agent_options", "last_options"],
 		"all_agent_session_options": ["all_agent_options", "session_options"],
 		"blocks_combined_options": ["shared_claude_options", "blocks_options"],
-		"claude_daily_options": ["shared_claude_options", "daily_options"],
+		"claude_daily_options": ["shared_claude_options", "daily_options", "last_options"],
+		"claude_monthly_options": ["shared_claude_options", "last_options"],
 		"claude_session_options": ["shared_claude_options", "session_options"],
-		"claude_weekly_options": ["shared_claude_options", "weekly_options"],
+		"claude_weekly_options": ["shared_claude_options", "weekly_options", "last_options"],
+		"codex_period_options": ["codex_options", "last_options"],
 		"openclaw_combined_options": ["agent_options", "openclaw_options"],
-		"pi_combined_options": ["agent_options", "pi_options"]
+		"openclaw_period_options": ["agent_options", "openclaw_options", "last_options"],
+		"pi_combined_options": ["agent_options", "pi_options"],
+		"pi_period_options": ["agent_options", "pi_options", "last_options"]
 	},
 	"root": {
 		"usage": ["ccusage [daily] <OPTIONS>", "ccusage <COMMANDS>"],
@@ -102,19 +108,19 @@
 			"path": ["daily"],
 			"description": "Show all detected coding (agent) CLI usage grouped by date",
 			"usage": "ccusage daily <OPTIONS>",
-			"options": "all_agent_options"
+			"options": "all_agent_period_options"
 		},
 		{
 			"path": ["monthly"],
 			"description": "Show all detected coding (agent) CLI usage grouped by month",
 			"usage": "ccusage monthly <OPTIONS>",
-			"options": "all_agent_options"
+			"options": "all_agent_period_options"
 		},
 		{
 			"path": ["weekly"],
 			"description": "Show all detected coding (agent) CLI usage grouped by week",
 			"usage": "ccusage weekly <OPTIONS>",
-			"options": "all_agent_options"
+			"options": "all_agent_period_options"
 		},
 		{
 			"path": ["session"],
@@ -175,7 +181,7 @@
 			"path": ["claude", "monthly"],
 			"description": "Show usage report grouped by month",
 			"usage": "ccusage claude monthly <OPTIONS>",
-			"options": "shared_claude_options"
+			"options": "claude_monthly_options"
 		},
 		{
 			"path": ["claude", "weekly"],
@@ -224,13 +230,13 @@
 			"path": ["codex", "daily"],
 			"description": "Show Codex token usage grouped by day",
 			"usage": "ccusage codex daily <OPTIONS>",
-			"options": "codex_options"
+			"options": "codex_period_options"
 		},
 		{
 			"path": ["codex", "monthly"],
 			"description": "Show Codex token usage grouped by month",
 			"usage": "ccusage codex monthly <OPTIONS>",
-			"options": "codex_options"
+			"options": "codex_period_options"
 		},
 		{
 			"path": ["codex", "session"],
@@ -265,19 +271,19 @@
 			"path": ["opencode", "daily"],
 			"description": "Show OpenCode token usage grouped by day",
 			"usage": "ccusage opencode daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["opencode", "weekly"],
 			"description": "Show OpenCode token usage grouped by week",
 			"usage": "ccusage opencode weekly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["opencode", "monthly"],
 			"description": "Show OpenCode token usage grouped by month",
 			"usage": "ccusage opencode monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["opencode", "session"],
@@ -308,13 +314,13 @@
 			"path": ["amp", "daily"],
 			"description": "Show Amp token usage grouped by day",
 			"usage": "ccusage amp daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["amp", "monthly"],
 			"description": "Show Amp token usage grouped by month",
 			"usage": "ccusage amp monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["amp", "session"],
@@ -345,13 +351,13 @@
 			"path": ["droid", "daily"],
 			"description": "Show Droid usage grouped by date",
 			"usage": "ccusage droid daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["droid", "monthly"],
 			"description": "Show Droid usage grouped by month",
 			"usage": "ccusage droid monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["droid", "session"],
@@ -382,13 +388,13 @@
 			"path": ["codebuff", "daily"],
 			"description": "Show Codebuff usage grouped by date",
 			"usage": "ccusage codebuff daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["codebuff", "monthly"],
 			"description": "Show Codebuff usage grouped by month",
 			"usage": "ccusage codebuff monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["codebuff", "session"],
@@ -419,13 +425,13 @@
 			"path": ["hermes", "daily"],
 			"description": "Show Hermes usage grouped by date",
 			"usage": "ccusage hermes daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["hermes", "monthly"],
 			"description": "Show Hermes usage grouped by month",
 			"usage": "ccusage hermes monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["hermes", "session"],
@@ -456,13 +462,13 @@
 			"path": ["pi", "daily"],
 			"description": "Show pi-agent usage grouped by date",
 			"usage": "ccusage pi daily <OPTIONS>",
-			"options": "pi_combined_options"
+			"options": "pi_period_options"
 		},
 		{
 			"path": ["pi", "monthly"],
 			"description": "Show pi-agent usage grouped by month",
 			"usage": "ccusage pi monthly <OPTIONS>",
-			"options": "pi_combined_options"
+			"options": "pi_period_options"
 		},
 		{
 			"path": ["pi", "session"],
@@ -493,13 +499,13 @@
 			"path": ["goose", "daily"],
 			"description": "Show Goose usage grouped by date",
 			"usage": "ccusage goose daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["goose", "monthly"],
 			"description": "Show Goose usage grouped by month",
 			"usage": "ccusage goose monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["goose", "session"],
@@ -530,13 +536,13 @@
 			"path": ["kilo", "daily"],
 			"description": "Show Kilo usage grouped by date",
 			"usage": "ccusage kilo daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["kilo", "monthly"],
 			"description": "Show Kilo usage grouped by month",
 			"usage": "ccusage kilo monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["kilo", "session"],
@@ -567,13 +573,13 @@
 			"path": ["copilot", "daily"],
 			"description": "Show GitHub Copilot CLI usage grouped by date",
 			"usage": "ccusage copilot daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["copilot", "monthly"],
 			"description": "Show GitHub Copilot CLI usage grouped by month",
 			"usage": "ccusage copilot monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["copilot", "session"],
@@ -604,13 +610,13 @@
 			"path": ["gemini", "daily"],
 			"description": "Show Gemini CLI usage grouped by date",
 			"usage": "ccusage gemini daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["gemini", "monthly"],
 			"description": "Show Gemini CLI usage grouped by month",
 			"usage": "ccusage gemini monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["gemini", "session"],
@@ -641,13 +647,13 @@
 			"path": ["kimi", "daily"],
 			"description": "Show Kimi usage grouped by date",
 			"usage": "ccusage kimi daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["kimi", "monthly"],
 			"description": "Show Kimi usage grouped by month",
 			"usage": "ccusage kimi monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["kimi", "session"],
@@ -678,13 +684,13 @@
 			"path": ["qwen", "daily"],
 			"description": "Show Qwen usage grouped by date",
 			"usage": "ccusage qwen daily <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["qwen", "monthly"],
 			"description": "Show Qwen usage grouped by month",
 			"usage": "ccusage qwen monthly <OPTIONS>",
-			"options": "agent_options"
+			"options": "agent_period_options"
 		},
 		{
 			"path": ["qwen", "session"],
@@ -715,13 +721,13 @@
 			"path": ["openclaw", "daily"],
 			"description": "Show OpenClaw usage grouped by date",
 			"usage": "ccusage openclaw daily <OPTIONS>",
-			"options": "openclaw_combined_options"
+			"options": "openclaw_period_options"
 		},
 		{
 			"path": ["openclaw", "monthly"],
 			"description": "Show OpenClaw usage grouped by month",
 			"usage": "ccusage openclaw monthly <OPTIONS>",
-			"options": "openclaw_combined_options"
+			"options": "openclaw_period_options"
 		},
 		{
 			"path": ["openclaw", "session"],

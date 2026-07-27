@@ -21,6 +21,29 @@ ccusage monthly --since 20260101
 ccusage session --until 20260531
 ```
 
+### Recent Periods
+
+Instead of working out dates, ask for the most recent periods of whatever the report groups by:
+
+```bash
+# Today
+ccusage daily --last 1
+
+# This week
+ccusage weekly --last 1
+
+# This month
+ccusage monthly --last 1
+
+# The last seven days, and the last three months
+ccusage daily --last 7
+ccusage monthly --last 3
+```
+
+The count is inclusive of the current period, so `--last 2` on a daily report covers yesterday and today. Weeks start on the same day the report buckets by, which is Monday everywhere except `ccusage claude weekly`, where `--start-of-week` decides.
+
+`--last` works on every daily, weekly, and monthly report, including the per-agent ones such as `ccusage codex daily --last 1`. It is not available on `session`, `blocks`, or `statusline`, which have no calendar period, and it cannot be combined with `--since`, `--until`, or `--sections`.
+
 ### Output Format
 
 Control how data is displayed:

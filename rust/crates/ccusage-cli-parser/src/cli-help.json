@@ -135,6 +135,12 @@
 			"description": "Display this version"
 		}
 	],
+	"last_options": [
+		{
+			"flags": "--last <last>",
+			"description": "Show only the most recent N periods of the report (1 is today, this week, or this month)"
+		}
+	],
 	"blocks_options": [
 		{
 			"flags": "-a, --active",

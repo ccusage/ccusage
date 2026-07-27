@@ -1,3 +1,5 @@
+mod last_window;
+
 use std::{env, ffi::OsString, process};
 
 pub(crate) use ccusage_cli::*;
@@ -10,22 +12,26 @@ use crate::DEFAULT_SESSION_DURATION_HOURS;
 pub(crate) fn parse() -> Cli {
     let args = env::args_os().collect::<Vec<_>>();
     let arg_strings = args_to_strings(args.iter().skip(1).cloned()).unwrap_or_else(|message| {
-        eprintln!("{message}");
-        eprintln!("Run 'ccusage --help' for usage.");
-        process::exit(2);
+        exit_with_usage(&message);
     });
     let config = ConfigContext::from_args(&arg_strings);
-    Cli::parse_from_with_config(
+    let mut cli = Cli::parse_from_with_config(
         args,
         &config,
         DEFAULT_SESSION_DURATION_HOURS,
         env!("CCUSAGE_VERSION"),
     )
-    .unwrap_or_else(|message| {
-        eprintln!("{message}");
-        eprintln!("Run 'ccusage --help' for usage.");
-        process::exit(2);
-    })
+    .unwrap_or_else(|message| exit_with_usage(&message));
+    if let Err(message) = last_window::resolve(&mut cli) {
+        exit_with_usage(&message);
+    }
+    cli
+}
+
+fn exit_with_usage(message: &str) -> ! {
+    eprintln!("{message}");
+    eprintln!("Run 'ccusage --help' for usage.");
+    process::exit(2);
 }
 
 fn args_to_strings<I>(args: I) -> Result<Vec<String>, String>
