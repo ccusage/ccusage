@@ -1,0 +1,38 @@
+name: Commit and push to main
+description: >
+  Commit the given paths as github-actions[bot] and push them to main, rebasing
+  onto whatever main has become while the caller was validating. Callers must
+  check out with fetch-depth: 0, because a shallow clone has no merge base to
+  rebase onto, and must only run this when the paths actually changed.
+inputs:
+  message:
+    description: Commit message
+    required: true
+  paths:
+    description: Whitespace-separated list of paths to commit
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Commit and push to main
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MESSAGE: ${{ inputs.message }}
+        PATHS: ${{ inputs.paths }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        gh auth setup-git
+
+        # PATHS is word-split on purpose: it carries a list of paths.
+        # shellcheck disable=SC2086
+        git commit --message "$MESSAGE" -- $PATHS
+
+        git fetch origin main
+        if ! git rebase origin/main; then
+          git rebase --abort
+          echo 'main moved with a conflicting change; the next run will retry.'
+          exit 1
+        fi
+        git push origin HEAD:main
