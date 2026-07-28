@@ -1,5 +1,8 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../../.. nixpkgs#nushell --command nu
+
+use ./native-binary.nu [binary-name, linked-dylibs]
+
 const package_dirs = {
     darwin-arm64: 'ccusage-darwin-arm64'
     darwin-x64: 'ccusage-darwin-x64'
@@ -20,18 +23,12 @@ def main [--platform: string, --arch: string, --binary: string] {
     let target_dir = [$repo_root, 'packages', $package_dir, 'bin'] | path join
     let target = [
         $target_dir
-        (binary_name $platform)
+        (binary-name $platform)
     ] | path join
     mkdir $target_dir
     cp -f $source $target
     finalize_target $platform $target
     print $target
-}
-def binary_name [platform: string] {
-    match $platform {
-        'win32' => 'ccusage.exe'
-        _ => 'ccusage'
-    }
 }
 def finalize_target [platform: string, target: path] {
     match $platform {
@@ -44,15 +41,12 @@ def finalize_target [platform: string, target: path] {
     }
 }
 def rewrite_darwin_system_libraries [binary_path: string] {
-    let linked = run-external otool '-L' $binary_path | complete
-    if $linked.exit_code != 0 {
+    let linked = (linked-dylibs $binary_path)
+    if not $linked.ok {
         error make {msg: $"otool failed for ($binary_path)\n($linked.stderr)"}
     }
     let failed_rewrite = (
-        $linked.stdout
-        | lines
-        | skip 1
-        | each {|line| $line | str trim | split row --regex '\s+' | first }
+        $linked.dylibs
         | where {|library| $library =~ '^/nix/store/[^/]+-libiconv-[^/]+/lib/libiconv\.2\.dylib$' }
         | each {|library|
             {library: $library, rewrite: (run-external install_name_tool '-change' $library /usr/lib/libiconv.2.dylib $binary_path | complete)}

@@ -1,5 +1,8 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../../.. nixpkgs#nushell --command nu
+
+use ./native-binary.nu [binary-name, linked-dylibs]
+
 const system_dylib_prefixes = ['/usr/lib/', '/System/Library/']
 def main [] {
     let repo_root = (
@@ -7,7 +10,7 @@ def main [] {
     )
     let target_platform = (node_platform)
     let target_arch = (node_arch)
-    let binary_name = (binary_name $target_platform)
+    let binary_name = (binary-name $target_platform)
     let native_package_root = (matching_native_package_root $repo_root $target_platform $target_arch)
     let native_binary = (match $native_package_root {
         null => null
@@ -39,12 +42,6 @@ def node_arch [] {
         'aarch64' => 'arm64'
         'x86_64' => 'x64'
         $other => $other
-    }
-}
-def binary_name [platform: string] {
-    match $platform {
-        'win32' => 'ccusage.exe'
-        _ => 'ccusage'
     }
 }
 def matching_native_package_root [repo_root: path, target_platform: string, target_arch: string] {
@@ -88,19 +85,11 @@ def linux_binary_is_static [binary: path] {
     $"($result.stdout)($result.stderr)" =~ '(?i)not a dynamic executable|statically linked'
 }
 def darwin_binary_links_only_system_dylibs [binary: path] {
-    let result = ^otool -L $binary | complete
-    match $result.exit_code {
-        0 => (
-            $result.stdout
-            | lines
-            | skip 1
-            | each {|line| $line | str trim }
-            | where {|line| $line | is-not-empty }
-            | each {|line| $line | split row --regex '\s+' | first }
-            | all {|dylib| $system_dylib_prefixes | any {|prefix| $dylib | str starts-with $prefix } }
-        )
-        _ => false
-    }
+    let linked = (linked-dylibs $binary)
+    $linked.ok and (
+        $linked.dylibs
+        | all {|dylib| $system_dylib_prefixes | any {|prefix| $dylib | str starts-with $prefix } }
+    )
 }
 def has_expected_version [binary, version: string] {
     ($binary != null) and ($binary | path exists) and ((reported_version $binary) == $version)
