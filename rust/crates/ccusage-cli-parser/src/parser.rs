@@ -331,6 +331,13 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::Qwen,
         ),
+        "rovo" => parse_basic_agent_command(
+            parser,
+            shared,
+            "rovo",
+            STANDARD_AGENT_REPORTS,
+            Command::Rovo,
+        ),
         "openclaw" => parse_openclaw_command(parser, shared, config),
         _ => Err(format!("Unknown command '{command}'")),
     }
@@ -762,6 +769,7 @@ fn is_command(arg: &str) -> bool {
             | "gemini"
             | "kimi"
             | "qwen"
+            | "rovo"
     )
 }
 
@@ -920,6 +928,7 @@ fn is_agent_command(command: &str) -> bool {
             | "gemini"
             | "kimi"
             | "qwen"
+            | "rovo"
             | "openclaw"
     )
 }
@@ -933,7 +942,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "kimi" | "qwen" | "openclaw" => {
+        | "gemini" | "kimi" | "qwen" | "rovo" | "openclaw" => {
             matches!(report, "daily" | "monthly" | "session")
         }
         _ => false,
@@ -956,6 +965,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "gemini" => "Gemini CLI",
         "kimi" => "Kimi",
         "qwen" => "Qwen",
+        "rovo" => "Rovo Dev",
         "openclaw" => "OpenClaw",
         _ => unreachable!("agent is prevalidated"),
     }
@@ -1030,6 +1040,7 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
             | Command::Gemini(args)
             | Command::Kimi(args)
             | Command::Qwen(args)
+            | Command::Rovo(args)
             | Command::OpenClaw(args),
         ) => (&args.shared, args.kind != AgentReportKind::Session),
     };

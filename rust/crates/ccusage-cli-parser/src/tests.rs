@@ -203,6 +203,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Gemini(args)) => agent_command_snapshot("gemini", args),
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
+        Some(Command::Rovo(args)) => agent_command_snapshot("rovo", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
     }
 }
@@ -607,7 +608,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw",
+        "copilot", "gemini", "kimi", "qwen", "rovo", "openclaw",
     ];
 
     for agent in agents {
@@ -1163,6 +1164,16 @@ fn parses_kimi_session_options() {
     let cli = parse(&["ccusage", "kimi", "session", "--json"]);
     let Some(Command::Kimi(args)) = cli.command else {
         panic!("expected kimi command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Session);
+    assert!(args.shared.json);
+}
+
+#[test]
+fn parses_rovo_session_options() {
+    let cli = parse(&["ccusage", "rovo", "session", "--json"]);
+    let Some(Command::Rovo(args)) = cli.command else {
+        panic!("expected rovo command");
     };
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);

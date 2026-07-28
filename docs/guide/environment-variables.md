@@ -23,6 +23,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `QWEN_DATA_DIR`                   | Qwen         | `~/.qwen`                          |
 | `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI  | Explicit `.jsonl` file             |
 | `GEMINI_DATA_DIR`                 | Gemini CLI   | `~/.gemini/tmp`                    |
+| `ROVO_DATA_DIR`                   | Rovo Dev CLI | `~/.rovodev`                       |
 
 Example:
 
@@ -41,6 +42,7 @@ export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
+export ROVO_DATA_DIR="/path/to/rovodev,/archive/rovodev"
 ccusage daily
 ```
 
@@ -210,7 +212,7 @@ To see which environment variables are being used:
 
 ```bash
 # Show all environment variables
-env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|CCUSAGE|LOG_LEVEL"
+env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|ROVO|CCUSAGE|LOG_LEVEL"
 
 # Debug mode shows environment variable usage
 LOG_LEVEL=4 ccusage daily --debug

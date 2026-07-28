@@ -46,6 +46,7 @@ fn main() -> Result<()> {
         Some(Command::Copilot(args)) => adapter::copilot::run(args),
         Some(Command::Gemini(args)) => adapter::gemini::run(args),
         Some(Command::Kimi(args)) => adapter::kimi::run(args),
+        Some(Command::Rovo(args)) => adapter::rovo::run(args),
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
         None => {
             let args = AgentCommandArgs {
@@ -85,7 +86,7 @@ mod tests {
 
     #[test]
     fn agent_commands_are_exposed_by_independent_crates() {
-        let runs: [fn(AgentCommandArgs) -> Result<()>; 14] = [
+        let runs: [fn(AgentCommandArgs) -> Result<()>; 15] = [
             ccusage_adapter_amp::run,
             ccusage_adapter_codebuff::run,
             ccusage_adapter_codex::run,
@@ -100,9 +101,10 @@ mod tests {
             ccusage_adapter_opencode::run,
             ccusage_adapter_pi::run,
             ccusage_adapter_qwen::run,
+            ccusage_adapter_rovo::run,
         ];
 
-        assert_eq!(runs.len(), 14);
+        assert_eq!(runs.len(), 15);
     }
 
     #[test]
@@ -861,6 +863,116 @@ mod tests {
                 "cacheReadTokens": 10,
                 "cost": 0.05
             }])
+        );
+    }
+
+    #[test]
+    fn loads_rovo_session_usage_entries() {
+        let fixture = fs_fixture!({
+            "sessions/session-a/session_context.json": json!({
+                "id": "session-a",
+                "timestamp": 1771880550,
+                "workspace_path": "/home/user/project",
+                "message_history": [
+                    {"kind": "request", "parts": []},
+                    {
+                        "kind": "response",
+                        "model_name": "claude-sonnet-4-5-20250929",
+                        "provider_response_id": "msg_vrtx_014rqTwZTSMNrU4g6HcjDpQp",
+                        "timestamp": "2026-02-23T21:03:45.664227Z",
+                        "usage": {
+                            "input_tokens": 7933,
+                            "cache_write_tokens": 1535,
+                            "cache_read_tokens": 6395,
+                            "output_tokens": 249,
+                            "details": {
+                                "cache_creation_input_tokens": 1535,
+                                "cache_read_input_tokens": 6395,
+                                "input_tokens": 3,
+                                "output_tokens": 249
+                            }
+                        }
+                    }
+                ]
+            })
+            .to_string(),
+        });
+        let _cleanup = EnvVarGuard::set("ROVO_DATA_DIR", fixture.root());
+
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = adapter::rovo::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].date, "2026-02-23");
+        assert_eq!(entries[0].session_id.as_ref(), "session-a");
+        assert_eq!(
+            entries[0].model.as_deref(),
+            Some("claude-sonnet-4-5-20250929")
+        );
+        assert_eq!(entries[0].data.message.usage.input_tokens, 3);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 249);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            1535
+        );
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 6395);
+        assert_eq!(entries[0].project_path.as_ref(), "/home/user/project");
+    }
+
+    #[test]
+    fn builds_rovo_daily_json_report() {
+        let entry = LoadedEntry {
+            data: UsageEntry {
+                session_id: Some("session-a".to_string()),
+                timestamp: "2026-02-23T21:03:45.664Z".to_string(),
+                version: None,
+                message: UsageMessage {
+                    usage: TokenUsageRaw {
+                        input_tokens: 100,
+                        output_tokens: 50,
+                        cache_creation_input_tokens: 20,
+                        cache_read_input_tokens: 10,
+                        speed: None,
+                        cache_creation: None,
+                    },
+                    model: Some("claude-sonnet-4-5-20250929".to_string()),
+                    id: Some("msg_vrtx_1".to_string()),
+                },
+                cost_usd: None,
+                request_id: None,
+                is_api_error_message: None,
+                is_sidechain: None,
+            },
+            timestamp: parse_ts_timestamp("2026-02-23T21:03:45.664Z").unwrap(),
+            date: "2026-02-23".to_string(),
+            project: Arc::from("rovo"),
+            session_id: Arc::from("session-a"),
+            project_path: Arc::from("/home/user/project"),
+            cost: 0.02,
+            extra_total_tokens: 0,
+            credits: None,
+            message_count: None,
+            model: Some("claude-sonnet-4-5-20250929".to_string()),
+            usage_limit_reset_time: None,
+            missing_pricing_model: None,
+        };
+
+        let rows = adapter::rovo::summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
+        let report = adapter::rovo::report_from_rows(&rows, AgentReportKind::Daily);
+
+        assert_eq!(report["daily"][0]["date"], "2026-02-23");
+        assert_eq!(report["daily"][0]["inputTokens"], 100);
+        assert_eq!(report["daily"][0]["outputTokens"], 50);
+        assert_eq!(report["daily"][0]["cacheCreationTokens"], 20);
+        assert_eq!(report["daily"][0]["cacheReadTokens"], 10);
+        assert_eq!(report["daily"][0]["totalTokens"], 180);
+        assert_eq!(report["daily"][0]["totalCost"], json!(0.02));
+        assert_eq!(
+            report["daily"][0]["modelsUsed"],
+            json!(["claude-sonnet-4-5-20250929"])
         );
     }
 

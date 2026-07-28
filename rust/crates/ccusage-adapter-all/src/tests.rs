@@ -559,6 +559,7 @@ fn isolated_agent_env(
         "GEMINI_DATA_DIR",
         "KIMI_DATA_DIR",
         "QWEN_DATA_DIR",
+        "ROVO_DATA_DIR",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))

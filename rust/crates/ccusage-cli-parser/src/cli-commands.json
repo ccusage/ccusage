@@ -98,6 +98,10 @@
 				"description": "Show Qwen usage commands"
 			},
 			{
+				"name": "rovo",
+				"description": "Show Rovo Dev usage commands"
+			},
+			{
 				"name": "openclaw",
 				"description": "Show OpenClaw usage commands"
 			}
@@ -696,6 +700,43 @@
 			"path": ["qwen", "session"],
 			"description": "Show Qwen usage grouped by session",
 			"usage": "ccusage qwen session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["rovo"],
+			"description": "Usage reports for rovo.",
+			"usage": "ccusage rovo <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Rovo Dev usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Rovo Dev usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Rovo Dev usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["rovo", "daily"],
+			"description": "Show Rovo Dev usage grouped by date",
+			"usage": "ccusage rovo daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["rovo", "monthly"],
+			"description": "Show Rovo Dev usage grouped by month",
+			"usage": "ccusage rovo monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["rovo", "session"],
+			"description": "Show Rovo Dev usage grouped by session",
+			"usage": "ccusage rovo session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{

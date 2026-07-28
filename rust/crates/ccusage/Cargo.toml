@@ -32,6 +32,7 @@ ccusage-adapter-openclaw.workspace = true
 ccusage-adapter-opencode.workspace = true
 ccusage-adapter-pi.workspace = true
 ccusage-adapter-qwen.workspace = true
+ccusage-adapter-rovo.workspace = true
 ccusage-cli-parser.workspace = true
 ccusage-cli.workspace = true
 ccusage-config.workspace = true
