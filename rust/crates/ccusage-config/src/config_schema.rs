@@ -50,6 +50,8 @@ pub struct CcusageConfig {
     pub kimi: Option<KimiConfig>,
     /// Qwen configuration.
     pub qwen: Option<QwenConfig>,
+    /// Rovo Dev configuration.
+    pub rovo: Option<RovoConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -299,6 +301,21 @@ pub struct QwenConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QwenCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RovoConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<RovoCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RovoCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
@@ -1128,7 +1145,7 @@ mod tests {
             &[
                 "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
                 "gemini", "goose", "hermes", "kilo", "kimi", "opencode", "openclaw", "pi", "qwen",
-                "droid",
+                "droid", "rovo",
             ],
         );
         assert!(
@@ -1271,6 +1288,13 @@ mod tests {
                 }
             },
             "qwen": {
+                "commands": {
+                    "session": {
+                        "json": true
+                    }
+                }
+            },
+            "rovo": {
                 "commands": {
                     "session": {
                         "json": true

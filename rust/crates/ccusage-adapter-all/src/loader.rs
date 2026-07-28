@@ -12,7 +12,7 @@ use crate::{
     SessionAccumulator, UsageSummary,
     adapter::{
         amp, claude, codebuff, codex, copilot, droid, gemini, goose, hermes, kilo, kimi, openclaw,
-        opencode, pi, qwen,
+        opencode, pi, qwen, rovo,
     },
     cli::{AgentReportKind, CodexSpeed, NamedPiStore, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -308,6 +308,21 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[14],
             progress_agent: crate::progress::UsageLoadAgent("Qwen"),
             load: Box::new(|| load_qwen_rows(load_kind, &loader_shared)),
+        },
+        AgentLoadSpec {
+            index: 15,
+            agent: BUILT_IN_AGENT_NAMES[15],
+            progress_agent: crate::progress::UsageLoadAgent("Rovo Dev"),
+            load: Box::new(|| {
+                load_priced_summary_agent_rows(
+                    "rovo",
+                    load_kind,
+                    &loader_shared,
+                    pricing,
+                    rovo::load_entries,
+                    rovo::summarize_entries,
+                )
+            }),
         },
     ];
     let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores)?;

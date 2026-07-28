@@ -130,6 +130,7 @@ dependencies = [
  "ccusage-adapter-opencode",
  "ccusage-adapter-pi",
  "ccusage-adapter-qwen",
+ "ccusage-adapter-rovo",
  "ccusage-cli",
  "ccusage-cli-parser",
  "ccusage-config",
@@ -161,6 +162,7 @@ dependencies = [
  "ccusage-adapter-opencode",
  "ccusage-adapter-pi",
  "ccusage-adapter-qwen",
+ "ccusage-adapter-rovo",
  "ccusage-cli",
  "ccusage-core",
  "ccusage-test-support",
@@ -358,6 +360,18 @@ dependencies = [
 
 [[package]]
 name = "ccusage-adapter-qwen"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-rovo"
 version = "0.0.0"
 dependencies = [
  "ccusage-adapter-common",

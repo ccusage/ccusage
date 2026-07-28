@@ -35,6 +35,7 @@ source in its own `ccusage-adapter-*` crate.
 - `ccusage-adapter-opencode`
 - `ccusage-adapter-pi`
 - `ccusage-adapter-qwen`
+- `ccusage-adapter-rovo`
 - `ccusage-cli`
 - `ccusage-cli-parser`
 - `ccusage-config`

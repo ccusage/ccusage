@@ -1,5 +1,6 @@
 ---
-source: crates/ccusage-cli/src/tests.rs
+source: crates/ccusage-cli-parser/src/tests.rs
+assertion_line: 702
 expression: help_text()
 ---
 USAGE:
@@ -27,6 +28,7 @@ COMMANDS:
   gemini                     Show Gemini CLI usage commands
   kimi                       Show Kimi usage commands
   qwen                       Show Qwen usage commands
+  rovo                       Show Rovo Dev usage commands
   openclaw                   Show OpenClaw usage commands
 
 For more info, run any command with the `--help` flag:
@@ -50,6 +52,7 @@ For more info, run any command with the `--help` flag:
   ccusage gemini --help
   ccusage kimi --help
   ccusage qwen --help
+  ccusage rovo --help
   ccusage openclaw --help
 
 OPTIONS:
