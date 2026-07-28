@@ -25,34 +25,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      - name: Capture current LiteLLM pricing JSON
-        run: |
-          rev="$(jq -r '.nodes.litellm.locked.rev' flake.lock)"
-          curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/BerriAI/litellm/${rev}/model_prices_and_context_window.json" \
-            --output /tmp/litellm-pricing-before.json
       - name: Update LiteLLM pricing input
-        run: |
-          nix flake update litellm
-      - name: Skip lock-only LiteLLM updates
         id: litellm
-        run: |
-          rev="$(jq -r '.nodes.litellm.locked.rev' flake.lock)"
-          curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/BerriAI/litellm/${rev}/model_prices_and_context_window.json" \
-            --output /tmp/litellm-pricing-after.json
-
-          if cmp --silent /tmp/litellm-pricing-before.json /tmp/litellm-pricing-after.json; then
-            echo "LiteLLM pricing JSON is unchanged; skipping the update."
-            git checkout -- flake.lock
-          fi
-
-          if git diff --quiet; then
-            echo 'Pricing snapshot is already up to date.'
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-          else
-            echo 'changed=true' >> "$GITHUB_OUTPUT"
-          fi
+        run: .github/scripts/update-litellm-lock.nu
       # The push below cannot trigger ci.yaml, so the checks that would have run
       # on a pull request run here instead. Each leg no-ops when the snapshot was
       # already up to date.
@@ -92,28 +67,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      - name: Update models.dev input
-        run: |
-          nix flake update models-dev
-      - name: Regenerate committed models.dev pricing snapshot
-        run: |
-          nix develop --command just gen-models-dev-pricing
-      - name: Skip lock-only models.dev updates
+      - name: Update models.dev pricing input
         id: models-dev
-        run: |
-          # Only the compacted snapshot affects the build; if a models.dev bump
-          # leaves embedded pricing unchanged, drop the lock-only churn.
-          if git diff --quiet -- rust/crates/ccusage-core/src/models-dev-pricing.json rust/crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json; then
-            echo "models.dev pricing snapshots are unchanged; skipping the update."
-            git checkout -- flake.lock rust/crates/ccusage-core/src/models-dev-pricing.json rust/crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json
-          fi
-
-          if git diff --quiet; then
-            echo 'Pricing snapshot is already up to date.'
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-          else
-            echo 'changed=true' >> "$GITHUB_OUTPUT"
-          fi
+        run: .github/scripts/update-models-dev-lock.nu
       - parallel:
           - name: Run nix flake check
             run: |
