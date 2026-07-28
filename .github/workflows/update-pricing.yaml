@@ -7,15 +7,22 @@ on:
 
 permissions: {}
 
+# Both jobs push to main, so a manual dispatch landing on top of the hourly
+# schedule would otherwise race the other run's push.
+concurrency:
+  group: update-pricing
+  cancel-in-progress: false
+
 jobs:
   update-pricing:
     runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 60
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
       - name: Capture current LiteLLM pricing JSON
@@ -28,6 +35,7 @@ jobs:
         run: |
           nix flake update litellm
       - name: Skip lock-only LiteLLM updates
+        id: litellm
         run: |
           rev="$(jq -r '.nodes.litellm.locked.rev' flake.lock)"
           curl --fail --location --silent --show-error \
@@ -35,57 +43,53 @@ jobs:
             --output /tmp/litellm-pricing-after.json
 
           if cmp --silent /tmp/litellm-pricing-before.json /tmp/litellm-pricing-after.json; then
-            echo "LiteLLM pricing JSON is unchanged; skipping PR."
+            echo "LiteLLM pricing JSON is unchanged; skipping the update."
             git checkout -- flake.lock
           fi
-      - name: Validate updated pricing snapshot
-        run: |
+
           if git diff --quiet; then
-            echo "Pricing snapshot is already up to date."
-            exit 0
-          fi
-          nix develop --command just check
-      - name: Create pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if git diff --quiet; then
-            echo "Pricing snapshot is already up to date."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          gh auth setup-git
-
-          branch="automation/litellm-pricing"
-          git checkout -B "$branch"
-          git add flake.lock
-          git commit -m "chore(pricing): update LiteLLM snapshot"
-          git push --force origin "$branch"
-
-          body="$(printf '%s\n' \
-            'Updates the locked LiteLLM pricing input used by Nix builds.' \
-            '' \
-            'Validation:' \
-            '- just check')"
-
-          if gh pr view "$branch" >/dev/null 2>&1; then
-            printf '%s\n' "$body" | gh pr edit "$branch" --title "chore(pricing): update LiteLLM snapshot" --body-file -
+            echo 'Pricing snapshot is already up to date.'
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
-            printf '%s\n' "$body" | gh pr create --base main --head "$branch" --title "chore(pricing): update LiteLLM snapshot" --body-file -
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
+      # The push below cannot trigger ci.yaml, so the checks that would have run
+      # on a pull request run here instead. Each leg no-ops when the snapshot was
+      # already up to date.
+      - parallel:
+          - name: Run nix flake check
+            run: |
+              git diff --quiet && exit 0
+              nix flake check --print-build-logs
+          - name: Run Rust tests
+            run: |
+              git diff --quiet && exit 0
+              nix build .#ccusage-tests --no-link --print-build-logs
+          - name: JS test
+            run: |
+              git diff --quiet && exit 0
+              nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs nixpkgs#just
+              pnpm install --frozen-lockfile
+              mkdir -p "$HOME/.claude/projects"
+              mkdir -p "$HOME/.config/claude/projects"
+              just test-node
+      - uses: ./.github/actions/commit-and-push-main
+        if: steps.litellm.outputs.changed == 'true'
+        with:
+          message: 'chore(pricing): update LiteLLM snapshot'
+          paths: flake.lock
 
   update-models-dev-pricing:
     needs: update-pricing
     if: ${{ always() }}
     runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 60
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
       - name: Update models.dev input
@@ -95,47 +99,43 @@ jobs:
         run: |
           nix develop --command just gen-models-dev-pricing
       - name: Skip lock-only models.dev updates
+        id: models-dev
         run: |
           # Only the compacted snapshot affects the build; if a models.dev bump
           # leaves embedded pricing unchanged, drop the lock-only churn.
           if git diff --quiet -- rust/crates/ccusage-core/src/models-dev-pricing.json rust/crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json; then
-            echo "models.dev pricing snapshots are unchanged; skipping PR."
+            echo "models.dev pricing snapshots are unchanged; skipping the update."
             git checkout -- flake.lock rust/crates/ccusage-core/src/models-dev-pricing.json rust/crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json
           fi
-      - name: Validate updated pricing snapshot
-        run: |
+
           if git diff --quiet; then
-            echo "Pricing snapshot is already up to date."
-            exit 0
-          fi
-          nix develop --command just check
-      - name: Create pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if git diff --quiet; then
-            echo "Pricing snapshot is already up to date."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          gh auth setup-git
-
-          branch="automation/models-dev-pricing"
-          git checkout -B "$branch"
-          git add flake.lock rust/crates/ccusage-core/src/models-dev-pricing.json rust/crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json
-          git commit -m "chore(pricing): update models.dev snapshot"
-          git push --force origin "$branch"
-
-          body="$(printf '%s\n' \
-            'Updates the pinned models.dev input and its committed pricing snapshot.' \
-            '' \
-            'Validation:' \
-            '- just check')"
-
-          if gh pr view "$branch" >/dev/null 2>&1; then
-            printf '%s\n' "$body" | gh pr edit "$branch" --title "chore(pricing): update models.dev snapshot" --body-file -
+            echo 'Pricing snapshot is already up to date.'
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
-            printf '%s\n' "$body" | gh pr create --base main --head "$branch" --title "chore(pricing): update models.dev snapshot" --body-file -
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
+      - parallel:
+          - name: Run nix flake check
+            run: |
+              git diff --quiet && exit 0
+              nix flake check --print-build-logs
+          - name: Run Rust tests
+            run: |
+              git diff --quiet && exit 0
+              nix build .#ccusage-tests --no-link --print-build-logs
+          - name: JS test
+            run: |
+              git diff --quiet && exit 0
+              nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs nixpkgs#just
+              pnpm install --frozen-lockfile
+              mkdir -p "$HOME/.claude/projects"
+              mkdir -p "$HOME/.config/claude/projects"
+              just test-node
+      - uses: ./.github/actions/commit-and-push-main
+        if: steps.models-dev.outputs.changed == 'true'
+        with:
+          message: 'chore(pricing): update models.dev snapshot'
+          paths: >-
+            flake.lock
+            rust/crates/ccusage-core/src/models-dev-pricing.json
+            rust/crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json
