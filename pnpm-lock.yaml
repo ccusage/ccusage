@@ -16,7 +16,7 @@ catalogs:
       specifier: ^1.7.2
       version: 1.7.5
     vitepress-plugin-llms:
-      specifier: ^1.12.2
+      specifier: ^1.13.3
       version: 1.13.3
   types:
     '@types/node':
