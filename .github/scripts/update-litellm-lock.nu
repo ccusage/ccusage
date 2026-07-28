@@ -16,11 +16,25 @@ def main [] {
         }
     }
 
-    $"changed=($changed)(char nl)" | save --append $env.GITHUB_OUTPUT
+    report {
+        changed: $changed
+        paths: [flake.lock]
+    }
 }
 
 # Fetch model_prices_and_context_window.json at the revision flake.lock pins.
 def locked-pricing []: nothing -> record {
     let rev = open --raw flake.lock | from json | get nodes.litellm.locked.rev
     http get $"https://raw.githubusercontent.com/BerriAI/litellm/($rev)/model_prices_and_context_window.json"
+}
+
+# Hand the workflow both the verdict and the paths to commit, so the file list
+# lives in one place instead of being repeated in the workflow.
+def report [result: record]: nothing -> nothing {
+    [
+        $"changed=($result.changed)"
+        $"paths=($result.paths | str join ' ')"
+    ]
+    | each {|line| $"($line)(char nl)" | save --append $env.GITHUB_OUTPUT }
+    | ignore
 }
