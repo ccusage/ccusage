@@ -68,7 +68,9 @@ impl SimpleTable {
         let widths = self.column_widths();
         let mut lines = Vec::new();
         lines.push(border('┌', '┬', '┐', &widths));
-        for header_row in expand_multiline_row(&self.headers, self.headers.len(), &widths) {
+        for header_row in
+            expand_multiline_row(&self.headers, self.headers.len(), &widths, &self.aligns)
+        {
             let header_row = header_row
                 .iter()
                 .map(|header| color(self.style, header, Color::Blue))
@@ -80,7 +82,9 @@ impl SimpleTable {
             match row {
                 Some(row) => {
                     let row = self.compact_date_row(row, &widths);
-                    for physical_row in expand_multiline_row(&row, self.headers.len(), &widths) {
+                    for physical_row in
+                        expand_multiline_row(&row, self.headers.len(), &widths, &self.aligns)
+                    {
                         lines.push(table_line(&physical_row, &self.aligns, &widths));
                     }
                 }
@@ -148,7 +152,12 @@ impl SimpleTable {
     }
 }
 
-fn expand_multiline_row(row: &[String], column_count: usize, widths: &[usize]) -> Vec<Vec<String>> {
+fn expand_multiline_row(
+    row: &[String],
+    column_count: usize,
+    widths: &[usize],
+    aligns: &[Align],
+) -> Vec<Vec<String>> {
     let cells = (0..column_count)
         .map(|index| {
             let content_width = widths
@@ -157,7 +166,15 @@ fn expand_multiline_row(row: &[String], column_count: usize, widths: &[usize]) -
                 .unwrap_or_default()
                 .saturating_sub(2);
             row.get(index)
-                .map(|cell| wrap_cell_lines(cell, content_width))
+                .map(|cell| {
+                    if aligns.get(index) == Some(&Align::Right)
+                        && visible_width(cell) > content_width
+                        && let Some(compact) = compact_numeric(cell, content_width)
+                    {
+                        return vec![compact];
+                    }
+                    wrap_cell_lines(cell, content_width)
+                })
                 .filter(|lines| !lines.is_empty())
                 .unwrap_or_else(|| vec![String::new()])
         })
@@ -278,6 +295,54 @@ fn wrap_cell_line(line: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// Rewrites a numeric cell into a compact `1.2K` / `3.4M` / `5.6B` form that
+/// fits `width` display columns.
+///
+/// Numeric columns must never be ellipsis-truncated: dropping the tail of
+/// `67,992,133` leaves `67,992,…`, which still reads as a number but is wrong
+/// by orders of magnitude. A compact form loses precision instead of meaning.
+/// Returns `None` when the cell is not a plain number and the caller should
+/// fall back to truncation.
+fn compact_numeric(value: &str, width: usize) -> Option<String> {
+    let (prefix, digits) = match value.strip_prefix('$') {
+        Some(rest) => ("$", rest),
+        None => ("", value),
+    };
+    let cleaned = digits.replace(',', "");
+    if cleaned.is_empty() || !cleaned.chars().all(|ch| ch.is_ascii_digit() || ch == '.') {
+        return None;
+    }
+    let number = cleaned.parse::<f64>().ok()?;
+
+    let mut scaled = number;
+    let mut unit = 0usize;
+    while scaled >= 1000.0 && unit < UNIT_SUFFIXES.len() {
+        scaled /= 1000.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        return None;
+    }
+    // Rounding can push the mantissa back over a unit boundary (999,999 would
+    // otherwise render as `1000.0K` rather than `1.0M`).
+    let rounded = (scaled * 10.0).round() / 10.0;
+    if rounded >= 1000.0 && unit < UNIT_SUFFIXES.len() {
+        scaled = rounded / 1000.0;
+        unit += 1;
+    }
+
+    let suffix = UNIT_SUFFIXES[unit - 1];
+    for precision in [1usize, 0] {
+        let candidate = format!("{prefix}{scaled:.precision$}{suffix}");
+        if visible_width(&candidate) <= width {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+const UNIT_SUFFIXES: [char; 3] = ['K', 'M', 'B'];
+
 fn compact_date_cell(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
     if bytes.len() == 10
@@ -347,6 +412,73 @@ mod tests {
             Some("2026\n05-18".to_string())
         );
         assert_eq!(compact_date_cell("20260518"), None);
+    }
+
+    #[test]
+    fn compact_numeric_keeps_magnitude_of_values_that_do_not_fit() {
+        assert_eq!(compact_numeric("123,456,789", 8).as_deref(), Some("123.5M"));
+        assert_eq!(compact_numeric("9,876,543", 8).as_deref(), Some("9.9M"));
+        assert_eq!(compact_numeric("67,992,133", 8).as_deref(), Some("68.0M"));
+        assert_eq!(compact_numeric("$12345.67", 8).as_deref(), Some("$12.3K"));
+        assert_eq!(compact_numeric("4,567,890,123", 8).as_deref(), Some("4.6B"));
+    }
+
+    #[test]
+    fn compact_numeric_drops_precision_before_giving_up() {
+        // 5 columns cannot hold `123.5M`, but `123M` still carries the magnitude.
+        assert_eq!(compact_numeric("123,456,789", 4).as_deref(), Some("123M"));
+        // Nothing fits, so the caller falls back to truncation.
+        assert_eq!(compact_numeric("123,456,789", 3), None);
+    }
+
+    #[test]
+    fn compact_numeric_rounds_across_the_unit_boundary() {
+        assert_eq!(compact_numeric("999,999", 8).as_deref(), Some("1.0M"));
+    }
+
+    #[test]
+    fn compact_numeric_declines_non_numeric_and_already_short_cells() {
+        assert_eq!(compact_numeric("- claude-opus-4-5", 8), None);
+        assert_eq!(compact_numeric("", 8), None);
+        assert_eq!(compact_numeric("2026-05-18", 8), None);
+        // Below 1000 there is no shorter honest form than the value itself.
+        assert_eq!(compact_numeric("602", 2), None);
+    }
+
+    #[test]
+    fn narrow_numeric_columns_keep_their_magnitude_instead_of_an_ellipsis() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input", "Output", "Cost (USD)"],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(56);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "- claude-opus-4-5".to_string(),
+            "123,456,789".to_string(),
+            "9,876,543".to_string(),
+            "$12345.67".to_string(),
+        ]);
+
+        let rendered = table.render_lines().join("\n");
+        assert!(
+            rendered.contains("123.5M") && rendered.contains("9.9M"),
+            "numeric cells should compact rather than truncate:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("123,456…") && !rendered.contains("9,876,5…"),
+            "no numeric cell should end in an ellipsis:\n{rendered}"
+        );
     }
 
     #[test]
