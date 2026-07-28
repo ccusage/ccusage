@@ -1,7 +1,22 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": ["config:recommended"],
 	"nix": {
 		"enabled": true
 	},
-	"extends": ["github>ryoppippi/renovate-config:no-group"]
+	"automerge": true,
+	"platformAutomerge": true,
+	"branchConcurrentLimit": 0,
+	"dependencyDashboard": true,
+	"labels": ["dependencies", "renovate"],
+	"lockFileMaintenance": {
+		"enabled": true,
+		"schedule": ["at any time"]
+	},
+	"minimumReleaseAge": "3 days",
+	"postUpdateOptions": ["pnpmDedupe"],
+	"rangeStrategy": "bump",
+	"vulnerabilityAlerts": {
+		"labels": ["security"]
+	}
 }
