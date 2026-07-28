@@ -123,6 +123,7 @@ dependencies = [
  "ccusage-adapter-droid",
  "ccusage-adapter-gemini",
  "ccusage-adapter-goose",
+ "ccusage-adapter-grok",
  "ccusage-adapter-hermes",
  "ccusage-adapter-kilo",
  "ccusage-adapter-kimi",
@@ -154,6 +155,7 @@ dependencies = [
  "ccusage-adapter-droid",
  "ccusage-adapter-gemini",
  "ccusage-adapter-goose",
+ "ccusage-adapter-grok",
  "ccusage-adapter-hermes",
  "ccusage-adapter-kilo",
  "ccusage-adapter-kimi",
@@ -278,6 +280,18 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlite",
+]
+
+[[package]]
+name = "ccusage-adapter-grok"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

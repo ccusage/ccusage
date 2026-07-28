@@ -100,6 +100,10 @@
 			{
 				"name": "openclaw",
 				"description": "Show OpenClaw usage commands"
+			},
+			{
+				"name": "grok",
+				"description": "Show Grok Build CLI usage commands"
 			}
 		]
 	},
@@ -734,6 +738,43 @@
 			"description": "Show OpenClaw usage grouped by session",
 			"usage": "ccusage openclaw session <OPTIONS>",
 			"options": "openclaw_combined_options"
+		},
+		{
+			"path": ["grok"],
+			"description": "Usage reports for Grok Build CLI.",
+			"usage": "ccusage grok <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Grok Build CLI usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Grok Build CLI usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Grok Build CLI usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["grok", "daily"],
+			"description": "Show Grok Build CLI usage grouped by date",
+			"usage": "ccusage grok daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["grok", "monthly"],
+			"description": "Show Grok Build CLI usage grouped by month",
+			"usage": "ccusage grok monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["grok", "session"],
+			"description": "Show Grok Build CLI usage grouped by session",
+			"usage": "ccusage grok session <OPTIONS>",
+			"options": "agent_options"
 		}
 	]
 }

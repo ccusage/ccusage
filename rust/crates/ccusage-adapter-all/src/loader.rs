@@ -11,8 +11,8 @@ use crate::{
     BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result,
     SessionAccumulator, UsageSummary,
     adapter::{
-        amp, claude, codebuff, codex, copilot, droid, gemini, goose, hermes, kilo, kimi, openclaw,
-        opencode, pi, qwen,
+        amp, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes, kilo, kimi,
+        openclaw, opencode, pi, qwen,
     },
     cli::{AgentReportKind, CodexSpeed, NamedPiStore, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -308,6 +308,22 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[14],
             progress_agent: crate::progress::UsageLoadAgent("Qwen"),
             load: Box::new(|| load_qwen_rows(load_kind, &loader_shared)),
+        },
+        AgentLoadSpec {
+            index: 15,
+            agent: BUILT_IN_AGENT_NAMES[15],
+            progress_agent: crate::progress::UsageLoadAgent("Grok"),
+            load: Box::new(|| {
+                let mut rows = load_summary_agent_rows(
+                    "grok",
+                    load_kind,
+                    &loader_shared,
+                    || grok::load_entries(&loader_shared, pricing),
+                    grok::summarize_entries,
+                )?;
+                rows.detected = rows.detected || grok::has_data();
+                Ok(rows)
+            }),
         },
     ];
     let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores)?;

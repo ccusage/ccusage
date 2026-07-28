@@ -44,6 +44,7 @@ flags:
 - OpenCode: `rust/adapters/opencode/src/README.md`
 - Amp: `rust/adapters/amp/src/README.md`
 - pi-agent: `rust/adapters/pi/src/README.md`
+- Grok Build CLI: `rust/adapters/grok/README.md`
 
 ## Implementation Notes
 

@@ -29,8 +29,8 @@ The CLI log files include operational events such as conversation creation, stre
 Because the local files do not expose the token accounting needed for ccusage reports, Antigravity CLI is not supported right now.
 :::
 
-::: details Why is Grok CLI not supported?
-Grok CLI was investigated, but its local SQLite data did not contain usable token accounting. Without token counts, model usage, or recorded costs in the local database, ccusage has nothing reliable to aggregate.
+::: details Is Grok Build CLI supported?
+Yes. Use `ccusage grok daily|monthly|session` (or unified `ccusage daily` when local Grok data exists). ccusage reads completed turns from `~/.grok/sessions/**/updates.jsonl` (`GROK_HOME` overrides the default home). Costs are LiteLLM token estimates; Grok `costUsdTicks` are not used as invoice USD. In-progress turns are counted only after `turn_completed`.
 
 Estimating tokens from message text would ignore provider-side context, hidden prompts, tool-call payloads, cached input, and tokenizer differences, so ccusage does not do that.
 :::
