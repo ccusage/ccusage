@@ -7,7 +7,7 @@ on:
 
 permissions: {}
 
-# Both jobs push to main, so a manual dispatch landing on top of the hourly
+# Both legs push to main, so a manual dispatch landing on top of the hourly
 # schedule would otherwise race the other run's push.
 concurrency:
   group: update-pricing
@@ -15,22 +15,46 @@ concurrency:
 
 jobs:
   update-pricing:
+    name: ${{ matrix.name }}
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 60
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      # The legs push to the same branch, so they must not race each other's
+      # rebase onto main.
+      max-parallel: 1
+      matrix:
+        include:
+          - name: litellm
+            script: .github/scripts/update-litellm-lock.nu
+            message: 'chore(pricing): update LiteLLM snapshot'
+            paths: flake.lock
+          - name: models-dev
+            script: .github/scripts/update-models-dev-lock.nu
+            message: 'chore(pricing): update models.dev snapshot'
+            paths: >-
+              flake.lock
+              rust/crates/ccusage-core/src/models-dev-pricing.json
+              rust/crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      - name: Update LiteLLM pricing input
-        id: litellm
-        run: .github/scripts/update-litellm-lock.nu
-      # The push below cannot trigger ci.yaml, so the checks that would have run
-      # on a pull request run here instead. Each leg no-ops when the snapshot was
-      # already up to date.
+        with:
+          cache-scope: ${{ matrix.name }}
+      - name: Update pricing input
+        id: update
+        env:
+          SCRIPT: ${{ matrix.script }}
+        run: $SCRIPT
+      # The push below cannot trigger ci.yaml, so the checks a pull request would
+      # have run happen here instead: `nix flake check` covers the preflight job's
+      # treefmt and gitleaks checks, and the remaining legs mirror the test job.
+      # Each leg no-ops when the update turned out to be lock-only churn.
       - parallel:
           - name: Run nix flake check
             run: |
@@ -48,50 +72,12 @@ jobs:
               mkdir -p "$HOME/.claude/projects"
               mkdir -p "$HOME/.config/claude/projects"
               just test-node
+          - name: Babashka performance harness test
+            run: |
+              git diff --quiet && exit 0
+              apps/ccusage/scripts/compare-pr-performance_test.clj
       - uses: ./.github/actions/commit-and-push-main
-        if: steps.litellm.outputs.changed == 'true'
+        if: steps.update.outputs.changed == 'true'
         with:
-          message: 'chore(pricing): update LiteLLM snapshot'
-          paths: flake.lock
-
-  update-models-dev-pricing:
-    needs: update-pricing
-    if: ${{ always() }}
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    timeout-minutes: 60
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/setup-nix-cache
-      - name: Update models.dev pricing input
-        id: models-dev
-        run: .github/scripts/update-models-dev-lock.nu
-      - parallel:
-          - name: Run nix flake check
-            run: |
-              git diff --quiet && exit 0
-              nix flake check --print-build-logs
-          - name: Run Rust tests
-            run: |
-              git diff --quiet && exit 0
-              nix build .#ccusage-tests --no-link --print-build-logs
-          - name: JS test
-            run: |
-              git diff --quiet && exit 0
-              nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs nixpkgs#just
-              pnpm install --frozen-lockfile
-              mkdir -p "$HOME/.claude/projects"
-              mkdir -p "$HOME/.config/claude/projects"
-              just test-node
-      - uses: ./.github/actions/commit-and-push-main
-        if: steps.models-dev.outputs.changed == 'true'
-        with:
-          message: 'chore(pricing): update models.dev snapshot'
-          paths: >-
-            flake.lock
-            rust/crates/ccusage-core/src/models-dev-pricing.json
-            rust/crates/ccusage-adapter-codex/src/codex-auto-review-fallbacks.json
+          message: ${{ matrix.message }}
+          paths: ${{ matrix.paths }}
