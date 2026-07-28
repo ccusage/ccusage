@@ -1,6 +1,8 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../.. nixpkgs#nushell nixpkgs#git --command nu
 
+use ./pricing-lock.nu report
+
 const SNAPSHOTS = [
     'rust/crates/ccusage-core/src/models-dev-pricing.json'
     'rust/adapters/codex/src/codex-auto-review-fallbacks.json'
@@ -43,15 +45,4 @@ def main [] {
 # Whether git reports tracked changes for the given paths.
 def dirty [...paths: string]: nothing -> bool {
     (^git diff --quiet -- ...$paths | complete).exit_code != 0
-}
-
-# Hand the workflow both the verdict and the paths to commit, so the file list
-# lives in one place instead of being repeated in the workflow.
-def report [result: record]: nothing -> nothing {
-    [
-        $"changed=($result.changed)"
-        $"paths=($result.paths | str join ' ')"
-    ]
-    | each {|line| $"($line)(char nl)" | save --append $env.GITHUB_OUTPUT }
-    | ignore
 }
