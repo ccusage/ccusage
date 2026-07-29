@@ -63,8 +63,10 @@ pub(super) fn antigravity_db_paths() -> Result<Vec<PathBuf>> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use super::*;
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvVarGuard, EnvVarsGuard, fs_fixture};
 
     #[test]
     fn discovers_conversation_databases_under_the_data_dir() {
@@ -106,9 +108,16 @@ mod tests {
 
     #[test]
     fn ignores_a_blank_data_dir_override() {
-        let _cleanup = EnvVarGuard::set(ANTIGRAVITY_DATA_DIR_ENV, "   ");
+        let fixture = fs_fixture!({});
+        // Pin `HOME` alongside the override so the fallback root is the fixture
+        // rather than whatever home directory the test process inherits. Both go
+        // through one guard because each guard holds the same global env lock.
+        let _cleanup = EnvVarsGuard::set_many([
+            (ANTIGRAVITY_DATA_DIR_ENV, Some(OsString::from("   "))),
+            ("HOME", Some(fixture.root().as_os_str().to_owned())),
+        ]);
 
         // Falls back to the default root, which holds no databases under test.
-        assert!(antigravity_db_paths().is_ok());
+        assert!(antigravity_db_paths().unwrap().is_empty());
     }
 }
