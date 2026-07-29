@@ -8,11 +8,20 @@ const ANTIGRAVITY_DATA_DIR_ENV: &str = "ANTIGRAVITY_DATA_DIR";
 const ANTIGRAVITY_CONVERSATIONS_DIR_NAME: &str = "conversations";
 
 /// Roots to search for Antigravity CLI data, honoring `ANTIGRAVITY_DATA_DIR`.
+///
+/// The override accepts comma-separated directories, like every other
+/// source-specific path variable, so a current profile and an archive can be
+/// reported together.
 fn antigravity_roots() -> Result<Vec<PathBuf>> {
-    if let Ok(root) = env::var(ANTIGRAVITY_DATA_DIR_ENV) {
-        let root = root.trim();
-        if !root.is_empty() {
-            return Ok(vec![PathBuf::from(root)]);
+    if let Ok(env_roots) = env::var(ANTIGRAVITY_DATA_DIR_ENV) {
+        let roots = env_roots
+            .split(',')
+            .map(str::trim)
+            .filter(|root| !root.is_empty())
+            .map(PathBuf::from)
+            .collect::<Vec<_>>();
+        if !roots.is_empty() {
+            return Ok(roots);
         }
     }
     let home = ccusage_core::home::home_dir()
@@ -75,6 +84,24 @@ mod tests {
             .collect::<Vec<_>>();
         // The summaries database sits outside `conversations/` and holds no usage.
         assert_eq!(names, vec!["adf2fd49.db", "f672f900.db"]);
+    }
+
+    #[test]
+    fn reads_comma_separated_data_dirs() {
+        let current = fs_fixture!({ "conversations/current.db": "" });
+        let archive = fs_fixture!({ "conversations/archive.db": "" });
+        let _cleanup = EnvVarGuard::set(
+            ANTIGRAVITY_DATA_DIR_ENV,
+            format!("{}, {}", current.root().display(), archive.root().display()),
+        );
+
+        let names = antigravity_db_paths()
+            .unwrap()
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["current.db", "archive.db"]);
     }
 
     #[test]
