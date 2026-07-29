@@ -16,8 +16,12 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 ## Data source
 
-- `${ANTIGRAVITY_DATA_DIR}/conversations/*.db`, or
-- `~/.gemini/antigravity-cli/conversations/*.db`
+- `${ANTIGRAVITY_DATA_DIR}/conversations/**/*.db`, or
+- `~/.gemini/antigravity-cli/conversations/**/*.db`
+
+`ANTIGRAVITY_DATA_DIR` accepts comma-separated roots, and each root's
+`conversations/` directory is searched recursively, so nested sub-conversation
+databases are collected too.
 
 Antigravity is a Gemini-family tool, so its CLI state lives under the shared
 `.gemini` directory. Reads SQLite with the bundled `sqlite` crate, which is why
