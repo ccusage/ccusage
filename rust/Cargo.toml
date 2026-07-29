@@ -48,7 +48,7 @@ jiff = { version = "0.2.35", default-features = false, features = [
 	"tzdb-zoneinfo",
 	"tzdb-bundle-platform",
 ] }
-memchr = "2"
+memchr = "2.8.3"
 mimalloc = "0.1.50"
 minreq = { version = "3.0.0-rc.1", default-features = false, features = ["https-rustls"] }
 rustc-hash = "2"
