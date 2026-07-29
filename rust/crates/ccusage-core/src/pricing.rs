@@ -2441,8 +2441,6 @@ mod tests {
         let pricing = PricingMap::load_embedded();
 
         assert!(pricing.find("claude-opus-4-8-20270898").is_some());
-        assert!(pricing.find("claude-opus-4-9").is_none());
-        assert!(pricing.find("claude-opus-5").is_none());
     }
 
     #[test]

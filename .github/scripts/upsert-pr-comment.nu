@@ -110,23 +110,22 @@ def try_update_comment [repository: string, comment_id: int, body: string] {
     {status: $status, result: $result, stderr: $result.stderr}
 }
 def gh_api_with_body [method: string, endpoint: string, body: string] {
-    let payload = mktemp -t ccusage-pr-comment.XXXXXX | str trim
-    {body: $body} | to json | save --force $payload
-    let args = [
+    {body: $body}
+    | to json
+    | gh_api_complete [
         --method
         $method
         --header
         'Content-Type: application/json'
         $endpoint
         --input
-        $payload
+        '-'
     ]
-    let result = (gh_api_complete $args)
-    rm --force $payload
-    $result
 }
-def gh_api_complete [args: list<string>] {
-    run-external gh api ...$args | complete
+# Pipeline input becomes the request body, so callers that send one never have to
+# stage a temporary file. Calls without input simply get an empty stdin.
+def gh_api_complete [args: list<string>]: any -> record {
+    $in | run-external gh api ...$args | complete
 }
 def is_comment_write_auth_failure [stderr: string] { ($stderr =~ 'HTTP 401') or ($stderr =~ 'HTTP 403') }
 def format_gh_error [args: list<string>, result: record] { $"gh api ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)" }

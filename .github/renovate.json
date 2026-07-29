@@ -5,15 +5,16 @@
 		"enabled": true
 	},
 	"automerge": true,
-	"platformAutomerge": true,
+	"platformAutomerge": false,
 	"branchConcurrentLimit": 0,
-	"dependencyDashboard": true,
+	"dependencyDashboard": false,
 	"labels": ["dependencies", "renovate"],
 	"lockFileMaintenance": {
 		"enabled": true,
 		"schedule": ["at any time"]
 	},
 	"minimumReleaseAge": "3 days",
+	"mode": "full",
 	"postUpdateOptions": ["pnpmDedupe"],
 	"rangeStrategy": "bump",
 	"vulnerabilityAlerts": {

@@ -7,6 +7,6 @@ export def report [result: record]: nothing -> nothing {
         $"changed=($result.changed)"
         $"paths=($result.paths | str join ' ')"
     ]
-    | each {|line| $"($line)(char nl)" | save --append $env.GITHUB_OUTPUT }
-    | ignore
+    | to text
+    | save --append $env.GITHUB_OUTPUT
 }
