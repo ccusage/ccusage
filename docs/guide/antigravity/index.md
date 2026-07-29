@@ -65,7 +65,7 @@ Antigravity leaves its `model_cost`, `credit_cost` and `consumed_credits` fields
 
 That figure is the equivalent public API cost, not an amount you were billed. Antigravity is quota-based, so the actual charge for this usage may well be zero.
 
-`--mode display` therefore reports no cost, because there is nothing precomputed to display:
+`--mode display` therefore reports no cost, because there is nothing precomputed to display. Use `--mode calculate` to estimate cost from token counts instead:
 
 ```bash
 ccusage antigravity daily --mode calculate

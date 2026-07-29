@@ -83,7 +83,6 @@ their tokens are still counted and they surface as missing pricing.
 ## Public surface
 
 - `loader::load_entries`
-- `report::report_from_rows`
 - `report::summarize_entries`
 - `run`
 
