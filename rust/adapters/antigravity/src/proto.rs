@@ -14,6 +14,9 @@
 
 use ccusage_core::TimestampMs;
 
+/// The upper bound `google.protobuf.Timestamp` puts on its nanos field.
+const NANOS_PER_SECOND: u32 = 1_000_000_000;
+
 /// One protobuf field value, limited to the wire types Antigravity actually uses.
 enum Value<'a> {
     Varint(u64),
@@ -101,7 +104,16 @@ fn timestamp(bytes: &[u8]) -> Option<TimestampMs> {
     while let Some((field, value)) = reader.next_field() {
         match (field, value) {
             (1, Value::Varint(raw)) => seconds = Some(raw as i64),
-            (2, Value::Varint(raw)) => nanos = u32::try_from(raw).unwrap_or(0),
+            // `google.protobuf.Timestamp` constrains nanos to a single second, so
+            // discard anything outside that range rather than carrying it into the
+            // millisecond total: normalizing it would report the invocation up to
+            // four seconds late and could push it over a day boundary.
+            (2, Value::Varint(raw)) => {
+                nanos = u32::try_from(raw)
+                    .ok()
+                    .filter(|nanos| *nanos < NANOS_PER_SECOND)
+                    .unwrap_or(0);
+            }
             _ => {}
         }
     }
@@ -466,6 +478,19 @@ mod tests {
     fn rejects_an_unset_timestamp_instead_of_dating_it_to_1970() {
         assert_eq!(parse_step_metadata(&field_bytes(1, &[])).timestamp, None);
         assert_eq!(timestamp(&field_varint(1, 0)), None);
+    }
+
+    #[test]
+    fn discards_nanos_beyond_the_second_they_may_describe() {
+        // Normalizing an out-of-range nanos count would report the invocation
+        // seconds later than it happened, which near midnight moves it to the
+        // next day. The seconds field is still trusted.
+        let corrupt = timestamp_bytes(1_785_328_986, NANOS_PER_SECOND + 355_887_000);
+
+        assert_eq!(
+            timestamp(&corrupt),
+            Some(TimestampMs::from_millis(1_785_328_986_000))
+        );
     }
 
     #[test]
