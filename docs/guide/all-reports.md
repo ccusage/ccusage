@@ -46,23 +46,24 @@ Unified tables include an **Agent** column so you can compare sources in one vie
 
 ## Supported Sources
 
-| Source       | Namespace  | Example focused view      |
-| ------------ | ---------- | ------------------------- |
-| Claude Code  | `claude`   | `ccusage claude daily`    |
-| Codex        | `codex`    | `ccusage codex daily`     |
-| OpenCode     | `opencode` | `ccusage opencode weekly` |
-| Amp          | `amp`      | `ccusage amp session`     |
-| Droid        | `droid`    | `ccusage droid daily`     |
-| Codebuff     | `codebuff` | `ccusage codebuff daily`  |
-| Hermes Agent | `hermes`   | `ccusage hermes daily`    |
-| pi-agent     | `pi`       | `ccusage pi monthly`      |
-| Goose        | `goose`    | `ccusage goose daily`     |
-| OpenClaw     | `openclaw` | `ccusage openclaw daily`  |
-| Kilo         | `kilo`     | `ccusage kilo daily`      |
-| Kimi         | `kimi`     | `ccusage kimi daily`      |
-| Qwen         | `qwen`     | `ccusage qwen daily`      |
-| Copilot CLI  | `copilot`  | `ccusage copilot daily`   |
-| Gemini CLI   | `gemini`   | `ccusage gemini daily`    |
+| Source       | Namespace     | Example focused view        |
+| ------------ | ------------- | --------------------------- |
+| Claude Code  | `claude`      | `ccusage claude daily`      |
+| Codex        | `codex`       | `ccusage codex daily`       |
+| OpenCode     | `opencode`    | `ccusage opencode weekly`   |
+| Amp          | `amp`         | `ccusage amp session`       |
+| Droid        | `droid`       | `ccusage droid daily`       |
+| Codebuff     | `codebuff`    | `ccusage codebuff daily`    |
+| Hermes Agent | `hermes`      | `ccusage hermes daily`      |
+| pi-agent     | `pi`          | `ccusage pi monthly`        |
+| Goose        | `goose`       | `ccusage goose daily`       |
+| OpenClaw     | `openclaw`    | `ccusage openclaw daily`    |
+| Kilo         | `kilo`        | `ccusage kilo daily`        |
+| Kimi         | `kimi`        | `ccusage kimi daily`        |
+| Qwen         | `qwen`        | `ccusage qwen daily`        |
+| Copilot CLI  | `copilot`     | `ccusage copilot daily`     |
+| Antigravity  | `antigravity` | `ccusage antigravity daily` |
+| Gemini CLI   | `gemini`      | `ccusage gemini daily`      |
 
 ## When to Focus a Source
 

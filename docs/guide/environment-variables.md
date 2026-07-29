@@ -17,6 +17,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `HERMES_HOME`                     | Hermes Agent | `~/.hermes`                        |
 | `PI_AGENT_DIR`                    | pi-agent     | `~/.pi/agent/sessions`             |
 | `GOOSE_PATH_ROOT`                 | Goose        | Standard Goose data roots          |
+| `ANTIGRAVITY_DATA_DIR`            | Antigravity  | `~/.gemini/antigravity-cli`        |
 | `OPENCLAW_DIR`                    | OpenClaw     | `~/.openclaw`                      |
 | `KILO_DATA_DIR`                   | Kilo         | `~/.local/share/kilo`              |
 | `KIMI_DATA_DIR`                   | Kimi         | `~/.kimi`, `~/.kimi-code`          |
@@ -210,7 +211,7 @@ To see which environment variables are being used:
 
 ```bash
 # Show all environment variables
-env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|CCUSAGE|LOG_LEVEL"
+env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|ANTIGRAVITY|CCUSAGE|LOG_LEVEL"
 
 # Debug mode shows environment variable usage
 LOG_LEVEL=4 ccusage daily --debug
