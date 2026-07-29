@@ -23,21 +23,22 @@ ccusage daily
 By default, ccusage reads every conversation database under:
 
 ```text
-~/.gemini/antigravity-cli/conversations/*.db
+~/.gemini/antigravity-cli/conversations/**/*.db
 ```
 
 Antigravity is a Gemini-family tool, so its CLI state lives under the shared `.gemini` directory rather than a directory of its own.
 
-Set `ANTIGRAVITY_DATA_DIR` when Antigravity is stored somewhere else:
+Set `ANTIGRAVITY_DATA_DIR` when Antigravity is stored somewhere else. It accepts comma-separated roots, so a current profile and an archive can be reported together:
 
 ```bash
 ANTIGRAVITY_DATA_DIR="/path/to/antigravity-cli" ccusage antigravity daily
+ANTIGRAVITY_DATA_DIR="/path/to/antigravity-cli,/archive/antigravity-cli" ccusage antigravity daily
 ```
 
-With `ANTIGRAVITY_DATA_DIR` set, ccusage reads:
+With `ANTIGRAVITY_DATA_DIR` set, ccusage reads every `.db` file below each root's `conversations/` directory, nested ones included:
 
 ```text
-$ANTIGRAVITY_DATA_DIR/conversations/*.db
+<each-root>/conversations/**/*.db
 ```
 
 Each conversation is a separate database, and a session in these reports is one conversation.
