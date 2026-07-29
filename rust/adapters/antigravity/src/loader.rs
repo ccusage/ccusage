@@ -86,20 +86,13 @@ fn records_to_entries(
     entries
 }
 
-/// Read every blob column of one conversation database.
-fn read_blobs(db_path: &Path, query: &str, shared: &SharedArgs) -> Vec<Vec<u8>> {
-    let Ok(connection) =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-    else {
-        debug_log(
-            shared,
-            format!(
-                "Failed to open Antigravity conversation {}",
-                db_path.display()
-            ),
-        );
-        return Vec::new();
-    };
+/// Read every blob column returned by one query.
+fn read_blobs(
+    connection: &sqlite::Connection,
+    db_path: &Path,
+    query: &str,
+    shared: &SharedArgs,
+) -> Vec<Vec<u8>> {
     // A conversation database created by a different Antigravity version can be
     // missing a table entirely, which is a prepare-time error rather than a reason
     // to discard the rest of the conversation.
@@ -150,8 +143,21 @@ fn collect_records(db_path: &Path, shared: &SharedArgs) -> Vec<UsageRecord> {
         |stem| Arc::from(stem.to_string_lossy().as_ref()),
     );
 
+    let Ok(connection) =
+        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
+    else {
+        debug_log(
+            shared,
+            format!(
+                "Failed to open Antigravity conversation {}",
+                db_path.display()
+            ),
+        );
+        return Vec::new();
+    };
+
     // Names first, so both sources can be attributed in one pass.
-    let generations = read_blobs(db_path, ANTIGRAVITY_GENERATION_QUERY, shared)
+    let generations = read_blobs(&connection, db_path, ANTIGRAVITY_GENERATION_QUERY, shared)
         .iter()
         .flat_map(|blob| parse_generation_metadata(blob))
         .collect::<Vec<_>>();
@@ -175,7 +181,7 @@ fn collect_records(db_path: &Path, shared: &SharedArgs) -> Vec<UsageRecord> {
     };
 
     let mut records = Vec::new();
-    for blob in read_blobs(db_path, ANTIGRAVITY_STEP_QUERY, shared) {
+    for blob in read_blobs(&connection, db_path, ANTIGRAVITY_STEP_QUERY, shared) {
         let step = parse_step_metadata(&blob);
         let Some(timestamp) = step.timestamp else {
             // A usage row with no timestamp cannot be placed in any reporting
