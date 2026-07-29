@@ -82,6 +82,28 @@ in
               *) export RUSTFLAGS="''${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=mold" ;;
             esac
           fi
+
+          # Install whenever a lockfile is newer than the last `just install`, so
+          # a `git pull` that bumps dependencies does not leave a stale tree. The
+          # `.envrc` watches pnpm-lock.yaml and the whole nix/ tree, so direnv
+          # re-enters the shell — and re-runs this check — as soon as one changes.
+          # The tool dirs under nix/tools are outside the pnpm workspace, hence
+          # the extra lockfiles.
+          needsInstall=false
+          if [ ! -e node_modules/.install-stamp ]; then
+            needsInstall=true
+          else
+            for lock in pnpm-lock.yaml nix/tools/*/bun.lock; do
+              if [ "$lock" -nt node_modules/.install-stamp ]; then
+                needsInstall=true
+              fi
+            done
+          fi
+          if [ "$needsInstall" = true ]; then
+            echo "Installing dependencies..."
+            just install
+          fi
+
           ${lib.getExe config.packages.syncAgentSkills}
           ${config.pre-commit.shellHook}
         ''

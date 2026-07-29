@@ -31,6 +31,10 @@ install:
         toolDir="$(dirname "$tsconfig")"
         (cd "$toolDir" && bun install --frozen-lockfile)
     done
+    # The dev shell re-installs when a lockfile is newer than this stamp. It
+    # cannot compare against node_modules itself, because an install that
+    # changes nothing leaves those directory mtimes untouched.
+    touch node_modules/.install-stamp
 
 # Build every workspace package
 build: ccusage::build docs::build
