@@ -18,6 +18,7 @@ publish = false
 [workspace.dependencies]
 ccusage-adapter-all = { path = "crates/ccusage-adapter-all" }
 ccusage-adapter-amp = { path = "adapters/amp" }
+ccusage-adapter-antigravity = { path = "adapters/antigravity" }
 ccusage-adapter-claude = { path = "adapters/claude" }
 ccusage-adapter-codebuff = { path = "adapters/codebuff" }
 ccusage-adapter-codex = { path = "adapters/codex" }
