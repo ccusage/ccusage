@@ -3,6 +3,24 @@
 The Antigravity adapter: it turns the per-conversation SQLite databases the
 Antigravity CLI writes into the usage entries the reports render.
 
+## Commands
+
+```sh
+ccusage antigravity daily
+ccusage antigravity monthly
+ccusage antigravity session
+```
+
+Antigravity also joins `ccusage daily` and the other unified reports whenever
+conversation databases are detected.
+
+The user-facing documentation lives in
+[docs/guide/antigravity](../../../docs/guide/antigravity/index.md), including the
+accuracy notes that explain what these numbers can and cannot tell you. See
+[docs/guide/all-reports](../../../docs/guide/all-reports.md) for the unified
+reports and [docs/guide/cost-modes](../../../docs/guide/cost-modes.md) for how
+`--mode` changes cost reporting.
+
 ## Owns
 
 - `loader.rs` — reading the source, dedupe, and date filtering.
