@@ -619,6 +619,17 @@
 			"context": 200000
 		}
 	},
+	"anthropic/claude-3-7-sonnet-20250219": {
+		"cost": {
+			"cache_read": 0.3,
+			"cache_write": 3.75,
+			"input": 3,
+			"output": 15
+		},
+		"limit": {
+			"context": 200000
+		}
+	},
 	"anthropic/claude-3-haiku": {
 		"cost": {
 			"cache_read": 0.03,
@@ -2650,9 +2661,9 @@
 	},
 	"kimi-k2-7-code": {
 		"cost": {
-			"cache_read": 0.16,
-			"input": 0.75,
-			"output": 3.5
+			"cache_read": 0.95,
+			"input": 0.95,
+			"output": 4
 		},
 		"limit": {
 			"context": 256000
@@ -2660,6 +2671,7 @@
 	},
 	"kimi-k2-7-code-highspeed": {
 		"cost": {
+			"cache_read": 1.9,
 			"input": 1.9,
 			"output": 8
 		},
@@ -2922,6 +2934,16 @@
 			"context": 262000
 		}
 	},
+	"moonshot/kimi-k2.7-code-highspeed": {
+		"cost": {
+			"cache_read": 0.38,
+			"input": 1.9,
+			"output": 8
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"moonshot/kimi-k3": {
 		"cost": {
 			"cache_read": 0.3,
@@ -3053,6 +3075,16 @@
 			"cache_read": 0.27,
 			"input": 2.7,
 			"output": 13.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"moonshotai/Kimi-K3-TEE": {
+		"cost": {
+			"cache_read": 1.5,
+			"input": 3,
+			"output": 15
 		},
 		"limit": {
 			"context": 1048576

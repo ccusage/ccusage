@@ -176,6 +176,8 @@ If ccusage shows no data, check:
    - OpenClaw: `${OPENCLAW_DIR:-~/.openclaw}` (also scans `~/.clawdbot`, `~/.moltbot`, `~/.moldbot`)
    - Qwen: `${QWEN_DATA_DIR:-~/.qwen}`
    - GitHub Copilot CLI: `~/.copilot/otel/*.jsonl` or `COPILOT_OTEL_FILE_EXPORTER_PATH`
+   - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity-cli}`
+   - Grok Build CLI: `${GROK_HOME:-~/.grok}`
 
 ### Custom Data Directory
 
@@ -196,6 +198,8 @@ export KILO_DATA_DIR="/path/to/kilo"
 export KIMI_DATA_DIR="/path/to/kimi"
 export QWEN_DATA_DIR="/path/to/qwen"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
+export ANTIGRAVITY_DATA_DIR="/path/to/antigravity-cli"
+export GROK_HOME="/path/to/grok-home"
 ```
 
 Each source-specific path variable can also contain comma-separated directories:
@@ -213,6 +217,7 @@ export OPENCLAW_DIR="/path/to/openclaw,/archive/openclaw"
 export KILO_DATA_DIR="/path/to/kilo,/archive/kilo"
 export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
+export ANTIGRAVITY_DATA_DIR="/path/to/antigravity-cli,/archive/antigravity-cli"
 ```
 
 ## Getting Help
