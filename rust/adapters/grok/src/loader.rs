@@ -81,9 +81,48 @@ mod tests {
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use std::ffi::OsString;
 
+    fn turn(
+        event_id: &str,
+        model: &str,
+        input: u64,
+        output: u64,
+        cache: u64,
+        reasoning: u64,
+        seconds: i64,
+    ) -> String {
+        serde_json::json!({
+            "timestamp": seconds,
+            "params": {
+                "sessionId": "sess",
+                "update": {
+                    "sessionUpdate": "turn_completed",
+                    "usage": {
+                        "modelUsage": {
+                            model: {
+                                "inputTokens": input,
+                                "outputTokens": output,
+                                "cachedReadTokens": cache,
+                                "reasoningTokens": reasoning,
+                            }
+                        }
+                    }
+                },
+                "_meta": { "eventId": event_id }
+            }
+        })
+        .to_string()
+    }
+
+    fn with_grok_home(fixture_root: &std::path::Path) -> EnvVarsGuard {
+        EnvVarsGuard::set_many([(
+            super::super::paths::GROK_HOME_ENV,
+            Some(OsString::from(fixture_root.as_os_str())),
+        )])
+    }
+
     #[test]
     fn loads_session_tree_with_uncached_split() {
-        let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-load","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"totalTokens":120,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"totalTokens":120}}}},"_meta":{"eventId":"evt-load"}}}"#;
+        let line = turn("evt-load", "grok-4.5-build", 100, 20, 40, 10, 1_750_000_000);
         let fixture = fs_fixture!({
             "sessions/proj/sess-load/updates.jsonl": line,
             "sessions/proj/sess-load/summary.json": r#"{"info":{"id":"sess-load","cwd":"/tmp/proj"}}"#,
@@ -92,10 +131,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let _guard = EnvVarsGuard::set_many([(
-            super::super::paths::GROK_HOME_ENV,
-            Some(OsString::from(fixture.root().as_os_str())),
-        )]);
+        let _guard = with_grok_home(fixture.root());
         let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2025-06-15");
@@ -104,6 +140,70 @@ mod tests {
         assert_eq!(entries[0].data.message.usage.output_tokens, 20);
         assert_eq!(entries[0].extra_total_tokens, 10);
         assert_eq!(entries[0].model.as_deref(), Some("grok-4.5-build"));
+        assert_eq!(entries[0].project_path.as_ref(), "/tmp/proj");
+    }
+
+    #[test]
+    fn dedupes_the_same_event_across_session_files() {
+        // The same server event can land in more than one session export; count it once.
+        let shared_event = turn("evt-shared", "grok-4.5-build", 100, 20, 0, 0, 1_750_000_000);
+        let other = turn("evt-other", "grok-4.5-build", 50, 5, 0, 0, 1_750_000_100);
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-a/updates.jsonl": shared_event.clone(),
+            "sessions/proj/sess-b/updates.jsonl": format!("{shared_event}\n{other}"),
+        });
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let _guard = with_grok_home(fixture.root());
+        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        let input: u64 = entries
+            .iter()
+            .map(|entry| entry.data.message.usage.input_tokens)
+            .sum();
+        assert_eq!(input, 150);
+    }
+
+    #[test]
+    fn keeps_usage_from_a_readable_session_when_a_sibling_file_is_corrupt() {
+        let good = turn("evt-good", "grok-4.5-build", 80, 8, 0, 0, 1_750_000_000);
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-good/updates.jsonl": good,
+            "sessions/proj/sess-bad/updates.jsonl": "\0\0\0not-jsonl\n{broken",
+        });
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let _guard = with_grok_home(fixture.root());
+        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        // One corrupt file must not cost the rest of the home directory.
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 80);
+    }
+
+    #[test]
+    fn sorts_entries_by_timestamp_across_sessions() {
+        let early = turn("evt-early", "grok-4.5-build", 10, 1, 0, 0, 1_750_000_000);
+        let late = turn("evt-late", "grok-4.5-build", 20, 2, 0, 0, 1_750_100_000);
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-late/updates.jsonl": late,
+            "sessions/proj/sess-early/updates.jsonl": early,
+        });
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let _guard = with_grok_home(fixture.root());
+        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-early"));
+        assert_eq!(entries[1].data.message.id.as_deref(), Some("evt-late"));
     }
 
     #[test]
@@ -111,10 +211,16 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/proj/sess/updates.jsonl": "{}\n",
         });
-        let _guard = EnvVarsGuard::set_many([(
-            super::super::paths::GROK_HOME_ENV,
-            Some(OsString::from(fixture.root().as_os_str())),
-        )]);
+        let _guard = with_grok_home(fixture.root());
         assert!(has_data());
+    }
+
+    #[test]
+    fn has_data_is_false_when_the_home_has_no_sessions() {
+        let fixture = fs_fixture!({
+            "logs/unified.jsonl": "{}\n",
+        });
+        let _guard = with_grok_home(fixture.root());
+        assert!(!has_data());
     }
 }

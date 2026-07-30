@@ -473,6 +473,73 @@ mod tests {
         r#"{"timestamp":1750000000,"method":"_x.ai/session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"totalTokens":120,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"totalTokens":120}}}},"_meta":{"eventId":"evt-1"}}}"#.to_string()
     }
 
+    fn turn_line(
+        event_id: &str,
+        model: &str,
+        input: u64,
+        output: u64,
+        cache: u64,
+        reasoning: u64,
+        envelope_seconds: i64,
+        agent_ms: Option<i64>,
+    ) -> String {
+        let mut meta = serde_json::json!({ "eventId": event_id });
+        if let Some(ms) = agent_ms {
+            meta["agentTimestampMs"] = serde_json::json!(ms);
+        }
+        serde_json::json!({
+            "timestamp": envelope_seconds,
+            "params": {
+                "sessionId": "sess-1",
+                "update": {
+                    "sessionUpdate": "turn_completed",
+                    "usage": {
+                        "inputTokens": input,
+                        "outputTokens": output,
+                        "cachedReadTokens": cache,
+                        "reasoningTokens": reasoning,
+                        "modelUsage": {
+                            model: {
+                                "inputTokens": input,
+                                "outputTokens": output,
+                                "cachedReadTokens": cache,
+                                "reasoningTokens": reasoning,
+                            }
+                        }
+                    }
+                },
+                "_meta": meta
+            }
+        })
+        .to_string()
+    }
+
+    fn parse_lines(content: &str, summary: Option<&str>) -> Vec<LoadedEntry> {
+        let fixture = if let Some(summary) = summary {
+            fs_fixture!({
+                "sessions/proj/sess-1/updates.jsonl": content,
+                "sessions/proj/sess-1/summary.json": summary,
+            })
+        } else {
+            fs_fixture!({
+                "sessions/proj/sess-1/updates.jsonl": content,
+            })
+        };
+        let files = GrokSessionFiles {
+            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
+            summary: summary.map(|_| fixture.path("sessions/proj/sess-1/summary.json")),
+        };
+        // Keep the fixture alive until parse finishes by reading paths first.
+        let _root = fixture.root().to_path_buf();
+        parse_session_files(
+            &files,
+            Some(&jiff::tz::TimeZone::UTC),
+            CostMode::Display,
+            &PricingMap::load_embedded(),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn splits_uncached_input_from_cache() {
         assert_eq!(split_tokens(100, 40), (60, 40));
@@ -493,6 +560,16 @@ mod tests {
                 "x-ai/grok-4.5".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn pricing_candidates_strip_grok_bracket_prefix() {
+        assert_eq!(
+            pricing_candidates("[grok] grok-4.5-build")[0],
+            "grok-4.5-build"
+        );
+        assert!(pricing_candidates("   ").is_empty());
+        assert!(pricing_candidates("[grok] ").is_empty());
     }
 
     #[test]
@@ -517,6 +594,61 @@ mod tests {
     }
 
     #[test]
+    fn prices_via_normalized_xai_candidate_when_raw_model_is_missing() {
+        // Embed only the stripped `xai/grok-4.5` form so candidate order is exercised.
+        let pricing_override = crate::cli::PricingOverride {
+            input_cost_per_token: Some(0.001),
+            output_cost_per_token: Some(0.002),
+            ..crate::cli::PricingOverride::default()
+        };
+        let key = "xai/grok-4.5".to_string();
+        let pricing = PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        let usage = TokenUsageRaw {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_input_tokens: 0,
+            ..TokenUsageRaw::default()
+        };
+
+        assert_eq!(
+            calculate_grok_cost("grok-4.5-build", usage, CostMode::Calculate, &pricing),
+            0.02
+        );
+    }
+
+    #[test]
+    fn reports_an_unpriced_model_as_missing_pricing_instead_of_dropping_it() {
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-1/updates.jsonl": turn_line(
+                "evt-miss",
+                "grok-never-priced-build",
+                93,
+                3,
+                0,
+                0,
+                1_750_000_000,
+                None,
+            ),
+        });
+        let files = GrokSessionFiles {
+            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
+            summary: None,
+        };
+        let pricing = PricingMap::load_embedded();
+        let entries =
+            parse_session_files(&files, None, CostMode::Calculate, &pricing).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("grok-never-priced-build"));
+        assert_eq!(entries[0].data.message.usage.input_tokens, 93);
+        assert_eq!(entries[0].cost, 0.0);
+        assert_eq!(
+            entries[0].missing_pricing_model.as_deref(),
+            Some("grok-never-priced-build")
+        );
+    }
+
+    #[test]
     fn turn_completed_model_usage_maps_tokens_without_double_count() {
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
@@ -535,10 +667,143 @@ mod tests {
         assert_eq!(entry.data.message.usage.input_tokens, 60);
         assert_eq!(entry.data.message.usage.cache_read_input_tokens, 40);
         assert_eq!(entry.data.message.usage.output_tokens, 20);
+        assert_eq!(entry.data.message.usage.cache_creation_input_tokens, 0);
         assert_eq!(entry.extra_total_tokens, 10);
+        // costUsdTicks is intentionally ignored; cost_usd stays unset.
         assert!(entry.data.cost_usd.is_none());
         assert_eq!(entry.session_id.as_ref(), "sess-1");
         assert_eq!(entry.project_path.as_ref(), "D:\\work\\proj");
+    }
+
+    #[test]
+    fn keeps_a_reasoning_only_row_when_other_buckets_are_zero() {
+        let line = turn_line("evt-r", "grok-4.5-build", 0, 0, 0, 42, 1_750_000_000, None);
+        let entries = parse_lines(&line, None);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 0);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 0);
+        assert_eq!(entries[0].extra_total_tokens, 42);
+    }
+
+    #[test]
+    fn falls_back_to_top_level_usage_when_model_usage_is_absent() {
+        let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-top","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":50,"outputTokens":5,"cachedReadTokens":10,"reasoningTokens":2}},"_meta":{"eventId":"evt-top"}}}"#;
+        let summary = r#"{"info":{"id":"sess-top","cwd":"/tmp/proj"},"current_model_id":"grok-4.5-build"}"#;
+        let entries = parse_lines(line, Some(summary));
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("grok-4.5-build"));
+        assert_eq!(entries[0].data.message.usage.input_tokens, 40);
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 5);
+        assert_eq!(entries[0].extra_total_tokens, 2);
+    }
+
+    #[test]
+    fn names_top_level_usage_unknown_when_summary_has_no_default_model() {
+        let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-u","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}},"_meta":{"eventId":"evt-u"}}}"#;
+        let entries = parse_lines(line, None);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("unknown"));
+    }
+
+    #[test]
+    fn prefers_agent_timestamp_ms_over_envelope_seconds() {
+        let line = turn_line(
+            "evt-ts",
+            "grok-4.5-build",
+            10,
+            1,
+            0,
+            0,
+            1_750_000_000,
+            Some(1_785_328_986_355),
+        );
+        let entries = parse_lines(&line, None);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_785_328_986_355);
+        assert_eq!(entries[0].date, "2026-07-29");
+    }
+
+    #[test]
+    fn converts_envelope_unix_seconds_to_millis_when_agent_ms_is_absent() {
+        let line = turn_line(
+            "evt-sec",
+            "grok-4.5-build",
+            10,
+            1,
+            0,
+            0,
+            1_750_000_000,
+            None,
+        );
+        let entries = parse_lines(&line, None);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_750_000_000_000);
+        assert_eq!(entries[0].date, "2025-06-15");
+    }
+
+    #[test]
+    fn uses_unix_epoch_when_no_timestamp_fields_are_present() {
+        let line = r#"{"params":{"sessionId":"sess-e","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":1,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-e"}}}"#;
+        let entries = parse_lines(line, None);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 0);
+    }
+
+    #[test]
+    fn summary_cwd_overrides_path_derived_project_and_fills_session_when_line_omits_it() {
+        // No params.sessionId — meta from summary.json should supply the session id.
+        let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-meta"}}}"#;
+        let summary = r#"{"info":{"id":"canonical-session","cwd":"D:\\canonical\\cwd"},"git_root_dir":"should-not-win"}"#;
+        let entries = parse_lines(line, Some(summary));
+
+        assert_eq!(entries[0].session_id.as_ref(), "canonical-session");
+        assert_eq!(entries[0].project_path.as_ref(), "D:\\canonical\\cwd");
+    }
+
+    #[test]
+    fn line_session_id_beats_summary_id() {
+        let line = sample_turn_completed_line();
+        let summary = r#"{"info":{"id":"canonical-session","cwd":"D:\\canonical\\cwd"}}"#;
+        let entries = parse_lines(&line, Some(summary));
+
+        assert_eq!(entries[0].session_id.as_ref(), "sess-1");
+        assert_eq!(entries[0].project_path.as_ref(), "D:\\canonical\\cwd");
+    }
+
+    #[test]
+    fn url_decodes_project_segment_when_summary_is_absent() {
+        // Omit params.sessionId so the session directory name becomes the id.
+        let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-url"}}}"#;
+        let fixture = fs_fixture!({
+            "sessions/D%3A%5Cwork%5Cproj/019fa1b1-0000-7000-8000-000000000001/updates.jsonl": line,
+        });
+        let files = GrokSessionFiles {
+            updates: fixture.path(
+                "sessions/D%3A%5Cwork%5Cproj/019fa1b1-0000-7000-8000-000000000001/updates.jsonl",
+            ),
+            summary: None,
+        };
+        let entries = parse_session_files(
+            &files,
+            None,
+            CostMode::Display,
+            &PricingMap::load_embedded(),
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].session_id.as_ref(),
+            "019fa1b1-0000-7000-8000-000000000001"
+        );
+        assert_eq!(entries[0].project_path.as_ref(), "D:\\work\\proj");
     }
 
     #[test]
@@ -547,18 +812,11 @@ mod tests {
             r#"{"timestamp":1750000001,"params":{"update":{"sessionUpdate":"tool_call"}}}"#,
             r#"{"timestamp":1750000002,"params":{"update":{"sessionUpdate":"turn_completed"},"_meta":{"eventId":"no-usage"}}}"#,
             r#"{"timestamp":1750000003,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":0,"outputTokens":0,"cachedReadTokens":0,"reasoningTokens":0,"modelUsage":{"grok-4.5":{"inputTokens":0,"outputTokens":0,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"zero"}}}"#,
+            r#"{"this is not json"#,
             &sample_turn_completed_line(),
         ]
         .join("\n");
-        let fixture = fs_fixture!({
-            "sessions/proj/sess-1/updates.jsonl": lines,
-        });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: None,
-        };
-        let pricing = PricingMap::load_embedded();
-        let entries = parse_session_files(&files, None, CostMode::Display, &pricing).unwrap();
+        let entries = parse_lines(&lines, None);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 60);
     }
@@ -566,15 +824,7 @@ mod tests {
     #[test]
     fn multi_model_turn_emits_one_entry_per_model() {
         let line = r#"{"timestamp":1750000100,"params":{"sessionId":"sess-m","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"model-a":{"inputTokens":10,"outputTokens":2,"cachedReadTokens":0,"reasoningTokens":1},"model-b":{"inputTokens":20,"outputTokens":4,"cachedReadTokens":5,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-multi"}}}"#;
-        let fixture = fs_fixture!({
-            "sessions/proj/sess-m/updates.jsonl": line,
-        });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-m/updates.jsonl"),
-            summary: None,
-        };
-        let pricing = PricingMap::load_embedded();
-        let mut entries = parse_session_files(&files, None, CostMode::Display, &pricing).unwrap();
+        let mut entries = parse_lines(line, None);
         entries.sort_by(|a, b| a.model.cmp(&b.model));
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].model.as_deref(), Some("model-a"));
@@ -589,20 +839,27 @@ mod tests {
     fn dedupes_same_event_id_and_model() {
         let line = sample_turn_completed_line();
         let content = format!("{line}\n{line}\n");
-        let fixture = fs_fixture!({
-            "sessions/proj/sess-1/updates.jsonl": content,
-        });
-        let files = GrokSessionFiles {
-            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
-            summary: None,
-        };
-        let pricing = PricingMap::load_embedded();
-        let entries = parse_session_files(&files, None, CostMode::Display, &pricing).unwrap();
+        let entries = parse_lines(&content, None);
         assert_eq!(entries.len(), 1);
     }
 
     #[test]
-    fn display_mode_cost_is_zero() {
+    fn dedupes_identical_rows_without_event_id_by_content_key() {
+        let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-d","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10}}}}}}"#;
+        let content = format!("{line}\n{line}\n");
+        let entries = parse_lines(&content, None);
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn keeps_distinct_models_that_share_an_event_id() {
+        let line = r#"{"timestamp":1750000100,"params":{"sessionId":"sess-m","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"model-a":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0},"model-b":{"inputTokens":20,"outputTokens":2,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-shared"}}}"#;
+        let entries = parse_lines(line, None);
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn display_mode_cost_is_zero_and_does_not_flag_missing_pricing() {
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
         });
@@ -613,6 +870,17 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let entries = parse_session_files(&files, None, CostMode::Display, &pricing).unwrap();
         assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 0.0);
+        assert_eq!(entries[0].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn ignores_precomputed_cost_usd_ticks_on_the_wire() {
+        let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"costUsdTicks":1038524000,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"costUsdTicks":1038524000}}}},"_meta":{"eventId":"evt-cost"}}}"#;
+        let entries = parse_lines(line, None);
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].data.cost_usd.is_none());
         assert_eq!(entries[0].cost, 0.0);
     }
 }

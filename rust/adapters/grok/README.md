@@ -69,6 +69,19 @@ Costs are token × LiteLLM pricing estimates. Display mode shows `$0` for Grok.
 - `serde`
 - `serde_json`
 
+## Testing
+
+Unit tests synthesize `updates.jsonl` fixtures (via `ccusage-test-support`)
+rather than committing real session trees, which would embed absolute paths and
+user prompts. Coverage spans path discovery, token split / pricing candidates,
+in-file and cross-session dedupe, timestamp resolution, summary metadata, and
+session report activity bounds.
+
+```powershell
+# Requires CCUSAGE_PRICING_JSON_PATH (or Nix) for the embedded LiteLLM snapshot.
+cargo test -p ccusage-adapter-grok
+```
+
 ## Live smoke
 
 ```powershell

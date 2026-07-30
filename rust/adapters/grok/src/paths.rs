@@ -87,6 +87,53 @@ mod tests {
     }
 
     #[test]
+    fn ignores_jsonl_files_that_are_not_named_updates() {
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-a/updates.jsonl": "{}\n",
+            "sessions/proj/sess-a/events.jsonl": "{}\n",
+            "sessions/proj/sess-a/notes.txt": "nope\n",
+            "logs/unified.jsonl": "{}\n",
+        });
+        let _guard = EnvVarsGuard::set_many([(
+            GROK_HOME_ENV,
+            Some(OsString::from(fixture.root().as_os_str())),
+        )]);
+
+        let files = discover_session_files().unwrap();
+        let names: Vec<_> = files
+            .iter()
+            .map(|file| {
+                file.updates
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(names, vec!["updates.jsonl".to_string()]);
+    }
+
+    #[test]
+    fn discovers_nested_session_trees_under_multiple_projects() {
+        let fixture = fs_fixture!({
+            "sessions/proj-a/sess-1/updates.jsonl": "{}\n",
+            "sessions/proj-b/sess-2/updates.jsonl": "{}\n",
+            "sessions/proj-b/sess-2/summary.json": "{}",
+        });
+        let _guard = EnvVarsGuard::set_many([(
+            GROK_HOME_ENV,
+            Some(OsString::from(fixture.root().as_os_str())),
+        )]);
+
+        let files = discover_session_files().unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|file| file.summary.is_some()));
+        assert!(files.iter().any(|file| file.summary.is_none()));
+        // Discovery sorts by path so load order is stable across runs.
+        assert!(files[0].updates < files[1].updates);
+    }
+
+    #[test]
     fn grok_home_is_used() {
         let fixture = fs_fixture!({
             "sessions/proj/session-a/updates.jsonl": "{}\n",
@@ -107,6 +154,9 @@ mod tests {
             ".grok/sessions/home/session-a/updates.jsonl": "{}\n",
         });
         let home = OsString::from(fixture.root().as_os_str());
+        // Pin HOME/USERPROFILE alongside the blank override so the fallback root
+        // is the fixture rather than whatever home the process inherits. Both go
+        // through one guard because each guard holds the same global env lock.
         let _guard = EnvVarsGuard::set_many([
             (GROK_HOME_ENV, Some(OsString::from("  "))),
             ("HOME", Some(home.clone())),
@@ -125,6 +175,18 @@ mod tests {
         let missing = fixture.path("does-not-exist");
         let _guard =
             EnvVarsGuard::set_many([(GROK_HOME_ENV, Some(OsString::from(missing.as_os_str())))]);
+        let files = discover_session_files().unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn non_directory_grok_home_yields_empty_discovery() {
+        let fixture = fs_fixture!({
+            "not-a-dir": "file",
+        });
+        let file_path = fixture.path("not-a-dir");
+        let _guard =
+            EnvVarsGuard::set_many([(GROK_HOME_ENV, Some(OsString::from(file_path.as_os_str())))]);
         let files = discover_session_files().unwrap();
         assert!(files.is_empty());
     }
