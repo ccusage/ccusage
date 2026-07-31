@@ -28,7 +28,7 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix-cache
       - name: Run agent
-        uses: pullfrog/pullfrog@08bd894659ce01e7ba4d98e25d3b12b533d653f0 # v0.1.40
+        uses: pullfrog/pullfrog@312d9be6bdf9bf0efa047f628298489777404cbb # v0.1.41
         with:
           prompt: ${{ inputs.prompt }}
         env:
