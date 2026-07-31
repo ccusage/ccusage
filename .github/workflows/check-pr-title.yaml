@@ -32,6 +32,11 @@ jobs:
     name: Validate PR title scope
     runs-on: ubuntu-slim
     timeout-minutes: 5
+    # Same exemptions as the job above, so the two title policies agree on which
+    # pull requests they judge.
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
+      && !contains(github.event.pull_request.labels.*.name, 'dependencies')
     steps:
       - uses: hustcer/setup-nu@ccd5bb5426b05a32009c2ba967946231f3919c97 # v3.25
         with:
@@ -88,7 +93,7 @@ jobs:
               reject $title "needs a scope" $hint
             }
 
-            if not ($scopes | any {|scope| $scope in $allowed }) {
+            if not ($scopes | all {|scope| $scope in $allowed }) {
               reject $title $"is scoped `($scopes | str join ',')`" $hint
             }
           }

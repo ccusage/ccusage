@@ -86,7 +86,7 @@ def check [
         reject $line "needs a scope" $hint
     }
 
-    if not ($scopes | any {|scope| $scope in $allowed }) {
+    if not ($scopes | all {|scope| $scope in $allowed }) {
         reject $line $"is scoped `($scopes | str join ',')`" $hint
     }
 }
