@@ -41,7 +41,7 @@ ccusage-core = { path = "crates/ccusage-core" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }
 ccusage-test-support = { path = "crates/ccusage-test-support" }
 assert_fs = "1.1.4"
-compact_str = "0.9"
+compact_str = "0.10.0"
 insta = { version = "1.48.0", features = ["json"] }
 jiff = { version = "0.2.35", default-features = false, features = [
 	"std",
