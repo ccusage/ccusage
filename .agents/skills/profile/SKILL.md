@@ -1,22 +1,39 @@
 ---
 name: profile
-description: Profiles ccusage performance. Use when debugging slow Rust CLI commands, TypeScript package scripts, launchers, benchmarks, packaging hot paths, or branch-vs-main speed changes.
+description: Profiles ccusage performance. Use when a CLI command is slow, when checking that an optimization actually helped, when comparing a branch against main, or when reading a captured CPU profile.
 ---
 
 # ccusage Profile
 
-Use this skill for ccusage performance work. The production CLI is Rust-first,
-but the TypeScript launcher and Nushell benchmark/package scripts still need
-focused profiling when those paths are in scope.
+Nearly all runtime cost lives in the Rust binary. `references/rust.md` covers
+release builds, the branch-vs-main worktree setup, deterministic measurement,
+JSON parity, and reproducing the CI performance comment.
 
-## Rust
+Two habits carry across every profiling session here:
 
-Read `references/rust.md` for native CLI profiling, branch-vs-main worktree
-setup, `hyperfine` validation, JSON parity checks, and PR performance workflow
-reproduction.
+- Measure end-to-end on real logs before trusting a profile. The wins in this
+  repository came from timing the real CLI over real Claude data; a
+  microbenchmark answers an isolated question without predicting a CLI win.
+- Re-verify `daily`, `weekly`, `monthly`, `session`, and `blocks` JSON after
+  touching aggregation order, and record in the commit message any hotspot that
+  was measured and deliberately left alone.
 
-## TypeScript And Scripts
+## Node Paths
 
-Read `references/typescript.md` for Node profiler commands, package script
-profiling, TypeScript launcher/Nushell benchmark setup, profile reading, and
-ccusage-specific performance lessons.
+`apps/ccusage/src/cli.js` resolves and spawns the platform binary, so the
+JavaScript side is a startup-latency question rather than a throughput one — a
+profile of it covers launcher startup, not the work the binary does:
+
+```sh
+LOG_LEVEL=0 node --cpu-prof --cpu-prof-dir /tmp/ccusage-profiles apps/ccusage/src/cli.js daily --offline --json
+```
+
+The same applies to the TypeScript tools under `nix/tools/`, which run on
+`node`. Scripts in `apps/ccusage/scripts/` do not: they carry `nix shell`
+shebangs that pick nushell, babashka, or bun, so time the script itself and
+profile with that runtime's own tooling rather than `NODE_OPTIONS`.
+
+Read `.cpuprofile` output bottom-up by self time in Chrome DevTools or the VS
+Code profiler, and map hot frames back to source with `rg`. Point
+`--cpu-prof-dir` outside the worktree — nothing here ignores a `profiles/`
+directory.

@@ -5,50 +5,21 @@ description: Guides ccusage structural code searches with ast-grep. Use when fin
 
 # ast-grep
 
-Use ast-grep when a search needs syntax structure rather than plain text. Prefer `rg` for simple text search.
+Reach for ast-grep when a search depends on syntax structure — a macro call with
+particular arguments, a match arm shape, an attribute on an item. `rg` is faster
+for plain text, and `reduce-similarities` owns duplicate-code detection.
 
-## Tooling
+`ast-grep` comes from the Nix dev shell, so prefix with `direnv exec .` when the
+shell is not already active. There is no `sgconfig.yml` here: relational rules go
+through `scan --inline-rules` or a throwaway `--rule` file rather than a project
+rule set. Scoping to `rust`, `apps`, `docs`, or `nix` keeps large searches quick,
+though a bare root search already skips gitignored trees.
 
-This repo provides `ast-grep` through `flake.nix`. Run commands from the Nix dev shell, or use `direnv exec .` when the shell is not already active:
+Start with `run --pattern` and widen only if it under-matches. Give relational
+rules `stopBy: end`, or they stop at the first node in that direction. When a
+pattern does not match the shape you expected, dump the parse with
+`--debug-query`.
 
-```sh
-direnv exec . ast-grep run --lang rust --pattern 'println!($$$ARGS)' rust
-direnv exec . ast-grep run --lang ts --pattern '/$P/' --json=stream apps packages
-```
+https://ast-grep.github.io/guide/pattern-syntax.html
 
-If `direnv` is unavailable and this is a one-off search, use comma as a fallback:
-
-```sh
-, ast-grep run --lang rust --pattern 'println!($$$ARGS)' rust
-, ast-grep run --lang ts --pattern '/$P/' --json=stream apps packages
-```
-
-## Workflow
-
-1. Describe the syntax shape you need to find.
-2. Start with a small pattern and test it against the repo.
-3. Use `--debug-query` when the pattern does not match the AST shape you expected.
-4. Only move to YAML rules when `run --pattern` cannot express the search.
-
-## Commands
-
-For quick pattern searches:
-
-```sh
-ast-grep run --lang rust --pattern 'pub fn $NAME($$$ARGS) -> $RET { $$$BODY }' rust
-ast-grep run --lang ts --pattern 'console.log($ARG)' apps packages
-```
-
-For JSON output that scripts can consume:
-
-```sh
-ast-grep run --lang rust --pattern 'String::from($ARG)' --json=stream rust
-ast-grep run --lang ts --pattern '/$P/' --json=stream apps packages
-```
-
-## Rule Tips
-
-- Use `run --pattern` for simple single-node matches.
-- Use `scan --rule` or `scan --inline-rules` for relational rules such as `inside` or `has`.
-- Add `stopBy: end` to relational rules so ast-grep searches the full direction.
-- Use `--debug-query=ast`, `--debug-query=cst`, or `--debug-query=pattern` when a rule does not match the code shape you expected.
+https://ast-grep.github.io/reference/rule.html

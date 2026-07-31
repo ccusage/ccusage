@@ -1,93 +1,54 @@
 # Rust Profiling
 
-Use this reference for native CLI performance work.
+## Before Optimizing
 
-## Preparation
-
-Read the relevant local Rust Performance Book pages before non-trivial
-optimization. Locate the clone instead of assuming a machine-specific path:
+For non-trivial work, read the Rust Performance Book chapters that apply
+(`profiling`, `io`, `heap-allocations`, `parallelism`, `type-sizes`). A local
+clone is faster to grep than the site; locate it instead of assuming a path:
 
 ```fish
 set perf_book_dir (ghq list --full-path nnethercote/perf-book | head -n 1)
-sed -n '1,220p' "$perf_book_dir/src/profiling.md"
-sed -n '1,220p' "$perf_book_dir/src/io.md"
-sed -n '1,220p' "$perf_book_dir/src/heap-allocations.md"
-sed -n '1,220p' "$perf_book_dir/src/parallelism.md"
-sed -n '1,220p' "$perf_book_dir/src/type-sizes.md"
+rg --files "$perf_book_dir/src"
 ```
 
-If there is no local clone, use the hosted Rust Performance Book as fallback:
-`https://nnethercote.github.io/perf-book/`.
+https://nnethercote.github.io/perf-book/
 
-Build release binaries before timing:
+## Measuring
+
+Time release builds only:
 
 ```sh
 direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
 ```
 
-## Branch Comparison
+Build main in a separate worktree so the checkout you are editing stays put
+(`git wt`, or `git worktree add /tmp/ccusage-main origin/main`) and build it the
+same way; the binaries land at `<worktree>/rust/target/release/ccusage`.
 
-Create a separate main worktree for branch-vs-main comparisons:
-
-```sh
-command git fetch origin main
-command git worktree add /tmp/ccusage-main origin/main
-direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
-cd /tmp/ccusage-main
-direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
-```
-
-Measure real commands with deterministic output settings:
+Every measured command carries the same prefix. Without it, progress output,
+terminal width, color, and timezone all move the numbers:
 
 ```sh
-hyperfine --warmup 4 --runs 10 --shell none \
-	"env LOG_LEVEL=0 COLUMNS=200 NO_COLOR=1 TZ=UTC rust/target/release/ccusage daily --offline --json" \
-	"env LOG_LEVEL=0 COLUMNS=200 NO_COLOR=1 TZ=UTC /tmp/ccusage-main/rust/target/release/ccusage daily --offline --json" \
-	--export-json /tmp/rust-hyperfine.json
+env LOG_LEVEL=0 COLUMNS=200 NO_COLOR=1 TZ=UTC rust/target/release/ccusage daily --offline --json
 ```
 
-For JSON parity, write both outputs and validate with `jq`:
+Feed both binaries to one `hyperfine --warmup 4 --runs 10 --shell none` run, and
+confirm the two JSON outputs match — plus table output when the change can
+affect rendering — before believing a speedup.
 
-```sh
-env LOG_LEVEL=0 COLUMNS=200 NO_COLOR=1 TZ=UTC rust/target/release/ccusage daily --offline --json >/tmp/head.json
-env LOG_LEVEL=0 COLUMNS=200 NO_COLOR=1 TZ=UTC /tmp/ccusage-main/rust/target/release/ccusage daily --offline --json >/tmp/main.json
-jq -e . /tmp/head.json >/dev/null
-jq -e . /tmp/main.json >/dev/null
-```
+## What Moves The Needle Here
 
-## What To Check
+- I/O count and buffering, before any CPU-only tweak.
+- Allocation and cloning on hot paths: borrowed `&str`, `Arc<str>`, or typed
+  summaries instead of owned `String`, and aggregating earlier so large
+  intermediate vectors never exist.
+- Parallelism only when it improves end-to-end time on real fixture shapes.
+- Binary size when adding a dependency or feature (`rust-binary-size` skill).
 
-- I/O count and buffering before CPU-only tweaks.
-- Avoid unnecessary `String` allocation and cloning on hot paths; prefer borrowed
-  `&str`, `Arc<str>`, or typed summaries where ownership is needed.
-- Avoid returning large intermediate object vectors when aggregation can happen
-  earlier without changing output.
-- Use parallelism only when it improves end-to-end command time on real fixture
-  shapes.
-- Keep binary size visible when adding dependencies or enabling features.
+## Reproducing The CI Performance Comment
 
-## PR Performance Workflow
-
-When CI performance comments are relevant, inspect options with `--help`, but do
-not treat help output as a profiling workload:
-
-```sh
-apps/ccusage/scripts/compare-pr-performance.bb --head-runtime rust --help
-```
-
-To reproduce the workflow shape locally, pass real fixture and worktree inputs:
-
-```sh
-apps/ccusage/scripts/compare-pr-performance.bb \
-	--base-dir /tmp/ccusage-main \
-	--head-dir "$PWD" \
-	--head-runtime rust \
-	--fixture-dir apps/ccusage/test/fixtures/claude \
-	--codex-fixture-dir apps/ccusage/test/fixtures/codex \
-	--runs 1 \
-	--warmup 0 \
-	--output /tmp/rust-perf-comment.md
-```
-
-Profile before committing an optimization. Validate with end-to-end `hyperfine`
-and JSON/table parity, not only microbenchmarks.
+`apps/ccusage/scripts/compare-pr-performance.bb --help` lists the options; the
+`compare-pr-performance.bb` step in `.github/workflows/ci.yaml` is the reference
+for a realistic argument set. Locally, point `--base-dir` at the main worktree
+and `--head-dir` at `$PWD`, and cut `--runs`/`--warmup` down to keep iteration
+fast.
