@@ -23,7 +23,7 @@ Read before editing:
   builds in, which is what a change to it costs. Some adapters add a
   `src/README.md` describing the source format.
 
-Two boundaries the crate names do not reveal: `ccusage-cli` holds the plain
+Two boundaries the crate names hide: `ccusage-cli` holds the plain
 argument types while `ccusage-cli-parser` holds the parser, help renderer, and
 embedded help JSON that only the binary depends on; `rust/crates/ccusage` stays
 thin on purpose, holding dispatch plus the commands that are not an agent report.
