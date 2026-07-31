@@ -38,7 +38,7 @@ The subject names the artifact or behavior changed and reads sensibly alone in a
 
 The `commit-msg` hook runs `scripts/validate-commit-scope.nu`: when staged paths live under `rust/adapters/<agent>/`, the scope must be that agent (`fix(kimi)`), one of the cross-cutting scopes, or — for a change spanning several agents — a workspace scope. `rust/adapters/common/` derives `adapter`, not `common`. Read the script for the current lists; no other part of the tree derives a scope.
 
-Formatter-only changes are `chore: format` or `chore(<scope>): format`. Messages are US English.
+Formatter-only changes are `chore: format`, or `chore(<scope>): format` when the scope rule above applies. Messages are US English.
 
 ## Push (push=true)
 

@@ -28,10 +28,11 @@ profile of it covers launcher startup, not the work the binary does:
 LOG_LEVEL=0 node --cpu-prof --cpu-prof-dir /tmp/ccusage-profiles apps/ccusage/src/cli.js daily --offline --json
 ```
 
-The same applies to the TypeScript tools under `nix/tools/`, which run on
-`node`. Scripts in `apps/ccusage/scripts/` do not: they carry `nix shell`
-shebangs that pick nushell, babashka, or bun, so time the script itself and
-profile with that runtime's own tooling rather than `NODE_OPTIONS`.
+Nothing else here runs on `node`. The tools under `nix/tools/` are built with
+`bunCli`/`bunNodeModules` and run under Bun; scripts in `apps/ccusage/scripts/`
+carry `nix shell` shebangs that pick nushell, babashka, or bun. Time those
+scripts directly and profile with their own runtime's tooling rather than
+`NODE_OPTIONS`.
 
 Read `.cpuprofile` output bottom-up by self time in Chrome DevTools or the VS
 Code profiler, and map hot frames back to source with `rg`. Point
