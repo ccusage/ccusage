@@ -30,6 +30,17 @@ through a public interface; never weaken a valid test to get a green build. A te
 that asserts a document contains certain wording freezes text rather than proving a
 contract.
 
+Three failure modes worth naming:
+
+- Horizontal slicing. One seam, one test, one minimal implementation, then the next —
+  not every test first and the implementation afterwards.
+- Tautological expectations. The expected value comes from an independent source, not
+  from rerunning the production algorithm inside the test.
+- Mocking inside the system. Substitute only real boundaries — the pricing fetch and
+  the log directories — through the seams the code already has: `--offline`,
+  `CLAUDE_CONFIG_DIR` and its siblings, and `ccusage-test-support`. Collaborators the
+  workspace owns are exercised through their public interface.
+
 ## Focused runs
 
 Rust tests live in the `rust/Cargo.toml` workspace. Prefix with `direnv exec .` when

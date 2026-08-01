@@ -34,7 +34,5 @@ carry `nix shell` shebangs that pick nushell, babashka, or bun. Time those
 scripts directly and profile with their own runtime's tooling rather than
 `NODE_OPTIONS`.
 
-Read `.cpuprofile` output bottom-up by self time in Chrome DevTools or the VS
-Code profiler, and map hot frames back to source with `rg`. Point
-`--cpu-prof-dir` outside the worktree — nothing here ignores a `profiles/`
+Point `--cpu-prof-dir` outside the worktree — nothing here ignores a `profiles/`
 directory.
