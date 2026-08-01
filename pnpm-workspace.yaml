@@ -9,7 +9,7 @@ catalogs:
   docs:
     '@ryoppippi/vite-plugin-cloudflare-redirect': ^1.1.3
     vitepress: 2.0.0-alpha.18
-    vitepress-plugin-group-icons: ^1.7.2
+    vitepress-plugin-group-icons: ^1.7.6
     vitepress-plugin-llms: ^1.13.4
   types:
     '@types/node': ^24.13.2
