@@ -1,6 +1,8 @@
 use std::{
-    fs, io,
+    fs,
+    io::{self, Read as _},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -15,16 +17,41 @@ const PRICING_FETCH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 ///
 /// Each response body is kept on disk next to its ETag, and later fetches
 /// revalidate with `If-None-Match`: an unchanged document costs a bodyless 304
-/// instead of the full download. GitHub serves the LiteLLM pricing table with a
-/// strong ETag, so a 1-minute polling loop drops from ~1.7MB per run to a few
-/// hundred bytes. The cache is best-effort like the statusline cache: a missing
-/// or torn entry just means a full fetch.
+/// instead of the full download. GitHub serves the pricing table with an ETag
+/// (a weak validator on the gzip variant, which `If-None-Match` still matches),
+/// so a 1-minute polling loop drops from ~1.7MB per run to a few hundred
+/// bytes. The cache is best-effort like the statusline cache: a missing or
+/// torn entry just means a full fetch.
 pub(crate) fn fetch_json(url: &str) -> io::Result<String> {
     fetch_json_with_cache_dir(url, &default_cache_dir())
 }
 
+/// Per-user cache directory. `XDG_CACHE_HOME` (or `~/.cache`) keeps the cache
+/// out of any world-shared /tmp on Linux, where another local user could plant
+/// or symlink entries; the temp dir — already per-user on macOS and Windows —
+/// is only the fallback when no home is available.
 fn default_cache_dir() -> PathBuf {
-    std::env::temp_dir().join("ccusage-http-cache")
+    cache_dir_under(
+        std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+        std::env::temp_dir(),
+    )
+}
+
+fn cache_dir_under(
+    xdg_cache_home: Option<PathBuf>,
+    home: Option<PathBuf>,
+    temp_dir: PathBuf,
+) -> PathBuf {
+    xdg_cache_home
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            home.filter(|path| path.is_absolute())
+                .map(|home| home.join(".cache"))
+        })
+        .unwrap_or(temp_dir)
+        .join("ccusage")
+        .join("http-cache")
 }
 
 fn fetch_json_with_cache_dir(url: &str, cache_dir: &Path) -> io::Result<String> {
@@ -41,41 +68,86 @@ fn fetch_json_with_cache_dir(url: &str, cache_dir: &Path) -> io::Result<String> 
     }
     let mut response = match request.call() {
         Ok(response) => response,
-        // A failed revalidation must not take down a run that still has a
-        // previously validated body on disk.
+        // A 4xx other than 429 means the URL itself no longer works (moved,
+        // gone). Surface the error so the caller's embedded fallback — which
+        // every release refreshes — wins over a cache frozen at the last
+        // successful fetch.
+        Err(ureq::Error::StatusCode(code)) if (400..500).contains(&code) && code != 429 => {
+            return Err(io::Error::other(format!("HTTP {code}")));
+        }
+        // 5xx, 429, and transport errors are transient: a previously
+        // validated body on disk beats taking the run down.
         Err(error) => {
             return match cached {
-                Some(cached) => Ok(cached.body),
+                Some(cached) => {
+                    log_stale_cache_use(url, &error.to_string());
+                    Ok(cached.body)
+                }
                 None => Err(io::Error::other(error.to_string())),
             };
         }
     };
-    if response.status().as_u16() == 304
-        && let Some(cached) = cached
-    {
-        return Ok(cached.body);
+    let status = response.status().as_u16();
+    if status == 304 {
+        return match cached {
+            Some(cached) => Ok(cached.body),
+            // Only reachable if the server sends an unsolicited 304.
+            None => Err(io::Error::other("HTTP 304 without a cached body")),
+        };
     }
-    if response.status().as_u16() != 200 {
-        return Err(io::Error::other(format!(
-            "HTTP {}",
-            response.status().as_u16()
-        )));
+    if status != 200 {
+        return Err(io::Error::other(format!("HTTP {status}")));
     }
     let etag = response
         .headers()
         .get("etag")
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    let body = response
+    // Bound the DECOMPRESSED size: ureq's own `.limit()` sits below the gzip
+    // decoder, so it would only cap the compressed stream and a hostile
+    // origin could balloon memory ~1000x through it. `take` on the reader
+    // bounds what actually lands in the string.
+    let mut body = String::new();
+    let failure = match response
         .body_mut()
         .with_config()
-        .limit(PRICING_FETCH_MAX_BYTES)
-        .read_to_string()
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+        .reader()
+        .take(PRICING_FETCH_MAX_BYTES + 1)
+        .read_to_string(&mut body)
+    {
+        Ok(_) if body.len() as u64 > PRICING_FETCH_MAX_BYTES => Some(io::Error::other(format!(
+            "response body over {PRICING_FETCH_MAX_BYTES} bytes"
+        ))),
+        Ok(_) => None,
+        Err(error) => Some(io::Error::new(
+            io::ErrorKind::InvalidData,
+            error.to_string(),
+        )),
+    };
+    // A body that dies mid-read (timeout, truncated stream, oversize) gets
+    // the same stale fallback as a failed request.
+    if let Some(error) = failure {
+        return match cached {
+            Some(cached) => {
+                log_stale_cache_use(url, &error.to_string());
+                Ok(cached.body)
+            }
+            None => Err(error),
+        };
+    }
     if let Some(etag) = etag {
         cache.write(&etag, &body);
     }
     Ok(body)
+}
+
+/// Mirrors the WARN gating of the pricing refresh in `ccusage-core`: silent
+/// by default, visible at log level 4+ so serving a stale cached copy is
+/// never invisible to someone debugging pricing.
+fn log_stale_cache_use(url: &str, error: &str) {
+    if ccusage_core::log_level().is_some_and(|level| level >= 4) {
+        eprintln!("WARN  Failed to refresh {url} ({error}); serving cached copy.");
+    }
 }
 
 /// On-disk ETag + body pair for one URL, stored as a single file: the first
@@ -115,19 +187,33 @@ impl CacheEntry {
     }
 
     fn write(&self, etag: &str, body: &str) {
+        // Unique per process AND per call: two threads of one process racing
+        // on the same URL must not interleave writes into one temp file.
+        static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
         if let Some(parent) = self.path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        // Write to a per-process temp file and rename it into place: rename
-        // within a directory is atomic, so readers see either the old pair or
-        // the new pair, never a torn or mixed one.
-        let tmp_path = self
-            .path
-            .with_extension(format!("tmp{}", std::process::id()));
-        if fs::write(&tmp_path, format!("{etag}\n{body}")).is_ok()
-            && fs::rename(&tmp_path, &self.path).is_err()
-        {
-            let _ = fs::remove_file(&tmp_path);
+        let Some(file_name) = self.path.file_name().and_then(|name| name.to_str()) else {
+            return;
+        };
+        let tmp_path = self.path.with_file_name(format!(
+            "{file_name}.tmp.{}.{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed),
+        ));
+        // Rename within a directory is atomic, so readers see either the old
+        // pair or the new pair, never a torn or mixed one.
+        match fs::write(&tmp_path, format!("{etag}\n{body}")) {
+            Ok(()) => {
+                if fs::rename(&tmp_path, &self.path).is_err() {
+                    let _ = fs::remove_file(&tmp_path);
+                }
+            }
+            // A half-written temp file (out of disk space, say) must not
+            // linger either.
+            Err(_) => {
+                let _ = fs::remove_file(&tmp_path);
+            }
         }
     }
 }
@@ -158,10 +244,10 @@ fn cache_file_stem(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CacheEntry, cache_file_stem};
-    use std::fs;
+    use super::{CacheEntry, cache_dir_under, cache_file_stem};
+    use std::{fs, path::PathBuf};
 
-    fn unique_test_dir(label: &str) -> std::path::PathBuf {
+    fn unique_test_dir(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "ccusage-http-cache-test-{label}-{}",
             std::process::id()
@@ -244,6 +330,27 @@ mod tests {
         assert_ne!(
             cache_file_stem(&format!("https://example.com/{}/a.json", "x".repeat(200))),
             cache_file_stem(&format!("https://example.com/{}/b.json", "x".repeat(200))),
+        );
+    }
+
+    #[test]
+    fn cache_dir_prefers_xdg_then_home_then_temp() {
+        assert_eq!(
+            cache_dir_under(
+                Some(PathBuf::from("/xdg")),
+                Some(PathBuf::from("/home/u")),
+                PathBuf::from("/tmp"),
+            ),
+            PathBuf::from("/xdg/ccusage/http-cache"),
+        );
+        assert_eq!(
+            cache_dir_under(None, Some(PathBuf::from("/home/u")), PathBuf::from("/tmp")),
+            PathBuf::from("/home/u/.cache/ccusage/http-cache"),
+        );
+        // A relative XDG_CACHE_HOME must be ignored per the basedir spec.
+        assert_eq!(
+            cache_dir_under(Some(PathBuf::from("relative")), None, PathBuf::from("/tmp")),
+            PathBuf::from("/tmp/ccusage/http-cache"),
         );
     }
 }
