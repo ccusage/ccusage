@@ -68,15 +68,14 @@ fn fetch_json_with_cache_dir(url: &str, cache_dir: &Path) -> io::Result<String> 
     }
     let mut response = match request.call() {
         Ok(response) => response,
-        // A 4xx other than 429 means the URL itself no longer works (moved,
-        // gone). Surface the error so the caller's embedded fallback — which
-        // every release refreshes — wins over a cache frozen at the last
-        // successful fetch.
-        Err(ureq::Error::StatusCode(code)) if (400..500).contains(&code) && code != 429 => {
+        // The URL itself no longer works (moved, gone): surface the error so
+        // the caller's embedded fallback — which every release refreshes —
+        // wins over a cache frozen at the last successful fetch.
+        Err(ureq::Error::StatusCode(code)) if is_permanent_http_failure(code) => {
             return Err(io::Error::other(format!("HTTP {code}")));
         }
-        // 5xx, 429, and transport errors are transient: a previously
-        // validated body on disk beats taking the run down.
+        // Everything else is treated as transient: a previously validated
+        // body on disk beats taking the run down.
         Err(error) => {
             return match cached {
                 Some(cached) => {
@@ -135,10 +134,28 @@ fn fetch_json_with_cache_dir(url: &str, cache_dir: &Path) -> io::Result<String> 
             None => Err(error),
         };
     }
-    if let Some(etag) = etag {
+    // Only a body that parses as JSON may replace the cached copy: the stale
+    // fallback is only sound while the copy on disk is known-good, and a
+    // hijacked or errored 200 (captive portal, CDN error page) must not
+    // evict it. The invalid body is still returned — the caller's own parse
+    // handling decides what happens to the run itself.
+    if let Some(etag) = etag
+        && looks_like_json(&body)
+    {
         cache.write(&etag, &body);
     }
     Ok(body)
+}
+
+/// A 404 or 410 means the URL itself is dead, so serving the stale cache
+/// forever would mask it. Every other status — 408, 421, 425, 429, 5xx —
+/// can be a passing condition and falls back to the cached copy.
+fn is_permanent_http_failure(code: u16) -> bool {
+    matches!(code, 404 | 410)
+}
+
+fn looks_like_json(body: &str) -> bool {
+    serde_json::from_str::<serde::de::IgnoredAny>(body).is_ok()
 }
 
 /// Mirrors the WARN gating of the pricing refresh in `ccusage-core`: silent
@@ -331,6 +348,29 @@ mod tests {
             cache_file_stem(&format!("https://example.com/{}/a.json", "x".repeat(200))),
             cache_file_stem(&format!("https://example.com/{}/b.json", "x".repeat(200))),
         );
+    }
+
+    #[test]
+    fn permanent_failure_is_a_short_allowlist() {
+        use super::is_permanent_http_failure;
+        assert!(is_permanent_http_failure(404));
+        assert!(is_permanent_http_failure(410));
+        for transient in [400u16, 401, 403, 408, 421, 425, 429, 500, 502, 503] {
+            assert!(
+                !is_permanent_http_failure(transient),
+                "HTTP {transient} must fall back to the cached copy"
+            );
+        }
+    }
+
+    #[test]
+    fn only_valid_json_may_replace_the_cached_copy() {
+        use super::looks_like_json;
+        assert!(looks_like_json("{\"model\":{}}"));
+        assert!(looks_like_json("[1, 2, 3]"));
+        assert!(!looks_like_json("<html>captive portal</html>"));
+        assert!(!looks_like_json("{\"truncated\":"));
+        assert!(!looks_like_json(""));
     }
 
     #[test]
