@@ -78,10 +78,13 @@ fn fetch_json_with_cache_dir(url: &str, cache_dir: &Path) -> io::Result<String> 
     Ok(body)
 }
 
-/// On-disk body + ETag pair for one URL.
+/// On-disk ETag + body pair for one URL, stored as a single file: the first
+/// line is the ETag, everything after it is the body. Keeping the pair in one
+/// file means one atomic rename replaces both together, so concurrent runs
+/// (a statusline and a polling collector, say) never observe a body paired
+/// with another run's ETag.
 struct CacheEntry {
-    body_path: PathBuf,
-    etag_path: PathBuf,
+    path: PathBuf,
 }
 
 struct CachedResponse {
@@ -91,35 +94,40 @@ struct CachedResponse {
 
 impl CacheEntry {
     fn for_url(dir: &Path, url: &str) -> Self {
-        let stem = cache_file_stem(url);
         Self {
-            body_path: dir.join(format!("{stem}.body")),
-            etag_path: dir.join(format!("{stem}.etag")),
+            path: dir.join(format!("{}.cache", cache_file_stem(url))),
         }
     }
 
     fn read(&self) -> Option<CachedResponse> {
-        let etag = fs::read_to_string(&self.etag_path).ok()?;
+        let raw = fs::read_to_string(&self.path).ok()?;
+        let (etag, body) = raw.split_once('\n')?;
         let etag = etag.trim();
         // The ETag goes back out as a header value, so drop anything that
         // could not have come from one.
         if etag.is_empty() || !etag.is_ascii() || etag.bytes().any(|byte| byte.is_ascii_control()) {
             return None;
         }
-        let body = fs::read_to_string(&self.body_path).ok()?;
         Some(CachedResponse {
             etag: etag.to_string(),
-            body,
+            body: body.to_string(),
         })
     }
 
     fn write(&self, etag: &str, body: &str) {
-        if let Some(parent) = self.body_path.parent() {
+        if let Some(parent) = self.path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        // Body first: an ETag on disk always refers to a fully written body.
-        if fs::write(&self.body_path, body).is_ok() {
-            let _ = fs::write(&self.etag_path, etag);
+        // Write to a per-process temp file and rename it into place: rename
+        // within a directory is atomic, so readers see either the old pair or
+        // the new pair, never a torn or mixed one.
+        let tmp_path = self
+            .path
+            .with_extension(format!("tmp{}", std::process::id()));
+        if fs::write(&tmp_path, format!("{etag}\n{body}")).is_ok()
+            && fs::rename(&tmp_path, &self.path).is_err()
+        {
+            let _ = fs::remove_file(&tmp_path);
         }
     }
 }
@@ -182,13 +190,37 @@ mod tests {
         let entry = CacheEntry::for_url(&dir, "https://example.com/pricing.json");
 
         entry.write("\"ok\"", "body");
-        fs::write(&entry.etag_path, "   \n").expect("overwrite etag");
+        fs::write(&entry.path, "   \nbody").expect("overwrite cache");
         assert!(entry.read().is_none(), "blank etag must not revalidate");
-        fs::write(&entry.etag_path, "line\r\nbreak").expect("overwrite etag");
+        fs::write(&entry.path, "etag\rwith-cr\nbody").expect("overwrite cache");
         assert!(
             entry.read().is_none(),
             "control characters must not reach a header value"
         );
+        fs::write(&entry.path, "etag-without-newline").expect("overwrite cache");
+        assert!(entry.read().is_none(), "a truncated entry must not be used");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cache_write_replaces_pair_atomically_and_cleans_up() {
+        let dir = unique_test_dir("atomic");
+        let _ = fs::remove_dir_all(&dir);
+        let entry = CacheEntry::for_url(&dir, "https://example.com/pricing.json");
+
+        entry.write("\"v1\"", "first");
+        entry.write("\"v2\"", "second\nwith\nnewlines");
+        let cached = entry.read().expect("cache entry after rewrite");
+        assert_eq!(cached.etag, "\"v2\"");
+        assert_eq!(cached.body, "second\nwith\nnewlines");
+        // No temp files may linger after successful writes.
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .expect("cache dir")
+            .filter_map(Result::ok)
+            .filter(|e| e.path() != entry.path)
+            .collect();
+        assert!(leftovers.is_empty(), "leftover files: {leftovers:?}");
 
         let _ = fs::remove_dir_all(&dir);
     }
