@@ -202,7 +202,6 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Copilot(args)) => agent_command_snapshot("copilot", args),
         Some(Command::Gemini(args)) => agent_command_snapshot("gemini", args),
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
-        Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
     }
@@ -607,22 +606,8 @@ fn applies_schema_documented_config_file_options() {
 fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
-        "claude",
-        "codex",
-        "opencode",
-        "amp",
-        "droid",
-        "codebuff",
-        "hermes",
-        "pi",
-        "goose",
-        "kilo",
-        "copilot",
-        "gemini",
-        "kimi",
-        "qwen",
-        "openclaw",
-        "antigravity",
+        "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
+        "copilot", "gemini", "kimi", "qwen", "openclaw",
     ];
 
     for agent in agents {

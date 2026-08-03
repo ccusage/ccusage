@@ -46,7 +46,6 @@ fn main() -> Result<()> {
         Some(Command::Copilot(args)) => adapter::copilot::run(args),
         Some(Command::Gemini(args)) => adapter::gemini::run(args),
         Some(Command::Kimi(args)) => adapter::kimi::run(args),
-        Some(Command::Antigravity(args)) => adapter::antigravity::run(args),
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
         None => {
             let args = AgentCommandArgs {
@@ -86,9 +85,8 @@ mod tests {
 
     #[test]
     fn agent_commands_are_exposed_by_independent_crates() {
-        let runs: [fn(AgentCommandArgs) -> Result<()>; 15] = [
+        let runs: [fn(AgentCommandArgs) -> Result<()>; 14] = [
             ccusage_adapter_amp::run,
-            ccusage_adapter_antigravity::run,
             ccusage_adapter_codebuff::run,
             ccusage_adapter_codex::run,
             ccusage_adapter_copilot::run,
@@ -104,7 +102,7 @@ mod tests {
             ccusage_adapter_qwen::run,
         ];
 
-        assert_eq!(runs.len(), 15);
+        assert_eq!(runs.len(), 14);
     }
 
     #[test]

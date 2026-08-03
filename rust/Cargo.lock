@@ -115,7 +115,6 @@ version = "0.0.0"
 dependencies = [
  "ccusage-adapter-all",
  "ccusage-adapter-amp",
- "ccusage-adapter-antigravity",
  "ccusage-adapter-claude",
  "ccusage-adapter-codebuff",
  "ccusage-adapter-codex",
@@ -147,7 +146,6 @@ name = "ccusage-adapter-all"
 version = "0.0.0"
 dependencies = [
  "ccusage-adapter-amp",
- "ccusage-adapter-antigravity",
  "ccusage-adapter-claude",
  "ccusage-adapter-codebuff",
  "ccusage-adapter-codex",
@@ -181,18 +179,6 @@ dependencies = [
  "jiff",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "ccusage-adapter-antigravity"
-version = "0.0.0"
-dependencies = [
- "ccusage-adapter-common",
- "ccusage-core",
- "ccusage-test-support",
- "jiff",
- "serde_json",
- "sqlite",
 ]
 
 [[package]]
