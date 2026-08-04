@@ -13,7 +13,7 @@ catalogs:
     vitepress-plugin-llms: ^1.13.4
   types:
     '@types/node': ^24.13.3
-    '@types/react': ^19.2.17
+    '@types/react': ^19.2.18
 
 enablePrePostScripts: true
 
