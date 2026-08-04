@@ -18,7 +18,6 @@ publish = false
 [workspace.dependencies]
 ccusage-adapter-all = { path = "crates/ccusage-adapter-all" }
 ccusage-adapter-amp = { path = "adapters/amp" }
-ccusage-adapter-antigravity = { path = "adapters/antigravity" }
 ccusage-adapter-claude = { path = "adapters/claude" }
 ccusage-adapter-codebuff = { path = "adapters/codebuff" }
 ccusage-adapter-codex = { path = "adapters/codex" }
@@ -42,7 +41,7 @@ ccusage-core = { path = "crates/ccusage-core" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }
 ccusage-test-support = { path = "crates/ccusage-test-support" }
 assert_fs = "1.1.4"
-compact_str = "0.9"
+compact_str = "0.10.0"
 insta = { version = "1.48.0", features = ["json"] }
 jiff = { version = "0.2.35", default-features = false, features = [
 	"std",
@@ -53,11 +52,11 @@ jiff = { version = "0.2.35", default-features = false, features = [
 memchr = "2.8.3"
 mimalloc = "0.1.52"
 minreq = { version = "3.0.0", default-features = false, features = ["https-rustls"] }
-rustc-hash = "2"
+rustc-hash = "2.1.3"
 schemars = "0.8"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-smallvec = "1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+smallvec = "1.15.2"
 sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
 terminal_size = "0.4.4"
 unicode-width = "0.2.2"

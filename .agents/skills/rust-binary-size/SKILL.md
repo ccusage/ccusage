@@ -1,6 +1,6 @@
 ---
 name: rust-binary-size
-description: Guides Rust binary size reduction for ccusage. Use when changing release profiles, dependency features, native packaging size, or investigating Rust executable bloat.
+description: Guides Rust binary size reduction for ccusage. Use when changing the rust/Cargo.toml release profile, dependency features, native packaging size, or investigating executable bloat with cargo bloat.
 paths:
   - 'rust/Cargo.toml'
   - 'rust/**/*.rs'
@@ -11,83 +11,46 @@ globs: 'rust/**/*.rs,rust/**/*.toml,apps/ccusage/scripts/**'
 
 # Rust Binary Size
 
-Use this skill when applying binary-size guidance to the Rust-first `ccusage`
-CLI, release profiles, native package binaries, dependency features, or size
-regression investigations.
-
-Primary external reference: <https://github.com/johnthagen/min-sized-rust>
+https://github.com/johnthagen/min-sized-rust
 
 ## Baseline
 
-Start by checking the existing release profile before adding new size settings:
+`[profile.release]` in `rust/Cargo.toml` already applies the `min-sized-rust`
+settings, including a separate `opt-level` for dependencies. Read it before adding
+anything, and change it only when a measurement argues for it.
 
-```sh
-sed -n '1,120p' rust/Cargo.toml
-```
-
-This workspace should keep stable release settings aligned with
-`min-sized-rust` unless a measured tradeoff argues otherwise:
-
-- `opt-level = "z"` for workspace crates unless benchmarking shows `"s"` is smaller.
-- `lto = "fat"` for maximum cross-crate dead-code elimination in release builds.
-- `codegen-units = 1` for better release optimization.
-- `panic = "abort"` only for binaries where stack unwinding is not required.
-- `strip = "symbols"` or an equivalent stable strip setting for packaged binaries.
+What ends up in a published platform package is the single `bin/ccusage` staged by
+the Nushell scripts in `apps/ccusage/scripts/`, so packaged size tracks the binary
+almost exactly. The `development` skill covers that packaging seam.
 
 ## Investigation
 
-Prefer measurement before changing code or dependencies:
+Measure before editing code or dependencies:
 
 ```sh
 direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
 ls -lh rust/target/release/ccusage
 ```
 
-When a size regression is not explained by the release profile, inspect
-dependency features and large symbols before editing:
+When the release profile does not explain a regression, look at feature flags
+(`cargo tree -e features -p ccusage`) and large symbols (`cargo bloat --release
+--bin ccusage --crates`), both against the same manifest. `cargo bloat` is not in
+the dev shell; the `missing-tools` skill covers running it without a flake change.
 
-```sh
-direnv exec . cargo tree --manifest-path rust/Cargo.toml -e features -p ccusage
-direnv exec . cargo bloat --manifest-path rust/Cargo.toml --release --bin ccusage --crates
-```
+## Change Ordering
 
-If `cargo bloat` is unavailable, use the `missing-tools` skill or run it through
-the Nix/dev-shell path preferred by the repository. Do not add a new tool to the
-flake unless repeated project work needs it.
+Low-risk first: drop unnecessary dependency default features once tests show they
+are unused, narrow optional features rather than swapping a well-fitting crate, and
+remove dead release-only code paths or assets. CLI behavior, JSON output, table
+output, and packaging semantics stay unchanged unless the user asks otherwise.
 
-## Safe Changes
-
-Prefer stable, low-risk changes first:
-
-- Disable unnecessary dependency default features when tests prove the disabled
-  features are not required.
-- Narrow optional dependency features instead of replacing a well-fitting crate.
-- Remove unused code paths, generated assets, or format-heavy diagnostics from
-  release-only paths only when behavior remains correct.
-- Keep `ccusage` functionality, JSON output, table output, and packaging
-  semantics unchanged unless the user explicitly asks for a behavior change.
-
-## Risky Changes
-
-Treat these as opt-in only unless the user explicitly asks for an aggressive
-minimum-size experiment:
-
-- Nightly-only flags such as `-Zlocation-detail`, `-Zfmt-debug`,
-  `panic=immediate-abort`, or `build-std`.
-- `#![no_std]`, `#![no_main]`, C entry points, or manual stdio.
-- UPX or other binary packers, especially for distributed CLI artifacts.
-- Dynamic Rust linking through `prefer-dynamic`, because deployment and ABI
-  constraints make it unsuitable for ordinary CLI releases.
+These are opt-in experiments, appropriate only when the user asks for an aggressive
+minimum-size push: nightly-only flags (`-Zlocation-detail`, `-Zfmt-debug`,
+`panic=immediate-abort`, `build-std`), `#![no_std]`/`#![no_main]` with manual stdio,
+binary packers such as UPX, and `prefer-dynamic` linking.
 
 ## Validation
 
-After changes, run formatting and the relevant behavioral checks:
-
-```sh
-direnv exec . just fmt
-direnv exec . just test
-```
-
-For release-profile or packaging changes, also build the native CLI and compare
-the binary size with the previous measurement. Record the command and result in
-the PR body or review reply.
+For release-profile or packaging changes, rebuild the native CLI, compare against
+the earlier measurement, and record the command and result in the PR body or review
+reply. Repo-wide format and test recipes are in the `development` skill.

@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Creates atomic Conventional Commits. Use when committing code changes, splitting hunks into revertable units, or writing detailed commit messages.
+description: Creates atomic Conventional Commits. Use when committing code changes, splitting a diff into independently revertable hunks, staging precise patches non-interactively, or writing commit messages.
 ---
 
 <!--
@@ -9,69 +9,39 @@ Example prompts:
   /commit push=true
 -->
 
+# Commit
+
 Arguments:
 
-- push: whether to push after committing (default: false). Set to true to push to remote.
-
-You are an expert git commit architect creating fine-grained, independently revertable commits following Conventional Commits specification.
-
-Before committing, inspect the current state:
-
-```sh
-git status --short
-git diff HEAD
-git log --oneline -10
-```
-
-## Core Philosophy
-
-Read `references/commit-guidance.md` for commit-splitting and message rules.
-
-For concrete good and bad examples, read `references/revertable-commits.md`.
+- `push`: push after committing (default: `false`).
 
 ## Workflow
 
-1. **Analyze the changes above**: Review the git state already provided
-2. **Review history**: Match existing commit patterns and inspect relevant file history before deciding commit boundaries
-3. **Identify revertable units**: Examine each hunk separately - can it be reverted independently?
-4. **For each unit**:
-   - Extract specific hunks using `git diff <file>`
-   - Create patch with only desired hunks
-   - Stage only that patch with `git apply --cached -v <patch>`
-   - Craft message following format below
-   - Commit and verify with `git show HEAD`
+1. Read the state and recent history — `git status --short`, `git diff HEAD`, `git log --oneline -10` — and match the granularity, scopes, and explanation style already in the log.
+2. Split the diff into independently revertable units, hunk by hunk rather than file by file.
+3. Stage each unit with `git apply --cached -v <patch>`. `git add -p` and `git add --interactive` hang in this environment, so a patch is the only way to stage part of a file. Read `references/git-apply.md` when one fails to apply.
+4. Commit, then confirm with `git show HEAD`.
 
-**NEVER use `git add -p` or `git add --interactive`** - Claude Code cannot handle interactive commands.
+## Revertability
 
-## Patch Staging
+Every commit answers "if I revert this alone, does anything else break?". Tiny commits are expected: one review comment, one wording correction, one reference-file extraction.
 
-Use `git apply --cached -v` to stage precise non-interactive patches. Read `references/git-apply.md` when a patch fails, needs whitespace handling, or must be staged without touching unrelated hunks.
+Tiny is not partial. A move, rename, or extraction lands as a single commit holding both sides — old path removed, new path added, references updated, generated links synced.
 
-## History Inspection
+Keep separate concerns in separate commits even when each change is correct, so reverting one concern does not revert unrelated work.
 
-Use standard git history commands to understand intent before committing. Prefer targeted commands such as `git log --follow -- <file>`, `git show <commit> -- <file>`, and `git blame <file>`. Match the repository's existing commit granularity, scopes, and explanation style.
+PR branches are squash-merged, so review fixes stack as follow-up commits. Amend only unpublished local mistakes, or when the user asks.
 
-## Commit Message Format
+## Messages
 
-Read `references/commit-guidance.md` for Conventional Commit message rules.
+The subject names the artifact or behavior changed and reads sensibly alone in a commit list; reviewer context goes in the body. Prefer `docs(skills): clarify reference routing` with a body citing the CodeRabbit feedback over `chore: address review feedback`. The body wraps at 72 columns and covers problem, rationale, decisions, and impact.
 
-## Quality Checks
+The `commit-msg` hook runs `scripts/validate-commit-scope.nu`: when staged paths live under `rust/adapters/<agent>/`, the scope must be that agent (`fix(kimi)`), one of the cross-cutting scopes, or — for a change spanning several agents — a workspace scope. `rust/adapters/common/` derives `adapter`, not `common`. Read the script for the current lists; no other part of the tree derives a scope.
 
-- Can this be reverted without breaking other functionality?
-- Is this the smallest logical unit?
-- Does message clearly explain the change?
-- Does it match project's commit patterns?
-- No debugging statements or commented code without explanation
+Formatter-only changes are `chore: format`, or `chore(<scope>): format` when the scope rule above applies. Messages are US English.
 
-## Key Principles
+## Push (push=true)
 
-- **Never push to main branch directly** - create a PR instead
-- Match project's established scope naming and conventions
-- Include issue/PR references when applicable
-- If the commit is just for applying formatter use `chore(xxx): format` or just `chore: format`
+Changes reach `main` through a PR, so commit on a feature branch; `references/push.md` has the branch and upstream checks.
 
-## Push (if push=true)
-
-After all commits are complete, push to remote. Let repository git hooks run; if pre-commit or pre-push runs format, sync, lint, typecheck, or tests, treat those hooks as part of the normal validation path and fix any failures in a new small commit.
-
-Read `references/push.md` for the exact upstream check and push commands.
+Push once every commit is in place and let the hooks in `nix/git-hooks.nix` run — treefmt and gitleaks on commit; treefmt, gitleaks, oxlint, `clippy -D warnings`, node test, and cargo test on push. Their failures are part of normal validation, so fix them in a new small commit.

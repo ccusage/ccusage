@@ -1,57 +1,37 @@
 ---
 name: agent-sources
-description: Guides ccusage agent source formats. Use when checking agent log locations, raw record structure, token mappings, model names, precomputed costs, or source-specific CLI behavior.
+description: Guides ccusage agent source formats. Use when checking where an agent stores its logs, how raw records map to tokens and models, how precomputed costs interact with cost modes, or which reports an agent supports.
 ---
 
 # ccusage Agent Sources
 
-Use this skill when inspecting source data formats, log paths, token
-normalization, precomputed cost semantics, or source-specific command behavior
-for any supported agent.
+Every agent is an adapter crate in `rust/adapters/<agent>` that turns one
+source's raw logs into the shared report shapes. `ccusage <report>` aggregates
+all of them; `ccusage <agent> <report>` scopes to one.
 
-## Shared Report Concepts
+Which reports an agent accepts is not uniform, and it is encoded twice:
+`STANDARD_AGENT_REPORTS` / `OPENCODE_AGENT_REPORTS` in
+`rust/crates/ccusage-cli/src/types.rs` drive parsing, while
+`agent_report_supported` in `rust/crates/ccusage-cli-parser/src/parser.rs`
+decides what is accepted per agent name. Changing an agent's report set means
+updating both. Keep command names and flag semantics aligned across agents
+unless the source data forces the difference, and say so in a comment when it
+does.
 
-Reports aggregate raw usage into daily, monthly, session, or billing-block summaries and output either tables or JSON.
+Cost handling is shared, not per-agent: `auto`, `calculate`, and `display`
+differ only in how a record's precomputed `costUSD` competes with token-derived
+cost, decided in `rust/crates/ccusage-core/src/cost.rs`. Pricing comes from
+LiteLLM with an embedded snapshot behind `--offline` (`pricing.rs`, and the
+`rust` skill for how both snapshots are built into the binary).
 
-The canonical command surface is the unified `ccusage` CLI:
+## Before Changing A Source
 
-```sh
-ccusage daily
-ccusage codex daily
-ccusage opencode daily
-ccusage amp daily
-ccusage pi daily
-```
+Read that agent's own docs first — they carry the paths, record shapes, token
+mapping, model fallbacks, and cost quirks that are not shared:
 
-Standalone agent wrapper packages have been removed. Use the unified `ccusage <agent> ...` commands in docs, tests, and examples, and do not reintroduce wrapper commands such as `ccusage-codex`, `ccusage-opencode`, `ccusage-amp`, or `ccusage-pi`.
+- `rust/adapters/<agent>/README.md` - what the crate owns and where its data lives.
+- `rust/adapters/<agent>/src/README.md` - record shapes and token/cost rules,
+  present for the sources that need them.
 
-Cost modes:
-
-- `auto` - prefer pre-calculated `costUSD` when available, otherwise calculate from tokens.
-- `calculate` - calculate from token counts and ignore pre-calculated costs.
-- `display` - use pre-calculated costs and show `0` when missing.
-
-Pricing generally comes from LiteLLM's `model_prices_and_context_window.json`. The `--offline` flag forces embedded pricing snapshots where supported.
-
-## Agent Details
-
-Read only the relevant adapter README before changing parser behavior, token
-mappings, data directory detection, fallback models, or agent-specific CLI
-flags:
-
-- Claude Code: `rust/adapters/claude/src/README.md`
-- Codex: `rust/adapters/codex/src/README.md`
-- OpenCode: `rust/adapters/opencode/src/README.md`
-- Amp: `rust/adapters/amp/src/README.md`
-- pi-agent: `rust/adapters/pi/src/README.md`
-- Grok Build CLI: `rust/adapters/grok/README.md`
-
-## Implementation Notes
-
-Agent adapter architecture lives in
-`rust/crates/ccusage/src/adapter/AGENTS.md`. Read that local architecture file
-when changing adapter module layout, shared implementation boundaries, migration
-strategy, tests, docs, terminal output, or benchmark expectations.
-
-Keep command names and flag semantics aligned across agents unless the source
-data forces a difference.
+Architecture and the shared-vs-source boundary live in
+`rust/adapters/README.md`; the per-change workflow in `rust/adapters/AGENTS.md`.

@@ -1,33 +1,36 @@
-# ccusage Commands
+# Commands, Dependencies, Validation, Releases
 
-`just` is the single entry point for repo-wide tasks. Run `just --list` to see
-every recipe. Use these unless a narrower package command is more appropriate:
+## Commands
 
-```sh
-just test
-just fmt
-just typecheck
-just build
-just check
-```
+`just` is the single entry point (`just --list`). Each workspace package owns a
+justfile imported as a module, so package recipes are `just <module>::<recipe>`
+and `just <module>::--list` lists one module. Whole-repo jobs the Nix flake owns
+(`fmt`, `check`, `schema`) stay at the root.
 
-Releases are managed by [tagpr](https://github.com/Songmu/tagpr): merging the
-auto-generated release PR tags the merge commit and triggers the publish
-workflow. The bump is patch by default; label merged PRs with `minor` or
-`major` to raise it.
+`just fmt` mutates files, so run it before the read-only checks.
 
-Useful main CLI commands:
+## Adding A Dependency Or Tool
 
-```sh
-pnpm --filter ccusage run start daily
-pnpm --filter ccusage run start monthly
-pnpm --filter ccusage run start session
-pnpm --filter ccusage run start blocks
-pnpm --filter ccusage run start daily --json
-pnpm --filter ccusage run start daily --mode auto
-pnpm --filter ccusage run start blocks --active
-pnpm --filter ccusage run start blocks --recent
-pnpm --filter ccusage run start blocks --token-limit max
-pnpm --filter ccusage run test:statusline
-cat apps/ccusage/test/statusline-test.json | pnpm --filter ccusage run start statusline
-```
+`comma` and `nix run` are fine for one-off investigation, but anything used
+repeatedly belongs in the repo: system and dev-shell CLIs in `flake.nix`
+(`nix/dev-shell.nix` is the current list), JS/TS tooling and scripts in
+`package.json`. Land the matching lockfile update — `flake.lock`,
+`pnpm-lock.yaml` — in the same commit so the addition stays independently
+revertable.
+
+## Validation
+
+Git hooks and CI cover the standard path: `.pre-commit-config.yaml` is generated
+from `nix/git-hooks.nix` and shows exactly which hook runs at which stage.
+
+Run `just typecheck` and `just test` yourself when the change touches behavior,
+types, or package code, or when the hooks and CI do not cover the edited files.
+Narrower package recipes are useful while iterating; finish with the root ones.
+
+## Releases
+
+Releases are managed by tagpr: merging the auto-generated release PR tags the
+merge commit and triggers the publish workflow. The bump is patch by default;
+label a merged PR `minor` or `major` to raise it.
+
+https://github.com/Songmu/tagpr

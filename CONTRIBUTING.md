@@ -57,6 +57,15 @@ Use the canonical `ccusage` command in docs and tests. Standalone wrapper packag
 
 Do not proactively create documentation files unless the change requires user-facing documentation.
 
+## Commit and PR Titles
+
+Commits and PR titles follow [Conventional Commits](https://www.conventionalcommits.org/). When a change
+belongs to one agent, the scope is that agent's directory name under `rust/adapters/` — `fix(kimi): ...`,
+`feat(codex): ...` — rather than a label invented for the occasion.
+
+A `commit-msg` hook checks this against your staged files, and CI checks the PR title, since a squash merge
+turns that title into the commit that lands on `main`.
+
 ## FAQ
 
 ### Why are new issues and PRs auto-closed?

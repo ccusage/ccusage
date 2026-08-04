@@ -1,49 +1,18 @@
 # AI Review
 
-## Reviewers
+Request CodeRabbit (`@coderabbitai`) on every PR, and Cubic (`@cubic-dev-ai`,
+the GitHub user `cubic.dev`) when it is usable on the repository. If the PR or
+recent repository comments show a different Cubic handle, use the one shown
+there.
 
-Always request CodeRabbit review. If Cubic is usable on the repository, request Cubic too.
+Add a top-level comment mentioning the bots after opening the PR, and mention
+the relevant bot again after every meaningful push; repeat the request when a
+bot does not rerun on its own.
 
-Current handles:
-
-- CodeRabbit: `@coderabbitai`
-- Cubic: `@cubic-dev-ai`
-
-`@cubic-dev-ai` was verified as the GitHub user `cubic.dev`. If a current PR or recent repository comments show a different Cubic handle, use the handle shown there.
-
-## Request Review
-
-After opening the PR, add a top-level PR comment that explicitly mentions the
-reviewer bots. If Cubic is unavailable on that PR, keep the CodeRabbit request.
-
-Mention the relevant bot after every meaningful push so it treats the request as directed at it instead of ordinary human discussion.
-
-## Inspect Review
-
-Poll PR comments, reviews, and inline threads before declaring the PR ready.
-
-Use GraphQL review threads when resolution state or inline context matters.
-
-Read `gh-review.md` for concrete `gh` commands to request review, list comments, reply to inline review comments, add top-level PR comments, update your own comments, and query review threads.
-
-## Respond
-
-Classify each bot review item as actionable, a question, a false positive, or informational. Do not silently ignore actionable feedback.
-
-For actionable feedback:
-
-1. Apply the smallest fix that preserves repo conventions.
-2. Run the relevant checks.
-3. Create a small follow-up commit using the `commit` skill.
-4. Push normally with `git push`.
-5. Reply in the specific thread with the relevant bot mentioned at the start, what changed, and which validation passed.
-
-Reply to inline review comments through the pull request review comment reply
-endpoint shown in `gh-review.md`.
-
-For Cubic comments, use `@cubic-dev-ai` in the reply body instead.
-
-If reviewer bots do not rerun automatically after a push, add another top-level
-PR comment using the request-review command from `gh-review.md`.
-
-Do not wait forever. If a reviewer bot does not respond after a reasonable polling window, leave the latest request visible on the PR and report that review is still pending.
+Poll comments, reviews, and inline threads before calling the PR ready — see
+`gh-review.md`, including the GraphQL query for thread resolution state.
+Classify each item as actionable, a question, a false positive, or
+informational, and for every actionable one apply the smallest fix that keeps
+repo conventions, run the relevant checks, commit and push through the `commit`
+skill, then reply in that thread — opening with the bot's mention — stating what
+changed and which validation passed.

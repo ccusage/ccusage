@@ -48,8 +48,6 @@ pub struct CcusageConfig {
     pub gemini: Option<GeminiConfig>,
     /// Kimi configuration.
     pub kimi: Option<KimiConfig>,
-    /// Antigravity configuration.
-    pub antigravity: Option<AntigravityConfig>,
     /// Qwen configuration.
     pub qwen: Option<QwenConfig>,
     /// Grok Build CLI configuration.
@@ -201,21 +199,6 @@ pub struct PiCommandsConfig {
     pub daily: Option<PiOptions>,
     pub monthly: Option<PiOptions>,
     pub session: Option<PiOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AntigravityConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<AntigravityCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AntigravityCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -1163,26 +1146,9 @@ mod tests {
             &schema,
             "ccusage-config",
             &[
-                "$schema",
-                "amp",
-                "antigravity",
-                "claude",
-                "codebuff",
-                "codex",
-                "commands",
-                "copilot",
-                "defaults",
-                "droid",
-                "gemini",
-                "goose",
-                "grok",
-                "hermes",
-                "kilo",
-                "kimi",
-                "opencode",
-                "openclaw",
-                "pi",
-                "qwen",
+                "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
+                "droid", "gemini", "goose", "grok", "hermes", "kilo", "kimi", "opencode", "openclaw",
+                "pi", "qwen",
             ],
         );
         assert!(

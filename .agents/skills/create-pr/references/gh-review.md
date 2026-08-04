@@ -1,63 +1,25 @@
 # GitHub Review Commands
 
-## Request Review
+`gh pr comment`, `gh pr view --json comments,reviews,statusCheckRollup`, and
+`gh pr checks` cover requesting review and polling. The calls below are the ones
+`gh` has no porcelain for. Reviewer handles are examples; use the ones current
+on the PR.
 
-Use current repository reviewer mentions. These are examples only:
+## Reply inside an inline thread
 
-```sh
-gh pr comment <pr-number-or-url> --body '@coderabbitai review
-@cubic-dev-ai review'
-```
-
-Poll PR state:
-
-```sh
-gh pr view <pr-number-or-url> --json url,state,headRefName,comments,reviews,statusCheckRollup
-```
-
-## List Comments
-
-List top-level PR comments:
-
-```sh
-gh api repos/:owner/:repo/issues/<pr-number>/comments --paginate \
-  --jq '.[] | {id, user: .user.login, created_at, body}'
-```
-
-List inline review comments:
-
-```sh
-gh api repos/:owner/:repo/pulls/<pr-number>/comments --paginate \
-  --jq '.[] | {id, user: .user.login, path, line, original_line, body}'
-```
-
-## Reply
-
-Reply to an inline review comment:
+`gh pr comment` only posts top-level comments, so replying in the thread a bot
+opened needs the REST replies endpoint with that comment's id (from
+`gh api repos/:owner/:repo/pulls/<pr-number>/comments`):
 
 ```sh
 gh api -X POST repos/:owner/:repo/pulls/<pr-number>/comments/<comment-id>/replies \
   -f body='@coderabbitai Fixed in <commit-sha>. Validation: just typecheck, just test.'
 ```
 
-Add a top-level PR comment:
+## Thread resolution state
 
-```sh
-gh pr comment <pr-number-or-url> --body '@coderabbitai Addressed the review feedback in <commit-sha>.'
-```
-
-Update your own top-level issue comment:
-
-```sh
-gh api -X PATCH repos/:owner/:repo/issues/comments/<comment-id> \
-  -f body='Updated comment body'
-```
-
-## Review Threads
-
-Use this when thread resolution state matters. This quick query only returns the
-first 100 review threads; add pagination with `pageInfo` and `after` for large
-PRs.
+Resolution state is GraphQL-only. This returns the first 100 threads; add
+`pageInfo` and `after` pagination for large PRs.
 
 ```sh
 gh api graphql \

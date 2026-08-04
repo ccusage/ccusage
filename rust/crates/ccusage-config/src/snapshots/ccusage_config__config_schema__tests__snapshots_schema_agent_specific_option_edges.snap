@@ -1297,7 +1297,6 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
   "rootProperties": [
     "$schema",
     "amp",
-    "antigravity",
     "claude",
     "codebuff",
     "codex",
