@@ -192,6 +192,17 @@ mod tests {
                 .sum::<u64>(),
             600
         );
+        for kind in [
+            crate::cli::AgentReportKind::Daily,
+            crate::cli::AgentReportKind::Weekly,
+            crate::cli::AgentReportKind::Monthly,
+            crate::cli::AgentReportKind::Session,
+        ] {
+            let rows = crate::summarize_entries(&entries, kind).unwrap();
+            let report = crate::report_from_rows(&rows, kind);
+            assert_eq!(report["totals"]["inputTokens"].as_u64(), Some(600));
+            assert_eq!(report["totals"]["outputTokens"].as_u64(), Some(30));
+        }
     }
 
     #[test]

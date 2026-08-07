@@ -1,4 +1,9 @@
-use std::{collections::HashSet, env, fs, path::PathBuf};
+use std::{
+    collections::HashSet,
+    env, fs,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 use crate::Result;
 
@@ -24,17 +29,7 @@ pub(super) fn hermes_state_db_paths() -> Result<Vec<PathBuf>> {
     for home in homes {
         paths.push(home.join("state.db"));
         if discover_profiles {
-            let mut profile_paths = fs::read_dir(home.join("profiles"))
-                .map(|entries| {
-                    entries
-                        .filter_map(|entry| entry.ok())
-                        .map(|entry| entry.path().join("state.db"))
-                        .filter(|path| path.is_file())
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            profile_paths.sort();
-            paths.extend(profile_paths);
+            paths.extend(profile_state_db_paths(&home)?);
         }
     }
     let mut seen = HashSet::new();
@@ -43,6 +38,35 @@ pub(super) fn hermes_state_db_paths() -> Result<Vec<PathBuf>> {
         .filter(|path| path.is_file())
         .filter(|path| seen.insert(path.clone()))
         .collect())
+}
+
+fn profile_state_db_paths(home: &Path) -> Result<Vec<PathBuf>> {
+    let profiles_dir = home.join("profiles");
+    let entries = match fs::read_dir(&profiles_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(crate::cli_error(format!(
+                "failed to read Hermes profiles directory {}: {error}",
+                profiles_dir.display()
+            )));
+        }
+    };
+    let mut paths = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            crate::cli_error(format!(
+                "failed to read an entry in Hermes profiles directory {}: {error}",
+                profiles_dir.display()
+            ))
+        })?;
+        let state_db = entry.path().join("state.db");
+        if state_db.is_file() {
+            paths.push(state_db);
+        }
+    }
+    paths.sort();
+    Ok(paths)
 }
 
 #[cfg(test)]
@@ -60,6 +84,7 @@ mod tests {
             ".hermes/profiles/personal/state.db": "",
             ".hermes/profiles/ignored/not-state.db": "",
         });
+        let _ = fixture.create_dir_all(".hermes/profiles/directory-db/state.db");
         let _env_guard = EnvVarsGuard::set_many([
             ("HOME", Some(fixture.root().as_os_str().to_os_string())),
             (HERMES_HOME_ENV, None),
@@ -75,6 +100,19 @@ mod tests {
                 fixture.path(".hermes/profiles/work/state.db"),
             ]
         );
+    }
+
+    #[test]
+    fn reports_non_missing_profile_directory_errors() {
+        let fixture = fs_fixture!({
+            ".hermes/profiles": "not a directory",
+        });
+        let _env_guard = EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.root().as_os_str().to_os_string())),
+            (HERMES_HOME_ENV, None),
+        ]);
+
+        assert!(hermes_state_db_paths().is_err());
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 > Hermes Agent support is experimental. Expect changes while both ccusage and [Hermes Agent](https://github.com/NousResearch/hermes-agent) continue to evolve.
 
-ccusage can read Hermes Agent session usage from its local SQLite state database. The adapter uses the same focused and unified report shape as the other local coding CLI data sources.
+ccusage can read Hermes Agent session usage from its local SQLite state databases. The adapter uses the same focused and unified report shape as the other local coding CLI data sources.
 
 ## Focused Views
 
