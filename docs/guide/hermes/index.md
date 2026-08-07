@@ -24,7 +24,7 @@ pnpm dlx ccusage hermes --help
 
 ## Data Source
 
-The CLI reads Hermes Agent session rows from `$HERMES_HOME/state.db`. When `HERMES_HOME` is not set, ccusage checks `~/.hermes/state.db`.
+The CLI reads Hermes Agent session rows from its local SQLite state databases. When `HERMES_HOME` is not set, ccusage checks both the default profile at `~/.hermes/state.db` and every named profile at `~/.hermes/profiles/*/state.db`.
 
 ```bash
 HERMES_HOME="$HOME/.hermes" ccusage hermes daily
@@ -32,7 +32,10 @@ HERMES_HOME="$HOME/.hermes" ccusage hermes daily
 
 ```text
 ~/.hermes/
-└── state.db
+├── state.db
+└── profiles/
+    ├── personal/state.db
+    └── work/state.db
 ```
 
 ## Report Views
@@ -54,15 +57,15 @@ These views support `--json`, `--compact`, `--offline`, `--since`, `--until`, an
 
 ## Environment Variables
 
-| Variable      | Description                                                                       |
-| ------------- | --------------------------------------------------------------------------------- |
-| `HERMES_HOME` | Override the directory containing `state.db`; comma-separated roots are supported |
-| `LOG_LEVEL`   | Adjust verbosity (0 silent ... 5 trace)                                           |
+| Variable      | Description                                                                                                             |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `HERMES_HOME` | Override the directories containing `state.db`; comma-separated roots are supported, and only the listed roots are read |
+| `LOG_LEVEL`   | Adjust verbosity (0 silent ... 5 trace)                                                                                 |
 
 ## Troubleshooting
 
 ::: details No Hermes Agent usage data found
-Ensure the database exists at `$HERMES_HOME/state.db` or `~/.hermes/state.db`. If your database lives elsewhere, set `HERMES_HOME` to the directory that contains `state.db`.
+Ensure a database exists at `$HERMES_HOME/state.db`, `~/.hermes/state.db`, or `~/.hermes/profiles/<name>/state.db`. If your database lives elsewhere, set `HERMES_HOME` to the directory that contains `state.db`.
 :::
 
 ::: details Costs showing as $0.00

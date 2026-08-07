@@ -15,7 +15,8 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 ## Data source
 
-- `${HERMES_HOME:-~/.hermes}/state.db`
+- `~/.hermes/state.db` and `~/.hermes/profiles/*/state.db` by default
+- `$HERMES_HOME/state.db` when `HERMES_HOME` is set; comma-separated roots are supported
 
 Reads SQLite with the bundled `sqlite` crate, which is why this crate declares it and
 most adapters do not.

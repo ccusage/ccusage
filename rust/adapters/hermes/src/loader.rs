@@ -109,7 +109,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     fn create_state_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -133,6 +133,65 @@ mod tests {
             ",
         )
         .unwrap();
+    }
+
+    fn insert_session(path: &Path, session_id: &str, started_at: f64, input_tokens: i64) {
+        let db = sqlite::open(path).unwrap();
+        let mut statement = db
+            .prepare(
+                "
+                    INSERT INTO sessions (
+                        id, source, model, started_at, input_tokens, output_tokens
+                    ) VALUES (?1, 'cli', 'claude-sonnet-4-20250514', ?2, ?3, 10)
+                ",
+            )
+            .unwrap();
+        statement.bind((1, session_id)).unwrap();
+        statement.bind((2, started_at)).unwrap();
+        statement.bind((3, input_tokens)).unwrap();
+        statement.next().unwrap();
+    }
+
+    #[test]
+    fn loads_default_and_named_profile_databases() {
+        let fixture = fs_fixture!({});
+        let default_db = fixture.path(".hermes/state.db");
+        let profile_db = fixture.path(".hermes/profiles/work/state.db");
+        let _ = fixture.create_dir_all(".hermes/profiles/work");
+        create_state_db(&default_db);
+        create_state_db(&profile_db);
+        insert_session(&default_db, "default-only", 1_750_000_000.0, 100);
+        insert_session(&default_db, "shared", 1_750_000_001.0, 200);
+        insert_session(&profile_db, "profile-only", 1_750_000_002.0, 300);
+        insert_session(&profile_db, "shared", 1_750_000_003.0, 400);
+        let _env_guard = EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.root().as_os_str().to_os_string())),
+            ("HERMES_HOME", None),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        let shared = SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &pricing).unwrap();
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.session_id.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["default-only", "shared", "profile-only"]
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.data.message.usage.input_tokens)
+                .sum::<u64>(),
+            600
+        );
     }
 
     #[test]

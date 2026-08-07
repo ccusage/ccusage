@@ -168,7 +168,7 @@ If ccusage shows no data, check:
    - Amp: `${AMP_DATA_DIR:-~/.local/share/amp}`
    - Droid: `${DROID_SESSIONS_DIR:-~/.factory/sessions}`
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`
-   - Hermes Agent: `${HERMES_HOME:-~/.hermes}/state.db`
+   - Hermes Agent: `$HERMES_HOME/state.db`, or `~/.hermes/state.db` and `~/.hermes/profiles/*/state.db` by default
    - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}`
    - Goose: standard Goose data roots or `GOOSE_PATH_ROOT`
    - Kilo: `${KILO_DATA_DIR:-~/.local/share/kilo}`
