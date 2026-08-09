@@ -1,5 +1,9 @@
 [
 	{
+		"releasedOn": "2026-07-09",
+		"model": "gpt-5.6-luna"
+	},
+	{
 		"releasedOn": "2026-04-23",
 		"model": "gpt-5.5"
 	},

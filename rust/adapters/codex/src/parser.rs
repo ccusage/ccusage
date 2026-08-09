@@ -1122,11 +1122,11 @@ mod tests {
     fn loads_codex_auto_review_fallbacks_from_models_dev_snapshot() {
         let fallbacks = codex_auto_review_fallback_models();
 
-        assert_eq!(fallbacks.len(), 7);
-        assert_eq!(fallbacks[0].released_on, "2026-04-23");
-        assert_eq!(fallbacks[0].model, "gpt-5.5");
-        assert_eq!(fallbacks[6].released_on, "2025-08-07");
-        assert_eq!(fallbacks[6].model, "gpt-5");
+        assert_eq!(fallbacks.len(), 8);
+        assert_eq!(fallbacks[0].released_on, "2026-07-09");
+        assert_eq!(fallbacks[0].model, "gpt-5.6-luna");
+        assert_eq!(fallbacks[7].released_on, "2025-08-07");
+        assert_eq!(fallbacks[7].model, "gpt-5");
         assert!(
             fallbacks
                 .windows(2)

@@ -188,6 +188,7 @@ function isCodexAutoReviewFallbackCandidate(modelId: string, model: ModelMetadat
 	return (
 		modelName === 'gpt-5' ||
 		modelName === 'gpt-5-codex' ||
+		modelName === 'gpt-5.6-luna' ||
 		/^gpt-5\.\d+$/.test(modelName) ||
 		/^gpt-5\.\d+-codex$/.test(modelName)
 	);

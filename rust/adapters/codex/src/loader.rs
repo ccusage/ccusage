@@ -840,16 +840,40 @@ mod tests {
                     },
                 })
                 .to_string(),
+                json!({
+                    "type": "turn.completed",
+                    "timestamp": "2026-07-08T23:59:59.999Z",
+                    "model": "codex-auto-review",
+                    "usage": {
+                        "input_tokens": 40,
+                        "output_tokens": 20,
+                        "total_tokens": 60,
+                    },
+                })
+                .to_string(),
+                json!({
+                    "type": "turn.completed",
+                    "timestamp": "2026-07-09T00:00:00.000Z",
+                    "model": "codex-auto-review",
+                    "usage": {
+                        "input_tokens": 50,
+                        "output_tokens": 25,
+                        "total_tokens": 75,
+                    },
+                })
+                .to_string(),
             ]
             .join("\n"),
         });
 
         let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
 
-        assert_eq!(events.len(), 3);
+        assert_eq!(events.len(), 5);
         assert_eq!(events[0].model.as_deref(), Some("gpt-5.3-codex"));
         assert_eq!(events[1].model.as_deref(), Some("gpt-5.4"));
         assert_eq!(events[2].model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(events[3].model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(events[4].model.as_deref(), Some("gpt-5.6-luna"));
         assert!(events.iter().all(|event| event.is_fallback_model));
     }
 
@@ -968,15 +992,31 @@ mod tests {
                     },
                 })
                 .to_string(),
+                json!({
+                    "timestamp": "2026-07-09T00:01:00.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "last_token_usage": {
+                                "input_tokens": 30,
+                                "output_tokens": 15,
+                                "total_tokens": 45,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
             ]
             .join("\n"),
         });
 
         let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
 
-        assert_eq!(events.len(), 2);
+        assert_eq!(events.len(), 3);
         assert_eq!(events[0].model.as_deref(), Some("gpt-5.2-codex"));
         assert_eq!(events[1].model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(events[2].model.as_deref(), Some("gpt-5.6-luna"));
         assert!(events.iter().all(|event| event.is_fallback_model));
     }
 
