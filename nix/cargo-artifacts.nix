@@ -40,6 +40,7 @@ let
     "droid"
     "gemini"
     "goose"
+    "grok"
     "hermes"
     "kilo"
     "kimi"
