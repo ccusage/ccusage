@@ -43,31 +43,21 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     });
 
     let mut entries: Vec<_> = loaded.into_iter().flatten().collect();
-    // Global dedupe across files (same eventId+model should not double-count).
+    // Global dedupe across files: the same server event can be exported into more
+    // than one session, and `eventId` is what identifies it. Entries without one
+    // are left alone rather than matched on their token counts, because
+    // `parse_session_files` already deduped its own file using the full record —
+    // including reasoning tokens, which `LoadedEntry` does not carry. Rebuilding a
+    // coarser key here could only collapse turns the parser deliberately kept apart.
     let mut seen = HashSet::new();
     entries.retain(|entry| {
-        let usage = entry.data.message.usage;
-        let key = entry
-            .data
-            .message
-            .id
-            .as_deref()
-            .map(|event_id| format!("{event_id}|{}", entry.model.as_deref().unwrap_or_default()))
-            .unwrap_or_else(|| {
-                // `extra_total_tokens` is always 0 here (reasoning stays inside
-                // `output_tokens`), so it carries no signal and is left out.
-                format!(
-                    "{}|{}|{}|{}|{}|{}|{}",
-                    entry.session_id.as_ref(),
-                    entry.timestamp.as_millis(),
-                    entry.model.as_deref().unwrap_or_default(),
-                    usage.input_tokens,
-                    usage.output_tokens,
-                    usage.cache_read_input_tokens,
-                    usage.cache_creation_input_tokens,
-                )
-            });
-        seen.insert(key)
+        let Some(event_id) = entry.data.message.id.as_deref() else {
+            return true;
+        };
+        seen.insert(format!(
+            "{event_id}|{}",
+            entry.model.as_deref().unwrap_or_default()
+        ))
     });
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
@@ -186,6 +176,34 @@ mod tests {
         // One corrupt file must not cost the rest of the home directory.
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 80);
+    }
+
+    #[test]
+    fn keeps_event_id_less_turns_that_differ_only_in_reasoning() {
+        // Reasoning sits inside outputTokens and is not carried on LoadedEntry, so a
+        // token-based key cannot tell these two turns apart. The parser keeps both;
+        // the global dedupe must not undo that.
+        let base = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-nr","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":REASONING}}}}}}"#;
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-nr/updates.jsonl": format!(
+                "{}\n{}\n",
+                base.replace("REASONING", "5"),
+                base.replace("REASONING", "10"),
+            ),
+        });
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let _guard = with_grok_home(fixture.root());
+        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        let input: u64 = entries
+            .iter()
+            .map(|entry| entry.data.message.usage.input_tokens)
+            .sum();
+        assert_eq!(input, 120);
     }
 
     #[test]
