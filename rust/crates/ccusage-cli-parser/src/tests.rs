@@ -202,9 +202,9 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Copilot(args)) => agent_command_snapshot("copilot", args),
         Some(Command::Gemini(args)) => agent_command_snapshot("gemini", args),
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
-        Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
+        Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
     }
 }
 
@@ -233,6 +233,13 @@ fn parses_root_daily_as_all_agent_report() {
     assert_eq!(args.kind, AgentReportKind::Daily);
     assert!(args.shared.json);
     assert_eq!(args.shared.since.as_deref(), Some("20260102"));
+}
+
+#[test]
+fn commandless_invocation_preserves_default_dispatch() {
+    let cli = parse(&["ccusage"]);
+
+    assert!(cli.command.is_none());
 }
 
 #[test]
@@ -607,22 +614,8 @@ fn applies_schema_documented_config_file_options() {
 fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
-        "claude",
-        "codex",
-        "opencode",
-        "amp",
-        "droid",
-        "codebuff",
-        "hermes",
-        "pi",
-        "goose",
-        "kilo",
-        "copilot",
-        "gemini",
-        "kimi",
-        "qwen",
-        "openclaw",
-        "antigravity",
+        "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
+        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok",
     ];
 
     for agent in agents {
@@ -709,6 +702,17 @@ fn contextual_statusline_help_lists_choice_options() {
 
     assert!(help.contains("choices: off | emoji | text | emoji-text"));
     assert!(help.contains("choices: auto | ccusage | cc | both"));
+}
+
+#[test]
+fn grok_help_does_not_advertise_path_option() {
+    let help = help_text_for_args(&[
+        "ccusage".to_string(),
+        "grok".to_string(),
+        "daily".to_string(),
+    ]);
+
+    assert!(!help.contains("--grok-path"));
 }
 
 #[test]
@@ -822,6 +826,10 @@ fn snapshots_representative_cli_parse_shapes() {
                 "session",
                 "--open-claw-path=/tmp/openclaw",
             ])),
+        }),
+        json!({
+            "case": "grok daily",
+            "cli": cli_snapshot(parse(&["ccusage", "grok", "daily", "--json"])),
         }),
         json!({
             "case": "blocks active recent",
@@ -1199,6 +1207,23 @@ fn parses_openclaw_session_options() {
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
     assert_eq!(args.open_claw_path.as_deref(), Some("/tmp/openclaw"));
+}
+
+#[test]
+fn parses_grok_daily_options() {
+    let cli = parse(&["ccusage", "grok", "daily", "--json"]);
+    let Some(Command::Grok(args)) = cli.command else {
+        panic!("expected grok command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Daily);
+    assert!(args.shared.json);
+}
+
+#[test]
+fn rejects_grok_path_option() {
+    let error = parse_error(&["ccusage", "grok", "daily", "--grok-path", "/tmp/grok-home"]);
+
+    assert_eq!(error, "Unknown option '--grok-path'");
 }
 
 #[test]
