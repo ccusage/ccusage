@@ -668,18 +668,26 @@ mod tests {
     }
 
     #[test]
-    fn prices_via_normalized_xai_candidate_when_raw_model_is_missing() {
-        // Only the stripped `xai/...` form is priced, so candidate order is
-        // exercised. The model is one no pricing table carries, because a model
-        // the embedded tables do price would be resolved by the first candidate
-        // and never reach the normalized one.
+    fn prices_via_the_stripped_candidate_when_the_build_form_is_missing() {
+        // The model is one no pricing table carries, so only the override key
+        // can answer it. That key carries a suffix of its own, which no
+        // `-build` candidate can reach: pricing the model therefore proves the
+        // stripped candidates ran, rather than the fuzzy lookup answering
+        // `xai/<raw>` with a key the raw form already contains.
         let pricing_override = crate::cli::PricingOverride {
             input_cost_per_token: Some(0.001),
             output_cost_per_token: Some(0.002),
             ..crate::cli::PricingOverride::default()
         };
-        let key = "xai/grok-unreleased-9.9".to_string();
+        let key = "xai/grok-unreleased-9.9-preview".to_string();
         let pricing = PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        for unpriced in [
+            "grok-unreleased-9.9-build",
+            "xai/grok-unreleased-9.9-build",
+            "x-ai/grok-unreleased-9.9-build",
+        ] {
+            assert!(pricing.find(unpriced).is_none(), "{unpriced} was priced");
+        }
         let usage = TokenUsageRaw {
             input_tokens: 10,
             output_tokens: 5,

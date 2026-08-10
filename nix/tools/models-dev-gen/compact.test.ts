@@ -3,10 +3,10 @@ import { it } from 'node:test';
 import {
 	buildModelsDevCatalogIndex,
 	formatDuplicateModelsDevPricingKeyWarning,
-	isEmbeddableModelsDevCandidate,
 	isPriceableModelsDevCost,
 	isTierVariantOfAuthoredModel,
 	isTokenPricedModel,
+	isUnversionedModelId,
 	MODELS_DEV_PROVIDER_TRUST,
 	modelsDevProviderTrust,
 	modelsDevCatalogRulesArtifact,
@@ -169,39 +169,10 @@ void it('uses a stable source ordering tie-break within one trust tier', () => {
 	);
 });
 
-void it('keeps reseller entries for retired models only resellers still list', () => {
-	assert.equal(
-		isEmbeddableModelsDevCandidate({
-			trust: MODELS_DEV_PROVIDER_TRUST.reseller,
-			sourceModelId: 'claude-3-5-haiku-20241022',
-			index,
-		}),
-		true,
-	);
-});
-
-void it('drops a reseller alias for a model a trusted catalog already publishes', () => {
-	assert.equal(
-		isEmbeddableModelsDevCandidate({
-			trust: MODELS_DEV_PROVIDER_TRUST.reseller,
-			sourceModelId: 'accounts/fireworks/models/kimi-k2p7-code',
-			index,
-		}),
-		false,
-	);
-});
-
-void it('keeps separately priced tiers of a model already carried', () => {
-	// kimi-k2.7-code-nitro is its own cheaper route, so resolving it to
-	// kimi-k2.7-code by name similarity would over-report it.
-	assert.equal(
-		isEmbeddableModelsDevCandidate({
-			trust: MODELS_DEV_PROVIDER_TRUST.reseller,
-			sourceModelId: 'kimi-k2.7-code-nitro',
-			index,
-		}),
-		true,
-	);
+void it('recognizes separately priced tiers of a model already carried', () => {
+	// kimi-k2.7-code-nitro is its own cheaper route, so a lookup for the base
+	// model must not reach it: the snapshot marks these exact-only.
+	assert.equal(isTierVariantOfAuthoredModel('kimi-k2.7-code-nitro', index), true);
 	assert.equal(isTierVariantOfAuthoredModel('kimi-k2.7-code-flex', index), true);
 	// Dotted and dashed spellings name the same base model.
 	assert.equal(isTierVariantOfAuthoredModel('kimi-k2-7-code-highspeed', index), true);
@@ -211,30 +182,29 @@ void it('keeps separately priced tiers of a model already carried', () => {
 	assert.equal(isTierVariantOfAuthoredModel('kimi-k4-preview', index), false);
 });
 
-void it('drops a tier the author prices itself', () => {
-	// Only one reseller lists claude-opus-5-fast, at 12 USD/Mtok, while Anthropic
-	// publishes its own fast rate of 10. Taking the reseller's markup as the rate
-	// for the tier would over-report it.
-	assert.equal(isTierVariantOfAuthoredModel('claude-opus-5-fast', index), false);
+void it('marks a tier the author prices itself as exact-only too', () => {
+	// A log naming claude-opus-5-fast still needs a rate, and only one reseller
+	// lists it (12 USD/Mtok against Anthropic's own fast rate of 10). Keeping it
+	// reachable by the fuzzy lookup is the hazard, because it would then answer a
+	// lookup for plain claude-opus-5.
 	assert.equal(
-		isEmbeddableModelsDevCandidate({
-			trust: MODELS_DEV_PROVIDER_TRUST.reseller,
-			sourceModelId: 'claude-opus-5-fast',
-			index,
-		}),
-		false,
-	);
-});
-
-void it('keeps platform entries whose ids only exist on that platform', () => {
-	assert.equal(
-		isEmbeddableModelsDevCandidate({
-			trust: MODELS_DEV_PROVIDER_TRUST.platform,
-			sourceModelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-			index,
-		}),
+		isTierVariantOfAuthoredModel('claude-opus-5-fast', index, { includeAuthorPricedModes: true }),
 		true,
 	);
+	// Without that flag it is not treated as a reseller-invented tier, because the
+	// author publishes the mode itself.
+	assert.equal(isTierVariantOfAuthoredModel('claude-opus-5-fast', index), false);
+});
+
+void it('recognizes ids that name no particular model', () => {
+	// `auto` is a routing label, so as a fuzzy candidate it answered
+	// `codex-auto-review`: ids with no version digit are marked exact-only.
+	assert.equal(isUnversionedModelId('auto'), true);
+	assert.equal(isUnversionedModelId('claude-opus-latest'), true);
+	// Any digit anywhere counts as a version, in either spelling.
+	assert.equal(isUnversionedModelId('kimi-k2.7-code'), false);
+	assert.equal(isUnversionedModelId('kimi-k2-7-code'), false);
+	assert.equal(isUnversionedModelId('claude-3-5-haiku-20241022'), false);
 });
 
 void it('rejects flat-fee catalogs that publish all-zero token costs', () => {

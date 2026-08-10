@@ -6,6 +6,14 @@
  * hosts it, and once per reseller that marks it up or discounts it. Only the
  * authoring catalog is guaranteed to carry list pricing, so picking the wrong
  * duplicate silently bills users at a marketplace rate.
+ *
+ * Every id the catalog publishes is embedded, and the rules here only decide
+ * *which* catalog's rates a given id gets. Pruning ids to keep the snapshot
+ * small was tried and abandoned: `PricingMap::find` falls back to substring
+ * matching that prefers the longest key, so removing an id makes the lookup
+ * guess between a base model and a premium tier. Keeping every id means each one
+ * resolves exactly, and the guessing is confined to ids the catalog has never
+ * heard of - which is where it was before any of this.
  */
 
 /**
@@ -158,38 +166,7 @@ export function buildModelsDevCatalogIndex(
 
 /** Model ids are spelled with either dots or dashes for the same version. */
 function normalizeModelId(modelId: string): string {
-	return modelId.toLowerCase().replace(/\./g, '-');
-}
-
-/**
- * Whether a reseller-only id names a tier of a model the snapshot already
- * carries - `kimi-k2.6-nitro`, `glm-5.2-flex`, `claude-opus-4-6-think`.
- *
- * Those are separately priced routes, usually cheaper than the author's list
- * rate, so resolving them to the base model by name similarity over-reports
- * their cost. Only bare ids qualify: an id carrying a provider path is that
- * provider's own catalogue entry for a model, not a distinct tier of it.
- *
- * A tier the author prices itself does not qualify, because then the reseller's
- * rate is a markup on a published rate rather than the only rate available:
- * `claude-opus-5-fast` exists solely in one reseller catalog at 12 USD/Mtok
- * while Anthropic's own fast rate is 10.
- */
-export function isTierVariantOfAuthoredModel(
-	sourceModelId: string,
-	index: ModelsDevCatalogIndex,
-): boolean {
-	if (sourceModelId.includes('/')) {
-		return false;
-	}
-	const normalized = normalizeModelId(sourceModelId);
-	return index.normalizedAuthoredModelIds.some((authored) => {
-		if (!normalized.startsWith(`${authored}-`)) {
-			return false;
-		}
-		const tier = normalized.slice(authored.length + 1);
-		return !index.authoredModes.get(authored)?.has(tier);
-	});
+	return modelId.toLowerCase().replace(/[.@]/g, '-');
 }
 
 /**
@@ -225,33 +202,56 @@ export function modelsDevProviderTrust({
 }
 
 /**
- * Whether a candidate belongs in the embedded snapshot at all.
+ * Whether an id identifies no particular model, so it must not answer a lookup
+ * for a longer id.
  *
- * Trusted catalogs are always embedded. A reseller catalog is embedded when the
- * authored catalog knows the model - which is what keeps retired first-party
- * releases only resellers still list - or when the id names a separately priced
- * tier of a model already carried. Everything else is a reseller's own alias for
- * a model some trusted catalog publishes anyway.
- *
- * @example
- * isEmbeddableModelsDevCandidate({ trust: 1, sourceModelId: 'accounts/fireworks/models/kimi-k2p6', index });
- * // false
+ * A model id nearly always carries a version - `kimi-k2.6`, `gpt-5.4`,
+ * `claude-opus-5`. An id with no digit at all is a family or a routing label:
+ * models.dev carries one called `auto`, and as a fuzzy candidate it answered
+ * `codex-auto-review`, a Codex label that must resolve through the adapter's
+ * date mapping instead of being priced directly.
  */
-export function isEmbeddableModelsDevCandidate({
-	trust,
-	sourceModelId,
-	index,
-}: {
-	trust: number;
-	sourceModelId: string;
-	index: ModelsDevCatalogIndex;
-}): boolean {
-	if (trust > MODELS_DEV_PROVIDER_TRUST.reseller) {
-		return true;
+export function isUnversionedModelId(sourceModelId: string): boolean {
+	return !/\d/.test(sourceModelId);
+}
+
+/**
+ * Whether an id names a separately priced tier of a model the snapshot also
+ * carries under its base id - `kimi-k2.6-nitro`, `glm-5.2-flex`,
+ * `kimi-k2.7-code-highspeed`, `claude-opus-5-fast`.
+ *
+ * Such an entry is the right rate only for a request naming it, so the snapshot
+ * marks it exact-only. Left reachable by the fuzzy lookup it answers the base
+ * model instead, because that lookup prefers the longest matching key: a request
+ * for `kimi-k2-7-code` was billed at the highspeed tier, double the list rate.
+ *
+ * Only bare ids qualify. An id carrying a provider path is that gateway's
+ * addressing of a model, and it has to stay fuzzy-reachable so the gateway's own
+ * tier spellings still resolve to a tier.
+ *
+ * @param includeAuthorPricedModes - count tiers the author prices itself. The
+ * shadowing hazard does not care who set the rate, but the embedding decision
+ * once did, so the two callers want different answers.
+ */
+export function isTierVariantOfAuthoredModel(
+	sourceModelId: string,
+	index: ModelsDevCatalogIndex,
+	{ includeAuthorPricedModes = false }: { includeAuthorPricedModes?: boolean } = {},
+): boolean {
+	if (sourceModelId.includes('/')) {
+		return false;
 	}
-	return (
-		index.authoredModelIds.has(sourceModelId) || isTierVariantOfAuthoredModel(sourceModelId, index)
-	);
+	const normalized = normalizeModelId(sourceModelId);
+	return index.normalizedAuthoredModelIds.some((authored) => {
+		if (!normalized.startsWith(`${authored}-`)) {
+			return false;
+		}
+		if (includeAuthorPricedModes) {
+			return true;
+		}
+		const tier = normalized.slice(authored.length + 1);
+		return !index.authoredModes.get(authored)?.has(tier);
+	});
 }
 
 /**

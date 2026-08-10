@@ -14,7 +14,8 @@ neither has a consumer outside it.
   not say: which catalogs author models, which only resell them, which model ids
   and tiers the authored catalog carries, and which models are priced per asset
   rather than per token. Both the snapshot and the runtime fetch apply it, so
-  they cannot disagree about where a rate came from or which ids exist.
+  they cannot disagree about where a rate came from or which ids the fuzzy
+  lookup may answer with.
 - `cost.rs` — cost calculation and missing-pricing detection.
 - `summary.rs`, `agent_report.rs`, `output.rs` — row aggregation, period labels,
   JSON shaping, and table rendering.

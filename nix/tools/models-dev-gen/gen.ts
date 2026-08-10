@@ -18,9 +18,10 @@ import { generateCatalog } from './packages/core/src/generate.ts';
 import {
 	buildModelsDevCatalogIndex,
 	formatDuplicateModelsDevPricingKeyWarning,
-	isEmbeddableModelsDevCandidate,
 	isPriceableModelsDevCost,
+	isTierVariantOfAuthoredModel,
 	isTokenPricedModel,
+	isUnversionedModelId,
 	type ModelsDevPricingCandidate,
 	modelsDevProviderTrust,
 	modelsDevCatalogRulesArtifact,
@@ -50,6 +51,8 @@ type Provider = { id?: string; models?: Record<string, Model> };
 type EmbeddedModel = {
 	cost: Cost;
 	limit?: { context: number };
+	/** Only a request naming this id exactly may use it; see `compact.ts`. */
+	exactOnly?: true;
 };
 type CodexAutoReviewFallback = {
 	releasedOn: string;
@@ -65,15 +68,17 @@ const catalogIndex = buildModelsDevCatalogIndex(models, providers);
 
 const selected: Record<string, { candidate: ModelsDevPricingCandidate; entry: EmbeddedModel }> = {};
 for (const [providerId, provider] of sortedEntries(providers)) {
+	// A catalog is filed under its own id, but it declares one too, and the Rust
+	// runtime loader resolves `provider.id ?? providerId` before it ranks. Resolve
+	// it once here as well, so a catalog filed under an alias is not an owner
+	// online and a reseller in the snapshot.
+	const sourceProviderId = provider.id ?? providerId;
 	for (const [modelId, model] of sortedEntries(provider.models ?? {})) {
 		const trust = modelsDevProviderTrust({
-			providerId,
+			providerId: sourceProviderId,
 			sourceModelId: modelId,
 			index: catalogIndex,
 		});
-		if (!isEmbeddableModelsDevCandidate({ trust, sourceModelId: modelId, index: catalogIndex })) {
-			continue;
-		}
 		const cost = model.cost ?? {};
 		// Skip entries without the base prices the runtime loader requires, and
 		// models whose rates are per asset rather than per text token.
@@ -99,8 +104,18 @@ for (const [providerId, provider] of sortedEntries(providers)) {
 		if (model.limit?.context != null) {
 			entry.limit = { context: model.limit.context };
 		}
+		// A tier is the right rate only for a request naming it. Left reachable by
+		// the fuzzy lookup it outranks the base model, which prefers the longest
+		// matching key. An id with no version in it is the mirror image: it is
+		// short enough to be a substring of unrelated ids.
+		if (
+			isTierVariantOfAuthoredModel(modelId, catalogIndex, { includeAuthorPricedModes: true }) ||
+			isUnversionedModelId(pricingKey)
+		) {
+			entry.exactOnly = true;
+		}
 		const candidate: ModelsDevPricingCandidate = {
-			sourceProviderId: provider.id ?? providerId,
+			sourceProviderId,
 			sourceModelId: modelId,
 			trust,
 			hasContextLimit: entry.limit != null,
