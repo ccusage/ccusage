@@ -154,7 +154,7 @@ fn cost_usd_from_ticks(ticks: u64) -> Option<f64> {
 }
 
 /// Split OpenAI-style input that includes cache: uncached = input − cache.
-pub(super) fn split_tokens(input: u64, cached: u64) -> (u64, u64) {
+fn split_tokens(input: u64, cached: u64) -> (u64, u64) {
     let cache = cached.min(input);
     let uncached = input.saturating_sub(cache);
     (uncached, cache)
@@ -174,7 +174,7 @@ fn split_input_tokens(input: u64, cached_read: u64, cache_creation: u64) -> (u64
 }
 
 /// Pricing lookup candidates for a raw Grok model id (e.g. `grok-4.5-build`).
-pub(super) fn pricing_candidates(raw_model: &str) -> Vec<String> {
+fn pricing_candidates(raw_model: &str) -> Vec<String> {
     let mut candidates = Vec::new();
     let mut push = |value: String| {
         if !candidates.iter().any(|existing| existing == &value) {

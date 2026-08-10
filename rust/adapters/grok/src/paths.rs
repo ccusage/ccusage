@@ -15,7 +15,7 @@ pub(super) struct GrokSessionFiles {
 }
 
 /// Resolve the Grok data root from `GROK_HOME`, then `~/.grok`.
-pub(super) fn resolve_root() -> Option<PathBuf> {
+fn resolve_root() -> Option<PathBuf> {
     if let Ok(home) = env::var(GROK_HOME_ENV)
         && !home.trim().is_empty()
     {
