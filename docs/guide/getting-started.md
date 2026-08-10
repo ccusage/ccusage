@@ -200,7 +200,7 @@ export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
 ```
 
-Each source-specific path variable can also contain comma-separated directories:
+Each source-specific path variable can also contain comma-separated directories, except `GROK_HOME`, which takes a single root:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"

@@ -64,7 +64,6 @@ per-request long-context tiering.
 
 - `loader::load_entries`
 - `loader::has_data`
-- `report::report_from_rows`
 - `report::summarize_entries`
 - `run`
 

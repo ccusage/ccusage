@@ -121,7 +121,9 @@ mod tests {
             model: Some("grok-4.5-build".to_string()),
             usage_limit_reset_time: None,
             missing_pricing_model: None,
-            extra_total_tokens: 10,
+            // Matches `parse_session_files`: Grok keeps reasoning inside
+            // `outputTokens`, so no tokens sit outside the counted buckets.
+            extra_total_tokens: 0,
             message_count: None,
         }
     }
@@ -145,8 +147,9 @@ mod tests {
         assert_eq!(report["daily"][0]["inputTokens"], 60);
         assert_eq!(report["daily"][0]["outputTokens"], 20);
         assert_eq!(report["daily"][0]["cacheReadTokens"], 40);
-        // totalTokens includes uncached input + output + cache read + reasoning.
-        assert_eq!(report["daily"][0]["totalTokens"], 130);
+        // totalTokens is uncached input + output + cache read; reasoning is
+        // already inside output and is never added again.
+        assert_eq!(report["daily"][0]["totalTokens"], 120);
     }
 
     #[test]
@@ -179,7 +182,7 @@ mod tests {
         assert_eq!(rows[0].project_path.as_deref(), Some("D:\\work\\proj"));
         assert_eq!(rows[0].input_tokens, 100);
         assert_eq!(rows[0].cache_read_tokens, 20);
-        assert_eq!(rows[0].extra_total_tokens, 20);
+        assert_eq!(rows[0].extra_total_tokens, 0);
         // The activity range is what the session table's Last Activity column and
         // the session JSON report.
         assert_eq!(

@@ -54,15 +54,16 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
             .as_deref()
             .map(|event_id| format!("{event_id}|{}", entry.model.as_deref().unwrap_or_default()))
             .unwrap_or_else(|| {
+                // `extra_total_tokens` is always 0 here (reasoning stays inside
+                // `output_tokens`), so it carries no signal and is left out.
                 format!(
-                    "{}|{}|{}|{}|{}|{}|{}",
+                    "{}|{}|{}|{}|{}|{}",
                     entry.session_id.as_ref(),
                     entry.timestamp.as_millis(),
                     entry.model.as_deref().unwrap_or_default(),
                     usage.input_tokens,
                     usage.output_tokens,
                     usage.cache_read_input_tokens,
-                    entry.extra_total_tokens,
                 )
             });
         seen.insert(key)

@@ -498,21 +498,23 @@ fn missing_grok_pricing(
 fn url_decode_lightweight(value: &str) -> String {
     // Session parents are URL-encoded cwd paths (e.g. `D%3A%5Cproj`).
     let bytes = value.as_bytes();
-    let mut out = String::with_capacity(value.len());
+    // Decode into bytes, not chars: a percent triplet is one UTF-8 byte, so
+    // pushing it as a `char` would turn a multi-byte path segment into mojibake.
+    let mut out = Vec::with_capacity(value.len());
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%'
             && i + 2 < bytes.len()
             && let (Some(hi), Some(lo)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2]))
         {
-            out.push(char::from(hi * 16 + lo));
+            out.push(hi * 16 + lo);
             i += 3;
             continue;
         }
-        out.push(char::from(bytes[i]));
+        out.push(bytes[i]);
         i += 1;
     }
-    out
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn from_hex(byte: u8) -> Option<u8> {
@@ -879,6 +881,31 @@ mod tests {
             "019fa1b1-0000-7000-8000-000000000001"
         );
         assert_eq!(entries[0].project_path.as_ref(), "D:\\work\\proj");
+    }
+
+    #[test]
+    fn url_decodes_multi_byte_project_segment() {
+        // `%C3%A9` is one UTF-8 code point split across two percent triplets.
+        let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-utf8"}}}"#;
+        let fixture = fs_fixture!({
+            "sessions/%2Fhome%2F%C3%A9projet/019fa1b1-0000-7000-8000-000000000002/updates.jsonl": line,
+        });
+        let files = GrokSessionFiles {
+            updates: fixture.path(
+                "sessions/%2Fhome%2F%C3%A9projet/019fa1b1-0000-7000-8000-000000000002/updates.jsonl",
+            ),
+            summary: None,
+        };
+        let entries = parse_session_files(
+            &files,
+            None,
+            CostMode::Display,
+            &PricingMap::load_embedded(),
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].project_path.as_ref(), "/home/éprojet");
     }
 
     #[test]
