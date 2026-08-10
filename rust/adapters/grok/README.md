@@ -30,8 +30,11 @@ Runtime root priority: a non-empty `GROK_HOME` → `~/.grok`.
 Path discovery stays inside the adapter, matching Grok Build CLI's official
 environment variable and default home.
 
-In-progress turns are not counted until `turn_completed` is written.
-`logs/unified.jsonl` is not used in v1.
+In-progress turns are not counted until `turn_completed` is written. A session
+killed mid-turn never gets that row, so its usage is invisible here even though
+`logs/unified.jsonl` recorded the underlying requests. That log is not used as a
+source: it carries no per-request model id, so its tokens cannot be priced or
+attributed.
 
 ## Token mapping
 
@@ -43,7 +46,7 @@ Grok records OpenAI-style usage where `inputTokens` includes cache:
 | `cachedReadTokens`               | `cache_read_input_tokens`     |                                                                          |
 | `outputTokens`                   | `output_tokens`               | as recorded                                                              |
 | `reasoningTokens`                | dropped                       | already inside `outputTokens`; counting it again would inflate the total |
-| —                                | `cache_creation_input_tokens` | always `0`                                                               |
+| `cacheCreationTokens`            | `cache_creation_input_tokens` | carved out of the uncached remainder                                     |
 | `costUsdTicks`                   | `cost_usd`                    | fixed-point USD, one tick is 1e-10 USD                                   |
 
 `costUsdTicks` is the invoice cost, so `display` and the default `auto` report what

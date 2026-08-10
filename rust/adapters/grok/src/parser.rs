@@ -74,6 +74,8 @@ struct GrokUsage {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     cached_read_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cache_creation_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     reasoning_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     total_tokens: u64,
@@ -92,6 +94,8 @@ struct GrokModelUsage {
     output_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     cached_read_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cache_creation_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     reasoning_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -154,6 +158,19 @@ pub(super) fn split_tokens(input: u64, cached: u64) -> (u64, u64) {
     let cache = cached.min(input);
     let uncached = input.saturating_sub(cache);
     (uncached, cache)
+}
+
+/// Split `inputTokens` into its uncached, cache-read and cache-write parts.
+///
+/// `cachedReadTokens` is provably a subset of `inputTokens`: session totals match
+/// `logs/unified.jsonl`, where `cached_prompt_tokens` is part of `prompt_tokens`.
+/// `cacheCreationTokens` arrived later and has only ever been observed as zero, so
+/// it is treated as a sibling subset rather than an extra bucket on top; that keeps
+/// the three parts summing back to `inputTokens` either way.
+fn split_input_tokens(input: u64, cached_read: u64, cache_creation: u64) -> (u64, u64, u64) {
+    let (uncached, cache_read) = split_tokens(input, cached_read);
+    let cache_creation = cache_creation.min(uncached);
+    (uncached - cache_creation, cache_read, cache_creation)
 }
 
 /// Pricing lookup candidates for a raw Grok model id (e.g. `grok-4.5-build`).
@@ -222,17 +239,25 @@ pub(super) fn parse_session_files(
 
         let model_rows = model_usage_rows(usage, meta.default_model.as_deref());
         for (raw_model, model_usage) in model_rows {
-            let (uncached, cache) =
-                split_tokens(model_usage.input_tokens, model_usage.cached_read_tokens);
+            let (uncached, cache, cache_creation) = split_input_tokens(
+                model_usage.input_tokens,
+                model_usage.cached_read_tokens,
+                model_usage.cache_creation_tokens,
+            );
             let output_tokens = model_usage.output_tokens;
             let reasoning_tokens = model_usage.reasoning_tokens;
-            if uncached == 0 && cache == 0 && output_tokens == 0 && reasoning_tokens == 0 {
+            if uncached == 0
+                && cache == 0
+                && cache_creation == 0
+                && output_tokens == 0
+                && reasoning_tokens == 0
+            {
                 continue;
             }
             let usage_raw = TokenUsageRaw {
                 input_tokens: uncached,
                 output_tokens,
-                cache_creation_input_tokens: 0,
+                cache_creation_input_tokens: cache_creation,
                 cache_read_input_tokens: cache,
                 speed: None,
                 cache_creation: None,
@@ -323,6 +348,7 @@ fn model_usage_rows(
             input_tokens: usage.input_tokens,
             output_tokens: usage.output_tokens,
             cached_read_tokens: usage.cached_read_tokens,
+            cache_creation_tokens: usage.cache_creation_tokens,
             reasoning_tokens: usage.reasoning_tokens,
             total_tokens: usage.total_tokens,
             cost_usd_ticks: usage.cost_usd_ticks,
@@ -939,6 +965,30 @@ mod tests {
         );
         assert!((entries[0].cost - 0.0185192).abs() < 1e-12);
         assert_eq!(entries[0].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn splits_cache_creation_out_of_the_uncached_input() {
+        assert_eq!(split_input_tokens(100, 40, 25), (35, 40, 25));
+        // Nothing to carve out when the field is absent, which is every turn observed so far.
+        assert_eq!(split_input_tokens(100, 40, 0), (60, 40, 0));
+        // A cache-write larger than the remaining input is clamped rather than wrapping.
+        assert_eq!(split_input_tokens(100, 40, 999), (0, 40, 60));
+    }
+
+    #[test]
+    fn reads_cache_creation_tokens() {
+        let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"cacheCreationTokens":25,"reasoningTokens":10,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"cacheCreationTokens":25,"reasoningTokens":10}}}},"_meta":{"eventId":"evt-cc"}}}"#;
+        let entries = parse_lines(line, None);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 35);
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 40);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            25
+        );
+        assert_eq!(entries[0].data.message.usage.output_tokens, 20);
     }
 
     #[test]

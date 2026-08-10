@@ -39,7 +39,7 @@ $GROK_HOME/   # or ~/.grok
             └── summary.json   # optional metadata
 ```
 
-Only rows with `sessionUpdate == "turn_completed"` and a usable usage breakdown are counted. In-progress turns are not included until they complete. `logs/unified.jsonl` is not used in this version.
+Only rows with `sessionUpdate == "turn_completed"` and a usable usage breakdown are counted. In-progress turns are not included until they complete, and a session killed mid-turn never records one, so its usage cannot be reported. `logs/unified.jsonl` is not used as a source: it has no per-request model id, so its tokens cannot be priced or attributed to a model.
 
 ## Report Views
 
@@ -53,7 +53,7 @@ These views support `--json`, `--compact`, `--mode`, and `--offline`.
 
 ## What Gets Calculated
 
-- **Token usage** - Grok records OpenAI-style usage where `inputTokens` includes cache. ccusage stores uncached input as `input − cachedRead`, cache as cache read, and full `outputTokens` as output.
+- **Token usage** - Grok records OpenAI-style usage where `inputTokens` includes cache. ccusage splits it into uncached input, cache read (`cachedReadTokens`) and cache write (`cacheCreationTokens`), and stores the full `outputTokens` as output.
 - **Reasoning tokens** - `reasoningTokens` are a subset of `outputTokens`, so they are already counted in the total. They are **not** added on top of output for either tokens or cost.
 - **Precomputed cost** - Grok records `costUsdTicks` on each completed turn, in units of 1e-10 USD. ccusage uses it as the invoice cost, so `display` and the default `auto` report exactly what Grok billed.
 - **Pricing** - `calculate`, and `auto` for turns that recorded no ticks, fall back to LiteLLM estimates. Model ids such as `grok-4.5-build` try candidates with the trailing `-build` stripped and `xai/` / `x-ai/` prefixes. A `turn_completed` row aggregates several API requests, so this fallback cannot reproduce Grok's per-request long-context tiering and only approximates the invoice.
