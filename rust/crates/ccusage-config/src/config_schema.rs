@@ -1147,8 +1147,8 @@ mod tests {
             "ccusage-config",
             &[
                 "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
-                "droid", "gemini", "goose", "grok", "hermes", "kilo", "kimi", "opencode", "openclaw",
-                "pi", "qwen",
+                "droid", "gemini", "goose", "grok", "hermes", "kilo", "kimi", "opencode",
+                "openclaw", "pi", "qwen",
             ],
         );
         assert!(
