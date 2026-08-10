@@ -885,6 +885,22 @@ mod tests {
     }
 
     #[test]
+    fn url_decode_recombines_wide_scalars_and_tolerates_invalid_bytes() {
+        // Three triplets for one scalar, which is what a CJK path segment looks like.
+        assert_eq!(
+            url_decode_lightweight("%2Ftmp%2F%E6%97%A5%E6%9C%AC"),
+            "/tmp/日本"
+        );
+        assert_eq!(
+            url_decode_lightweight("D%3A%5Cwork%5Cproj"),
+            "D:\\work\\proj"
+        );
+        // A triplet that is not valid UTF-8 degrades to the replacement character
+        // rather than panicking or truncating the rest of the path.
+        assert_eq!(url_decode_lightweight("%2Ftmp%2F%FFx"), "/tmp/\u{fffd}x");
+    }
+
+    #[test]
     fn url_decodes_multi_byte_project_segment() {
         // `%C3%A9` is one UTF-8 code point split across two percent triplets.
         let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-utf8"}}}"#;
