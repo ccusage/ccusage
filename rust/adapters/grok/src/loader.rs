@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(entries[0].data.message.usage.input_tokens, 60);
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 40);
         assert_eq!(entries[0].data.message.usage.output_tokens, 20);
-        assert_eq!(entries[0].extra_total_tokens, 10);
+        assert_eq!(entries[0].extra_total_tokens, 0);
         assert_eq!(entries[0].model.as_deref(), Some("grok-4.5-build"));
         assert_eq!(entries[0].project_path.as_ref(), "/tmp/proj");
     }

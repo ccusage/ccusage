@@ -42,8 +42,8 @@ Earlier investigations looked at local Grok data that did not expose usable toke
 accounting (for example SQLite without per-turn usage). Grok Build CLI is now
 supported: ccusage reads completed turns from
 `${GROK_HOME:-~/.grok}/sessions/**/updates.jsonl` (`sessionUpdate == "turn_completed"`
-with `usage` / `modelUsage`). Costs are LiteLLM token estimates; Grok
-`costUsdTicks` are not used as invoice USD. In-progress turns count only after
+with `usage` / `modelUsage`). Costs come from Grok's own `costUsdTicks`, with
+LiteLLM estimates as the fallback. In-progress turns count only after
 `turn_completed`. See [Grok Build CLI](/guide/grok/).
 :::
 

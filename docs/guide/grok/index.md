@@ -43,20 +43,20 @@ Only rows with `sessionUpdate == "turn_completed"` and a usable usage breakdown 
 
 ## Report Views
 
-| Focused view           | Description                     | See also                                |
-| ---------------------- | ------------------------------- | --------------------------------------- |
-| `ccusage grok daily`   | Aggregate usage by date         | [Daily Usage](/guide/daily-reports)     |
-| `ccusage grok monthly` | Aggregate usage by month        | [Monthly Usage](/guide/monthly-reports) |
-| `ccusage grok session` | Group usage by Grok session     | [Session Usage](/guide/session-reports) |
+| Focused view           | Description                 | See also                                |
+| ---------------------- | --------------------------- | --------------------------------------- |
+| `ccusage grok daily`   | Aggregate usage by date     | [Daily Usage](/guide/daily-reports)     |
+| `ccusage grok monthly` | Aggregate usage by month    | [Monthly Usage](/guide/monthly-reports) |
+| `ccusage grok session` | Group usage by Grok session | [Session Usage](/guide/session-reports) |
 
 These views support `--json`, `--compact`, `--mode`, and `--offline`.
 
 ## What Gets Calculated
 
 - **Token usage** - Grok records OpenAI-style usage where `inputTokens` includes cache. ccusage stores uncached input as `input − cachedRead`, cache as cache read, and full `outputTokens` as output.
-- **Reasoning tokens** - `reasoningTokens` are included in total tokens (`extra_total`) only. They are **not** billed separately and are **not** added on top of output for cost.
-- **Precomputed cost** - Grok `costUsdTicks` are ignored. `cost_usd` is never set from session files.
-- **Pricing** - Costs are LiteLLM-based estimates. Model ids such as `grok-4.5-build` try candidates with the trailing `-build` stripped and `xai/` / `x-ai/` prefixes. Display mode shows `$0` for Grok.
+- **Reasoning tokens** - `reasoningTokens` are a subset of `outputTokens`, so they are already counted in the total. They are **not** added on top of output for either tokens or cost.
+- **Precomputed cost** - Grok records `costUsdTicks` on each completed turn, in units of 1e-10 USD. ccusage uses it as the invoice cost, so `display` and the default `auto` report exactly what Grok billed.
+- **Pricing** - `calculate`, and `auto` for turns that recorded no ticks, fall back to LiteLLM estimates. Model ids such as `grok-4.5-build` try candidates with the trailing `-build` stripped and `xai/` / `x-ai/` prefixes. A `turn_completed` row aggregates several API requests, so this fallback cannot reproduce Grok's per-request long-context tiering and only approximates the invoice.
 - **Model labels** - Display form is the raw `modelUsage` key (e.g. `grok-4.5-build`). The Agent column identifies the Grok source in unified reports.
 
 ## Environment Variables
@@ -70,16 +70,16 @@ These views support `--json`, `--compact`, `--mode`, and `--offline`.
 
 ```json
 {
-  "grok": {
-    "defaults": {
-      "offline": true
-    },
-    "commands": {
-      "session": {
-        "json": true
-      }
-    }
-  }
+	"grok": {
+		"defaults": {
+			"offline": true
+		},
+		"commands": {
+			"session": {
+				"json": true
+			}
+		}
+	}
 }
 ```
 
@@ -96,7 +96,7 @@ Ensure completed turns exist under `~/.grok/sessions/**/updates.jsonl`. In-progr
 :::
 
 ::: details Costs showing as $0.00
-Grok has no precomputed USD in ccusage. Use default `auto` or `--mode calculate` with offline/online LiteLLM pricing. Display mode intentionally shows `$0`. If a model is missing from pricing, cost stays `$0` and a missing-pricing warning may appear.
+Turns written before Grok started recording `costUsdTicks` carry no cost, so `display` shows zero for them. Use `--mode calculate` to price those from LiteLLM instead. If a model is missing from pricing, the cost stays at zero and a missing-pricing warning may appear.
 :::
 
 ::: details Totals lower than expected while a turn is open

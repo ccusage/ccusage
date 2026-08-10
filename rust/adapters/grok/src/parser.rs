@@ -77,6 +77,8 @@ struct GrokUsage {
     reasoning_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     total_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cost_usd_ticks: u64,
     #[serde(default)]
     model_usage: Option<HashMap<String, GrokModelUsage>>,
 }
@@ -94,6 +96,8 @@ struct GrokModelUsage {
     reasoning_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     total_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cost_usd_ticks: u64,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -127,6 +131,22 @@ struct SessionMeta {
     session_id: String,
     project_path: String,
     default_model: Option<String>,
+}
+
+/// `costUsdTicks` are fixed-point USD: one tick is 1e-10 USD.
+///
+/// Verified against 58 turns of Grok CLI 1.0.0 data: every turn's
+/// `costUsdTicks / 1e10` reproduced the xAI list price for `xai/grok-4.5`
+/// exactly. Grok bills each API request separately, but a `turn_completed` row
+/// only carries the sum over the requests in that turn. Recomputing from those
+/// totals therefore cannot place the long-context tier boundary where Grok did,
+/// and lands on either side of the real figure depending on how the turn split;
+/// the recorded ticks are the only value that survives the aggregation.
+const COST_USD_TICKS_PER_USD: f64 = 1e10;
+
+/// Convert Grok's fixed-point `costUsdTicks` into USD, if the record carried any.
+fn cost_usd_from_ticks(ticks: u64) -> Option<f64> {
+    (ticks > 0).then(|| ticks as f64 / COST_USD_TICKS_PER_USD)
 }
 
 /// Split OpenAI-style input that includes cache: uncached = input − cache.
@@ -233,9 +253,11 @@ pub(super) fn parse_session_files(
             // Display the raw modelUsage key (e.g. grok-4.5-build); Agent column already
             // identifies the source in unified reports.
             let display_model = raw_model.clone();
+            let cost_usd = cost_usd_from_ticks(model_usage.cost_usd_ticks);
             // Cost bills full output_tokens only; reasoning is never added to billable output.
-            let cost = calculate_grok_cost(&raw_model, usage_raw, mode, pricing);
-            let missing_pricing_model = missing_grok_pricing(&raw_model, usage_raw, mode, pricing);
+            let cost = calculate_grok_cost(&raw_model, usage_raw, cost_usd, mode, pricing);
+            let missing_pricing_model =
+                missing_grok_pricing(&raw_model, usage_raw, cost_usd, mode, pricing);
             let timestamp_text = format_rfc3339_millis(timestamp_ms);
             let data = UsageEntry {
                 session_id: Some(session_id.clone()),
@@ -246,7 +268,7 @@ pub(super) fn parse_session_files(
                     model: Some(display_model.clone()),
                     id: event_id.clone(),
                 },
-                cost_usd: None,
+                cost_usd,
                 request_id: event_id.clone(),
                 is_api_error_message: None,
                 is_sidechain: None,
@@ -264,7 +286,11 @@ pub(super) fn parse_session_files(
                 message_count: None,
                 usage_limit_reset_time: None,
                 missing_pricing_model,
-                extra_total_tokens: reasoning_tokens,
+                // Grok reports `totalTokens == inputTokens + outputTokens`, so its
+                // reasoning tokens are already a subset of the output count. Adding
+                // them to `extra_total_tokens` would bill them into the grand total a
+                // second time.
+                extra_total_tokens: 0,
             });
             let _ = model_usage.total_tokens;
         }
@@ -299,6 +325,7 @@ fn model_usage_rows(
             cached_read_tokens: usage.cached_read_tokens,
             reasoning_tokens: usage.reasoning_tokens,
             total_tokens: usage.total_tokens,
+            cost_usd_ticks: usage.cost_usd_ticks,
         },
     )]
 }
@@ -396,11 +423,15 @@ fn dedupe_key(
 fn calculate_grok_cost(
     raw_model: &str,
     usage: TokenUsageRaw,
+    cost_usd: Option<f64>,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> f64 {
     match mode {
-        CostMode::Display => 0.0,
+        CostMode::Display => cost_usd.unwrap_or(0.0),
+        // Grok's own figure is authoritative, so `auto` prefers it and only falls
+        // back to the pricing table when a turn recorded no ticks.
+        CostMode::Auto if cost_usd.is_some() => cost_usd.unwrap_or(0.0),
         CostMode::Auto | CostMode::Calculate => {
             for candidate in pricing_candidates(raw_model) {
                 if pricing.find(&candidate).is_some() {
@@ -421,10 +452,13 @@ fn calculate_grok_cost(
 fn missing_grok_pricing(
     raw_model: &str,
     usage: TokenUsageRaw,
+    cost_usd: Option<f64>,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> Option<String> {
-    if mode == CostMode::Display {
+    // A turn that carried its own cost needs no pricing entry, so `display` and a
+    // ticks-backed `auto` never warn about a missing model.
+    if mode == CostMode::Display || (mode == CostMode::Auto && cost_usd.is_some()) {
         return None;
     }
     missing_pricing_model_for_candidates(
@@ -473,13 +507,18 @@ mod tests {
         r#"{"timestamp":1750000000,"method":"_x.ai/session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"totalTokens":120,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"totalTokens":120}}}},"_meta":{"eventId":"evt-1"}}}"#.to_string()
     }
 
-    fn turn_line(
-        event_id: &str,
-        model: &str,
+    #[derive(Clone, Copy)]
+    struct TurnTokens {
         input: u64,
         output: u64,
         cache: u64,
         reasoning: u64,
+    }
+
+    fn turn_line(
+        event_id: &str,
+        model: &str,
+        tokens: TurnTokens,
         envelope_seconds: i64,
         agent_ms: Option<i64>,
     ) -> String {
@@ -487,6 +526,12 @@ mod tests {
         if let Some(ms) = agent_ms {
             meta["agentTimestampMs"] = serde_json::json!(ms);
         }
+        let TurnTokens {
+            input,
+            output,
+            cache,
+            reasoning,
+        } = tokens;
         serde_json::json!({
             "timestamp": envelope_seconds,
             "params": {
@@ -588,7 +633,7 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost(&model, usage, CostMode::Calculate, &pricing),
+            calculate_grok_cost(&model, usage, None, CostMode::Calculate, &pricing),
             3.0
         );
     }
@@ -611,7 +656,7 @@ mod tests {
         };
 
         assert_eq!(
-            calculate_grok_cost("grok-4.5-build", usage, CostMode::Calculate, &pricing),
+            calculate_grok_cost("grok-4.5-build", usage, None, CostMode::Calculate, &pricing),
             0.02
         );
     }
@@ -622,10 +667,7 @@ mod tests {
             "sessions/proj/sess-1/updates.jsonl": turn_line(
                 "evt-miss",
                 "grok-never-priced-build",
-                93,
-                3,
-                0,
-                0,
+                TurnTokens { input: 93, output: 3, cache: 0, reasoning: 0 },
                 1_750_000_000,
                 None,
             ),
@@ -635,8 +677,7 @@ mod tests {
             summary: None,
         };
         let pricing = PricingMap::load_embedded();
-        let entries =
-            parse_session_files(&files, None, CostMode::Calculate, &pricing).unwrap();
+        let entries = parse_session_files(&files, None, CostMode::Calculate, &pricing).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("grok-never-priced-build"));
@@ -668,28 +709,36 @@ mod tests {
         assert_eq!(entry.data.message.usage.cache_read_input_tokens, 40);
         assert_eq!(entry.data.message.usage.output_tokens, 20);
         assert_eq!(entry.data.message.usage.cache_creation_input_tokens, 0);
-        assert_eq!(entry.extra_total_tokens, 10);
-        // costUsdTicks is intentionally ignored; cost_usd stays unset.
+        // Reasoning is already inside outputTokens, so it adds nothing to the total.
+        assert_eq!(entry.extra_total_tokens, 0);
+        // This fixture records no costUsdTicks, so there is no precomputed cost.
         assert!(entry.data.cost_usd.is_none());
         assert_eq!(entry.session_id.as_ref(), "sess-1");
         assert_eq!(entry.project_path.as_ref(), "D:\\work\\proj");
     }
 
     #[test]
-    fn keeps_a_reasoning_only_row_when_other_buckets_are_zero() {
-        let line = turn_line("evt-r", "grok-4.5-build", 0, 0, 0, 42, 1_750_000_000, None);
+    fn does_not_add_reasoning_tokens_to_the_total() {
+        let tokens = TurnTokens {
+            input: 0,
+            output: 0,
+            cache: 0,
+            reasoning: 42,
+        };
+        let line = turn_line("evt-r", "grok-4.5-build", tokens, 1_750_000_000, None);
         let entries = parse_lines(&line, None);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 0);
         assert_eq!(entries[0].data.message.usage.output_tokens, 0);
-        assert_eq!(entries[0].extra_total_tokens, 42);
+        assert_eq!(entries[0].extra_total_tokens, 0);
     }
 
     #[test]
     fn falls_back_to_top_level_usage_when_model_usage_is_absent() {
         let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-top","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":50,"outputTokens":5,"cachedReadTokens":10,"reasoningTokens":2}},"_meta":{"eventId":"evt-top"}}}"#;
-        let summary = r#"{"info":{"id":"sess-top","cwd":"/tmp/proj"},"current_model_id":"grok-4.5-build"}"#;
+        let summary =
+            r#"{"info":{"id":"sess-top","cwd":"/tmp/proj"},"current_model_id":"grok-4.5-build"}"#;
         let entries = parse_lines(line, Some(summary));
 
         assert_eq!(entries.len(), 1);
@@ -697,7 +746,7 @@ mod tests {
         assert_eq!(entries[0].data.message.usage.input_tokens, 40);
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].data.message.usage.output_tokens, 5);
-        assert_eq!(entries[0].extra_total_tokens, 2);
+        assert_eq!(entries[0].extra_total_tokens, 0);
     }
 
     #[test]
@@ -711,13 +760,16 @@ mod tests {
 
     #[test]
     fn prefers_agent_timestamp_ms_over_envelope_seconds() {
+        let tokens = TurnTokens {
+            input: 10,
+            output: 1,
+            cache: 0,
+            reasoning: 0,
+        };
         let line = turn_line(
             "evt-ts",
             "grok-4.5-build",
-            10,
-            1,
-            0,
-            0,
+            tokens,
             1_750_000_000,
             Some(1_785_328_986_355),
         );
@@ -730,16 +782,13 @@ mod tests {
 
     #[test]
     fn converts_envelope_unix_seconds_to_millis_when_agent_ms_is_absent() {
-        let line = turn_line(
-            "evt-sec",
-            "grok-4.5-build",
-            10,
-            1,
-            0,
-            0,
-            1_750_000_000,
-            None,
-        );
+        let tokens = TurnTokens {
+            input: 10,
+            output: 1,
+            cache: 0,
+            reasoning: 0,
+        };
+        let line = turn_line("evt-sec", "grok-4.5-build", tokens, 1_750_000_000, None);
         let entries = parse_lines(&line, None);
 
         assert_eq!(entries.len(), 1);
@@ -829,7 +878,7 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].model.as_deref(), Some("model-a"));
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
-        assert_eq!(entries[0].extra_total_tokens, 1);
+        assert_eq!(entries[0].extra_total_tokens, 0);
         assert_eq!(entries[1].model.as_deref(), Some("model-b"));
         assert_eq!(entries[1].data.message.usage.input_tokens, 15);
         assert_eq!(entries[1].data.message.usage.cache_read_input_tokens, 5);
@@ -875,12 +924,78 @@ mod tests {
     }
 
     #[test]
-    fn ignores_precomputed_cost_usd_ticks_on_the_wire() {
-        let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"costUsdTicks":1038524000,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10,"costUsdTicks":1038524000}}}},"_meta":{"eventId":"evt-cost"}}}"#;
+    fn reads_the_recorded_cost_usd_ticks() {
+        // Verbatim from a Grok CLI 1.0.0 turn: 185_192_000 ticks is $0.0185192,
+        // which is exactly the xAI list price for these token counts.
+        let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":18444,"outputTokens":130,"cachedReadTokens":11264,"reasoningTokens":73,"costUsdTicks":185192000,"modelUsage":{"grok-4.5-build":{"inputTokens":18444,"outputTokens":130,"cachedReadTokens":11264,"reasoningTokens":73,"costUsdTicks":185192000}}}},"_meta":{"eventId":"evt-cost"}}}"#;
         let entries = parse_lines(line, None);
 
         assert_eq!(entries.len(), 1);
-        assert!(entries[0].data.cost_usd.is_none());
-        assert_eq!(entries[0].cost, 0.0);
+        assert!(
+            entries[0]
+                .data
+                .cost_usd
+                .is_some_and(|cost| (cost - 0.0185192).abs() < 1e-12)
+        );
+        assert!((entries[0].cost - 0.0185192).abs() < 1e-12);
+        assert_eq!(entries[0].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn auto_prefers_recorded_ticks_while_calculate_recomputes() {
+        let key = "xai/grok-4.5".to_string();
+        let pricing_override = crate::cli::PricingOverride {
+            input_cost_per_token: Some(1.0),
+            output_cost_per_token: Some(1.0),
+            ..crate::cli::PricingOverride::default()
+        };
+        let pricing = PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        let usage = TokenUsageRaw {
+            input_tokens: 10,
+            output_tokens: 10,
+            ..TokenUsageRaw::default()
+        };
+
+        assert_eq!(
+            calculate_grok_cost(
+                "grok-4.5-build",
+                usage,
+                Some(0.25),
+                CostMode::Auto,
+                &pricing
+            ),
+            0.25
+        );
+        assert_eq!(
+            calculate_grok_cost(
+                "grok-4.5-build",
+                usage,
+                Some(0.25),
+                CostMode::Calculate,
+                &pricing
+            ),
+            20.0
+        );
+    }
+
+    #[test]
+    fn auto_falls_back_to_the_pricing_table_without_ticks() {
+        let key = "xai/grok-4.5".to_string();
+        let pricing_override = crate::cli::PricingOverride {
+            input_cost_per_token: Some(1.0),
+            output_cost_per_token: Some(1.0),
+            ..crate::cli::PricingOverride::default()
+        };
+        let pricing = PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
+        let usage = TokenUsageRaw {
+            input_tokens: 10,
+            output_tokens: 10,
+            ..TokenUsageRaw::default()
+        };
+
+        assert_eq!(
+            calculate_grok_cost("grok-4.5-build", usage, None, CostMode::Auto, &pricing),
+            20.0
+        );
     }
 }

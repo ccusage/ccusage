@@ -37,16 +37,20 @@ In-progress turns are not counted until `turn_completed` is written.
 
 Grok records OpenAI-style usage where `inputTokens` includes cache:
 
-| Grok field | ccusage field | Rule |
-| --- | --- | --- |
-| `inputTokens − cachedReadTokens` | `input_tokens` | cache clamped ≤ input |
-| `cachedReadTokens` | `cache_read_input_tokens` | |
-| `outputTokens` | `output_tokens` | as recorded |
-| `reasoningTokens` | `extra_total_tokens` only | **not** billed separately |
-| — | `cache_creation_input_tokens` | always `0` |
-| `costUsdTicks` | ignored | `cost_usd` always unset |
+| Grok field                       | ccusage field                 | Rule                                                                     |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
+| `inputTokens − cachedReadTokens` | `input_tokens`                | cache clamped ≤ input                                                    |
+| `cachedReadTokens`               | `cache_read_input_tokens`     |                                                                          |
+| `outputTokens`                   | `output_tokens`               | as recorded                                                              |
+| `reasoningTokens`                | dropped                       | already inside `outputTokens`; counting it again would inflate the total |
+| —                                | `cache_creation_input_tokens` | always `0`                                                               |
+| `costUsdTicks`                   | `cost_usd`                    | fixed-point USD, one tick is 1e-10 USD                                   |
 
-Costs are token × LiteLLM pricing estimates. Display mode shows `$0` for Grok.
+`costUsdTicks` is the invoice cost, so `display` and the default `auto` report what
+Grok billed. `calculate`, and `auto` for turns that recorded no ticks, fall back to
+token × LiteLLM pricing. That fallback only approximates the invoice: a
+`turn_completed` row aggregates several API requests, so it cannot reproduce Grok's
+per-request long-context tiering.
 
 ## Model display and pricing
 
