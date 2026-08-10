@@ -10,7 +10,6 @@ use ccusage_core::*;
 
 mod adapter {
     pub use ccusage_adapter_amp as amp;
-    pub use ccusage_adapter_antigravity as antigravity;
     pub use ccusage_adapter_claude as claude;
     pub use ccusage_adapter_codebuff as codebuff;
     pub use ccusage_adapter_codex as codex;
@@ -18,6 +17,7 @@ mod adapter {
     pub use ccusage_adapter_droid as droid;
     pub use ccusage_adapter_gemini as gemini;
     pub use ccusage_adapter_goose as goose;
+    pub use ccusage_adapter_grok as grok;
     pub use ccusage_adapter_hermes as hermes;
     pub use ccusage_adapter_kilo as kilo;
     pub use ccusage_adapter_kimi as kimi;

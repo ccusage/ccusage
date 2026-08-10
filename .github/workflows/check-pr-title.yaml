@@ -23,3 +23,105 @@ jobs:
           ignoreLabels: |
             autorelease: pending
             dependencies
+
+  # The job above only checks the title's shape. A squash merge turns that title
+  # into the subject on main, so it also has to survive the scope rules
+  # scripts/validate-commit-scope.nu applies to local commits — keep the two in
+  # step.
+  scope:
+    name: Validate PR title scope
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    # Same exemptions as the job above, so the two title policies agree on which
+    # pull requests they judge.
+    if: >-
+      !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
+      && !contains(github.event.pull_request.labels.*.name, 'dependencies')
+    steps:
+      - uses: hustcer/setup-nu@f3fd65374ffc4d60974c0dd2f7263c6c5c285f81 # v3.26
+        with:
+          # Matches the dev shell in flake.nix, so a title rejected here is
+          # rejected the same way by the commit-msg hook.
+          version: 0.114.1
+
+      - name: Check title scope against the changed adapters
+        shell: nu {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        # This job only calls GitHub APIs, so keeping the script inline avoids a repository clone.
+        run: |
+          # Mirrors scripts/validate-commit-scope.nu; the two move together.
+          const CROSS_CUTTING_SCOPES = [deps, release, pricing, revert]
+          const WORKSPACE_SCOPES = [adapter, all, rust]
+          const GENERATED_SUBJECTS = ["Merge ", "Revert ", "fixup!", "squash!", "amend!"]
+
+          def main []: nothing -> nothing {
+            let title = $env.PR_TITLE | str trim
+
+            if ($GENERATED_SUBJECTS | any {|prefix| $title | str starts-with $prefix }) { return }
+
+            let parsed = $title | parse --regex '^(?<type>[a-z]+)(?:\((?<scope>[^()]+)\))?!?: \S' | get 0?
+            if $parsed == null {
+              reject $title "is not a Conventional Commit" "Use `<type>(<scope>): <subject>`, for example `feat(codex): add session totals`."
+            }
+
+            let owners = changed-owners
+            let scopes = $parsed.scope
+              | default ""
+              | split row ","
+              | each {|scope| $scope | str trim }
+              | where {|scope| $scope != "" }
+
+            match $owners {
+              [] => {}
+              [$owner] => {
+                (check $title $scopes ($CROSS_CUTTING_SCOPES | prepend $owner)
+                  $"The change belongs to `($owner)`, so use `($parsed.type)\(($owner)\): ...`.")
+              }
+              [_, _, ..] => {
+                (check $title $scopes ($CROSS_CUTTING_SCOPES | append $WORKSPACE_SCOPES | append $owners)
+                  $"The change spans ($owners | str join ', '), so name one of them or use a scope that covers all of them.")
+              }
+            }
+          }
+
+          # Rejects a title whose scope is missing from `allowed`.
+          def check [title: string, scopes: list<string>, allowed: list<string>, hint: string]: nothing -> nothing {
+            if ($scopes | is-empty) {
+              reject $title "needs a scope" $hint
+            }
+
+            if not ($scopes | all {|scope| $scope in $allowed }) {
+              reject $title $"is scoped `($scopes | str join ',')`" $hint
+            }
+          }
+
+          def reject [title: string, problem: string, hint: string]: nothing -> nothing {
+            print --stderr $"PR title ($problem):\n  ($title)\n\n($hint)"
+            exit 1
+          }
+
+          # Lists the agents owning the files this pull request touches. Only
+          # rust/adapters/* is mapped: each crate is a catch-all whose commits are
+          # scoped by feature rather than by crate name.
+          def changed-owners []: nothing -> list<string> {
+            gh api $"repos/($env.GITHUB_REPOSITORY)/pulls/($env.PR_NUMBER)/files" --paginate --slurp
+            | from json
+            | flatten
+            | get filename
+            | each {|path| owner-for-path $path }
+            | compact
+            | uniq
+            | sort
+          }
+
+          def owner-for-path [path: string]: nothing -> any {
+            match ($path | split row "/") {
+              ["rust", "adapters", "common", ..] => "adapter"
+              # A dot means the entry is a file directly under `adapters/`, not an agent.
+              ["rust", "adapters", $agent, ..] if not ($agent | str contains ".") => $agent
+              _ => null
+            }
+          }

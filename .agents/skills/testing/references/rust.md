@@ -1,77 +1,66 @@
 # Rust Tests
 
-Use fixture-backed Rust tests for parser, path discovery, SQLite loading,
-dedupe, aggregation, pricing, and CLI output parity. Prefer
-`ccusage-test-support` for temporary filesystem setup instead of hand-rolled
-`env::temp_dir()` paths.
+Fixture-backed tests cover parsing, path discovery, SQLite loading, dedupe,
+aggregation, pricing, and CLI output parity.
 
-## Filesystem Fixtures
+## Fixtures
 
-Use the internal `ccusage-test-support` crate for Rust tests that need temporary
-files or directories. The fixture owns an `assert_fs::TempDir`, so everything is
-removed automatically when the fixture variable drops at the end of the test.
+Tests needing temporary files or environment variables use the internal
+`ccusage-test-support` crate rather than hand-rolled `env::temp_dir()` paths:
 
-For small inline trees, prefer `fs_fixture!`:
+- `fs_fixture!` builds an inline tree; `Fixture::new()` exposes `create_dir_all`,
+  `write_file`, and `path` for incremental setup.
+- `EnvVarGuard::set` and `EnvVarsGuard::set_many` take a process-wide lock and
+  restore the previous value on drop, which is what stops env-dependent tests from
+  racing each other under `cargo test`.
 
-```rust
-use ccusage_test_support::fs_fixture;
+A fixture owns an `assert_fs::TempDir` and deletes it when the fixture variable
+drops, so keep that variable alive as long as paths under it are used — returning
+only a `PathBuf` out of an inner scope loses the directory.
 
-let fixture = fs_fixture!({
-    "projects/example/session.jsonl": "{}\n",
-});
+Working examples: `rust/adapters/codex/src/loader.rs`,
+`rust/adapters/gemini/src/paths.rs`.
 
-let file_path = fixture.path("projects/example/session.jsonl");
-```
+## Snapshots
 
-For incremental setup, use `Fixture` directly:
+`insta` (with the `json` feature) covers CLI help, parse shapes, report JSON, and
+table rendering — see `rust/crates/ccusage-cli-parser/src/tests.rs` and
+`rust/adapters/codex/src/lib.rs`. Committed `.snap` files live in a `snapshots/`
+directory beside the module. `cargo-insta` is in the dev shell, so review pending
+snapshots with `cargo insta review` and read the diff before accepting, rather than
+hand-editing `.snap` files.
 
-```rust
-use ccusage_test_support::Fixture;
-
-let fixture = Fixture::new();
-fixture.create_dir_all("projects/example/session");
-fixture.write_file("projects/example/session/chat.jsonl", "{}\n");
-```
-
-Keep the fixture variable alive for as long as paths under it are used. Do not
-return or store only a `PathBuf` from a short inner scope, because dropping the
-fixture removes the directory.
+Prefer JSON assertions for structured behavior, and snapshots or explicit layout
+assertions for human-readable tables, so table layout and responsive behavior stay
+reviewable for each affected agent/report combination.
 
 ## Readability
 
-For expected failures, use `Result` tests, `matches!`, or explicit error
-assertions. For table-driven coverage, use `rstest` cases when the crate is
-already available, explicit Rust case structs, or a small local macro for
-repeated assertions. For concrete Rust examples, read
-`../../tdd/references/rust.md`.
+For expected failures, use `Result` tests, `matches!`, or explicit error assertions.
+The workspace has no test-case crate, so cover table-driven cases with explicit case
+structs or a small local macro for repeated assertions.
 
-## CLI Output Tests
+Doc tests run under `cargo test`. Use them for public helpers where the example
+doubles as documentation, not for broad CLI behavior.
 
-Integration tests that exercise human-readable table output should use focused
-golden output or explicit layout assertions so table layout and responsive
-behavior stay reviewable for each affected agent/report combination.
+## Pricing And Model Names
 
-Prefer JSON assertions for structured behavior and snapshot assertions for terminal layout.
+Pricing resolves against two embedded snapshots: the LiteLLM one generated into
+`OUT_DIR` at build time, and the committed `models-dev-pricing.json`.
+`PricingMap::load_embedded()` reads only those and touches no network, so tests use it;
+`load_with_overrides(offline: false, ..)` is the path that fetches. Lookup is not plain
+equality — alias and separator handling means the tests in
+`rust/crates/ccusage-core/src/pricing.rs` are the reference for what a new model name
+should resolve to. A pricing failure usually means the upstream snapshot moved or the
+name is genuinely unsupported.
 
-## Claude Models
-
-Use current Claude 4 model names in tests:
+Use current Claude 4 names, `claude-{model-type}-{generation}-{date}`:
 
 ```text
 claude-sonnet-4-20250514
 claude-opus-4-20250514
 ```
 
-The preferred naming pattern is `claude-{model-type}-{generation}-{date}`. Use compatibility or alias forms such as `claude-4-sonnet-*` only when the test explicitly covers pricing lookup, alias handling, or legacy compatibility behavior.
-
-When model coverage matters, include both Sonnet and Opus. Avoid outdated Claude 3 model names unless the test specifically covers legacy input.
-
-## LiteLLM Pricing
-
-Cost calculations require exact model-name matches against LiteLLM pricing data. If adding model tests:
-
-1. Verify the model exists in LiteLLM's pricing data.
-2. Use exact model names from the pricing database.
-3. Prefer offline/stubbed pricing loaders where the package already has that pattern.
-
-Pricing-related test failures may mean the external model database changed or a model name is unsupported.
+Include both Sonnet and Opus when model coverage matters. Alias forms such as
+`claude-4-sonnet-*` and Claude 3 names belong in tests that specifically cover
+pricing lookup, alias handling, or legacy compatibility.

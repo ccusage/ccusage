@@ -67,6 +67,15 @@ in
               stages = [ "pre-commit" ];
               priority = 20;
             };
+            ccusage-commit-scope = {
+              enable = true;
+              name = "commit scope";
+              entry = "${lib.getExe pkgs.nushell} scripts/validate-commit-scope.nu";
+              pass_filenames = true;
+              always_run = true;
+              stages = [ "commit-msg" ];
+              priority = 0;
+            };
             ccusage-treefmt-check = {
               enable = true;
               name = "treefmt";

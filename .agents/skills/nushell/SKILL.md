@@ -1,6 +1,6 @@
 ---
 name: nushell
-description: Guides ccusage Nushell scripts. Use when adding, editing, formatting, or validating .nu scripts, Nix shebangs, GitHub Actions script calls, or just recipes that invoke Nushell.
+description: Guides ccusage Nushell scripts. Use when adding, editing, formatting, or validating .nu files under .github/scripts, apps/ccusage/scripts, or scripts, including their Nix shebangs and GitHub Actions callers.
 paths:
   - '**/*.nu'
 globs: '*.nu'
@@ -8,53 +8,72 @@ globs: '*.nu'
 
 # ccusage Nushell
 
-Use this skill for repository scripts written in Nushell, especially under
-`.github/scripts/` and `apps/ccusage/scripts/`.
+Nushell is a functional, structured-data language that happens to be a shell.
+Write it that way: pipelines of transformations over records and tables, not bash
+with different syntax. Root `AGENTS.md` says when to pick Nushell over Babashka,
+Rust, or TypeScript.
+
+Scripts live in `.github/scripts/`, `apps/ccusage/scripts/`, and `scripts/`.
 
 ## Runtime Shape
 
-- Prefer executable `.nu` scripts with a Nix shebang over adding `nushell` to a
-  GitHub Actions profile install.
-- Use `#!/usr/bin/env nix` plus a `nix shell --inputs-from` line when the script
-  needs tools that should be pinned by the flake.
-- Keep the shebang tool list to commands the script directly invokes.
-- It is acceptable for a Nu script to call external tools such as `gh`, `jq`,
-  `git`, `hyperfine`, `pnpm`, `node`, or `bun` when those tools are the right
-  boundary. Prefer the shebang Nix shell to global installs.
+Every executable script is a `.nu` file with a Nix shebang and a `def main`; that
+shebang is how CI gets an interpreter, rather than a `nushell` profile install in
+the workflow. List only the tools the script directly invokes; `--inputs-from` is relative to
+the script's own directory, so its depth differs per directory — copy the header
+from a neighbor, such as `.github/scripts/upsert-pr-comment.nu` or
+`apps/ccusage/scripts/stage-native-package.nu`.
 
-Example:
+Files that exist only to be imported as modules carry no shebang and no `main`:
+`.github/scripts/pricing-lock.nu`, `apps/ccusage/scripts/native-binary.nu`.
 
-```nu
-#!/usr/bin/env nix
-#! nix shell --inputs-from ../../.. nixpkgs#nushell nixpkgs#git --command nu
-```
+Workflows run these scripts through the shebang, but the commit-msg hook in
+`nix/git-hooks.nix` invokes `scripts/validate-commit-scope.nu` as an argument to
+`nushell` instead, so that script only ever gets `nu` itself.
 
-Adjust the `--inputs-from` relative path to the script location.
+Calling external tools such as `gh`, `jq`, `git`, `hyperfine`, `pnpm`, `node`, or
+`bun` is fine when they are the right boundary — pin them through the shebang
+shell rather than a global install.
+
+## Docs
+
+Read before writing. The sidebar on any of these reaches the rest of the book,
+plus `/commands/` and `/cookbook/`.
+
+https://www.nushell.sh/book/thinking_in_nu.html
+
+https://www.nushell.sh/book/nushell_map_functional.html
+
+https://www.nushell.sh/book/style_guide.html
 
 ## Style
 
-- Use structured Nushell data operations (`open`, records, lists, `from json`,
-  `to json`, `transpose`, `where`, `each`) instead of ad hoc string parsing.
-- Use `run-external` for commands where flags may be parsed by Nushell, and quote
-  short flags such as `'-L'`, `'-x'`, `'-c'`, and `'-change'`.
-- Keep command arguments as lists until the external boundary. When a string
-  command is required, quote arguments that may contain spaces.
-- Use `complete` when you need exit code, stdout, and stderr without throwing.
-- Print progress to stderr for CI scripts whose stdout is a data artifact.
+Functional style is the default. Treat each of these as a defect to fix:
+
+- **`mut` + `for` as an accumulator.** Use `reduce`, `each`, `where`, `group-by`, `zip`, `flatten`, `insert`/`update`, `generate`. `mut` is legitimate only for genuinely sequential state that no filter expresses.
+- **String plumbing between steps.** Pass records and tables; serialize once at the boundary (`to json --raw`) and parse once on the way in (`from json`).
+- **Nested `if`/`else` chains on a value's shape.** Use `match`, including list patterns and guards.
+- **Shelling out for data.** Native commands over `^jq`, `^sed`, `^awk`, `^date`.
+- **Bare `each` for effects.** Say so with `| ignore` when the result is unused.
+
+Also:
+
+- Type custom command signatures — parameter types, `--flag`, and the return type. They document intent and are checked at parse time.
+- `run-external` for commands whose flags Nushell would otherwise parse; quote short flags such as `'-L'`, `'-x'`, `'-c'`, and keep arguments as lists up to the external boundary.
+- `complete` when you need exit code, stdout, and stderr without throwing; `error make` rather than a sentinel return value.
+- Timestamps are `datetime` and durations are `duration`; compare and subtract them directly instead of formatting to strings.
+- Progress to stderr for CI scripts whose stdout is a data artifact.
 
 ## Validation
 
-Run syntax checks through Nix instead of assuming `nu` is on `PATH`:
+Nushell renames and breaks things between minor releases, so check constructs
+against the pinned interpreter instead of trusting memory:
 
 ```sh
-nix shell --inputs-from . nixpkgs#nushell --command nu --commands 'nu-check path/to/script.nu'
+direnv exec . nu --ide-check 10 path/to/script.nu
+direnv exec . nu -c 'help <command>'
 ```
 
-Run formatting after edits:
-
-```sh
-just fmt
-```
-
-For behavior changes, add a focused smoke command that invokes the script via
-its executable shebang, then run the repo check that owns the caller.
+`just fmt` runs `nufmt` over `*.nu` through treefmt. For behavior changes, invoke
+the script through its shebang as a smoke check and run the repo check that owns
+the caller.

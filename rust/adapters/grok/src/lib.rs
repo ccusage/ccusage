@@ -1,10 +1,11 @@
-use ccusage_adapter_common::{filter_loaded_entries_by_date, read_files_parallel};
+use ccusage_adapter_common::{
+    collect_files_with_extension, filter_loaded_entries_by_date, read_files_parallel,
+};
 use ccusage_core::*;
 
 mod loader;
 mod parser;
 mod paths;
-mod proto;
 mod report;
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
     wants_json,
 };
 
-pub use loader::load_entries;
+pub use loader::{has_data, load_entries};
 pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 
@@ -37,7 +38,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         );
     }
     print_usage_table(
-        "Antigravity Token Usage Report",
+        "Grok Token Usage Report",
         ccusage_core::first_column(args.kind),
         &rows,
         &shared,
@@ -45,4 +46,22 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         None,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod smoke_tests {
+    use super::*;
+    use crate::cli::SharedArgs;
+
+    #[test]
+    #[ignore = "requires real Grok home with sessions/**/updates.jsonl"]
+    fn smoke_real_grok_home_loads_without_error() {
+        let shared = SharedArgs {
+            timezone: Some("UTC".into()),
+            ..SharedArgs::default()
+        };
+        let pricing = PricingMap::load_embedded();
+        let entries = load_entries(&shared, &pricing).unwrap();
+        let _ = entries.len();
+    }
 }

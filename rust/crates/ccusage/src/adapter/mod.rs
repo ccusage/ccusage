@@ -1,6 +1,5 @@
 pub(crate) use ccusage_adapter_all as all;
 pub(crate) use ccusage_adapter_amp as amp;
-pub(crate) use ccusage_adapter_antigravity as antigravity;
 pub(crate) use ccusage_adapter_claude as claude;
 pub(crate) use ccusage_adapter_codebuff as codebuff;
 pub(crate) use ccusage_adapter_codex as codex;
@@ -8,6 +7,7 @@ pub(crate) use ccusage_adapter_copilot as copilot;
 pub(crate) use ccusage_adapter_droid as droid;
 pub(crate) use ccusage_adapter_gemini as gemini;
 pub(crate) use ccusage_adapter_goose as goose;
+pub(crate) use ccusage_adapter_grok as grok;
 pub(crate) use ccusage_adapter_hermes as hermes;
 pub(crate) use ccusage_adapter_kilo as kilo;
 pub(crate) use ccusage_adapter_kimi as kimi;

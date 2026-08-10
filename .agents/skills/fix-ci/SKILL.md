@@ -5,36 +5,30 @@ description: Diagnoses and fixes failing GitHub Actions checks with gh. Use when
 
 # Fix CI
 
-Use this when a PR check fails or the user asks to fix CI. This skill is repo-local so contributors can follow the same workflow without relying on a personal global skill.
+1. Read the check state with `gh pr checks`, then pull the failing job logs with
+   `gh run view <run-id> --log-failed`. Logs fetched through `gh` are reproducible;
+   browser-only inspection is not. Pending checks can usually wait unless the failure is
+   already clear.
 
-## Workflow
+2. Reproduce locally. CI runs almost everything through Nix, so the failing step maps onto a
+   `just` recipe:
 
-1. Inspect PR checks:
+   | CI job / step                                  | Local                                                  |
+   | ---------------------------------------------- | ------------------------------------------------------ |
+   | `preflight`, or `Run nix flake check`          | `just check`                                           |
+   | `Run Rust tests` (`nix build .#ccusage-tests`) | `just rust::test`                                      |
+   | `JS test`                                      | `just test-node`                                       |
+   | `Babashka performance harness test`            | `apps/ccusage/scripts/compare-pr-performance_test.clj` |
 
-   ```sh
-   gh pr checks
-   gh pr view --json url,headRefName,statusCheckRollup
-   ```
+   Start with the narrowest command that reproduces the failure — a single `cargo test`
+   filter — before the recipe above.
 
-2. Identify failed GitHub Actions runs and jobs. Ignore pending checks until they finish unless the failure is already clear.
+3. Fix the smallest cause that explains the failed check, using the skill for the area being
+   changed: `testing`, `development`, `docs`, or the nearest package `AGENTS.md`. When the
+   failure was generated output or formatting, commit the regenerated result the check
+   requires rather than hand-editing it.
 
-3. Fetch failed logs:
+4. Commit with the `commit` skill; a manifest change and its lockfile update belong in the
+   same commit, and unrelated cleanups belong in separate ones. Let the git hooks run.
 
-   ```sh
-   gh run view <run-id> --log-failed
-   gh run view <run-id> --json jobs
-   ```
-
-4. Fix the smallest cause that explains the failed check. Use the relevant repo skill or nearest package guidance for the area being changed, such as `testing`, `development`, or `docs/AGENTS.md`.
-
-5. Validate locally with the narrowest command that reproduces the failure, then run the relevant broader checks. Let git hooks run normally.
-
-6. Commit the fix as a small independently revertible commit using the `commit` skill. If the fix requires a manifest or lockfile update, include both in the same commit.
-
-7. Push normally and use `create-pr` to comment or request another review pass when appropriate.
-
-## Notes
-
-- Prefer `gh` over browser-only inspection so logs and job IDs are reproducible.
-- Do not mix unrelated review cleanups into a CI fix commit.
-- If CI failed because of generated output or formatting, commit only the generated/formatting result that the failing check requires.
+5. Push, then use `create-pr` to comment or request another review pass when appropriate.

@@ -1,67 +1,55 @@
 # AGENTS.md
 
-This file points agents at the right repo-local skills and keeps only the guidance that should always be visible.
+Routing plus the policies that are true before any task starts. Task-time detail lives in the
+skills below and loads when the task triggers them.
 
 ## Skill Routing
 
-Use these skills before working in this repository:
-
-- `development` - monorepo layout, bundled CLI packaging, commands, code style, dependency policy, and post-change checks.
-- `rust` - native Rust CLI implementation, parser/module layout, pricing embedding, and TypeScript parity checks.
-- `profile` - Rust and TypeScript performance profiling, branch-vs-main speed comparisons, profile reading, and optimization validation.
-- `testing` - Rust cargo tests, Node tests, CLI snapshots, Claude model names, LiteLLM pricing tests, and filesystem fixtures.
-- `typescript` - TypeScript package/tooling work, package launchers, schema tooling, and typed fixtures.
-- `agent-sources` - agent adapter log locations, token mappings, cost rules, and CLI behavior.
-- `docs` - cross-repository documentation impact checks for README files, docs guides, VitePress navigation, screenshots, schema docs, and user-facing commands/options.
-- `skill-creator` - repo-local skill creation, SKILL.md frontmatter, description trigger quality, and reference layout.
-- `nushell` - Nushell scripts, Nix shebangs, GitHub Actions script calls, `nu-check`, and `nufmt` formatting.
-- `ast-grep` - structural code searches in Rust or TypeScript and AST-based migration verification with the dev-shell `ast-grep` CLI.
-- `rust-binary-size` - Rust release profile, dependency feature, native packaging size, and executable bloat reduction guidance based on min-sized-rust.
+- `development` - monorepo layout, `just` recipes, dev-shell environment, dependency and tooling policy, validation, releases.
+- `rust` - `rust/crates` and `rust/adapters` implementation: crate roles, module layout, visibility and `just hawk`, embedded pricing, behavior parity.
+- `typescript` - `.ts`, `.tsx`, `.js`, and `.jsx` package and tooling code, typed literals, launchers, schema tooling.
+- `agent-sources` - agent log locations, raw record shapes, token mappings, cost modes, source-specific CLI behavior.
+- `testing` - cargo and Node tests, CLI snapshots, fixtures, pricing and model tests.
 - `tdd` - Red-Green-Refactor workflow for logic changes.
-- `reduce-similarities` - AST-based duplicate Rust code detection with similarity-rs; TypeScript duplication checks use `typescript` and `ast-grep`.
-- `cmux-debug` - terminal UI and responsive table verification in cmux.
-- `create-pr` - single entry point for PR work, from branch creation through AI review requests, review-thread replies, and passing CI.
-- `fix-ci` - diagnose and fix failing GitHub Actions checks with `gh`, then push small follow-up commits.
+- `profile` - CLI and script performance, branch-vs-main comparisons.
+- `rust-binary-size` - release profile, dependency features, native packaging size, executable bloat.
+- `reduce-similarities` - duplicate Rust code detection with `similarity-rs`.
+- `ast-grep` - structural searches in Rust or TypeScript.
+- `nushell` - `.nu` scripts, Nix shebangs, and the recipes and workflows that call them.
+- `cmux-debug` - output that depends on real terminal geometry: responsive tables, progress, spinners.
+- `docs` - whether and where a change needs documentation updates; run it whenever a user-facing agent, command, option, report mode, config key, JSON field, or screenshot changes.
+- `skill-creator` - authoring or editing `.agents/skills`.
+- `commit` - atomic Conventional Commits and patch-based staging.
+- `create-pr` - branch through merged PR: pushing, AI review requests, review-thread replies, CI.
+- `fix-ci` - failing GitHub Actions checks.
 
-## Monorepo Packages
+## Repository Shape
 
-Check the nearest package-specific `AGENTS.md` before editing package code:
+The production CLI is Rust-first. Source-specific runtime behavior belongs in
+`rust/adapters/<agent>`, shared behavior in `ccusage-core` or `ccusage-adapter-common`.
+`apps/ccusage` is the npm surface only - bin launcher, schema artifact, packaging and benchmark
+scripts - and not a place for adapter logic.
 
-- `apps/ccusage/AGENTS.md` - main Claude Code usage CLI and library
+Read the nearest `AGENTS.md` before editing:
+
+- `apps/ccusage/AGENTS.md` - published npm package
+- `rust/adapters/AGENTS.md` - adapter crates
 - `docs/AGENTS.md` - VitePress documentation site
 
-## Always-On Reminders
+## Policy
 
-- The canonical user-facing CLI is `ccusage` with agent subcommands such as `ccusage amp`, `ccusage codex`, `ccusage opencode`, and `ccusage pi`.
-- Use Nushell for small structured automation that primarily orchestrates external commands, files, HTTP, and JSON.
-- Use Babashka when automation develops a reusable data model, multiple transformation stages, substantial reporting logic, or focused unit tests.
-- Use Rust for production binaries and CPU- or memory-intensive tooling.
-- Use TypeScript when the implementation directly benefits from the npm and JavaScript ecosystem or exposes a JavaScript API.
-- Standalone agent wrapper packages have been removed. Do not add docs, tests, or features that promote `ccusage-amp`, `ccusage-codex`, `ccusage-opencode`, or `ccusage-pi`.
-- Runtime libraries for bundled packages belong in `devDependencies` unless explicitly requested otherwise.
-- When initializing this repository environment, run `direnv allow` so the pinned Nix dev shell is activated.
-- Prefer tools provided by the Nix dev shell before falling back to ad hoc installs: `rg`, `fd`, `fzf`, `delta`, `dust`, `jq`, `gh`, `hyperfine`, `similarity`, `ast-grep`, `typos`, and `typos-lsp`. When a missing tool would be useful for repeated agent work in this repository, add it to `flake.nix`.
-- The production CLI is Rust-first under `rust/crates` and `rust/adapters`. Put source-specific
-  runtime behavior in `rust/adapters/<agent>` and shared behavior in
-  `ccusage-core` or `ccusage-adapter-common` unless the work is specifically about
-  npm packaging, generated schemas, docs tooling, or benchmark scripts.
-- For Rust code, keep modules small, use `pub` only for what another crate uses and `pub(crate)` for everything else (`just hawk` reports the difference), prefer fixture-backed parser/loader tests, and run cargo checks through the `just` recipes when possible.
-- TypeScript rules still apply to `.ts`, `.tsx`, `.js`, and `.jsx` package/tooling files. Use `typescript` there, especially `satisfies` and `as const satisfies` for typed literals.
-- For TypeScript package code, use `logger.ts` instead of `console.log`, use `.ts` extensions for local imports, and avoid dynamic imports.
-- After code changes, run `just fmt` when formatting may apply. Rely on git hooks and CI for covered checks; run `just typecheck` or `just test` manually when the change touches behavior, types, package code, or when hooks/CI do not cover the edited files. `just` is the single entry point for repo tasks (`just --list`); recipes route to the pnpm workspace or the Nix flake.
-- PR branches are squash-merged by default; prefer stacked, small, revertable follow-up commits over `git commit --amend` unless explicitly requested.
-- Use US English for repository-facing GitHub communication, including issue comments, PR descriptions, review replies, triage notes, and bot-directed replies.
-- Do what has been asked, nothing more. Do not proactively create documentation files unless explicitly requested.
-
-## Cross-Cutting Flow
-
-For changes that affect user-facing agents, commands, options, report modes,
-configuration, JSON output, screenshots, or examples:
-
-1. Implement the runtime/package/docs change in the owning location.
-2. Use the `docs` skill to audit documentation impact.
-3. Update the root `README.md`, `apps/ccusage/README.md`, relevant `docs/guide/`
-   pages, related cross-links, and VitePress navigation when the user-facing
-   surface changed.
-4. Skip documentation edits for internal-only refactors, test-only changes, or
-   skill maintenance unless they change user-facing behavior.
+- The canonical command is `ccusage` with agent subcommands, such as `ccusage codex daily`. The
+  standalone wrapper packages `ccusage-amp`, `ccusage-codex`, `ccusage-opencode`, and `ccusage-pi`
+  were removed; do not reintroduce them in code, docs, tests, or examples.
+- Runtime libraries for bundled packages go in `devDependencies` unless the user asks otherwise.
+- Language choice: Rust for production binaries and CPU- or memory-intensive tooling; Nushell for
+  small automation that mostly orchestrates external commands, files, HTTP, and JSON; Babashka once
+  automation grows a reusable data model, several transformation stages, substantial reporting
+  logic, or its own unit tests; TypeScript when the work benefits from the npm and JavaScript
+  ecosystem or exposes a JavaScript API.
+- Repository-facing GitHub communication - issue comments, PR descriptions, review replies, triage
+  notes, bot-directed replies - is US English.
+- PR branches are squash-merged, so prefer small stacked follow-up commits over
+  `git commit --amend` unless the user asks for an amend.
+- Work happens inside the pinned Nix dev shell: run `direnv allow` when first initializing this
+  environment, and prefix one-offs with `direnv exec .` from outside it.
