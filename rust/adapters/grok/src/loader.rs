@@ -57,13 +57,14 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
                 // `extra_total_tokens` is always 0 here (reasoning stays inside
                 // `output_tokens`), so it carries no signal and is left out.
                 format!(
-                    "{}|{}|{}|{}|{}|{}",
+                    "{}|{}|{}|{}|{}|{}|{}",
                     entry.session_id.as_ref(),
                     entry.timestamp.as_millis(),
                     entry.model.as_deref().unwrap_or_default(),
                     usage.input_tokens,
                     usage.output_tokens,
                     usage.cache_read_input_tokens,
+                    usage.cache_creation_input_tokens,
                 )
             });
         seen.insert(key)

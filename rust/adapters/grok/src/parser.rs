@@ -438,11 +438,12 @@ fn dedupe_key(
         return format!("{event_id}|{model}");
     }
     format!(
-        "{session_id}|{}|{model}|{}|{}|{}|{reasoning}",
+        "{session_id}|{}|{model}|{}|{}|{}|{}|{reasoning}",
         timestamp.as_millis(),
         usage.input_tokens,
         usage.output_tokens,
         usage.cache_read_input_tokens,
+        usage.cache_creation_input_tokens,
     )
 }
 
@@ -951,6 +952,22 @@ mod tests {
         let content = format!("{line}\n{line}\n");
         let entries = parse_lines(&content, None);
         assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn keeps_rows_without_event_id_that_differ_only_in_cache_creation() {
+        // Both turns leave 80 uncached input, so cache creation is the only
+        // discriminator left; dropping one would undercount 20 tokens.
+        let with_creation = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-cc","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":5,"cachedReadTokens":0,"cacheCreationTokens":20,"reasoningTokens":0}}}}}}"#;
+        let without_creation = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-cc","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":80,"outputTokens":5,"cachedReadTokens":0,"reasoningTokens":0}}}}}}"#;
+        let entries = parse_lines(&format!("{with_creation}\n{without_creation}\n"), None);
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            20
+        );
+        assert_eq!(entries[1].data.message.usage.cache_creation_input_tokens, 0);
     }
 
     #[test]
