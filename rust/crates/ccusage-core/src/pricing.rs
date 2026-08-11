@@ -136,24 +136,24 @@ pub struct PricingMap {
 #[derive(Debug, Default)]
 struct ExactOnlyKeys {
     raw: FxHashSet<String>,
-    /// The normalized spellings that differ from the id they name, mapped back
-    /// to it. Canonical ids are not stored twice, and `None` marks a spelling
-    /// two exact-only ids share, which therefore names neither on its own.
+    /// Every id under its normalized spelling, mapped back to the id it names.
+    /// An id spelled with dashes alone is indexed too, or a request writing it
+    /// with `.` or `@` would answer neither membership question; `None` marks a
+    /// spelling two exact-only ids share, which therefore names neither on its
+    /// own.
     normalized: FxHashMap<String, Option<String>>,
 }
 
 impl ExactOnlyKeys {
     fn insert(&mut self, key: String) {
-        if let Cow::Owned(normalized) = normalized_pricing_key(&key) {
-            self.normalized
-                .entry(normalized)
-                .and_modify(|named| {
-                    if named.as_deref() != Some(key.as_str()) {
-                        *named = None;
-                    }
-                })
-                .or_insert_with(|| Some(key.clone()));
-        }
+        self.normalized
+            .entry(normalized_pricing_key(&key).into_owned())
+            .and_modify(|named| {
+                if named.as_deref() != Some(key.as_str()) {
+                    *named = None;
+                }
+            })
+            .or_insert_with(|| Some(key.clone()));
         self.raw.insert(key);
     }
 
@@ -161,9 +161,7 @@ impl ExactOnlyKeys {
         if !self.raw.remove(key) {
             return;
         }
-        let Cow::Owned(normalized) = normalized_pricing_key(key) else {
-            return;
-        };
+        let normalized = normalized_pricing_key(key).into_owned();
         // Another id can share the normalized spelling, and dropping it while
         // that id is still exact-only would reopen the gate for both.
         let mut sharing = self
@@ -2158,6 +2156,25 @@ mod tests {
         // Only a spelling of the whole id is that id: a longer name that merely
         // contains it keeps the fuzzy match it has always had.
         assert!(pricing.find("claude-opus-5-eu-preview").is_some());
+    }
+
+    #[test]
+    fn a_dotted_spelling_of_a_dash_spelled_exact_only_id_is_priced_as_that_id() {
+        // The catalog writes most exact-only ids with dashes alone, and those
+        // have to be indexed under their normalized spelling too: a request for
+        // `claude-opus-5.fast` normalizes to the id the snapshot carries, so
+        // leaving it out of the index lets the primary fuzzy scan answer with
+        // the base `claude-opus-5` entry and bill the tier at list price.
+        let pricing = PricingMap::load_embedded();
+
+        let base = pricing.find("claude-opus-5").unwrap();
+        let dotted = pricing
+            .find("claude-opus-5.fast")
+            .expect("the dotted spelling names the Fast tier");
+        assert!((dotted.input * 1e6 - 12.0).abs() < 1e-9);
+        assert!((dotted.output * 1e6 - 60.0).abs() < 1e-9);
+        assert!(dotted.input > base.input);
+        assert_eq!(pricing.context_limit("claude-opus-5.fast"), Some(1_000_000));
     }
 
     #[test]
