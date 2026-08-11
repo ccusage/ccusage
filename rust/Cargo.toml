@@ -50,6 +50,9 @@ jiff = { version = "0.2.35", default-features = false, features = [
 	"tzdb-bundle-platform",
 ] }
 memchr = "2.8.3"
+# Inflate-only consumer of the deflated pricing snapshots build.rs embeds; the
+# compression side is a build-dependency of ccusage-core.
+miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
 mimalloc = "0.1.52"
 minreq = { version = "3.0.0", default-features = false, features = ["https-rustls"] }
 rustc-hash = "2.1.3"

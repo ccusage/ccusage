@@ -16,14 +16,20 @@ ccusage-cli.workspace = true
 ccusage-terminal.workspace = true
 jiff.workspace = true
 memchr.workspace = true
+miniz_oxide.workspace = true
 rustc-hash.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
 
 [build-dependencies]
+miniz_oxide.workspace = true
 minreq = { workspace = true, optional = true }
-serde_json.workspace = true
+# float_roundtrip: the snapshots are minified through a parse -> serialize
+# round-trip, and serde_json's default float parsing is not correctly rounded,
+# so without it a handful of prices shift by one ULP on the way into the
+# binary. Host-only, so it costs the shipped binary nothing.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 
 [dev-dependencies]
 ccusage-test-support.workspace = true

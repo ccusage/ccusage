@@ -5,9 +5,11 @@ use serde_json::{Map, Value};
 const FLAKE_LOCK_JSON: &str = "../../../flake.lock";
 #[cfg(feature = "fetch-litellm-pricing")]
 const LITELLM_PRICING_JSON: &str = "model_prices_and_context_window.json";
-const OUT_PRICING_JSON: &str = "litellm-pricing.json";
+const OUT_PRICING_JSON: &str = "litellm-pricing.json.deflate";
 const MODELS_DEV_PRICING_JSON: &str = "src/models-dev-pricing.json";
-const OUT_MODELS_DEV_PRICING_JSON: &str = "models-dev-pricing.json";
+const OUT_MODELS_DEV_PRICING_JSON: &str = "models-dev-pricing.json.deflate";
+const MODELS_DEV_CATALOG_RULES_JSON: &str = "src/models-dev-catalog-rules.json";
+const OUT_MODELS_DEV_CATALOG_RULES_JSON: &str = "models-dev-catalog-rules.json.deflate";
 const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
 #[cfg(feature = "fetch-litellm-pricing")]
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
@@ -26,25 +28,33 @@ fn main() {
     };
     let pricing_json = compact_pricing_json(&pricing_json).expect("compact LiteLLM pricing JSON");
 
-    fs::write(out_path, pricing_json).expect("write build-time pricing snapshot");
+    fs::write(out_path, deflate(pricing_json.as_bytes()))
+        .expect("write build-time pricing snapshot");
 
-    minify_models_dev_pricing_json();
+    embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON);
+    embed_snapshot(
+        MODELS_DEV_CATALOG_RULES_JSON,
+        OUT_MODELS_DEV_CATALOG_RULES_JSON,
+    );
 }
 
-/// The committed models.dev snapshot stays indented so its regeneration diffs
-/// stay reviewable, but it is embedded verbatim, so the indentation would ship
-/// in the binary. Strip it on the way in.
-fn minify_models_dev_pricing_json() {
-    println!("cargo:rerun-if-changed={MODELS_DEV_PRICING_JSON}");
-    let snapshot = fs::read_to_string(MODELS_DEV_PRICING_JSON)
-        .expect("read committed models.dev pricing snapshot");
-    let value =
-        serde_json::from_str::<Value>(&snapshot).expect("parse models.dev pricing snapshot");
-    fs::write(
-        out_dir_path(OUT_MODELS_DEV_PRICING_JSON),
-        serde_json::to_string(&value).expect("serialize models.dev pricing snapshot"),
-    )
-    .expect("write build-time models.dev pricing snapshot");
+/// The committed snapshots stay indented so their regeneration diffs stay
+/// reviewable, but they are embedded verbatim, so the indentation - and, at
+/// 2K+ models, most of the JSON itself - would ship in the binary. Minify and
+/// deflate on the way in; the runtime inflates once on first use.
+fn embed_snapshot(source: &str, out_name: &str) {
+    println!("cargo:rerun-if-changed={source}");
+    let snapshot = fs::read_to_string(source).expect("read committed pricing snapshot");
+    let value = serde_json::from_str::<Value>(&snapshot).expect("parse committed pricing snapshot");
+    let minified = serde_json::to_string(&value).expect("serialize committed pricing snapshot");
+    fs::write(out_dir_path(out_name), deflate(minified.as_bytes()))
+        .expect("write build-time pricing snapshot");
+}
+
+/// Raw deflate at maximum effort: the cost is paid once per changed snapshot at
+/// build time, and the level only matters there.
+fn deflate(bytes: &[u8]) -> Vec<u8> {
+    miniz_oxide::deflate::compress_to_vec(bytes, 10)
 }
 
 fn out_dir_path(file_name: &str) -> PathBuf {

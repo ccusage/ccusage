@@ -11,12 +11,43 @@ use serde_json::Value;
 
 use crate::fast::{FxHashMap, FxHashSet};
 
-const BUILD_TIME_PRICING_JSON: &str =
-    include_str!(concat!(env!("OUT_DIR"), "/litellm-pricing.json"));
-const BUILD_TIME_MODELS_DEV_JSON: &str =
-    include_str!(concat!(env!("OUT_DIR"), "/models-dev-pricing.json"));
-const MODELS_DEV_CATALOG_RULES_JSON: &str = include_str!("models-dev-catalog-rules.json");
+// The embedded snapshots ship deflated - the models.dev one alone would
+// otherwise add a quarter megabyte of JSON to the binary - and are inflated
+// once, on first use, by the accessors below.
+const BUILD_TIME_PRICING_DEFLATE: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/litellm-pricing.json.deflate"));
+const BUILD_TIME_MODELS_DEV_DEFLATE: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/models-dev-pricing.json.deflate"));
+const MODELS_DEV_CATALOG_RULES_DEFLATE: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/models-dev-catalog-rules.json.deflate"
+));
 const FAST_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("fast-multiplier-overrides.json");
+
+/// Inflate one of the deflated snapshots above. Infallible by construction:
+/// build.rs produced the bytes from JSON it had just serialized.
+fn inflate_snapshot(cell: &'static OnceLock<String>, deflated: &[u8]) -> &'static str {
+    cell.get_or_init(|| {
+        let bytes = miniz_oxide::inflate::decompress_to_vec(deflated)
+            .expect("inflate embedded pricing snapshot");
+        String::from_utf8(bytes).expect("embedded pricing snapshot is UTF-8")
+    })
+}
+
+fn build_time_pricing_json() -> &'static str {
+    static JSON: OnceLock<String> = OnceLock::new();
+    inflate_snapshot(&JSON, BUILD_TIME_PRICING_DEFLATE)
+}
+
+fn build_time_models_dev_json() -> &'static str {
+    static JSON: OnceLock<String> = OnceLock::new();
+    inflate_snapshot(&JSON, BUILD_TIME_MODELS_DEV_DEFLATE)
+}
+
+fn models_dev_catalog_rules_json() -> &'static str {
+    static JSON: OnceLock<String> = OnceLock::new();
+    inflate_snapshot(&JSON, MODELS_DEV_CATALOG_RULES_DEFLATE)
+}
 const LITELLM_PRICING_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
@@ -321,8 +352,9 @@ fn is_unversioned_models_dev_model_id(model_id: &str) -> bool {
 fn models_dev_catalog_rules() -> &'static ModelsDevCatalogRules {
     static RULES: OnceLock<ModelsDevCatalogRules> = OnceLock::new();
     RULES.get_or_init(|| {
-        let mut rules: ModelsDevCatalogRules = serde_json::from_str(MODELS_DEV_CATALOG_RULES_JSON)
-            .expect("parse embedded models-dev-catalog-rules.json");
+        let mut rules: ModelsDevCatalogRules =
+            serde_json::from_str(models_dev_catalog_rules_json())
+                .expect("parse embedded models-dev-catalog-rules.json");
         rules.normalized_authored_model_ids = rules
             .authored_model_ids
             .iter()
@@ -448,7 +480,7 @@ impl PricingMap {
     pub fn load_embedded() -> Self {
         let mut map = Self::default();
         let fast_multiplier_overrides = FastMultiplierOverrides::load();
-        map.load_json_with_overrides(BUILD_TIME_PRICING_JSON, &fast_multiplier_overrides);
+        map.load_json_with_overrides(build_time_pricing_json(), &fast_multiplier_overrides);
         map.put_builtin_pricing(&fast_multiplier_overrides);
         map.apply_builtin_long_context_rates();
         // Resolve models that LiteLLM and the built-in table miss from the
@@ -1808,7 +1840,7 @@ fn embedded_models_dev_pricing() -> &'static PricingMap {
     static EMBEDDED_MODELS_DEV_PRICING: OnceLock<PricingMap> = OnceLock::new();
     EMBEDDED_MODELS_DEV_PRICING.get_or_init(|| {
         let mut map = PricingMap::default();
-        map.load_models_dev_json_missing(BUILD_TIME_MODELS_DEV_JSON)
+        map.load_models_dev_json_missing(build_time_models_dev_json())
             .expect("embedded models-dev-pricing.json must parse");
         map
     })
@@ -1874,7 +1906,7 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BUILD_TIME_MODELS_DEV_JSON, BUILD_TIME_PRICING_JSON, Fuzzy, Pricing, PricingMap,
+        Fuzzy, Pricing, PricingMap, build_time_models_dev_json, build_time_pricing_json,
         embedded_models_dev_pricing, long_context_split_threshold, model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
@@ -2929,7 +2961,7 @@ mod tests {
     fn embedded_models_dev_snapshot_is_parseable() {
         let mut map = PricingMap::default();
         assert!(
-            map.load_models_dev_json_missing(BUILD_TIME_MODELS_DEV_JSON)
+            map.load_models_dev_json_missing(build_time_models_dev_json())
                 .is_some()
         );
     }
@@ -3477,10 +3509,11 @@ mod tests {
 
     #[test]
     fn embedded_build_time_pricing_is_compact() {
-        assert!(BUILD_TIME_PRICING_JSON.len() < 200_000);
-        assert!(!BUILD_TIME_PRICING_JSON.contains("\"source\""));
-        assert!(!BUILD_TIME_PRICING_JSON.contains("vertex_ai/"));
-        assert!(BUILD_TIME_PRICING_JSON.contains("claude-opus-4-6"));
+        let json = build_time_pricing_json();
+        assert!(json.len() < 200_000);
+        assert!(!json.contains("\"source\""));
+        assert!(!json.contains("vertex_ai/"));
+        assert!(json.contains("claude-opus-4-6"));
     }
 
     #[test]
