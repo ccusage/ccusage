@@ -118,18 +118,101 @@ pub struct PricingMap {
     /// rate only for a request that names it. Left in the fuzzy scan it wins over
     /// the base model, because that scan prefers the longest matching key, so
     /// `kimi-k2-7-code` would be billed at the premium tier.
-    exact_only: FxHashSet<String>,
+    exact_only: ExactOnlyKeys,
     context_limits: FxHashMap<String, u64>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
     find_cache: OnceLock<Mutex<FxHashMap<String, Option<Pricing>>>>,
 }
 
+/// The ids of [`PricingMap::exact_only`], indexed both as written and under the
+/// separator-normalized spelling `pricing_key_matches` compares.
+///
+/// The gate that keeps a request naming an exact-only id off the fuzzy scan has
+/// to recognize the same spellings that scan does, or `claude-opus-5@eu` written
+/// as `claude-opus-5-eu` passes the gate and is billed at the base model's rate,
+/// which is exactly what marking the id exact-only was meant to prevent. That
+/// spelling names the tier, so it resolves to it rather than losing its rate.
+#[derive(Debug, Default)]
+struct ExactOnlyKeys {
+    raw: FxHashSet<String>,
+    /// The normalized spellings that differ from the id they name, mapped back
+    /// to it. Canonical ids are not stored twice, and `None` marks a spelling
+    /// two exact-only ids share, which therefore names neither on its own.
+    normalized: FxHashMap<String, Option<String>>,
+}
+
+impl ExactOnlyKeys {
+    fn insert(&mut self, key: String) {
+        if let Cow::Owned(normalized) = normalized_pricing_key(&key) {
+            self.normalized
+                .entry(normalized)
+                .and_modify(|named| {
+                    if named.as_deref() != Some(key.as_str()) {
+                        *named = None;
+                    }
+                })
+                .or_insert_with(|| Some(key.clone()));
+        }
+        self.raw.insert(key);
+    }
+
+    fn remove(&mut self, key: &str) {
+        if !self.raw.remove(key) {
+            return;
+        }
+        let Cow::Owned(normalized) = normalized_pricing_key(key) else {
+            return;
+        };
+        // Another id can share the normalized spelling, and dropping it while
+        // that id is still exact-only would reopen the gate for both.
+        let mut sharing = self
+            .raw
+            .iter()
+            .filter(|other| normalized_pricing_key(other) == normalized);
+        let only = sharing.next().cloned();
+        let shared = sharing.next().is_some();
+        match only {
+            None => {
+                self.normalized.remove(&normalized);
+            }
+            Some(only) => {
+                self.normalized
+                    .insert(normalized, (!shared).then_some(only));
+            }
+        }
+    }
+
+    /// Whether the id is exact-only as written, the question the fuzzy scan asks
+    /// of its own candidate keys.
+    fn contains(&self, key: &str) -> bool {
+        self.raw.contains(key)
+    }
+
+    /// Whether the id is any spelling of an exact-only id, the question a
+    /// requested model name has to answer before it may be fuzzy-matched.
+    fn contains_any_spelling(&self, key: &str) -> bool {
+        self.raw.contains(key)
+            || self
+                .normalized
+                .contains_key(normalized_pricing_key(key).as_ref())
+    }
+
+    /// The exact-only id an alternate separator spelling names, if exactly one
+    /// does. The fuzzy scan already treats those spellings as one id, so this
+    /// only decides which entry answers, not whether they match.
+    fn id_spelled_by(&self, key: &str) -> Option<&str> {
+        self.normalized
+            .get(normalized_pricing_key(key).as_ref())?
+            .as_deref()
+    }
+}
+
 impl Default for PricingMap {
     fn default() -> Self {
         Self {
             entries: FxHashMap::default(),
-            exact_only: FxHashSet::default(),
+            exact_only: ExactOnlyKeys::default(),
             context_limits: FxHashMap::default(),
             enable_models_dev_fallback: false,
             enable_embedded_models_dev_fallback: false,
@@ -821,6 +904,11 @@ impl PricingMap {
 
     fn find_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
         self.entries.get(model).copied().or_else(|| {
+            // A separator spelling of an exact-only id names that entry, so it
+            // is answered from it rather than gated into a miss below.
+            if let Some(id) = self.exact_only.id_spelled_by(model) {
+                return self.entries.get(id).copied();
+            }
             if fuzzy == Fuzzy::Denied || self.is_exact_only_lookup(model) {
                 return None;
             }
@@ -853,10 +941,16 @@ impl PricingMap {
     /// The network catalog is deliberately not consulted: reading it would fetch
     /// models.dev before the primary lookup has even missed, and it is generated
     /// from the same rules as the snapshot the check already reads.
+    /// Membership is asked of every spelling of the id, not just the one the
+    /// catalog wrote: the fuzzy scan the gate protects matches `.`, `@` and `-`
+    /// interchangeably, so `claude-opus-5-eu` reaches the base model's entry
+    /// just as `claude-opus-5@eu` would and has to be gated with it.
     fn is_exact_only_lookup(&self, model: &str) -> bool {
-        self.exact_only.contains(model)
+        self.exact_only.contains_any_spelling(model)
             || (self.enable_embedded_models_dev_fallback
-                && embedded_models_dev_pricing().exact_only.contains(model))
+                && embedded_models_dev_pricing()
+                    .exact_only
+                    .contains_any_spelling(model))
     }
 
     /// Whether the spelling a lookup recorded may be fuzzy-matched at all.
@@ -915,6 +1009,9 @@ impl PricingMap {
 
     fn context_limit_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
         self.context_limits.get(model).copied().or_else(|| {
+            if let Some(id) = self.exact_only.id_spelled_by(model) {
+                return self.context_limits.get(id).copied();
+            }
             if fuzzy == Fuzzy::Denied || self.is_exact_only_lookup(model) {
                 return None;
             }
@@ -2034,6 +2131,33 @@ mod tests {
         // Gating keys the snapshot carries must not cost keys nothing prices
         // exactly their fuzzy match.
         assert!(pricing.find("claude-opus-5-20260115").is_some());
+    }
+
+    #[test]
+    fn a_separator_spelling_of_an_exact_only_id_is_priced_as_that_id() {
+        // `pricing_key_matches` reads `@`, `.` and `-` as one separator, so
+        // `claude-opus-5-eu` fuzzy-matches LiteLLM's base `claude-opus-5` exactly
+        // as `claude-opus-5@eu` would. Gating only the spelling the catalog wrote
+        // would bill the regional premium at list price, and gating the spelling
+        // without answering from the id it names would lose the rate entirely.
+        let pricing = PricingMap::load_embedded();
+
+        let base = pricing.find("claude-opus-5").unwrap();
+        let eu = pricing.find("claude-opus-5@eu").unwrap();
+        let dashed = pricing
+            .find("claude-opus-5-eu")
+            .expect("the dashed spelling names the EU alias");
+        assert!(dashed.input > base.input);
+        assert!((dashed.input - eu.input).abs() < 1e-12);
+        assert!((dashed.output - eu.output).abs() < 1e-12);
+        assert_eq!(
+            pricing.context_limit("claude-opus-5-eu"),
+            pricing.context_limit("claude-opus-5@eu")
+        );
+
+        // Only a spelling of the whole id is that id: a longer name that merely
+        // contains it keeps the fuzzy match it has always had.
+        assert!(pricing.find("claude-opus-5-eu-preview").is_some());
     }
 
     #[test]
