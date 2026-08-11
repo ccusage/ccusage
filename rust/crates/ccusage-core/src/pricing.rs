@@ -776,6 +776,9 @@ impl PricingMap {
 
     fn find_entry(&self, model: &str) -> Option<Pricing> {
         self.entries.get(model).copied().or_else(|| {
+            if self.is_exact_only_lookup(model) {
+                return None;
+            }
             let normalized_model = normalized_pricing_key(model);
             self.entries
                 .iter()
@@ -788,6 +791,27 @@ impl PricingMap {
                 })
                 .map(|(_, pricing)| *pricing)
         })
+    }
+
+    /// Whether `model` names an entry that only an exact request may use, which
+    /// is the other half of the `exact_only` rule: such a key must not be
+    /// answered by a fuzzy match on a different model either, or the tier it
+    /// names is unreachable and the base model's rate is billed for it.
+    ///
+    /// The check has to reach past this map because the embedded models.dev
+    /// snapshot is a separate map consulted only after the primary one misses:
+    /// `claude-opus-5-fast` would otherwise fuzzy-match LiteLLM's
+    /// `claude-opus-5` here and never reach the snapshot's tier entry. Only a
+    /// carried entry gates the scan, so a key nothing prices exactly still falls
+    /// back to fuzzy matching rather than losing its rate.
+    ///
+    /// The network catalog is deliberately not consulted: reading it would fetch
+    /// models.dev before the primary lookup has even missed, and it is generated
+    /// from the same rules as the snapshot the check already reads.
+    fn is_exact_only_lookup(&self, model: &str) -> bool {
+        self.exact_only.contains(model)
+            || (self.enable_embedded_models_dev_fallback
+                && embedded_models_dev_pricing().exact_only.contains(model))
     }
 
     pub fn context_limit(&self, model: &str) -> Option<u64> {
@@ -827,6 +851,9 @@ impl PricingMap {
 
     fn context_limit_entry(&self, model: &str) -> Option<u64> {
         self.context_limits.get(model).copied().or_else(|| {
+            if self.is_exact_only_lookup(model) {
+                return None;
+            }
             let normalized_model = normalized_pricing_key(model);
             self.context_limits
                 .iter()
@@ -1912,6 +1939,37 @@ mod tests {
         // MoonshotAI's list rate. Reseller catalogs publish 0.73 and 0.75.
         assert!((kimi_k27_code.input * 1e6 - 0.95).abs() < 1e-9);
         assert!((kimi_k27_code.output * 1e6 - 4.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn embedded_pricing_prefers_an_exact_only_tier_over_a_fuzzy_litellm_match() {
+        // The snapshot lives in its own map, consulted only after the primary
+        // LiteLLM one misses, so marking `claude-opus-5-fast` exact-only there is
+        // not enough on its own: the primary fuzzy scan would answer with the
+        // base `claude-opus-5` entry it does carry and bill the tier at list
+        // price. Exercised through `load_embedded` to cover that lookup order.
+        let pricing = PricingMap::load_embedded();
+
+        let base = pricing.find("claude-opus-5").unwrap();
+        assert!((base.input * 1e6 - 5.0).abs() < 1e-9);
+
+        let fast = pricing
+            .find("claude-opus-5-fast")
+            .expect("the embedded snapshot prices the Fast tier");
+        assert!((fast.input * 1e6 - 12.0).abs() < 1e-9);
+        assert!((fast.output * 1e6 - 60.0).abs() < 1e-9);
+        assert_eq!(pricing.context_limit("claude-opus-5-fast"), Some(1_000_000));
+
+        // A regional alias shadows the same base entry, and is exact-only for
+        // the same reason: its premium is not the list rate.
+        let eu = pricing
+            .find("claude-opus-5@eu")
+            .expect("the embedded snapshot prices the EU alias");
+        assert!(eu.input > base.input);
+
+        // Gating keys the snapshot carries must not cost keys nothing prices
+        // exactly their fuzzy match.
+        assert!(pricing.find("claude-opus-5-20260115").is_some());
     }
 
     #[test]
