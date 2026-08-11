@@ -70,6 +70,14 @@ impl Pricing {
     }
 }
 
+/// Whether a lookup may fall back to the fuzzy scan, or has to answer from
+/// exact entries because a fuzzy match would shadow an exact-only id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fuzzy {
+    Allowed,
+    Denied,
+}
+
 #[derive(Debug)]
 pub struct PricingMap {
     entries: FxHashMap<String, Pricing>,
@@ -728,18 +736,20 @@ impl PricingMap {
         // serialized on the expensive fuzzy path).
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
+        let fuzzy = self.allows_fuzzy_lookup(model, resolved_alias);
         let result = self
-            .find_entry_or_alias(model)
+            .find_entry_or_alias(model, fuzzy)
             .or_else(|| {
                 (resolved_alias != model)
-                    .then(|| self.find_entry_or_alias(resolved_alias))
+                    .then(|| self.find_entry_or_alias(resolved_alias, Fuzzy::Allowed))
                     .flatten()
             })
             .or_else(|| {
                 self.enable_models_dev_fallback
                     .then(|| {
-                        models_dev_pricing()
-                            .and_then(|pricing| pricing.find_entry_or_alias(resolved_alias))
+                        models_dev_pricing().and_then(|pricing| {
+                            pricing.find_entry_or_alias(resolved_alias, Fuzzy::Allowed)
+                        })
                     })
                     .flatten()
             })
@@ -748,7 +758,10 @@ impl PricingMap {
             // fuzzy alias matching. It works offline, unlike the network source.
             .or_else(|| {
                 self.enable_embedded_models_dev_fallback
-                    .then(|| embedded_models_dev_pricing().find_entry_or_alias(resolved_alias))
+                    .then(|| {
+                        embedded_models_dev_pricing()
+                            .find_entry_or_alias(resolved_alias, Fuzzy::Allowed)
+                    })
                     .flatten()
             });
         // Store the result (including None for misses) so repeated lookups
@@ -766,17 +779,17 @@ impl PricingMap {
         self.entries.get(model).copied()
     }
 
-    fn find_entry_or_alias(&self, model: &str) -> Option<Pricing> {
+    fn find_entry_or_alias(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
         self.entries
             .get(model)
             .copied()
-            .or_else(|| pricing_alias(model).and_then(|alias| self.find_entry(alias)))
-            .or_else(|| self.find_entry(model))
+            .or_else(|| pricing_alias(model).and_then(|alias| self.find_entry(alias, fuzzy)))
+            .or_else(|| self.find_entry(model, fuzzy))
     }
 
-    fn find_entry(&self, model: &str) -> Option<Pricing> {
+    fn find_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
         self.entries.get(model).copied().or_else(|| {
-            if self.is_exact_only_lookup(model) {
+            if fuzzy == Fuzzy::Denied || self.is_exact_only_lookup(model) {
                 return None;
             }
             let normalized_model = normalized_pricing_key(model);
@@ -814,20 +827,36 @@ impl PricingMap {
                 && embedded_models_dev_pricing().exact_only.contains(model))
     }
 
+    /// Whether the spelling a lookup recorded may be fuzzy-matched at all.
+    ///
+    /// A `CCUSAGE_MODEL_ALIASES` entry pointing at an exact-only id is tried
+    /// only after this map has answered for the recorded spelling, so a spelling
+    /// that fuzzy-matches some other model - `claude-opus-5-turbo` aliased to
+    /// `claude-opus-5-fast` matches LiteLLM's `claude-opus-5` - would be billed
+    /// at that model's rate and never reach the tier the alias names. Exact
+    /// entries for the recorded spelling still win, as they do without an alias.
+    fn allows_fuzzy_lookup(&self, model: &str, resolved_alias: &str) -> Fuzzy {
+        if resolved_alias != model && self.is_exact_only_lookup(resolved_alias) {
+            return Fuzzy::Denied;
+        }
+        Fuzzy::Allowed
+    }
+
     pub fn context_limit(&self, model: &str) -> Option<u64> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
-        self.context_limit_entry_or_alias(model)
+        let fuzzy = self.allows_fuzzy_lookup(model, resolved_alias);
+        self.context_limit_entry_or_alias(model, fuzzy)
             .or_else(|| {
                 (resolved_alias != model)
-                    .then(|| self.context_limit_entry_or_alias(resolved_alias))
+                    .then(|| self.context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed))
                     .flatten()
             })
             .or_else(|| {
                 self.enable_models_dev_fallback
                     .then(|| {
                         models_dev_pricing().and_then(|pricing| {
-                            pricing.context_limit_entry_or_alias(resolved_alias)
+                            pricing.context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed)
                         })
                     })
                     .flatten()
@@ -835,23 +864,26 @@ impl PricingMap {
             .or_else(|| {
                 self.enable_embedded_models_dev_fallback
                     .then(|| {
-                        embedded_models_dev_pricing().context_limit_entry_or_alias(resolved_alias)
+                        embedded_models_dev_pricing()
+                            .context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed)
                     })
                     .flatten()
             })
     }
 
-    fn context_limit_entry_or_alias(&self, model: &str) -> Option<u64> {
+    fn context_limit_entry_or_alias(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
         self.context_limits
             .get(model)
             .copied()
-            .or_else(|| pricing_alias(model).and_then(|alias| self.context_limit_entry(alias)))
-            .or_else(|| self.context_limit_entry(model))
+            .or_else(|| {
+                pricing_alias(model).and_then(|alias| self.context_limit_entry(alias, fuzzy))
+            })
+            .or_else(|| self.context_limit_entry(model, fuzzy))
     }
 
-    fn context_limit_entry(&self, model: &str) -> Option<u64> {
+    fn context_limit_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
         self.context_limits.get(model).copied().or_else(|| {
-            if self.is_exact_only_lookup(model) {
+            if fuzzy == Fuzzy::Denied || self.is_exact_only_lookup(model) {
                 return None;
             }
             let normalized_model = normalized_pricing_key(model);
@@ -1842,7 +1874,7 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BUILD_TIME_MODELS_DEV_JSON, BUILD_TIME_PRICING_JSON, Pricing, PricingMap,
+        BUILD_TIME_MODELS_DEV_JSON, BUILD_TIME_PRICING_JSON, Fuzzy, Pricing, PricingMap,
         embedded_models_dev_pricing, long_context_split_threshold, model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
@@ -1970,6 +2002,29 @@ mod tests {
         // Gating keys the snapshot carries must not cost keys nothing prices
         // exactly their fuzzy match.
         assert!(pricing.find("claude-opus-5-20260115").is_some());
+    }
+
+    #[test]
+    fn configured_alias_of_an_exact_only_tier_beats_a_fuzzy_match_on_the_alias() {
+        // The alias target is only tried after this map has answered for the
+        // recorded spelling, and that spelling can fuzzy-match a different model
+        // on its own - here LiteLLM's base `claude-opus-5` - which would bill the
+        // tier at list price and never reach what the alias names.
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+            "claude-opus-5-turbo",
+            "claude-opus-5-fast",
+        )]);
+        let pricing = PricingMap::load_embedded();
+
+        let turbo = pricing
+            .find("claude-opus-5-turbo")
+            .expect("the alias resolves to the Fast tier");
+        assert!((turbo.input * 1e6 - 12.0).abs() < 1e-9);
+        assert!((turbo.output * 1e6 - 60.0).abs() < 1e-9);
+        assert_eq!(
+            pricing.context_limit("claude-opus-5-turbo"),
+            Some(1_000_000)
+        );
     }
 
     #[test]
@@ -2222,11 +2277,14 @@ mod tests {
             .expect("models.dev retry should cache successful pricing");
 
         let gpt_retry = pricing
-            .find_entry("gpt-retry")
+            .find_entry("gpt-retry", Fuzzy::Allowed)
             .expect("successful retry should load pricing");
         assert_eq!(gpt_retry.input, 0.000001);
         assert_eq!(gpt_retry.output, 0.000002);
-        assert_eq!(pricing.context_limit_entry("gpt-retry"), Some(42));
+        assert_eq!(
+            pricing.context_limit_entry("gpt-retry", Fuzzy::Allowed),
+            Some(42)
+        );
     }
 
     #[test]
@@ -2889,13 +2947,13 @@ mod tests {
         let Some(model) = embedded_models_dev_pricing()
             .entries
             .keys()
-            .find(|model| offline.find_entry(model).is_none())
+            .find(|model| offline.find_entry(model, Fuzzy::Allowed).is_none())
         else {
             return;
         };
         // The primary table alone misses it, but the offline embedded fallback
         // resolves it; a bare map without the fallback flag must not.
-        assert!(offline.find_entry(model).is_none());
+        assert!(offline.find_entry(model, Fuzzy::Allowed).is_none());
         assert!(offline.find(model).is_some());
         assert!(PricingMap::default().find(model).is_none());
     }
@@ -2905,7 +2963,7 @@ mod tests {
         use ccusage_cli::PricingOverride;
         assert!(
             embedded_models_dev_pricing()
-                .find_entry("claude-fable-5")
+                .find_entry("claude-fable-5", Fuzzy::Allowed)
                 .is_some(),
             "embedded models.dev snapshot should include claude-fable-5"
         );
@@ -3119,13 +3177,15 @@ mod tests {
             crate::model_aliases::set_model_aliases_for_tests([("claude-opus-4-8", "mythos-5")]);
         let pricing = PricingMap::load_embedded();
 
-        let original = pricing.find_entry("claude-opus-4-8").unwrap();
+        let original = pricing
+            .find_entry("claude-opus-4-8", Fuzzy::Allowed)
+            .unwrap();
         let resolved = pricing.find("claude-opus-4-8").unwrap();
 
         assert_eq!(resolved.input, original.input);
         assert_eq!(
             pricing.context_limit("claude-opus-4-8"),
-            pricing.context_limit_entry("claude-opus-4-8")
+            pricing.context_limit_entry("claude-opus-4-8", Fuzzy::Allowed)
         );
     }
 
