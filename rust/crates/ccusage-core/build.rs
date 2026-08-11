@@ -44,11 +44,14 @@ fn main() {
 /// deflate on the way in; the runtime inflates once on first use.
 fn embed_snapshot(source: &str, out_name: &str) {
     println!("cargo:rerun-if-changed={source}");
-    let snapshot = fs::read_to_string(source).expect("read committed pricing snapshot");
-    let value = serde_json::from_str::<Value>(&snapshot).expect("parse committed pricing snapshot");
-    let minified = serde_json::to_string(&value).expect("serialize committed pricing snapshot");
+    let snapshot =
+        fs::read_to_string(source).unwrap_or_else(|error| panic!("read {source}: {error}"));
+    let value = serde_json::from_str::<Value>(&snapshot)
+        .unwrap_or_else(|error| panic!("parse {source}: {error}"));
+    let minified =
+        serde_json::to_string(&value).unwrap_or_else(|error| panic!("serialize {source}: {error}"));
     fs::write(out_dir_path(out_name), deflate(minified.as_bytes()))
-        .expect("write build-time pricing snapshot");
+        .unwrap_or_else(|error| panic!("write {out_name}: {error}"));
 }
 
 /// Raw deflate at maximum effort: the cost is paid once per changed snapshot at
