@@ -60,7 +60,7 @@ smallvec = "1.15.2"
 sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
 terminal_size = "0.4.4"
 unicode-width = "0.2.2"
-ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
+ureq = { version = "3.4.0", default-features = false, features = ["rustls"] }
 
 [profile.release]
 codegen-units = 1
