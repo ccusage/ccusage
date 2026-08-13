@@ -26,6 +26,14 @@ pub use types::{
 };
 pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
+pub fn has_data() -> bool {
+    paths::codex_usage_sources().is_ok_and(|sources| {
+        sources
+            .iter()
+            .any(|source| !paths::collect_codex_usage_files(&source.dir).is_empty())
+    })
+}
+
 use report::{print_table_from_groups, report_from_groups};
 
 use crate::cli::{AgentReportKind, CodexSpeed};

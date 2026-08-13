@@ -11,8 +11,9 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use rustc_hash::FxHasher;
 
 use crate::{
-    CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, Result,
+    CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, MILLIS_PER_DAY, Result,
     cli::{AgentReportKind, SharedArgs, WeekDay},
+    date_range_bounds_ms,
     fast::FxHashMap,
     format_date_tz, merge_codex_service_tiers, parse_ts_timestamp, parse_tz, wants_json,
     week_start,
@@ -73,7 +74,10 @@ fn load_groups_from_sources(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    let file_groups = paths::collect_deduped_codex_usage_files(sources);
+    let mut file_groups = paths::collect_deduped_codex_usage_files(sources);
+    for group in &mut file_groups {
+        retain_report_files(&mut group.files, shared);
+    }
     let replay_plan = CodexReplayPlan::new(
         file_groups
             .iter()
@@ -106,7 +110,8 @@ pub(super) fn load_groups_from_directory(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    let files = paths::collect_codex_usage_files(sessions_dir);
+    let mut files = paths::collect_codex_usage_files(sessions_dir);
+    retain_report_files(&mut files, shared);
     let replay_plan =
         CodexReplayPlan::new([(sessions_dir, files.as_slice())], shared.single_thread);
     let run = CodexAggregateRun {
@@ -123,6 +128,31 @@ pub(super) fn load_groups_from_directory(
     let mut groups = aggregate_files_parallel(&run, &seen)?;
     apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
     Ok(groups)
+}
+
+fn retain_report_files(files: &mut Vec<PathBuf>, shared: &SharedArgs) {
+    let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
+    let (Some(start), _) = date_range_bounds_ms(shared.since.as_deref(), None, timezone.as_ref())
+    else {
+        return;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok());
+    if now.is_none_or(|now| start > now) {
+        return;
+    }
+    // ponytail: mtime is a one-day-widened proxy; inspect file tails if preserved mtimes matter.
+    let cutoff = start.saturating_sub(MILLIS_PER_DAY);
+    files.retain(|file| {
+        file.metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+            .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+            .is_none_or(|modified| modified >= cutoff)
+    });
 }
 
 fn aggregate_files_with_dedupe(
@@ -709,6 +739,41 @@ mod tests {
                 None,
             );
         }
+    }
+
+    #[test]
+    fn skips_codex_files_older_than_since_window() {
+        let fixture = fs_fixture!({
+            "old.jsonl": "",
+            "recent.jsonl": "",
+        });
+        let old = fixture.path("old.jsonl");
+        let recent = fixture.path("recent.jsonl");
+        for (file, timestamp) in [
+            (&old, "2026-05-20T00:00:00Z"),
+            (&recent, "2026-05-28T12:00:00Z"),
+        ] {
+            let modified = std::time::UNIX_EPOCH
+                + std::time::Duration::from_millis(
+                    parse_ts_timestamp(timestamp).unwrap().as_millis() as u64,
+                );
+            std::fs::File::options()
+                .write(true)
+                .open(file)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+        }
+        let mut files = vec![old, recent.clone()];
+        let shared = SharedArgs {
+            since: Some("20260529".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        retain_report_files(&mut files, &shared);
+
+        assert_eq!(files, vec![recent]);
     }
 
     #[test]

@@ -525,6 +525,31 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
     assert_daily_family_and_session_sections_match_standalone(&shared);
 }
 
+#[test]
+fn detects_codex_when_date_filter_excludes_all_rows() {
+    let fixture = fs_fixture!({
+        "codex/sessions/session.jsonl": codex_usage_line(
+            "2026-01-02T08:01:00.000Z",
+            "gpt-5.2",
+            1_000,
+        ),
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "CODEX_HOME",
+        fixture.path("codex").into_os_string(),
+    );
+
+    let result = loader::load_rows(
+        AgentReportKind::Daily,
+        &fixture_shared("20990102", "20990102"),
+    )
+    .unwrap();
+
+    assert!(result.rows.is_empty());
+    assert_eq!(result.detected_agents, vec!["codex"]);
+}
+
 fn fixture_shared(since: &str, until: &str) -> SharedArgs {
     SharedArgs {
         since: Some(since.to_string()),
