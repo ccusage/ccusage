@@ -560,6 +560,10 @@ fn isolated_agent_env(
         "KIMI_DATA_DIR",
         "QWEN_DATA_DIR",
         "GROK_HOME",
+        "ANTIGRAVITY_DATA_DIR",
+        "CLINE_DATA_DIR",
+        "MUSE_DATA_DIR",
+        "ZCODE_DATA_DIR",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))

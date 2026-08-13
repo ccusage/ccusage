@@ -6,6 +6,7 @@ publish.workspace = true
 
 [dependencies]
 ccusage-adapter-amp.workspace = true
+ccusage-adapter-antigravity.workspace = true
 ccusage-adapter-claude.workspace = true
 ccusage-adapter-codebuff.workspace = true
 ccusage-adapter-codex.workspace = true
