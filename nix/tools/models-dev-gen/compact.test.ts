@@ -256,7 +256,7 @@ void it('rejects image-output models a reseller catalog describes as text-only',
 	// model as text-only, which would embed a per-image rate as an output rate.
 	assert.equal(
 		isTokenPricedModel({
-			sourceModelId: 'gemini-2.5-flash-image',
+			sourceModelId: 'gemini-2-5-flash-image',
 			modalities: { input: ['text', 'image'], output: ['text'] },
 			index,
 		}),
@@ -298,17 +298,17 @@ void it('exports the rules the runtime loader cannot derive from a live response
 		authoredModelIds: [
 			'claude-3-5-haiku-20241022',
 			'claude-opus-5',
-			'gemini-2.5-flash-image',
+			'gemini-2-5-flash-image',
 			'glm-5-turbo',
-			'grok-build-0.1',
-			'kimi-k2.7-code',
+			'grok-build-0-1',
+			'kimi-k2-7-code',
 			'whisper-large-v3',
 		],
 		// Anthropic prices its own fast mode, so a reseller's `claude-opus-5-fast`
 		// rate is a markup rather than the tier's only rate, and the runtime needs
 		// to know that to skip it the way generation does.
 		authoredModes: { 'claude-opus-5': ['fast'] },
-		assetPricedModelIds: ['gemini-2.5-flash-image', 'whisper-large-v3'],
+		assetPricedModelIds: ['gemini-2-5-flash-image', 'whisper-large-v3'],
 	});
 });
 

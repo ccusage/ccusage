@@ -122,10 +122,14 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
     // whole context, cached or not: a Grok turn re-reading 8M cached tokens
     // with 10K fresh ones is a long-context request, not a short one.
     if let Some(threshold) = pricing.long_context_threshold {
-        let context_tokens = usage.input_tokens
-            + usage.cache_read_input_tokens
-            + cache_create_5m_tokens
-            + cache_create_1h_tokens;
+        // Saturating: the counters come from lenient JSONL parsing, and a
+        // corrupt line must not wrap the sum below the threshold or abort under
+        // overflow checks.
+        let context_tokens = usage
+            .input_tokens
+            .saturating_add(usage.cache_read_input_tokens)
+            .saturating_add(cache_create_5m_tokens)
+            .saturating_add(cache_create_1h_tokens);
         let long_context = context_tokens > threshold;
         let rate = |base: f64, above: Option<f64>| {
             if long_context {

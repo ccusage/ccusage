@@ -383,10 +383,13 @@ impl ModelsDevCatalogRules {
         source_model_id: &str,
         modalities: Option<&ModelsDevModalities>,
     ) -> bool {
-        if self.asset_priced_model_ids.contains(source_model_id) {
+        // The artifact lists are normalized, so a catalog spelling the model
+        // with different separators or case still gets the authored verdict.
+        let normalized = normalized_models_dev_model_id(source_model_id);
+        if self.asset_priced_model_ids.contains(normalized.as_ref()) {
             return false;
         }
-        if self.authored_model_ids.contains(source_model_id) {
+        if self.authored_model_ids.contains(normalized.as_ref()) {
             return true;
         }
         let Some(modalities) = modalities else {
@@ -809,10 +812,11 @@ impl PricingMap {
                     && rules.is_exact_only(&model_key, model.id.as_deref().unwrap_or(&model_key))
             });
             let model_id = model.id.unwrap_or(model_key);
-            // Dotted and dashed spellings name one model, so they contend for
-            // one slot; kept apart, the fuzzy lookup ties between a tiered
-            // spelling and a reseller's flat one and can pick either.
-            let normalized_id = normalized_pricing_key(&model_id).into_owned();
+            // Dotted, dashed and case spellings name one model, so they contend
+            // for one slot; kept apart, the fuzzy lookup ties between a tiered
+            // spelling and a reseller's flat one and can pick either. Normalized
+            // exactly as the generator normalizes, case folding included.
+            let normalized_id = normalized_models_dev_model_id(&model_id).into_owned();
             let claimed = claims.get(&normalized_id).cloned();
             if claimed.is_none() && self.entries.contains_key(&model_id) {
                 continue;
@@ -1292,6 +1296,13 @@ impl PricingMap {
                     existing.cache_create = pricing.cache_create;
                     existing.cache_read = pricing.cache_read;
                     existing.cache_read_explicit = true;
+                } else if existing.cache_create == existing.input * 1.25 {
+                    // `Pricing` records only cache-read explicitness, so a
+                    // snapshot publishing a read rate but no write rate leaves
+                    // the write at the derived default - recognizable exactly,
+                    // because it is this same computation - and z.ai bills no
+                    // cache writes at all.
+                    existing.cache_create = pricing.cache_create;
                 }
             }
             std::collections::hash_map::Entry::Vacant(slot) => {
@@ -1453,10 +1464,8 @@ impl PricingMap {
             long_context_threshold: None,
             fast_multiplier: 1.0,
         };
-        self.entries
-            .insert("claude-3-5-haiku".to_string(), claude_3_5_haiku);
-        self.entries
-            .insert("claude-3-5-haiku-20241022".to_string(), claude_3_5_haiku);
+        self.put_builtin_entry("claude-3-5-haiku".to_string(), claude_3_5_haiku);
+        self.put_builtin_entry("claude-3-5-haiku-20241022".to_string(), claude_3_5_haiku);
         self.put_builtin_entry(
             "claude-3-opus".to_string(),
             Pricing {
@@ -1731,8 +1740,7 @@ impl PricingMap {
         self.put_builtin_glm("zai/glm-4.5-airx", glm_pricing(1.1e-6, 4.5e-6, 0.22e-6));
         self.put_builtin_glm("zai/glm-4.5v", glm_pricing(0.6e-6, 1.8e-6, 0.11e-6));
         self.put_builtin_glm("zai/glm-4-32b-0414-128k", glm_pricing(0.1e-6, 0.1e-6, 0.0));
-        self.entries
-            .insert("zai/glm-4.5-flash".to_string(), glm_pricing(0.0, 0.0, 0.0));
+        self.put_builtin_glm("zai/glm-4.5-flash", glm_pricing(0.0, 0.0, 0.0));
         self.put_builtin_glm("glm-4.6", glm_base);
         self.put_builtin_glm("glm-4.7", glm_base);
         self.put_builtin_entry(

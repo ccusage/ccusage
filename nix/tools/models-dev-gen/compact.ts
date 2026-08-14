@@ -88,7 +88,7 @@ export type ModelsDevCatalogIndex = {
 	normalizedAuthoredModelIds: readonly string[];
 	/** Normalized authored id -> the modes that id publishes its own rates for. */
 	authoredModes: ReadonlyMap<string, ReadonlySet<string>>;
-	/** Authored modalities by bare model id. */
+	/** Authored modalities keyed by the normalized bare model id. */
 	authoredModalities: ReadonlyMap<string, ModelsDevModalities>;
 };
 
@@ -140,7 +140,7 @@ export function buildModelsDevCatalogIndex(
 		authorProviderIds.add(key.slice(0, separator));
 		authoredModelIds.add(modelId);
 		if (model.modalities != null) {
-			authoredModalities.set(modelId, model.modalities);
+			authoredModalities.set(normalizeModelId(modelId), model.modalities);
 		}
 	}
 	const authoredModes = new Map<string, Set<string>>();
@@ -277,16 +277,24 @@ export function modelsDevCatalogRulesArtifact(index: ModelsDevCatalogIndex): {
 	authoredModes: Record<string, string[]>;
 	assetPricedModelIds: string[];
 } {
-	const assetPricedModelIds = [...index.authoredModelIds]
-		.filter((sourceModelId) => !isTokenPricedModel({ sourceModelId, modalities: undefined, index }))
-		.sort();
+	const assetPricedModelIds = [
+		...new Set(
+			[...index.authoredModelIds]
+				.filter(
+					(sourceModelId) => !isTokenPricedModel({ sourceModelId, modalities: undefined, index }),
+				)
+				.map(normalizeModelId),
+		),
+	].sort();
 	return {
 		owners: [...index.authorProviderIds, ...FIRST_PARTY_PROVIDER_ID_ALIASES].sort(),
 		platforms: [...PLATFORM_PROVIDER_IDS].sort(),
 		// The runtime needs both lists: an authored id absent from the asset list
 		// is authored as token-priced, which settles it without consulting
-		// whichever catalog the live response happens to serve it from.
-		authoredModelIds: [...index.authoredModelIds].sort(),
+		// whichever catalog the live response happens to serve it from. Emitted
+		// normalized, and looked up normalized, so a catalog spelling the model
+		// with different separators or case cannot dodge the verdict.
+		authoredModelIds: [...new Set([...index.authoredModelIds].map(normalizeModelId))].sort(),
 		// The tiers an author prices itself, so the runtime can tell a reseller-only
 		// tier worth carrying from a reseller's markup on a published rate, which is
 		// the rest of what `isEmbeddableModelsDevCandidate` decides.
@@ -346,12 +354,28 @@ export function isTokenPricedModel({
 	modalities: ModelsDevModalities | undefined;
 	index: ModelsDevCatalogIndex;
 }): boolean {
-	const authoritative = index.authoredModalities.get(sourceModelId) ?? modalities;
-	const output = authoritative?.output ?? ['text'];
+	// Keyed by the normalized id, so a catalog spelling the model with different
+	// separators or case still gets the authored verdict.
+	const normalized = normalizeModelId(sourceModelId);
+	const authored = index.authoredModalities.get(normalized);
+	if (authored != null) {
+		return billsPerTextToken(authored);
+	}
+	// An authored model that publishes no modalities is token-priced: the Rust
+	// loader keeps every authored id it has no asset verdict for, so skipping it
+	// here would make the snapshot and a live refresh disagree.
+	if (index.normalizedAuthoredModelIds.includes(normalized)) {
+		return true;
+	}
+	return billsPerTextToken(modalities);
+}
+
+function billsPerTextToken(modalities: ModelsDevModalities | undefined): boolean {
+	const output = modalities?.output ?? ['text'];
 	if (output.length !== 1 || output[0] !== 'text') {
 		return false;
 	}
-	const input = authoritative?.input ?? ['text'];
+	const input = modalities?.input ?? ['text'];
 	return input.includes('text');
 }
 
