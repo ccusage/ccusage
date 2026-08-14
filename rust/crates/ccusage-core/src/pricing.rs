@@ -65,7 +65,7 @@ pub struct Pricing {
     pub cache_read_explicit: bool,
     /// Whether `cache_create` came from published data rather than the derived
     /// `input * 1.25` default, so provider-fact patches know what they may fix.
-    pub cache_create_explicit: bool,
+    pub(crate) cache_create_explicit: bool,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
     pub(crate) cache_create_above_200k: Option<f64>,
@@ -316,6 +316,12 @@ struct ModelsDevClaim {
 struct ModelsDevClaimSlot {
     claim: ModelsDevClaim,
     stored_id: String,
+    /// The declared id of the catalog that claimed it, and the source key it
+    /// claimed under: generation breaks exact-strength ties by
+    /// `(sourceProviderId, sourceModelId)`, and two catalogs can declare the
+    /// same provider id.
+    provider_id: String,
+    source_key: String,
 }
 
 /// Trust tiers, matching the generator's.
@@ -769,7 +775,13 @@ impl PricingMap {
                         let trust = rules.rank(&provider_id);
                         // A live catalog is the raw upstream shape, so none of
                         // generation's verdicts are recorded in it.
-                        self.load_models_dev_models(provider.models, trust, true, &mut claims)
+                        self.load_models_dev_models(
+                            provider.models,
+                            &provider_id,
+                            trust,
+                            true,
+                            &mut claims,
+                        )
                     })
                     .sum()
             }
@@ -777,7 +789,9 @@ impl PricingMap {
                 let mut claims = FxHashMap::default();
                 // A flat map is the generated snapshot, which carries its
                 // verdicts as fields rather than leaving them to be rederived.
-                self.load_models_dev_models(models, MODELS_DEV_TRUST_OWNER, false, &mut claims)
+                // The flat snapshot has one implicit source, so any constant id
+                // works: ties inside it are settled by the source keys.
+                self.load_models_dev_models(models, "", MODELS_DEV_TRUST_OWNER, false, &mut claims)
             }
         })
     }
@@ -794,6 +808,7 @@ impl PricingMap {
     fn load_models_dev_models(
         &mut self,
         models: FxHashMap<String, ModelsDevModel>,
+        provider_id: &str,
         trust: u8,
         derive_exact_only: bool,
         claims: &mut FxHashMap<String, ModelsDevClaimSlot>,
@@ -822,12 +837,13 @@ impl PricingMap {
                 derive_exact_only
                     && rules.is_exact_only(&model_key, declared_id.unwrap_or(&model_key))
             });
+            let source_key = model_key;
             // An empty declared id falls back to the source key, exactly as the
             // generator's `selectModelsDevPricingKey` does: keeping "" would
             // store the model under a name no lookup ever asks for.
             let model_id = match model.id.filter(|id| !id.is_empty()) {
                 Some(id) => id,
-                None => model_key,
+                None => source_key.clone(),
             };
             // Dotted, dashed and case spellings name one model, so they contend
             // for one slot; kept apart, the fuzzy lookup ties between a tiered
@@ -861,10 +877,19 @@ impl PricingMap {
                 has_cache_write: cost.cache_write.is_some(),
                 has_context_limit: context_limit.is_some(),
             };
-            if claimed
-                .as_ref()
-                .is_some_and(|claimed| claimed.claim >= claim)
-            {
+            let replaces_equal_claim = |previous: &ModelsDevClaimSlot| {
+                // Generation compares equal-strength candidates by
+                // `(sourceProviderId, sourceModelId)`, smaller first. Providers
+                // load here in ascending declared-id order, so a differing
+                // declared id is already settled by arrival; only a collision
+                // falls through to the source keys.
+                previous.claim == claim
+                    && previous.provider_id == provider_id
+                    && source_key < previous.source_key
+            };
+            if claimed.as_ref().is_some_and(|claimed| {
+                claimed.claim > claim || (claimed.claim == claim && !replaces_equal_claim(claimed))
+            }) {
                 continue;
             }
             // A replacement under a different spelling supersedes the losing
@@ -929,6 +954,8 @@ impl PricingMap {
                     ModelsDevClaimSlot {
                         claim,
                         stored_id: model_id,
+                        provider_id: provider_id.to_string(),
+                        source_key,
                     },
                 )
                 .is_none()
@@ -3233,6 +3260,39 @@ mod tests {
                     "id": "some-gateway",
                     "models": {
                         "some-reseller-only-model": {
+                            "cost": { "input": 1, "output": 2 }
+                        }
+                    }
+                }
+            }"#;
+        let mut pricing = PricingMap::default();
+
+        assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
+        let entry = pricing.find_exact("some-reseller-only-model").unwrap();
+        assert!((entry.input * 1e6 - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn live_models_dev_pricing_breaks_exact_ties_by_source_key_across_same_id_catalogs() {
+        // Two catalogs declaring the same provider id are one provider to
+        // generation, which breaks exact-strength ties by the source model key.
+        // The smaller source key lives in the catalog with the LARGER map key
+        // here, so keeping whichever arrived first would pick the other rate.
+        let json = r#"{
+                "aaa-key": {
+                    "id": "some-gateway",
+                    "models": {
+                        "zz-spelling": {
+                            "id": "some-reseller-only-model",
+                            "cost": { "input": 9, "output": 9 }
+                        }
+                    }
+                },
+                "zzz-key": {
+                    "id": "some-gateway",
+                    "models": {
+                        "aa-spelling": {
+                            "id": "some-reseller-only-model",
                             "cost": { "input": 1, "output": 2 }
                         }
                     }
