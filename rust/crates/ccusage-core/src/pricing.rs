@@ -63,6 +63,9 @@ pub struct Pricing {
     pub(crate) cache_create: f64,
     pub cache_read: f64,
     pub cache_read_explicit: bool,
+    /// Whether `cache_create` came from published data rather than the derived
+    /// `input * 1.25` default, so provider-fact patches know what they may fix.
+    pub cache_create_explicit: bool,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
     pub(crate) cache_create_above_200k: Option<f64>,
@@ -86,6 +89,7 @@ impl Pricing {
             cache_create: 0.0,
             cache_read: 0.0,
             cache_read_explicit: false,
+            cache_create_explicit: false,
             input_above_200k: None,
             output_above_200k: None,
             cache_create_above_200k: None,
@@ -695,6 +699,7 @@ impl PricingMap {
             };
             let context_limit = pricing.max_input_tokens;
             let cache_read_explicit = pricing.cache_read_input_token_cost.is_some();
+            let cache_create_explicit = pricing.cache_creation_input_token_cost.is_some();
             let fast_multiplier = pricing
                 .provider_specific_entry
                 .and_then(|entry| entry.fast)
@@ -710,6 +715,7 @@ impl PricingMap {
                         .unwrap_or(input * 1.25),
                     cache_read: pricing.cache_read_input_token_cost.unwrap_or(input * 0.1),
                     cache_read_explicit,
+                    cache_create_explicit,
                     input_above_200k: pricing.input_cost_per_token_above_200k_tokens,
                     output_above_200k: pricing.output_cost_per_token_above_200k_tokens,
                     cache_create_above_200k: pricing
@@ -875,6 +881,7 @@ impl PricingMap {
             let input = input / 1_000_000.0;
             let output = output / 1_000_000.0;
             let cache_read_explicit = cost.cache_read.is_some();
+            let cache_create_explicit = cost.cache_write.is_some();
             self.entries.insert(
                 model_id.clone(),
                 Pricing {
@@ -889,6 +896,7 @@ impl PricingMap {
                         .map(|value| value / 1_000_000.0)
                         .unwrap_or(input * 0.1),
                     cache_read_explicit,
+                    cache_create_explicit,
                     input_above_200k: long_context.and_then(|rates| rates.input),
                     output_above_200k: long_context.and_then(|rates| rates.output),
                     cache_create_above_200k: long_context.and_then(|rates| rates.cache_create),
@@ -1208,6 +1216,8 @@ impl PricingMap {
             cache_read,
             cache_read_explicit: override_value.cache_read_input_token_cost.is_some()
                 || base.cache_read_explicit,
+            cache_create_explicit: override_value.cache_creation_input_token_cost.is_some()
+                || base.cache_create_explicit,
             input_above_200k: override_value
                 .input_cost_per_token_above_200k_tokens
                 .or(base.input_above_200k),
@@ -1304,16 +1314,12 @@ impl PricingMap {
             std::collections::hash_map::Entry::Occupied(mut existing) => {
                 let existing = existing.get_mut();
                 if !existing.cache_read_explicit {
-                    existing.cache_create = pricing.cache_create;
                     existing.cache_read = pricing.cache_read;
                     existing.cache_read_explicit = true;
-                } else if existing.cache_create == existing.input * 1.25 {
-                    // `Pricing` records only cache-read explicitness, so a
-                    // snapshot publishing a read rate but no write rate leaves
-                    // the write at the derived default - recognizable exactly,
-                    // because it is this same computation - and z.ai bills no
-                    // cache writes at all.
+                }
+                if !existing.cache_create_explicit {
                     existing.cache_create = pricing.cache_create;
+                    existing.cache_create_explicit = true;
                 }
             }
             std::collections::hash_map::Entry::Vacant(slot) => {
@@ -1336,6 +1342,7 @@ impl PricingMap {
                 cache_create: 6.25e-6,
                 cache_read: 0.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1352,6 +1359,7 @@ impl PricingMap {
                 cache_create: 6.25e-6,
                 cache_read: 0.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1370,6 +1378,7 @@ impl PricingMap {
                 cache_create: 6.25e-6,
                 cache_read: 0.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1388,6 +1397,7 @@ impl PricingMap {
                 cache_create: 6.25e-6,
                 cache_read: 0.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1406,6 +1416,7 @@ impl PricingMap {
                 cache_create: 1.25e-6,
                 cache_read: 0.1e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1422,6 +1433,7 @@ impl PricingMap {
                 cache_create: 18.75e-6,
                 cache_read: 1.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1438,6 +1450,7 @@ impl PricingMap {
                 cache_create: 3.75e-6,
                 cache_read: 0.3e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1454,6 +1467,7 @@ impl PricingMap {
                 cache_create: 3.75e-6,
                 cache_read: 0.3e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: Some(6e-6),
                 output_above_200k: Some(22.5e-6),
                 cache_create_above_200k: Some(7.5e-6),
@@ -1468,6 +1482,7 @@ impl PricingMap {
             cache_create: 1.0e-6,
             cache_read: 0.08e-6,
             cache_read_explicit: true,
+            cache_create_explicit: true,
             input_above_200k: None,
             output_above_200k: None,
             cache_create_above_200k: None,
@@ -1485,6 +1500,7 @@ impl PricingMap {
                 cache_create: 18.75e-6,
                 cache_read: 1.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1501,6 +1517,7 @@ impl PricingMap {
                 cache_create: 3.75e-6,
                 cache_read: 0.3e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1517,6 +1534,7 @@ impl PricingMap {
                 cache_create: 0.3e-6,
                 cache_read: 0.03e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1533,6 +1551,7 @@ impl PricingMap {
                 cache_create: 1.25e-6,
                 cache_read: 0.125e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1549,6 +1568,7 @@ impl PricingMap {
                 cache_create: 5e-6,
                 cache_read: 0.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1567,6 +1587,7 @@ impl PricingMap {
                 cache_create: 1.25e-6,
                 cache_read: 0.125e-6,
                 cache_read_explicit: false,
+                cache_create_explicit: false,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1584,6 +1605,7 @@ impl PricingMap {
                 cache_create: 0.75e-6,
                 cache_read: 0.1e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1601,6 +1623,7 @@ impl PricingMap {
                 cache_create: 1.1875e-6,
                 cache_read: 0.16e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1615,6 +1638,7 @@ impl PricingMap {
             cache_create: 1.25e-6,
             cache_read: 0.125e-6,
             cache_read_explicit: true,
+            cache_create_explicit: true,
             input_above_200k: None,
             output_above_200k: None,
             cache_create_above_200k: None,
@@ -1631,6 +1655,7 @@ impl PricingMap {
             cache_create: 1.75e-6,
             cache_read: 0.175e-6,
             cache_read_explicit: true,
+            cache_create_explicit: true,
             input_above_200k: None,
             output_above_200k: None,
             cache_create_above_200k: None,
@@ -1659,6 +1684,7 @@ impl PricingMap {
                 cache_create: 2.5e-6,
                 cache_read: 0.25e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1677,6 +1703,7 @@ impl PricingMap {
                 cache_create: 0.75e-6,
                 cache_read: 0.075e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1693,6 +1720,7 @@ impl PricingMap {
                 cache_create: 0.2e-6,
                 cache_read: 0.02e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1718,6 +1746,7 @@ impl PricingMap {
                     cache_create,
                     cache_read,
                     cache_read_explicit: true,
+                    cache_create_explicit: true,
                     input_above_200k: None,
                     output_above_200k: None,
                     cache_create_above_200k: None,
@@ -1736,6 +1765,7 @@ impl PricingMap {
             cache_create: 0.0,
             cache_read,
             cache_read_explicit: true,
+            cache_create_explicit: true,
             input_above_200k: None,
             output_above_200k: None,
             cache_create_above_200k: None,
@@ -2383,6 +2413,37 @@ mod tests {
         assert_eq!(zai_glm_45.cache_create, 0.0);
         assert_eq!(zai_glm_45.cache_read, 0.11e-6);
         assert_eq!(pricing.context_limit("zai/glm-4.5"), Some(128_000));
+    }
+
+    #[test]
+    fn glm_cache_patch_keeps_an_explicitly_published_cache_write_rate() {
+        // A published cache-write rate survives the z.ai patch even when it
+        // happens to equal the derived `input * 1.25` default: explicitness is
+        // tracked, not inferred from the value.
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "zai/glm-test-model": {
+                    "input_cost_per_token": 0.2,
+                    "output_cost_per_token": 1.1,
+                    "cache_read_input_token_cost": 0.03,
+                    "cache_creation_input_token_cost": 0.25
+                }
+            }"#,
+        );
+        let zeroed = Pricing {
+            cache_create: 0.0,
+            cache_read: 0.03,
+            cache_read_explicit: true,
+            cache_create_explicit: true,
+            ..Pricing::empty()
+        };
+
+        pricing.put_builtin_glm("zai/glm-test-model", zeroed);
+
+        let entry = pricing.find_exact("zai/glm-test-model").unwrap();
+        assert_eq!(entry.cache_create, 0.25);
+        assert_eq!(entry.cache_read, 0.03);
     }
 
     #[test]
@@ -3757,6 +3818,7 @@ mod tests {
                 cache_create: 6.25e-6,
                 cache_read: 0.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -3773,6 +3835,7 @@ mod tests {
                 cache_create: 18.75e-6,
                 cache_read: 1.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -3796,6 +3859,7 @@ mod tests {
                 cache_create: 18.75e-6,
                 cache_read: 1.5e-6,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -3935,6 +3999,7 @@ mod tests {
                 cache_create: 0.0,
                 cache_read: 0.0,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -3951,6 +4016,7 @@ mod tests {
                 cache_create: 0.0,
                 cache_read: 0.0,
                 cache_read_explicit: true,
+                cache_create_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -4043,6 +4109,7 @@ mod tests {
                     cache_create: 30e-6,
                     cache_read: 40e-6,
                     cache_read_explicit: true,
+                    cache_create_explicit: true,
                     input_above_200k: Some(15e-6),
                     output_above_200k: None,
                     cache_create_above_200k: None,
@@ -4128,6 +4195,7 @@ mod tests {
                     cache_create: 3.75e-6,
                     cache_read: 3e-7,
                     cache_read_explicit: false,
+                    cache_create_explicit: false,
                     input_above_200k: None,
                     output_above_200k: None,
                     cache_create_above_200k: Some(4.6875e-6),
@@ -4167,6 +4235,7 @@ mod tests {
                     cache_create: 0.0,
                     cache_read: 0.0,
                     cache_read_explicit: false,
+                    cache_create_explicit: false,
                     input_above_200k: None,
                     output_above_200k: None,
                     cache_create_above_200k: None,
@@ -4198,6 +4267,7 @@ mod tests {
                     cache_create: 3.75e-6,
                     cache_read: 3e-7,
                     cache_read_explicit: false,
+                    cache_create_explicit: false,
                     input_above_200k: None,
                     output_above_200k: None,
                     cache_create_above_200k: None,

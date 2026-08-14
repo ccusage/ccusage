@@ -96,7 +96,7 @@ Ensure completed turns exist under `~/.grok/sessions/**/updates.jsonl`. In-progr
 :::
 
 ::: details Costs showing as $0.00
-Turns written before Grok started recording `costUsdTicks` carry no cost, so `display` shows zero for them. Use `--mode calculate` to price those from LiteLLM instead. If a model is missing from pricing, the cost stays at zero and a missing-pricing warning may appear.
+Turns written before Grok started recording `costUsdTicks` carry no cost, so `display` shows zero for them. Use `--mode calculate` to price those from the pricing tables instead. If a model is missing from pricing, the cost stays at zero and a missing-pricing warning may appear.
 :::
 
 ::: details Totals lower than expected while a turn is open
