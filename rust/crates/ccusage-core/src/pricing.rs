@@ -1056,7 +1056,7 @@ impl PricingMap {
         for (model, input, output, cache_create, cache_read) in [
             ("gpt-5.6-sol", 5e-6, 30e-6, 6.25e-6, 0.5e-6),
             ("gpt-5.6-terra", 2.5e-6, 15e-6, 3.125e-6, 0.25e-6),
-            ("gpt-5.6-luna", 1e-6, 6e-6, 1.25e-6, 0.1e-6),
+            ("gpt-5.6-luna", 0.2e-6, 1.2e-6, 0.25e-6, 0.02e-6),
         ] {
             self.entries.insert(
                 model.to_string(),
@@ -1348,7 +1348,7 @@ fn builtin_long_context_rates(base_model: &str) -> Option<LongContextRates> {
     match base_model {
         "gpt-5.6-sol" => Some(openai(10e-6, 45e-6, Some(12.5e-6), Some(1e-6))),
         "gpt-5.6-terra" => Some(openai(5e-6, 22.5e-6, Some(6.25e-6), Some(0.5e-6))),
-        "gpt-5.6-luna" => Some(openai(2e-6, 9e-6, Some(2.5e-6), Some(0.2e-6))),
+        "gpt-5.6-luna" => Some(openai(0.4e-6, 1.8e-6, Some(0.5e-6), Some(0.04e-6))),
         // gpt-5.5 and gpt-5.4 have no separate cache-write price, so cache
         // writes are billed as regular input in both tiers.
         "gpt-5.5" => Some(openai(10e-6, 45e-6, Some(10e-6), Some(1e-6))),
@@ -2105,10 +2105,14 @@ mod tests {
         assert_eq!(terra.output_above_200k, Some(22.5e-6));
 
         let luna = pricing.find("gpt-5.6-luna").unwrap();
-        assert_eq!(luna.input, 1e-6);
-        assert_eq!(luna.output, 6e-6);
-        assert_eq!(luna.input_above_200k, Some(2e-6));
-        assert_eq!(luna.output_above_200k, Some(9e-6));
+        assert_eq!(luna.input, 0.2e-6);
+        assert_eq!(luna.output, 1.2e-6);
+        assert_eq!(luna.cache_create, 0.25e-6);
+        assert_eq!(luna.cache_read, 0.02e-6);
+        assert_eq!(luna.input_above_200k, Some(0.4e-6));
+        assert_eq!(luna.output_above_200k, Some(1.8e-6));
+        assert_eq!(luna.cache_create_above_200k, Some(0.5e-6));
+        assert_eq!(luna.cache_read_above_200k, Some(0.04e-6));
     }
 
     #[test]
