@@ -111,13 +111,22 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
         .input_above_200k
         .map(|c| c * CACHE_CREATE_1H_INPUT_MULTIPLIER);
 
-    // OpenAI two-stage pricing: a per-model `long_context_threshold` means the
+    // Two-stage pricing: a per-model `long_context_threshold` means the
     // request's input size selects the tier and every bucket is billed entirely
     // at that tier's rate. The whole request switches once input exceeds the
     // threshold, so this is not a marginal breakpoint. This mirrors the Codex
     // per-request tiering in `calculate_codex_model_cost`.
+    //
+    // `input_tokens` here is the uncached remainder - adapters normalize usage
+    // into the Claude shape - but the vendor's tier is chosen by the request's
+    // whole context, cached or not: a Grok turn re-reading 8M cached tokens
+    // with 10K fresh ones is a long-context request, not a short one.
     if let Some(threshold) = pricing.long_context_threshold {
-        let long_context = usage.input_tokens > threshold;
+        let context_tokens = usage.input_tokens
+            + usage.cache_read_input_tokens
+            + cache_create_5m_tokens
+            + cache_create_1h_tokens;
+        let long_context = context_tokens > threshold;
         let rate = |base: f64, above: Option<f64>| {
             if long_context {
                 above.unwrap_or(base)
@@ -289,6 +298,50 @@ mod tests {
             (cost - 0.53005).abs() < 1e-9,
             "short-context cost was {cost}"
         );
+    }
+
+    #[test]
+    fn cached_context_selects_the_long_context_tier() {
+        // The tier is chosen by the whole context the request carried, and on
+        // agents with aggressive prompt caching almost all of it is cache
+        // reads: a Grok turn re-reading megabytes of cached context with a few
+        // thousand fresh tokens is a long-context request. Judging by uncached
+        // input alone billed such turns at the short-context rate.
+        let pricing = PricingMap::load_embedded();
+
+        // grok-4.5: base $2/$6, cache read $0.3; above 200K context $4/$12/$0.6.
+        let cached_heavy = TokenUsageRaw {
+            input_tokens: 10_000,
+            output_tokens: 1_000,
+            cache_read_input_tokens: 500_000,
+            ..TokenUsageRaw::default()
+        };
+        let cost = calculate_cost_for_usage(
+            Some("grok-4.5"),
+            cached_heavy,
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        // 0.01M * 4 + 0.001M * 12 + 0.5M * 0.6
+        assert!((cost - 0.352).abs() < 1e-9, "cached-heavy cost was {cost}");
+
+        // The same shape below the boundary stays on the base rates.
+        let short = TokenUsageRaw {
+            input_tokens: 10_000,
+            output_tokens: 1_000,
+            cache_read_input_tokens: 100_000,
+            ..TokenUsageRaw::default()
+        };
+        let cost = calculate_cost_for_usage(
+            Some("grok-4.5"),
+            short,
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        // 0.01M * 2 + 0.001M * 6 + 0.1M * 0.3
+        assert!((cost - 0.056).abs() < 1e-9, "short-context cost was {cost}");
     }
 
     #[test]
