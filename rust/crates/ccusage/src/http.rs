@@ -6,6 +6,8 @@ use std::{
     time::Duration,
 };
 
+use ccusage_core::pricing::FetchedJson;
+
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 const PRICING_FETCH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -20,43 +22,40 @@ const PRICING_FETCH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// instead of the full download. GitHub serves the pricing table with an ETag
 /// (a weak validator on the gzip variant, which `If-None-Match` still matches),
 /// so a 1-minute polling loop drops from ~1.7MB per run to a few hundred
-/// bytes. The cache is best-effort like the statusline cache: a missing or
-/// torn entry just means a full fetch.
-pub(crate) fn fetch_json(url: &str) -> io::Result<String> {
-    fetch_json_with_cache_dir(url, &default_cache_dir())
+/// bytes. The cache only ever answers a 304 — any fetch failure surfaces as an
+/// error so the caller's embedded pricing, which every release refreshes, takes
+/// over exactly as it does with no cache at all. It is best-effort like the
+/// statusline cache: a missing or torn entry just means a full fetch.
+pub(crate) fn fetch_json(url: &str) -> io::Result<FetchedJson> {
+    fetch_json_with_cache_dir(url, default_cache_dir().as_deref())
 }
 
-/// Per-user cache directory. `XDG_CACHE_HOME` (or `~/.cache`) keeps the cache
-/// out of any world-shared /tmp on Linux, where another local user could plant
-/// or symlink entries; the temp dir — already per-user on macOS and Windows —
-/// is only the fallback when no home is available.
-fn default_cache_dir() -> PathBuf {
+/// Per-user cache directory: `XDG_CACHE_HOME`, or `.cache` under the home
+/// directory (`ccusage_core::home::home_dir`, which also resolves the Windows
+/// profile variables). `None` disables caching for the run: without a per-user
+/// directory the only candidates are world-shared places like `/tmp`, where
+/// another local user could plant or symlink an entry that a later 304 would
+/// turn into trusted pricing data.
+fn default_cache_dir() -> Option<PathBuf> {
     cache_dir_under(
         std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
-        std::env::var_os("HOME").map(PathBuf::from),
-        std::env::temp_dir(),
+        ccusage_core::home::home_dir(),
     )
 }
 
-fn cache_dir_under(
-    xdg_cache_home: Option<PathBuf>,
-    home: Option<PathBuf>,
-    temp_dir: PathBuf,
-) -> PathBuf {
+fn cache_dir_under(xdg_cache_home: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
     xdg_cache_home
         .filter(|path| path.is_absolute())
         .or_else(|| {
             home.filter(|path| path.is_absolute())
                 .map(|home| home.join(".cache"))
         })
-        .unwrap_or(temp_dir)
-        .join("ccusage")
-        .join("http-cache")
+        .map(|base| base.join("ccusage").join("http-cache"))
 }
 
-fn fetch_json_with_cache_dir(url: &str, cache_dir: &Path) -> io::Result<String> {
-    let cache = CacheEntry::for_url(cache_dir, url);
-    let cached = cache.read();
+fn fetch_json_with_cache_dir(url: &str, cache_dir: Option<&Path>) -> io::Result<FetchedJson> {
+    let cache = cache_dir.map(|dir| CacheEntry::for_url(dir, url));
+    let cached = cache.as_ref().and_then(CacheEntry::read);
 
     let agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)))
@@ -68,28 +67,15 @@ fn fetch_json_with_cache_dir(url: &str, cache_dir: &Path) -> io::Result<String> 
     }
     let mut response = match request.call() {
         Ok(response) => response,
-        // The URL itself no longer works (moved, gone): surface the error so
-        // the caller's embedded fallback — which every release refreshes —
-        // wins over a cache frozen at the last successful fetch.
-        Err(ureq::Error::StatusCode(code)) if is_permanent_http_failure(code) => {
+        Err(ureq::Error::StatusCode(code)) => {
             return Err(io::Error::other(format!("HTTP {code}")));
         }
-        // Everything else is treated as transient: a previously validated
-        // body on disk beats taking the run down.
-        Err(error) => {
-            return match cached {
-                Some(cached) => {
-                    log_stale_cache_use(url, &error.to_string());
-                    Ok(cached.body)
-                }
-                None => Err(io::Error::other(error.to_string())),
-            };
-        }
+        Err(error) => return Err(io::Error::other(error.to_string())),
     };
     let status = response.status().as_u16();
     if status == 304 {
         return match cached {
-            Some(cached) => Ok(cached.body),
+            Some(cached) => Ok(FetchedJson::new(cached.body)),
             // Only reachable if the server sends an unsolicited 304.
             None => Err(io::Error::other("HTTP 304 without a cached body")),
         };
@@ -107,63 +93,28 @@ fn fetch_json_with_cache_dir(url: &str, cache_dir: &Path) -> io::Result<String> 
     // origin could balloon memory ~1000x through it. `take` on the reader
     // bounds what actually lands in the string.
     let mut body = String::new();
-    let failure = match response
+    response
         .body_mut()
         .with_config()
         .reader()
         .take(PRICING_FETCH_MAX_BYTES + 1)
         .read_to_string(&mut body)
-    {
-        Ok(_) if body.len() as u64 > PRICING_FETCH_MAX_BYTES => Some(io::Error::other(format!(
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+    if body.len() as u64 > PRICING_FETCH_MAX_BYTES {
+        return Err(io::Error::other(format!(
             "response body over {PRICING_FETCH_MAX_BYTES} bytes"
-        ))),
-        Ok(_) => None,
-        Err(error) => Some(io::Error::new(
-            io::ErrorKind::InvalidData,
-            error.to_string(),
+        )));
+    }
+    // The cache write is deferred to the caller's parse verdict: only a body
+    // the pricing loader accepted may replace the previous validated pair, so
+    // a hijacked or errored 200 (captive portal, CDN error page) never evicts
+    // it even though the body itself is still handed to the caller.
+    match (cache, etag) {
+        (Some(cache), Some(etag)) => Ok(FetchedJson::with_validation_hook(
+            body,
+            Box::new(move |body| cache.write(&etag, body)),
         )),
-    };
-    // A body that dies mid-read (timeout, truncated stream, oversize) gets
-    // the same stale fallback as a failed request.
-    if let Some(error) = failure {
-        return match cached {
-            Some(cached) => {
-                log_stale_cache_use(url, &error.to_string());
-                Ok(cached.body)
-            }
-            None => Err(error),
-        };
-    }
-    // Only a body that parses as JSON may replace the cached copy: the stale
-    // fallback is only sound while the copy on disk is known-good, and a
-    // hijacked or errored 200 (captive portal, CDN error page) must not
-    // evict it. The invalid body is still returned — the caller's own parse
-    // handling decides what happens to the run itself.
-    if let Some(etag) = etag
-        && looks_like_json(&body)
-    {
-        cache.write(&etag, &body);
-    }
-    Ok(body)
-}
-
-/// A 404 or 410 means the URL itself is dead, so serving the stale cache
-/// forever would mask it. Every other status — 408, 421, 425, 429, 5xx —
-/// can be a passing condition and falls back to the cached copy.
-fn is_permanent_http_failure(code: u16) -> bool {
-    matches!(code, 404 | 410)
-}
-
-fn looks_like_json(body: &str) -> bool {
-    serde_json::from_str::<serde::de::IgnoredAny>(body).is_ok()
-}
-
-/// Mirrors the WARN gating of the pricing refresh in `ccusage-core`: silent
-/// by default, visible at log level 4+ so serving a stale cached copy is
-/// never invisible to someone debugging pricing.
-fn log_stale_cache_use(url: &str, error: &str) {
-    if ccusage_core::log_level().is_some_and(|level| level >= 4) {
-        eprintln!("WARN  Failed to refresh {url} ({error}); serving cached copy.");
+        _ => Ok(FetchedJson::new(body)),
     }
 }
 
@@ -189,7 +140,20 @@ impl CacheEntry {
     }
 
     fn read(&self) -> Option<CachedResponse> {
-        let raw = fs::read_to_string(&self.path).ok()?;
+        self.read_bounded(PRICING_FETCH_MAX_BYTES)
+    }
+
+    /// Bounded like the network read: the cache file holds a past response
+    /// body, so a grown or corrupted file must not balloon memory either.
+    fn read_bounded(&self, max_bytes: u64) -> Option<CachedResponse> {
+        let file = fs::File::open(&self.path).ok()?;
+        let mut raw = String::new();
+        file.take(max_bytes.saturating_add(1))
+            .read_to_string(&mut raw)
+            .ok()?;
+        if raw.len() as u64 > max_bytes {
+            return None;
+        }
         let (etag, body) = raw.split_once('\n')?;
         let etag = etag.trim();
         // The ETag goes back out as a header value, so drop anything that
@@ -261,56 +225,181 @@ fn cache_file_stem(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CacheEntry, cache_dir_under, cache_file_stem};
-    use std::{fs, path::PathBuf};
+    use super::{CacheEntry, cache_dir_under, cache_file_stem, fetch_json_with_cache_dir};
+    use ccusage_test_support::Fixture;
+    use std::{
+        io::{Read as _, Write as _},
+        net::TcpListener,
+        path::PathBuf,
+        thread,
+    };
 
-    fn unique_test_dir(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "ccusage-http-cache-test-{label}-{}",
-            std::process::id()
-        ))
+    /// Minimal scripted HTTP server: serves one connection per response and
+    /// returns the request head each connection sent.
+    fn serve_responses(responses: Vec<String>) -> (String, thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
+        let url = format!(
+            "http://{}/pricing.json",
+            listener.local_addr().expect("mock server address")
+        );
+        let handle = thread::spawn(move || {
+            let mut requests = Vec::new();
+            for response in responses {
+                let (mut stream, _) = listener.accept().expect("accept connection");
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if stream.read(&mut byte).expect("read request head") == 0 {
+                        break;
+                    }
+                    head.push(byte[0]);
+                }
+                requests.push(String::from_utf8_lossy(&head).into_owned());
+                stream
+                    .write_all(response.as_bytes())
+                    .expect("write response");
+            }
+            requests
+        });
+        (url, handle)
+    }
+
+    fn ok_response(etag: &str, body: &str) -> String {
+        format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\netag: {etag}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len(),
+        )
+    }
+
+    #[test]
+    fn fetch_writes_cache_only_on_commit_and_then_revalidates() {
+        let fixture = Fixture::new();
+        let cache_dir = fixture.path("http-cache");
+        let body = "{\"model\":{}}";
+        let (url, server) = serve_responses(vec![
+            ok_response("\"v1\"", body),
+            ok_response("\"v1\"", body),
+            "HTTP/1.1 304 Not Modified\r\netag: \"v1\"\r\nconnection: close\r\n\r\n".to_string(),
+        ]);
+        let entry = CacheEntry::for_url(&cache_dir, &url);
+
+        // An uncommitted body must leave no cache entry behind.
+        let uncommitted = fetch_json_with_cache_dir(&url, Some(&cache_dir)).expect("first fetch");
+        assert_eq!(uncommitted.body(), body);
+        drop(uncommitted);
+        assert!(
+            entry.read().is_none(),
+            "a body the caller never validated must not be cached"
+        );
+
+        // Committing after the caller's parse persists the pair.
+        let fetched = fetch_json_with_cache_dir(&url, Some(&cache_dir)).expect("second fetch");
+        fetched.commit();
+        let committed = entry.read().expect("commit writes the etag/body pair");
+        assert_eq!(committed.etag, "\"v1\"");
+        assert_eq!(committed.body, body);
+
+        // A cached pair revalidates and a 304 serves the body from disk.
+        let revalidated =
+            fetch_json_with_cache_dir(&url, Some(&cache_dir)).expect("revalidated fetch");
+        assert_eq!(revalidated.body(), body);
+
+        let requests = server.join().expect("mock server");
+        assert!(
+            !requests[0].to_lowercase().contains("if-none-match"),
+            "no validator may be offered before anything is cached"
+        );
+        assert!(
+            !requests[1].to_lowercase().contains("if-none-match"),
+            "an uncommitted body must not become a validator"
+        );
+        assert!(
+            requests[2].to_lowercase().contains("if-none-match: \"v1\""),
+            "the committed pair must revalidate: {}",
+            requests[2]
+        );
+    }
+
+    #[test]
+    fn fetch_failure_is_an_error_even_with_a_cached_copy() {
+        let fixture = Fixture::new();
+        let cache_dir = fixture.path("http-cache");
+        let (url, server) = serve_responses(vec![
+            "HTTP/1.1 500 Internal Server Error\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                .to_string(),
+        ]);
+        let entry = CacheEntry::for_url(&cache_dir, &url);
+        entry.write("\"v1\"", "{\"model\":{}}");
+
+        let error = fetch_json_with_cache_dir(&url, Some(&cache_dir))
+            .expect_err("a failed refresh must surface so embedded pricing takes over");
+        assert_eq!(error.to_string(), "HTTP 500");
+        // The pair stays available for revalidation; it is just never a body.
+        assert!(entry.read().is_some());
+        let _ = server.join();
+    }
+
+    #[test]
+    fn missing_cache_dir_disables_caching_but_not_fetching() {
+        let body = "{\"model\":{}}";
+        let (url, server) = serve_responses(vec![ok_response("\"v1\"", body)]);
+
+        let fetched = fetch_json_with_cache_dir(&url, None).expect("fetch without a cache dir");
+        assert_eq!(fetched.body(), body);
+        // With no per-user directory there is nowhere safe to write: commit
+        // must be a no-op instead of a fallback to a shared location.
+        fetched.commit();
+
+        let requests = server.join().expect("mock server");
+        assert!(!requests[0].to_lowercase().contains("if-none-match"));
     }
 
     #[test]
     fn cache_round_trips_etag_and_body() {
-        let dir = unique_test_dir("round-trip");
-        let _ = fs::remove_dir_all(&dir);
-        let entry = CacheEntry::for_url(&dir, "https://example.com/pricing.json");
+        let fixture = Fixture::new();
+        let entry = CacheEntry::for_url(fixture.root(), "https://example.com/pricing.json");
 
         assert!(entry.read().is_none());
         entry.write("\"abc123\"", "{\"model\":{}}");
         let cached = entry.read().expect("cache entry after write");
         assert_eq!(cached.etag, "\"abc123\"");
         assert_eq!(cached.body, "{\"model\":{}}");
-
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn cache_read_rejects_unusable_etag() {
-        let dir = unique_test_dir("bad-etag");
-        let _ = fs::remove_dir_all(&dir);
-        let entry = CacheEntry::for_url(&dir, "https://example.com/pricing.json");
+        let fixture = Fixture::new();
+        let entry = CacheEntry::for_url(fixture.root(), "https://example.com/pricing.json");
 
         entry.write("\"ok\"", "body");
-        fs::write(&entry.path, "   \nbody").expect("overwrite cache");
+        std::fs::write(&entry.path, "   \nbody").expect("overwrite cache");
         assert!(entry.read().is_none(), "blank etag must not revalidate");
-        fs::write(&entry.path, "etag\rwith-cr\nbody").expect("overwrite cache");
+        std::fs::write(&entry.path, "etag\rwith-cr\nbody").expect("overwrite cache");
         assert!(
             entry.read().is_none(),
             "control characters must not reach a header value"
         );
-        fs::write(&entry.path, "etag-without-newline").expect("overwrite cache");
+        std::fs::write(&entry.path, "etag-without-newline").expect("overwrite cache");
         assert!(entry.read().is_none(), "a truncated entry must not be used");
+    }
 
-        let _ = fs::remove_dir_all(&dir);
+    #[test]
+    fn cache_read_is_bounded_like_the_network_read() {
+        let fixture = Fixture::new();
+        let entry = CacheEntry::for_url(fixture.root(), "https://example.com/pricing.json");
+
+        entry.write("\"v1\"", "0123456789");
+        assert!(
+            entry.read_bounded(4).is_none(),
+            "an oversize cache file must be ignored, not loaded"
+        );
+        assert!(entry.read_bounded(64).is_some());
     }
 
     #[test]
     fn cache_write_replaces_pair_atomically_and_cleans_up() {
-        let dir = unique_test_dir("atomic");
-        let _ = fs::remove_dir_all(&dir);
-        let entry = CacheEntry::for_url(&dir, "https://example.com/pricing.json");
+        let fixture = Fixture::new();
+        let entry = CacheEntry::for_url(fixture.root(), "https://example.com/pricing.json");
 
         entry.write("\"v1\"", "first");
         entry.write("\"v2\"", "second\nwith\nnewlines");
@@ -318,14 +407,12 @@ mod tests {
         assert_eq!(cached.etag, "\"v2\"");
         assert_eq!(cached.body, "second\nwith\nnewlines");
         // No temp files may linger after successful writes.
-        let leftovers: Vec<_> = fs::read_dir(&dir)
+        let leftovers: Vec<_> = std::fs::read_dir(fixture.root())
             .expect("cache dir")
             .filter_map(Result::ok)
             .filter(|e| e.path() != entry.path)
             .collect();
         assert!(leftovers.is_empty(), "leftover files: {leftovers:?}");
-
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -351,46 +438,27 @@ mod tests {
     }
 
     #[test]
-    fn permanent_failure_is_a_short_allowlist() {
-        use super::is_permanent_http_failure;
-        assert!(is_permanent_http_failure(404));
-        assert!(is_permanent_http_failure(410));
-        for transient in [400u16, 401, 403, 408, 421, 425, 429, 500, 502, 503] {
-            assert!(
-                !is_permanent_http_failure(transient),
-                "HTTP {transient} must fall back to the cached copy"
-            );
-        }
-    }
+    fn cache_dir_requires_an_absolute_per_user_directory() {
+        let fixture = Fixture::new();
+        let xdg = fixture.path("xdg-cache");
+        let home = fixture.path("home");
 
-    #[test]
-    fn only_valid_json_may_replace_the_cached_copy() {
-        use super::looks_like_json;
-        assert!(looks_like_json("{\"model\":{}}"));
-        assert!(looks_like_json("[1, 2, 3]"));
-        assert!(!looks_like_json("<html>captive portal</html>"));
-        assert!(!looks_like_json("{\"truncated\":"));
-        assert!(!looks_like_json(""));
-    }
-
-    #[test]
-    fn cache_dir_prefers_xdg_then_home_then_temp() {
         assert_eq!(
-            cache_dir_under(
-                Some(PathBuf::from("/xdg")),
-                Some(PathBuf::from("/home/u")),
-                PathBuf::from("/tmp"),
-            ),
-            PathBuf::from("/xdg/ccusage/http-cache"),
+            cache_dir_under(Some(xdg.clone()), Some(home.clone())),
+            Some(xdg.join("ccusage").join("http-cache")),
         );
         assert_eq!(
-            cache_dir_under(None, Some(PathBuf::from("/home/u")), PathBuf::from("/tmp")),
-            PathBuf::from("/home/u/.cache/ccusage/http-cache"),
+            cache_dir_under(None, Some(home.clone())),
+            Some(home.join(".cache").join("ccusage").join("http-cache")),
         );
         // A relative XDG_CACHE_HOME must be ignored per the basedir spec.
         assert_eq!(
-            cache_dir_under(Some(PathBuf::from("relative")), None, PathBuf::from("/tmp")),
-            PathBuf::from("/tmp/ccusage/http-cache"),
+            cache_dir_under(Some(PathBuf::from("relative")), Some(home.clone())),
+            Some(home.join(".cache").join("ccusage").join("http-cache")),
         );
+        // No per-user directory disables caching entirely rather than falling
+        // back to a world-shared temp dir another local user can write to.
+        assert_eq!(cache_dir_under(Some(PathBuf::from("relative")), None), None);
+        assert_eq!(cache_dir_under(None, None), None);
     }
 }

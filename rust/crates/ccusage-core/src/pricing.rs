@@ -150,7 +150,7 @@ impl ModelsDevPricingCache {
 
     fn get_or_try_load<F>(&self, fetch_json: F) -> Option<&PricingMap>
     where
-        F: FnOnce() -> std::io::Result<String>,
+        F: FnOnce() -> std::io::Result<FetchedJson>,
     {
         if let Some(pricing) = self.pricing.get() {
             return Some(pricing);
@@ -254,10 +254,16 @@ impl PricingMap {
             );
 
             match fetch_result {
-                Ok(json) => {
-                    let loaded_count = map.load_json(&json);
-                    if loaded_count == 0 && should_log_pricing_refresh_details() {
-                        eprintln!("WARN  Failed to parse LiteLLM pricing; using embedded pricing.");
+                Ok(fetched) => {
+                    let loaded_count = map.load_json(fetched.body());
+                    if loaded_count == 0 {
+                        if should_log_pricing_refresh_details() {
+                            eprintln!(
+                                "WARN  Failed to parse LiteLLM pricing; using embedded pricing."
+                            );
+                        }
+                    } else {
+                        fetched.commit();
                     }
                 }
                 Err(error) => {
@@ -1444,10 +1450,10 @@ fn embedded_models_dev_pricing() -> &'static PricingMap {
 
 fn load_models_dev_pricing<F>(fetch_json: F) -> Option<PricingMap>
 where
-    F: FnOnce() -> std::io::Result<String>,
+    F: FnOnce() -> std::io::Result<FetchedJson>,
 {
-    let json = match fetch_json() {
-        Ok(json) => json,
+    let fetched = match fetch_json() {
+        Ok(fetched) => fetched,
         Err(error) => {
             if should_log_pricing_refresh_details() {
                 eprintln!(
@@ -1458,25 +1464,81 @@ where
         }
     };
     let mut map = PricingMap::default();
-    if map.load_models_dev_json_missing(&json).is_none() {
+    if map.load_models_dev_json_missing(fetched.body()).is_none() {
         if should_log_pricing_refresh_details() {
             eprintln!("WARN  Failed to parse models.dev pricing; using LiteLLM pricing.");
         }
         return None;
     }
+    fetched.commit();
     Some(map)
 }
 
-fn fetch_pricing_json() -> std::io::Result<String> {
+fn fetch_pricing_json() -> std::io::Result<FetchedJson> {
     fetch_json_url(LITELLM_PRICING_URL)
 }
 
-fn fetch_models_dev_json() -> std::io::Result<String> {
+fn fetch_models_dev_json() -> std::io::Result<FetchedJson> {
     fetch_json_url(MODELS_DEV_API_URL)
 }
 
+/// A fetched JSON document plus the fetcher's deferred cache write.
+///
+/// The fetcher must not persist a body it cannot validate — a 200 can carry a
+/// JSON-shaped error envelope — and this crate is the first place the body is
+/// actually parsed against a pricing schema. `commit` hands the parse verdict
+/// back: the loaders call it once the body has produced usable pricing, and an
+/// uncommitted body is never written to the fetcher's cache.
+pub struct FetchedJson {
+    body: String,
+    on_validated: Option<ValidationHook>,
+}
+
+/// Deferred cache write, handed the body once it passes a schema parse.
+pub type ValidationHook = Box<dyn FnOnce(&str)>;
+
+impl FetchedJson {
+    /// A body with nothing to commit: cache hits, cache-less fetches, tests.
+    pub fn new(body: String) -> Self {
+        Self {
+            body,
+            on_validated: None,
+        }
+    }
+
+    /// A body the fetcher wants to cache once the caller's parse accepts it.
+    pub fn with_validation_hook(body: String, on_validated: ValidationHook) -> Self {
+        Self {
+            body,
+            on_validated: Some(on_validated),
+        }
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    /// Reports that the body passed a pricing-schema parse, running the
+    /// fetcher's deferred cache write.
+    pub fn commit(self) {
+        if let Some(on_validated) = self.on_validated {
+            on_validated(&self.body);
+        }
+    }
+}
+
+impl std::fmt::Debug for FetchedJson {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FetchedJson")
+            .field("body_bytes", &self.body.len())
+            .field("committable", &self.on_validated.is_some())
+            .finish()
+    }
+}
+
 /// Fetches a JSON document over HTTP for the pricing refresh.
-pub type JsonFetcher = fn(&str) -> std::io::Result<String>;
+pub type JsonFetcher = fn(&str) -> std::io::Result<FetchedJson>;
 
 static JSON_FETCHER: OnceLock<JsonFetcher> = OnceLock::new();
 
@@ -1490,7 +1552,7 @@ pub fn set_json_fetcher(fetcher: JsonFetcher) {
     let _ = JSON_FETCHER.set(fetcher);
 }
 
-fn fetch_json_url(url: &str) -> std::io::Result<String> {
+fn fetch_json_url(url: &str) -> std::io::Result<FetchedJson> {
     let Some(fetch) = JSON_FETCHER.get() else {
         return Err(std::io::Error::other(
             "no HTTP client installed for pricing refresh",
@@ -1775,7 +1837,8 @@ mod tests {
 
         let pricing = cache
             .get_or_try_load(|| {
-                Ok(r#"{
+                Ok(super::FetchedJson::new(
+                    r#"{
                     "openai": {
                         "id": "openai",
                         "name": "OpenAI",
@@ -1794,7 +1857,8 @@ mod tests {
                         }
                     }
                 }"#
-                .to_string())
+                    .to_string(),
+                ))
             })
             .expect("models.dev retry should cache successful pricing");
 
@@ -1804,6 +1868,59 @@ mod tests {
         assert_eq!(gpt_retry.input, 0.000001);
         assert_eq!(gpt_retry.output, 0.000002);
         assert_eq!(pricing.context_limit_entry("gpt-retry"), Some(42));
+    }
+
+    #[test]
+    fn models_dev_parse_verdict_drives_the_fetcher_commit() {
+        let committed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let hook_flag = std::sync::Arc::clone(&committed);
+        let rejected = super::load_models_dev_pricing(|| {
+            Ok(super::FetchedJson::with_validation_hook(
+                "<html>captive portal</html>".to_string(),
+                Box::new(move |_| hook_flag.store(true, Ordering::Relaxed)),
+            ))
+        });
+        assert!(rejected.is_none());
+        assert!(
+            !committed.load(Ordering::Relaxed),
+            "a body that fails the schema parse must not be committed"
+        );
+
+        let hook_flag = std::sync::Arc::clone(&committed);
+        let loaded = super::load_models_dev_pricing(|| {
+            Ok(super::FetchedJson::with_validation_hook(
+                r#"{
+                    "openai": {
+                        "id": "openai",
+                        "name": "OpenAI",
+                        "models": {
+                            "gpt-commit": {
+                                "id": "gpt-commit",
+                                "name": "GPT Commit",
+                                "cost": {
+                                    "input": 1.0,
+                                    "output": 2.0
+                                }
+                            }
+                        }
+                    }
+                }"#
+                .to_string(),
+                Box::new(move |body| {
+                    assert!(
+                        body.contains("gpt-commit"),
+                        "hook must see the body it caches"
+                    );
+                    hook_flag.store(true, Ordering::Relaxed);
+                }),
+            ))
+        });
+        assert!(loaded.is_some());
+        assert!(
+            committed.load(Ordering::Relaxed),
+            "a body that parses must reach the fetcher's cache"
+        );
     }
 
     #[test]
@@ -1822,7 +1939,8 @@ mod tests {
 
         let skipped = cache.get_or_try_load(|| {
             attempts.fetch_add(1, Ordering::Relaxed);
-            Ok(r#"{
+            Ok(super::FetchedJson::new(
+                r#"{
                 "openai": {
                     "id": "openai",
                     "name": "OpenAI",
@@ -1838,7 +1956,8 @@ mod tests {
                     }
                 }
             }"#
-            .to_string())
+                .to_string(),
+            ))
         });
         assert!(skipped.is_none());
         assert_eq!(attempts.load(Ordering::Relaxed), 1);
