@@ -747,6 +747,10 @@ impl PricingMap {
                         .rank(&right_id)
                         .cmp(&rules.rank(&left_id))
                         .then_with(|| left_id.cmp(&right_id))
+                        // Two catalogs can declare the same id; the map key is
+                        // unique, so it settles the order the way generation's
+                        // provider-key walk does.
+                        .then_with(|| left_key.cmp(right_key))
                 });
                 // Within one tier the generator prefers the entry carrying more
                 // pricing detail, so track what claimed each id to make the same
@@ -807,11 +811,18 @@ impl PricingMap {
             }
             // Same reason: the tier half of the verdict reads the source key,
             // before it is resolved away.
+            let declared_id = model.id.as_deref().filter(|id| !id.is_empty());
             let exact_only = model.exact_only.unwrap_or_else(|| {
                 derive_exact_only
-                    && rules.is_exact_only(&model_key, model.id.as_deref().unwrap_or(&model_key))
+                    && rules.is_exact_only(&model_key, declared_id.unwrap_or(&model_key))
             });
-            let model_id = model.id.unwrap_or(model_key);
+            // An empty declared id falls back to the source key, exactly as the
+            // generator's `selectModelsDevPricingKey` does: keeping "" would
+            // store the model under a name no lookup ever asks for.
+            let model_id = match model.id.filter(|id| !id.is_empty()) {
+                Some(id) => id,
+                None => model_key,
+            };
             // Dotted, dashed and case spellings name one model, so they contend
             // for one slot; kept apart, the fuzzy lookup ties between a tiered
             // spelling and a reseller's flat one and can pick either. Normalized
@@ -3119,6 +3130,58 @@ mod tests {
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         let entry = pricing.find_exact("some-reseller-only-model").unwrap();
         assert_eq!(entry.long_context_threshold, Some(200_000));
+    }
+
+    #[test]
+    fn live_models_dev_pricing_stores_a_model_with_an_empty_declared_id_by_its_key() {
+        // A live catalog can declare `id` as an empty string. The generator's
+        // `selectModelsDevPricingKey` falls back to the source key; keeping ""
+        // would store the model under a name no lookup ever asks for.
+        let json = r#"{
+                "moonshotai": {
+                    "models": {
+                        "kimi-k9": {
+                            "id": "",
+                            "cost": { "input": 3, "output": 15 }
+                        }
+                    }
+                }
+            }"#;
+        let mut pricing = PricingMap::default();
+
+        assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
+        assert!(pricing.find_exact("kimi-k9").is_some());
+        assert!(pricing.find_exact("").is_none());
+    }
+
+    #[test]
+    fn live_models_dev_pricing_orders_same_id_catalogs_by_their_map_key() {
+        // Two catalogs can declare the same provider id. The declared id ties,
+        // so the unique map key settles the order - the same order generation's
+        // provider-key walk uses - instead of hash iteration.
+        let json = r#"{
+                "zzz-alias": {
+                    "id": "some-gateway",
+                    "models": {
+                        "some-reseller-only-model": {
+                            "cost": { "input": 9, "output": 9 }
+                        }
+                    }
+                },
+                "aaa-alias": {
+                    "id": "some-gateway",
+                    "models": {
+                        "some-reseller-only-model": {
+                            "cost": { "input": 1, "output": 2 }
+                        }
+                    }
+                }
+            }"#;
+        let mut pricing = PricingMap::default();
+
+        assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
+        let entry = pricing.find_exact("some-reseller-only-model").unwrap();
+        assert!((entry.input * 1e6 - 1.0).abs() < 1e-9);
     }
 
     #[test]
