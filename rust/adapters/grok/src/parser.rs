@@ -460,10 +460,26 @@ fn calculate_grok_cost(
         // back to the pricing table when a turn recorded no ticks.
         CostMode::Auto if cost_usd.is_some() => cost_usd.unwrap_or(0.0),
         CostMode::Auto | CostMode::Calculate => {
-            for candidate in pricing_candidates(raw_model) {
-                if pricing.find(&candidate).is_some() {
+            // Exact hits across every candidate first: `find` falls back to
+            // substring matching, and a fuzzy hit on the first candidate would
+            // shadow an exact entry - a user pricing override included - that a
+            // later candidate names precisely.
+            let candidates = pricing_candidates(raw_model);
+            for candidate in &candidates {
+                if pricing.find_exact(candidate).is_some() {
                     return calculate_cost_for_usage(
-                        Some(&candidate),
+                        Some(candidate),
+                        usage,
+                        None,
+                        CostMode::Calculate,
+                        Some(pricing),
+                    );
+                }
+            }
+            for candidate in &candidates {
+                if pricing.find(candidate).is_some() {
+                    return calculate_cost_for_usage(
+                        Some(candidate),
                         usage,
                         None,
                         CostMode::Calculate,
