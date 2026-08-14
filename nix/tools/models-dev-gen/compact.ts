@@ -96,6 +96,7 @@ export type ModelsDevPricingCandidate = {
 	sourceProviderId: string;
 	sourceModelId: string;
 	trust: number;
+	hasLongContextTier: boolean;
 	hasContextLimit: boolean;
 	hasExplicitCacheRead: boolean;
 	hasExplicitCacheWrite: boolean;
@@ -174,7 +175,7 @@ export function buildModelsDevCatalogIndex(
 }
 
 /** Model ids are spelled with either dots or dashes for the same version. */
-function normalizeModelId(modelId: string): string {
+export function normalizeModelId(modelId: string): string {
 	return modelId.toLowerCase().replace(/[.@]/g, '-');
 }
 
@@ -381,6 +382,9 @@ function compareModelsDevPricingCandidates(
 ): number {
 	return (
 		compareNumber(left.trust, right.trust) ||
+		// A long-context band is the rate data hardest to come by, so within a
+		// trust tier the candidate carrying one wins.
+		compareBoolean(left.hasLongContextTier, right.hasLongContextTier) ||
 		compareBoolean(left.hasExplicitCacheRead, right.hasExplicitCacheRead) ||
 		compareBoolean(left.hasExplicitCacheWrite, right.hasExplicitCacheWrite) ||
 		compareBoolean(left.hasContextLimit, right.hasContextLimit) ||

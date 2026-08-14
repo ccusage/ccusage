@@ -294,16 +294,24 @@ struct ModelsDevCatalogRules {
 /// How strong one catalog's claim on a model id is.
 ///
 /// Ordered exactly as `shouldReplaceModelsDevPricingCandidate` compares
-/// candidates at generation time - trust first, then cache-read, cache-write and
-/// context-limit presence - so the online path resolves the same catalog the
-/// committed snapshot did. `derive(PartialOrd)` compares the fields in
-/// declaration order, which is that order.
+/// candidates at generation time - trust first, then a long-context band, then
+/// cache-read, cache-write and context-limit presence - so the online path
+/// resolves the same catalog the committed snapshot did. `derive(PartialOrd)`
+/// compares the fields in declaration order, which is that order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct ModelsDevClaim {
     trust: u8,
+    has_long_context_tier: bool,
     has_cache_read: bool,
     has_cache_write: bool,
     has_context_limit: bool,
+}
+
+/// The spelling and strength under which a model id was claimed this pass.
+#[derive(Debug, Clone)]
+struct ModelsDevClaimSlot {
+    claim: ModelsDevClaim,
+    stored_id: String,
 }
 
 /// Trust tiers, matching the generator's.
@@ -740,7 +748,7 @@ impl PricingMap {
                 // Within one tier the generator prefers the entry carrying more
                 // pricing detail, so track what claimed each id to make the same
                 // choice here rather than keeping whichever came first.
-                let mut claims: FxHashMap<String, ModelsDevClaim> = FxHashMap::default();
+                let mut claims: FxHashMap<String, ModelsDevClaimSlot> = FxHashMap::default();
                 ranked
                     .into_iter()
                     .map(|(provider_key, provider)| {
@@ -775,7 +783,7 @@ impl PricingMap {
         models: FxHashMap<String, ModelsDevModel>,
         trust: u8,
         derive_exact_only: bool,
-        claims: &mut FxHashMap<String, ModelsDevClaim>,
+        claims: &mut FxHashMap<String, ModelsDevClaimSlot>,
     ) -> usize {
         let rules = models_dev_catalog_rules();
         let mut loaded_count = 0;
@@ -801,7 +809,11 @@ impl PricingMap {
                     && rules.is_exact_only(&model_key, model.id.as_deref().unwrap_or(&model_key))
             });
             let model_id = model.id.unwrap_or(model_key);
-            let claimed = claims.get(&model_id).copied();
+            // Dotted and dashed spellings name one model, so they contend for
+            // one slot; kept apart, the fuzzy lookup ties between a tiered
+            // spelling and a reseller's flat one and can pick either.
+            let normalized_id = normalized_pricing_key(&model_id).into_owned();
+            let claimed = claims.get(&normalized_id).cloned();
             if claimed.is_none() && self.entries.contains_key(&model_id) {
                 continue;
             }
@@ -820,16 +832,31 @@ impl PricingMap {
                 continue;
             }
             let context_limit = model.limit.and_then(|limit| limit.context);
+            let long_context = cost.long_context_tier();
             let claim = ModelsDevClaim {
                 trust,
+                has_long_context_tier: long_context.is_some(),
                 has_cache_read: cost.cache_read.is_some(),
                 has_cache_write: cost.cache_write.is_some(),
                 has_context_limit: context_limit.is_some(),
             };
-            if claimed.is_some_and(|claimed| claimed >= claim) {
+            if claimed
+                .as_ref()
+                .is_some_and(|claimed| claimed.claim >= claim)
+            {
                 continue;
             }
-            let long_context = cost.long_context_tier();
+            // A replacement under a different spelling supersedes the losing
+            // spelling's entry entirely, or both would stay findable and the
+            // fuzzy tie would return.
+            if let Some(previous) = claimed
+                .as_ref()
+                .filter(|previous| previous.stored_id != model_id)
+            {
+                self.entries.remove(&previous.stored_id);
+                self.exact_only.remove(&previous.stored_id);
+                self.context_limits.remove(&previous.stored_id);
+            }
             let input = input / 1_000_000.0;
             let output = output / 1_000_000.0;
             let cache_read_explicit = cost.cache_read.is_some();
@@ -873,7 +900,16 @@ impl PricingMap {
             }
             // Replacing a weaker claim is not a new model, so it must not count
             // twice: the count is how many models the payload resolved.
-            if claims.insert(model_id, claim).is_none() {
+            if claims
+                .insert(
+                    normalized_id,
+                    ModelsDevClaimSlot {
+                        claim,
+                        stored_id: model_id,
+                    },
+                )
+                .is_none()
+            {
                 loaded_count += 1;
             }
         }
@@ -3000,6 +3036,81 @@ mod tests {
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         let entry = pricing.find_exact("shared-model").unwrap();
         assert!((entry.input * 1e6 - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn live_models_dev_pricing_merges_spelling_duplicates_onto_one_entry() {
+        // The dotted and dashed spellings name one model. Kept apart, the fuzzy
+        // lookup ties between them by length and can return whichever, so the
+        // flat reseller spelling must lose its slot to the tiered owner one
+        // entirely - entry included, not just the claim.
+        let json = r#"{
+                "llmgateway": {
+                    "models": {
+                        "grok-9-5": {
+                            "cost": { "input": 2, "output": 6 }
+                        }
+                    }
+                },
+                "xai": {
+                    "models": {
+                        "grok-9.5": {
+                            "cost": {
+                                "input": 2, "output": 6, "cache_read": 0.3,
+                                "tiers": [{
+                                    "input": 4, "output": 12, "cache_read": 0.6,
+                                    "tier": { "type": "context", "size": 200000 }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }"#;
+        let mut pricing = PricingMap::default();
+
+        assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
+        assert!(pricing.find_exact("grok-9-5").is_none());
+        let entry = pricing.find_exact("grok-9.5").unwrap();
+        assert_eq!(entry.long_context_threshold, Some(200_000));
+        // The dashed spelling still resolves - through the fuzzy lookup - and
+        // lands on the tiered entry rather than a flat duplicate.
+        let via_dash = pricing.find("grok-9-5").unwrap();
+        assert_eq!(via_dash.long_context_threshold, Some(200_000));
+    }
+
+    #[test]
+    fn live_models_dev_pricing_prefers_a_tiered_catalog_within_a_trust_tier() {
+        // Within one trust tier, the catalog publishing a long-context band
+        // outranks one with more cache detail: the band is the rate data
+        // hardest to come by.
+        let json = r#"{
+                "llmgateway": {
+                    "models": {
+                        "some-reseller-only-model": {
+                            "cost": { "input": 1, "output": 2, "cache_read": 0.1, "cache_write": 1.25 },
+                            "limit": { "context": 500000 }
+                        }
+                    }
+                },
+                "venice": {
+                    "models": {
+                        "some-reseller-only-model": {
+                            "cost": {
+                                "input": 1, "output": 2,
+                                "tiers": [{
+                                    "input": 2, "output": 4,
+                                    "tier": { "type": "context", "size": 200000 }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }"#;
+        let mut pricing = PricingMap::default();
+
+        assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
+        let entry = pricing.find_exact("some-reseller-only-model").unwrap();
+        assert_eq!(entry.long_context_threshold, Some(200_000));
     }
 
     #[test]

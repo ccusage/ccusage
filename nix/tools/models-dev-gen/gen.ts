@@ -22,6 +22,7 @@ import {
 	isTierVariantOfAuthoredModel,
 	isTokenPricedModel,
 	type ModelsDevCostTier,
+	normalizeModelId,
 	selectLongContextTier,
 	isUnversionedModelId,
 	type ModelsDevPricingCandidate,
@@ -69,7 +70,10 @@ const { models, providers } = (await generateCatalog('.')) as {
 
 const catalogIndex = buildModelsDevCatalogIndex(models, providers);
 
-const selected: Record<string, { candidate: ModelsDevPricingCandidate; entry: EmbeddedModel }> = {};
+const selected: Record<
+	string,
+	{ candidate: ModelsDevPricingCandidate; entry: EmbeddedModel; pricingKey: string }
+> = {};
 for (const [providerId, provider] of sortedEntries(providers)) {
 	// A catalog is filed under its own id, but it declares one too, and the Rust
 	// runtime loader resolves `provider.id ?? providerId` before it ranks. Resolve
@@ -125,11 +129,16 @@ for (const [providerId, provider] of sortedEntries(providers)) {
 			sourceProviderId,
 			sourceModelId: modelId,
 			trust,
+			hasLongContextTier: longContextTier != null,
 			hasContextLimit: entry.limit != null,
 			hasExplicitCacheRead: cost.cache_read != null,
 			hasExplicitCacheWrite: cost.cache_write != null,
 		};
-		const existing = selected[pricingKey];
+		// Dotted and dashed spellings name one model, so they contend for one
+		// slot: kept apart, the fuzzy lookup ties between a tiered spelling and a
+		// reseller's flat one and can pick either.
+		const normalizedKey = normalizeModelId(pricingKey);
+		const existing = selected[normalizedKey];
 		if (existing != null) {
 			const replacement = shouldReplaceModelsDevPricingCandidate(existing.candidate, candidate);
 			// Duplicates across trust tiers are the normal case and are resolved by
@@ -146,12 +155,12 @@ for (const [providerId, provider] of sortedEntries(providers)) {
 				continue;
 			}
 		}
-		selected[pricingKey] = { candidate, entry };
+		selected[normalizedKey] = { candidate, entry, pricingKey };
 	}
 }
 
 const out = Object.fromEntries(
-	Object.entries(selected).map(([pricingKey, { entry }]) => [pricingKey, entry]),
+	Object.values(selected).map(({ pricingKey, entry }) => [pricingKey, entry]),
 );
 
 // Stable key ordering keeps the committed snapshot's diffs minimal across regenerations.
