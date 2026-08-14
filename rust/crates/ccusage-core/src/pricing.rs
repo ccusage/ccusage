@@ -1464,7 +1464,14 @@ where
         }
     };
     let mut map = PricingMap::default();
-    if map.load_models_dev_json_missing(fetched.body()).is_none() {
+    // Zero usable entries is a failed refresh, not a validated document: an
+    // empty object parses, but retaining it would pin an unpriceable map for
+    // the process and committing it would keep a 304 serving it across runs.
+    if map
+        .load_models_dev_json_missing(fetched.body())
+        .unwrap_or(0)
+        == 0
+    {
         if should_log_pricing_refresh_details() {
             eprintln!("WARN  Failed to parse models.dev pricing; using LiteLLM pricing.");
         }
@@ -1885,6 +1892,21 @@ mod tests {
         assert!(
             !committed.load(Ordering::Relaxed),
             "a body that fails the schema parse must not be committed"
+        );
+
+        // `{}` parses but prices nothing: it must not be retained or become
+        // the cached response a later 304 keeps serving.
+        let hook_flag = std::sync::Arc::clone(&committed);
+        let empty = super::load_models_dev_pricing(|| {
+            Ok(super::FetchedJson::with_validation_hook(
+                "{}".to_string(),
+                Box::new(move |_| hook_flag.store(true, Ordering::Relaxed)),
+            ))
+        });
+        assert!(empty.is_none(), "zero loaded entries is a failed refresh");
+        assert!(
+            !committed.load(Ordering::Relaxed),
+            "a body with zero usable entries must not be committed"
         );
 
         let hook_flag = std::sync::Arc::clone(&committed);
