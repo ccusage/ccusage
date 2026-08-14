@@ -21,6 +21,8 @@ import {
 	isPriceableModelsDevCost,
 	isTierVariantOfAuthoredModel,
 	isTokenPricedModel,
+	type ModelsDevCostTier,
+	selectLongContextTier,
 	isUnversionedModelId,
 	type ModelsDevPricingCandidate,
 	modelsDevProviderTrust,
@@ -34,6 +36,7 @@ type Cost = {
 	output?: number | null;
 	cache_read?: number | null;
 	cache_write?: number | null;
+	tiers?: ModelsDevCostTier[];
 };
 type Model = {
 	id?: string;
@@ -93,12 +96,16 @@ for (const [providerId, provider] of sortedEntries(providers)) {
 			continue;
 		}
 		const pricingKey = selectModelsDevPricingKey(modelId, model.id);
+		// The long-context band keeps the upstream `cost.tiers` shape, so the Rust
+		// loader reads the snapshot and a live `api.json` response with one parser.
+		const longContextTier = selectLongContextTier(cost.tiers);
 		const entry: EmbeddedModel = {
 			cost: {
 				input: cost.input,
 				output: cost.output,
 				...(cost.cache_read != null ? { cache_read: cost.cache_read } : {}),
 				...(cost.cache_write != null ? { cache_write: cost.cache_write } : {}),
+				...(longContextTier != null ? { tiers: [longContextTier] } : {}),
 			},
 		};
 		if (model.limit?.context != null) {

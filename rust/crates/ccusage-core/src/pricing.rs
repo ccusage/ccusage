@@ -78,11 +78,6 @@ pub struct Pricing {
 /// Default tier boundary for LiteLLM `*_above_200k_tokens` pricing fields.
 pub(crate) const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
-/// OpenAI long-context pricing boundary: requests with more than 272K input
-/// tokens (GPT-5's maximum short-context input size) are billed at
-/// long-context rates.
-const OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 272_000;
-
 impl Pricing {
     const fn empty() -> Self {
         Self {
@@ -518,6 +513,60 @@ struct ModelsDevCost {
     output: Option<f64>,
     cache_read: Option<f64>,
     cache_write: Option<f64>,
+    /// Above-base rate bands. The embedded snapshot keeps the upstream shape, so
+    /// this reads a live `api.json` response and the snapshot alike.
+    tiers: Option<Vec<ModelsDevCostTier>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelsDevCostTier {
+    input: Option<f64>,
+    output: Option<f64>,
+    cache_read: Option<f64>,
+    cache_write: Option<f64>,
+    tier: Option<ModelsDevTierBound>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelsDevTierBound {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    size: Option<u64>,
+}
+
+impl ModelsDevCost {
+    /// The band a request crosses first, in per-token rates.
+    ///
+    /// `Pricing` holds one above-base band, so the lowest context threshold wins:
+    /// a handful of models publish a second, higher one, and dropping the lower
+    /// would price everything between the two thresholds at the base rate.
+    /// Bands keyed by anything but context are skipped, because the runtime
+    /// compares the threshold against an input-token count.
+    fn long_context_tier(&self) -> Option<LongContextRates> {
+        self.tiers
+            .as_deref()?
+            .iter()
+            .filter_map(|tier| {
+                let bound = tier.tier.as_ref()?;
+                if bound.kind.as_deref() != Some("context") {
+                    return None;
+                }
+                let threshold = bound.size.filter(|size| *size > 0)?;
+                Some(LongContextRates {
+                    threshold,
+                    input: tier.input.map(per_token),
+                    output: tier.output.map(per_token),
+                    cache_create: tier.cache_write.map(per_token),
+                    cache_read: tier.cache_read.map(per_token),
+                })
+            })
+            .min_by_key(|rates| rates.threshold)
+    }
+}
+
+/// models.dev publishes rates per million tokens; everything else here is per token.
+fn per_token(per_million: f64) -> f64 {
+    per_million / 1_000_000.0
 }
 
 #[derive(Debug, Deserialize)]
@@ -563,7 +612,7 @@ impl PricingMap {
         let fast_multiplier_overrides = FastMultiplierOverrides::load();
         map.load_json_with_overrides(build_time_pricing_json(), &fast_multiplier_overrides);
         map.put_builtin_pricing(&fast_multiplier_overrides);
-        map.apply_builtin_long_context_rates();
+        map.fill_long_context_rates_from_models_dev();
         // Resolve models that LiteLLM and the built-in table miss from the
         // embedded models.dev snapshot. This works offline, unlike the network
         // source gated by `enable_models_dev_fallback`.
@@ -603,7 +652,7 @@ impl PricingMap {
         // A live LiteLLM refresh replaces whole entries, so re-apply the
         // built-in long-context rates it does not publish before user
         // overrides get the final word.
-        map.apply_builtin_long_context_rates();
+        map.fill_long_context_rates_from_models_dev();
         map.enable_models_dev_fallback = !offline;
         map.apply_overrides(overrides);
         map
@@ -780,6 +829,7 @@ impl PricingMap {
             if claimed.is_some_and(|claimed| claimed >= claim) {
                 continue;
             }
+            let long_context = cost.long_context_tier();
             let input = input / 1_000_000.0;
             let output = output / 1_000_000.0;
             let cache_read_explicit = cost.cache_read.is_some();
@@ -797,11 +847,11 @@ impl PricingMap {
                         .map(|value| value / 1_000_000.0)
                         .unwrap_or(input * 0.1),
                     cache_read_explicit,
-                    input_above_200k: None,
-                    output_above_200k: None,
-                    cache_create_above_200k: None,
-                    cache_read_above_200k: None,
-                    long_context_threshold: None,
+                    input_above_200k: long_context.and_then(|rates| rates.input),
+                    output_above_200k: long_context.and_then(|rates| rates.output),
+                    cache_create_above_200k: long_context.and_then(|rates| rates.cache_create),
+                    cache_read_above_200k: long_context.and_then(|rates| rates.cache_read),
+                    long_context_threshold: long_context.map(|rates| rates.threshold),
                     fast_multiplier: 1.0,
                 },
             );
@@ -1145,14 +1195,18 @@ impl PricingMap {
     }
 
     /// Fills in long-context tier rates for models whose upstream pricing
-    /// entries only carry the flat rates. Runs after every pricing load
-    /// (embedded and live) because LiteLLM refreshes replace whole entries.
-    /// Entries that already carry any tier rate are left untouched so
-    /// upstream data wins once it exists. The check is deliberately
-    /// all-or-nothing rather than per field: upstream `*_above_200k_tokens`
-    /// values assume the 200K boundary, so mixing them with built-in rates
-    /// that assume the OpenAI 272K boundary would price both tiers wrong.
-    fn apply_builtin_long_context_rates(&mut self) {
+    /// entries only carry the flat rates, from the embedded models.dev
+    /// snapshot's `cost.tiers`. LiteLLM publishes no long-context rates for
+    /// OpenAI or xAI at all, so without this every request above the boundary
+    /// is billed at the base rate. Runs after every pricing load (embedded and
+    /// live) because LiteLLM refreshes replace whole entries.
+    ///
+    /// Entries that already carry any tier rate are left untouched so upstream
+    /// data wins once it exists. The check is deliberately all-or-nothing
+    /// rather than per field: each source's rates assume that source's own
+    /// boundary, so mixing fields across sources would price both tiers wrong.
+    fn fill_long_context_rates_from_models_dev(&mut self) {
+        let tiers = embedded_models_dev_pricing();
         for (model, pricing) in &mut self.entries {
             if pricing.input_above_200k.is_some()
                 || pricing.output_above_200k.is_some()
@@ -1161,20 +1215,62 @@ impl PricingMap {
             {
                 continue;
             }
-            let Some(rates) = builtin_long_context_rates(model_without_date_suffix(model)) else {
+            // Only exact ids are consulted (after date-suffix and alias
+            // resolution): a fuzzy match here could graft one model's tier onto
+            // another's base rates.
+            let base = model_without_date_suffix(model);
+            let resolved = pricing_alias(base).unwrap_or(base);
+            let Some(source) = tiers
+                .entries
+                .get(resolved)
+                .or_else(|| tiers.entries.get(base))
+            else {
                 continue;
             };
-            pricing.input_above_200k = rates.input;
-            pricing.output_above_200k = rates.output;
-            pricing.cache_create_above_200k = rates.cache_create;
-            pricing.cache_read_above_200k = rates.cache_read;
-            pricing.long_context_threshold = Some(rates.threshold);
+            if source.long_context_threshold.is_none() {
+                continue;
+            }
+            pricing.input_above_200k = source.input_above_200k;
+            pricing.output_above_200k = source.output_above_200k;
+            pricing.cache_create_above_200k = source.cache_create_above_200k;
+            pricing.cache_read_above_200k = source.cache_read_above_200k;
+            pricing.long_context_threshold = source.long_context_threshold;
         }
         self.clear_find_cache();
     }
 
+    fn put_builtin_entry(&mut self, model: String, pricing: Pricing) {
+        self.entries.entry(model).or_insert(pricing);
+    }
+
+    /// z.ai's catalog needs one provider fact LiteLLM does not publish: GLM
+    /// bills no cache writes, and its cache reads have their own rate. Base
+    /// rates stay whatever the loaded snapshot says - overwriting them froze
+    /// stale prices before - and only the cache fields are patched, and only
+    /// when the snapshot did not publish them itself.
+    fn put_builtin_glm(&mut self, model: &str, pricing: Pricing) {
+        match self.entries.entry(model.to_string()) {
+            std::collections::hash_map::Entry::Occupied(mut existing) => {
+                let existing = existing.get_mut();
+                if !existing.cache_read_explicit {
+                    existing.cache_create = pricing.cache_create;
+                    existing.cache_read = pricing.cache_read;
+                    existing.cache_read_explicit = true;
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(pricing);
+            }
+        }
+    }
+
+    /// Last-resort rates for models ccusage must always price, used only when
+    /// the loaded snapshots miss the key: upstream data is refreshed hourly,
+    /// so overwriting it with these frozen numbers would reintroduce stale
+    /// prices whenever a vendor changes theirs (OpenAI cut the gpt-5.6 rates
+    /// after these were written).
     fn put_builtin_pricing(&mut self, fast_multiplier_overrides: &FastMultiplierOverrides) {
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-opus-4-5".to_string(),
             Pricing {
                 input: 5e-6,
@@ -1190,7 +1286,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-opus-4-6".to_string(),
             Pricing {
                 input: 5e-6,
@@ -1208,7 +1304,7 @@ impl PricingMap {
                     .unwrap_or(1.0),
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-opus-4-7".to_string(),
             Pricing {
                 input: 5e-6,
@@ -1226,7 +1322,7 @@ impl PricingMap {
                     .unwrap_or(1.0),
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-opus-4-8".to_string(),
             Pricing {
                 input: 5e-6,
@@ -1244,7 +1340,7 @@ impl PricingMap {
                     .unwrap_or(1.0),
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-haiku-4-5".to_string(),
             Pricing {
                 input: 1e-6,
@@ -1260,7 +1356,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-opus-4".to_string(),
             Pricing {
                 input: 15e-6,
@@ -1276,7 +1372,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-sonnet-4-6".to_string(),
             Pricing {
                 input: 3e-6,
@@ -1292,7 +1388,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-sonnet-4".to_string(),
             Pricing {
                 input: 3e-6,
@@ -1325,7 +1421,7 @@ impl PricingMap {
             .insert("claude-3-5-haiku".to_string(), claude_3_5_haiku);
         self.entries
             .insert("claude-3-5-haiku-20241022".to_string(), claude_3_5_haiku);
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-3-opus".to_string(),
             Pricing {
                 input: 15e-6,
@@ -1341,7 +1437,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-3-sonnet".to_string(),
             Pricing {
                 input: 3e-6,
@@ -1357,7 +1453,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "claude-3-haiku".to_string(),
             Pricing {
                 input: 0.25e-6,
@@ -1373,7 +1469,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "gpt-5".to_string(),
             Pricing {
                 input: 1.25e-6,
@@ -1389,7 +1485,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "gpt-5.5".to_string(),
             Pricing {
                 input: 5e-6,
@@ -1407,7 +1503,7 @@ impl PricingMap {
                     .unwrap_or(1.0),
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "grok-4.3".to_string(),
             Pricing {
                 input: 1.25e-6,
@@ -1424,7 +1520,7 @@ impl PricingMap {
             },
         );
         // Source: https://platform.kimi.ai/docs/pricing/chat-k25
-        self.entries.insert(
+        self.put_builtin_entry(
             "moonshot/kimi-k2.5".to_string(),
             Pricing {
                 input: 0.6e-6,
@@ -1441,7 +1537,7 @@ impl PricingMap {
             },
         );
         // Source: https://platform.kimi.ai/docs/pricing/chat-k26
-        self.entries.insert(
+        self.put_builtin_entry(
             "moonshot/kimi-k2.6".to_string(),
             Pricing {
                 input: 0.95e-6,
@@ -1470,7 +1566,7 @@ impl PricingMap {
             long_context_threshold: None,
             fast_multiplier: 1.0,
         };
-        self.entries.insert("gpt-5.1".to_string(), gpt_5_1_pricing);
+        self.put_builtin_entry("gpt-5.1".to_string(), gpt_5_1_pricing);
         self.entries
             .insert("gpt-5.1-codex".to_string(), gpt_5_1_pricing);
         let gpt_5_codex_pricing = Pricing {
@@ -1488,7 +1584,7 @@ impl PricingMap {
         };
         self.entries
             .insert("gpt-5.2-codex".to_string(), gpt_5_codex_pricing);
-        self.entries.insert(
+        self.put_builtin_entry(
             "gpt-5.3-codex".to_string(),
             Pricing {
                 fast_multiplier: fast_multiplier_overrides
@@ -1499,7 +1595,7 @@ impl PricingMap {
         );
         self.entries
             .insert("gpt-5.2".to_string(), gpt_5_codex_pricing);
-        self.entries.insert(
+        self.put_builtin_entry(
             "gpt-5.4".to_string(),
             Pricing {
                 input: 2.5e-6,
@@ -1517,7 +1613,7 @@ impl PricingMap {
                     .unwrap_or(1.0),
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "gpt-5.4-mini".to_string(),
             Pricing {
                 input: 0.75e-6,
@@ -1533,7 +1629,7 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "gpt-5.4-nano".to_string(),
             Pricing {
                 input: 0.2e-6,
@@ -1550,14 +1646,15 @@ impl PricingMap {
             },
         );
         // Source: https://platform.openai.com/docs/pricing (Standard tier,
-        // short context). The long-context tier rates live in
-        // `builtin_long_context_rates`, which runs after every pricing load.
+        // short context). The long-context tier rates come from the embedded
+        // models.dev snapshot via `fill_long_context_rates_from_models_dev`,
+        // which runs after every pricing load.
         for (model, input, output, cache_create, cache_read) in [
             ("gpt-5.6-sol", 5e-6, 30e-6, 6.25e-6, 0.5e-6),
             ("gpt-5.6-terra", 2.5e-6, 15e-6, 3.125e-6, 0.25e-6),
             ("gpt-5.6-luna", 1e-6, 6e-6, 1.25e-6, 0.1e-6),
         ] {
-            self.entries.insert(
+            self.put_builtin_entry(
                 model.to_string(),
                 Pricing {
                     input,
@@ -1591,33 +1688,18 @@ impl PricingMap {
             fast_multiplier: 1.0,
         };
         let glm_base = glm_pricing(0.6e-6, 2.2e-6, 0.11e-6);
-        self.entries.insert("glm-4.5".to_string(), glm_base);
-        self.entries.insert("zai/glm-4.5".to_string(), glm_base);
-        self.entries.insert(
-            "zai/glm-4.5-x".to_string(),
-            glm_pricing(2.2e-6, 8.9e-6, 0.45e-6),
-        );
-        self.entries.insert(
-            "zai/glm-4.5-air".to_string(),
-            glm_pricing(0.2e-6, 1.1e-6, 0.03e-6),
-        );
-        self.entries.insert(
-            "zai/glm-4.5-airx".to_string(),
-            glm_pricing(1.1e-6, 4.5e-6, 0.22e-6),
-        );
-        self.entries.insert(
-            "zai/glm-4.5v".to_string(),
-            glm_pricing(0.6e-6, 1.8e-6, 0.11e-6),
-        );
-        self.entries.insert(
-            "zai/glm-4-32b-0414-128k".to_string(),
-            glm_pricing(0.1e-6, 0.1e-6, 0.0),
-        );
+        self.put_builtin_glm("glm-4.5", glm_base);
+        self.put_builtin_glm("zai/glm-4.5", glm_base);
+        self.put_builtin_glm("zai/glm-4.5-x", glm_pricing(2.2e-6, 8.9e-6, 0.45e-6));
+        self.put_builtin_glm("zai/glm-4.5-air", glm_pricing(0.2e-6, 1.1e-6, 0.03e-6));
+        self.put_builtin_glm("zai/glm-4.5-airx", glm_pricing(1.1e-6, 4.5e-6, 0.22e-6));
+        self.put_builtin_glm("zai/glm-4.5v", glm_pricing(0.6e-6, 1.8e-6, 0.11e-6));
+        self.put_builtin_glm("zai/glm-4-32b-0414-128k", glm_pricing(0.1e-6, 0.1e-6, 0.0));
         self.entries
             .insert("zai/glm-4.5-flash".to_string(), glm_pricing(0.0, 0.0, 0.0));
-        self.entries.insert("glm-4.6".to_string(), glm_base);
-        self.entries.insert("glm-4.7".to_string(), glm_base);
-        self.entries.insert(
+        self.put_builtin_glm("glm-4.6", glm_base);
+        self.put_builtin_glm("glm-4.7", glm_base);
+        self.put_builtin_entry(
             "glm-5".to_string(),
             Pricing {
                 input: 1.0e-6,
@@ -1626,7 +1708,7 @@ impl PricingMap {
                 ..glm_base
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "glm-5-turbo".to_string(),
             Pricing {
                 input: 1.2e-6,
@@ -1635,7 +1717,7 @@ impl PricingMap {
                 ..glm_base
             },
         );
-        self.entries.insert(
+        self.put_builtin_entry(
             "glm-5.1".to_string(),
             Pricing {
                 input: 1.4e-6,
@@ -1815,8 +1897,9 @@ fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
     }
 }
 
-/// Long-context tier rates (per token) for a base model, applied on top of
-/// loaded pricing entries by `apply_builtin_long_context_rates`.
+/// Long-context tier rates (per token) for a base model, parsed from a
+/// models.dev `cost.tiers` band and applied on top of loaded pricing entries
+/// by `fill_long_context_rates_from_models_dev`.
 #[derive(Clone, Copy)]
 struct LongContextRates {
     threshold: u64,
@@ -1826,49 +1909,23 @@ struct LongContextRates {
     cache_read: Option<f64>,
 }
 
-/// Built-in two-stage rates that upstream pricing sources do not publish.
-/// Source: https://platform.openai.com/docs/pricing (Standard tier); OpenAI
-/// bills requests with more than 272K input tokens at long-context rates.
-fn builtin_long_context_rates(base_model: &str) -> Option<LongContextRates> {
-    let openai = |input: f64, output: f64, cache_create: Option<f64>, cache_read: Option<f64>| {
-        LongContextRates {
-            threshold: OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
-            input: Some(input),
-            output: Some(output),
-            cache_create,
-            cache_read,
-        }
-    };
-    // A default family alias bills at the variant it points to, so it must pick
-    // up that variant's tier rates. Upstream pricing data publishes the alias as
-    // its own entry without long-context rates, which would otherwise leave the
-    // alias on flat pricing.
-    let base_model = pricing_alias(base_model).unwrap_or(base_model);
-    match base_model {
-        "gpt-5.6-sol" => Some(openai(10e-6, 45e-6, Some(12.5e-6), Some(1e-6))),
-        "gpt-5.6-terra" => Some(openai(5e-6, 22.5e-6, Some(6.25e-6), Some(0.5e-6))),
-        "gpt-5.6-luna" => Some(openai(2e-6, 9e-6, Some(2.5e-6), Some(0.2e-6))),
-        // gpt-5.5 and gpt-5.4 have no separate cache-write price, so cache
-        // writes are billed as regular input in both tiers.
-        "gpt-5.5" => Some(openai(10e-6, 45e-6, Some(10e-6), Some(1e-6))),
-        "gpt-5.4" => Some(openai(5e-6, 22.5e-6, Some(5e-6), Some(0.5e-6))),
-        // The pro models have no prompt-caching prices, so only the input and
-        // output rates change in the long-context tier.
-        "gpt-5.5-pro" | "gpt-5.4-pro" => Some(openai(60e-6, 270e-6, None, None)),
-        _ => None,
-    }
-}
-
 /// Input-token boundary above which a request is billed at a model's
 /// long-context tier. Codex aggregates per-model token sums before pricing is
 /// applied, so each request's tier must be decided during aggregation from the
-/// model's own threshold rather than a single global constant. This returns the
-/// same value `apply_builtin_long_context_rates` stamps onto
-/// `Pricing::long_context_threshold`, and falls back to the default 200K
+/// model's own threshold rather than a single global constant. The boundary
+/// comes from the embedded models.dev snapshot's `cost.tiers` - the same data
+/// `fill_long_context_rates_from_models_dev` stamps onto
+/// `Pricing::long_context_threshold` - and falls back to the default 200K
 /// boundary used for LiteLLM `*_above_200k_tokens` data.
 pub fn long_context_split_threshold(model: &str) -> u64 {
-    builtin_long_context_rates(model_without_date_suffix(model))
-        .map(|rates| rates.threshold)
+    let tiers = embedded_models_dev_pricing();
+    let base = model_without_date_suffix(model);
+    let resolved = pricing_alias(base).unwrap_or(base);
+    tiers
+        .entries
+        .get(resolved)
+        .or_else(|| tiers.entries.get(base))
+        .and_then(|pricing| pricing.long_context_threshold)
         .unwrap_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
 }
 
@@ -3205,17 +3262,21 @@ mod tests {
         assert_eq!(sol.long_context_threshold, Some(272_000));
         assert_eq!(pricing.context_limit("gpt-5.6-sol"), Some(1_050_000));
 
+        // OpenAI cut the terra and luna rates after launch. The snapshots carry
+        // the new prices, and the frozen built-in table must not undo them.
         let terra = pricing.find("gpt-5.6-terra").unwrap();
-        assert_eq!(terra.input, 2.5e-6);
-        assert_eq!(terra.cache_create, 3.125e-6);
-        assert_eq!(terra.input_above_200k, Some(5e-6));
-        assert_eq!(terra.output_above_200k, Some(22.5e-6));
+        assert_eq!(terra.input, 2e-6);
+        assert_eq!(terra.output, 12e-6);
+        assert_eq!(terra.input_above_200k, Some(4e-6));
+        assert_eq!(terra.output_above_200k, Some(18e-6));
 
         let luna = pricing.find("gpt-5.6-luna").unwrap();
-        assert_eq!(luna.input, 1e-6);
-        assert_eq!(luna.output, 6e-6);
-        assert_eq!(luna.input_above_200k, Some(2e-6));
-        assert_eq!(luna.output_above_200k, Some(9e-6));
+        // Compared per million tokens: the per-token division leaves the rates
+        // one ulp away from the equivalent literals.
+        assert!((luna.input * 1e6 - 0.2).abs() < 1e-9);
+        assert!((luna.output * 1e6 - 1.2).abs() < 1e-9);
+        assert!((luna.input_above_200k.unwrap() * 1e6 - 0.4).abs() < 1e-9);
+        assert!((luna.output_above_200k.unwrap() * 1e6 - 1.8).abs() < 1e-9);
     }
 
     #[test]
@@ -3275,7 +3336,7 @@ mod tests {
                 }
             }"#,
         );
-        pricing.apply_builtin_long_context_rates();
+        pricing.fill_long_context_rates_from_models_dev();
 
         let gpt_55 = pricing.find("gpt-5.5").unwrap();
         assert_eq!(gpt_55.input, 6e-6);
@@ -3295,11 +3356,35 @@ mod tests {
                 }
             }"#,
         );
-        pricing.apply_builtin_long_context_rates();
+        pricing.fill_long_context_rates_from_models_dev();
 
         let gpt_55 = pricing.find("gpt-5.5").unwrap();
         assert_eq!(gpt_55.input_above_200k, Some(12e-6));
         assert_eq!(gpt_55.long_context_threshold, None);
+    }
+
+    #[test]
+    fn embedded_models_dev_carries_grok_long_context_tiers() {
+        // xAI bills grok-4.5 and grok-4.6 at double rates above 200K input
+        // tokens. LiteLLM's embed does not carry xai keys at all, so these come
+        // from the models.dev snapshot's `cost.tiers` - without them every
+        // long-context Grok request is billed at the base rate (#1541).
+        let pricing = PricingMap::load_embedded();
+
+        for model in ["grok-4.5", "grok-4.6"] {
+            let entry = pricing.find(model).unwrap();
+            assert!((entry.input * 1e6 - 2.0).abs() < 1e-9, "{model} base input");
+            assert!(
+                (entry.input_above_200k.unwrap() * 1e6 - 4.0).abs() < 1e-9,
+                "{model} long-context input"
+            );
+            assert!(
+                (entry.output_above_200k.unwrap() * 1e6 - 12.0).abs() < 1e-9,
+                "{model} long-context output"
+            );
+            assert_eq!(entry.long_context_threshold, Some(200_000), "{model}");
+        }
+        assert_eq!(long_context_split_threshold("grok-4.5"), 200_000);
     }
 
     #[test]

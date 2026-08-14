@@ -59,6 +59,15 @@ const FIRST_PARTY_PROVIDER_ID_ALIASES = [
 	'zai',
 ] as const satisfies readonly string[];
 
+/** One above-base rate band, as `cost.tiers[]` publishes it. */
+export type ModelsDevCostTier = {
+	input?: number | null;
+	output?: number | null;
+	cache_read?: number | null;
+	cache_write?: number | null;
+	tier?: { type?: string; size?: number | null };
+};
+
 export type ModelsDevModalities = {
 	input?: readonly string[];
 	output?: readonly string[];
@@ -390,4 +399,31 @@ function compareBoolean(left: boolean, right: boolean): number {
 
 function compareStringPreferSmaller(left: string, right: string): number {
 	return left === right ? 0 : left < right ? 1 : -1;
+}
+
+/**
+ * The long-context band to embed for a model, or `undefined` when it has none.
+ *
+ * `Pricing` holds a single above-base band, so the lowest context threshold is
+ * the one kept: it is the band a request crosses first, and the 15 models that
+ * publish a second one would otherwise contribute nothing at all. Bands keyed by
+ * anything other than context are skipped, because the runtime compares them
+ * against an input-token count.
+ *
+ * @example
+ * selectLongContextTier([{ input: 4, output: 12, tier: { type: 'context', size: 200000 } }]);
+ * // the same band back, ready to embed
+ */
+export function selectLongContextTier(
+	tiers: readonly ModelsDevCostTier[] | undefined,
+): ModelsDevCostTier | undefined {
+	const contextTiers = (tiers ?? []).filter(
+		(tier) => tier.tier?.type === 'context' && (tier.tier?.size ?? 0) > 0,
+	);
+	if (contextTiers.length === 0) {
+		return undefined;
+	}
+	return contextTiers.reduce((lowest, tier) =>
+		(tier.tier?.size ?? 0) < (lowest.tier?.size ?? 0) ? tier : lowest,
+	);
 }
