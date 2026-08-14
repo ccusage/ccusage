@@ -65,7 +65,7 @@ pub struct Pricing {
     pub cache_read_explicit: bool,
     /// Whether `cache_create` came from published data rather than the derived
     /// `input * 1.25` default, so provider-fact patches know what they may fix.
-    pub(crate) cache_create_explicit: bool,
+    cache_create_explicit: bool,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
     pub(crate) cache_create_above_200k: Option<f64>,
