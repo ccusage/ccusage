@@ -142,6 +142,21 @@ pub fn print_json_or_jq(mut value: Value, jq: Option<&str>, no_cost: bool) -> Re
     Ok(())
 }
 
+/// Controls optional metrics in a focused usage table.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UsageTableOptions {
+    /// Whether a full-width table includes the cache-creation column.
+    pub show_cache_creation: bool,
+}
+
+impl Default for UsageTableOptions {
+    fn default() -> Self {
+        Self {
+            show_cache_creation: true,
+        }
+    }
+}
+
 pub fn print_usage_table(
     title: &str,
     first_column: &str,
@@ -149,6 +164,27 @@ pub fn print_usage_table(
     shared: &SharedArgs,
     group_projects: bool,
     project_aliases: Option<&str>,
+) -> Result<()> {
+    print_usage_table_with_options(
+        title,
+        first_column,
+        rows,
+        shared,
+        group_projects,
+        project_aliases,
+        UsageTableOptions::default(),
+    )
+}
+
+/// Print a focused usage table with source-specific display options.
+pub fn print_usage_table_with_options(
+    title: &str,
+    first_column: &str,
+    rows: &[UsageSummary],
+    shared: &SharedArgs,
+    group_projects: bool,
+    project_aliases: Option<&str>,
+    options: UsageTableOptions,
 ) -> Result<()> {
     if rows.is_empty() {
         eprintln!("{}", empty_usage_table_message());
@@ -164,40 +200,8 @@ pub fn print_usage_table(
     );
     let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
     print_box_title(title, shared);
-    let mut headers = if compact {
-        vec![first_column, "Models", "Input", "Output", "Cost (USD)"]
-    } else {
-        vec![
-            first_column,
-            "Models",
-            "Input",
-            "Output",
-            "Cache Create",
-            "Cache Read",
-            "Total Tokens",
-            "Cost (USD)",
-        ]
-    };
-    let mut aligns = if compact {
-        vec![
-            Align::Left,
-            Align::Left,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-        ]
-    } else {
-        vec![
-            Align::Left,
-            Align::Left,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-        ]
-    };
+    let (mut headers, mut aligns) =
+        usage_table_columns(first_column, compact, options.show_cache_creation);
     if shared.no_cost {
         headers.pop();
         aligns.pop();
@@ -235,26 +239,24 @@ pub fn print_usage_table(
             .unwrap_or("");
         let models = format_models_multiline(&row.models_used);
         let total_tokens = row.total_tokens();
-        let mut values = if compact {
-            vec![
-                label.to_string(),
-                models,
-                format_number(row.input_tokens),
-                format_number(row.output_tokens),
-                format_currency(row.total_cost),
-            ]
+        let mut values = vec![
+            label.to_string(),
+            models,
+            format_number(row.input_tokens),
+            format_number(row.output_tokens),
+        ];
+        if !compact && options.show_cache_creation {
+            values.push(format_number(row.cache_creation_tokens));
+        }
+        if compact {
+            values.push(format_currency(row.total_cost));
         } else {
-            vec![
-                label.to_string(),
-                models,
-                format_number(row.input_tokens),
-                format_number(row.output_tokens),
-                format_number(row.cache_creation_tokens),
+            values.extend([
                 format_number(row.cache_read_tokens),
                 format_number(total_tokens),
                 format_currency(row.total_cost),
-            ]
-        };
+            ]);
+        }
         if shared.no_cost {
             values.pop();
         }
@@ -265,7 +267,14 @@ pub fn print_usage_table(
         }
         table.push(values);
         if shared.breakdown {
-            push_breakdown_rows(&mut table, row, compact, include_last_activity, shared);
+            push_breakdown_rows(
+                &mut table,
+                row,
+                compact,
+                options.show_cache_creation,
+                include_last_activity,
+                shared,
+            );
         }
     }
 
@@ -295,26 +304,22 @@ pub fn print_usage_table(
         .and_then(Value::as_u64)
         .unwrap_or(input + output + cache_create + cache_read);
     table.separator();
-    let mut total_row = if compact {
-        vec![
-            color(shared, "Total", Color::Yellow),
-            String::new(),
-            color(shared, format_number(input), Color::Yellow),
-            color(shared, format_number(output), Color::Yellow),
-            color(shared, format_currency(total_cost), Color::Yellow),
-        ]
+    let mut total_row = vec![
+        color(shared, "Total", Color::Yellow),
+        String::new(),
+        color(shared, format_number(input), Color::Yellow),
+        color(shared, format_number(output), Color::Yellow),
+    ];
+    if !compact && options.show_cache_creation {
+        total_row.push(color(shared, format_number(cache_create), Color::Yellow));
+    }
+    if compact {
+        total_row.push(color(shared, format_currency(total_cost), Color::Yellow));
     } else {
-        vec![
-            color(shared, "Total", Color::Yellow),
-            String::new(),
-            color(shared, format_number(input), Color::Yellow),
-            color(shared, format_number(output), Color::Yellow),
-            color(shared, format_number(cache_create), Color::Yellow),
-            color(shared, format_number(cache_read), Color::Yellow),
-            color(shared, format_number(total_tokens), Color::Yellow),
-            color(shared, format_currency(total_cost), Color::Yellow),
-        ]
-    };
+        total_row.push(color(shared, format_number(cache_read), Color::Yellow));
+        total_row.push(color(shared, format_number(total_tokens), Color::Yellow));
+        total_row.push(color(shared, format_currency(total_cost), Color::Yellow));
+    }
     if shared.no_cost {
         total_row.pop();
     }
@@ -329,6 +334,27 @@ pub fn print_usage_table(
         eprintln!("Expand terminal width to see cache metrics and total tokens");
     }
     Ok(())
+}
+
+fn usage_table_columns(
+    first_column: &str,
+    compact: bool,
+    show_cache_creation: bool,
+) -> (Vec<&str>, Vec<Align>) {
+    let mut headers = vec![first_column, "Models", "Input", "Output"];
+    let mut aligns = vec![Align::Left, Align::Left, Align::Right, Align::Right];
+    if !compact && show_cache_creation {
+        headers.push("Cache Create");
+        aligns.push(Align::Right);
+    }
+    if compact {
+        headers.push("Cost (USD)");
+        aligns.push(Align::Right);
+    } else {
+        headers.extend(["Cache Read", "Total Tokens", "Cost (USD)"]);
+        aligns.extend([Align::Right, Align::Right, Align::Right]);
+    }
+    (headers, aligns)
 }
 
 fn empty_usage_table_message() -> &'static str {
@@ -406,6 +432,7 @@ fn push_breakdown_rows(
     table: &mut SimpleTable,
     row: &UsageSummary,
     compact: bool,
+    show_cache_creation: bool,
     include_last_activity: bool,
     shared: &SharedArgs,
 ) {
@@ -414,33 +441,27 @@ fn push_breakdown_rows(
             + breakdown.output_tokens
             + breakdown.cache_creation_tokens
             + breakdown.cache_read_tokens;
-        let mut values = if compact {
-            vec![
-                color(
-                    shared,
-                    format!("  └─ {}", short_model_name(&breakdown.model_name)),
-                    Color::Grey,
-                ),
-                String::new(),
-                color(shared, format_number(breakdown.input_tokens), Color::Grey),
-                color(shared, format_number(breakdown.output_tokens), Color::Grey),
-                color(shared, format_currency(breakdown.cost), Color::Grey),
-            ]
+        let mut values = vec![
+            color(
+                shared,
+                format!("  └─ {}", short_model_name(&breakdown.model_name)),
+                Color::Grey,
+            ),
+            String::new(),
+            color(shared, format_number(breakdown.input_tokens), Color::Grey),
+            color(shared, format_number(breakdown.output_tokens), Color::Grey),
+        ];
+        if !compact && show_cache_creation {
+            values.push(color(
+                shared,
+                format_number(breakdown.cache_creation_tokens),
+                Color::Grey,
+            ));
+        }
+        if compact {
+            values.push(color(shared, format_currency(breakdown.cost), Color::Grey));
         } else {
-            vec![
-                color(
-                    shared,
-                    format!("  └─ {}", short_model_name(&breakdown.model_name)),
-                    Color::Grey,
-                ),
-                String::new(),
-                color(shared, format_number(breakdown.input_tokens), Color::Grey),
-                color(shared, format_number(breakdown.output_tokens), Color::Grey),
-                color(
-                    shared,
-                    format_number(breakdown.cache_creation_tokens),
-                    Color::Grey,
-                ),
+            values.extend([
                 color(
                     shared,
                     format_number(breakdown.cache_read_tokens),
@@ -448,8 +469,8 @@ fn push_breakdown_rows(
                 ),
                 color(shared, format_number(total), Color::Grey),
                 color(shared, format_currency(breakdown.cost), Color::Grey),
-            ]
-        };
+            ]);
+        }
         if shared.no_cost {
             values.pop();
         }
@@ -545,6 +566,33 @@ mod tests {
     #[test]
     fn empty_usage_table_message_is_provider_agnostic() {
         assert_eq!(empty_usage_table_message(), "No usage data found.");
+    }
+
+    #[test]
+    fn focused_table_can_omit_cache_creation_without_dropping_cache_reads() {
+        let (headers, aligns) = usage_table_columns("Date", false, false);
+
+        assert_eq!(
+            headers,
+            vec![
+                "Date",
+                "Models",
+                "Input",
+                "Output",
+                "Cache Read",
+                "Total Tokens",
+                "Cost (USD)",
+            ]
+        );
+        assert_eq!(headers.len(), aligns.len());
+    }
+
+    #[test]
+    fn focused_table_includes_cache_creation_by_default() {
+        let (headers, aligns) = usage_table_columns("Date", false, true);
+
+        assert!(headers.contains(&"Cache Create"));
+        assert_eq!(headers.len(), aligns.len());
     }
 
     #[test]

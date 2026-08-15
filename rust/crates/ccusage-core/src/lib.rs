@@ -31,10 +31,10 @@ pub use date_utils::*;
 pub use last_window::{PeriodUnit, last_periods_since};
 pub use logger::{debug_log, log_level};
 pub use output::{
-    format_currency, format_models_multiline, format_number, group_project_output, json_float,
-    print_json_or_jq, print_missing_pricing_warnings, print_missing_pricing_warnings_for_models,
-    print_usage_table, session_summary_json, should_use_compact_layout, summary_json, totals_json,
-    wants_json,
+    UsageTableOptions, format_currency, format_models_multiline, format_number,
+    group_project_output, json_float, print_json_or_jq, print_missing_pricing_warnings,
+    print_missing_pricing_warnings_for_models, print_usage_table, print_usage_table_with_options,
+    session_summary_json, should_use_compact_layout, summary_json, totals_json, wants_json,
 };
 pub use pricing::{Pricing, PricingMap};
 pub(crate) use project_names::parse_project_aliases;

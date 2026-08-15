@@ -51,6 +51,11 @@ Only rows with `sessionUpdate == "turn_completed"` and a usable usage breakdown 
 
 These views support `--json`, `--compact`, `--mode`, and `--offline`.
 
+Focused terminal tables omit the `Cache Create` column when the selected Grok
+rows report no cache-creation tokens. The column reappears when selected rows
+contain a non-zero value; JSON output keeps `cacheCreationTokens` in the stable
+report schema either way.
+
 ## What Gets Calculated
 
 - **Token usage** - Grok records OpenAI-style usage where `inputTokens` includes cache. ccusage splits it into uncached input, cache read (`cachedReadTokens`) and cache write (`cacheCreationTokens`), and stores the full `outputTokens` as output.

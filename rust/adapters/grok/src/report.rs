@@ -146,6 +146,7 @@ mod tests {
 
         assert_eq!(report["daily"][0]["inputTokens"], 60);
         assert_eq!(report["daily"][0]["outputTokens"], 20);
+        assert_eq!(report["daily"][0]["cacheCreationTokens"], 0);
         assert_eq!(report["daily"][0]["cacheReadTokens"], 40);
         // totalTokens is uncached input + output + cache read; reasoning is
         // already inside output and is never added again.
