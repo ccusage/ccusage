@@ -66,57 +66,8 @@ impl SharedArgs {
     }
 }
 
-/// The two documented spellings of a `--since` / `--until` bound.
-pub const DATE_BOUND_FORMATS: &str = "YYYY-MM-DD or YYYYMMDD";
-
-/// Normalizes a date bound into the `YYYYMMDD` form the report keys use.
-///
-/// Reports compare bounds against row keys as plain strings, so a value that is
-/// not one of the two documented formats, or that is not a real calendar date,
-/// would silently turn the filter into a no-op or drop every row. Returns
-/// `None` for those values so callers can reject them.
-pub fn normalize_date_bound(value: &str) -> Option<String> {
-    let bytes = value.as_bytes();
-    let digits: [u8; 8] = match bytes.len() {
-        8 => bytes.try_into().ok()?,
-        10 if bytes[4] == b'-' && bytes[7] == b'-' => {
-            let mut digits = [0u8; 8];
-            digits[..4].copy_from_slice(&bytes[..4]);
-            digits[4..6].copy_from_slice(&bytes[5..7]);
-            digits[6..].copy_from_slice(&bytes[8..]);
-            digits
-        }
-        _ => return None,
-    };
-    if !digits.iter().all(u8::is_ascii_digit) {
-        return None;
-    }
-    let number = |slice: &[u8]| {
-        slice
-            .iter()
-            .fold(0u32, |value, digit| value * 10 + u32::from(digit - b'0'))
-    };
-    let year = number(&digits[..4]) as i32;
-    let month = number(&digits[4..6]);
-    let day = number(&digits[6..]);
-    if day == 0 || day > days_in_month(year, month) {
-        return None;
-    }
-    std::str::from_utf8(&digits).ok().map(str::to_string)
-}
-
-fn days_in_month(year: i32, month: u32) -> u32 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if is_leap_year(year) => 29,
-        2 => 28,
-        _ => 0,
-    }
-}
-
-fn is_leap_year(year: i32) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+pub fn normalize_date_bound(value: &str) -> String {
+    value.replace('-', "")
 }
 
 #[derive(Clone)]
@@ -314,60 +265,3 @@ pub trait CliConfig {
 pub struct NoConfig;
 
 impl CliConfig for NoConfig {}
-
-#[cfg(test)]
-mod tests {
-    use super::normalize_date_bound;
-
-    #[test]
-    fn accepts_both_documented_formats() {
-        assert_eq!(
-            normalize_date_bound("2026-07-10").as_deref(),
-            Some("20260710")
-        );
-        assert_eq!(
-            normalize_date_bound("20260710").as_deref(),
-            Some("20260710")
-        );
-    }
-
-    #[test]
-    fn accepts_leap_day_only_in_leap_years() {
-        assert_eq!(
-            normalize_date_bound("2024-02-29").as_deref(),
-            Some("20240229")
-        );
-        assert_eq!(
-            normalize_date_bound("2000-02-29").as_deref(),
-            Some("20000229")
-        );
-        assert_eq!(normalize_date_bound("2026-02-29"), None);
-        assert_eq!(normalize_date_bound("1900-02-29"), None);
-    }
-
-    #[test]
-    fn rejects_impossible_calendar_dates() {
-        assert_eq!(normalize_date_bound("2026-02-30"), None);
-        assert_eq!(normalize_date_bound("2026-13-01"), None);
-        assert_eq!(normalize_date_bound("2026-00-10"), None);
-        assert_eq!(normalize_date_bound("2026-07-00"), None);
-        assert_eq!(normalize_date_bound("2026-04-31"), None);
-    }
-
-    #[test]
-    fn rejects_undocumented_spellings() {
-        assert_eq!(normalize_date_bound("abc"), None);
-        assert_eq!(normalize_date_bound(""), None);
-        assert_eq!(normalize_date_bound("2026/07/10"), None);
-        assert_eq!(normalize_date_bound("2026-7-10"), None);
-        assert_eq!(normalize_date_bound("2026-07-10T00:00:00Z"), None);
-        assert_eq!(normalize_date_bound("2026-07-1"), None);
-        assert_eq!(normalize_date_bound("2026_07_10"), None);
-    }
-
-    #[test]
-    fn rejects_non_ascii_values_without_panicking() {
-        assert_eq!(normalize_date_bound("２０２６０７１０"), None);
-        assert_eq!(normalize_date_bound("2026-07-1０"), None);
-    }
-}

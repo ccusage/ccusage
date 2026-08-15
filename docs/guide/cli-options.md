@@ -21,8 +21,6 @@ ccusage monthly --since 20260101
 ccusage session --until 20260531
 ```
 
-Both bounds accept `YYYY-MM-DD` or `YYYYMMDD` and are inclusive. Any other spelling, or a value that is not a real calendar date such as `2026-02-30`, is rejected with a non-zero exit code instead of silently changing which rows the report keeps. The same check applies to `since` and `until` in a [configuration file](/guide/config-files).
-
 ### Recent Periods
 
 Instead of working out dates, ask for the most recent periods of whatever the report groups by:
