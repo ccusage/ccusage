@@ -68,17 +68,24 @@ impl ConfigContext {
     /// command that applies shared options, not just the pi-store readers.
     fn detect_date_bound_error(&self) -> Option<String> {
         self.option_maps().into_iter().find_map(|options| {
-            let options = SharedOptions::from_map(options);
-            [("since", options.since), ("until", options.until)]
-                .into_iter()
-                .find_map(|(key, value)| {
-                    let value = value?;
-                    normalize_date_bound(&value).is_none().then(|| {
-                        config_error(format!(
-                            "{key} '{value}' is not a valid date. Expected {DATE_BOUND_FORMATS}"
-                        ))
-                    })
+            [
+                ("since", options.get("since")),
+                ("until", options.get("until")),
+            ]
+            .into_iter()
+            .find_map(|(key, value)| {
+                let value = value?;
+                let Some(value) = value.as_str() else {
+                    return Some(config_error(format!(
+                        "{key} must be a string. Expected {DATE_BOUND_FORMATS}"
+                    )));
+                };
+                normalize_date_bound(value).is_none().then(|| {
+                    config_error(format!(
+                        "{key} '{value}' is not a valid date. Expected {DATE_BOUND_FORMATS}"
+                    ))
                 })
+            })
         })
     }
 
@@ -353,6 +360,7 @@ fn option_takes_value(arg: &str) -> bool {
         "-s" | "--since"
             | "-u"
             | "--until"
+            | "--last"
             | "-m"
             | "--mode"
             | "--debug-samples"
@@ -380,6 +388,7 @@ fn option_takes_value(arg: &str) -> bool {
             | "--refresh-interval"
             | "--context-low-threshold"
             | "--context-medium-threshold"
+            | "--sections"
     )
 }
 
@@ -1218,6 +1227,37 @@ mod tests {
                 "Invalid ccusage config: until 'abc' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
             )
         );
+    }
+
+    #[test]
+    fn rejects_config_date_bounds_that_are_not_strings() {
+        let config = config_context_from_json(r#"{ "defaults": { "since": 20260710 } }"#);
+
+        assert_eq!(
+            config.config_error(),
+            Some("Invalid ccusage config: since must be a string. Expected YYYY-MM-DD or YYYYMMDD")
+        );
+    }
+
+    #[test]
+    fn detects_commands_after_root_options_with_values() {
+        for command in [
+            vec!["--last", "1", "weekly"],
+            vec!["--sections", "daily", "weekly"],
+        ] {
+            let config = config_context_for_command(
+                r#"{ "commands": { "weekly": { "since": "not-a-date" } } }"#,
+                &command,
+            );
+
+            assert_eq!(
+                config.config_error(),
+                Some(
+                    "Invalid ccusage config: since 'not-a-date' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
+                ),
+                "expected {command:?} to inspect the weekly command config"
+            );
+        }
     }
 
     #[test]
