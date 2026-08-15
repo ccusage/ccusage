@@ -243,6 +243,38 @@ fn commandless_invocation_preserves_default_dispatch() {
 }
 
 #[test]
+fn rejects_date_bounds_that_are_not_real_calendar_dates() {
+    for value in [
+        "2026-02-30",
+        "2026-13-01",
+        "abc",
+        "2026/07/10",
+        "2026-07-10T00:00:00Z",
+    ] {
+        assert_eq!(
+            parse_error(&["ccusage", "daily", "--since", value]),
+            format!("Invalid value for --since '{value}'. Expected YYYY-MM-DD or YYYYMMDD.")
+        );
+        assert_eq!(
+            parse_error(&["ccusage", "daily", "--until", value]),
+            format!("Invalid value for --until '{value}'. Expected YYYY-MM-DD or YYYYMMDD.")
+        );
+    }
+}
+
+#[test]
+fn accepts_both_documented_date_bound_formats() {
+    for (value, normalized) in [("2026-07-10", "20260710"), ("20260710", "20260710")] {
+        let cli = parse(&["ccusage", "daily", "--since", value, "--until", value]);
+        let Some(Command::All(args)) = cli.command else {
+            panic!("expected all-agent command");
+        };
+        assert_eq!(args.shared.since.as_deref(), Some(normalized));
+        assert_eq!(args.shared.until.as_deref(), Some(normalized));
+    }
+}
+
+#[test]
 fn parses_last_periods_on_period_reports() {
     let cli = parse(&["ccusage", "daily", "--last", "1"]);
     let Some(Command::All(args)) = cli.command else {
