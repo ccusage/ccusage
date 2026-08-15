@@ -53,8 +53,8 @@ These views support `--json`, `--compact`, `--mode`, and `--offline`.
 
 Focused terminal tables omit the `Cache Create` column when the selected Grok
 rows report no cache-creation tokens. The column reappears when selected rows
-contain a non-zero value; JSON output keeps `cacheCreationTokens` in the stable
-report schema either way.
+contain a non-zero value; [JSON output](/guide/json-output) keeps
+`cacheCreationTokens` in the stable report schema either way.
 
 ## What Gets Calculated
 

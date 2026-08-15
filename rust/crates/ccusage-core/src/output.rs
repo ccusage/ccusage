@@ -589,7 +589,8 @@ mod tests {
 
     #[test]
     fn focused_table_includes_cache_creation_by_default() {
-        let (headers, aligns) = usage_table_columns("Date", false, true);
+        let options = UsageTableOptions::default();
+        let (headers, aligns) = usage_table_columns("Date", false, options.show_cache_creation);
 
         assert!(headers.contains(&"Cache Create"));
         assert_eq!(headers.len(), aligns.len());
