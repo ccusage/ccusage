@@ -540,7 +540,7 @@ mod tests {
                 }),
             ];
             let shared = SharedArgs {
-                since: Some(normalize_date_bound(since)),
+                since: normalize_date_bound(since),
                 order: SortOrder::Asc,
                 ..SharedArgs::default()
             };

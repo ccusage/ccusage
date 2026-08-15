@@ -4,8 +4,9 @@ use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs,
-    SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    CostSource, DATE_BOUND_FORMATS, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS,
+    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
+    normalize_date_bound,
 };
 
 use crate::Cli;
@@ -713,10 +714,10 @@ fn parse_shared_arg_for_command(
 fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(), String> {
     match parser.next_flag()?.as_str() {
         "-s" | "--since" => {
-            shared.since = Some(normalize_date_bound(&parser.value_for("--since")?))
+            shared.since = Some(parse_date_bound("--since", &parser.value_for("--since")?)?)
         }
         "-u" | "--until" => {
-            shared.until = Some(normalize_date_bound(&parser.value_for("--until")?))
+            shared.until = Some(parse_date_bound("--until", &parser.value_for("--until")?)?)
         }
         "--last" => shared.last = Some(parse_last_periods(&parser.value_for("--last")?)?),
         "-j" | "--json" => shared.json = true,
@@ -1003,6 +1004,12 @@ fn is_shared_flag(arg: &str) -> bool {
             | "--single-thread"
             | "--no-cost"
     )
+}
+
+fn parse_date_bound(flag: &str, value: &str) -> Result<String, String> {
+    normalize_date_bound(value).ok_or_else(|| {
+        format!("Invalid value for {flag} '{value}'. Expected {DATE_BOUND_FORMATS}.")
+    })
 }
 
 fn parse_last_periods(value: &str) -> Result<u32, String> {
