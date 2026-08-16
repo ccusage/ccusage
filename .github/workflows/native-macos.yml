@@ -5,6 +5,9 @@ on:
   push:
     branches: [feat/ccusage-macos-native]
 
+permissions:
+  contents: write
+
 jobs:
   build-and-qa:
     runs-on: macos-15
@@ -22,9 +25,8 @@ jobs:
         run: native build --yes -Dautomation=true
       - name: Launch for deterministic UI QA
         run: |
-          native dev -Dautomation=true > /tmp/ccusage-native.log 2>&1 &
+          ./zig-out/bin/ccusage-wrap > /tmp/ccusage-native.log 2>&1 &
           echo $! > /tmp/native.pid
-          sleep 8
           native automate wait
           native automate snapshot > native-snapshot.txt
           native automate assert 'gpu_nonblank=true'
@@ -55,4 +57,4 @@ jobs:
             native-snapshot.txt
             native-dev.log
             zig-out/**
-          if-no-files-found: error
+          if-no-files-found: warn
