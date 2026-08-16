@@ -1,4 +1,5 @@
-import { Cmd, asciiBytes, type Bytes } from "@native-sdk/core";
+import { Cmd, asciiBytes } from "@native-sdk/core";
+type Bytes = Uint8Array;
 
 export type Page = "overview" | "agents" | "models" | "sessions";
 
@@ -33,16 +34,16 @@ export type Msg =
   | { readonly kind: "refresh" };
 
 export function initialModel(): [Model, Cmd<Msg>] {
-  return [{ page: "overview", range: asciiBytes("Last 30 days"), refreshed: false }, Cmd.none()];
+  return [{ page: "overview", range: asciiBytes("Last 30 days"), refreshed: false }, Cmd.none];
 }
 
 export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
   switch (msg.kind) {
-    case "overview": return [{ ...model, page: "overview" }, Cmd.none()];
-    case "agents": return [{ ...model, page: "agents" }, Cmd.none()];
-    case "models": return [{ ...model, page: "models" }, Cmd.none()];
-    case "sessions": return [{ ...model, page: "sessions" }, Cmd.none()];
-    case "refresh": return [{ ...model, refreshed: true }, Cmd.none()];
+    case "overview": return [{ ...model, page: "overview" }, Cmd.none];
+    case "agents": return [{ ...model, page: "agents" }, Cmd.none];
+    case "models": return [{ ...model, page: "models" }, Cmd.none];
+    case "sessions": return [{ ...model, page: "sessions" }, Cmd.none];
+    case "refresh": return [{ ...model, refreshed: true }, Cmd.none];
   }
 }
 
