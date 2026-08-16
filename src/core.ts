@@ -49,7 +49,7 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
 
 export function title(_model: Model): Bytes { return asciiBytes("Usage overview"); }
 export function subtitle(model: Model): Bytes {
-  return model.refreshed ? asciiBytes("Refreshed just now · local ccusage data") : asciiBytes("Local coding-agent usage · updated 2 min ago");
+  return model.refreshed ? asciiBytes("Refreshed just now / local ccusage data") : asciiBytes("Local coding-agent usage / updated 2 min ago");
 }
 export function totalCost(_model: Model): Bytes { return asciiBytes("$184.72"); }
 export function totalTokens(_model: Model): Bytes { return asciiBytes("48.6M"); }
@@ -79,10 +79,10 @@ export function recentDays(_model: Model): readonly DayRow[] {
 
 export function topAgents(_model: Model): readonly AgentRow[] {
   return [
-    { name: asciiBytes("Codex"), detail: asciiBytes("GPT-5.6 Sol · 42 sessions"), tokens: asciiBytes("21.4M"), cost: asciiBytes("$82.16"), share: asciiBytes("44.5%") },
-    { name: asciiBytes("Claude Code"), detail: asciiBytes("Opus 4.1 · 31 sessions"), tokens: asciiBytes("15.8M"), cost: asciiBytes("$64.09"), share: asciiBytes("34.7%") },
-    { name: asciiBytes("OpenCode"), detail: asciiBytes("mixed models · 18 sessions"), tokens: asciiBytes("7.6M"), cost: asciiBytes("$27.31"), share: asciiBytes("14.8%") },
-    { name: asciiBytes("Gemini CLI"), detail: asciiBytes("Gemini 2.5 Pro · 9 sessions"), tokens: asciiBytes("3.8M"), cost: asciiBytes("$11.16"), share: asciiBytes("6.0%") },
+    { name: asciiBytes("Codex"), detail: asciiBytes("GPT-5.6 Sol / 42 sessions"), tokens: asciiBytes("21.4M"), cost: asciiBytes("$82.16"), share: asciiBytes("44.5%") },
+    { name: asciiBytes("Claude Code"), detail: asciiBytes("Opus 4.1 / 31 sessions"), tokens: asciiBytes("15.8M"), cost: asciiBytes("$64.09"), share: asciiBytes("34.7%") },
+    { name: asciiBytes("OpenCode"), detail: asciiBytes("mixed models / 18 sessions"), tokens: asciiBytes("7.6M"), cost: asciiBytes("$27.31"), share: asciiBytes("14.8%") },
+    { name: asciiBytes("Gemini CLI"), detail: asciiBytes("Gemini 2.5 Pro / 9 sessions"), tokens: asciiBytes("3.8M"), cost: asciiBytes("$11.16"), share: asciiBytes("6.0%") },
   ];
 }
 
