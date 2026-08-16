@@ -22,7 +22,7 @@ jobs:
         run: native build --yes
       - name: Launch for deterministic UI QA
         run: |
-          native dev --yes > /tmp/ccusage-native.log 2>&1 &
+          native dev > /tmp/ccusage-native.log 2>&1 &
           echo $! > /tmp/native.pid
           sleep 8
           native automate wait
