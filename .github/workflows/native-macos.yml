@@ -5,6 +5,9 @@ on:
   push:
     branches: [feat/ccusage-macos-native]
 
+permissions:
+  contents: write
+
 jobs:
   build-and-qa:
     runs-on: macos-15
@@ -34,6 +37,20 @@ jobs:
       - name: Preserve dev log
         if: always()
         run: cp /tmp/ccusage-native.log native-dev.log || true
+      - name: Publish QA evidence
+        if: success()
+        run: |
+          mkdir -p qa
+          cp screenshot-main-canvas.png qa/screenshot-main-canvas.png
+          cp native-snapshot.txt qa/native-snapshot.txt
+          cp native-dev.log qa/native-dev.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add qa
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: publish native QA evidence [skip ci]"
+            git push origin HEAD:feat/ccusage-macos-native
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
