@@ -51,12 +51,26 @@ jobs:
             git commit -m "chore: publish native QA evidence [skip ci]"
             git push origin HEAD:feat/ccusage-macos-native
           fi
+      - name: Export text-safe screenshot preview
+        if: success()
+        run: |
+          sips -Z 1000 screenshot-main-canvas.png --out screenshot-preview.jpg >/dev/null
+          base64 -i screenshot-preview.jpg | tr -d '\n' > screenshot-preview.b64
+          mkdir -p qa/preview-b64
+          rm -f qa/preview-b64/part-*
+          split -b 50000 -a 3 screenshot-preview.b64 qa/preview-b64/part-
+          git add qa/preview-b64
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: publish text-safe screenshot preview [skip ci]"
+            git push origin HEAD:feat/ccusage-macos-native
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ccusage-native-qa
           path: |
             screenshot-main-canvas.png
+            screenshot-preview.jpg
             native-snapshot.txt
             native-dev.log
             zig-out/**
