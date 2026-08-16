@@ -592,10 +592,12 @@ fn filtered_pi_format_agent_rows(
 
 fn load_claude_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRows> {
     if kind == AgentReportKind::Session {
-        let entries = claude::load_entries(shared, None)?;
+        let mut entries = claude::load_entries(shared, None)?;
         let detected = !entries.is_empty();
-        let mut summaries = summarize_entry_sessions(&entries)?;
-        filter_session_summaries(&mut summaries, shared);
+        // Match the pi path: scope the date window to entries before
+        // summarizing, so session totals cover only the requested window.
+        filter_loaded_entries_by_date(&mut entries, shared);
+        let summaries = summarize_entry_sessions(&entries)?;
         return Ok(AgentRows {
             rows: summary_rows("claude", summaries, false),
             detected,
@@ -1426,5 +1428,39 @@ mod tests {
                 ("pi", ["[pi] gpt-5".to_string()].as_slice()),
             ]
         );
+    }
+
+    #[test]
+    fn unified_claude_session_rows_scope_totals_to_the_date_window() {
+        let fixture = fs_fixture!({
+            "projects/project1/session1/chat.jsonl": [
+                r#"{"timestamp":"2026-01-01T12:00:00.000Z","message":{"id":"msg_1","model":"claude-opus-4-6","usage":{"input_tokens":1,"output_tokens":10}},"requestId":"req_1","costUSD":0.01}"#,
+                r#"{"timestamp":"2026-01-02T12:00:00.000Z","message":{"id":"msg_2","model":"claude-opus-4-6","usage":{"input_tokens":2,"output_tokens":20}},"requestId":"req_2","costUSD":0.02}"#,
+                r#"{"timestamp":"2026-01-03T12:00:00.000Z","message":{"id":"msg_3","model":"claude-opus-4-6","usage":{"input_tokens":3,"output_tokens":30}},"requestId":"req_3","costUSD":0.03}"#,
+            ]
+            .join("\n"),
+        });
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+
+        let shared = |since: Option<&str>, until: Option<&str>| SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            since: since.map(str::to_string),
+            until: until.map(str::to_string),
+            ..SharedArgs::default()
+        };
+
+        let lifetime = load_claude_rows(AgentReportKind::Session, &shared(None, None)).unwrap();
+        assert_eq!(lifetime.rows.len(), 1);
+        assert_eq!(lifetime.rows[0].output_tokens, 60);
+
+        // Both bounds are inclusive, and the window scopes the totals rather
+        // than only selecting which sessions are listed.
+        let windowed = load_claude_rows(
+            AgentReportKind::Session,
+            &shared(Some("20260102"), Some("20260103")),
+        )
+        .unwrap();
+        assert_eq!(windowed.rows.len(), 1);
+        assert_eq!(windowed.rows[0].output_tokens, 50);
     }
 }

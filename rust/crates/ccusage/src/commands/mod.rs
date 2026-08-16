@@ -6,14 +6,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ccusage_adapter_common::filter_loaded_entries_by_date;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::pricing::PricingMap;
 use crate::{
     BucketKind, Color, Context, DEFAULT_RECENT_DAYS, DEFAULT_SESSION_DURATION_HOURS,
-    MILLIS_PER_DAY, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs, block_json,
-    calculate_burn_rate,
+    MILLIS_PER_DAY, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs, UsageSummary,
+    block_json, calculate_burn_rate,
     cli::{
         BlocksArgs, CostSource, DailyArgs, SessionArgs, SharedArgs, SortOrder, StatuslineArgs,
         VisualBurnRate, WeekDay, WeeklyArgs,
@@ -141,15 +142,16 @@ pub(crate) fn run_weekly(args: WeeklyArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn run_session(args: SessionArgs) -> Result<()> {
-    let shared = args.shared.clone();
-    if let Some(id) = args.id {
-        return run_session_id(&id, &shared);
-    }
+/// Build one row per Claude session, scoped to the `--since` / `--until`
+/// window.
+///
+/// The window is applied to usage entries before grouping. Filtering the
+/// grouped rows afterwards can only drop whole sessions, which would leave
+/// every surviving row reporting its lifetime totals.
+fn claude_session_rows(shared: &SharedArgs) -> Result<Vec<UsageSummary>> {
+    let mut entries = load_entries(shared, None)?;
+    filter_loaded_entries_by_date(&mut entries, shared);
 
-    let mut session_shared = shared.clone();
-    session_shared.order = SortOrder::Desc;
-    let entries = load_entries(&session_shared, None)?;
     let mut grouped = Vec::<SessionAccumulator>::new();
     let mut group_indexes = FxHashMap::<(Arc<str>, Arc<str>), usize>::default();
     for entry in &entries {
@@ -169,26 +171,21 @@ pub(crate) fn run_session(args: SessionArgs) -> Result<()> {
     for group in grouped {
         rows.push(group.into_summary()?);
     }
-    if session_shared.since.is_some() || session_shared.until.is_some() {
-        rows.retain(|row| {
-            let date = row
-                .last_activity
-                .as_deref()
-                .unwrap_or_default()
-                .replace('-', "");
-            session_shared
-                .since
-                .as_ref()
-                .is_none_or(|since| &date >= since)
-                && session_shared
-                    .until
-                    .as_ref()
-                    .is_none_or(|until| &date <= until)
-        });
-    }
     rows.retain(|row| {
         row.input_tokens + row.output_tokens + row.cache_creation_tokens + row.cache_read_tokens > 0
     });
+    Ok(rows)
+}
+
+pub(crate) fn run_session(args: SessionArgs) -> Result<()> {
+    let shared = args.shared.clone();
+    if let Some(id) = args.id {
+        return run_session_id(&id, &shared);
+    }
+
+    let mut session_shared = shared.clone();
+    session_shared.order = SortOrder::Desc;
+    let mut rows = claude_session_rows(&session_shared)?;
     rows.sort_by(|a, b| match session_shared.order {
         SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
         SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
@@ -215,7 +212,8 @@ pub(crate) fn run_session(args: SessionArgs) -> Result<()> {
 }
 
 fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
-    let entries = load_entries(shared, None)?;
+    let mut entries = load_entries(shared, None)?;
+    filter_loaded_entries_by_date(&mut entries, shared);
     let mut session_entries = entries
         .into_iter()
         .filter(|entry| {
@@ -842,9 +840,10 @@ struct HookContext {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{EnvVarGuard, Fixture, fs_fixture};
 
     use super::*;
+    use crate::cli::CostMode;
 
     #[test]
     fn calculates_context_tokens_from_latest_assistant_transcript_line() {
@@ -1062,5 +1061,98 @@ mod tests {
             Some("xhigh")
         );
         assert!(without_effort.effort.is_none());
+    }
+
+    /// One Claude session with usage on three consecutive UTC days,
+    /// 10 / 20 / 30 output tokens and $0.01 / $0.02 / $0.03.
+    fn three_day_session_fixture() -> Fixture {
+        fs_fixture!({
+            "projects/project1/session1/chat.jsonl": [
+                r#"{"timestamp":"2026-01-01T12:00:00.000Z","message":{"id":"msg_1","model":"claude-opus-4-6","usage":{"input_tokens":1,"output_tokens":10}},"requestId":"req_1","costUSD":0.01}"#,
+                r#"{"timestamp":"2026-01-02T12:00:00.000Z","message":{"id":"msg_2","model":"claude-opus-4-6","usage":{"input_tokens":2,"output_tokens":20}},"requestId":"req_2","costUSD":0.02}"#,
+                r#"{"timestamp":"2026-01-03T12:00:00.000Z","message":{"id":"msg_3","model":"claude-opus-4-6","usage":{"input_tokens":3,"output_tokens":30}},"requestId":"req_3","costUSD":0.03}"#,
+            ]
+            .join("\n"),
+        })
+    }
+
+    fn session_shared(since: Option<&str>, until: Option<&str>) -> SharedArgs {
+        SharedArgs {
+            mode: CostMode::Display,
+            since: since.map(str::to_string),
+            until: until.map(str::to_string),
+            ..SharedArgs::default()
+        }
+    }
+
+    #[test]
+    fn session_rows_report_lifetime_totals_without_date_bounds() {
+        let fixture = three_day_session_fixture();
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+
+        let rows = claude_session_rows(&session_shared(None, None)).unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].output_tokens, 60);
+        assert!((rows[0].total_cost - 0.06).abs() < 1e-9);
+    }
+
+    #[test]
+    fn session_rows_scope_totals_to_the_date_window() {
+        let fixture = three_day_session_fixture();
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+
+        let rows = claude_session_rows(&session_shared(Some("20260102"), None)).unwrap();
+
+        // The session started on 2026-01-01, so the row survives either way.
+        // Only a window applied to entries changes the totals.
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].output_tokens, 50);
+        assert!((rows[0].total_cost - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn session_rows_treat_both_date_bounds_as_inclusive() {
+        let fixture = three_day_session_fixture();
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+
+        let single_day =
+            claude_session_rows(&session_shared(Some("20260102"), Some("20260102"))).unwrap();
+        assert_eq!(single_day.len(), 1);
+        assert_eq!(single_day[0].output_tokens, 20);
+
+        // The last activity falls on the `--until` day, which must be kept.
+        let through_last_day =
+            claude_session_rows(&session_shared(Some("20260101"), Some("20260103"))).unwrap();
+        assert_eq!(through_last_day.len(), 1);
+        assert_eq!(through_last_day[0].output_tokens, 60);
+    }
+
+    #[test]
+    fn session_rows_drop_a_session_with_no_entries_in_the_window() {
+        let fixture = three_day_session_fixture();
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+
+        let rows = claude_session_rows(&session_shared(Some("20260201"), None)).unwrap();
+
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn session_rows_resolve_entry_dates_in_the_requested_timezone() {
+        let fixture = fs_fixture!({
+            "projects/project1/session1/chat.jsonl":
+                r#"{"timestamp":"2026-01-02T02:00:00.000Z","message":{"id":"msg_1","model":"claude-opus-4-6","usage":{"input_tokens":1,"output_tokens":10}},"requestId":"req_1","costUSD":0.01}"#,
+        });
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+
+        // 2026-01-02T02:00Z is still 2026-01-01 in Montreal (UTC-5).
+        let mut montreal = session_shared(Some("20260102"), None);
+        montreal.timezone = Some("America/Montreal".to_string());
+        assert!(claude_session_rows(&montreal).unwrap().is_empty());
+
+        let mut utc = session_shared(Some("20260102"), None);
+        utc.timezone = Some("UTC".to_string());
+        assert_eq!(claude_session_rows(&utc).unwrap().len(), 1);
     }
 }
