@@ -5,6 +5,9 @@ on:
   push:
     branches: [feat/ccusage-macos-native]
 
+permissions:
+  contents: write
+
 jobs:
   build-and-qa:
     runs-on: macos-15
@@ -18,13 +21,12 @@ jobs:
         run: npm install -g @native-sdk/cli@latest
       - name: Validate app
         run: native check
-      - name: Build release
-        run: native build --yes
+      - name: Build release with automation
+        run: native build --yes -Dautomation=true
       - name: Launch for deterministic UI QA
         run: |
-          native dev -Dautomation=true > /tmp/ccusage-native.log 2>&1 &
+          ./zig-out/bin/ccusage-wrap > /tmp/ccusage-native.log 2>&1 &
           echo $! > /tmp/native.pid
-          sleep 8
           native automate wait
           native automate snapshot > native-snapshot.txt
           native automate assert 'gpu_nonblank=true'
@@ -33,6 +35,18 @@ jobs:
       - name: Preserve dev log
         if: always()
         run: cp /tmp/ccusage-native.log native-dev.log || true
+      - name: Preserve QA evidence on branch
+        if: success()
+        run: |
+          mkdir -p qa
+          cp screenshot-main-canvas.png qa/screenshot-main-canvas.png
+          cp native-snapshot.txt qa/native-snapshot.txt
+          cp native-dev.log qa/native-dev.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add qa
+          git diff --cached --quiet || git commit -m "chore: update native QA evidence [skip ci]"
+          git push
       - uses: actions/upload-artifact@v4
         if: always()
         with:
