@@ -3,7 +3,7 @@
     <spacer width="70" />
     <row gap="8" cross="center">
       <panel width="28" height="28" radius="md" background="accent" label="ccusage mark">
-        <column grow="1" main="center" cross="center"><text foreground="accent_text" weight="bold">c</text></column>
+        <column grow="1" main="center" cross="center"><text foreground="accent_text"><span weight="bold">c</span></text></column>
       </panel>
       <text label="ccusage"><span weight="bold" scale="1.15">ccusage</span></text>
     </row>
@@ -68,7 +68,7 @@
             <column gap="10">
               <row cross="center"><column gap="2"><text><span weight="bold" scale="1.15">Token volume</span></text><text size="sm" foreground="text_muted">Input + output + cache</text></column><spacer grow="1"/><badge variant="secondary">48.6M</badge></row>
               <chart grow="1" y-min="0" y-max="1" label="Token history"><series kind="bar" values="{tokenHistory}" /></chart>
-              <text size="sm" foreground="text_muted">Peak usage: 3.1M tokens · Aug 10</text>
+              <text size="sm" foreground="text_muted">Peak usage: 3.1M tokens / Aug 10</text>
             </column>
           </panel>
         </row>
