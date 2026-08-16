@@ -18,12 +18,13 @@ jobs:
         run: npm install -g @native-sdk/cli@latest
       - name: Validate app
         run: native check
-      - name: Build release with automation
-        run: native build --yes -Dautomation=true
+      - name: Build release
+        run: native build --yes
       - name: Launch for deterministic UI QA
         run: |
-          ./zig-out/bin/ccusage-wrap > /tmp/ccusage-native.log 2>&1 &
+          native dev -Dautomation=true > /tmp/ccusage-native.log 2>&1 &
           echo $! > /tmp/native.pid
+          sleep 8
           native automate wait
           native automate snapshot > native-snapshot.txt
           native automate assert 'gpu_nonblank=true'
