@@ -1,28 +1,27 @@
 import { Cmd, asciiBytes } from "@native-sdk/core";
-type Bytes = Uint8Array;
 
 export type Page = "overview" | "agents" | "models" | "sessions";
 
 export interface DayRow {
-  readonly day: Bytes;
-  readonly date: Bytes;
-  readonly tokens: Bytes;
-  readonly cost: Bytes;
-  readonly change: Bytes;
+  readonly day: Uint8Array;
+  readonly date: Uint8Array;
+  readonly tokens: Uint8Array;
+  readonly cost: Uint8Array;
+  readonly change: Uint8Array;
   readonly changeUp: boolean;
 }
 
 export interface AgentRow {
-  readonly name: Bytes;
-  readonly detail: Bytes;
-  readonly tokens: Bytes;
-  readonly cost: Bytes;
-  readonly share: Bytes;
+  readonly name: Uint8Array;
+  readonly detail: Uint8Array;
+  readonly tokens: Uint8Array;
+  readonly cost: Uint8Array;
+  readonly share: Uint8Array;
 }
 
 export interface Model {
   readonly page: Page;
-  readonly range: Bytes;
+  readonly range: Uint8Array;
   readonly refreshed: boolean;
 }
 
@@ -47,18 +46,18 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
   }
 }
 
-export function title(_model: Model): Bytes { return asciiBytes("Usage overview"); }
-export function subtitle(model: Model): Bytes {
+export function title(_model: Model): Uint8Array { return asciiBytes("Usage overview"); }
+export function subtitle(model: Model): Uint8Array {
   return model.refreshed ? asciiBytes("Refreshed just now / local ccusage data") : asciiBytes("Local coding-agent usage / updated 2 min ago");
 }
-export function totalCost(_model: Model): Bytes { return asciiBytes("$184.72"); }
-export function totalTokens(_model: Model): Bytes { return asciiBytes("48.6M"); }
-export function activeDays(_model: Model): Bytes { return asciiBytes("24"); }
-export function avgDaily(_model: Model): Bytes { return asciiBytes("$7.70"); }
-export function costDelta(_model: Model): Bytes { return asciiBytes("+12.4%"); }
-export function tokenDelta(_model: Model): Bytes { return asciiBytes("+8.1%"); }
-export function dayDelta(_model: Model): Bytes { return asciiBytes("+3 days"); }
-export function avgDelta(_model: Model): Bytes { return asciiBytes("+$0.82"); }
+export function totalCost(_model: Model): Uint8Array { return asciiBytes("$184.72"); }
+export function totalTokens(_model: Model): Uint8Array { return asciiBytes("48.6M"); }
+export function activeDays(_model: Model): Uint8Array { return asciiBytes("24"); }
+export function avgDaily(_model: Model): Uint8Array { return asciiBytes("$7.70"); }
+export function costDelta(_model: Model): Uint8Array { return asciiBytes("+12.4%"); }
+export function tokenDelta(_model: Model): Uint8Array { return asciiBytes("+8.1%"); }
+export function dayDelta(_model: Model): Uint8Array { return asciiBytes("+3 days"); }
+export function avgDelta(_model: Model): Uint8Array { return asciiBytes("+$0.82"); }
 
 export function costHistory(_model: Model): readonly number[] {
   return [0.19,0.27,0.22,0.34,0.31,0.42,0.37,0.48,0.43,0.39,0.52,0.58,0.47,0.62,0.55,0.68,0.64,0.73,0.69,0.78,0.71,0.82,0.76,0.88,0.81,0.92,0.84,0.96,0.89,1.0];
