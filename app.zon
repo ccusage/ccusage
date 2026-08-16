@@ -1,0 +1,30 @@
+.{
+    .id = "dev.vedanth.ccusagewrap",
+    .name = "ccusage-wrap",
+    .display_name = "ccusage",
+    .description = "A native visual workspace for ccusage token and cost analytics.",
+    .version = "0.1.0",
+    .platforms = .{"macos"},
+    .permissions = .{ "view", "command" },
+    .capabilities = .{ "native_views", "gpu_surfaces" },
+    .shell = .{
+        .windows = .{
+            .{
+                .label = "main",
+                .title = "ccusage",
+                .width = 1280,
+                .height = 820,
+                .min_width = 1080,
+                .min_height = 700,
+                .restore_state = true,
+                .restore_policy = "center_on_primary",
+                .titlebar = "hidden_inset_tall",
+                .views = .{
+                    .{ .label = "main-canvas", .kind = "gpu_surface", .fill = true, .role = "ccusage analytics dashboard", .accessibility_label = "ccusage dashboard", .gpu_backend = "metal", .gpu_pixel_format = "bgra8_unorm", .gpu_present_mode = "timer", .gpu_alpha_mode = "opaque", .gpu_color_space = "srgb", .gpu_vsync = true },
+                },
+            },
+        },
+    },
+    .security = .{ .navigation = .{ .allowed_origins = .{ "zero://app", "zero://inline" }, .external_links = .{ .action = "deny" } } },
+    .web_engine = "system",
+}

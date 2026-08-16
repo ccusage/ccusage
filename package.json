@@ -1,16 +1,9 @@
 {
-	"name": "ccusage-monorepo",
-	"version": "20.0.20",
-	"private": true,
-	"workspaces": [
-		"apps/*",
-		"docs",
-		"packages/*"
-	],
-	"type": "module",
-	"scripts": {
-		"preinstall": "npx only-allow pnpm"
-	},
-	"dependencies": {},
-	"packageManager": "pnpm@11.21.0"
+  "name": "ccusage-wrap",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Native ccusage analytics app for macOS",
+  "dependencies": {
+    "@native-sdk/core": "0.9.1"
+  }
 }

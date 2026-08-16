@@ -1,0 +1,45 @@
+name: Native macOS QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/ccusage-macos-native]
+
+jobs:
+  build-and-qa:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Native SDK
+        run: npm install -g @native-sdk/cli@latest
+      - name: Validate app
+        run: native check
+      - name: Build release
+        run: native build
+      - name: Launch for deterministic UI QA
+        run: |
+          native dev > /tmp/ccusage-native.log 2>&1 &
+          echo $! > /tmp/native.pid
+          sleep 8
+          native automate wait
+          native automate snapshot > native-snapshot.txt
+          native automate assert 'gpu_nonblank=true'
+          native automate screenshot main-canvas 2
+          kill $(cat /tmp/native.pid) || true
+      - name: Preserve dev log
+        if: always()
+        run: cp /tmp/ccusage-native.log native-dev.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ccusage-native-qa
+          path: |
+            screenshot-main-canvas.png
+            native-snapshot.txt
+            native-dev.log
+            zig-out/**
+          if-no-files-found: warn
