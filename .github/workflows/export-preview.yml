@@ -1,0 +1,35 @@
+name: Export QA Preview
+
+on:
+  push:
+    branches: [feat/ccusage-macos-native]
+    paths:
+      - '.github/workflows/export-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export preview chunks
+        run: |
+          test -s qa/screenshot-main-canvas.png
+          sips -Z 1000 qa/screenshot-main-canvas.png --out /tmp/screenshot-preview.jpg >/dev/null
+          base64 -i /tmp/screenshot-preview.jpg | tr -d '\n' > /tmp/screenshot-preview.b64
+          mkdir -p qa/preview-b64
+          rm -f qa/preview-b64/part-*
+          split -b 50000 -a 3 /tmp/screenshot-preview.b64 qa/preview-b64/part-
+          echo "preview_bytes=$(wc -c < /tmp/screenshot-preview.jpg)"
+          echo "chunks=$(find qa/preview-b64 -type f | wc -l)"
+      - name: Publish preview chunks
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add qa/preview-b64
+          git commit -m "chore: export QA screenshot preview [skip ci]"
+          git push origin HEAD:feat/ccusage-macos-native
