@@ -94,7 +94,7 @@
                 </row>
                 <separator />
                 <for each="recentDays" as="r" key="date">
-                  <row height="36" gap="12" cross="center" label="{r.day} {r.date}">
+                  <row height="36" gap="12" cross="center" label="{r.day}">
                     <text width="120">{r.day}</text>
                     <text width="90" size="sm" foreground="text_muted">{r.date}</text>
                     <spacer grow="1" />
