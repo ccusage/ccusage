@@ -19,10 +19,10 @@ jobs:
       - name: Validate app
         run: native check
       - name: Build release
-        run: native build
+        run: native build --yes
       - name: Launch for deterministic UI QA
         run: |
-          native dev > /tmp/ccusage-native.log 2>&1 &
+          native dev --yes > /tmp/ccusage-native.log 2>&1 &
           echo $! > /tmp/native.pid
           sleep 8
           native automate wait
