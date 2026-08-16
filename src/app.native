@@ -1,106 +1,171 @@
 <column background="background">
-  <row height="58" padding="14" gap="12" cross="center" background="surface" window-drag="true" label="App header">
-    <spacer width="70" />
-    <row gap="8" cross="center">
-      <panel width="28" height="28" radius="md" background="accent" label="ccusage mark">
-        <column grow="1" main="center" cross="center"><text foreground="accent_text"><span weight="bold">c</span></text></column>
-      </panel>
-      <text label="ccusage"><span weight="bold" scale="1.15">ccusage</span></text>
-    </row>
+  <row height="54" padding="16" gap="12" cross="center" background="surface" window-drag="true" label="ccusage titlebar">
+    <text size="heading" label="ccusage"><span weight="bold">ccusage</span></text>
+    <text size="sm" foreground="text_muted">Native usage dashboard</text>
     <spacer grow="1" />
-    <badge variant="secondary">local</badge>
-    <button size="sm" variant="outline" icon="refresh" on-press="refresh" label="Refresh usage">Refresh</button>
+    <button size="sm" variant="outline" on-press="refresh" label="Refresh usage">Refresh</button>
   </row>
   <separator />
 
   <row grow="1">
-    <column width="210" padding="16" gap="6" background="surface" label="Sidebar">
-      <text size="sm" foreground="text_muted" width="170">ANALYTICS</text>
-      <button size="sm" variant="ghost" selected="{pageIsOverview}" icon="chart" on-press="overview" label="Overview">Overview</button>
-      <button size="sm" variant="ghost" selected="{pageIsAgents}" icon="terminal" on-press="agents" label="Agents">Agents</button>
-      <button size="sm" variant="ghost" selected="{pageIsModels}" icon="sparkles" on-press="models" label="Models">Models</button>
-      <button size="sm" variant="ghost" selected="{pageIsSessions}" icon="clock" on-press="sessions" label="Sessions">Sessions</button>
+    <column width="210" padding="16" gap="8" background="surface" label="Navigation">
+      <text size="sm" foreground="text_muted">WORKSPACE</text>
+      <button size="sm" variant="outline" on-press="overview" label="Overview">Overview</button>
+      <button size="sm" variant="outline" on-press="agents" label="Agents">Agents</button>
+      <button size="sm" variant="outline" on-press="models" label="Models">Models</button>
+      <button size="sm" variant="outline" on-press="sessions" label="Sessions">Sessions</button>
       <spacer grow="1" />
-      <panel padding="12" radius="lg" background="background" border-color="border">
-        <column gap="4">
-          <text size="sm"><span weight="bold">ccusage CLI</span></text>
-          <text size="sm" foreground="text_muted" wrap="true">Visual layer for your local agent usage data.</text>
-        </column>
-      </panel>
+      <text size="sm" foreground="text_muted">Local-first · no cloud account</text>
     </column>
+
     <separator />
 
     <scroll grow="1" label="Dashboard content">
-      <column padding="28" gap="20">
-        <row cross="center">
+      <column padding="24" gap="18">
+        <row cross="center" gap="12">
           <column gap="4">
-            <text label="Usage overview"><span weight="bold" scale="1.8">{title}</span></text>
+            <text size="heading" label="{title}"><span weight="bold">{title}</span></text>
             <text size="sm" foreground="text_muted">{subtitle}</text>
           </column>
           <spacer grow="1" />
-          <button size="sm" variant="outline" icon="calendar" label="Date range">{range}</button>
+          <badge variant="secondary">{range}</badge>
         </row>
 
-        <row gap="12" label="Summary metrics">
-          <panel grow="1" height="126" padding="16" radius="lg" background="surface" border-color="border">
-            <column gap="5"><text size="sm" foreground="text_muted">TOTAL COST</text><text label="Total cost"><span weight="bold" scale="1.65">{totalCost}</span></text><badge variant="secondary">{costDelta} vs prior period</badge></column>
-          </panel>
-          <panel grow="1" height="126" padding="16" radius="lg" background="surface" border-color="border">
-            <column gap="5"><text size="sm" foreground="text_muted">TOTAL TOKENS</text><text label="Total tokens"><span weight="bold" scale="1.65">{totalTokens}</span></text><badge variant="secondary">{tokenDelta} vs prior period</badge></column>
-          </panel>
-          <panel grow="1" height="126" padding="16" radius="lg" background="surface" border-color="border">
-            <column gap="5"><text size="sm" foreground="text_muted">ACTIVE DAYS</text><text label="Active days"><span weight="bold" scale="1.65">{activeDays}</span></text><badge variant="secondary">{dayDelta}</badge></column>
-          </panel>
-          <panel grow="1" height="126" padding="16" radius="lg" background="surface" border-color="border">
-            <column gap="5"><text size="sm" foreground="text_muted">DAILY AVERAGE</text><text label="Daily average"><span weight="bold" scale="1.65">{avgDaily}</span></text><badge variant="secondary">{avgDelta}</badge></column>
-          </panel>
-        </row>
+        <if test="{pageIsOverview}">
+          <column gap="18">
+            <row gap="12" label="Summary metrics">
+              <panel grow="1" height="122" padding="16" background="surface" radius="lg" border-color="border" label="Total cost">
+                <column gap="7">
+                  <text size="sm" foreground="text_muted">TOTAL COST</text>
+                  <text size="heading"><span weight="bold">{totalCost}</span></text>
+                  <badge variant="secondary">{costDelta}</badge>
+                </column>
+              </panel>
+              <panel grow="1" height="122" padding="16" background="surface" radius="lg" border-color="border" label="Total tokens">
+                <column gap="7">
+                  <text size="sm" foreground="text_muted">TOKENS</text>
+                  <text size="heading"><span weight="bold">{totalTokens}</span></text>
+                  <badge variant="secondary">{tokenDelta}</badge>
+                </column>
+              </panel>
+              <panel grow="1" height="122" padding="16" background="surface" radius="lg" border-color="border" label="Active days">
+                <column gap="7">
+                  <text size="sm" foreground="text_muted">ACTIVE DAYS</text>
+                  <text size="heading"><span weight="bold">{activeDays}</span></text>
+                  <badge variant="secondary">{dayDelta}</badge>
+                </column>
+              </panel>
+              <panel grow="1" height="122" padding="16" background="surface" radius="lg" border-color="border" label="Average daily cost">
+                <column gap="7">
+                  <text size="sm" foreground="text_muted">DAILY AVG</text>
+                  <text size="heading"><span weight="bold">{avgDaily}</span></text>
+                  <badge variant="secondary">{avgDelta}</badge>
+                </column>
+              </panel>
+            </row>
 
-        <row gap="12">
-          <panel grow="1" height="245" padding="18" radius="lg" background="surface" border-color="border" label="Cost trend">
-            <column gap="10">
-              <row cross="center"><column gap="2"><text><span weight="bold" scale="1.15">Spend trend</span></text><text size="sm" foreground="text_muted">Estimated USD cost by day</text></column><spacer grow="1"/><badge variant="secondary">30 days</badge></row>
-              <chart grow="1" y-min="0" y-max="1" label="Cost history"><series kind="area" values="{costHistory}" /></chart>
-              <row><text size="sm" foreground="text_muted">Jul 18</text><spacer grow="1"/><text size="sm" foreground="text_muted">Aug 16</text></row>
-            </column>
-          </panel>
-          <panel width="350" height="245" padding="18" radius="lg" background="surface" border-color="border" label="Token trend">
-            <column gap="10">
-              <row cross="center"><column gap="2"><text><span weight="bold" scale="1.15">Token volume</span></text><text size="sm" foreground="text_muted">Input + output + cache</text></column><spacer grow="1"/><badge variant="secondary">48.6M</badge></row>
-              <chart grow="1" y-min="0" y-max="1" label="Token history"><series kind="bar" values="{tokenHistory}" /></chart>
-              <text size="sm" foreground="text_muted">Peak usage: 3.1M tokens / Aug 10</text>
-            </column>
-          </panel>
-        </row>
+            <row gap="12">
+              <panel grow="1" height="210" padding="16" background="surface" radius="lg" border-color="border" label="Cost history">
+                <column gap="12">
+                  <text label="Spend over time"><span weight="bold">Spend over time</span></text>
+                  <text size="sm" foreground="text_muted">Daily estimated API-equivalent cost</text>
+                  <chart grow="1" y-min="0" y-max="1" label="Cost history chart">
+                    <series kind="area" values="{costHistory}" />
+                  </chart>
+                </column>
+              </panel>
+              <panel grow="1" height="210" padding="16" background="surface" radius="lg" border-color="border" label="Token history">
+                <column gap="12">
+                  <text label="Token volume"><span weight="bold">Token volume</span></text>
+                  <text size="sm" foreground="text_muted">Relative daily token usage</text>
+                  <chart grow="1" y-min="0" y-max="1" label="Token history chart">
+                    <series kind="bar" values="{tokenHistory}" />
+                  </chart>
+                </column>
+              </panel>
+            </row>
 
-        <row gap="12">
-          <panel grow="1" padding="18" radius="lg" background="surface" border-color="border" label="Recent usage">
-            <column gap="10">
-              <row cross="center"><text><span weight="bold" scale="1.15">Recent usage</span></text><spacer grow="1"/><text size="sm" foreground="text_muted">Daily totals</text></row>
-              <separator />
-              <table label="Recent daily usage">
-                <table-row height="28" gap="10"><table-cell grow="1" size="sm" foreground="text_muted">DAY</table-cell><table-cell width="100" size="sm" foreground="text_muted">TOKENS</table-cell><table-cell width="90" size="sm" foreground="text_muted">COST</table-cell><table-cell width="70" size="sm" foreground="text_muted">CHANGE</table-cell></table-row>
-                <for each="recentDays" as="d" key="date">
-                  <table-row height="38" gap="10"><table-cell grow="1"><row gap="8"><text>{d.day}</text><text size="sm" foreground="text_muted">{d.date}</text></row></table-cell><table-cell width="100">{d.tokens}</table-cell><table-cell width="90">{d.cost}</table-cell><table-cell width="70"><badge variant="secondary">{d.change}</badge></table-cell></table-row>
+            <panel padding="16" background="surface" radius="lg" border-color="border" label="Recent usage">
+              <column gap="10">
+                <row cross="center">
+                  <text label="Recent usage"><span weight="bold">Recent usage</span></text>
+                  <spacer grow="1" />
+                  <text size="sm" foreground="text_muted">Latest five days</text>
+                </row>
+                <separator />
+                <for each="recentDays" as="r" key="date">
+                  <row height="36" gap="12" cross="center" label="{r.day} {r.date}">
+                    <text width="120">{r.day}</text>
+                    <text width="90" size="sm" foreground="text_muted">{r.date}</text>
+                    <spacer grow="1" />
+                    <text width="100" size="sm" text-alignment="end">{r.tokens}</text>
+                    <text width="90" size="sm" text-alignment="end">{r.cost}</text>
+                    <badge variant="secondary">{r.change}</badge>
+                  </row>
                 </for>
-              </table>
-            </column>
-          </panel>
+              </column>
+            </panel>
 
-          <panel width="430" padding="18" radius="lg" background="surface" border-color="border" label="Top agents">
-            <column gap="10">
-              <row cross="center"><text><span weight="bold" scale="1.15">Top agents</span></text><spacer grow="1"/><button size="sm" variant="ghost" on-press="agents">View all</button></row>
+            <panel padding="16" background="surface" radius="lg" border-color="border" label="Top agents">
+              <column gap="10">
+                <text label="Top agents"><span weight="bold">Top agents</span></text>
+                <separator />
+                <for each="topAgents" as="a" key="name">
+                  <row height="48" gap="12" cross="center" label="{a.name}">
+                    <column width="260" gap="2">
+                      <text>{a.name}</text>
+                      <text size="sm" foreground="text_muted">{a.detail}</text>
+                    </column>
+                    <spacer grow="1" />
+                    <text width="100" size="sm" text-alignment="end">{a.tokens}</text>
+                    <text width="90" size="sm" text-alignment="end">{a.cost}</text>
+                    <badge variant="secondary">{a.share}</badge>
+                  </row>
+                </for>
+              </column>
+            </panel>
+          </column>
+        </if>
+
+        <if test="{pageIsAgents}">
+          <panel padding="20" background="surface" radius="lg" border-color="border" label="Agents view">
+            <column gap="12">
+              <text size="heading"><span weight="bold">Agents</span></text>
+              <text foreground="text_muted">Compare usage across Codex, Claude Code, OpenCode and Gemini CLI.</text>
               <separator />
               <for each="topAgents" as="a" key="name">
-                <row height="48" gap="10" cross="center">
-                  <panel width="30" height="30" radius="md" background="background"><column grow="1" main="center" cross="center"><icon name="terminal" width="14" height="14" foreground="text_muted" /></column></panel>
-                  <column grow="1" gap="1"><text>{a.name}</text><text size="sm" foreground="text_muted">{a.detail}</text></column>
-                  <column width="70" gap="1" cross="end"><text>{a.cost}</text><text size="sm" foreground="text_muted">{a.share}</text></column>
+                <row height="54" cross="center" gap="12">
+                  <column width="300" gap="2"><text>{a.name}</text><text size="sm" foreground="text_muted">{a.detail}</text></column>
+                  <spacer grow="1" /><text>{a.tokens}</text><text width="100" text-alignment="end">{a.cost}</text><badge variant="secondary">{a.share}</badge>
                 </row>
               </for>
             </column>
           </panel>
-        </row>
+        </if>
+
+        <if test="{pageIsModels}">
+          <panel padding="20" background="surface" radius="lg" border-color="border" label="Models view">
+            <column gap="10">
+              <text size="heading"><span weight="bold">Models</span></text>
+              <text foreground="text_muted">Model-level reporting is ready for live ccusage ingestion.</text>
+              <separator />
+              <text>GPT-5.6 Sol</text><text size="sm" foreground="text_muted">Codex · primary coding workload</text>
+              <text>Claude Opus 4.1</text><text size="sm" foreground="text_muted">Claude Code · long-context sessions</text>
+              <text>Gemini 2.5 Pro</text><text size="sm" foreground="text_muted">Gemini CLI · secondary usage</text>
+            </column>
+          </panel>
+        </if>
+
+        <if test="{pageIsSessions}">
+          <panel padding="20" background="surface" radius="lg" border-color="border" label="Sessions view">
+            <column gap="10">
+              <text size="heading"><span weight="bold">Sessions</span></text>
+              <text foreground="text_muted">Session drill-down with agent, model, tokens and cost.</text>
+              <separator />
+              <text>Recent sessions will appear here from local ccusage data.</text>
+            </column>
+          </panel>
+        </if>
       </column>
     </scroll>
   </row>
