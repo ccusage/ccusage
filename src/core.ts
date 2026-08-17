@@ -52,6 +52,11 @@ export type Msg =
   | { readonly kind: "update_stage_failed"; readonly reason: Uint8Array };
 
 export const viewUnbound = [
+  "range",
+  "metric",
+  "refreshed",
+  "updateState",
+  "updateVersion",
   "updateUrl",
   "updateSha256",
   "update_feed",
