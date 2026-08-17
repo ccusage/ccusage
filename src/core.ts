@@ -46,8 +46,8 @@ export type Msg =
   | { readonly kind: "tokens" }
   | { readonly kind: "refresh" }
   | { readonly kind: "update_action" }
-  | { readonly kind: "update_feed"; readonly status: number; readonly body: Uint8Array }
-  | { readonly kind: "update_feed_failed"; readonly reason: Uint8Array }
+  | { readonly kind: "update_check_done"; readonly code: number; readonly output: Uint8Array }
+  | { readonly kind: "update_check_failed"; readonly reason: Uint8Array }
   | { readonly kind: "update_stage_done"; readonly code: number; readonly output: Uint8Array }
   | { readonly kind: "update_stage_failed"; readonly reason: Uint8Array };
 
@@ -59,8 +59,8 @@ export const viewUnbound = [
   "updateVersion",
   "updateUrl",
   "updateSha256",
-  "update_feed",
-  "update_feed_failed",
+  "update_check_done",
+  "update_check_failed",
   "update_stage_done",
   "update_stage_failed",
 ] as const;
@@ -77,9 +77,15 @@ export function initialModel(): [Model, Cmd<Msg>] {
       updateSha256: asciiBytes(""),
       updateDetail: asciiBytes("Checking the latest GitHub release..."),
     },
-    Cmd.fetch(
-      { url: asciiBytes("https://github.com/vedanth-jadhav/ccusage-wrap/releases/latest/download/macos-update-feed.txt"), timeoutMs: 12000 },
-      { key: "update-feed", ok: "update_feed", err: "update_feed_failed" },
+    Cmd.spawn(
+      [
+        asciiBytes("/usr/bin/curl"),
+        asciiBytes("-fsSL"),
+        asciiBytes("--max-time"),
+        asciiBytes("12"),
+        asciiBytes("https://github.com/vedanth-jadhav/ccusage-wrap/releases/latest/download/macos-update-feed.txt"),
+      ],
+      { key: "update-feed", collect: true, exit: "update_check_done", err: "update_check_failed" },
     ),
   ];
 }
@@ -113,19 +119,25 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
       if (model.updateState === "staging" || model.updateState === "restarting") return [model, Cmd.none];
       return [
         { ...model, updateState: "checking", updateDetail: asciiBytes("Checking the latest GitHub release...") },
-        Cmd.fetch(
-          { url: asciiBytes("https://github.com/vedanth-jadhav/ccusage-wrap/releases/latest/download/macos-update-feed.txt"), timeoutMs: 12000 },
-          { key: "update-feed", ok: "update_feed", err: "update_feed_failed" },
+        Cmd.spawn(
+          [
+            asciiBytes("/usr/bin/curl"),
+            asciiBytes("-fsSL"),
+            asciiBytes("--max-time"),
+            asciiBytes("12"),
+            asciiBytes("https://github.com/vedanth-jadhav/ccusage-wrap/releases/latest/download/macos-update-feed.txt"),
+          ],
+          { key: "update-feed", collect: true, exit: "update_check_done", err: "update_check_failed" },
         ),
       ];
-    case "update_feed": {
-      if (msg.status !== 200) {
+    case "update_check_done": {
+      if (msg.code !== 0) {
         return [
           { ...model, updateState: "failed", updateDetail: asciiBytes("Could not read the release feed. Try again.") },
           Cmd.none,
         ];
       }
-      const feed = parseReleaseFeed(msg.body);
+      const feed = parseReleaseFeed(msg.output);
       if (feed === null) {
         return [
           { ...model, updateState: "failed", updateDetail: asciiBytes("The release feed was invalid. Try again later.") },
@@ -157,7 +169,7 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
         Cmd.none,
       ];
     }
-    case "update_feed_failed":
+    case "update_check_failed":
       return [
         { ...model, updateState: "failed", updateDetail: asciiBytes("Update check failed. Check your connection and retry.") },
         Cmd.none,
