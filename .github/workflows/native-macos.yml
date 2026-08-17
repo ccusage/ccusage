@@ -23,7 +23,7 @@ jobs:
         run: native check
       - name: Build release with automation
         run: native build --yes -Dautomation=true
-      - name: Launch for deterministic UI QA
+      - name: Launch and capture full UI gallery
         run: |
           native dev -Dautomation=true > /tmp/ccusage-native.log 2>&1 &
           echo $! > /tmp/native.pid
@@ -31,8 +31,45 @@ jobs:
           native automate wait
           native automate snapshot > native-snapshot.txt
           native automate assert 'gpu_nonblank=true'
-          native automate screenshot main-canvas 2
-          cp .zig-cache/native-sdk-automation/screenshot-main-canvas.png screenshot-main-canvas.png
+
+          mkdir -p screenshots
+          capture() {
+            local name="$1"
+            native automate screenshot main-canvas 2
+            cp .zig-cache/native-sdk-automation/screenshot-main-canvas.png "screenshots/${name}.png"
+          }
+
+          # Top-of-dashboard gallery: every range x metric state.
+          capture 30d-cost
+
+          native automate widget-click main-canvas 8940470776672419989
+          capture 7d-cost
+
+          native automate widget-click main-canvas 17159552847958022097
+          capture 90d-cost
+
+          native automate widget-click main-canvas 3061973545732546492
+          native automate widget-click main-canvas 71724543277967904
+          capture 30d-tokens
+
+          native automate widget-click main-canvas 8940470776672419989
+          capture 7d-tokens
+
+          native automate widget-click main-canvas 17159552847958022097
+          capture 90d-tokens
+
+          # Lower breakdown gallery: model view and day view.
+          native automate widget-click main-canvas 3061973545732546492
+          native automate widget-click main-canvas 10791117841906338459
+          native automate widget-click main-canvas 4781559404017235484
+          native automate widget-wheel main-canvas 2960813184610498267 760
+          capture breakdown-model
+
+          native automate widget-click main-canvas 5285361661896574149
+          capture breakdown-day
+
+          cp "screenshots/30d-cost.png" screenshot-main-canvas.png
+          native automate snapshot > native-snapshot-final.txt
           kill $(cat /tmp/native.pid) || true
       - name: Preserve dev log
         if: always()
@@ -40,15 +77,18 @@ jobs:
       - name: Publish QA evidence
         if: success()
         run: |
-          mkdir -p qa
+          mkdir -p qa/screenshots
+          rm -f qa/screenshots/*.png
+          cp screenshots/*.png qa/screenshots/
           cp screenshot-main-canvas.png qa/screenshot-main-canvas.png
           cp native-snapshot.txt qa/native-snapshot.txt
+          cp native-snapshot-final.txt qa/native-snapshot-final.txt
           cp native-dev.log qa/native-dev.log
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add qa
           if ! git diff --cached --quiet; then
-            git commit -m "chore: publish native QA evidence [skip ci]"
+            git commit -m "chore: publish full native screenshot gallery [skip ci]"
             git push origin HEAD:${GITHUB_REF_NAME}
           fi
       - name: Export text-safe screenshot preview
@@ -69,9 +109,11 @@ jobs:
         with:
           name: ccusage-native-qa
           path: |
+            screenshots/*.png
             screenshot-main-canvas.png
             screenshot-preview.jpg
             native-snapshot.txt
+            native-snapshot-final.txt
             native-dev.log
             zig-out/**
           if-no-files-found: error
