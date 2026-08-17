@@ -68,7 +68,10 @@ jobs:
           kill $(cat /tmp/native.pid) || true
       - name: Preserve dev log
         if: always()
-        run: cp /tmp/ccusage-native.log native-dev.log || true
+        run: |
+          cp /tmp/ccusage-native.log native-dev.log || true
+          echo "===== native dev log ====="
+          cat /tmp/ccusage-native.log || true
       - name: Publish QA evidence
         if: success()
         run: |
