@@ -54,7 +54,7 @@
           <panel padding="14" background="background" radius="lg" border-color="border" label="Daily usage chart">
             <column gap="8">
               <row gap="14">
-                <text size="sm" foreground="orange">Codex</text>
+                <text size="sm" foreground="accent">Codex</text>
                 <text size="sm" foreground="text_muted">Claude Code</text>
               </row>
               <chart values="{codexSeries}" height="265" label="Daily usage chart" />
