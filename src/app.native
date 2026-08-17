@@ -1,172 +1,114 @@
 <column background="background">
-  <row height="54" padding="16" gap="12" cross="center" background="surface" window-drag="true" label="ccusage titlebar">
-    <text size="heading" label="ccusage"><span weight="bold">ccusage</span></text>
-    <text size="sm" foreground="text_muted">Native usage dashboard</text>
-    <spacer grow="1" />
-    <button size="sm" variant="outline" on-press="refresh" label="Refresh usage">Refresh</button>
-  </row>
-  <separator />
-
-  <row grow="1">
-    <column width="210" padding="16" gap="8" background="surface" label="Navigation">
-      <text size="sm" foreground="text_muted">WORKSPACE</text>
-      <button size="sm" variant="outline" on-press="overview" label="Overview">Overview</button>
-      <button size="sm" variant="outline" on-press="agents" label="Agents">Agents</button>
-      <button size="sm" variant="outline" on-press="models" label="Models">Models</button>
-      <button size="sm" variant="outline" on-press="sessions" label="Sessions">Sessions</button>
-      <spacer grow="1" />
-      <text size="sm" foreground="text_muted">Local-first · no cloud account</text>
+  <row height="68" padding="18" gap="12" cross="center" background="background" window-drag="true" label="Usage titlebar">
+    <button size="sm" variant="outline" label="Back">&lt;</button>
+    <column gap="2">
+      <text size="heading" label="Usage"><span weight="bold">Usage</span></text>
+      <text size="sm" foreground="text_muted">{dateRange}</text>
     </column>
+    <spacer grow="1" />
+    <button size="sm" variant="outline" on-press="range7" label="7 days">7 days</button>
+    <button size="sm" variant="outline" on-press="range30" label="30 days">30 days</button>
+    <button size="sm" variant="outline" on-press="range90" label="90 days">90 days</button>
+    <button size="sm" variant="outline" on-press="refresh" label="Refresh">Refresh</button>
+  </row>
 
-    <separator />
-
-    <scroll grow="1" label="Dashboard content">
-      <column padding="24" gap="18">
-        <row cross="center" gap="12">
-          <column gap="4">
-            <text size="heading" label="{title}"><span weight="bold">{title}</span></text>
-            <text size="sm" foreground="text_muted">{subtitle}</text>
+  <scroll grow="1" label="Usage dashboard">
+    <column padding="26" gap="24">
+      <row gap="28" label="Cost overview">
+        <column width="360" gap="18">
+          <column gap="6">
+            <text size="sm" foreground="text_muted">RAW TOKEN COST</text>
+            <text size="heading"><span weight="bold">{rawTokenCost}</span></text>
+            <text size="sm" foreground="text_muted">* if billed at full API rate</text>
           </column>
+
+          <column gap="12" label="Providers">
+            <text><span weight="bold">Providers</span></text>
+            <for each="providers" as="p" key="name">
+              <panel padding="14" background="surface" radius="lg" border-color="border" label="{p.name}">
+                <column gap="8">
+                  <row cross="center">
+                    <text><span weight="bold">{p.name}</span></text>
+                    <spacer grow="1" />
+                    <text>{p.amount}</text>
+                  </row>
+                  <text size="sm" foreground="text_muted">{p.detail}</text>
+                  <separator />
+                </column>
+              </panel>
+            </for>
+          </column>
+        </column>
+
+        <column grow="1" gap="12">
+          <row cross="center">
+            <text><span weight="bold">{modeLabel}</span></text>
+            <spacer grow="1" />
+            <button size="sm" variant="outline" on-press="cost" label="Cost">COST</button>
+            <button size="sm" variant="outline" on-press="tokens" label="Tokens">TOKENS</button>
+          </row>
+          <panel height="330" padding="16" background="background" radius="lg" border-color="border" label="Daily usage chart">
+            <column gap="10">
+              <text size="sm" foreground="text_muted">Codex / Claude Code</text>
+              <chart grow="1" y-min="0" y-max="1" label="Daily usage chart">
+                <series kind="area" values="{dailySeries}" />
+              </chart>
+              <row>
+                <text size="sm" foreground="text_muted">Jul 11</text>
+                <spacer grow="1" />
+                <text size="sm" foreground="text_muted">Aug 9</text>
+              </row>
+            </column>
+          </panel>
+        </column>
+      </row>
+
+      <panel padding="0" background="surface" radius="lg" border-color="border" label="Totals">
+        <row gap="0">
+          <for each="totals" as="t" key="label">
+            <column grow="1" padding="16" gap="5">
+              <text size="sm" foreground="text_muted">{t.label}</text>
+              <text size="heading"><span weight="bold">{t.value}</span></text>
+              <text size="sm" foreground="text_muted">{t.detail}</text>
+            </column>
+          </for>
+        </row>
+      </panel>
+
+      <column gap="12" label="Breakdown">
+        <row cross="center">
+          <text><span weight="bold">Breakdown</span></text>
           <spacer grow="1" />
-          <badge variant="secondary">{range}</badge>
+          <button size="sm" variant="outline" label="Model">MODEL</button>
+          <button size="sm" variant="outline" label="Day">DAY</button>
         </row>
 
-        <if test="{pageIsOverview}">
-          <column gap="18">
-            <row gap="12" label="Summary metrics">
-              <panel grow="1" height="122" padding="16" background="surface" radius="lg" border-color="border" label="Total cost">
-                <column gap="7">
-                  <text size="sm" foreground="text_muted">TOTAL COST</text>
-                  <text size="heading"><span weight="bold">{totalCost}</span></text>
-                  <badge variant="secondary">{costDelta}</badge>
-                </column>
-              </panel>
-              <panel grow="1" height="122" padding="16" background="surface" radius="lg" border-color="border" label="Total tokens">
-                <column gap="7">
-                  <text size="sm" foreground="text_muted">TOKENS</text>
-                  <text size="heading"><span weight="bold">{totalTokens}</span></text>
-                  <badge variant="secondary">{tokenDelta}</badge>
-                </column>
-              </panel>
-              <panel grow="1" height="122" padding="16" background="surface" radius="lg" border-color="border" label="Active days">
-                <column gap="7">
-                  <text size="sm" foreground="text_muted">ACTIVE DAYS</text>
-                  <text size="heading"><span weight="bold">{activeDays}</span></text>
-                  <badge variant="secondary">{dayDelta}</badge>
-                </column>
-              </panel>
-              <panel grow="1" height="122" padding="16" background="surface" radius="lg" border-color="border" label="Average daily cost">
-                <column gap="7">
-                  <text size="sm" foreground="text_muted">DAILY AVG</text>
-                  <text size="heading"><span weight="bold">{avgDaily}</span></text>
-                  <badge variant="secondary">{avgDelta}</badge>
-                </column>
-              </panel>
+        <panel padding="14" background="background" radius="lg" border-color="border" label="Usage breakdown table">
+          <column gap="0">
+            <row height="34" cross="center">
+              <text grow="1" size="sm" foreground="text_muted">Model</text>
+              <text width="120" size="sm" foreground="text_muted" text-alignment="end">Cost</text>
+              <text width="90" size="sm" foreground="text_muted" text-alignment="end">Share</text>
+              <text width="110" size="sm" foreground="text_muted" text-alignment="end">Tokens</text>
             </row>
-
-            <row gap="12">
-              <panel grow="1" height="210" padding="16" background="surface" radius="lg" border-color="border" label="Cost history">
-                <column gap="12">
-                  <text label="Spend over time"><span weight="bold">Spend over time</span></text>
-                  <text size="sm" foreground="text_muted">Daily estimated API-equivalent cost</text>
-                  <chart grow="1" y-min="0" y-max="1" label="Cost history chart">
-                    <series kind="area" values="{costHistory}" />
-                  </chart>
+            <separator />
+            <for each="breakdown" as="b" key="id">
+              <row height="46" gap="12" cross="center" label="{b.model}">
+                <column grow="1" gap="1">
+                  <text>{b.model}</text>
+                  <text size="sm" foreground="text_muted">{b.provider}</text>
                 </column>
-              </panel>
-              <panel grow="1" height="210" padding="16" background="surface" radius="lg" border-color="border" label="Token history">
-                <column gap="12">
-                  <text label="Token volume"><span weight="bold">Token volume</span></text>
-                  <text size="sm" foreground="text_muted">Relative daily token usage</text>
-                  <chart grow="1" y-min="0" y-max="1" label="Token history chart">
-                    <series kind="bar" values="{tokenHistory}" />
-                  </chart>
-                </column>
-              </panel>
-            </row>
-
-            <panel padding="16" background="surface" radius="lg" border-color="border" label="Recent usage">
-              <column gap="10">
-                <row cross="center">
-                  <text label="Recent usage"><span weight="bold">Recent usage</span></text>
-                  <spacer grow="1" />
-                  <text size="sm" foreground="text_muted">Latest five days</text>
-                </row>
-                <separator />
-                <for each="recentDays" as="r" key="date">
-                  <row height="36" gap="12" cross="center" label="{r.day}">
-                    <text width="120">{r.day}</text>
-                    <text width="90" size="sm" foreground="text_muted">{r.date}</text>
-                    <spacer grow="1" />
-                    <text width="100" size="sm" text-alignment="end">{r.tokens}</text>
-                    <text width="90" size="sm" text-alignment="end">{r.cost}</text>
-                    <badge variant="secondary">{r.change}</badge>
-                  </row>
-                </for>
-              </column>
-            </panel>
-
-            <panel padding="16" background="surface" radius="lg" border-color="border" label="Top agents">
-              <column gap="10">
-                <text label="Top agents"><span weight="bold">Top agents</span></text>
-                <separator />
-                <for each="topAgents" as="a" key="name">
-                  <row height="48" gap="12" cross="center" label="{a.name}">
-                    <column width="260" gap="2">
-                      <text>{a.name}</text>
-                      <text size="sm" foreground="text_muted">{a.detail}</text>
-                    </column>
-                    <spacer grow="1" />
-                    <text width="100" size="sm" text-alignment="end">{a.tokens}</text>
-                    <text width="90" size="sm" text-alignment="end">{a.cost}</text>
-                    <badge variant="secondary">{a.share}</badge>
-                  </row>
-                </for>
-              </column>
-            </panel>
+                <text width="120" text-alignment="end">{b.cost}</text>
+                <text width="90" size="sm" foreground="text_muted" text-alignment="end">{b.share}</text>
+                <text width="110" size="sm" foreground="text_muted" text-alignment="end">{b.tokens}</text>
+              </row>
+              <separator />
+            </for>
           </column>
-        </if>
-
-        <if test="{pageIsAgents}">
-          <panel padding="20" background="surface" radius="lg" border-color="border" label="Agents view">
-            <column gap="12">
-              <text size="heading"><span weight="bold">Agents</span></text>
-              <text foreground="text_muted">Compare usage across Codex, Claude Code, OpenCode and Gemini CLI.</text>
-              <separator />
-              <for each="topAgents" as="a" key="name">
-                <row height="54" cross="center" gap="12">
-                  <column width="300" gap="2"><text>{a.name}</text><text size="sm" foreground="text_muted">{a.detail}</text></column>
-                  <spacer grow="1" /><text>{a.tokens}</text><text width="100" text-alignment="end">{a.cost}</text><badge variant="secondary">{a.share}</badge>
-                </row>
-              </for>
-            </column>
-          </panel>
-        </if>
-
-        <if test="{pageIsModels}">
-          <panel padding="20" background="surface" radius="lg" border-color="border" label="Models view">
-            <column gap="10">
-              <text size="heading"><span weight="bold">Models</span></text>
-              <text foreground="text_muted">Model-level reporting is ready for live ccusage ingestion.</text>
-              <separator />
-              <text>GPT-5.6 Sol</text><text size="sm" foreground="text_muted">Codex · primary coding workload</text>
-              <text>Claude Opus 4.1</text><text size="sm" foreground="text_muted">Claude Code · long-context sessions</text>
-              <text>Gemini 2.5 Pro</text><text size="sm" foreground="text_muted">Gemini CLI · secondary usage</text>
-            </column>
-          </panel>
-        </if>
-
-        <if test="{pageIsSessions}">
-          <panel padding="20" background="surface" radius="lg" border-color="border" label="Sessions view">
-            <column gap="10">
-              <text size="heading"><span weight="bold">Sessions</span></text>
-              <text foreground="text_muted">Session drill-down with agent, model, tokens and cost.</text>
-              <separator />
-              <text>Recent sessions will appear here from local ccusage data.</text>
-            </column>
-          </panel>
-        </if>
+        </panel>
       </column>
-    </scroll>
-  </row>
+
+      <text size="sm" foreground="text_muted">{refreshStatus}</text>
+    </column>
+  </scroll>
 </column>
