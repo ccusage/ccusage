@@ -3,7 +3,7 @@ import { isNewerRelease, parseReleaseFeed } from "./updater.ts";
 
 export type Range = "seven" | "thirty" | "ninety";
 export type Metric = "cost" | "tokens";
-export type UpdateState = "checking" | "current" | "available" | "staging" | "restarting" | "error";
+export type UpdateState = "checking" | "current" | "available" | "staging" | "restarting" | "failed";
 
 export interface ProviderRow {
   readonly name: Uint8Array;
@@ -116,14 +116,14 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
     case "update_feed": {
       if (msg.status !== 200) {
         return [
-          { ...model, updateState: "error", updateDetail: asciiBytes("Could not read the release feed. Try again.") },
+          { ...model, updateState: "failed", updateDetail: asciiBytes("Could not read the release feed. Try again.") },
           Cmd.none,
         ];
       }
       const feed = parseReleaseFeed(msg.body);
       if (feed === null) {
         return [
-          { ...model, updateState: "error", updateDetail: asciiBytes("The release feed was invalid. Try again later.") },
+          { ...model, updateState: "failed", updateDetail: asciiBytes("The release feed was invalid. Try again later.") },
           Cmd.none,
         ];
       }
@@ -154,7 +154,7 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
     }
     case "update_feed_failed":
       return [
-        { ...model, updateState: "error", updateDetail: asciiBytes("Update check failed. Check your connection and retry.") },
+        { ...model, updateState: "failed", updateDetail: asciiBytes("Update check failed. Check your connection and retry.") },
         Cmd.none,
       ];
     case "update_stage_done":
@@ -167,14 +167,14 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
       return [
         {
           ...model,
-          updateState: "error",
+          updateState: "failed",
           updateDetail: msg.output.length > 0 ? msg.output : asciiBytes("The update could not be installed."),
         },
         Cmd.none,
       ];
     case "update_stage_failed":
       return [
-        { ...model, updateState: "error", updateDetail: msg.reason },
+        { ...model, updateState: "failed", updateDetail: msg.reason },
         Cmd.none,
       ];
   }
