@@ -1,8 +1,8 @@
 {
   "scripts": {
-    "dev": "native-cli dev",
-    "build": "native-cli build",
-    "export": "native-cli export",
+    "dev": "native dev",
+    "build": "native build --yes",
+    "export": "native export --yes",
     "test": "tsx --test tests/*.test.ts"
   },
   "devDependencies": {
