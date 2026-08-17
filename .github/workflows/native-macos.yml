@@ -30,9 +30,7 @@ jobs:
           node-version: 22
       - name: Install project dev dependencies
         run: npm install --ignore-scripts
-      - name: Install native CLI
-        run: npm install -g @native-sdk/cli
       - name: Run unit and performance regression tests
         run: npm test
       - name: Verify app builds
-        run: native-cli build
+        run: npm run build
