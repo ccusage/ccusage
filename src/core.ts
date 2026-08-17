@@ -1,6 +1,6 @@
 import { Cmd, asciiBytes } from "@native-sdk/core";
 
-export type Range = "7" | "30" | "90";
+export type Range = "seven" | "thirty" | "ninety";
 export type Metric = "cost" | "tokens";
 
 export interface ProviderRow {
@@ -17,6 +17,7 @@ export interface TotalRow {
 }
 
 export interface BreakdownRow {
+  readonly id: Uint8Array;
   readonly model: Uint8Array;
   readonly provider: Uint8Array;
   readonly cost: Uint8Array;
@@ -39,14 +40,14 @@ export type Msg =
   | { readonly kind: "refresh" };
 
 export function initialModel(): [Model, Cmd<Msg>] {
-  return [{ range: "30", metric: "cost", refreshed: false }, Cmd.none];
+  return [{ range: "thirty", metric: "cost", refreshed: false }, Cmd.none];
 }
 
 export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
   switch (msg.kind) {
-    case "range7": return [{ ...model, range: "7" }, Cmd.none];
-    case "range30": return [{ ...model, range: "30" }, Cmd.none];
-    case "range90": return [{ ...model, range: "90" }, Cmd.none];
+    case "range7": return [{ ...model, range: "seven" }, Cmd.none];
+    case "range30": return [{ ...model, range: "thirty" }, Cmd.none];
+    case "range90": return [{ ...model, range: "ninety" }, Cmd.none];
     case "cost": return [{ ...model, metric: "cost" }, Cmd.none];
     case "tokens": return [{ ...model, metric: "tokens" }, Cmd.none];
     case "refresh": return [{ ...model, refreshed: true }, Cmd.none];
@@ -54,14 +55,14 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
 }
 
 export function dateRange(model: Model): Uint8Array {
-  if (model.range === "7") return asciiBytes("Aug 3 to Aug 9");
-  if (model.range === "90") return asciiBytes("May 12 to Aug 9");
+  if (model.range === "seven") return asciiBytes("Aug 3 to Aug 9");
+  if (model.range === "ninety") return asciiBytes("May 12 to Aug 9");
   return asciiBytes("Jul 11 to Aug 9");
 }
 
 export function rawTokenCost(model: Model): Uint8Array {
-  if (model.range === "7") return asciiBytes("$21,744.10*");
-  if (model.range === "90") return asciiBytes("$128,230.61*");
+  if (model.range === "seven") return asciiBytes("$21,744.10*");
+  if (model.range === "ninety") return asciiBytes("$128,230.61*");
   return asciiBytes("$54,890.48*");
 }
 
@@ -73,9 +74,9 @@ export function modeLabel(model: Model): Uint8Array {
   return model.metric === "cost" ? asciiBytes("Daily cost") : asciiBytes("Daily tokens");
 }
 
-export function range7Selected(model: Model): boolean { return model.range === "7"; }
-export function range30Selected(model: Model): boolean { return model.range === "30"; }
-export function range90Selected(model: Model): boolean { return model.range === "90"; }
+export function range7Selected(model: Model): boolean { return model.range === "seven"; }
+export function range30Selected(model: Model): boolean { return model.range === "thirty"; }
+export function range90Selected(model: Model): boolean { return model.range === "ninety"; }
 export function costSelected(model: Model): boolean { return model.metric === "cost"; }
 export function tokensSelected(model: Model): boolean { return model.metric === "tokens"; }
 
@@ -105,13 +106,13 @@ export function totals(_model: Model): readonly TotalRow[] {
 
 export function breakdown(_model: Model): readonly BreakdownRow[] {
   return [
-    { model: asciiBytes("gpt-5.6-sol"), provider: asciiBytes("Codex"), cost: asciiBytes("$35,098.97"), share: asciiBytes("63.9%"), tokens: asciiBytes("48.6B") },
-    { model: asciiBytes("claude-fable-5"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$12,769.21"), share: asciiBytes("23.3%"), tokens: asciiBytes("8.14B") },
-    { model: asciiBytes("claude-opus-5"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$6,267.20"), share: asciiBytes("11.4%"), tokens: asciiBytes("8.27B") },
-    { model: asciiBytes("gpt-5.6-sol"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$205.18"), share: asciiBytes("0.4%"), tokens: asciiBytes("207M") },
-    { model: asciiBytes("claude-opus-4-8"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$127.77"), share: asciiBytes("0.2%"), tokens: asciiBytes("131M") },
-    { model: asciiBytes("claude-sonnet-5"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$16.98"), share: asciiBytes("0.0%"), tokens: asciiBytes("33.7M") },
-    { model: asciiBytes("claude-haiku-4-5"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$2.89"), share: asciiBytes("0.0%"), tokens: asciiBytes("16.2M") },
-    { model: asciiBytes("gpt-5.6-terra"), provider: asciiBytes("Codex"), cost: asciiBytes("$0.78"), share: asciiBytes("0.0%"), tokens: asciiBytes("1.35M") },
+    { id: asciiBytes("codex-sol"), model: asciiBytes("gpt-5.6-sol"), provider: asciiBytes("Codex"), cost: asciiBytes("$35,098.97"), share: asciiBytes("63.9%"), tokens: asciiBytes("48.6B") },
+    { id: asciiBytes("fable-5"), model: asciiBytes("claude-fable-5"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$12,769.21"), share: asciiBytes("23.3%"), tokens: asciiBytes("8.14B") },
+    { id: asciiBytes("opus-5"), model: asciiBytes("claude-opus-5"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$6,267.20"), share: asciiBytes("11.4%"), tokens: asciiBytes("8.27B") },
+    { id: asciiBytes("claude-sol"), model: asciiBytes("gpt-5.6-sol"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$205.18"), share: asciiBytes("0.4%"), tokens: asciiBytes("207M") },
+    { id: asciiBytes("opus-4-8"), model: asciiBytes("claude-opus-4-8"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$127.77"), share: asciiBytes("0.2%"), tokens: asciiBytes("131M") },
+    { id: asciiBytes("sonnet-5"), model: asciiBytes("claude-sonnet-5"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$16.98"), share: asciiBytes("0.0%"), tokens: asciiBytes("33.7M") },
+    { id: asciiBytes("haiku-4-5"), model: asciiBytes("claude-haiku-4-5"), provider: asciiBytes("Claude Code"), cost: asciiBytes("$2.89"), share: asciiBytes("0.0%"), tokens: asciiBytes("16.2M") },
+    { id: asciiBytes("terra"), model: asciiBytes("gpt-5.6-terra"), provider: asciiBytes("Codex"), cost: asciiBytes("$0.78"), share: asciiBytes("0.0%"), tokens: asciiBytes("1.35M") },
   ];
 }
