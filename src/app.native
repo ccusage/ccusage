@@ -1,9 +1,9 @@
-<column background="background">
-  <row height="72" padding="18" gap="12" cross="center" background="background" window-drag="true" label="Usage titlebar">
+<column background="#050505" foreground="#f4f4f4">
+  <row height="72" padding="18" gap="12" cross="center" background="#050505" foreground="#f4f4f4" window-drag="true" label="Usage titlebar">
     <button size="icon" variant="ghost" icon="chevron-left" label="Back"></button>
     <column gap="2">
-      <text size="heading"><span weight="bold">Usage</span></text>
-      <text size="sm" foreground="text_muted">{dateRange}</text>
+      <text size="heading" foreground="#f7f7f7"><span weight="bold">Usage</span></text>
+      <text size="sm" foreground="#8d8d8d">{dateRange}</text>
     </column>
     <spacer grow="1" />
     <button-group>
@@ -14,28 +14,28 @@
     <button size="icon" variant="ghost" icon="refresh-cw" label="Refresh" on-press="refresh"></button>
   </row>
 
-  <scroll grow="1" label="Usage dashboard">
-    <column padding="28" gap="24">
+  <scroll grow="1" background="#050505" label="Usage dashboard">
+    <column padding="28" gap="24" background="#050505" foreground="#f4f4f4">
       <row gap="32" label="Cost overview">
         <column width="370" gap="22">
           <column gap="7">
-            <text size="sm" foreground="text_muted">RAW TOKEN COST</text>
-            <text size="display"><span weight="bold">{rawTokenCost}</span></text>
-            <text size="sm" foreground="text_muted">* if billed at full API rate</text>
+            <text size="sm" foreground="#8d8d8d">RAW TOKEN COST</text>
+            <text size="display" foreground="#f8f8f8"><span weight="bold">{rawTokenCost}</span></text>
+            <text size="sm" foreground="#8d8d8d">* if billed at full API rate</text>
           </column>
 
           <column gap="12" label="Providers">
-            <text><span weight="bold">Providers</span></text>
+            <text foreground="#f4f4f4"><span weight="bold">Providers</span></text>
             <for each="providers" as="p" key="name">
-              <panel padding="15" background="surface" radius="lg" border-color="border" label="{p.name}">
-                <column gap="9">
+              <panel padding="15" background="#111111" radius="lg" border-color="#242424" label="{p.name}">
+                <column gap="9" foreground="#f4f4f4">
                   <row cross="center">
-                    <text><span weight="bold">{p.name}</span></text>
+                    <text foreground="#f4f4f4"><span weight="bold">{p.name}</span></text>
                     <spacer grow="1" />
-                    <text>{p.amount}</text>
+                    <text foreground="#f4f4f4">{p.amount}</text>
                   </row>
-                  <separator />
-                  <text size="sm" foreground="text_muted">{p.detail}</text>
+                  <separator color="#242424" />
+                  <text size="sm" foreground="#8d8d8d">{p.detail}</text>
                 </column>
               </panel>
             </for>
@@ -44,40 +44,40 @@
 
         <column grow="1" gap="12">
           <row cross="center">
-            <text><span weight="bold">Daily cost</span></text>
+            <text foreground="#f4f4f4"><span weight="bold">Daily cost</span></text>
             <spacer grow="1" />
             <button-group>
               <button size="sm" variant="outline" selected="{costSelected}" on-press="cost">COST</button>
               <button size="sm" variant="outline" selected="{tokensSelected}" on-press="tokens">TOKENS</button>
             </button-group>
           </row>
-          <panel height="342" padding="14" background="background" radius="lg" border-color="border" label="Daily usage chart">
-            <column gap="8">
+          <panel height="342" padding="14" background="#050505" radius="lg" border-color="#202020" label="Daily usage chart">
+            <column gap="8" background="#050505" foreground="#f4f4f4">
               <row gap="14">
-                <text size="sm">Codex</text>
-                <text size="sm" foreground="text_muted">Claude Code</text>
+                <text size="sm" foreground="#f4f4f4">Codex</text>
+                <text size="sm" foreground="#df7657">Claude Code</text>
               </row>
               <chart grow="1" y-min="0" y-max="1" grid-lines="2" hover-details="true" label="Daily usage chart">
-                <series kind="area" values="{codexSeries}" color="text" label="Codex" />
-                <series kind="area" values="{claudeSeries}" color="accent" label="Claude Code" />
+                <series kind="area" values="{codexSeries}" color="#e9e9e9" label="Codex" />
+                <series kind="area" values="{claudeSeries}" color="#df7657" label="Claude Code" />
               </chart>
               <row>
-                <text size="sm" foreground="text_muted">Jul 11</text>
+                <text size="sm" foreground="#777777">Jul 11</text>
                 <spacer grow="1" />
-                <text size="sm" foreground="text_muted">Aug 9</text>
+                <text size="sm" foreground="#777777">Aug 9</text>
               </row>
             </column>
           </panel>
         </column>
       </row>
 
-      <panel padding="0" background="surface" radius="lg" border-color="border" label="Totals">
-        <row gap="0">
+      <panel padding="0" background="#0d0d0d" radius="lg" border-color="#202020" label="Totals">
+        <row gap="0" foreground="#f4f4f4">
           <for each="totals" as="t" key="label">
             <column grow="1" padding="16" gap="5">
-              <text size="sm" foreground="text_muted">{t.label}</text>
-              <text><span weight="bold">{t.value}</span></text>
-              <text size="sm" foreground="text_muted">{t.detail}</text>
+              <text size="sm" foreground="#858585">{t.label}</text>
+              <text foreground="#f4f4f4"><span weight="bold">{t.value}</span></text>
+              <text size="sm" foreground="#777777">{t.detail}</text>
             </column>
           </for>
         </row>
@@ -85,7 +85,7 @@
 
       <column gap="12" label="Breakdown">
         <row cross="center">
-          <text><span weight="bold">Breakdown</span></text>
+          <text foreground="#f4f4f4"><span weight="bold">Breakdown</span></text>
           <spacer grow="1" />
           <button-group>
             <button size="sm" variant="outline" selected="true">MODEL</button>
@@ -93,32 +93,32 @@
           </button-group>
         </row>
 
-        <panel padding="14" background="background" radius="lg" border-color="border" label="Usage breakdown table">
-          <column gap="0">
+        <panel padding="14" background="#050505" radius="lg" border-color="#202020" label="Usage breakdown table">
+          <column gap="0" foreground="#f4f4f4">
             <row height="34" cross="center">
-              <text grow="1" size="sm" foreground="text_muted">Model</text>
-              <text width="120" size="sm" foreground="text_muted" text-alignment="end">Cost</text>
-              <text width="90" size="sm" foreground="text_muted" text-alignment="end">Share</text>
-              <text width="110" size="sm" foreground="text_muted" text-alignment="end">Tokens</text>
+              <text grow="1" size="sm" foreground="#777777">Model</text>
+              <text width="120" size="sm" foreground="#777777" text-alignment="end">Cost</text>
+              <text width="90" size="sm" foreground="#777777" text-alignment="end">Share</text>
+              <text width="110" size="sm" foreground="#777777" text-alignment="end">Tokens</text>
             </row>
-            <separator />
+            <separator color="#202020" />
             <for each="breakdown" as="b" key="id">
               <row height="46" gap="12" cross="center" label="{b.model}">
                 <column grow="1" gap="1">
-                  <text>{b.model}</text>
-                  <text size="sm" foreground="text_muted">{b.provider}</text>
+                  <text foreground="#f0f0f0">{b.model}</text>
+                  <text size="sm" foreground="#777777">{b.provider}</text>
                 </column>
-                <text width="120" text-alignment="end">{b.cost}</text>
-                <text width="90" size="sm" foreground="text_muted" text-alignment="end">{b.share}</text>
-                <text width="110" size="sm" foreground="text_muted" text-alignment="end">{b.tokens}</text>
+                <text width="120" foreground="#f0f0f0" text-alignment="end">{b.cost}</text>
+                <text width="90" size="sm" foreground="#777777" text-alignment="end">{b.share}</text>
+                <text width="110" size="sm" foreground="#a0a0a0" text-alignment="end">{b.tokens}</text>
               </row>
-              <separator />
+              <separator color="#171717" />
             </for>
           </column>
         </panel>
       </column>
 
-      <text size="sm" foreground="text_muted">{refreshStatus}</text>
+      <text size="sm" foreground="#666666">{refreshStatus}</text>
     </column>
   </scroll>
 </column>
