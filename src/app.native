@@ -34,7 +34,6 @@
                     <spacer grow="1" />
                     <text>{p.amount}</text>
                   </row>
-                  <separator />
                   <text size="sm" foreground="text_muted">{p.detail}</text>
                 </column>
               </panel>
@@ -44,23 +43,21 @@
 
         <column grow="1" gap="12">
           <row cross="center">
-            <text><span weight="bold">Daily cost</span></text>
+            <text><span weight="bold">Daily {metric}</span></text>
             <spacer grow="1" />
             <button-group>
               <button size="sm" variant="outline" selected="{costSelected}" on-press="cost">COST</button>
               <button size="sm" variant="outline" selected="{tokensSelected}" on-press="tokens">TOKENS</button>
             </button-group>
           </row>
-          <panel height="342" padding="14" background="background" radius="lg" border-color="border" label="Daily usage chart">
+
+          <panel padding="14" background="background" radius="lg" border-color="border" label="Daily usage chart">
             <column gap="8">
               <row gap="14">
-                <text size="sm">Codex</text>
-                <text size="sm" foreground="accent">Claude Code</text>
+                <text size="sm" foreground="orange">Codex</text>
+                <text size="sm" foreground="text_muted">Claude Code</text>
               </row>
-              <chart grow="1" y-min="0" y-max="1" grid-lines="2" hover-details="true" label="Daily usage chart">
-                <series kind="area" values="{codexSeries}" color="text" label="Codex" />
-                <series kind="area" values="{claudeSeries}" color="accent" label="Claude Code" />
-              </chart>
+              <chart values="{codexSeries}" height="265" label="Daily usage chart" />
               <row>
                 <text size="sm" foreground="text_muted">Jul 11</text>
                 <spacer grow="1" />
@@ -72,7 +69,7 @@
       </row>
 
       <panel padding="0" background="surface" radius="lg" border-color="border" label="Totals">
-        <row gap="0">
+        <row>
           <for each="totals" as="t" key="label">
             <column grow="1" padding="16" gap="5">
               <text size="sm" foreground="text_muted">{t.label}</text>
@@ -119,6 +116,20 @@
       </column>
 
       <text size="sm" foreground="text_muted">{refreshStatus}</text>
+
+      <separator />
+
+      <row gap="12" cross="center" label="Application updates">
+        <column gap="3" grow="1">
+          <text><span weight="bold">Updates</span></text>
+          <text size="sm" foreground="text_muted">{updateDetail}</text>
+        </column>
+        <column gap="2" cross="end">
+          <text size="sm" foreground="text_muted">Version</text>
+          <text>{updateVersionText}</text>
+        </column>
+        <button size="sm" variant="outline" on-press="update_action">{updateActionLabel}</button>
+      </row>
     </column>
   </scroll>
 </column>

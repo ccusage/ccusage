@@ -1,0 +1,176 @@
+name: Release macOS DMG
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/ccusage-macos-native
+    paths:
+      - release/macos-version.txt
+
+permissions:
+  contents: write
+
+env:
+  MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+  MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+  APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+  APPLE_ID: ${{ secrets.APPLE_ID }}
+  APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve release version
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < release/macos-version.txt)"
+          test -n "$VERSION"
+          grep -F ".version = \"${VERSION}\"" app.zon
+          grep -F "asciiBytes(\"${VERSION}\")" src/core.ts
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=macos-v$VERSION" >> "$GITHUB_ENV"
+      - name: Refuse duplicate release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite it."
+            exit 1
+          fi
+      - name: Install Native SDK
+        run: npm install -g @native-sdk/cli@latest
+      - name: Validate, build and test
+        run: |
+          native check --strict
+          native build --yes
+          native test
+          native check --strict
+      - name: Configure Developer ID certificate when available
+        run: |
+          set -euo pipefail
+          if [ -n "${MACOS_CERTIFICATE_BASE64:-}" ] && [ -n "${MACOS_CERTIFICATE_PASSWORD:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            KEYCHAIN="$RUNNER_TEMP/ccusage-signing.keychain-db"
+            KEYCHAIN_PASSWORD="$(uuidgen)"
+            echo "$MACOS_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            security import "$RUNNER_TEMP/signing.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12
+            security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            echo "SIGNING_MODE=identity" >> "$GITHUB_ENV"
+          else
+            echo "SIGNING_MODE=adhoc" >> "$GITHUB_ENV"
+          fi
+      - name: Package signed macOS app
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [ "$SIGNING_MODE" = "identity" ]; then
+            args=(--target macos --signing identity --identity "$APPLE_SIGNING_IDENTITY" --output dist/ccusage.app)
+            if [ -n "${APPLE_TEAM_ID:-}" ]; then args+=(--team-id "$APPLE_TEAM_ID"); fi
+            native package "${args[@]}"
+            echo "SIGNING_DESCRIPTION=Developer ID signed" >> "$GITHUB_ENV"
+          else
+            native package --target macos --signing adhoc --output dist/ccusage.app
+            echo "SIGNING_DESCRIPTION=ad-hoc signed (not Developer ID notarized)" >> "$GITHUB_ENV"
+          fi
+          /usr/bin/codesign --verify --deep --strict --verbose=2 dist/ccusage.app
+          BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/ccusage.app/Contents/Info.plist)"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/ccusage.app/Contents/Info.plist)"
+          test "$BUNDLE_VERSION" = "$VERSION"
+          test "$BUNDLE_ID" = "dev.vedanth.ccusagewrap"
+      - name: Create updater ZIP and DMG
+        run: |
+          set -euo pipefail
+          ZIP="dist/ccusage-${VERSION}-macos-arm64.zip"
+          DMG="dist/ccusage-${VERSION}-macos-arm64.dmg"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent dist/ccusage.app "$ZIP"
+          mkdir -p dist/dmg-root
+          /usr/bin/ditto dist/ccusage.app dist/dmg-root/ccusage.app
+          ln -s /Applications dist/dmg-root/Applications
+          /usr/bin/hdiutil create -volname "ccusage ${VERSION}" -srcfolder dist/dmg-root -ov -format UDZO "$DMG"
+      - name: Notarize DMG when credentials are available
+        run: |
+          set -euo pipefail
+          DMG="dist/ccusage-${VERSION}-macos-arm64.dmg"
+          if [ "$SIGNING_MODE" = "identity" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ]; then
+            xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+            xcrun stapler staple "$DMG"
+            xcrun stapler validate "$DMG"
+            echo "NOTARIZATION_DESCRIPTION=notarized and stapled" >> "$GITHUB_ENV"
+          else
+            echo "NOTARIZATION_DESCRIPTION=not notarized" >> "$GITHUB_ENV"
+          fi
+      - name: Verify updater payload and DMG
+        run: |
+          set -euo pipefail
+          ZIP="dist/ccusage-${VERSION}-macos-arm64.zip"
+          DMG="dist/ccusage-${VERSION}-macos-arm64.dmg"
+          TMP="$(mktemp -d)"
+          /usr/bin/ditto -x -k "$ZIP" "$TMP/zip"
+          /usr/bin/codesign --verify --deep --strict "$TMP/zip/ccusage.app"
+          MOUNT="$TMP/mount"
+          mkdir -p "$MOUNT"
+          /usr/bin/hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT"
+          trap '/usr/bin/hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true' EXIT
+          test -d "$MOUNT/ccusage.app"
+          /usr/bin/codesign --verify --deep --strict "$MOUNT/ccusage.app"
+          /usr/bin/hdiutil detach "$MOUNT"
+          trap - EXIT
+      - name: Build signed update feed and checksums
+        run: |
+          set -euo pipefail
+          ZIP="dist/ccusage-${VERSION}-macos-arm64.zip"
+          DMG="dist/ccusage-${VERSION}-macos-arm64.dmg"
+          ZIP_SHA="$(/usr/bin/shasum -a 256 "$ZIP" | /usr/bin/awk '{print $1}')"
+          printf '%s\n%s\n%s\n' \
+            "$VERSION" \
+            "https://github.com/vedanth-jadhav/ccusage-wrap/releases/download/${TAG}/ccusage-${VERSION}-macos-arm64.zip" \
+            "$ZIP_SHA" > dist/macos-update-feed.txt
+          (cd dist && /usr/bin/shasum -a 256 "ccusage-${VERSION}-macos-arm64.zip" "ccusage-${VERSION}-macos-arm64.dmg") > dist/SHA256SUMS.txt
+          cat > dist/release-notes.md <<EOF
+          # ccusage ${VERSION} for macOS
+
+          Native Apple Silicon release of the redesigned ccusage dashboard.
+
+          - Installer: DMG with Applications shortcut
+          - Built-in updater: checks the latest GitHub Release, downloads the ZIP payload, verifies SHA-256 and the app code signature, validates bundle/version identity, replaces the installed app after shutdown, and relaunches it
+          - Signing: ${SIGNING_DESCRIPTION}
+          - Notarization: ${NOTARIZATION_DESCRIPTION}
+          - Architecture: arm64 (Apple Silicon)
+
+          Future macOS releases published by this workflow automatically provide the feed consumed by the app.
+          EOF
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "ccusage ${VERSION} for macOS" \
+            --notes-file dist/release-notes.md \
+            "dist/ccusage-${VERSION}-macos-arm64.dmg" \
+            "dist/ccusage-${VERSION}-macos-arm64.zip" \
+            dist/macos-update-feed.txt \
+            dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ccusage-macos-release-${{ env.VERSION }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/macos-update-feed.txt
+            dist/SHA256SUMS.txt
+            dist/release-notes.md
+          if-no-files-found: warn
