@@ -1,144 +1,149 @@
-ready=true protocol=0x59d66f39803fd602 frame=1 commands=0 runtime_uptime_ns=745468000 dispatch_errors=0 dropped_trace_records=0 publisher_pid=5154 markup_watch=armed
-window @w1 "ccusage" bounds=(0,62 1024x681) focused=true frame=1 commands=0
-  view @w1/main-canvas kind=gpu_surface role="ccusage analytics dashboard" accessibility_label="ccusage dashboard" text="ccusage analytics dashboard" bounds=(0,0 1024x681) layer=0 visible=true enabled=true focused=false open=true gpu_size=1024x681 gpu_scale=1 gpu_backend=metal gpu_pixel_format=bgra8_unorm gpu_present_mode=timer gpu_alpha_mode=opaque gpu_color_space=srgb gpu_vsync=true gpu_status=ready gpu_present_path=packet gpu_frame=4 gpu_timestamp_ns=241182988000 gpu_frame_interval_ns=16666666 gpu_input_count=0 gpu_input_timestamp_ns=0 gpu_input_latency_ns=0 gpu_input_latency_budget_ns=16666666 gpu_input_latency_budget_exceeded=0 gpu_input_latency_budget_ok=true gpu_first_frame_latency_ns=1121000 gpu_first_frame_latency_budget_ns=150000000 gpu_first_frame_latency_budget_exceeded=0 gpu_first_frame_latency_budget_ok=true gpu_nonblank=true gpu_occluded=false gpu_sample=0xffffffff present_fallback=none present_fallback_needed=0 present_fallback_limit=0 present_fallback_command="" present_fallback_frames=0 present_mode=full present_patch_bytes=0 present_patch_upserts=0 present_patch_evicts=0 present_retained_commands=78 canvas_revision=6 canvas_commands=137 canvas_frame_requires_render=false canvas_frame_full_repaint=false canvas_frame_batches=0 canvas_frame_encoder_commands=0 canvas_frame_encoder_cache_actions=0 canvas_frame_encoder_pipeline_binds=0 canvas_frame_encoder_draws=0 canvas_frame_pipelines=0 canvas_frame_pipeline_uploads=0 canvas_frame_pipeline_retains=0 canvas_frame_pipeline_evicts=0 canvas_frame_path_geometries=0 canvas_frame_path_vertices=0 canvas_frame_path_indices=0 canvas_frame_path_uploads=0 canvas_frame_path_retains=0 canvas_frame_path_evicts=0 canvas_frame_images=0 canvas_frame_image_uploads=0 canvas_frame_image_retains=0 canvas_frame_image_evicts=0 canvas_frame_layers=0 canvas_frame_opacity_layers=0 canvas_frame_clip_layers=0 canvas_frame_transform_layers=0 canvas_frame_layer_uploads=0 canvas_frame_layer_retains=0 canvas_frame_layer_evicts=0 canvas_frame_resources=0 canvas_frame_uploads=0 canvas_frame_retains=0 canvas_frame_evicts=0 canvas_frame_effects=0 canvas_frame_shadows=0 canvas_frame_blurs=0 canvas_frame_effect_uploads=0 canvas_frame_effect_retains=0 canvas_frame_effect_evicts=0 canvas_frame_glyphs=0 canvas_frame_glyph_uploads=0 canvas_frame_glyph_retains=0 canvas_frame_glyph_evicts=0 canvas_frame_text_layouts=0 canvas_frame_text_lines=0 canvas_frame_text_uploads=0 canvas_frame_text_retains=0 canvas_frame_text_evicts=0 canvas_frame_gpu_packet_commands=0 canvas_frame_gpu_packet_cache_actions=0 canvas_frame_gpu_packet_cached_resources=0 canvas_frame_gpu_packet_unsupported=0 canvas_frame_gpu_packet_representable=true canvas_frame_changes=0 canvas_frame_budget_exceeded=0 canvas_frame_budget_ok=true widget_nodes=152/1024 widget_semantics=141/1024 context_menu_items=0/512 text_layout_plans=0/2048 text_layout_lines=0/8192 canvas_frame_dirty=null canvas_frame_profile_work_units=0 canvas_frame_profile_risk=idle canvas_frame_profile_surface_area=697344 canvas_frame_profile_dirty_area=0 canvas_frame_profile_dirty_ratio=0 widget_revision=5 widget_nodes=152 widget_semantics=141 widget_cursor=arrow
+ready=true protocol=0x59d66f39803fd602 frame=1 commands=0 runtime_uptime_ns=1185700000 dispatch_errors=0 dropped_trace_records=0 publisher_pid=5787 markup_watch=armed
+window @w1 "Usage" bounds=(0,62 1024x681) focused=true frame=1 commands=0
+  view @w1/main-canvas kind=gpu_surface role="ccusage analytics dashboard" accessibility_label="ccusage dashboard" text="ccusage analytics dashboard" bounds=(0,0 1024x681) layer=0 visible=true enabled=true focused=false open=true gpu_size=1024x681 gpu_scale=1 gpu_backend=metal gpu_pixel_format=bgra8_unorm gpu_present_mode=timer gpu_alpha_mode=opaque gpu_color_space=srgb gpu_vsync=true gpu_status=ready gpu_present_path=packet gpu_frame=4 gpu_timestamp_ns=285393234000 gpu_frame_interval_ns=16666666 gpu_input_count=0 gpu_input_timestamp_ns=0 gpu_input_latency_ns=0 gpu_input_latency_budget_ns=16666666 gpu_input_latency_budget_exceeded=0 gpu_input_latency_budget_ok=true gpu_first_frame_latency_ns=6489000 gpu_first_frame_latency_budget_ns=150000000 gpu_first_frame_latency_budget_exceeded=0 gpu_first_frame_latency_budget_ok=true gpu_nonblank=true gpu_occluded=false gpu_sample=0xffffffff present_fallback=none present_fallback_needed=0 present_fallback_limit=0 present_fallback_command="" present_fallback_frames=0 present_mode=full present_patch_bytes=0 present_patch_upserts=0 present_patch_evicts=0 present_retained_commands=79 canvas_revision=6 canvas_commands=139 canvas_frame_requires_render=false canvas_frame_full_repaint=false canvas_frame_batches=0 canvas_frame_encoder_commands=0 canvas_frame_encoder_cache_actions=0 canvas_frame_encoder_pipeline_binds=0 canvas_frame_encoder_draws=0 canvas_frame_pipelines=0 canvas_frame_pipeline_uploads=0 canvas_frame_pipeline_retains=0 canvas_frame_pipeline_evicts=0 canvas_frame_path_geometries=0 canvas_frame_path_vertices=0 canvas_frame_path_indices=0 canvas_frame_path_uploads=0 canvas_frame_path_retains=0 canvas_frame_path_evicts=0 canvas_frame_images=0 canvas_frame_image_uploads=0 canvas_frame_image_retains=0 canvas_frame_image_evicts=0 canvas_frame_layers=0 canvas_frame_opacity_layers=0 canvas_frame_clip_layers=0 canvas_frame_transform_layers=0 canvas_frame_layer_uploads=0 canvas_frame_layer_retains=0 canvas_frame_layer_evicts=0 canvas_frame_resources=0 canvas_frame_uploads=0 canvas_frame_retains=0 canvas_frame_evicts=0 canvas_frame_effects=0 canvas_frame_shadows=0 canvas_frame_blurs=0 canvas_frame_effect_uploads=0 canvas_frame_effect_retains=0 canvas_frame_effect_evicts=0 canvas_frame_glyphs=0 canvas_frame_glyph_uploads=0 canvas_frame_glyph_retains=0 canvas_frame_glyph_evicts=0 canvas_frame_text_layouts=0 canvas_frame_text_lines=0 canvas_frame_text_uploads=0 canvas_frame_text_retains=0 canvas_frame_text_evicts=0 canvas_frame_gpu_packet_commands=0 canvas_frame_gpu_packet_cache_actions=0 canvas_frame_gpu_packet_cached_resources=0 canvas_frame_gpu_packet_unsupported=0 canvas_frame_gpu_packet_representable=true canvas_frame_changes=0 canvas_frame_budget_exceeded=0 canvas_frame_budget_ok=true widget_nodes=157/1024 widget_semantics=146/1024 context_menu_items=0/512 text_layout_plans=0/2048 text_layout_lines=0/8192 canvas_frame_dirty=null canvas_frame_profile_work_units=0 canvas_frame_profile_risk=idle canvas_frame_profile_surface_area=697344 canvas_frame_profile_dirty_area=0 canvas_frame_profile_dirty_ratio=0 widget_revision=5 widget_nodes=157 widget_semantics=146 widget_cursor=arrow
     widget @w1/main-canvas#7107225545848579185 role=group name="" bounds=(0,0 1024x681) focused=false enabled=true
-    widget @w1/main-canvas#14944009214579768109 role=group name="Usage titlebar" bounds=(0,0 1024x68) focused=false enabled=true parent=#7107225545848579185
-    widget @w1/main-canvas#13805358733426311158 role=button name="Back" bounds=(73,20 42x28) focused=false enabled=true parent=#14944009214579768109 actions=[focus,press]
-    widget @w1/main-canvas#3188132213632658501 role=group name="" bounds=(127,7.375 87.94678x53.25) focused=false enabled=true parent=#14944009214579768109
-    widget @w1/main-canvas#1186513299285212051 role=text name="Usage" bounds=(127,7.375 87.94678x35) focused=false enabled=true parent=#3188132213632658501
-    widget @w1/main-canvas#7719491652044149455 role=text name="Jul 11 to Aug 9" bounds=(127,44.375 87.94678x16.25) focused=false enabled=true parent=#3188132213632658501
-    widget @w1/main-canvas#16398612680291470437 role=group name="" bounds=(226.94678,34 465.05322x0) focused=false enabled=true parent=#14944009214579768109
-    widget @w1/main-canvas#8940470776672419989 role=button name="7 days" bounds=(704,20 60x28) focused=false enabled=true parent=#14944009214579768109 actions=[focus,press]
-    widget @w1/main-canvas#3061973545732546492 role=button name="30 days" bounds=(776,20 69x28) focused=false enabled=true parent=#14944009214579768109 actions=[focus,press]
-    widget @w1/main-canvas#17159552847958022097 role=button name="90 days" bounds=(857,20 69x28) focused=false enabled=true parent=#14944009214579768109 actions=[focus,press]
-    widget @w1/main-canvas#15336067822416758853 role=button name="Refresh" bounds=(938,20 68x28) focused=false enabled=true parent=#14944009214579768109 actions=[focus,press]
-    widget @w1/main-canvas#2960813184610498267 role=group name="Usage dashboard" bounds=(0,68 1024x613) focused=false enabled=true parent=#7107225545848579185 value=0 scroll=[offset=0,viewport=613,content=1107.75] actions=[focus,increment,decrement]
-    widget @w1/main-canvas#4812682645685395625 role=group name="" bounds=(0,68 1024x613) focused=false enabled=true parent=#2960813184610498267
-    widget @w1/main-canvas#11996491272180909653 role=group name="Cost overview" bounds=(26,94 972x370) focused=false enabled=true parent=#4812682645685395625
-    widget @w1/main-canvas#2808830772338716413 role=group name="" bounds=(26,94 360x370) focused=false enabled=true parent=#11996491272180909653
-    widget @w1/main-canvas#15439273461331659863 role=group name="" bounds=(26,94 360x79.5) focused=false enabled=true parent=#2808830772338716413
-    widget @w1/main-canvas#4877755655930435132 role=text name="RAW TOKEN COST" bounds=(26,94 360x16.25) focused=false enabled=true parent=#15439273461331659863
-    widget @w1/main-canvas#12143480350684796429 role=text name="$54,890.48*" bounds=(26,116.25 360x35) focused=false enabled=true parent=#15439273461331659863
-    widget @w1/main-canvas#817730368910437282 role=text name="* if billed at full API rate" bounds=(26,157.25 360x16.25) focused=false enabled=true parent=#15439273461331659863
-    widget @w1/main-canvas#4034445388709676471 role=group name="Providers" bounds=(26,191.5 360x199) focused=false enabled=true parent=#2808830772338716413
-    widget @w1/main-canvas#8370131009749597850 role=text name="Providers" bounds=(26,191.5 360x17.5) focused=false enabled=true parent=#4034445388709676471
-    widget @w1/main-canvas#12962090889839257848 role=group name="Codex" bounds=(26,221 360x78.75) focused=false enabled=true parent=#4034445388709676471
-    widget @w1/main-canvas#5852992582047356773 role=group name="" bounds=(40,235 332x50.75) focused=false enabled=true parent=#12962090889839257848
-    widget @w1/main-canvas#7760019444466362057 role=group name="" bounds=(40,235 332x17.5) focused=false enabled=true parent=#5852992582047356773
-    widget @w1/main-canvas#13751853126831717234 role=text name="Codex" bounds=(40,235 43.65088x17.5) focused=false enabled=true parent=#7760019444466362057
-    widget @w1/main-canvas#1857018562142437826 role=group name="" bounds=(83.65088,243.75 212.90771x0) focused=false enabled=true parent=#7760019444466362057
-    widget @w1/main-canvas#5755889597172735164 role=text name="$35,304.93" bounds=(296.5586,235 75.44141x17.5) focused=false enabled=true parent=#7760019444466362057
-    widget @w1/main-canvas#13568642325992164818 role=text name="64.3% of cost / 48.8B tokens" bounds=(40,260.5 332x16.25) focused=false enabled=true parent=#5852992582047356773
-    widget @w1/main-canvas#620088699327925683 role=group name="Claude Code" bounds=(26,311.75 360x78.75) focused=false enabled=true parent=#4034445388709676471
-    widget @w1/main-canvas#8125311956686132034 role=group name="" bounds=(40,325.75 332x50.75) focused=false enabled=true parent=#620088699327925683
-    widget @w1/main-canvas#3879807921650525546 role=group name="" bounds=(40,325.75 332x17.5) focused=false enabled=true parent=#8125311956686132034
-    widget @w1/main-canvas#15046744348968670418 role=text name="Claude Code" bounds=(40,325.75 87.609375x17.5) focused=false enabled=true parent=#3879807921650525546
-    widget @w1/main-canvas#2907686899081154754 role=group name="" bounds=(127.609375,334.5 171.35547x0) focused=false enabled=true parent=#3879807921650525546
-    widget @w1/main-canvas#7104771824339089099 role=text name="$19,585.54" bounds=(298.96484,325.75 73.03516x17.5) focused=false enabled=true parent=#3879807921650525546
-    widget @w1/main-canvas#5259661447292310200 role=text name="35.7% of cost / 17.2B tokens" bounds=(40,351.25 332x16.25) focused=false enabled=true parent=#8125311956686132034
-    widget @w1/main-canvas#1865888599564023097 role=group name="" bounds=(414,94 584x370) focused=false enabled=true parent=#11996491272180909653
-    widget @w1/main-canvas#13181957422696111853 role=group name="" bounds=(414,94 584x28) focused=false enabled=true parent=#1865888599564023097
-    widget @w1/main-canvas#913432627320516130 role=text name="Daily cost" bounds=(414,99.25 67.83301x17.5) focused=false enabled=true parent=#13181957422696111853
-    widget @w1/main-canvas#15941340046184729687 role=group name="" bounds=(481.833,108 388.167x0) focused=false enabled=true parent=#13181957422696111853
-    widget @w1/main-canvas#10791117841906338459 role=button name="Cost" bounds=(870,94 56x28) focused=false enabled=true parent=#13181957422696111853 actions=[focus,press]
-    widget @w1/main-canvas#71724543277967904 role=button name="Tokens" bounds=(926,94 72x28) focused=false enabled=true parent=#13181957422696111853 actions=[focus,press]
-    widget @w1/main-canvas#4229449984998836464 role=group name="Daily usage chart" bounds=(414,134 584x330) focused=false enabled=true parent=#1865888599564023097
-    widget @w1/main-canvas#5203479053269451648 role=group name="" bounds=(430,150 552x298) focused=false enabled=true parent=#4229449984998836464
-    widget @w1/main-canvas#6678433409003073807 role=text name="Codex / Claude Code" bounds=(430,150 552x16.25) focused=false enabled=true parent=#5203479053269451648
-    widget @w1/main-canvas#5113792364923011977 role=chart name="Daily usage chart" bounds=(430,176.25 552x245.5) focused=false enabled=true parent=#5203479053269451648 value=0.17
-    widget @w1/main-canvas#3860863505189914130 role=group name="" bounds=(430,431.75 552x16.25) focused=false enabled=true parent=#5203479053269451648
-    widget @w1/main-canvas#8352358100490199183 role=text name="Jul 11" bounds=(430,431.75 33.128418x16.25) focused=false enabled=true parent=#3860863505189914130
-    widget @w1/main-canvas#18053935826548973807 role=group name="" bounds=(463.12842,431.75 483.36914x16.25) focused=false enabled=true parent=#3860863505189914130
-    widget @w1/main-canvas#16566822443274681880 role=text name="Aug 9" bounds=(946.49756,431.75 35.50244x16.25) focused=false enabled=true parent=#3860863505189914130
-    widget @w1/main-canvas#3122984749509596299 role=group name="Totals" bounds=(26,488 972x144.5) focused=false enabled=true parent=#4812682645685395625
-    widget @w1/main-canvas#16910917812544479383 role=group name="" bounds=(26,488 972x144.5) focused=false enabled=true parent=#3122984749509596299
-    widget @w1/main-canvas#11010386636292116460 role=group name="" bounds=(26,488 194.4x144.5) focused=false enabled=true parent=#16910917812544479383
-    widget @w1/main-canvas#6653193324251794469 role=text name="Processed tokens" bounds=(42,504 162.4x16.25) focused=false enabled=true parent=#11010386636292116460
-    widget @w1/main-canvas#5989863948682622511 role=text name="65.9B" bounds=(42,525.25 162.4x35) focused=false enabled=true parent=#11010386636292116460
-    widget @w1/main-canvas#1014233834538771636 role=text name="2.27B per active day" bounds=(42,565.25 162.4x16.25) focused=false enabled=true parent=#11010386636292116460
-    widget @w1/main-canvas#17048381238252243799 role=group name="" bounds=(220.4,488 194.4x144.5) focused=false enabled=true parent=#16910917812544479383
-    widget @w1/main-canvas#121374727734770436 role=text name="Cached input" bounds=(236.4,504 162.4x16.25) focused=false enabled=true parent=#17048381238252243799
-    widget @w1/main-canvas#12264959612927179847 role=text name="63.3B" bounds=(236.4,525.25 162.4x35) focused=false enabled=true parent=#17048381238252243799
-    widget @w1/main-canvas#13188235964446554189 role=text name="97.5% of observed input" bounds=(236.4,565.25 162.4x16.25) focused=false enabled=true parent=#17048381238252243799
-    widget @w1/main-canvas#10059229787837996752 role=group name="" bounds=(414.8,488 194.4x144.5) focused=false enabled=true parent=#16910917812544479383
-    widget @w1/main-canvas#10276483006271041227 role=text name="Uncached input" bounds=(430.8,504 162.4x16.25) focused=false enabled=true parent=#10059229787837996752
-    widget @w1/main-canvas#15750611217731090123 role=text name="1.61B" bounds=(430.8,525.25 162.4x35) focused=false enabled=true parent=#10059229787837996752
-    widget @w1/main-canvas#17317251933100700780 role=text name="582M cache writes" bounds=(430.8,565.25 162.4x16.25) focused=false enabled=true parent=#10059229787837996752
-    widget @w1/main-canvas#9252502371777980221 role=group name="" bounds=(609.19995,488 194.4x144.5) focused=false enabled=true parent=#16910917812544479383
-    widget @w1/main-canvas#3003728506953248259 role=text name="Output" bounds=(625.19995,504 162.4x16.25) focused=false enabled=true parent=#9252502371777980221
-    widget @w1/main-canvas#458658674089685319 role=text name="193M" bounds=(625.19995,525.25 162.4x35) focused=false enabled=true parent=#9252502371777980221
-    widget @w1/main-canvas#2280858665908557711 role=text name="includes reasoning" bounds=(625.19995,565.25 162.4x16.25) focused=false enabled=true parent=#9252502371777980221
-    widget @w1/main-canvas#13607070424901892364 role=group name="" bounds=(803.6,488 194.4x144.5) focused=false enabled=true parent=#16910917812544479383
-    widget @w1/main-canvas#16284669609249627342 role=text name="Cache savings" bounds=(819.6,504 162.4x16.25) focused=false enabled=true parent=#13607070424901892364
-    widget @w1/main-canvas#13687105995747955811 role=text name="$320,610.13" bounds=(819.6,525.25 162.4x70) focused=false enabled=true parent=#13607070424901892364
-    widget @w1/main-canvas#13566790086526206837 role=text name="5.8x the raw cost" bounds=(819.6,600.25 162.4x16.25) focused=false enabled=true parent=#13607070424901892364
-    widget @w1/main-canvas#9698169180642487090 role=group name="Breakdown" bounds=(26,656.5 972x479) focused=false enabled=true parent=#4812682645685395625
-    widget @w1/main-canvas#15575326781867880073 role=group name="" bounds=(26,656.5 972x28) focused=false enabled=true parent=#9698169180642487090
-    widget @w1/main-canvas#15843851590074995227 role=text name="Breakdown" bounds=(26,661.75 77.041016x17.5) focused=false enabled=true parent=#15575326781867880073
-    widget @w1/main-canvas#16191249801117047733 role=group name="" bounds=(103.041016,670.5 782.959x0) focused=false enabled=true parent=#15575326781867880073
-    widget @w1/main-canvas#4781559404017235484 role=button name="Model" bounds=(886,656.5 66x28) focused=false enabled=true parent=#15575326781867880073 actions=[focus,press]
-    widget @w1/main-canvas#5285361661896574149 role=button name="Day" bounds=(952,656.5 46x28) focused=false enabled=true parent=#15575326781867880073 actions=[focus,press]
-    widget @w1/main-canvas#14397005168815590842 role=group name="Usage breakdown table" bounds=(26,696.5 972x439) focused=false enabled=true parent=#9698169180642487090
-    widget @w1/main-canvas#17780691256080749969 role=group name="" bounds=(40,710.5 944x411) focused=false enabled=true parent=#14397005168815590842
-    widget @w1/main-canvas#14175616948171831281 role=group name="" bounds=(40,710.5 944x34) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#17239980009596768919 role=text name="Model" bounds=(40,719.375 624x16.25) focused=false enabled=true parent=#14175616948171831281
-    widget @w1/main-canvas#16179915127856817477 role=text name="Cost" bounds=(664,719.375 120x16.25) focused=false enabled=true parent=#14175616948171831281
-    widget @w1/main-canvas#105201225124485690 role=text name="Share" bounds=(784,719.375 90x16.25) focused=false enabled=true parent=#14175616948171831281
-    widget @w1/main-canvas#293409657539242449 role=text name="Tokens" bounds=(874,719.375 110x16.25) focused=false enabled=true parent=#14175616948171831281
-    widget @w1/main-canvas#275183958190331090 role=group name="gpt-5.6-sol" bounds=(40,745.5 944x46) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#870679494083112997 role=group name="" bounds=(40,751.125 588x34.75) focused=false enabled=true parent=#275183958190331090
-    widget @w1/main-canvas#2008052514870545626 role=text name="gpt-5.6-sol" bounds=(40,751.125 588x17.5) focused=false enabled=true parent=#870679494083112997
-    widget @w1/main-canvas#222714087954359837 role=text name="Codex" bounds=(40,769.625 588x16.25) focused=false enabled=true parent=#870679494083112997
-    widget @w1/main-canvas#9084673634182745036 role=text name="$35,098.97" bounds=(640,759.75 120x17.5) focused=false enabled=true parent=#275183958190331090
-    widget @w1/main-canvas#100476759896686314 role=text name="63.9%" bounds=(772,760.375 90x16.25) focused=false enabled=true parent=#275183958190331090
-    widget @w1/main-canvas#9026331657972572807 role=text name="48.6B" bounds=(874,760.375 110x16.25) focused=false enabled=true parent=#275183958190331090
-    widget @w1/main-canvas#10931558272389641261 role=group name="claude-fable-5" bounds=(40,792.5 944x46) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#3580192034808004091 role=group name="" bounds=(40,798.125 588x34.75) focused=false enabled=true parent=#10931558272389641261
-    widget @w1/main-canvas#2126777613788908904 role=text name="claude-fable-5" bounds=(40,798.125 588x17.5) focused=false enabled=true parent=#3580192034808004091
-    widget @w1/main-canvas#4850374316220167468 role=text name="Claude Code" bounds=(40,816.625 588x16.25) focused=false enabled=true parent=#3580192034808004091
-    widget @w1/main-canvas#4089955326595394114 role=text name="$12,769.21" bounds=(640,806.75 120x17.5) focused=false enabled=true parent=#10931558272389641261
-    widget @w1/main-canvas#7445708686816350900 role=text name="23.3%" bounds=(772,807.375 90x16.25) focused=false enabled=true parent=#10931558272389641261
-    widget @w1/main-canvas#13875969085501630868 role=text name="8.14B" bounds=(874,807.375 110x16.25) focused=false enabled=true parent=#10931558272389641261
-    widget @w1/main-canvas#12547042482282245409 role=group name="claude-opus-5" bounds=(40,839.5 944x46) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#6372375519472827426 role=group name="" bounds=(40,845.125 588x34.75) focused=false enabled=true parent=#12547042482282245409
-    widget @w1/main-canvas#16804326633346417250 role=text name="claude-opus-5" bounds=(40,845.125 588x17.5) focused=false enabled=true parent=#6372375519472827426
-    widget @w1/main-canvas#2094250154394054995 role=text name="Claude Code" bounds=(40,863.625 588x16.25) focused=false enabled=true parent=#6372375519472827426
-    widget @w1/main-canvas#15956686612702669396 role=text name="$6,267.20" bounds=(640,853.75 120x17.5) focused=false enabled=true parent=#12547042482282245409
-    widget @w1/main-canvas#9251334823572314879 role=text name="11.4%" bounds=(772,854.375 90x16.25) focused=false enabled=true parent=#12547042482282245409
-    widget @w1/main-canvas#7124667436378028279 role=text name="8.27B" bounds=(874,854.375 110x16.25) focused=false enabled=true parent=#12547042482282245409
-    widget @w1/main-canvas#17564658350267079038 role=group name="gpt-5.6-sol" bounds=(40,886.5 944x46) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#18160822663372893973 role=group name="" bounds=(40,892.125 588x34.75) focused=false enabled=true parent=#17564658350267079038
-    widget @w1/main-canvas#14299115227242222978 role=text name="gpt-5.6-sol" bounds=(40,892.125 588x17.5) focused=false enabled=true parent=#18160822663372893973
-    widget @w1/main-canvas#4111707850889530860 role=text name="Claude Code" bounds=(40,910.625 588x16.25) focused=false enabled=true parent=#18160822663372893973
-    widget @w1/main-canvas#9414987541154178470 role=text name="$205.18" bounds=(640,900.75 120x17.5) focused=false enabled=true parent=#17564658350267079038
-    widget @w1/main-canvas#11015273412250069124 role=text name="0.4%" bounds=(772,901.375 90x16.25) focused=false enabled=true parent=#17564658350267079038
-    widget @w1/main-canvas#5598148514502379342 role=text name="207M" bounds=(874,901.375 110x16.25) focused=false enabled=true parent=#17564658350267079038
-    widget @w1/main-canvas#4504809932141932040 role=group name="claude-opus-4-8" bounds=(40,933.5 944x46) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#15115348913115989042 role=group name="" bounds=(40,939.125 588x34.75) focused=false enabled=true parent=#4504809932141932040
-    widget @w1/main-canvas#16859391199240905616 role=text name="claude-opus-4-8" bounds=(40,939.125 588x17.5) focused=false enabled=true parent=#15115348913115989042
-    widget @w1/main-canvas#7279686890092475616 role=text name="Claude Code" bounds=(40,957.625 588x16.25) focused=false enabled=true parent=#15115348913115989042
-    widget @w1/main-canvas#245777420308098217 role=text name="$127.77" bounds=(640,947.75 120x17.5) focused=false enabled=true parent=#4504809932141932040
-    widget @w1/main-canvas#5766298094005938884 role=text name="0.2%" bounds=(772,948.375 90x16.25) focused=false enabled=true parent=#4504809932141932040
-    widget @w1/main-canvas#5264696510007422290 role=text name="131M" bounds=(874,948.375 110x16.25) focused=false enabled=true parent=#4504809932141932040
-    widget @w1/main-canvas#14579863676730832215 role=group name="claude-sonnet-5" bounds=(40,980.5 944x46) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#15087406355513897082 role=group name="" bounds=(40,986.125 588x34.75) focused=false enabled=true parent=#14579863676730832215
-    widget @w1/main-canvas#1755346992236608773 role=text name="claude-sonnet-5" bounds=(40,986.125 588x17.5) focused=false enabled=true parent=#15087406355513897082
-    widget @w1/main-canvas#18008689324552790455 role=text name="Claude Code" bounds=(40,1004.625 588x16.25) focused=false enabled=true parent=#15087406355513897082
-    widget @w1/main-canvas#7129164360096593508 role=text name="$16.98" bounds=(640,994.75 120x17.5) focused=false enabled=true parent=#14579863676730832215
-    widget @w1/main-canvas#12011454668749812637 role=text name="0.0%" bounds=(772,995.375 90x16.25) focused=false enabled=true parent=#14579863676730832215
-    widget @w1/main-canvas#4848953916691946807 role=text name="33.7M" bounds=(874,995.375 110x16.25) focused=false enabled=true parent=#14579863676730832215
-    widget @w1/main-canvas#3187444895922136144 role=group name="claude-haiku-4-5" bounds=(40,1027.5 944x46) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#9467680186552803673 role=group name="" bounds=(40,1033.125 588x34.75) focused=false enabled=true parent=#3187444895922136144
-    widget @w1/main-canvas#16630918268303996966 role=text name="claude-haiku-4-5" bounds=(40,1033.125 588x17.5) focused=false enabled=true parent=#9467680186552803673
-    widget @w1/main-canvas#8869169181409509660 role=text name="Claude Code" bounds=(40,1051.625 588x16.25) focused=false enabled=true parent=#9467680186552803673
-    widget @w1/main-canvas#3317000653429562028 role=text name="$2.89" bounds=(640,1041.75 120x17.5) focused=false enabled=true parent=#3187444895922136144
-    widget @w1/main-canvas#4757691803360291208 role=text name="0.0%" bounds=(772,1042.375 90x16.25) focused=false enabled=true parent=#3187444895922136144
-    widget @w1/main-canvas#8321755114865057941 role=text name="16.2M" bounds=(874,1042.375 110x16.25) focused=false enabled=true parent=#3187444895922136144
-    widget @w1/main-canvas#1301095439927428151 role=group name="gpt-5.6-terra" bounds=(40,1074.5 944x46) focused=false enabled=true parent=#17780691256080749969
-    widget @w1/main-canvas#18443896584478478873 role=group name="" bounds=(40,1080.125 588x34.75) focused=false enabled=true parent=#1301095439927428151
-    widget @w1/main-canvas#10824778939733507377 role=text name="gpt-5.6-terra" bounds=(40,1080.125 588x17.5) focused=false enabled=true parent=#18443896584478478873
-    widget @w1/main-canvas#992238536375609992 role=text name="Codex" bounds=(40,1098.625 588x16.25) focused=false enabled=true parent=#18443896584478478873
-    widget @w1/main-canvas#9371544656253950867 role=text name="$0.78" bounds=(640,1088.75 120x17.5) focused=false enabled=true parent=#1301095439927428151
-    widget @w1/main-canvas#18274697511928389292 role=text name="0.0%" bounds=(772,1089.375 90x16.25) focused=false enabled=true parent=#1301095439927428151
-    widget @w1/main-canvas#10705962666550583579 role=text name="1.35M" bounds=(874,1089.375 110x16.25) focused=false enabled=true parent=#1301095439927428151
-    widget @w1/main-canvas#16384798563506875547 role=text name="Local usage data" bounds=(26,1159.5 972x16.25) focused=false enabled=true parent=#4812682645685395625
+    widget @w1/main-canvas#14944009214579768109 role=group name="Usage titlebar" bounds=(0,0 1024x72) focused=false enabled=true parent=#7107225545848579185
+    widget @w1/main-canvas#13805358733426311158 role=button name="Back" bounds=(73,16 40x40) focused=false enabled=true parent=#14944009214579768109 actions=[focus,press]
+    widget @w1/main-canvas#3188132213632658501 role=group name="" bounds=(125,11.875 87.94678x48.25) focused=false enabled=true parent=#14944009214579768109
+    widget @w1/main-canvas#1186513299285212051 role=text name="Usage" bounds=(125,11.875 87.94678x30) focused=false enabled=true parent=#3188132213632658501
+    widget @w1/main-canvas#7719491652044149455 role=text name="Jul 11 to Aug 9" bounds=(125,43.875 87.94678x16.25) focused=false enabled=true parent=#3188132213632658501
+    widget @w1/main-canvas#16398612680291470437 role=group name="" bounds=(224.94678,36 516.0532x0) focused=false enabled=true parent=#14944009214579768109
+    widget @w1/main-canvas#16577023637562638937 role=group name="" bounds=(753,20 201x32) focused=false enabled=true parent=#14944009214579768109
+    widget @w1/main-canvas#10141557241506780752 role=button name="7 days" bounds=(753,20 55x32) focused=false enabled=true parent=#16577023637562638937 actions=[focus,press]
+    widget @w1/main-canvas#18252922771944292320 role=button name="30 days" bounds=(816,20 65x32) focused=false enabled=true parent=#16577023637562638937 state=[selected] actions=[focus,press]
+    widget @w1/main-canvas#14699360880903989747 role=button name="90 days" bounds=(889,20 65x32) focused=false enabled=true parent=#16577023637562638937 actions=[focus,press]
+    widget @w1/main-canvas#3061973545732546492 role=button name="Refresh" bounds=(966,16 40x40) focused=false enabled=true parent=#14944009214579768109 actions=[focus,press]
+    widget @w1/main-canvas#2960813184610498267 role=group name="Usage dashboard" bounds=(0,72 1024x609) focused=false enabled=true parent=#7107225545848579185 value=0 scroll=[offset=0,viewport=609,content=1077.25] actions=[focus,increment,decrement]
+    widget @w1/main-canvas#4812682645685395625 role=group name="" bounds=(0,72 1024x609) focused=false enabled=true parent=#2960813184610498267
+    widget @w1/main-canvas#11996491272180909653 role=group name="Cost overview" bounds=(28,100 968x386) focused=false enabled=true parent=#4812682645685395625
+    widget @w1/main-canvas#2808830772338716413 role=group name="" bounds=(28,100 370x386) focused=false enabled=true parent=#11996491272180909653
+    widget @w1/main-canvas#15439273461331659863 role=group name="" bounds=(28,100 370x106.5) focused=false enabled=true parent=#2808830772338716413
+    widget @w1/main-canvas#4877755655930435132 role=text name="RAW TOKEN COST" bounds=(28,100 370x16.25) focused=false enabled=true parent=#15439273461331659863
+    widget @w1/main-canvas#12143480350684796429 role=text name="$54,890.48*" bounds=(28,123.25 370x60) focused=false enabled=true parent=#15439273461331659863
+    widget @w1/main-canvas#817730368910437282 role=text name="* if billed at full API rate" bounds=(28,190.25 370x16.25) focused=false enabled=true parent=#15439273461331659863
+    widget @w1/main-canvas#4034445388709676471 role=group name="Providers" bounds=(28,228.5 370x207) focused=false enabled=true parent=#2808830772338716413
+    widget @w1/main-canvas#8370131009749597850 role=text name="Providers" bounds=(28,228.5 370x17.5) focused=false enabled=true parent=#4034445388709676471
+    widget @w1/main-canvas#12962090889839257848 role=group name="Codex" bounds=(28,258 370x82.75) focused=false enabled=true parent=#4034445388709676471
+    widget @w1/main-canvas#5852992582047356773 role=group name="" bounds=(43,273 340x52.75) focused=false enabled=true parent=#12962090889839257848
+    widget @w1/main-canvas#7760019444466362057 role=group name="" bounds=(43,273 340x17.5) focused=false enabled=true parent=#5852992582047356773
+    widget @w1/main-canvas#13751853126831717234 role=text name="Codex" bounds=(43,273 43.65088x17.5) focused=false enabled=true parent=#7760019444466362057
+    widget @w1/main-canvas#1857018562142437826 role=group name="" bounds=(86.65088,281.75 220.90771x0) focused=false enabled=true parent=#7760019444466362057
+    widget @w1/main-canvas#5755889597172735164 role=text name="$35,304.93" bounds=(307.5586,273 75.44141x17.5) focused=false enabled=true parent=#7760019444466362057
+    widget @w1/main-canvas#5355466159055359133 role=text name="64.3% of cost / 48.8B tokens" bounds=(43,309.5 340x16.25) focused=false enabled=true parent=#5852992582047356773
+    widget @w1/main-canvas#620088699327925683 role=group name="Claude Code" bounds=(28,352.75 370x82.75) focused=false enabled=true parent=#4034445388709676471
+    widget @w1/main-canvas#8125311956686132034 role=group name="" bounds=(43,367.75 340x52.75) focused=false enabled=true parent=#620088699327925683
+    widget @w1/main-canvas#3879807921650525546 role=group name="" bounds=(43,367.75 340x17.5) focused=false enabled=true parent=#8125311956686132034
+    widget @w1/main-canvas#15046744348968670418 role=text name="Claude Code" bounds=(43,367.75 87.609375x17.5) focused=false enabled=true parent=#3879807921650525546
+    widget @w1/main-canvas#2907686899081154754 role=group name="" bounds=(130.60938,376.5 179.35547x0) focused=false enabled=true parent=#3879807921650525546
+    widget @w1/main-canvas#7104771824339089099 role=text name="$19,585.54" bounds=(309.96484,367.75 73.03516x17.5) focused=false enabled=true parent=#3879807921650525546
+    widget @w1/main-canvas#10045821338039345515 role=text name="35.7% of cost / 17.2B tokens" bounds=(43,404.25 340x16.25) focused=false enabled=true parent=#8125311956686132034
+    widget @w1/main-canvas#1865888599564023097 role=group name="" bounds=(430,100 566x386) focused=false enabled=true parent=#11996491272180909653
+    widget @w1/main-canvas#13181957422696111853 role=group name="" bounds=(430,100 566x32) focused=false enabled=true parent=#1865888599564023097
+    widget @w1/main-canvas#913432627320516130 role=text name="Daily cost" bounds=(430,107.25 67.83301x17.5) focused=false enabled=true parent=#13181957422696111853
+    widget @w1/main-canvas#15941340046184729687 role=group name="" bounds=(497.833,116 370.167x0) focused=false enabled=true parent=#13181957422696111853
+    widget @w1/main-canvas#1207396529023192481 role=group name="" bounds=(868,100 128x32) focused=false enabled=true parent=#13181957422696111853
+    widget @w1/main-canvas#13400711477941315440 role=button name="COST" bounds=(868,100 51x32) focused=false enabled=true parent=#1207396529023192481 state=[selected] actions=[focus,press]
+    widget @w1/main-canvas#9179183960772455132 role=button name="TOKENS" bounds=(927,100 69x32) focused=false enabled=true parent=#1207396529023192481 actions=[focus,press]
+    widget @w1/main-canvas#4229449984998836464 role=group name="Daily usage chart" bounds=(430,144 566x342) focused=false enabled=true parent=#1865888599564023097
+    widget @w1/main-canvas#5203479053269451648 role=group name="" bounds=(444,158 538x314) focused=false enabled=true parent=#4229449984998836464
+    widget @w1/main-canvas#8233979930078479698 role=group name="" bounds=(444,158 538x16.25) focused=false enabled=true parent=#5203479053269451648
+    widget @w1/main-canvas#9001631828861036675 role=text name="Codex" bounds=(444,158 38.581055x16.25) focused=false enabled=true parent=#8233979930078479698
+    widget @w1/main-canvas#9671904434000565676 role=text name="Claude Code" bounds=(496.58105,158 77.98096x16.25) focused=false enabled=true parent=#8233979930078479698
+    widget @w1/main-canvas#5113792364923011977 role=chart name="Daily usage chart" bounds=(444,182.25 538x265.5) focused=false enabled=true parent=#5203479053269451648 value=0.09
+    widget @w1/main-canvas#3860863505189914130 role=group name="" bounds=(444,455.75 538x16.25) focused=false enabled=true parent=#5203479053269451648
+    widget @w1/main-canvas#8352358100490199183 role=text name="Jul 11" bounds=(444,455.75 33.128418x16.25) focused=false enabled=true parent=#3860863505189914130
+    widget @w1/main-canvas#18053935826548973807 role=group name="" bounds=(477.12842,455.75 469.36914x16.25) focused=false enabled=true parent=#3860863505189914130
+    widget @w1/main-canvas#16566822443274681880 role=text name="Aug 9" bounds=(946.49756,455.75 35.50244x16.25) focused=false enabled=true parent=#3860863505189914130
+    widget @w1/main-canvas#3122984749509596299 role=group name="Totals" bounds=(28,510 968x92) focused=false enabled=true parent=#4812682645685395625
+    widget @w1/main-canvas#16910917812544479383 role=group name="" bounds=(28,510 968x92) focused=false enabled=true parent=#3122984749509596299
+    widget @w1/main-canvas#11010386636292116460 role=group name="" bounds=(28,510 193.6x92) focused=false enabled=true parent=#16910917812544479383
+    widget @w1/main-canvas#6653193324251794469 role=text name="Processed tokens" bounds=(44,526 161.6x16.25) focused=false enabled=true parent=#11010386636292116460
+    widget @w1/main-canvas#5989863948682622511 role=text name="65.9B" bounds=(44,547.25 161.6x17.5) focused=false enabled=true parent=#11010386636292116460
+    widget @w1/main-canvas#1014233834538771636 role=text name="2.27B per active day" bounds=(44,569.75 161.6x16.25) focused=false enabled=true parent=#11010386636292116460
+    widget @w1/main-canvas#17048381238252243799 role=group name="" bounds=(221.6,510 193.6x92) focused=false enabled=true parent=#16910917812544479383
+    widget @w1/main-canvas#121374727734770436 role=text name="Cached input" bounds=(237.6,526 161.6x16.25) focused=false enabled=true parent=#17048381238252243799
+    widget @w1/main-canvas#12264959612927179847 role=text name="63.3B" bounds=(237.6,547.25 161.6x17.5) focused=false enabled=true parent=#17048381238252243799
+    widget @w1/main-canvas#13188235964446554189 role=text name="97.5% of observed input" bounds=(237.6,569.75 161.6x16.25) focused=false enabled=true parent=#17048381238252243799
+    widget @w1/main-canvas#10059229787837996752 role=group name="" bounds=(415.2,510 193.6x92) focused=false enabled=true parent=#16910917812544479383
+    widget @w1/main-canvas#10276483006271041227 role=text name="Uncached input" bounds=(431.2,526 161.6x16.25) focused=false enabled=true parent=#10059229787837996752
+    widget @w1/main-canvas#15750611217731090123 role=text name="1.61B" bounds=(431.2,547.25 161.6x17.5) focused=false enabled=true parent=#10059229787837996752
+    widget @w1/main-canvas#17317251933100700780 role=text name="582M cache writes" bounds=(431.2,569.75 161.6x16.25) focused=false enabled=true parent=#10059229787837996752
+    widget @w1/main-canvas#9252502371777980221 role=group name="" bounds=(608.80005,510 193.6x92) focused=false enabled=true parent=#16910917812544479383
+    widget @w1/main-canvas#3003728506953248259 role=text name="Output" bounds=(624.80005,526 161.6x16.25) focused=false enabled=true parent=#9252502371777980221
+    widget @w1/main-canvas#458658674089685319 role=text name="193M" bounds=(624.80005,547.25 161.6x17.5) focused=false enabled=true parent=#9252502371777980221
+    widget @w1/main-canvas#2280858665908557711 role=text name="includes reasoning" bounds=(624.80005,569.75 161.6x16.25) focused=false enabled=true parent=#9252502371777980221
+    widget @w1/main-canvas#13607070424901892364 role=group name="" bounds=(802.4,510 193.6x92) focused=false enabled=true parent=#16910917812544479383
+    widget @w1/main-canvas#16284669609249627342 role=text name="Cache savings" bounds=(818.4,526 161.6x16.25) focused=false enabled=true parent=#13607070424901892364
+    widget @w1/main-canvas#13687105995747955811 role=text name="$320,610.13" bounds=(818.4,547.25 161.6x17.5) focused=false enabled=true parent=#13607070424901892364
+    widget @w1/main-canvas#13566790086526206837 role=text name="5.8x the raw cost" bounds=(818.4,569.75 161.6x16.25) focused=false enabled=true parent=#13607070424901892364
+    widget @w1/main-canvas#9698169180642487090 role=group name="Breakdown" bounds=(28,626 968x483) focused=false enabled=true parent=#4812682645685395625
+    widget @w1/main-canvas#15575326781867880073 role=group name="" bounds=(28,626 968x32) focused=false enabled=true parent=#9698169180642487090
+    widget @w1/main-canvas#15843851590074995227 role=text name="Breakdown" bounds=(28,633.25 77.041016x17.5) focused=false enabled=true parent=#15575326781867880073
+    widget @w1/main-canvas#16191249801117047733 role=group name="" bounds=(105.041016,642 780.959x0) focused=false enabled=true parent=#15575326781867880073
+    widget @w1/main-canvas#4843732807684050003 role=group name="" bounds=(886,626 110x32) focused=false enabled=true parent=#15575326781867880073
+    widget @w1/main-canvas#14622312109170068728 role=button name="MODEL" bounds=(886,626 62x32) focused=false enabled=true parent=#4843732807684050003 state=[selected] actions=[focus,press]
+    widget @w1/main-canvas#3166273455632770036 role=button name="DAY" bounds=(956,626 40x32) focused=false enabled=true parent=#4843732807684050003 actions=[focus,press]
+    widget @w1/main-canvas#14397005168815590842 role=group name="Usage breakdown table" bounds=(28,670 968x439) focused=false enabled=true parent=#9698169180642487090
+    widget @w1/main-canvas#17780691256080749969 role=group name="" bounds=(42,684 940x411) focused=false enabled=true parent=#14397005168815590842
+    widget @w1/main-canvas#14175616948171831281 role=group name="" bounds=(42,684 940x34) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#17239980009596768919 role=text name="Model" bounds=(42,692.875 620x16.25) focused=false enabled=true parent=#14175616948171831281
+    widget @w1/main-canvas#16179915127856817477 role=text name="Cost" bounds=(662,692.875 120x16.25) focused=false enabled=true parent=#14175616948171831281
+    widget @w1/main-canvas#105201225124485690 role=text name="Share" bounds=(782,692.875 90x16.25) focused=false enabled=true parent=#14175616948171831281
+    widget @w1/main-canvas#293409657539242449 role=text name="Tokens" bounds=(872,692.875 110x16.25) focused=false enabled=true parent=#14175616948171831281
+    widget @w1/main-canvas#275183958190331090 role=group name="gpt-5.6-sol" bounds=(42,719 940x46) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#870679494083112997 role=group name="" bounds=(42,724.625 584x34.75) focused=false enabled=true parent=#275183958190331090
+    widget @w1/main-canvas#2008052514870545626 role=text name="gpt-5.6-sol" bounds=(42,724.625 584x17.5) focused=false enabled=true parent=#870679494083112997
+    widget @w1/main-canvas#222714087954359837 role=text name="Codex" bounds=(42,743.125 584x16.25) focused=false enabled=true parent=#870679494083112997
+    widget @w1/main-canvas#9084673634182745036 role=text name="$35,098.97" bounds=(638,733.25 120x17.5) focused=false enabled=true parent=#275183958190331090
+    widget @w1/main-canvas#100476759896686314 role=text name="63.9%" bounds=(770,733.875 90x16.25) focused=false enabled=true parent=#275183958190331090
+    widget @w1/main-canvas#9026331657972572807 role=text name="48.6B" bounds=(872,733.875 110x16.25) focused=false enabled=true parent=#275183958190331090
+    widget @w1/main-canvas#10931558272389641261 role=group name="claude-fable-5" bounds=(42,766 940x46) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#3580192034808004091 role=group name="" bounds=(42,771.625 584x34.75) focused=false enabled=true parent=#10931558272389641261
+    widget @w1/main-canvas#2126777613788908904 role=text name="claude-fable-5" bounds=(42,771.625 584x17.5) focused=false enabled=true parent=#3580192034808004091
+    widget @w1/main-canvas#4850374316220167468 role=text name="Claude Code" bounds=(42,790.125 584x16.25) focused=false enabled=true parent=#3580192034808004091
+    widget @w1/main-canvas#4089955326595394114 role=text name="$12,769.21" bounds=(638,780.25 120x17.5) focused=false enabled=true parent=#10931558272389641261
+    widget @w1/main-canvas#7445708686816350900 role=text name="23.3%" bounds=(770,780.875 90x16.25) focused=false enabled=true parent=#10931558272389641261
+    widget @w1/main-canvas#13875969085501630868 role=text name="8.14B" bounds=(872,780.875 110x16.25) focused=false enabled=true parent=#10931558272389641261
+    widget @w1/main-canvas#12547042482282245409 role=group name="claude-opus-5" bounds=(42,813 940x46) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#6372375519472827426 role=group name="" bounds=(42,818.625 584x34.75) focused=false enabled=true parent=#12547042482282245409
+    widget @w1/main-canvas#16804326633346417250 role=text name="claude-opus-5" bounds=(42,818.625 584x17.5) focused=false enabled=true parent=#6372375519472827426
+    widget @w1/main-canvas#2094250154394054995 role=text name="Claude Code" bounds=(42,837.125 584x16.25) focused=false enabled=true parent=#6372375519472827426
+    widget @w1/main-canvas#15956686612702669396 role=text name="$6,267.20" bounds=(638,827.25 120x17.5) focused=false enabled=true parent=#12547042482282245409
+    widget @w1/main-canvas#9251334823572314879 role=text name="11.4%" bounds=(770,827.875 90x16.25) focused=false enabled=true parent=#12547042482282245409
+    widget @w1/main-canvas#7124667436378028279 role=text name="8.27B" bounds=(872,827.875 110x16.25) focused=false enabled=true parent=#12547042482282245409
+    widget @w1/main-canvas#17564658350267079038 role=group name="gpt-5.6-sol" bounds=(42,860 940x46) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#18160822663372893973 role=group name="" bounds=(42,865.625 584x34.75) focused=false enabled=true parent=#17564658350267079038
+    widget @w1/main-canvas#14299115227242222978 role=text name="gpt-5.6-sol" bounds=(42,865.625 584x17.5) focused=false enabled=true parent=#18160822663372893973
+    widget @w1/main-canvas#4111707850889530860 role=text name="Claude Code" bounds=(42,884.125 584x16.25) focused=false enabled=true parent=#18160822663372893973
+    widget @w1/main-canvas#9414987541154178470 role=text name="$205.18" bounds=(638,874.25 120x17.5) focused=false enabled=true parent=#17564658350267079038
+    widget @w1/main-canvas#11015273412250069124 role=text name="0.4%" bounds=(770,874.875 90x16.25) focused=false enabled=true parent=#17564658350267079038
+    widget @w1/main-canvas#5598148514502379342 role=text name="207M" bounds=(872,874.875 110x16.25) focused=false enabled=true parent=#17564658350267079038
+    widget @w1/main-canvas#4504809932141932040 role=group name="claude-opus-4-8" bounds=(42,907 940x46) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#15115348913115989042 role=group name="" bounds=(42,912.625 584x34.75) focused=false enabled=true parent=#4504809932141932040
+    widget @w1/main-canvas#16859391199240905616 role=text name="claude-opus-4-8" bounds=(42,912.625 584x17.5) focused=false enabled=true parent=#15115348913115989042
+    widget @w1/main-canvas#7279686890092475616 role=text name="Claude Code" bounds=(42,931.125 584x16.25) focused=false enabled=true parent=#15115348913115989042
+    widget @w1/main-canvas#245777420308098217 role=text name="$127.77" bounds=(638,921.25 120x17.5) focused=false enabled=true parent=#4504809932141932040
+    widget @w1/main-canvas#5766298094005938884 role=text name="0.2%" bounds=(770,921.875 90x16.25) focused=false enabled=true parent=#4504809932141932040
+    widget @w1/main-canvas#5264696510007422290 role=text name="131M" bounds=(872,921.875 110x16.25) focused=false enabled=true parent=#4504809932141932040
+    widget @w1/main-canvas#14579863676730832215 role=group name="claude-sonnet-5" bounds=(42,954 940x46) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#15087406355513897082 role=group name="" bounds=(42,959.625 584x34.75) focused=false enabled=true parent=#14579863676730832215
+    widget @w1/main-canvas#1755346992236608773 role=text name="claude-sonnet-5" bounds=(42,959.625 584x17.5) focused=false enabled=true parent=#15087406355513897082
+    widget @w1/main-canvas#18008689324552790455 role=text name="Claude Code" bounds=(42,978.125 584x16.25) focused=false enabled=true parent=#15087406355513897082
+    widget @w1/main-canvas#7129164360096593508 role=text name="$16.98" bounds=(638,968.25 120x17.5) focused=false enabled=true parent=#14579863676730832215
+    widget @w1/main-canvas#12011454668749812637 role=text name="0.0%" bounds=(770,968.875 90x16.25) focused=false enabled=true parent=#14579863676730832215
+    widget @w1/main-canvas#4848953916691946807 role=text name="33.7M" bounds=(872,968.875 110x16.25) focused=false enabled=true parent=#14579863676730832215
+    widget @w1/main-canvas#3187444895922136144 role=group name="claude-haiku-4-5" bounds=(42,1001 940x46) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#9467680186552803673 role=group name="" bounds=(42,1006.625 584x34.75) focused=false enabled=true parent=#3187444895922136144
+    widget @w1/main-canvas#16630918268303996966 role=text name="claude-haiku-4-5" bounds=(42,1006.625 584x17.5) focused=false enabled=true parent=#9467680186552803673
+    widget @w1/main-canvas#8869169181409509660 role=text name="Claude Code" bounds=(42,1025.125 584x16.25) focused=false enabled=true parent=#9467680186552803673
+    widget @w1/main-canvas#3317000653429562028 role=text name="$2.89" bounds=(638,1015.25 120x17.5) focused=false enabled=true parent=#3187444895922136144
+    widget @w1/main-canvas#4757691803360291208 role=text name="0.0%" bounds=(770,1015.875 90x16.25) focused=false enabled=true parent=#3187444895922136144
+    widget @w1/main-canvas#8321755114865057941 role=text name="16.2M" bounds=(872,1015.875 110x16.25) focused=false enabled=true parent=#3187444895922136144
+    widget @w1/main-canvas#1301095439927428151 role=group name="gpt-5.6-terra" bounds=(42,1048 940x46) focused=false enabled=true parent=#17780691256080749969
+    widget @w1/main-canvas#18443896584478478873 role=group name="" bounds=(42,1053.625 584x34.75) focused=false enabled=true parent=#1301095439927428151
+    widget @w1/main-canvas#10824778939733507377 role=text name="gpt-5.6-terra" bounds=(42,1053.625 584x17.5) focused=false enabled=true parent=#18443896584478478873
+    widget @w1/main-canvas#992238536375609992 role=text name="Codex" bounds=(42,1072.125 584x16.25) focused=false enabled=true parent=#18443896584478478873
+    widget @w1/main-canvas#9371544656253950867 role=text name="$0.78" bounds=(638,1062.25 120x17.5) focused=false enabled=true parent=#1301095439927428151
+    widget @w1/main-canvas#18274697511928389292 role=text name="0.0%" bounds=(770,1062.875 90x16.25) focused=false enabled=true parent=#1301095439927428151
+    widget @w1/main-canvas#10705962666550583579 role=text name="1.35M" bounds=(872,1062.875 110x16.25) focused=false enabled=true parent=#1301095439927428151
+    widget @w1/main-canvas#16384798563506875547 role=text name="Local usage data" bounds=(28,1133 968x16.25) focused=false enabled=true parent=#4812682645685395625
