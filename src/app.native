@@ -1,138 +1,32 @@
 <column background="background">
   <row height="72" padding="18" gap="12" cross="center" background="background" window-drag="true" label="Usage titlebar">
     <button size="icon" variant="ghost" icon="chevron-left" label="Back"></button>
-    <column gap="2">
-      <text size="heading"><span weight="bold">Usage</span></text>
-      <text size="sm" foreground="text_muted">{dateRange}</text>
-    </column>
+    <column gap="2"><text size="heading"><span weight="bold">Ccusage</span></text><text size="sm" foreground="text_muted">Local usage + subscription limits</text></column>
     <spacer grow="1" />
-    <button-group>
-      <button size="sm" variant="outline" selected="{range7Selected}" on-press="range7">7 days</button>
-      <button size="sm" variant="outline" selected="{range30Selected}" on-press="range30">30 days</button>
-      <button size="sm" variant="outline" selected="{range90Selected}" on-press="range90">90 days</button>
-    </button-group>
-    <button size="icon" variant="ghost" icon="refresh-cw" label="Refresh" on-press="refresh"></button>
+    <button size="icon" variant="ghost" icon="refresh-cw" label="Refresh usage" on-press="refresh"></button>
   </row>
-
-  <scroll grow="1" label="Usage dashboard">
+  <scroll grow="1" label="Ccusage dashboard">
     <column padding="28" gap="24">
-      <row gap="32" label="Cost overview">
-        <column width="370" gap="22">
-          <column gap="7">
-            <text size="sm" foreground="text_muted">RAW TOKEN COST</text>
-            <text size="display"><span weight="bold">{rawTokenCost}</span></text>
-            <text size="sm" foreground="text_muted">* if billed at full API rate</text>
-          </column>
-
-          <column gap="12" label="Providers">
-            <text><span weight="bold">Providers</span></text>
-            <for each="providers" as="p" key="name">
-              <panel padding="15" background="surface" radius="lg" border-color="border" label="{p.name}">
-                <column gap="9">
-                  <row cross="center">
-                    <text><span weight="bold">{p.name}</span></text>
-                    <spacer grow="1" />
-                    <text>{p.amount}</text>
-                  </row>
-                  <separator />
-                  <text size="sm" foreground="text_muted">{p.detail}</text>
-                </column>
-              </panel>
-            </for>
-          </column>
-        </column>
-
-        <column grow="1" gap="12">
-          <row cross="center">
-            <text><span weight="bold">Daily cost</span></text>
-            <spacer grow="1" />
-            <button-group>
-              <button size="sm" variant="outline" selected="{costSelected}" on-press="cost">COST</button>
-              <button size="sm" variant="outline" selected="{tokensSelected}" on-press="tokens">TOKENS</button>
-            </button-group>
-          </row>
-          <panel height="342" padding="14" background="background" radius="lg" border-color="border" label="Daily usage chart">
-            <column gap="8">
-              <row gap="14">
-                <text size="sm">Codex</text>
-                <text size="sm" foreground="accent">Claude Code</text>
-              </row>
-              <chart grow="1" y-min="0" y-max="1" grid-lines="2" hover-details="true" label="Daily usage chart">
-                <series kind="area" values="{codexSeries}" color="text" label="Codex" />
-                <series kind="area" values="{claudeSeries}" color="accent" label="Claude Code" />
-              </chart>
-              <row>
-                <text size="sm" foreground="text_muted">Jul 11</text>
-                <spacer grow="1" />
-                <text size="sm" foreground="text_muted">Aug 9</text>
-              </row>
-            </column>
-          </panel>
-        </column>
-      </row>
-
-      <panel padding="0" background="surface" radius="lg" border-color="border" label="Totals">
-        <row gap="0">
-          <for each="totals" as="t" key="label">
-            <column grow="1" padding="16" gap="5">
-              <text size="sm" foreground="text_muted">{t.label}</text>
-              <text><span weight="bold">{t.value}</span></text>
-              <text size="sm" foreground="text_muted">{t.detail}</text>
-            </column>
-          </for>
+      <row gap="12" label="Dashboard section selector"><button grow="1" size="lg" variant="outline" selected="{usageSelected}" on-press="show_usage">Usage · local history</button><button grow="1" size="lg" variant="outline" selected="{limitsSelected}" on-press="show_limits">Rate Limits · live subscription</button></row>
+      <column visible="{usageVisible}" gap="24" label="Usage section">
+        <row cross="center"><column gap="2"><text size="heading"><span weight="bold">Usage</span></text><text size="sm" foreground="text_muted">{dateRange}</text></column><spacer grow="1" /><button-group><button size="sm" variant="outline" selected="{range7Selected}" on-press="range7">7 days</button><button size="sm" variant="outline" selected="{range30Selected}" on-press="range30">30 days</button><button size="sm" variant="outline" selected="{range90Selected}" on-press="range90">90 days</button></button-group></row>
+        <row gap="32" label="Cost overview">
+          <column width="370" gap="22"><column gap="7"><text size="sm" foreground="text_muted">RAW TOKEN COST</text><text size="display"><span weight="bold">{rawTokenCost}</span></text><text size="sm" foreground="text_muted">* if billed at full API rate</text></column><column gap="12" label="Providers"><text><span weight="bold">Providers</span></text><for each="providers" as="p" key="name"><panel padding="15" background="surface" radius="lg" border-color="border" label="{p.name}"><column gap="9"><row cross="center"><text><span weight="bold">{p.name}</span></text><spacer grow="1" /><text>{p.amount}</text></row><separator /><text size="sm" foreground="text_muted">{p.detail}</text></column></panel></for></column></column>
+          <column grow="1" gap="12"><row cross="center"><text><span weight="bold">Daily cost</span></text><spacer grow="1" /><button-group><button size="sm" variant="outline" selected="{costSelected}" on-press="cost">COST</button><button size="sm" variant="outline" selected="{tokensSelected}" on-press="tokens">TOKENS</button></button-group></row><panel height="342" padding="14" background="background" radius="lg" border-color="border" label="Daily usage chart"><column gap="8"><row gap="14"><text size="sm">Codex</text><text size="sm" foreground="accent">Claude Code</text></row><chart grow="1" y-min="0" y-max="1" grid-lines="2" hover-details="true" label="Daily usage chart"><series kind="area" values="{codexSeries}" color="text" label="Codex" /><series kind="area" values="{claudeSeries}" color="accent" label="Claude Code" /></chart><row><text size="sm" foreground="text_muted">Jul 11</text><spacer grow="1" /><text size="sm" foreground="text_muted">Aug 9</text></row></column></panel></column>
         </row>
-      </panel>
-
-      <column gap="12" label="Breakdown">
-        <row cross="center">
-          <text><span weight="bold">Breakdown</span></text>
-          <spacer grow="1" />
-          <button-group>
-            <button size="sm" variant="outline" selected="true">MODEL</button>
-            <button size="sm" variant="outline">DAY</button>
-          </button-group>
-        </row>
-
-        <panel padding="14" background="background" radius="lg" border-color="border" label="Usage breakdown table">
-          <column gap="0">
-            <row height="34" cross="center">
-              <text grow="1" size="sm" foreground="text_muted">Model</text>
-              <text width="120" size="sm" foreground="text_muted" text-alignment="end">Cost</text>
-              <text width="90" size="sm" foreground="text_muted" text-alignment="end">Share</text>
-              <text width="110" size="sm" foreground="text_muted" text-alignment="end">Tokens</text>
-            </row>
-            <separator />
-            <for each="breakdown" as="b" key="id">
-              <row height="46" gap="12" cross="center" label="{b.model}">
-                <column grow="1" gap="1">
-                  <text>{b.model}</text>
-                  <text size="sm" foreground="text_muted">{b.provider}</text>
-                </column>
-                <text width="120" text-alignment="end">{b.cost}</text>
-                <text width="90" size="sm" foreground="text_muted" text-alignment="end">{b.share}</text>
-                <text width="110" size="sm" foreground="text_muted" text-alignment="end">{b.tokens}</text>
-              </row>
-              <separator />
-            </for>
-          </column>
-        </panel>
+        <panel padding="0" background="surface" radius="lg" border-color="border" label="Totals"><row gap="0"><for each="totals" as="t" key="label"><column grow="1" padding="16" gap="5"><text size="sm" foreground="text_muted">{t.label}</text><text><span weight="bold">{t.value}</span></text><text size="sm" foreground="text_muted">{t.detail}</text></column></for></row></panel>
+        <column gap="12" label="Breakdown"><row cross="center"><text><span weight="bold">Breakdown</span></text><spacer grow="1" /><button-group><button size="sm" variant="outline" selected="true">MODEL</button><button size="sm" variant="outline">DAY</button></button-group></row><panel padding="14" background="background" radius="lg" border-color="border" label="Usage breakdown table"><column gap="0"><row height="34" cross="center"><text grow="1" size="sm" foreground="text_muted">Model</text><text width="120" size="sm" foreground="text_muted" text-alignment="end">Cost</text><text width="90" size="sm" foreground="text_muted" text-alignment="end">Share</text><text width="110" size="sm" foreground="text_muted" text-alignment="end">Tokens</text></row><separator /><for each="breakdown" as="b" key="id"><row height="46" gap="12" cross="center" label="{b.model}"><column grow="1" gap="1"><text>{b.model}</text><text size="sm" foreground="text_muted">{b.provider}</text></column><text width="120" text-alignment="end">{b.cost}</text><text width="90" size="sm" foreground="text_muted" text-alignment="end">{b.share}</text><text width="110" size="sm" foreground="text_muted" text-alignment="end">{b.tokens}</text></row><separator /></for></column></panel></column>
+        <text size="sm" foreground="text_muted">{refreshStatus}</text>
       </column>
-
-      <text size="sm" foreground="text_muted">{refreshStatus}</text>
-
+      <column visible="{limitsVisible}" gap="20" label="Rate limits section">
+        <row cross="center"><column gap="3"><text size="heading"><span weight="bold">Rate Limits</span></text><text size="sm" foreground="text_muted">Live subscription windows · source: Codex OAuth usage</text></column><spacer grow="1" /><column gap="2" cross="end"><text size="sm" foreground="text_muted">PLAN</text><text><span weight="bold">{ratePlan}</span></text></column><button size="sm" variant="outline" disabled="{rateRefreshDisabled}" on-press="rate_refresh">Refresh limits</button></row>
+        <text size="sm" foreground="text_muted">{rateDetail}</text>
+        <row gap="16"><panel grow="1" padding="20" background="surface" radius="lg" border-color="border" label="5 hour rate limit"><column gap="14"><row cross="center"><column gap="3"><text size="sm" foreground="text_muted">5-HOUR WINDOW</text><text size="display"><span weight="bold">{fiveHourUsed}</span></text><text size="sm" foreground="text_muted">used</text></column><spacer grow="1" /><column gap="3" cross="end"><text size="sm" foreground="text_muted">REMAINING</text><text size="heading"><span weight="bold">{fiveHourRemaining}</span></text><text size="sm" foreground="text_muted">resets in {fiveHourReset}</text></column></row><separator /><text size="sm">{fiveHourPace}</text></column></panel><panel grow="1" padding="20" background="surface" radius="lg" border-color="border" label="Weekly rate limit"><column gap="14"><row cross="center"><column gap="3"><text size="sm" foreground="text_muted">WEEKLY WINDOW</text><text size="display"><span weight="bold">{weeklyUsed}</span></text><text size="sm" foreground="text_muted">used</text></column><spacer grow="1" /><column gap="3" cross="end"><text size="sm" foreground="text_muted">REMAINING</text><text size="heading"><span weight="bold">{weeklyRemaining}</span></text><text size="sm" foreground="text_muted">resets in {weeklyReset}</text></column></row><separator /><text size="sm">{weeklyPace}</text></column></panel></row>
+        <row gap="16"><panel grow="1" height="260" padding="16" background="background" radius="lg" border-color="border" label="5-hour pace chart"><column gap="8"><text><span weight="bold">5-hour pace</span></text><text size="sm" foreground="text_muted">Usage now vs time elapsed in the window</text><chart grow="1" y-min="0" y-max="1" grid-lines="4" hover-details="true" label="5-hour usage pace"><series kind="bar" values="{fiveHourUsageSeries}" color="accent" label="Used" /><series kind="bar" values="{fiveHourTimeSeries}" color="text" label="Elapsed" /></chart></column></panel><panel grow="1" height="260" padding="16" background="background" radius="lg" border-color="border" label="Weekly pace chart"><column gap="8"><text><span weight="bold">Weekly pace</span></text><text size="sm" foreground="text_muted">Usage now vs time elapsed in the window</text><chart grow="1" y-min="0" y-max="1" grid-lines="4" hover-details="true" label="Weekly usage pace"><series kind="bar" values="{weeklyUsageSeries}" color="accent" label="Used" /><series kind="bar" values="{weeklyTimeSeries}" color="text" label="Elapsed" /></chart></column></panel></row>
+        <panel padding="16" background="surface" radius="lg" border-color="border" label="Rate limit notes"><column gap="7"><text><span weight="bold">How to read this</span></text><text size="sm" foreground="text_muted">Used is the subscription capacity reported by ChatGPT. Elapsed is how far through the reset window you are. If used is materially above elapsed, your current pace may exhaust the window before reset.</text><text size="sm" foreground="text_muted">Data is fetched only when this section opens or you press Refresh, then cached for 2 minutes. No background polling.</text></column></panel>
+      </column>
       <separator />
-
-      <row gap="12" cross="center" label="Application updates">
-        <column gap="3" grow="1">
-          <text><span weight="bold">Updates</span></text>
-          <text size="sm" foreground="text_muted">{updateDetail}</text>
-        </column>
-        <column gap="2" cross="end">
-          <text size="sm" foreground="text_muted">Version</text>
-          <text>{updateVersionText}</text>
-        </column>
-        <button size="sm" variant="outline" on-press="update_action">{updateActionLabel}</button>
-      </row>
+      <row gap="12" cross="center" label="Application updates"><column gap="3" grow="1"><text><span weight="bold">Updates</span></text><text size="sm" foreground="text_muted">{updateDetail}</text></column><column gap="2" cross="end"><text size="sm" foreground="text_muted">Version</text><text>{updateVersionText}</text></column><button size="sm" variant="outline" on-press="update_action">{updateActionLabel}</button></row>
     </column>
   </scroll>
 </column>
