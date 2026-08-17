@@ -3,10 +3,11 @@
     "dev": "native-cli dev",
     "build": "native-cli build",
     "export": "native-cli export",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts"
   },
   "devDependencies": {
     "@native-sdk/cli": "latest",
-    "@native-sdk/core": "latest"
+    "@native-sdk/core": "latest",
+    "tsx": "latest"
   }
 }
