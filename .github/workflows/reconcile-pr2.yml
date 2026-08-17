@@ -35,13 +35,15 @@ jobs:
 
           if [ "$merge_status" -ne 0 ]; then
             echo "Resolving stacked PR overlap by preserving the polished branch for conflicted paths."
+            git diff --name-only --diff-filter=U -z > /tmp/pr2-conflicts
             while IFS= read -r -d '' path; do
+              echo "Resolving: $path"
               if git checkout --ours -- "$path" 2>/dev/null; then
                 git add -- "$path"
               else
                 git rm -f --ignore-unmatch -- "$path"
               fi
-            done < <(git diff --name-only --diff-filter=U -z)
+            done < /tmp/pr2-conflicts
           fi
 
           unresolved="$(git diff --name-only --diff-filter=U)"
@@ -54,6 +56,7 @@ jobs:
           git rm -f .github/workflows/reconcile-pr2.yml
           git add -A
           git diff --cached --check
+          git status --short
 
           if git diff --cached --quiet; then
             echo "No reconciliation commit needed."
