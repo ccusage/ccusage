@@ -28,6 +28,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install project dev dependencies
+        run: npm install --ignore-scripts
       - name: Install native CLI
         run: npm install -g @native-sdk/cli
       - name: Run unit and performance regression tests
