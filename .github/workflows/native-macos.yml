@@ -3,7 +3,7 @@ name: Native macOS QA
 on:
   workflow_dispatch:
   push:
-    branches: [feat/ccusage-macos-native]
+    branches: [feat/ccusage-macos-native, feat/reference-usage-visual-overhaul]
 
 permissions:
   contents: write
@@ -49,7 +49,7 @@ jobs:
           git add qa
           if ! git diff --cached --quiet; then
             git commit -m "chore: publish native QA evidence [skip ci]"
-            git push origin HEAD:feat/ccusage-macos-native
+            git push origin HEAD:${GITHUB_REF_NAME}
           fi
       - name: Export text-safe screenshot preview
         if: success()
@@ -62,7 +62,7 @@ jobs:
           git add qa/preview-b64
           if ! git diff --cached --quiet; then
             git commit -m "chore: publish text-safe screenshot preview [skip ci]"
-            git push origin HEAD:feat/ccusage-macos-native
+            git push origin HEAD:${GITHUB_REF_NAME}
           fi
       - uses: actions/upload-artifact@v4
         if: always()
