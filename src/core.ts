@@ -168,7 +168,7 @@ export function update(model: Model, msg: Msg): [Model, Cmd<Msg>] {
         {
           ...model,
           updateState: "error",
-          updateDetail: msg.output.length > 0 ? msg.output.trim() : asciiBytes("The update could not be installed."),
+          updateDetail: msg.output.length > 0 ? msg.output : asciiBytes("The update could not be installed."),
         },
         Cmd.none,
       ];

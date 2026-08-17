@@ -6,15 +6,28 @@ export interface ReleaseFeed {
   readonly sha256: Uint8Array;
 }
 
-function parseDecimal(bytes: Uint8Array): number {
-  if (bytes.length === 0) return -1;
-  let value = 0;
-  for (let i = 0; i < bytes.length; i += 1) {
-    const digit = bytes[i];
-    if (digit < 48 || digit > 57) return -1;
-    value = value * 10 + (digit - 48);
+interface SemVer {
+  readonly major: number;
+  readonly minor: number;
+  readonly patch: number;
+}
+
+function trimLineEnd(bytes: Uint8Array, start: number, end: number): Uint8Array {
+  let last = end;
+  while (last > start) {
+    const c = bytes[last - 1];
+    if (c === 13 || c === 32 || c === 9) last -= 1;
+    else break;
   }
-  return value;
+  return bytes.subarray(start, last);
+}
+
+function startsWithBytes(value: Uint8Array, prefix: Uint8Array): boolean {
+  if (value.length < prefix.length) return false;
+  for (let i = 0; i < prefix.length; i += 1) {
+    if (value[i] !== prefix[i]) return false;
+  }
+  return true;
 }
 
 function validSha256(bytes: Uint8Array): boolean {
@@ -28,32 +41,67 @@ function validSha256(bytes: Uint8Array): boolean {
   return true;
 }
 
+function parseSemVer(bytes: Uint8Array): SemVer | null {
+  let major = 0;
+  let minor = 0;
+  let patch = 0;
+  let part = 0;
+  let value = 0;
+  let digits = 0;
+
+  for (let i = 0; i < bytes.length; i += 1) {
+    const c = bytes[i];
+    if (c >= 48 && c <= 57) {
+      value = value * 10 + (c - 48);
+      digits += 1;
+      continue;
+    }
+    if (c !== 46 || digits === 0 || part >= 2) return null;
+    if (part === 0) major = value;
+    else minor = value;
+    part += 1;
+    value = 0;
+    digits = 0;
+  }
+
+  if (part !== 2 || digits === 0) return null;
+  patch = value;
+  return { major, minor, patch };
+}
+
 export function parseReleaseFeed(body: Uint8Array): ReleaseFeed | null {
-  const lines = body.trim().split(asciiBytes("\n"));
-  if (lines.length < 3) return null;
+  let first = -1;
+  let second = -1;
+  let third = body.length;
 
-  const version = lines[0].trim();
-  const url = lines[1].trim();
-  const sha256 = lines[2].trim();
+  for (let i = 0; i < body.length; i += 1) {
+    if (body[i] === 10) {
+      if (first < 0) first = i;
+      else if (second < 0) second = i;
+      else {
+        third = i;
+        break;
+      }
+    }
+  }
 
-  if (version.length === 0) return null;
-  if (!url.startsWith(asciiBytes("https://github.com/vedanth-jadhav/ccusage-wrap/releases/download/macos-v"))) return null;
+  if (first <= 0 || second <= first + 1) return null;
+  const version = trimLineEnd(body, 0, first);
+  const url = trimLineEnd(body, first + 1, second);
+  const sha256 = trimLineEnd(body, second + 1, third);
+
+  if (version.length === 0 || parseSemVer(version) === null) return null;
+  if (!startsWithBytes(url, asciiBytes("https://github.com/vedanth-jadhav/ccusage-wrap/releases/download/macos-v"))) return null;
   if (!validSha256(sha256)) return null;
 
   return { version, url, sha256 };
 }
 
 export function isNewerRelease(candidate: Uint8Array, current: Uint8Array): boolean {
-  const next = candidate.split(asciiBytes("."));
-  const now = current.split(asciiBytes("."));
-  if (next.length !== 3 || now.length !== 3) return false;
-
-  for (let i = 0; i < 3; i += 1) {
-    const nextPart = parseDecimal(next[i]);
-    const nowPart = parseDecimal(now[i]);
-    if (nextPart < 0 || nowPart < 0) return false;
-    if (nextPart > nowPart) return true;
-    if (nextPart < nowPart) return false;
-  }
-  return false;
+  const next = parseSemVer(candidate);
+  const now = parseSemVer(current);
+  if (next === null || now === null) return false;
+  if (next.major !== now.major) return next.major > now.major;
+  if (next.minor !== now.minor) return next.minor > now.minor;
+  return next.patch > now.patch;
 }
