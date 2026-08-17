@@ -1,0 +1,56 @@
+name: Reconcile release branch
+
+on:
+  push:
+    branches:
+      - release/macos-v0.1.0-autoupdate
+    paths:
+      - .github/workflows/reconcile-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/macos-v0.1.0-autoupdate
+          fetch-depth: 0
+      - name: Merge current native base and keep release QA evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin feat/ccusage-macos-native
+
+          set +e
+          git merge --no-ff --no-commit origin/feat/ccusage-macos-native
+          merge_status=$?
+          set -e
+
+          if [ "$merge_status" -ne 0 ]; then
+            git diff --name-only --diff-filter=U -z > /tmp/release-conflicts
+            while IFS= read -r -d '' path; do
+              echo "Resolving generated overlap: $path"
+              case "$path" in
+                qa/*)
+                  git checkout --ours -- "$path"
+                  git add -- "$path"
+                  ;;
+                *)
+                  echo "Unexpected non-QA conflict: $path"
+                  exit 1
+                  ;;
+              esac
+            done < /tmp/release-conflicts
+          fi
+
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git rm -f .github/workflows/reconcile-release.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "chore: reconcile release with native QA evidence"
+          git push origin HEAD:release/macos-v0.1.0-autoupdate
