@@ -92,7 +92,7 @@
               <text width="110" size="sm" foreground="text_muted" text-alignment="end">Tokens</text>
             </row>
             <separator />
-            <for each="breakdown" as="b" key="model">
+            <for each="breakdown" as="b" key="id">
               <row height="46" gap="12" cross="center" label="{b.model}">
                 <column grow="1" gap="1">
                   <text>{b.model}</text>
