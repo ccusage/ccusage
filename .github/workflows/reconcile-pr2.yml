@@ -1,0 +1,64 @@
+name: Reconcile PR 2
+
+on:
+  push:
+    branches:
+      - feat/reference-usage-pixel-polish
+    paths:
+      - .github/workflows/reconcile-pr2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout polish branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/reference-usage-pixel-polish
+          fetch-depth: 0
+
+      - name: Merge current native base and resolve stacked overlap
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin feat/ccusage-macos-native
+
+          set +e
+          git merge --no-ff --no-commit origin/feat/ccusage-macos-native
+          merge_status=$?
+          set -e
+
+          if [ "$merge_status" -ne 0 ]; then
+            echo "Resolving stacked PR overlap by preserving the polished branch for conflicted paths."
+            while IFS= read -r -d '' path; do
+              if git checkout --ours -- "$path" 2>/dev/null; then
+                git add -- "$path"
+              else
+                git rm -f --ignore-unmatch -- "$path"
+              fi
+            done < <(git diff --name-only --diff-filter=U -z)
+          fi
+
+          unresolved="$(git diff --name-only --diff-filter=U)"
+          if [ -n "$unresolved" ]; then
+            echo "Unresolved paths remain:"
+            printf '%s\n' "$unresolved"
+            exit 1
+          fi
+
+          git rm -f .github/workflows/reconcile-pr2.yml
+          git add -A
+          git diff --cached --check
+
+          if git diff --cached --quiet; then
+            echo "No reconciliation commit needed."
+            exit 0
+          fi
+
+          git commit -m "chore: reconcile pixel polish with merged native base"
+          git push origin HEAD:feat/reference-usage-pixel-polish
