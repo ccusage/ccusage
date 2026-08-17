@@ -4,15 +4,15 @@ export type RateLimitState = "idle" | "loading" | "ready" | "error";
 
 export interface RateWindowSnapshot {
   readonly usedPercent: number;
-  readonly resetAt: number;
+  readonly resetInSeconds: number;
   readonly windowSeconds: number;
+  readonly expectedUsedPercent: number;
 }
 
 export interface RateLimitSnapshot {
   readonly plan: Uint8Array;
   readonly primary: RateWindowSnapshot | null;
   readonly secondary: RateWindowSnapshot | null;
-  readonly fetchedAt: number;
 }
 
 export interface PaceSnapshot {
@@ -52,38 +52,33 @@ function parseAsciiNumber(value: Uint8Array): number | null {
 
 function parseWindow(body: Uint8Array, prefix: "primary" | "secondary"): RateWindowSnapshot | null {
   const usedPercent = parseAsciiNumber(lineValue(body, `${prefix}_used`));
-  const resetAt = parseAsciiNumber(lineValue(body, `${prefix}_reset`));
+  const resetInSeconds = parseAsciiNumber(lineValue(body, `${prefix}_reset_in`));
   const windowSeconds = parseAsciiNumber(lineValue(body, `${prefix}_seconds`));
-  if (usedPercent === null || resetAt === null || windowSeconds === null || windowSeconds <= 0) return null;
+  const expectedUsedPercent = parseAsciiNumber(lineValue(body, `${prefix}_expected`));
+  if (usedPercent === null || resetInSeconds === null || windowSeconds === null || expectedUsedPercent === null || windowSeconds <= 0) return null;
   return {
     usedPercent: Math.max(0, Math.min(100, usedPercent)),
-    resetAt,
+    resetInSeconds: Math.max(0, resetInSeconds),
     windowSeconds,
+    expectedUsedPercent: Math.max(0, Math.min(100, expectedUsedPercent)),
   };
 }
 
-export function parseRateLimitProbe(body: Uint8Array, fetchedAt = Math.floor(Date.now() / 1000)): RateLimitSnapshot | null {
+export function parseRateLimitProbe(body: Uint8Array): RateLimitSnapshot | null {
   const primary = parseWindow(body, "primary");
   const secondary = parseWindow(body, "secondary");
   if (primary === null && secondary === null) return null;
   const plan = lineValue(body, "plan");
-  return { plan: plan.length > 0 ? plan : asciiBytes("ChatGPT"), primary, secondary, fetchedAt };
+  return { plan: plan.length > 0 ? plan : asciiBytes("ChatGPT"), primary, secondary };
 }
 
-export function paceFor(window: RateWindowSnapshot | null, nowSeconds = Math.floor(Date.now() / 1000)): PaceSnapshot | null {
+export function paceFor(window: RateWindowSnapshot | null): PaceSnapshot | null {
   if (window === null) return null;
-  const timeRemaining = Math.max(0, Math.min(window.windowSeconds, window.resetAt - nowSeconds));
-  const elapsed = window.windowSeconds - timeRemaining;
-  const expected = Math.max(0, Math.min(100, (elapsed / window.windowSeconds) * 100));
-  const delta = window.usedPercent - expected;
+  const delta = window.usedPercent - window.expectedUsedPercent;
   return {
-    expectedUsedPercent: expected,
+    expectedUsedPercent: window.expectedUsedPercent,
     deltaPercent: delta,
     remainingPercent: Math.max(0, 100 - window.usedPercent),
     status: Math.abs(delta) <= 6 ? "on_track" : delta > 0 ? "ahead" : "behind",
   };
-}
-
-export function isRateSnapshotFresh(snapshot: RateLimitSnapshot | null, nowSeconds = Math.floor(Date.now() / 1000), ttlSeconds = 120): boolean {
-  return snapshot !== null && nowSeconds >= snapshot.fetchedAt && nowSeconds - snapshot.fetchedAt < ttlSeconds;
 }
