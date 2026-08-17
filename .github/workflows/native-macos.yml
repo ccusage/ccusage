@@ -1,117 +1,36 @@
-name: Native macOS QA
+name: Native macOS
 
 on:
-  workflow_dispatch:
   push:
-    branches: [feat/ccusage-macos-native, feat/reference-usage-visual-overhaul, feat/reference-usage-pixel-polish, 'release/macos-*']
-
-permissions:
-  contents: write
+    paths:
+      - 'package.json'
+      - 'app.zon'
+      - 'src/**'
+      - 'tests/**'
+      - 'THIRD_PARTY_NOTICES.md'
+      - '.github/workflows/native-macos.yml'
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'app.zon'
+      - 'src/**'
+      - 'tests/**'
+      - 'THIRD_PARTY_NOTICES.md'
+      - '.github/workflows/native-macos.yml'
+  workflow_dispatch:
 
 jobs:
-  build-and-qa:
-    runs-on: macos-15
-    timeout-minutes: 25
+  verify:
+    runs-on: macos-14
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install Native SDK
-        run: npm install -g @native-sdk/cli@latest
-      - name: Validate app
-        run: native check --strict
-      - name: Build release with automation
-        run: native build --yes -Dautomation=true
-      - name: Force dark appearance for reference QA
-        run: |
-          defaults write -g AppleInterfaceStyle -string Dark
-          killall cfprefsd || true
-      - name: Launch and capture full UI gallery
-        run: |
-          native dev -Dautomation=true > /tmp/ccusage-native.log 2>&1 &
-          echo $! > /tmp/native.pid
-          sleep 8
-          native automate wait
-          native automate snapshot > native-snapshot.txt
-          native automate assert 'gpu_nonblank=true'
-
-          mkdir -p screenshots
-          capture() {
-            local name="$1"
-            native automate screenshot main-canvas 2
-            cp .zig-cache/native-sdk-automation/screenshot-main-canvas.png "screenshots/${name}.png"
-          }
-
-          capture 30d-cost
-          native automate widget-click main-canvas 10141557241506780752
-          capture 7d-cost
-          native automate widget-click main-canvas 14699360880903989747
-          capture 90d-cost
-          native automate widget-click main-canvas 18252922771944292320
-          native automate widget-click main-canvas 9179183960772455132
-          capture 30d-tokens
-          native automate widget-click main-canvas 10141557241506780752
-          capture 7d-tokens
-          native automate widget-click main-canvas 14699360880903989747
-          capture 90d-tokens
-          native automate widget-click main-canvas 18252922771944292320
-          native automate widget-click main-canvas 13400711477941315440
-          native automate widget-click main-canvas 14622312109170068728
-          native automate widget-wheel main-canvas 2960813184610498267 760
-          capture breakdown-model
-          native automate widget-click main-canvas 3166273455632770036
-          capture breakdown-day
-
-          cp "screenshots/30d-cost.png" screenshot-main-canvas.png
-          native automate snapshot > native-snapshot-final.txt
-          kill $(cat /tmp/native.pid) || true
-      - name: Preserve dev log
-        if: always()
-        run: |
-          cp /tmp/ccusage-native.log native-dev.log || true
-          echo "===== native dev log ====="
-          cat /tmp/ccusage-native.log || true
-      - name: Publish QA evidence
-        if: success()
-        run: |
-          mkdir -p qa/screenshots
-          rm -f qa/screenshots/*.png
-          cp screenshots/*.png qa/screenshots/
-          cp screenshot-main-canvas.png qa/screenshot-main-canvas.png
-          cp native-snapshot.txt qa/native-snapshot.txt
-          cp native-snapshot-final.txt qa/native-snapshot-final.txt
-          cp native-dev.log qa/native-dev.log
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add qa
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: publish full polished screenshot gallery [skip ci]"
-            git push origin HEAD:${GITHUB_REF_NAME}
-          fi
-      - name: Export text-safe screenshot preview
-        if: success()
-        run: |
-          sips -Z 1000 screenshot-main-canvas.png --out screenshot-preview.jpg >/dev/null
-          base64 -i screenshot-preview.jpg | tr -d '\n' > screenshot-preview.b64
-          mkdir -p qa/preview-b64
-          rm -f qa/preview-b64/part-*
-          split -b 50000 -a 3 screenshot-preview.b64 qa/preview-b64/part-
-          git add qa/preview-b64
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: publish text-safe screenshot preview [skip ci]"
-            git push origin HEAD:${GITHUB_REF_NAME}
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ccusage-native-qa
-          path: |
-            screenshots/*.png
-            screenshot-main-canvas.png
-            screenshot-preview.jpg
-            native-snapshot.txt
-            native-snapshot-final.txt
-            native-dev.log
-            zig-out/**
-          if-no-files-found: error
+      - name: Install native CLI
+        run: npm install -g @native-sdk/cli
+      - name: Run unit and performance regression tests
+        run: npm test
+      - name: Verify app builds
+        run: native-cli build

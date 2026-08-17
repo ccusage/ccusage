@@ -1,9 +1,11 @@
 {
-  "name": "ccusage-wrap",
-  "private": true,
-  "version": "0.1.0",
-  "description": "Native ccusage analytics app for macOS",
-  "dependencies": {
-    "@native-sdk/core": "0.9.1"
+  "scripts": {
+    "dev": "native-cli dev",
+    "build": "native-cli build",
+    "export": "native-cli export",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@native-sdk/cli": "latest"
   }
 }
