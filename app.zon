@@ -7,15 +7,17 @@
     .platforms = .{"macos"},
     .permissions = .{ "view", "command" },
     .capabilities = .{ "native_views", "gpu_surfaces" },
+    .theme = "geist",
+    .theme_accent = "#de7656",
     .shell = .{
         .windows = .{
             .{
                 .label = "main",
-                .title = "ccusage",
-                .width = 1280,
-                .height = 820,
-                .min_width = 1080,
-                .min_height = 700,
+                .title = "Usage",
+                .width = 1440,
+                .height = 1000,
+                .min_width = 980,
+                .min_height = 760,
                 .restore_state = true,
                 .restore_policy = "center_on_primary",
                 .titlebar = "hidden_inset_tall",
