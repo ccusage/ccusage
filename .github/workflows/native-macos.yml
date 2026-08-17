@@ -3,7 +3,7 @@ name: Native macOS QA
 on:
   workflow_dispatch:
   push:
-    branches: [feat/ccusage-macos-native, feat/reference-usage-visual-overhaul]
+    branches: [feat/ccusage-macos-native, feat/reference-usage-visual-overhaul, feat/reference-usage-pixel-polish]
 
 permissions:
   contents: write
@@ -20,9 +20,13 @@ jobs:
       - name: Install Native SDK
         run: npm install -g @native-sdk/cli@latest
       - name: Validate app
-        run: native check
+        run: native check --strict
       - name: Build release with automation
         run: native build --yes -Dautomation=true
+      - name: Force dark appearance for reference QA
+        run: |
+          defaults write -g AppleInterfaceStyle -string Dark
+          killall cfprefsd || true
       - name: Launch for deterministic UI QA
         run: |
           native dev -Dautomation=true > /tmp/ccusage-native.log 2>&1 &

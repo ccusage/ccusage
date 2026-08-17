@@ -70,21 +70,20 @@ export function refreshStatus(model: Model): Uint8Array {
   return model.refreshed ? asciiBytes("Updated just now") : asciiBytes("Local usage data");
 }
 
-export function modeLabel(model: Model): Uint8Array {
-  return model.metric === "cost" ? asciiBytes("Daily cost") : asciiBytes("Daily tokens");
-}
-
 export function range7Selected(model: Model): boolean { return model.range === "seven"; }
 export function range30Selected(model: Model): boolean { return model.range === "thirty"; }
 export function range90Selected(model: Model): boolean { return model.range === "ninety"; }
 export function costSelected(model: Model): boolean { return model.metric === "cost"; }
 export function tokensSelected(model: Model): boolean { return model.metric === "tokens"; }
 
-export function dailySeries(model: Model): readonly number[] {
-  if (model.metric === "tokens") {
-    return [0.02,0.02,0.11,0.04,0.07,0.01,0.00,0.00,0.04,0.13,0.08,0.14,0.11,0.03,0.10,0.08,0.07,0.05,0.20,0.27,0.62,0.03,0.04,0.11,0.08,0.28,0.72,0.91,0.31,0.18];
-  }
-  return [0.01,0.01,0.08,0.03,0.06,0.01,0.00,0.00,0.03,0.10,0.07,0.11,0.09,0.02,0.08,0.06,0.05,0.04,0.16,0.23,0.68,0.02,0.03,0.09,0.06,0.31,0.76,0.95,0.39,0.17];
+export function codexSeries(model: Model): readonly number[] {
+  if (model.metric === "tokens") return [0.01,0.01,0.03,0.01,0.00,0.00,0.00,0.00,0.01,0.02,0.02,0.03,0.02,0.01,0.03,0.02,0.02,0.02,0.14,0.22,0.66,0.02,0.01,0.06,0.03,0.16,0.64,0.91,0.17,0.07];
+  return [0.01,0.01,0.05,0.02,0.00,0.00,0.00,0.00,0.01,0.04,0.03,0.05,0.04,0.01,0.04,0.03,0.03,0.02,0.16,0.23,0.68,0.01,0.02,0.06,0.03,0.21,0.76,0.95,0.27,0.09];
+}
+
+export function claudeSeries(model: Model): readonly number[] {
+  if (model.metric === "tokens") return [0.01,0.01,0.08,0.03,0.07,0.01,0.00,0.00,0.03,0.11,0.06,0.11,0.09,0.02,0.07,0.06,0.05,0.03,0.06,0.05,0.04,0.01,0.03,0.05,0.05,0.12,0.08,0.20,0.14,0.11];
+  return [0.01,0.01,0.03,0.02,0.06,0.01,0.00,0.00,0.02,0.06,0.04,0.06,0.05,0.01,0.05,0.04,0.03,0.02,0.04,0.04,0.03,0.01,0.02,0.03,0.03,0.10,0.09,0.23,0.12,0.08];
 }
 
 export function providers(_model: Model): readonly ProviderRow[] {
