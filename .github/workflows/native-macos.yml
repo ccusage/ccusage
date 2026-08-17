@@ -3,7 +3,7 @@ name: Native macOS QA
 on:
   workflow_dispatch:
   push:
-    branches: [feat/ccusage-macos-native, feat/reference-usage-visual-overhaul, feat/reference-usage-pixel-polish]
+    branches: [feat/ccusage-macos-native, feat/reference-usage-visual-overhaul, feat/reference-usage-pixel-polish, 'release/macos-*']
 
 permissions:
   contents: write
@@ -43,32 +43,23 @@ jobs:
             cp .zig-cache/native-sdk-automation/screenshot-main-canvas.png "screenshots/${name}.png"
           }
 
-          # Top-of-dashboard gallery: every range x metric state.
           capture 30d-cost
-
           native automate widget-click main-canvas 10141557241506780752
           capture 7d-cost
-
           native automate widget-click main-canvas 14699360880903989747
           capture 90d-cost
-
           native automate widget-click main-canvas 18252922771944292320
           native automate widget-click main-canvas 9179183960772455132
           capture 30d-tokens
-
           native automate widget-click main-canvas 10141557241506780752
           capture 7d-tokens
-
           native automate widget-click main-canvas 14699360880903989747
           capture 90d-tokens
-
-          # Lower breakdown gallery: model view and day view.
           native automate widget-click main-canvas 18252922771944292320
           native automate widget-click main-canvas 13400711477941315440
           native automate widget-click main-canvas 14622312109170068728
           native automate widget-wheel main-canvas 2960813184610498267 760
           capture breakdown-model
-
           native automate widget-click main-canvas 3166273455632770036
           capture breakdown-day
 
@@ -77,7 +68,10 @@ jobs:
           kill $(cat /tmp/native.pid) || true
       - name: Preserve dev log
         if: always()
-        run: cp /tmp/ccusage-native.log native-dev.log || true
+        run: |
+          cp /tmp/ccusage-native.log native-dev.log || true
+          echo "===== native dev log ====="
+          cat /tmp/ccusage-native.log || true
       - name: Publish QA evidence
         if: success()
         run: |

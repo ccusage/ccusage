@@ -119,6 +119,20 @@
       </column>
 
       <text size="sm" foreground="text_muted">{refreshStatus}</text>
+
+      <separator />
+
+      <row gap="12" cross="center" label="Application updates">
+        <column gap="3" grow="1">
+          <text><span weight="bold">Updates</span></text>
+          <text size="sm" foreground="text_muted">{updateDetail}</text>
+        </column>
+        <column gap="2" cross="end">
+          <text size="sm" foreground="text_muted">Version</text>
+          <text>{updateVersionText}</text>
+        </column>
+        <button size="sm" variant="outline" on-press="update_action">{updateActionLabel}</button>
+      </row>
     </column>
   </scroll>
 </column>

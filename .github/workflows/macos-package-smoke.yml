@@ -1,0 +1,76 @@
+name: macOS Package Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'release/macos-*'
+
+permissions:
+  contents: read
+
+jobs:
+  package-smoke:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Native SDK
+        run: npm install -g @native-sdk/cli@latest
+      - name: Strict validation
+        run: native check --strict
+      - name: Build release binary
+        run: native build --yes
+      - name: Run native tests
+        run: native test
+      - name: Recheck typed UI contract
+        run: native check --strict
+      - name: Package ad-hoc signed macOS app
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < release/macos-version.txt)"
+          mkdir -p dist
+          native package --target macos --signing adhoc --output dist/ccusage.app
+          /usr/bin/codesign --verify --deep --strict --verbose=2 dist/ccusage.app
+          BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/ccusage.app/Contents/Info.plist)"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/ccusage.app/Contents/Info.plist)"
+          test "$BUNDLE_VERSION" = "$VERSION"
+          test "$BUNDLE_ID" = "dev.vedanth.ccusagewrap"
+      - name: Build updater archive and DMG
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < release/macos-version.txt)"
+          ZIP="dist/ccusage-${VERSION}-macos-arm64.zip"
+          DMG="dist/ccusage-${VERSION}-macos-arm64.dmg"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent dist/ccusage.app "$ZIP"
+          mkdir -p dist/dmg-root
+          /usr/bin/ditto dist/ccusage.app dist/dmg-root/ccusage.app
+          ln -s /Applications dist/dmg-root/Applications
+          /usr/bin/hdiutil create -volname "ccusage ${VERSION}" -srcfolder dist/dmg-root -ov -format UDZO "$DMG"
+          /usr/bin/shasum -a 256 "$ZIP" "$DMG" > dist/SHA256SUMS.txt
+      - name: Verify archive and mounted DMG
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < release/macos-version.txt)"
+          TMP="$(mktemp -d)"
+          /usr/bin/ditto -x -k "dist/ccusage-${VERSION}-macos-arm64.zip" "$TMP/zip"
+          /usr/bin/codesign --verify --deep --strict "$TMP/zip/ccusage.app"
+          MOUNT="$TMP/mount"
+          mkdir -p "$MOUNT"
+          /usr/bin/hdiutil attach "dist/ccusage-${VERSION}-macos-arm64.dmg" -nobrowse -readonly -mountpoint "$MOUNT"
+          trap '/usr/bin/hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true' EXIT
+          test -d "$MOUNT/ccusage.app"
+          /usr/bin/codesign --verify --deep --strict "$MOUNT/ccusage.app"
+          /usr/bin/hdiutil detach "$MOUNT"
+          trap - EXIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ccusage-macos-package-smoke
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error

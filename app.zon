@@ -5,8 +5,8 @@
     .description = "A native visual workspace for ccusage token and cost analytics.",
     .version = "0.1.0",
     .platforms = .{"macos"},
-    .permissions = .{ "view", "command" },
-    .capabilities = .{ "native_views", "gpu_surfaces" },
+    .permissions = .{ "view", "command", "network" },
+    .capabilities = .{ "native_views", "gpu_surfaces", "network" },
     .theme = "geist",
     .theme_accent = "#de7656",
     .shell = .{
