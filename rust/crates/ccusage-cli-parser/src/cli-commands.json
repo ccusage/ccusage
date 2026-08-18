@@ -104,6 +104,10 @@
 			{
 				"name": "grok",
 				"description": "Show Grok Build CLI usage commands"
+			},
+			{
+				"name": "zcode",
+				"description": "Show ZCode usage commands"
 			}
 		]
 	},
@@ -774,6 +778,43 @@
 			"path": ["grok", "session"],
 			"description": "Show Grok Build CLI usage grouped by session",
 			"usage": "ccusage grok session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["zcode"],
+			"description": "Usage reports for zcode.",
+			"usage": "ccusage zcode <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show ZCode usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show ZCode usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show ZCode usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["zcode", "daily"],
+			"description": "Show ZCode usage grouped by date",
+			"usage": "ccusage zcode daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["zcode", "monthly"],
+			"description": "Show ZCode usage grouped by month",
+			"usage": "ccusage zcode monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["zcode", "session"],
+			"description": "Show ZCode usage grouped by session",
+			"usage": "ccusage zcode session <OPTIONS>",
 			"options": "agent_options"
 		}
 	]

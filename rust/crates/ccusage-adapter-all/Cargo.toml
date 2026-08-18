@@ -22,6 +22,7 @@ ccusage-adapter-openclaw.workspace = true
 ccusage-adapter-opencode.workspace = true
 ccusage-adapter-pi.workspace = true
 ccusage-adapter-qwen.workspace = true
+ccusage-adapter-zcode.workspace = true
 ccusage-cli.workspace = true
 ccusage-core.workspace = true
 serde.workspace = true

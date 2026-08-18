@@ -52,6 +52,8 @@ pub struct CcusageConfig {
     pub qwen: Option<QwenConfig>,
     /// Grok Build CLI configuration.
     pub grok: Option<GrokConfig>,
+    /// ZCode configuration.
+    pub zcode: Option<ZCodeConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -316,6 +318,21 @@ pub struct GrokConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ZCodeConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<ZCodeCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ZCodeCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
@@ -1093,6 +1110,7 @@ mod tests {
             &with_keys(&shared, &["openClawPath"]),
         );
         assert_schema_properties(&schema, &["grok", "defaults"], &shared);
+        assert_schema_properties(&schema, &["zcode", "defaults"], &shared);
     }
 
     #[test]
@@ -1148,7 +1166,7 @@ mod tests {
             &[
                 "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
                 "droid", "gemini", "goose", "grok", "hermes", "kilo", "kimi", "opencode",
-                "openclaw", "pi", "qwen",
+                "openclaw", "pi", "qwen", "zcode",
             ],
         );
         assert!(
@@ -1431,6 +1449,7 @@ mod tests {
             "piDefaults": schema_node(&schema, &["pi", "defaults"]),
             "openclawDefaults": schema_node(&schema, &["openclaw", "defaults"]),
             "grokDefaults": schema_node(&schema, &["grok", "defaults"]),
+            "zcodeDefaults": schema_node(&schema, &["zcode", "defaults"]),
         }));
     }
 

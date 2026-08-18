@@ -34,6 +34,7 @@ ccusage-adapter-openclaw = { path = "adapters/openclaw" }
 ccusage-adapter-opencode = { path = "adapters/opencode" }
 ccusage-adapter-pi = { path = "adapters/pi" }
 ccusage-adapter-qwen = { path = "adapters/qwen" }
+ccusage-adapter-zcode = { path = "adapters/zcode" }
 ccusage-cli = { path = "crates/ccusage-cli" }
 ccusage-cli-parser = { path = "crates/ccusage-cli-parser" }
 ccusage-config = { path = "crates/ccusage-config" }
