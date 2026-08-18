@@ -171,9 +171,18 @@ pub struct AgentCommandArgs {
     pub kind: AgentReportKind,
     pub sections: Option<Vec<AgentReportKind>>,
     pub by_agent: bool,
+    pub by_provider: bool,
+    pub agent_selectors: Vec<AgentSelector>,
+    pub model_patterns: Vec<String>,
     pub pi_path: Option<String>,
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentSelector {
+    pub agent: String,
+    pub provider: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

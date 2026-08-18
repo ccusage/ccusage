@@ -157,7 +157,7 @@ fn row_json(row: &AllRow, include_agents: bool) -> Value {
 }
 
 fn agent_json(row: &AllRow) -> Value {
-    json!({
+    let mut value = json!({
         "agent": row.agent,
         "modelsUsed": row.models_used,
         "inputTokens": row.input_tokens,
@@ -167,7 +167,11 @@ fn agent_json(row: &AllRow) -> Value {
         "totalTokens": row.total_tokens,
         "totalCost": json_float(row.total_cost),
         "modelBreakdowns": row.model_breakdowns,
-    })
+    });
+    if let (Some(object), Some(provider)) = (value.as_object_mut(), row.provider.as_ref()) {
+        object.insert("provider".to_string(), json!(provider));
+    }
+    value
 }
 
 fn totals_json(rows: &[AllRow]) -> Value {
@@ -396,12 +400,16 @@ pub(super) fn all_table_row(
     } else {
         row.period.clone()
     };
+    let label = row.provider.as_ref().map_or_else(
+        || agent_label(row.agent).to_string(),
+        |provider| format!("{}[{provider}]", agent_label(row.agent)),
+    );
     let agent = if breakdown {
-        format!("- {}", agent_label(row.agent))
+        format!("- {label}")
     } else if row.agent_breakdowns.is_some() {
         "All".to_string()
     } else {
-        agent_label(row.agent).to_string()
+        label
     };
     let models = if row.agent_breakdowns.is_some() {
         String::new()

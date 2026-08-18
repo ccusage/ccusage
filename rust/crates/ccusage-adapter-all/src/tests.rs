@@ -13,7 +13,7 @@ use serde_json::json;
 use super::*;
 use crate::{
     Align, CodexGroup, CodexModelUsage, ModelBreakdown, PricingMap,
-    cli::{AgentReportKind, CodexSpeed, SharedArgs},
+    cli::{AgentReportKind, AgentSelector, CodexSpeed, SharedArgs},
     model_aliases::set_model_aliases_for_tests,
 };
 use ccusage_test_support::{EnvVarsGuard, fs_fixture};
@@ -23,6 +23,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
         rows: vec![AllRow {
             period: "2026-01-02".to_string(),
             agent,
+            provider: None,
             models_used: Vec::new(),
             input_tokens: 1,
             output_tokens: 0,
@@ -84,6 +85,7 @@ fn aggregates_daily_agent_rows_by_period() {
             AllRow {
                 period: "2026-01-02".to_string(),
                 agent: "codex",
+                provider: None,
                 models_used: vec!["gpt-5".to_string()],
                 input_tokens: 100,
                 output_tokens: 20,
@@ -99,6 +101,7 @@ fn aggregates_daily_agent_rows_by_period() {
             AllRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
+                provider: None,
                 models_used: vec!["claude-sonnet-4-20250514".to_string()],
                 input_tokens: 50,
                 output_tokens: 25,
@@ -141,6 +144,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
             AllRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
+                provider: None,
                 models_used: vec!["claude-sonnet-4-20250514".to_string()],
                 input_tokens: 10,
                 output_tokens: 5,
@@ -164,6 +168,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
             AllRow {
                 period: "2026-01-15".to_string(),
                 agent: "claude",
+                provider: None,
                 models_used: vec!["claude-opus-4-20250514".to_string()],
                 input_tokens: 20,
                 output_tokens: 10,
@@ -187,6 +192,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
             AllRow {
                 period: "2026-01-20".to_string(),
                 agent: "codex",
+                provider: None,
                 models_used: vec!["gpt-5".to_string()],
                 input_tokens: 30,
                 output_tokens: 15,
@@ -261,6 +267,7 @@ fn renders_all_report_json_with_period_and_agent_metadata() {
     let rows = vec![AllRow {
         period: "2026-01-02".to_string(),
         agent: "all",
+        provider: None,
         models_used: vec!["gpt-5".to_string()],
         input_tokens: 100,
         output_tokens: 20,
@@ -287,6 +294,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
     let rows = vec![AllRow {
         period: "2026-01-02".to_string(),
         agent: "all",
+        provider: None,
         models_used: vec!["claude-sonnet-4-20250514".to_string(), "gpt-5".to_string()],
         input_tokens: 150,
         output_tokens: 45,
@@ -300,6 +308,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
             AllRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
+                provider: None,
                 models_used: vec!["claude-sonnet-4-20250514".to_string()],
                 input_tokens: 50,
                 output_tokens: 25,
@@ -323,6 +332,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
             AllRow {
                 period: "2026-01-02".to_string(),
                 agent: "codex",
+                provider: None,
                 models_used: vec!["gpt-5".to_string()],
                 input_tokens: 100,
                 output_tokens: 20,
@@ -386,6 +396,7 @@ fn omits_by_agent_json_breakdowns_by_default() {
         vec![AllRow {
             period: "2026-01-02".to_string(),
             agent: "codex",
+            provider: None,
             models_used: vec!["gpt-5".to_string()],
             input_tokens: 100,
             output_tokens: 20,
@@ -411,6 +422,7 @@ fn renders_multi_section_json_with_command_totals() {
     let daily_rows = vec![AllRow {
         period: "2026-01-02".to_string(),
         agent: "all",
+        provider: None,
         models_used: vec!["gpt-5".to_string()],
         input_tokens: 100,
         output_tokens: 20,
@@ -427,6 +439,7 @@ fn renders_multi_section_json_with_command_totals() {
     let session_rows = vec![AllRow {
         period: "session-a".to_string(),
         agent: "codex",
+        provider: None,
         models_used: vec!["gpt-5".to_string()],
         input_tokens: 100,
         output_tokens: 20,
@@ -525,6 +538,88 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
     assert_daily_family_and_session_sections_match_standalone(&shared);
 }
 
+#[test]
+fn splits_pi_usage_by_message_provider() {
+    let fixture = fs_fixture!({
+        "pi/sessions/project-a/agent_session-a.jsonl": [
+            r#"{"type":"message","timestamp":"2026-08-18T08:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-5","usage":{"input":10,"output":1,"cost":{"total":1.0}}}}"#,
+            r#"{"type":"message","timestamp":"2026-08-18T09:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{"input":20,"output":2,"cacheRead":200,"cost":{"total":2.0}}}}"#,
+            r#"{"type":"message","timestamp":"2026-08-18T10:00:00.000Z","message":{"role":"assistant","provider":"xai-auth","model":"grok-4.6","usage":{"input":30,"output":3,"cost":{"total":3.0}}}}"#,
+        ].join("\n"),
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "PI_AGENT_DIR",
+        fixture.path("pi/sessions").into_os_string(),
+    );
+    let shared = fixture_shared("20260818", "20260818");
+
+    let result = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        AllFilters {
+            by_provider: true,
+            ..AllFilters::default()
+        },
+    )
+    .unwrap();
+
+    let providers = result.rows[0]
+        .agent_breakdowns
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|row| (row.provider.as_deref().unwrap(), row.input_tokens))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        providers,
+        vec![("anthropic", 10), ("openai-codex", 20), ("xai-auth", 30)]
+    );
+    let report = report_json_with_agents(&result.rows, AgentReportKind::Daily, true);
+    assert_eq!(report["daily"][0]["agents"][1]["provider"], "openai-codex");
+    assert_eq!(report["daily"][0]["agents"][1]["cacheReadTokens"], 200);
+}
+
+#[test]
+fn filters_pi_provider_and_model_with_agent_selector() {
+    let fixture = fs_fixture!({
+        "pi/sessions/project-a/agent_session-a.jsonl": [
+            r#"{"type":"message","timestamp":"2026-08-18T08:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{"input":20,"output":2,"cost":{"total":2.0}}}}"#,
+            r#"{"type":"message","timestamp":"2026-08-18T09:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"o4-mini","usage":{"input":40,"output":4,"cost":{"total":4.0}}}}"#,
+            r#"{"type":"message","timestamp":"2026-08-18T10:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-5","usage":{"input":80,"output":8,"cost":{"total":8.0}}}}"#,
+        ].join("\n"),
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "PI_AGENT_DIR",
+        fixture.path("pi/sessions").into_os_string(),
+    );
+    let shared = fixture_shared("20260818", "20260818");
+    let selectors = vec![AgentSelector {
+        agent: "pi".to_string(),
+        provider: Some("openai-codex".to_string()),
+    }];
+    let models = vec!["gpt-*".to_string()];
+
+    let result = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        AllFilters {
+            agent_selectors: &selectors,
+            model_patterns: &models,
+            ..AllFilters::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(result.rows[0].input_tokens, 20);
+    assert_eq!(result.rows[0].output_tokens, 2);
+    let breakdown = &result.rows[0].agent_breakdowns.as_ref().unwrap()[0];
+    assert_eq!(breakdown.provider.as_deref(), Some("openai-codex"));
+    assert_eq!(breakdown.models_used, vec!["[pi] gpt-5.6-sol"]);
+    assert_eq!(breakdown.total_cost, 2.0);
+}
+
 fn fixture_shared(since: &str, until: &str) -> SharedArgs {
     SharedArgs {
         since: Some(since.to_string()),
@@ -582,7 +677,7 @@ fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {
     let _env = isolated_agent_env(&fixture, "GROK_HOME", fixture.path("grok").into_os_string());
     let shared = fixture_shared("20250615", "20250615");
 
-    let result = loader::load_rows(kind, &shared).unwrap();
+    let result = loader::load_rows(kind, &shared, AllFilters::default()).unwrap();
 
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.detected_agents, vec!["grok"]);
@@ -622,7 +717,7 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
             ],
             AgentReportKind::Weekly | AgentReportKind::Monthly => unreachable!(),
         };
-        let section_rows = load_sections(&sections, shared).unwrap();
+        let section_rows = load_sections(&sections, shared, AllFilters::default()).unwrap();
         let report = sections_report_json(&section_rows.sections, command_kind, false);
 
         for section_kind in [
@@ -631,7 +726,7 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
             AgentReportKind::Monthly,
             AgentReportKind::Session,
         ] {
-            let standalone = load_rows(section_kind, shared).unwrap();
+            let standalone = load_rows(section_kind, shared, AllFilters::default()).unwrap();
             let standalone_report = report_json(&standalone.rows, section_kind);
             let key = match section_kind {
                 AgentReportKind::Daily => "daily",
@@ -762,6 +857,7 @@ fn aggregates_model_breakdowns_across_agents() {
             AllRow {
                 period: "2026-01-02".to_string(),
                 agent: "codex",
+                provider: None,
                 models_used: vec!["gpt-5".to_string()],
                 input_tokens: 10,
                 output_tokens: 5,
@@ -785,6 +881,7 @@ fn aggregates_model_breakdowns_across_agents() {
             AllRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
+                provider: None,
                 models_used: vec!["gpt-5".to_string(), "claude-sonnet-4-20250514".to_string()],
                 input_tokens: 30,
                 output_tokens: 20,
@@ -842,6 +939,7 @@ fn displays_total_tokens_with_cache_tokens_like_typescript_table() {
     let row = AllRow {
         period: "2026-01-02".to_string(),
         agent: "codex",
+        provider: None,
         models_used: vec!["gpt-5".to_string()],
         input_tokens: 100,
         output_tokens: 20,
@@ -865,6 +963,7 @@ fn report_title_uses_detected_agents_even_when_filtered_rows_are_sparse() {
     let rows = vec![AllRow {
         period: "2026-01-02".to_string(),
         agent: "all",
+        provider: None,
         models_used: vec!["gpt-5".to_string()],
         input_tokens: 100,
         output_tokens: 20,
@@ -895,6 +994,7 @@ fn all_table_rows_match_main_agent_breakdown_display() {
     let row = AllRow {
         period: "2026-01-02".to_string(),
         agent: "all",
+        provider: None,
         models_used: vec!["gpt-5".to_string()],
         input_tokens: 100,
         output_tokens: 20,
@@ -907,6 +1007,7 @@ fn all_table_rows_match_main_agent_breakdown_display() {
         agent_breakdowns: Some(vec![AllRow {
             period: "2026-01-02".to_string(),
             agent: "codex",
+            provider: None,
             models_used: vec!["gpt-5".to_string()],
             input_tokens: 100,
             output_tokens: 20,
@@ -938,10 +1039,36 @@ fn all_table_rows_match_main_agent_breakdown_display() {
 }
 
 #[test]
+fn provider_breakdown_table_row_uses_agent_selector_syntax() {
+    let row = AllRow {
+        period: "2026-08-18".to_string(),
+        agent: "pi",
+        provider: Some("openai-codex".to_string()),
+        models_used: vec!["[pi] gpt-5.6-sol".to_string()],
+        input_tokens: 20,
+        output_tokens: 2,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 200,
+        total_tokens: 222,
+        total_cost: 2.0,
+        metadata: None,
+        metadata_agents: Some(vec!["pi"]),
+        agent_breakdowns: None,
+        model_breakdowns: Vec::new(),
+    };
+
+    assert_eq!(
+        all_table_row(&row, false, true, false)[1],
+        "- pi-agent[openai-codex]"
+    );
+}
+
+#[test]
 fn all_report_title_lists_detected_agents() {
     let row = AllRow {
         period: "2026-01-02".to_string(),
         agent: "all",
+        provider: None,
         models_used: Vec::new(),
         input_tokens: 0,
         output_tokens: 0,

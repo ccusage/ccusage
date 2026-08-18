@@ -13,8 +13,26 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub use loader::load_entries_for_store_path;
+#[derive(Debug)]
+pub struct PiEntry {
+    pub provider: Option<String>,
+    pub entry: LoadedEntry,
+}
+
+impl std::ops::Deref for PiEntry {
+    type Target = LoadedEntry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entry
+    }
+}
+
 pub use loader::{load_entries, load_entries_for_store_paths};
+#[doc(hidden)]
+pub use loader::{
+    load_entries_for_store_path, load_entries_for_store_paths_with_provider,
+    load_entries_with_provider,
+};
 pub use paths::{named_store_paths, paths as default_paths};
 pub use report::{report_from_rows, summarize_entries};
 

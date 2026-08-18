@@ -141,6 +141,8 @@ bunx ccusage pi daily --pi-path /path/to/sessions,/archive/pi/sessions
 bunx ccusage daily --all
 bunx ccusage daily --sections daily,monthly,session --json
 bunx ccusage daily --by-agent --json
+bunx ccusage daily --by-provider
+bunx ccusage daily --agent 'codex,pi[openai-codex]' --model 'gpt-*'
 
 # Filters and options
 bunx ccusage daily --since 2026-04-25 --until 2026-05-16

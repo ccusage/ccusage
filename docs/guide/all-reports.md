@@ -28,9 +28,24 @@ For automation, unified JSON reports can emit several report sections from one l
 ```bash
 ccusage daily --sections daily,monthly,session --json
 ccusage daily --by-agent --json
+ccusage daily --by-provider
 ```
 
 `--sections` accepts `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included, and table output prints each requested section as a separate table. `--by-agent` adds an `agents` array to daily, weekly, and monthly JSON rows; session rows are already source-specific.
+
+`--by-provider` splits Pi-format sources into rows such as `pi-agent[anthropic]` and `pi-agent[openai-codex]`. Provider rows include the same token, cache, model, and cost fields as agent rows; JSON output adds a `provider` field.
+
+Filter unified reports with comma-separated agent selectors and model globs:
+
+```bash
+# Codex plus OpenAI-backed Pi usage
+ccusage daily --agent 'codex,pi[openai-codex]'
+
+# GPT models from those sources
+ccusage daily --agent 'codex,pi[openai-codex]' --model 'gpt-*'
+```
+
+An agent selector is `agent` or `agent[provider]`. `--model` accepts comma-separated patterns using `*` and `?`, and matches the model name without a Pi store prefix such as `[pi]`.
 
 ## How Unified Views Work
 

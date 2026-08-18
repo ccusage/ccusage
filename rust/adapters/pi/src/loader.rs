@@ -1,8 +1,8 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, collect_files_with_extension, debug_log,
-    parse_tz, read_files_parallel,
+    LoadedEntry, PiEntry, PricingMap, Result, cli::SharedArgs, collect_files_with_extension,
+    debug_log, parse_tz, read_files_parallel,
 };
 
 use super::{parser, paths};
@@ -15,6 +15,22 @@ pub fn load_entries(
     crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("pi-agent"),
         shared.json,
+        || {
+            load_entries_inner(shared, custom_path, pricing)
+                .map(|entries| entries.into_iter().map(|entry| entry.entry).collect())
+        },
+    )
+}
+
+#[doc(hidden)]
+pub fn load_entries_with_provider(
+    shared: &SharedArgs,
+    custom_path: Option<&str>,
+    pricing: Option<&PricingMap>,
+) -> Result<Vec<PiEntry>> {
+    crate::progress::track_usage_load(
+        crate::progress::UsageLoadAgent("pi-agent"),
+        shared.json,
         || load_entries_inner(shared, custom_path, pricing),
     )
 }
@@ -23,7 +39,7 @@ fn load_entries_inner(
     shared: &SharedArgs,
     custom_path: Option<&str>,
     pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<PiEntry>> {
     load_entries_from_paths(
         shared,
         paths::paths(custom_path)?,
@@ -53,6 +69,17 @@ pub fn load_entries_for_store_paths(
     store_name: &str,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
+    load_entries_for_store_paths_with_provider(shared, store_paths, store_name, pricing)
+        .map(|entries| entries.into_iter().map(|entry| entry.entry).collect())
+}
+
+#[doc(hidden)]
+pub fn load_entries_for_store_paths_with_provider(
+    shared: &SharedArgs,
+    store_paths: Vec<PathBuf>,
+    store_name: &str,
+    pricing: Option<&PricingMap>,
+) -> Result<Vec<PiEntry>> {
     load_entries_from_paths(
         shared,
         store_paths,
@@ -88,7 +115,7 @@ fn load_entries_from_paths(
     paths: Vec<PathBuf>,
     pricing: Option<&PricingMap>,
     scope: PiLoadScope<'_>,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<PiEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
     let mut entries = Vec::new();
     let mut seen = HashSet::new();

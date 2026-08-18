@@ -14,9 +14,16 @@ use crate::{
         amp, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes, kilo, kimi,
         openclaw, opencode, pi, qwen,
     },
-    cli::{AgentReportKind, CodexSpeed, NamedPiStore, SharedArgs, WeekDay},
-    filter_loaded_entries_by_date, json_float,
+    cli::{AgentReportKind, AgentSelector, CodexSpeed, NamedPiStore, SharedArgs, WeekDay},
+    date_within_range, filter_loaded_entries_by_date, json_float,
 };
+
+#[derive(Clone, Copy, Default)]
+pub(super) struct AllFilters<'a> {
+    pub(super) by_provider: bool,
+    pub(super) agent_selectors: &'a [AgentSelector],
+    pub(super) model_patterns: &'a [String],
+}
 
 use super::{
     report::sort_rows,
@@ -26,10 +33,14 @@ use super::{
     },
 };
 
-pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AllLoadResult> {
+pub(super) fn load_rows(
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+    filters: AllFilters<'_>,
+) -> Result<AllLoadResult> {
     let pricing = load_pricing(shared);
     let load_kind = load_kind_for_report(kind);
-    let loaded = load_base_rows(load_kind, shared, &pricing)?;
+    let loaded = load_base_rows(load_kind, shared, &pricing, filters)?;
     Ok(AllLoadResult {
         rows: finish_rows(kind, loaded.rows, shared),
         detected_agents: loaded.detected_agents,
@@ -39,13 +50,14 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
 pub(super) fn load_sections(
     kinds: &[AgentReportKind],
     shared: &SharedArgs,
+    filters: AllFilters<'_>,
 ) -> Result<AllSectionsLoadResult> {
     let pricing = load_pricing(shared);
     let daily_base = needs_daily_family(kinds)
-        .then(|| load_base_rows(AgentReportKind::Daily, shared, &pricing))
+        .then(|| load_base_rows(AgentReportKind::Daily, shared, &pricing, filters))
         .transpose()?;
     let session_base = needs_session(kinds)
-        .then(|| load_base_rows(AgentReportKind::Session, shared, &pricing))
+        .then(|| load_base_rows(AgentReportKind::Session, shared, &pricing, filters))
         .transpose()?;
 
     let daily_detected_agents = daily_base
@@ -101,6 +113,7 @@ fn load_base_rows(
     load_kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
+    filters: AllFilters<'_>,
 ) -> Result<AllLoadResult> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
@@ -211,7 +224,14 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[7],
             progress_agent: crate::progress::UsageLoadAgent("pi-agent"),
             load: Box::new(|| {
-                load_pi_format_agent_rows("pi", None, load_kind, &loader_shared, pricing)
+                load_pi_format_agent_rows(
+                    "pi",
+                    None,
+                    load_kind,
+                    &loader_shared,
+                    pricing,
+                    filters.split_pi_provider("pi"),
+                )
             }),
         },
         AgentLoadSpec {
@@ -344,6 +364,7 @@ fn load_base_rows(
                     load_kind,
                     loader_shared_ref,
                     pricing_ref,
+                    filters.split_pi_provider(agent),
                 )
             }),
         });
@@ -359,10 +380,43 @@ fn load_base_rows(
             loaded.agent_rows,
         );
     }
+    filter_rows(&mut rows, filters);
+    if !filters.agent_selectors.is_empty() {
+        detected_agents.retain(|agent| filters.matches_agent(agent));
+    }
     Ok(AllLoadResult {
         rows,
         detected_agents,
     })
+}
+
+impl AllFilters<'_> {
+    fn matches_agent(self, agent: &str) -> bool {
+        self.agent_selectors.is_empty()
+            || self
+                .agent_selectors
+                .iter()
+                .any(|selector| wildcard_match(&selector.agent, agent))
+    }
+
+    fn split_pi_provider(self, agent: &str) -> bool {
+        self.by_provider
+            || self.agent_selectors.iter().any(|selector| {
+                wildcard_match(&selector.agent, agent) && selector.provider.is_some()
+            })
+    }
+
+    fn matches_row(self, row: &AllRow) -> bool {
+        self.agent_selectors.is_empty()
+            || self.agent_selectors.iter().any(|selector| {
+                wildcard_match(&selector.agent, row.agent)
+                    && selector.provider.as_ref().is_none_or(|provider| {
+                        row.provider
+                            .as_deref()
+                            .is_some_and(|candidate| wildcard_match(provider, candidate))
+                    })
+            })
+    }
 }
 
 fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs) -> Vec<AllRow> {
@@ -535,7 +589,12 @@ fn load_pi_format_agent_rows(
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
+    by_provider: bool,
 ) -> Result<AgentRows> {
+    if by_provider {
+        let entries = pi::load_entries_with_provider(shared, custom_path, Some(pricing))?;
+        return filtered_pi_provider_rows(agent, kind, shared, entries, true);
+    }
     let mut entries = pi::load_entries(shared, custom_path, Some(pricing))?;
     let detected = !entries.is_empty();
     let summaries = if kind == AgentReportKind::Session {
@@ -569,9 +628,59 @@ fn load_named_pi_store_rows_from_paths(
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
+    by_provider: bool,
 ) -> Result<AgentRows> {
+    if by_provider {
+        let entries = pi::load_entries_for_store_paths_with_provider(
+            shared,
+            store_paths,
+            agent,
+            Some(pricing),
+        )?;
+        return filtered_pi_provider_rows(agent, kind, shared, entries, true);
+    }
     let entries = pi::load_entries_for_store_paths(shared, store_paths, agent, Some(pricing))?;
     filtered_pi_format_agent_rows(agent, kind, shared, entries, true)
+}
+
+fn filtered_pi_provider_rows(
+    agent: &'static str,
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+    mut entries: Vec<pi::PiEntry>,
+    include_project_path: bool,
+) -> Result<AgentRows> {
+    let detected = !entries.is_empty();
+    entries.retain(|entry| {
+        date_within_range(
+            &entry.date,
+            shared.since.as_deref(),
+            shared.until.as_deref(),
+        )
+    });
+    let mut providers = BTreeMap::<String, Vec<LoadedEntry>>::new();
+    for entry in entries {
+        let provider = entry
+            .provider
+            .filter(|provider| !provider.trim().is_empty())
+            .unwrap_or_else(|| "unknown".to_string());
+        providers.entry(provider).or_default().push(entry.entry);
+    }
+    let mut rows = Vec::new();
+    for (provider, entries) in providers {
+        let summaries = if kind == AgentReportKind::Session {
+            summarize_entry_sessions(&entries)?
+        } else {
+            pi::summarize_entries(&entries, kind)?
+        };
+        rows.extend(summary_rows_with_provider(
+            agent,
+            summaries,
+            include_project_path,
+            Some(provider),
+        ));
+    }
+    Ok(AgentRows { rows, detected })
 }
 
 fn filtered_pi_format_agent_rows(
@@ -731,6 +840,15 @@ fn summary_rows(
     summaries: Vec<UsageSummary>,
     include_project_path: bool,
 ) -> Vec<AllRow> {
+    summary_rows_with_provider(agent, summaries, include_project_path, None)
+}
+
+fn summary_rows_with_provider(
+    agent: &'static str,
+    summaries: Vec<UsageSummary>,
+    include_project_path: bool,
+    provider: Option<String>,
+) -> Vec<AllRow> {
     summaries
         .into_iter()
         .filter_map(|summary| {
@@ -749,6 +867,7 @@ fn summary_rows(
             Some(AllRow {
                 period,
                 agent,
+                provider: provider.clone(),
                 models_used: summary.models_used,
                 input_tokens: summary.input_tokens,
                 output_tokens: summary.output_tokens,
@@ -763,6 +882,100 @@ fn summary_rows(
             })
         })
         .collect()
+}
+
+fn filter_rows(rows: &mut Vec<AllRow>, filters: AllFilters<'_>) {
+    rows.retain_mut(|row| {
+        if !filters.matches_row(row) {
+            return false;
+        }
+        filters.model_patterns.is_empty() || filter_row_models(row, filters.model_patterns)
+    });
+}
+
+fn filter_row_models(row: &mut AllRow, patterns: &[String]) -> bool {
+    row.model_breakdowns.retain(|breakdown| {
+        let model = unprefixed_model_name(&breakdown.model_name);
+        patterns
+            .iter()
+            .any(|pattern| wildcard_match(pattern, model))
+    });
+    if row.model_breakdowns.is_empty() {
+        return false;
+    }
+    row.models_used = row
+        .model_breakdowns
+        .iter()
+        .map(|breakdown| breakdown.model_name.clone())
+        .collect();
+    row.input_tokens = row
+        .model_breakdowns
+        .iter()
+        .map(|breakdown| breakdown.input_tokens)
+        .sum();
+    row.output_tokens = row
+        .model_breakdowns
+        .iter()
+        .map(|breakdown| breakdown.output_tokens)
+        .sum();
+    row.cache_creation_tokens = row
+        .model_breakdowns
+        .iter()
+        .map(|breakdown| breakdown.cache_creation_tokens)
+        .sum();
+    row.cache_read_tokens = row
+        .model_breakdowns
+        .iter()
+        .map(|breakdown| breakdown.cache_read_tokens)
+        .sum();
+    row.total_tokens = row.model_breakdowns.iter().fold(0_u64, |total, breakdown| {
+        total
+            .saturating_add(breakdown.input_tokens)
+            .saturating_add(breakdown.output_tokens)
+            .saturating_add(breakdown.cache_creation_tokens)
+            .saturating_add(breakdown.cache_read_tokens)
+            .saturating_add(breakdown.extra_total_tokens)
+    });
+    row.total_cost = row
+        .model_breakdowns
+        .iter()
+        .map(|breakdown| breakdown.cost)
+        .sum();
+    true
+}
+
+fn unprefixed_model_name(model: &str) -> &str {
+    model
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once("] "))
+        .map_or(model, |(_, model)| model)
+}
+
+fn wildcard_match(pattern: &str, value: &str) -> bool {
+    let pattern = pattern.to_ascii_lowercase();
+    let value = value.to_ascii_lowercase();
+    let (pattern, value) = (pattern.as_bytes(), value.as_bytes());
+    let (mut p, mut v, mut star, mut retry) = (0, 0, None, 0);
+    while v < value.len() {
+        if p < pattern.len() && (pattern[p] == b'?' || pattern[p] == value[v]) {
+            p += 1;
+            v += 1;
+        } else if p < pattern.len() && pattern[p] == b'*' {
+            star = Some(p);
+            p += 1;
+            retry = v;
+        } else if let Some(star_index) = star {
+            p = star_index + 1;
+            retry += 1;
+            v = retry;
+        } else {
+            return false;
+        }
+    }
+    while p < pattern.len() && pattern[p] == b'*' {
+        p += 1;
+    }
+    p == pattern.len()
 }
 
 fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Option<Value> {
@@ -817,6 +1030,7 @@ where
     AllRow {
         period: period.to_string(),
         agent: "codex",
+        provider: None,
         models_used: group.models.keys().cloned().collect(),
         input_tokens: codex::non_cached_input_tokens(group.input_tokens, group.cached_input_tokens),
         output_tokens: group.output_tokens,
@@ -996,7 +1210,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Session, &shared).unwrap();
+        let result = load_rows(AgentReportKind::Session, &shared, AllFilters::default()).unwrap();
         let omp_rows = result
             .rows
             .iter()
@@ -1069,7 +1283,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Session, &shared).unwrap();
+        let result = load_rows(AgentReportKind::Session, &shared, AllFilters::default()).unwrap();
         let pi_rows = result
             .rows
             .iter()
@@ -1110,6 +1324,7 @@ mod tests {
             AgentReportKind::Session,
             &shared,
             &PricingMap::default(),
+            false,
         )
         .unwrap();
 
@@ -1232,7 +1447,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, AllFilters::default()) else {
             panic!("expected default pi path collision");
         };
 
@@ -1270,7 +1485,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, AllFilters::default()) else {
             panic!("expected named pi store path collision");
         };
 
@@ -1302,7 +1517,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, AllFilters::default()) else {
             panic!("expected nested default pi path collision");
         };
 
@@ -1341,7 +1556,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, AllFilters::default()) else {
             panic!("expected partial named pi store path collision");
         };
 
@@ -1370,7 +1585,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Daily, &shared).unwrap();
+        let result = load_rows(AgentReportKind::Daily, &shared, AllFilters::default()).unwrap();
 
         assert!(result.detected_agents.contains(&"omp"));
         assert_eq!(result.rows.len(), 1);
@@ -1396,6 +1611,7 @@ mod tests {
             AgentReportKind::Daily,
             &shared,
             &PricingMap::default(),
+            false,
         )
         .unwrap()
         .rows;

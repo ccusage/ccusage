@@ -4,7 +4,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, Pricing, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, PiEntry, Pricing, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage, calculate_cost_from_pricing,
     cli::CostMode, fast::LinePrefilter, format_date_tz, missing_pricing_model_for_usage,
 };
@@ -26,6 +26,8 @@ struct PiLine {
 struct PiMessage {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     role: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    provider: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model: Option<String>,
     usage: Option<PiUsage>,
@@ -70,7 +72,7 @@ pub fn read_session_file(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<PiEntry>> {
     read_session_file_with_context(path, tz, mode, pricing, PiStoreContext::Default)
 }
 
@@ -81,7 +83,7 @@ pub(super) fn read_session_file_for_store(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     store_name: &str,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<PiEntry>> {
     read_session_file_with_context(
         path,
         tz,
@@ -165,7 +167,7 @@ fn read_session_file_with_context(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     context: PiStoreContext<'_>,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<PiEntry>> {
     let content = fs::read(path)?;
     let project = context.project(path);
     let session_id = extract_session_id(path);
@@ -242,20 +244,23 @@ fn read_session_file_with_context(
             is_api_error_message: None,
             is_sidechain: None,
         };
-        entries.push(LoadedEntry {
-            date: format_date_tz(timestamp, tz),
-            timestamp,
-            project: Arc::from(project.as_str()),
-            session_id: Arc::from(session_id.as_str()),
-            project_path: Arc::from(project.as_str()),
-            cost,
-            extra_total_tokens,
-            credits: None,
-            message_count: None,
-            model,
-            data,
-            usage_limit_reset_time: None,
-            missing_pricing_model,
+        entries.push(PiEntry {
+            provider: message.provider.clone(),
+            entry: LoadedEntry {
+                date: format_date_tz(timestamp, tz),
+                timestamp,
+                project: Arc::from(project.as_str()),
+                session_id: Arc::from(session_id.as_str()),
+                project_path: Arc::from(project.as_str()),
+                cost,
+                extra_total_tokens,
+                credits: None,
+                message_count: None,
+                model,
+                data,
+                usage_limit_reset_time: None,
+                missing_pricing_model,
+            },
         });
     }
     Ok(entries)
@@ -399,6 +404,19 @@ pub(super) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> Strin
 mod tests {
     use super::*;
     use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn preserves_message_provider_for_unified_breakdowns() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5","usage":{"input":100,"output":200}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+
+        let entries = read_session_file(&file, None, CostMode::Display, None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider.as_deref(), Some("openai-codex"));
+    }
 
     #[test]
     fn falls_back_to_total_tokens_when_pi_parts_are_missing() {

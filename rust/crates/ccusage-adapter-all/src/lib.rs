@@ -35,12 +35,17 @@ use crate::{
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     let kind = args.kind;
-    let shared = args.shared;
-    let include_agents = args.by_agent;
-    if let Some(sections) = args.sections {
+    let include_agents = args.by_agent || args.by_provider || !args.agent_selectors.is_empty();
+    let filters = loader::AllFilters {
+        by_provider: args.by_provider,
+        agent_selectors: &args.agent_selectors,
+        model_patterns: &args.model_patterns,
+    };
+    let shared = &args.shared;
+    if let Some(sections) = args.sections.clone() {
         let sections = requested_sections(kind, sections);
-        let result = loader::load_sections(&sections, &shared)?;
-        if wants_json(&shared) {
+        let result = loader::load_sections(&sections, shared, filters)?;
+        if wants_json(shared) {
             return report::print_sections_report_json(
                 &result.sections,
                 kind,
@@ -53,18 +58,18 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
             report::print_table(
                 rows,
                 *section_kind,
-                &shared,
+                shared,
                 result.detected_agents_for(*section_kind),
             )?;
         }
         return Ok(());
     }
-    let result = loader::load_rows(kind, &shared)?;
-    if wants_json(&shared) {
+    let result = loader::load_rows(kind, shared, filters)?;
+    if wants_json(shared) {
         let output = report::report_json_with_agents(&result.rows, kind, include_agents);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
-    report::print_table(&result.rows, kind, &shared, &result.detected_agents)
+    report::print_table(&result.rows, kind, shared, &result.detected_agents)
 }
 
 fn requested_sections(
@@ -86,7 +91,9 @@ fn requested_sections(
 }
 
 #[cfg(test)]
-use loader::{aggregate_rows, codex_group_row, load_agent_rows_parallel, load_rows, load_sections};
+use loader::{
+    AllFilters, aggregate_rows, codex_group_row, load_agent_rows_parallel, load_rows, load_sections,
+};
 #[cfg(test)]
 use report::{
     all_report_title, all_table_columns, all_table_row, report_json, report_json_with_agents,

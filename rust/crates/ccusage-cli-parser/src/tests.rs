@@ -218,6 +218,12 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
             .map(|section| format!("{section:?}"))
             .collect::<Vec<_>>()),
         "byAgent": args.by_agent,
+        "byProvider": args.by_provider,
+        "agentSelectors": args.agent_selectors.into_iter().map(|selector| json!({
+            "agent": selector.agent,
+            "provider": selector.provider,
+        })).collect::<Vec<_>>(),
+        "modelPatterns": args.model_patterns,
         "piPath": args.pi_path,
         "openClawPath": args.open_claw_path,
         "codexSpeed": format!("{:?}", args.codex_speed),
@@ -387,6 +393,33 @@ fn parses_unified_sections_and_by_agent_flags() {
 }
 
 #[test]
+fn parses_unified_agent_provider_and_model_selectors() {
+    let cli = parse(&[
+        "ccusage",
+        "daily",
+        "--agent",
+        "codex,pi[openai-codex]",
+        "--model",
+        "gpt-*",
+        "--by-provider",
+    ]);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+
+    assert_eq!(args.agent_selectors.len(), 2);
+    assert_eq!(args.agent_selectors[0].agent, "codex");
+    assert_eq!(args.agent_selectors[0].provider, None);
+    assert_eq!(args.agent_selectors[1].agent, "pi");
+    assert_eq!(
+        args.agent_selectors[1].provider.as_deref(),
+        Some("openai-codex")
+    );
+    assert_eq!(args.model_patterns, vec!["gpt-*"]);
+    assert!(args.by_provider);
+}
+
+#[test]
 fn parses_root_sections_and_by_agent_flags_without_daily_token() {
     let cli = parse(&[
         "ccusage",
@@ -463,17 +496,30 @@ fn parses_top_level_session_sections_as_all_agent_report_without_id() {
 }
 
 #[test]
-fn rejects_sections_and_by_agent_with_top_level_session_id() {
+fn rejects_unified_options_with_top_level_session_id() {
     let sections_error = parse_error(&["ccusage", "session", "--id", "abc", "--sections", "daily"]);
     assert_eq!(
         sections_error,
-        "The --sections and --by-agent options cannot be used with session --id."
+        "Unified report options cannot be used with session --id."
     );
 
     let by_agent_error = parse_error(&["ccusage", "session", "--id", "abc", "--by-agent"]);
     assert_eq!(
         by_agent_error,
-        "The --sections and --by-agent options cannot be used with session --id."
+        "Unified report options cannot be used with session --id."
+    );
+
+    let selector_error = parse_error(&[
+        "ccusage",
+        "session",
+        "--id",
+        "abc",
+        "--agent",
+        "pi[openai-codex]",
+    ]);
+    assert_eq!(
+        selector_error,
+        "Unified report options cannot be used with session --id."
     );
 }
 
@@ -484,6 +530,22 @@ fn rejects_unified_only_flags_on_per_agent_subcommands() {
 
     let by_agent_error = parse_error(&["ccusage", "codex", "daily", "--by-agent"]);
     assert_eq!(by_agent_error, "Unknown codex option '--by-agent'");
+
+    let agent_error = parse_error(&["ccusage", "codex", "daily", "--agent", "pi"]);
+    assert_eq!(agent_error, "Unknown codex option '--agent'");
+
+    let model_error = parse_error(&["ccusage", "codex", "daily", "--model", "gpt-*"]);
+    assert_eq!(model_error, "Unknown codex option '--model'");
+}
+
+#[test]
+fn rejects_malformed_agent_provider_selector() {
+    let error = parse_error(&["ccusage", "daily", "--agent", "pi[openai-codex"]);
+
+    assert_eq!(
+        error,
+        "Invalid --agent selector 'pi[openai-codex'. Expected agent or agent[provider], for example codex or pi[openai-codex]."
+    );
 }
 
 #[test]
@@ -908,10 +970,6 @@ fn snapshots_cli_parse_error_guidance() {
             "error": parse_error(&["ccusage", "--daily"]),
         }),
         json!({
-            "args": ["ccusage", "daily", "--agent", "codex"],
-            "error": parse_error(&["ccusage", "daily", "--agent", "codex"]),
-        }),
-        json!({
             "args": ["ccusage", "codex", "blocks"],
             "error": parse_error(&["ccusage", "codex", "blocks"]),
         }),
@@ -1064,15 +1122,6 @@ fn rejects_report_flag_aliases_with_guidance() {
     assert_eq!(
         error,
         "Report flags like --daily are not supported. Use \"ccusage daily\" instead."
-    );
-}
-
-#[test]
-fn rejects_agent_filter_options_with_guidance() {
-    let error = parse_error(&["ccusage", "daily", "--agent", "codex"]);
-    assert_eq!(
-        error,
-        "Agent filters like --agent are not supported. Use \"ccusage <agent> <report>\", for example \"ccusage codex daily\"."
     );
 }
 

@@ -93,6 +93,19 @@
 			"default": "false"
 		},
 		{
+			"flags": "--by-provider",
+			"description": "Split Pi-format agent rows by message provider",
+			"default": "false"
+		},
+		{
+			"flags": "--agent <selector>",
+			"description": "Filter by comma-separated agent or agent[provider] selectors"
+		},
+		{
+			"flags": "--model <pattern>",
+			"description": "Filter by comma-separated model glob patterns"
+		},
+		{
 			"flags": "-O, --offline",
 			"description": "Use cached pricing data where supported",
 			"default": "false"

@@ -3,10 +3,10 @@ use std::{ffi::OsString, path::PathBuf};
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
-    AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DATE_BOUND_FORMATS, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS,
-    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    AgentCommandArgs, AgentReportKind, AgentSelector, BlocksArgs, CliConfig, CodexSpeed, Command,
+    CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, OPENCODE_AGENT_REPORTS,
+    STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate,
+    WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 use crate::Cli;
@@ -21,6 +21,9 @@ enum ControlArg {
 struct RootAllOptions {
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
+    by_provider: bool,
+    agent_selectors: Vec<AgentSelector>,
+    model_patterns: Vec<String>,
     first_flag: Option<&'static str>,
 }
 
@@ -37,12 +40,23 @@ impl RootAllOptions {
         self.first_flag.unwrap_or("--sections")
     }
 
+    fn has_report_options(&self) -> bool {
+        self.sections.is_some()
+            || self.by_agent
+            || self.by_provider
+            || !self.agent_selectors.is_empty()
+            || !self.model_patterns.is_empty()
+    }
+
     fn into_agent_args(self, shared: SharedArgs, kind: AgentReportKind) -> AgentCommandArgs {
         AgentCommandArgs {
             shared,
             kind,
             sections: self.sections,
             by_agent: self.by_agent,
+            by_provider: self.by_provider,
+            agent_selectors: self.agent_selectors,
+            model_patterns: self.model_patterns,
             pi_path: None,
             open_claw_path: None,
             codex_speed: CodexSpeed::Auto,
@@ -78,9 +92,6 @@ impl Cli {
             None => {}
         }
         if let Some(message) = report_flag_alias_error(&parser.args) {
-            return Err(message);
-        }
-        if let Some(message) = agent_filter_option_error(&parser.args) {
             return Err(message);
         }
         if let Some(message) = unsupported_agent_report_error(&parser.args) {
@@ -352,9 +363,7 @@ fn parse_root_all_arg(
     parser: &mut ArgParser,
     options: &mut RootAllOptions,
 ) -> Result<bool, String> {
-    if let Some(flag) =
-        parse_unified_report_arg(parser, &mut options.sections, &mut options.by_agent)?
-    {
+    if let Some(flag) = parse_unified_report_arg(parser, options)? {
         options.mark_used(flag);
         return Ok(true);
     }
@@ -363,8 +372,7 @@ fn parse_root_all_arg(
 
 fn parse_unified_report_arg(
     parser: &mut ArgParser,
-    sections: &mut Option<Vec<AgentReportKind>>,
-    by_agent: &mut bool,
+    options: &mut RootAllOptions,
 ) -> Result<Option<&'static str>, String> {
     if matches!(parser.peek(), Some("--all")) {
         parser.next();
@@ -372,13 +380,33 @@ fn parse_unified_report_arg(
     }
     if matches!(parser.peek_name(), Some("--sections")) {
         parser.next_flag()?;
-        *sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
+        options.sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
         return Ok(Some("--sections"));
     }
     if matches!(parser.peek(), Some("--by-agent")) {
         parser.next();
-        *by_agent = true;
+        options.by_agent = true;
         return Ok(Some("--by-agent"));
+    }
+    if matches!(parser.peek(), Some("--by-provider")) {
+        parser.next();
+        options.by_provider = true;
+        return Ok(Some("--by-provider"));
+    }
+    if matches!(parser.peek_name(), Some("--agent")) {
+        parser.next_flag()?;
+        options
+            .agent_selectors
+            .extend(parse_agent_selectors(&parser.value_for("--agent")?)?);
+        return Ok(Some("--agent"));
+    }
+    if matches!(parser.peek_name(), Some("--model")) {
+        parser.next_flag()?;
+        options.model_patterns.extend(parse_nonempty_list(
+            "--model",
+            &parser.value_for("--model")?,
+        )?);
+        return Ok(Some("--model"));
     }
     Ok(None)
 }
@@ -390,10 +418,9 @@ fn parse_all_command(
     _config: &dyn CliConfig,
     initial_options: RootAllOptions,
 ) -> Result<Command, String> {
-    let mut sections = initial_options.sections;
-    let mut by_agent = initial_options.by_agent;
+    let mut options = initial_options;
     while parser.peek().is_some() {
-        if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
+        if parse_unified_report_arg(parser, &mut options)?.is_some() {
             continue;
         }
         parse_shared_arg(parser, &mut shared)?;
@@ -401,8 +428,11 @@ fn parse_all_command(
     Ok(Command::All(AgentCommandArgs {
         shared,
         kind,
-        sections,
-        by_agent,
+        sections: options.sections,
+        by_agent: options.by_agent,
+        by_provider: options.by_provider,
+        agent_selectors: options.agent_selectors,
+        model_patterns: options.model_patterns,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -416,10 +446,9 @@ fn parse_top_level_session_command(
     initial_options: RootAllOptions,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
-    let mut sections = initial_options.sections;
-    let mut by_agent = initial_options.by_agent;
+    let mut options = initial_options;
     while parser.peek().is_some() {
-        if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
+        if parse_unified_report_arg(parser, &mut options)?.is_some() {
             continue;
         }
         if parse_shared_arg_for_command(parser, &mut args.shared)? {
@@ -432,11 +461,8 @@ fn parse_top_level_session_command(
     }
 
     if args.id.is_some() {
-        if sections.is_some() || by_agent {
-            return Err(
-                "The --sections and --by-agent options cannot be used with session --id."
-                    .to_string(),
-            );
+        if options.has_report_options() {
+            return Err("Unified report options cannot be used with session --id.".to_string());
         }
         return Ok(Command::Session(args));
     }
@@ -444,8 +470,11 @@ fn parse_top_level_session_command(
     Ok(Command::All(AgentCommandArgs {
         shared: args.shared,
         kind: AgentReportKind::Session,
-        sections,
-        by_agent,
+        sections: options.sections,
+        by_agent: options.by_agent,
+        by_provider: options.by_provider,
+        agent_selectors: options.agent_selectors,
+        model_patterns: options.model_patterns,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -603,6 +632,9 @@ fn parse_codex_command(
         kind,
         sections: None,
         by_agent: false,
+        by_provider: false,
+        agent_selectors: Vec::new(),
+        model_patterns: Vec::new(),
         pi_path: None,
         open_claw_path: None,
         codex_speed,
@@ -632,6 +664,9 @@ fn parse_pi_command(
         kind,
         sections: None,
         by_agent: false,
+        by_provider: false,
+        agent_selectors: Vec::new(),
+        model_patterns: Vec::new(),
         pi_path,
         open_claw_path: None,
         codex_speed,
@@ -661,6 +696,9 @@ fn parse_openclaw_command(
         kind,
         sections: None,
         by_agent: false,
+        by_provider: false,
+        agent_selectors: Vec::new(),
+        model_patterns: Vec::new(),
         pi_path: None,
         open_claw_path,
         codex_speed,
@@ -691,6 +729,9 @@ fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommand
         kind,
         sections: None,
         by_agent: false,
+        by_provider: false,
+        agent_selectors: Vec::new(),
+        model_patterns: Vec::new(),
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -802,33 +843,6 @@ fn report_flag_alias_error(args: &[String]) -> Option<String> {
         "Report flags like {flag} are not supported. Use \"ccusage {}\" instead.",
         flag.trim_start_matches("--")
     ))
-}
-
-fn agent_filter_option_error(args: &[String]) -> Option<String> {
-    let allows_short_active = blocks_command_tokens(args);
-    let flag = args.iter().find_map(|arg| {
-        if arg == "--agent" || arg.starts_with("--agent=") {
-            return Some("--agent");
-        }
-        if (arg == "-a" && !allows_short_active) || arg.starts_with("-a=") {
-            return Some("-a");
-        }
-        None
-    })?;
-    Some(format!(
-        "Agent filters like {flag} are not supported. Use \"ccusage <agent> <report>\", for example \"ccusage codex daily\"."
-    ))
-}
-
-fn blocks_command_tokens(args: &[String]) -> bool {
-    let tokens = command_tokens(args);
-    matches!(
-        tokens.as_slice(),
-        [command, ..] if command == "blocks"
-    ) || matches!(
-        tokens.as_slice(),
-        [agent, command, ..] if agent == "claude" && command == "blocks"
-    )
 }
 
 fn unsupported_agent_report_error(args: &[String]) -> Option<String> {
@@ -1112,6 +1126,58 @@ fn parse_report_sections(value: &str) -> Result<Vec<AgentReportKind>, String> {
         ));
     }
     Ok(sections)
+}
+
+fn parse_agent_selectors(value: &str) -> Result<Vec<AgentSelector>, String> {
+    parse_nonempty_list("--agent", value)?
+        .into_iter()
+        .map(|selector| {
+            let Some(open) = selector.find('[') else {
+                if selector.contains(']') {
+                    return Err(invalid_agent_selector(&selector));
+                }
+                return Ok(AgentSelector {
+                    agent: selector,
+                    provider: None,
+                });
+            };
+            if !selector.ends_with(']')
+                || selector[open + 1..selector.len() - 1].contains(['[', ']'])
+            {
+                return Err(invalid_agent_selector(&selector));
+            }
+            let agent = selector[..open].trim();
+            let provider = selector[open + 1..selector.len() - 1].trim();
+            if agent.is_empty() || provider.is_empty() {
+                return Err(invalid_agent_selector(&selector));
+            }
+            Ok(AgentSelector {
+                agent: agent.to_string(),
+                provider: Some(provider.to_string()),
+            })
+        })
+        .collect()
+}
+
+fn parse_nonempty_list(flag: &str, value: &str) -> Result<Vec<String>, String> {
+    let values = value
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        return Err(format!(
+            "Invalid {flag} value '{value}'. Expected a non-empty selector."
+        ));
+    }
+    Ok(values)
+}
+
+fn invalid_agent_selector(selector: &str) -> String {
+    format!(
+        "Invalid --agent selector '{selector}'. Expected agent or agent[provider], for example codex or pi[openai-codex]."
+    )
 }
 
 fn parse_week_day(value: &str) -> Result<WeekDay, String> {

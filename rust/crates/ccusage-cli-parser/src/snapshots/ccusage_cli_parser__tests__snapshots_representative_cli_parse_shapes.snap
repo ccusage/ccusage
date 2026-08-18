@@ -32,9 +32,12 @@ expression: cases
     "case": "root daily with shared flags",
     "cli": {
       "command": {
+        "agentSelectors": [],
         "byAgent": false,
+        "byProvider": false,
         "codexSpeed": "Auto",
         "kind": "Daily",
+        "modelPatterns": [],
         "openClawPath": null,
         "piPath": null,
         "sections": null,
@@ -180,9 +183,12 @@ expression: cases
     "case": "codex monthly fast",
     "cli": {
       "command": {
+        "agentSelectors": [],
         "byAgent": false,
+        "byProvider": false,
         "codexSpeed": "Fast",
         "kind": "Monthly",
+        "modelPatterns": [],
         "openClawPath": null,
         "piPath": null,
         "sections": null,
@@ -232,9 +238,12 @@ expression: cases
     "case": "opencode weekly",
     "cli": {
       "command": {
+        "agentSelectors": [],
         "byAgent": false,
+        "byProvider": false,
         "codexSpeed": "Auto",
         "kind": "Weekly",
+        "modelPatterns": [],
         "openClawPath": null,
         "piPath": null,
         "sections": null,
@@ -284,9 +293,12 @@ expression: cases
     "case": "pi session path",
     "cli": {
       "command": {
+        "agentSelectors": [],
         "byAgent": false,
+        "byProvider": false,
         "codexSpeed": "Auto",
         "kind": "Session",
+        "modelPatterns": [],
         "openClawPath": null,
         "piPath": "/tmp/pi-sessions",
         "sections": null,
@@ -336,9 +348,12 @@ expression: cases
     "case": "openclaw session path",
     "cli": {
       "command": {
+        "agentSelectors": [],
         "byAgent": false,
+        "byProvider": false,
         "codexSpeed": "Auto",
         "kind": "Session",
+        "modelPatterns": [],
         "openClawPath": "/tmp/openclaw",
         "piPath": null,
         "sections": null,
@@ -388,9 +403,12 @@ expression: cases
     "case": "grok daily",
     "cli": {
       "command": {
+        "agentSelectors": [],
         "byAgent": false,
+        "byProvider": false,
         "codexSpeed": "Auto",
         "kind": "Daily",
+        "modelPatterns": [],
         "openClawPath": null,
         "piPath": null,
         "sections": null,

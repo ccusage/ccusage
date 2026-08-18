@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/cli.rs
+source: crates/ccusage-cli-parser/src/tests.rs
 expression: cases
 ---
 [
@@ -9,15 +9,6 @@ expression: cases
       "--daily"
     ],
     "error": "Report flags like --daily are not supported. Use \"ccusage daily\" instead."
-  },
-  {
-    "args": [
-      "ccusage",
-      "daily",
-      "--agent",
-      "codex"
-    ],
-    "error": "Agent filters like --agent are not supported. Use \"ccusage <agent> <report>\", for example \"ccusage codex daily\"."
   },
   {
     "args": [

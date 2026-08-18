@@ -8,6 +8,7 @@ use crate::{ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
 pub(super) struct AllRow {
     pub(super) period: String,
     pub(super) agent: &'static str,
+    pub(super) provider: Option<String>,
     pub(super) models_used: Vec<String>,
     pub(super) input_tokens: u64,
     pub(super) output_tokens: u64,
@@ -72,7 +73,7 @@ pub(super) struct AllAccumulator {
     models: BTreeSet<String>,
     agents: BTreeSet<&'static str>,
     agent_breakdowns: Vec<AllRow>,
-    agent_indexes: FxHashMap<&'static str, usize>,
+    agent_indexes: FxHashMap<(&'static str, Option<String>), usize>,
 }
 
 impl AllAccumulator {
@@ -89,11 +90,11 @@ impl AllAccumulator {
         } else if row.agent != "all" {
             self.agents.insert(row.agent);
         }
-        match self.agent_indexes.get(row.agent).copied() {
+        let key = (row.agent, row.provider.clone());
+        match self.agent_indexes.get(&key).copied() {
             Some(index) => merge_agent_breakdown(&mut self.agent_breakdowns[index], row),
             None => {
-                self.agent_indexes
-                    .insert(row.agent, self.agent_breakdowns.len());
+                self.agent_indexes.insert(key, self.agent_breakdowns.len());
                 self.agent_breakdowns.push(AllRow {
                     metadata_agents: Some(vec![row.agent]),
                     agent_breakdowns: None,
@@ -114,6 +115,7 @@ impl AllAccumulator {
         AllRow {
             period,
             agent: "all",
+            provider: None,
             models_used: self.models.into_iter().collect(),
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,

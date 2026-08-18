@@ -6,7 +6,7 @@ into the usage entries the reports render.
 ## Owns
 
 - `loader.rs` — reading the source, dedupe, and date filtering.
-- `parser.rs` — raw record parsing, token mapping, and model naming.
+- `parser.rs` — raw record parsing, token mapping, model naming, and provider metadata.
 - `paths.rs` — environment variables, default directories, and file discovery.
 - `report.rs` — the JSON and table shapes where they differ from the shared ones.
 
