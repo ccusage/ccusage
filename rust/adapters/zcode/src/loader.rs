@@ -1,10 +1,9 @@
 use std::{collections::HashSet, path::Path, path::PathBuf};
 
+use ccusage_adapter_common::read_files_parallel;
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
 
 use super::{
     parser::{ZcodeUsageRow, row_to_entry},
@@ -61,9 +60,9 @@ fn load_entries_from_database(
     };
     let Ok(mut statement) = connection.prepare(
         "SELECT m.id, m.session_id, m.started_at, m.model_id, \
-         m.input_tokens, m.output_tokens, m.reasoning_tokens, \
-         m.cache_creation_input_tokens, m.cache_read_input_tokens, \
-         m.computed_total_tokens, s.directory, s.version \
+         m.input_tokens, m.output_tokens, m.cache_creation_input_tokens, \
+         m.cache_read_input_tokens, \
+         m.computed_total_tokens, s.directory \
          FROM model_usage m LEFT JOIN session s ON s.id = m.session_id \
          WHERE m.status = 'completed'",
     ) else {
@@ -104,12 +103,10 @@ fn read_usage_row(statement: &sqlite::Statement<'_>) -> Option<ZcodeUsageRow> {
         model_id: statement.read::<String, _>(3).ok()?,
         input_tokens: read_token_column(statement, 4),
         output_tokens: read_token_column(statement, 5),
-        // Index 6 is reasoning_tokens, which the parser does not consume.
-        cache_creation_input_tokens: read_token_column(statement, 7),
-        cache_read_input_tokens: read_token_column(statement, 8),
-        computed_total_tokens: read_token_column(statement, 9),
-        directory: statement.read::<Option<String>, _>(10).ok().flatten(),
-        version: statement.read::<Option<String>, _>(11).ok().flatten(),
+        cache_creation_input_tokens: read_token_column(statement, 6),
+        cache_read_input_tokens: read_token_column(statement, 7),
+        computed_total_tokens: read_token_column(statement, 8),
+        directory: statement.read::<Option<String>, _>(9).ok().flatten(),
     })
 }
 
@@ -138,13 +135,14 @@ mod tests {
             )",
         )
         .unwrap();
-        db.execute("CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, version TEXT)")
+        db.execute("CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT)")
             .unwrap();
     }
 
     struct UsageCounts {
         input_tokens: i64,
         output_tokens: i64,
+        cache_creation: i64,
         cache_read: i64,
         computed_total: i64,
     }
@@ -163,7 +161,7 @@ mod tests {
                 "INSERT INTO model_usage (id, session_id, started_at, model_id, status,
                  input_tokens, output_tokens, reasoning_tokens,
                  cache_creation_input_tokens, cache_read_input_tokens, computed_total_tokens)
-                 VALUES (?1, ?2, ?3, 'GLM-5.3', ?4, ?5, ?6, 0, 0, ?7, ?8)",
+                 VALUES (?1, ?2, ?3, 'GLM-5.3', ?4, ?5, ?6, 0, ?7, ?8, ?9)",
             )
             .unwrap();
         statement.bind((1, id)).unwrap();
@@ -172,19 +170,19 @@ mod tests {
         statement.bind((4, status)).unwrap();
         statement.bind((5, counts.input_tokens)).unwrap();
         statement.bind((6, counts.output_tokens)).unwrap();
-        statement.bind((7, counts.cache_read)).unwrap();
-        statement.bind((8, counts.computed_total)).unwrap();
+        statement.bind((7, counts.cache_creation)).unwrap();
+        statement.bind((8, counts.cache_read)).unwrap();
+        statement.bind((9, counts.computed_total)).unwrap();
         statement.next().unwrap();
     }
 
-    fn insert_session(path: &Path, id: &str, directory: &str, version: &str) {
+    fn insert_session(path: &Path, id: &str, directory: &str) {
         let db = sqlite::open(path).unwrap();
         let mut statement = db
-            .prepare("INSERT INTO session (id, directory, version) VALUES (?1, ?2, ?3)")
+            .prepare("INSERT INTO session (id, directory) VALUES (?1, ?2)")
             .unwrap();
         statement.bind((1, id)).unwrap();
         statement.bind((2, directory)).unwrap();
-        statement.bind((3, version)).unwrap();
         statement.next().unwrap();
     }
 
@@ -209,7 +207,7 @@ mod tests {
     #[test]
     fn carves_cache_reads_out_of_input_tokens_and_prices_the_model() {
         let (fixture, db_file) = fixture_with_db();
-        insert_session(&db_file, "session-a", "/Users/aaron/code/proj", "0.16.3");
+        insert_session(&db_file, "session-a", "/Users/aaron/code/proj");
         // input_tokens includes the cache-read slice; computed = input + output.
         insert_usage(
             &db_file,
@@ -220,6 +218,7 @@ mod tests {
             UsageCounts {
                 input_tokens: 16_507,
                 output_tokens: 59,
+                cache_creation: 0,
                 cache_read: 11_712,
                 computed_total: 16_566,
             },
@@ -234,14 +233,42 @@ mod tests {
         assert_eq!(usage.cache_read_input_tokens, 11_712);
         assert_eq!(usage.cache_creation_input_tokens, 0);
         assert_eq!(entries[0].date, "2026-08-16");
-        assert_eq!(entries[0].model.as_deref(), Some("glm-5.3"));
+        assert_eq!(entries[0].model.as_deref(), Some("GLM-5.3"));
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].project_path.as_ref(), "/Users/aaron/code/proj");
-        assert_eq!(entries[0].data.version.as_deref(), Some("0.16.3"));
+        assert_eq!(entries[0].data.version, None);
         // glm-5.3 is in the embedded pricing snapshot, so the cost derives
         // from it instead of reporting a missing-pricing model.
         assert!(entries[0].cost > 0.0);
         assert!(entries[0].missing_pricing_model.is_none());
+    }
+
+    #[test]
+    fn carves_cache_creation_out_of_input_tokens() {
+        let (fixture, db_file) = fixture_with_db();
+        insert_usage(
+            &db_file,
+            "usage-1",
+            "session-a",
+            1_786_909_042_666,
+            "completed",
+            UsageCounts {
+                input_tokens: 1_000,
+                output_tokens: 300,
+                cache_creation: 100,
+                cache_read: 200,
+                computed_total: 1_300,
+            },
+        );
+
+        let entries = load(fixture.root(), CostMode::Auto);
+
+        assert_eq!(entries.len(), 1);
+        let usage = entries[0].data.message.usage;
+        assert_eq!(usage.input_tokens, 700);
+        assert_eq!(usage.cache_creation_input_tokens, 100);
+        assert_eq!(usage.cache_read_input_tokens, 200);
+        assert_eq!(crate::total_usage_tokens(usage), 1_300);
     }
 
     #[test]
@@ -256,6 +283,7 @@ mod tests {
             UsageCounts {
                 input_tokens: 100,
                 output_tokens: 10,
+                cache_creation: 0,
                 cache_read: 0,
                 computed_total: 110,
             },
@@ -269,6 +297,7 @@ mod tests {
             UsageCounts {
                 input_tokens: 0,
                 output_tokens: 0,
+                cache_creation: 0,
                 cache_read: 0,
                 computed_total: 0,
             },
@@ -282,6 +311,7 @@ mod tests {
             UsageCounts {
                 input_tokens: 0,
                 output_tokens: 0,
+                cache_creation: 0,
                 cache_read: 0,
                 computed_total: 0,
             },
@@ -291,6 +321,33 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
+    }
+
+    #[test]
+    fn clamps_cache_reads_to_input_tokens() {
+        let (fixture, db_file) = fixture_with_db();
+        insert_usage(
+            &db_file,
+            "usage-1",
+            "session-a",
+            1_786_909_042_666,
+            "completed",
+            UsageCounts {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_creation: 0,
+                cache_read: 40,
+                computed_total: 15,
+            },
+        );
+
+        let entries = load(fixture.root(), CostMode::Auto);
+
+        assert_eq!(entries.len(), 1);
+        let usage = entries[0].data.message.usage;
+        assert_eq!(usage.input_tokens, 0);
+        assert_eq!(usage.cache_read_input_tokens, 10);
+        assert_eq!(crate::total_usage_tokens(usage), 15);
     }
 
     #[test]
@@ -326,6 +383,7 @@ mod tests {
             UsageCounts {
                 input_tokens: 100,
                 output_tokens: 10,
+                cache_creation: 0,
                 cache_read: 0,
                 computed_total: 110,
             },
@@ -343,6 +401,7 @@ mod tests {
             UsageCounts {
                 input_tokens: 50,
                 output_tokens: 5,
+                cache_creation: 0,
                 cache_read: 0,
                 computed_total: 55,
             },

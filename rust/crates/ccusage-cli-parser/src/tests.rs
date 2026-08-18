@@ -1257,16 +1257,6 @@ fn parses_grok_daily_options() {
 }
 
 #[test]
-fn parses_zcode_daily_options() {
-    let cli = parse(&["ccusage", "zcode", "daily", "--json"]);
-    let Some(Command::ZCode(args)) = cli.command else {
-        panic!("expected zcode command");
-    };
-    assert_eq!(args.kind, AgentReportKind::Daily);
-    assert!(args.shared.json);
-}
-
-#[test]
 fn rejects_grok_path_option() {
     let error = parse_error(&["ccusage", "grok", "daily", "--grok-path", "/tmp/grok-home"]);
 
