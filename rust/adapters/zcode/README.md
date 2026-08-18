@@ -19,15 +19,15 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 The `model_usage` table records one row per model request. The adapter selects
 rows with `status = 'completed'` — error and cancelled attempts record zero
-tokens — and joins `session` for the project directory and app version.
+tokens — and joins `session` for the project directory.
 
 ## Token semantics
 
-- `input_tokens` **includes** the cache-read slice: the schema's own
+- `input_tokens` **includes** the cache-read and cache-creation slices: the schema's own
   `computed_total_tokens` is `input_tokens + output_tokens` exactly, and
-  `cache_read_input_tokens <= input_tokens` holds for every observed row. The
-  parser carves the cache-read slice out of input so the reported buckets stay
-  additive and cache reads price at their cheaper rate.
+  the cache buckets fit within `input_tokens` for every observed row. The parser
+  carves both slices out of input so the reported buckets stay additive and
+  cache tokens price at their cheaper rates.
 - `reasoning_tokens` and `cache_creation_input_tokens` exist in the schema but
   are zero in every observed row. Reasoning is assumed to sit inside output
   (matching how the GLM provider reports it); if a future version moves
@@ -37,9 +37,11 @@ tokens — and joins `session` for the project directory and app version.
 
 ## Cost semantics
 
-ZCode records no per-request cost, so every cost mode derives from the pricing
-tables. Model ids are lowercased before lookup (`GLM-5.3` -> `glm-5.3`) because
-pricing keys match case-sensitively.
+ZCode records no per-request cost. The default `auto` mode and `calculate`
+estimate costs from the pricing tables; `display` reports zero because there is
+no recorded cost to display. Pricing lookup tries the raw model id first, then a
+provider-qualified Z.ai id and normalized aliases, so exact custom-provider
+overrides and Z.ai pricing both work.
 
 ## Schema stability
 

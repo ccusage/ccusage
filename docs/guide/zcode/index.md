@@ -19,7 +19,7 @@ Most users can start with unified reports such as `ccusage daily`. Add the `zcod
 
 ## Data Source
 
-The CLI reads completed model requests from the `model_usage` table in ZCode's SQLite database, joining `session` for the project directory and app version.
+The CLI reads completed model requests from the `model_usage` table in ZCode's SQLite database, joining `session` for the project directory.
 
 Root resolution (highest first):
 
@@ -47,14 +47,14 @@ Only rows with `status = 'completed'` are counted. Error and cancelled attempts 
 | `ccusage zcode monthly` | Aggregate usage by month     | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage zcode session` | Group usage by ZCode session | [Session Usage](/guide/session-reports) |
 
-These views support `--json`, `--compact`, `--mode`, and `--offline`.
+These views support [`--json`](/guide/json-output), `--compact`, `--mode`, and `--offline`.
 
 ## What Gets Calculated
 
-- **Token usage** - ZCode records OpenAI-style usage where `input_tokens` includes the cache-read slice. ccusage carves `cache_read_input_tokens` out of input so cache reads are reported and priced at their own rate.
+- **Token usage** - ZCode records OpenAI-style usage where `input_tokens` includes cache-read and cache-creation tokens. ccusage carves both cache slices out of input so the reported buckets remain additive and use their own pricing rates.
 - **Reasoning tokens** - ZCode's schema has a `reasoning_tokens` column, but every observed row records zero; reasoning is assumed to sit inside output and is never added on top. If a future ZCode version moves it outside, the recorded total grows past the counted buckets and ccusage routes the difference into its extra-tokens bucket instead of dropping it.
-- **Costs** - ZCode records no per-request cost, so every cost mode derives from the pricing tables. Model ids are lowercased for lookup (`GLM-5.3` matches the `glm-5.3` pricing entry).
-- **Session metadata** - Session reports carry the project directory, first/last activity, and app version from the `session` table.
+- **Costs** - ZCode records no per-request cost. The default `auto` mode and `calculate` estimate costs from the pricing tables; `display` shows `$0.00` because there is no recorded cost to display. Pricing lookup honors an exact raw-model override first, then tries provider-qualified Z.ai and normalized aliases.
+- **Session metadata** - Session reports carry the project directory and first/last activity.
 
 ## Environment Variables
 
@@ -89,5 +89,5 @@ Ensure `~/.zcode/cli/db/db.sqlite` exists and has completed rows in `model_usage
 :::
 
 ::: details Costs showing as $0.00
-ZCode subscription usage has no recorded per-request cost, so costs are always table estimates. If a model is missing from pricing, the cost stays at zero and a missing-pricing warning may appear.
+ZCode records no per-request cost, so `--mode display` shows `$0.00`. Use the default `auto` mode or `--mode calculate` to estimate costs from the pricing tables. If a model is missing from pricing, the estimate stays at zero and a missing-pricing warning may appear.
 :::
