@@ -15,6 +15,7 @@ These projects are maintained independently and are not affiliated with the ccus
 
 - [ccusage Raycast Extension](https://www.raycast.com/nyatinte/ccusage) - Raycast integration for quick usage checks
 - [ccusage.nvim](https://github.com/S1M0N38/ccusage.nvim) - Track Claude Code usage in Neovim
+- [coffee-paladin](https://github.com/pawelkwaczynski/coffee-paladin) - macOS menu bar thermal guard for AI agent workloads, showing today's ccusage totals next to chip temperature
 
 ## CLI Utilities
 
