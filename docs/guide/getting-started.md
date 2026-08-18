@@ -177,6 +177,7 @@ If ccusage shows no data, check:
    - Qwen: `${QWEN_DATA_DIR:-~/.qwen}`
    - GitHub Copilot CLI: `~/.copilot/otel/*.jsonl` or `COPILOT_OTEL_FILE_EXPORTER_PATH`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
+   - ZCode: `${ZCODE_HOME:-~/.zcode}`
 
 ### Custom Data Directory
 
@@ -198,6 +199,7 @@ export KIMI_DATA_DIR="/path/to/kimi"
 export QWEN_DATA_DIR="/path/to/qwen"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
+export ZCODE_HOME="/path/to/zcode-home"
 ```
 
 Each source-specific path variable can also contain comma-separated directories, except `GROK_HOME`, which takes a single root:

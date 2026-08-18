@@ -24,6 +24,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file             |
 | `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                    |
 | `GROK_HOME`                       | Grok Build CLI | `~/.grok`                          |
+| `ZCODE_HOME`                      | ZCode          | `~/.zcode`                         |
 
 Example:
 
@@ -43,6 +44,7 @@ export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
 export GROK_HOME="/path/to/grok-home"
+export ZCODE_HOME="/path/to/zcode-home,/archive/zcode"
 ccusage daily
 ```
 
