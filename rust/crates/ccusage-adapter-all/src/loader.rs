@@ -524,7 +524,10 @@ fn load_summary_agent_rows(
     filter_loaded_entries_by_date(&mut entries, shared);
     let summaries = summarize_entries(&entries, kind)?;
     Ok(AgentRows {
-        rows: summary_rows(agent, summaries, false),
+        // Include projectPath (workdir) in session reports for every agent.
+        // summary_metadata() only emits it when a session_id is present, so
+        // daily/weekly/monthly aggregate rows are unaffected.
+        rows: summary_rows(agent, summaries, true),
         detected,
     })
 }
@@ -597,7 +600,7 @@ fn load_claude_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentR
         let mut summaries = summarize_entry_sessions(&entries)?;
         filter_session_summaries(&mut summaries, shared);
         return Ok(AgentRows {
-            rows: summary_rows("claude", summaries, false),
+            rows: summary_rows("claude", summaries, true),
             detected,
         });
     }
@@ -678,7 +681,7 @@ fn load_qwen_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRow
         let mut summaries = qwen::summarize_entries(&entries, kind)?;
         filter_session_summaries(&mut summaries, shared);
         return Ok(AgentRows {
-            rows: summary_rows("qwen", summaries, false),
+            rows: summary_rows("qwen", summaries, true),
             detected,
         });
     }
