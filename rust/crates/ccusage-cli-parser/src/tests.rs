@@ -205,6 +205,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
+        Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
     }
 }
 
@@ -646,8 +647,23 @@ fn applies_schema_documented_config_file_options() {
 fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
-        "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok",
+        "claude",
+        "codex",
+        "opencode",
+        "amp",
+        "droid",
+        "codebuff",
+        "hermes",
+        "pi",
+        "goose",
+        "kilo",
+        "copilot",
+        "gemini",
+        "kimi",
+        "qwen",
+        "openclaw",
+        "grok",
+        "antigravity",
     ];
 
     for agent in agents {
@@ -1256,6 +1272,26 @@ fn rejects_grok_path_option() {
     let error = parse_error(&["ccusage", "grok", "daily", "--grok-path", "/tmp/grok-home"]);
 
     assert_eq!(error, "Unknown option '--grok-path'");
+}
+
+#[test]
+fn parses_antigravity_daily_options() {
+    let cli = parse(&["ccusage", "antigravity", "daily", "--json"]);
+    let Some(Command::Antigravity(args)) = cli.command else {
+        panic!("expected antigravity command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Daily);
+    assert!(args.shared.json);
+}
+
+#[test]
+fn parses_agy_alias_command() {
+    let cli = parse(&["ccusage", "agy", "session", "--json"]);
+    let Some(Command::Antigravity(args)) = cli.command else {
+        panic!("expected antigravity command via agy alias");
+    };
+    assert_eq!(args.kind, AgentReportKind::Session);
+    assert!(args.shared.json);
 }
 
 #[test]

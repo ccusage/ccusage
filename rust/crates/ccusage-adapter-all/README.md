@@ -10,7 +10,7 @@ into one table or JSON document.
 - `report.rs` — the unified row and total shapes.
 - `types.rs` — the accumulators the merge needs.
 
-This is the only crate that depends on all 16 adapters, which keeps the adapters
+This is the only crate that depends on all 17 adapters, which keeps the adapters
 themselves independent of each other.
 
 ## Public surface
@@ -20,6 +20,7 @@ themselves independent of each other.
 ## Depends on
 
 - `ccusage-adapter-amp`
+- `ccusage-adapter-antigravity`
 - `ccusage-adapter-claude`
 - `ccusage-adapter-codebuff`
 - `ccusage-adapter-codex`

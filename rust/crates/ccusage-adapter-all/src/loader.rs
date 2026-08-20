@@ -11,8 +11,8 @@ use crate::{
     BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result,
     SessionAccumulator, UsageSummary,
     adapter::{
-        amp, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes, kilo, kimi,
-        openclaw, opencode, pi, qwen,
+        amp, antigravity, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
+        kilo, kimi, openclaw, opencode, pi, qwen,
     },
     cli::{AgentReportKind, CodexSpeed, NamedPiStore, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -322,6 +322,22 @@ fn load_base_rows(
                     grok::summarize_entries,
                 )?;
                 rows.detected = rows.detected || grok::has_data();
+                Ok(rows)
+            }),
+        },
+        AgentLoadSpec {
+            index: 16,
+            agent: BUILT_IN_AGENT_NAMES[16],
+            progress_agent: crate::progress::UsageLoadAgent("Antigravity"),
+            load: Box::new(|| {
+                let mut rows = load_summary_agent_rows(
+                    "antigravity",
+                    load_kind,
+                    &loader_shared,
+                    || antigravity::load_entries(&loader_shared, pricing),
+                    antigravity::summarize_entries,
+                )?;
+                rows.detected = rows.detected || antigravity::has_data();
                 Ok(rows)
             }),
         },

@@ -104,6 +104,10 @@
 			{
 				"name": "grok",
 				"description": "Show Grok Build CLI usage commands"
+			},
+			{
+				"name": "antigravity",
+				"description": "Show Antigravity usage commands"
 			}
 		]
 	},
@@ -774,6 +778,43 @@
 			"path": ["grok", "session"],
 			"description": "Show Grok Build CLI usage grouped by session",
 			"usage": "ccusage grok session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["antigravity"],
+			"description": "Usage reports for Antigravity.",
+			"usage": "ccusage antigravity <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Antigravity usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Antigravity usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Antigravity usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["antigravity", "daily"],
+			"description": "Show Antigravity usage grouped by date",
+			"usage": "ccusage antigravity daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["antigravity", "monthly"],
+			"description": "Show Antigravity usage grouped by month",
+			"usage": "ccusage antigravity monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["antigravity", "session"],
+			"description": "Show Antigravity usage grouped by session",
+			"usage": "ccusage antigravity session <OPTIONS>",
 			"options": "agent_options"
 		}
 	]

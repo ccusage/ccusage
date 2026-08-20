@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage-cli/src/tests.rs
+source: crates/ccusage-cli-parser/src/tests.rs
 expression: help_text()
 ---
 USAGE:
@@ -29,6 +29,7 @@ COMMANDS:
   qwen                       Show Qwen usage commands
   openclaw                   Show OpenClaw usage commands
   grok                       Show Grok Build CLI usage commands
+  antigravity                Show Antigravity usage commands
 
 For more info, run any command with the `--help` flag:
   ccusage daily --help
@@ -53,6 +54,7 @@ For more info, run any command with the `--help` flag:
   ccusage qwen --help
   ccusage openclaw --help
   ccusage grok --help
+  ccusage antigravity --help
 
 OPTIONS:
   -j, --json                           Output in JSON format (default: false)

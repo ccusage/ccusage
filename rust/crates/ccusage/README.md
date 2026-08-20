@@ -20,6 +20,7 @@ source in its own `ccusage-adapter-*` crate.
 
 - `ccusage-adapter-all`
 - `ccusage-adapter-amp`
+- `ccusage-adapter-antigravity`
 - `ccusage-adapter-claude`
 - `ccusage-adapter-codebuff`
 - `ccusage-adapter-codex`
