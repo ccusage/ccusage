@@ -88,13 +88,14 @@ ccusage reads from local coding CLI data directories:
 | Kimi           | `kimi`     | `${KIMI_DATA_DIR:-~/.kimi}` (also `~/.kimi-code`) |
 | Qwen           | `qwen`     | `${QWEN_DATA_DIR:-~/.qwen}`                       |
 | Copilot CLI    | `copilot`  | `~/.copilot/otel/*.jsonl`                         |
-| Gemini CLI     | `gemini`   | `${GEMINI_DATA_DIR:-~/.gemini/tmp}`               |
-| Grok Build CLI | `grok`     | `${GROK_HOME:-~/.grok}`                           |
+| Gemini CLI     | `gemini`      | `${GEMINI_DATA_DIR:-~/.gemini/tmp}`               |
+| Grok Build CLI | `grok`        | `${GROK_HOME:-~/.grok}`                           |
+| Antigravity    | `antigravity` | `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity}` (also `~/.gemini/antigravity-ide`, `~/.gemini/antigravity-cli`, `~/.gemini/antigravity-backup`) |
 
 The tool automatically detects available data and aggregates all supported coding CLIs by default.
 Source-specific environment variables that support multiple roots can contain comma-separated directories, which lets unified reports combine current profiles and archives.
 
-Some coding agents have been investigated but are not supported because their local files do not contain reliable token usage. See [Source Support Q&A](/guide/source-support-qa) for the current notes on Antigravity CLI, legacy Grok CLI SQLite data, and Devin CLI.
+Some coding agents have been investigated but are not supported because their local files do not contain reliable token usage. See [Source Support Q&A](/guide/source-support-qa) for the current notes on Devin CLI.
 
 ## Report Shape
 
@@ -126,6 +127,7 @@ ccusage qwen daily
 ccusage copilot daily
 ccusage gemini daily
 ccusage grok daily
+ccusage antigravity daily
 ```
 
 Use `ccusage <source> <report>` only when you want to narrow a report to one source.

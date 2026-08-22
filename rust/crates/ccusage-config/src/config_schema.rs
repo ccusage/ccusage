@@ -52,6 +52,8 @@ pub struct CcusageConfig {
     pub qwen: Option<QwenConfig>,
     /// Grok Build CLI configuration.
     pub grok: Option<GrokConfig>,
+    /// Google Antigravity configuration.
+    pub antigravity: Option<AntigravityConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -316,6 +318,21 @@ pub struct GrokConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AntigravityConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<AntigravityCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AntigravityCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
@@ -1146,7 +1163,7 @@ mod tests {
             &schema,
             "ccusage-config",
             &[
-                "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
+                "$schema", "amp", "antigravity", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
                 "droid", "gemini", "goose", "grok", "hermes", "kilo", "kimi", "opencode",
                 "openclaw", "pi", "qwen",
             ],

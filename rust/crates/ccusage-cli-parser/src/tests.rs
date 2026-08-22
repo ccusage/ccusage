@@ -205,6 +205,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
+        Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
     }
 }
 
@@ -1256,6 +1257,16 @@ fn rejects_grok_path_option() {
     let error = parse_error(&["ccusage", "grok", "daily", "--grok-path", "/tmp/grok-home"]);
 
     assert_eq!(error, "Unknown option '--grok-path'");
+}
+
+#[test]
+fn parses_antigravity_daily_options() {
+    let cli = parse(&["ccusage", "antigravity", "daily", "--json"]);
+    let Some(Command::Antigravity(args)) = cli.command else {
+        panic!("expected antigravity command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Daily);
+    assert!(args.shared.json);
 }
 
 #[test]

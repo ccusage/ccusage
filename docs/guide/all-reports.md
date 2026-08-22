@@ -62,8 +62,9 @@ Unified tables include an **Agent** column so you can compare sources in one vie
 | Kimi           | `kimi`     | `ccusage kimi daily`      |
 | Qwen           | `qwen`     | `ccusage qwen daily`      |
 | Copilot CLI    | `copilot`  | `ccusage copilot daily`   |
-| Gemini CLI     | `gemini`   | `ccusage gemini daily`    |
-| Grok Build CLI | `grok`     | `ccusage grok daily`      |
+| Gemini CLI     | `gemini`      | `ccusage gemini daily`      |
+| Grok Build CLI | `grok`        | `ccusage grok daily`        |
+| Antigravity    | `antigravity` | `ccusage antigravity daily` |
 
 ## When to Focus a Source
 

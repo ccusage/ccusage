@@ -77,8 +77,9 @@ ccusage reads local usage data from coding agent CLIs and turns it into daily, w
 | Kimi               | `ccusage kimi daily`     |
 | Qwen               | `ccusage qwen daily`     |
 | GitHub Copilot CLI | `ccusage copilot daily`  |
-| Gemini CLI         | `ccusage gemini daily`   |
-| Grok Build CLI     | `ccusage grok daily`     |
+| Gemini CLI         | `ccusage gemini daily`      |
+| Grok Build CLI     | `ccusage grok daily`        |
+| Antigravity        | `ccusage antigravity daily` |
 
 Use `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session` to include every detected source in one report.
 
