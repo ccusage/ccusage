@@ -23,7 +23,7 @@ These projects are maintained independently and are not affiliated with the ccus
 ## Web Applications
 
 - [Straude](https://straude.com) - Strava-style Claude Code telemetry for logging usage, tracking spend, and comparing pace
-- [viberank](https://viberank.app) - A community-driven leaderboard for Claude Code usage. ([GitHub](https://github.com/sculptdotfun/viberank))
+- [viberank](https://viberank.app) - Public leaderboard and open dataset for AI coding usage across the agents ccusage reads — Claude Code, Codex, Gemini CLI, Copilot, OpenCode, Hermes, pi, Kimi and more. Per-tool boards, verified GitHub profiles, README badges, daily autosubmit, and a free JSON API publishing the spend distribution under CC BY 4.0. ([GitHub](https://github.com/sculptdotfun/viberank))
 - [CCWarriors](https://ccwarriors.xyz) - Live leaderboard of AI coding spend across Claude Code, Codex, Gemini, and other ccusage-readable agents, with per-tool filters and real-time updates. ([GitHub](https://github.com/distroinfinity/ccwarriors))
 - [Token Battle](https://tokenbattle.vercel.app) - AI coding cost leaderboard for comparing monthly ccusage exports from Claude Code, Codex CLI, and Gemini CLI, with dashboard uploads, public rankings, and shareable profiles.
 
