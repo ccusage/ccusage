@@ -19,6 +19,7 @@ These projects are maintained independently and are not affiliated with the ccus
 ## CLI Utilities
 
 - [scx](https://github.com/yamamuteki/scx) - Convert ccusage USD output from stdin into a local currency
+- [ccledger](https://github.com/zkm00323/ccledger) - Reads the Claude Code transcripts already on disk and splits usage by main loop vs subagent, and by 5m vs 1h cache-write tier; reports what it cannot attribute instead of hiding it
 
 ## Web Applications
 
