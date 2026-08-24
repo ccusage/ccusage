@@ -192,6 +192,8 @@ bunx ccusage monthly --compact  # Compact monthly report
 
 Full documentation is available at **[ccusage.com](https://ccusage.com/)**
 
+Further reading (Japanese): [how ccusage began](https://ryoppippi.com/blog/2025-05-29-zenn-6c9a8fe6629cd6-ja/)
+
 ## Development
 
 <details>

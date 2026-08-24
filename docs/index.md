@@ -52,6 +52,8 @@ features:
     details: Use pre-cached pricing data without network connectivity
 ---
 
+Project history (Japanese): [how ccusage began](https://ryoppippi.com/blog/2025-05-29-zenn-6c9a8fe6629cd6-ja/)
+
 <div style="text-align: center; margin: 2rem 0;">
   <h2 style="margin-bottom: 1rem;">Support ccusage</h2>
   <p style="margin-bottom: 1rem;">Sponsored by</p>
