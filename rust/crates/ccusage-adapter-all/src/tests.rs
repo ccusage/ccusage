@@ -495,8 +495,7 @@ fn multi_section_claude_fixture_matches_standalone_sections_for_daily_and_sessio
     });
     let _env = isolated_agent_env(
         &fixture,
-        "CLAUDE_CONFIG_DIR",
-        fixture.root().as_os_str().into(),
+        &[("CLAUDE_CONFIG_DIR", fixture.root().as_os_str().into())],
     );
     let shared = fixture_shared("20990102", "20990102");
 
@@ -517,8 +516,7 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
     });
     let _env = isolated_agent_env(
         &fixture,
-        "CODEX_HOME",
-        fixture.path("codex").into_os_string(),
+        &[("CODEX_HOME", fixture.path("codex").into_os_string())],
     );
     let shared = fixture_shared("20990201", "20990202");
 
@@ -538,8 +536,7 @@ fn fixture_shared(since: &str, until: &str) -> SharedArgs {
 
 fn isolated_agent_env(
     fixture: &ccusage_test_support::Fixture,
-    source_key: &'static str,
-    source_value: OsString,
+    sources: &[(&'static str, OsString)],
 ) -> EnvVarsGuard {
     let home = fixture.path("empty-home").into_os_string();
     let xdg_config = fixture.path("empty-xdg-config").into_os_string();
@@ -560,6 +557,7 @@ fn isolated_agent_env(
         "KIMI_DATA_DIR",
         "QWEN_DATA_DIR",
         "GROK_HOME",
+        "CLINE_HOME",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))
@@ -570,7 +568,9 @@ fn isolated_agent_env(
         Some(fixture.path("empty-userprofile").into_os_string()),
     ));
     vars.push(("XDG_CONFIG_HOME", Some(xdg_config)));
-    vars.push((source_key, Some(source_value)));
+    for (source_key, source_value) in sources {
+        vars.push((*source_key, Some(source_value.clone())));
+    }
     EnvVarsGuard::set_many(vars)
 }
 
@@ -579,7 +579,10 @@ fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {
     let fixture = fs_fixture!({
         "grok/sessions/proj/sess-grok/updates.jsonl": line,
     });
-    let _env = isolated_agent_env(&fixture, "GROK_HOME", fixture.path("grok").into_os_string());
+    let _env = isolated_agent_env(
+        &fixture,
+        &[("GROK_HOME", fixture.path("grok").into_os_string())],
+    );
     let shared = fixture_shared("20250615", "20250615");
 
     let result = loader::load_rows(kind, &shared).unwrap();
@@ -593,6 +596,36 @@ fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {
     assert_eq!(result.rows[0].input_tokens, 60);
     assert_eq!(result.rows[0].cache_read_tokens, 40);
     assert_eq!(result.rows[0].output_tokens, 20);
+}
+
+#[test]
+fn detects_cline_source_through_production_wiring() {
+    let fixture = fs_fixture!({
+        "cline/data/sessions/sess-c/sess-c.messages.json":
+            r#"{"sessionId":"sess-c","messages":[{"ts":1750000000000,"role":"assistant","modelInfo":{"id":"claude-sonnet-4-20250514"},"metrics":{"inputTokens":100,"cacheReadTokens":25,"cacheWriteTokens":0,"outputTokens":10,"cost":0.01}}]}"#,
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        &[("CLINE_HOME", fixture.path("cline").into_os_string())],
+    );
+    let shared = fixture_shared("20250615", "20250615");
+
+    let result = loader::load_rows(AgentReportKind::Daily, &shared).unwrap();
+
+    assert!(
+        result.detected_agents.contains(&"cline"),
+        "detected agents: {:?}",
+        result.detected_agents
+    );
+    assert_eq!(result.rows.len(), 1);
+    let cline = result.rows[0]
+        .agent_breakdowns
+        .as_ref()
+        .and_then(|rows| rows.iter().find(|row| row.agent == "cline"))
+        .expect("cline breakdown present");
+    assert_eq!(cline.input_tokens, 100);
+    assert_eq!(cline.cache_read_tokens, 25);
+    assert_eq!(cline.output_tokens, 10);
 }
 
 #[test]

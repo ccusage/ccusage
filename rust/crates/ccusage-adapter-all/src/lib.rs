@@ -11,6 +11,7 @@ use ccusage_core::*;
 mod adapter {
     pub use ccusage_adapter_amp as amp;
     pub use ccusage_adapter_claude as claude;
+    pub use ccusage_adapter_cline as cline;
     pub use ccusage_adapter_codebuff as codebuff;
     pub use ccusage_adapter_codex as codex;
     pub use ccusage_adapter_copilot as copilot;

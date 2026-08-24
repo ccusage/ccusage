@@ -102,6 +102,10 @@
 				"description": "Show OpenClaw usage commands"
 			},
 			{
+				"name": "cline",
+				"description": "Show Cline usage commands"
+			},
+			{
 				"name": "grok",
 				"description": "Show Grok Build CLI usage commands"
 			}
@@ -738,6 +742,43 @@
 			"description": "Show OpenClaw usage grouped by session",
 			"usage": "ccusage openclaw session <OPTIONS>",
 			"options": "openclaw_combined_options"
+		},
+		{
+			"path": ["cline"],
+			"description": "Usage reports for cline.",
+			"usage": "ccusage cline <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Cline usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Cline usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Cline usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["cline", "daily"],
+			"description": "Show Cline usage grouped by date",
+			"usage": "ccusage cline daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["cline", "monthly"],
+			"description": "Show Cline usage grouped by month",
+			"usage": "ccusage cline monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["cline", "session"],
+			"description": "Show Cline usage grouped by session",
+			"usage": "ccusage cline session <OPTIONS>",
+			"options": "agent_options"
 		},
 		{
 			"path": ["grok"],

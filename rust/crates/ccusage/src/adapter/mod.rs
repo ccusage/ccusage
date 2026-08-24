@@ -1,6 +1,7 @@
 pub(crate) use ccusage_adapter_all as all;
 pub(crate) use ccusage_adapter_amp as amp;
 pub(crate) use ccusage_adapter_claude as claude;
+pub(crate) use ccusage_adapter_cline as cline;
 pub(crate) use ccusage_adapter_codebuff as codebuff;
 pub(crate) use ccusage_adapter_codex as codex;
 pub(crate) use ccusage_adapter_copilot as copilot;

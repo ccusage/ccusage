@@ -204,6 +204,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
+        Some(Command::Cline(args)) => agent_command_snapshot("cline", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
     }
 }
@@ -647,7 +648,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok",
+        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "cline",
     ];
 
     for agent in agents {
