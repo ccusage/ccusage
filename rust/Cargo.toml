@@ -30,6 +30,7 @@ ccusage-adapter-grok = { path = "adapters/grok" }
 ccusage-adapter-hermes = { path = "adapters/hermes" }
 ccusage-adapter-kilo = { path = "adapters/kilo" }
 ccusage-adapter-kimi = { path = "adapters/kimi" }
+ccusage-adapter-muse = { path = "adapters/muse" }
 ccusage-adapter-openclaw = { path = "adapters/openclaw" }
 ccusage-adapter-opencode = { path = "adapters/opencode" }
 ccusage-adapter-pi = { path = "adapters/pi" }

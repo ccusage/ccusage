@@ -495,8 +495,7 @@ fn multi_section_claude_fixture_matches_standalone_sections_for_daily_and_sessio
     });
     let _env = isolated_agent_env(
         &fixture,
-        "CLAUDE_CONFIG_DIR",
-        fixture.root().as_os_str().into(),
+        &[("CLAUDE_CONFIG_DIR", fixture.root().as_os_str().into())],
     );
     let shared = fixture_shared("20990102", "20990102");
 
@@ -517,12 +516,60 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
     });
     let _env = isolated_agent_env(
         &fixture,
-        "CODEX_HOME",
-        fixture.path("codex").into_os_string(),
+        &[("CODEX_HOME", fixture.path("codex").into_os_string())],
     );
     let shared = fixture_shared("20990201", "20990202");
 
     assert_daily_family_and_session_sections_match_standalone(&shared);
+}
+
+/// One Muse Code event envelope recorded at 2099-01-02T00:00:00Z.
+fn muse_envelope(payload_type: &str, id: &str, stream_id: &str, event: &str) -> String {
+    format!(
+        r#"{{"schema_version":1,"id":"{id}","stream":{{"kind":"session","id":"{stream_id}"}},"sequence":1,"recorded_at":4070995200000000,"record_type":"event","durability":"durable","causation_id":null,"payload_type":"{payload_type}","payload_schema_version":1,"payload":{event}}}"#
+    )
+}
+
+#[test]
+fn detects_muse_source_through_production_wiring() {
+    let fixture = fs_fixture!({
+        "muse/sessions/2099/01/02/sess-a/session.jsonl": [
+            muse_envelope(
+                "runtime.session.metadata",
+                "meta-1",
+                "sess-a",
+                r#"{"record":{"workspace_root":"/home/user/projects/ccusage"}}"#,
+            ),
+            muse_envelope(
+                "runtime.session",
+                "rec-1",
+                "sess-a",
+                r#"{"event":{"kind":"model_completed","model":"muse-spark-1.2","usage":{"cache_read_tokens":0,"input_tokens":100,"output_tokens":10}},"kind":"run"}"#,
+            ),
+        ]
+        .join("\n"),
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        &[("XDG_DATA_HOME", fixture.root().as_os_str().into())],
+    );
+    let shared = fixture_shared("20990102", "20990102");
+
+    let result = load_rows(AgentReportKind::Daily, &shared).unwrap();
+
+    assert!(
+        result.detected_agents.contains(&"muse"),
+        "detected agents: {:?}",
+        result.detected_agents
+    );
+    assert_eq!(result.rows.len(), 1);
+    let muse = result.rows[0]
+        .agent_breakdowns
+        .as_ref()
+        .and_then(|rows| rows.iter().find(|row| row.agent == "muse"))
+        .expect("muse breakdown present");
+    assert_eq!(muse.input_tokens, 100);
+    assert_eq!(muse.output_tokens, 10);
 }
 
 fn fixture_shared(since: &str, until: &str) -> SharedArgs {
@@ -538,8 +585,7 @@ fn fixture_shared(since: &str, until: &str) -> SharedArgs {
 
 fn isolated_agent_env(
     fixture: &ccusage_test_support::Fixture,
-    source_key: &'static str,
-    source_value: OsString,
+    sources: &[(&'static str, OsString)],
 ) -> EnvVarsGuard {
     let home = fixture.path("empty-home").into_os_string();
     let xdg_config = fixture.path("empty-xdg-config").into_os_string();
@@ -570,7 +616,9 @@ fn isolated_agent_env(
         Some(fixture.path("empty-userprofile").into_os_string()),
     ));
     vars.push(("XDG_CONFIG_HOME", Some(xdg_config)));
-    vars.push((source_key, Some(source_value)));
+    for (source_key, source_value) in sources {
+        vars.push((*source_key, Some(source_value.clone())));
+    }
     EnvVarsGuard::set_many(vars)
 }
 
@@ -579,7 +627,10 @@ fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {
     let fixture = fs_fixture!({
         "grok/sessions/proj/sess-grok/updates.jsonl": line,
     });
-    let _env = isolated_agent_env(&fixture, "GROK_HOME", fixture.path("grok").into_os_string());
+    let _env = isolated_agent_env(
+        &fixture,
+        &[("GROK_HOME", fixture.path("grok").into_os_string())],
+    );
     let shared = fixture_shared("20250615", "20250615");
 
     let result = loader::load_rows(kind, &shared).unwrap();

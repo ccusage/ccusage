@@ -21,6 +21,7 @@ mod adapter {
     pub use ccusage_adapter_hermes as hermes;
     pub use ccusage_adapter_kilo as kilo;
     pub use ccusage_adapter_kimi as kimi;
+    pub use ccusage_adapter_muse as muse;
     pub use ccusage_adapter_openclaw as openclaw;
     pub use ccusage_adapter_opencode as opencode;
     pub use ccusage_adapter_pi as pi;

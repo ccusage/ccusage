@@ -18,6 +18,7 @@ ccusage-adapter-grok.workspace = true
 ccusage-adapter-hermes.workspace = true
 ccusage-adapter-kilo.workspace = true
 ccusage-adapter-kimi.workspace = true
+ccusage-adapter-muse.workspace = true
 ccusage-adapter-openclaw.workspace = true
 ccusage-adapter-opencode.workspace = true
 ccusage-adapter-pi.workspace = true

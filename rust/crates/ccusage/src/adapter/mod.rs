@@ -11,6 +11,7 @@ pub(crate) use ccusage_adapter_grok as grok;
 pub(crate) use ccusage_adapter_hermes as hermes;
 pub(crate) use ccusage_adapter_kilo as kilo;
 pub(crate) use ccusage_adapter_kimi as kimi;
+pub(crate) use ccusage_adapter_muse as muse;
 pub(crate) use ccusage_adapter_openclaw as openclaw;
 pub(crate) use ccusage_adapter_opencode as opencode;
 pub(crate) use ccusage_adapter_pi as pi;

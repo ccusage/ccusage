@@ -102,6 +102,10 @@
 				"description": "Show OpenClaw usage commands"
 			},
 			{
+				"name": "muse",
+				"description": "Show Muse Code usage commands"
+			},
+			{
 				"name": "grok",
 				"description": "Show Grok Build CLI usage commands"
 			}
@@ -738,6 +742,43 @@
 			"description": "Show OpenClaw usage grouped by session",
 			"usage": "ccusage openclaw session <OPTIONS>",
 			"options": "openclaw_combined_options"
+		},
+		{
+			"path": ["muse"],
+			"description": "Usage reports for muse.",
+			"usage": "ccusage muse <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Muse Code usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Muse Code usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Muse Code usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["muse", "daily"],
+			"description": "Show Muse Code usage grouped by date",
+			"usage": "ccusage muse daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["muse", "monthly"],
+			"description": "Show Muse Code usage grouped by month",
+			"usage": "ccusage muse monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["muse", "session"],
+			"description": "Show Muse Code usage grouped by session",
+			"usage": "ccusage muse session <OPTIONS>",
+			"options": "agent_options"
 		},
 		{
 			"path": ["grok"],

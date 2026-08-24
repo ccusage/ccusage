@@ -12,7 +12,7 @@ use crate::{
     SessionAccumulator, UsageSummary,
     adapter::{
         amp, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes, kilo, kimi,
-        openclaw, opencode, pi, qwen,
+        muse, openclaw, opencode, pi, qwen,
     },
     cli::{AgentReportKind, CodexSpeed, NamedPiStore, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -323,6 +323,21 @@ fn load_base_rows(
                 )?;
                 rows.detected = rows.detected || grok::has_data();
                 Ok(rows)
+            }),
+        },
+        AgentLoadSpec {
+            index: 16,
+            agent: BUILT_IN_AGENT_NAMES[16],
+            progress_agent: crate::progress::UsageLoadAgent("Muse Code"),
+            load: Box::new(|| {
+                load_priced_summary_agent_rows(
+                    "muse",
+                    load_kind,
+                    &loader_shared,
+                    pricing,
+                    muse::load_entries,
+                    muse::summarize_entries,
+                )
             }),
         },
     ];

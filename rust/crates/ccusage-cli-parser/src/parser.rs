@@ -318,6 +318,13 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::Gemini,
         ),
+        "muse" => parse_basic_agent_command(
+            parser,
+            shared,
+            "muse",
+            STANDARD_AGENT_REPORTS,
+            Command::Muse,
+        ),
         "kimi" => parse_basic_agent_command(
             parser,
             shared,
@@ -770,6 +777,7 @@ fn is_command(arg: &str) -> bool {
             | "gemini"
             | "kimi"
             | "qwen"
+            | "muse"
             | "grok"
     )
 }
@@ -943,7 +951,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "kimi" | "qwen" | "openclaw" | "grok" => {
+        | "gemini" | "kimi" | "qwen" | "openclaw" | "muse" | "grok" => {
             matches!(report, "daily" | "monthly" | "session")
         }
         _ => false,
@@ -965,6 +973,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "copilot" => "GitHub Copilot CLI",
         "gemini" => "Gemini CLI",
         "kimi" => "Kimi",
+        "muse" => "Muse Code",
         "qwen" => "Qwen",
         "openclaw" => "OpenClaw",
         "grok" => "Grok",
@@ -1048,6 +1057,7 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
             | Command::Kimi(args)
             | Command::Qwen(args)
             | Command::OpenClaw(args)
+            | Command::Muse(args)
             | Command::Grok(args),
         ) => (&args.shared, args.kind != AgentReportKind::Session),
     };
