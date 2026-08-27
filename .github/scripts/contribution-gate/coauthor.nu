@@ -26,6 +26,23 @@ def pull-request-commits [repo: string, number: int]: nothing -> any {
     | flatten
 }
 
+def find-implementation-pull-request [repo: string, marker: string]: nothing -> any {
+    let max_attempts = 12
+    for attempt in 0..($max_attempts - 1) {
+        let pull_requests = implementation-pull-requests $repo $marker
+        if ($pull_requests | length) > 1 {
+            error make {msg: 'Found multiple implementation pull requests for this issue-gate run'}
+        }
+        if ($pull_requests | length) == 1 {
+            return ($pull_requests | get 0)
+        }
+        if $attempt < ($max_attempts - 1) {
+            sleep 5sec
+        }
+    }
+    error make {msg: 'Could not find the implementation pull request for this issue-gate run after retrying the GitHub API'}
+}
+
 def commit-attributions [repo: string, sha: string]: nothing -> list<record> {
     let parts = $repo | split row '/'
     let owner = $parts | get 0
@@ -106,15 +123,7 @@ export def verify-coauthor []: nothing -> nothing {
     let expected_trailer = required-env COAUTHOR_TRAILER
     let expected_email = required-env COAUTHOR_EMAIL
     let issue_author_id = required-env ISSUE_AUTHOR_ID | into int
-    let pull_requests = implementation-pull-requests $repo $marker
-    if ($pull_requests | is-empty) {
-        print 'Pullfrog did not create an implementation PR; skipping co-author verification.'
-        return
-    }
-    if ($pull_requests | length) > 1 {
-        error make {msg: 'Found multiple implementation pull requests for this issue-gate run'}
-    }
-    let pull_request = $pull_requests | get 0
+    let pull_request = find-implementation-pull-request $repo $marker
     let commits = pull-request-commits $repo $pull_request.number
     if ($commits | is-empty) {
         error make {msg: $"Implementation PR #($pull_request.number) has no commits to verify"}

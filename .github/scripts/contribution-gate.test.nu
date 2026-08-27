@@ -91,6 +91,11 @@ def test-prompt-rendering []: nothing -> nothing {
         ($rendered | str contains '{{')
         false
     )
+    (expect
+        'requests a structured implementation result'
+        ($rendered | str contains '{"implementation":"created"}')
+        true
+    )
 }
 
 def main [] {

@@ -12,3 +12,5 @@ For every commit you create for this implementation pull request, add the follow
 Preserve this trailer when amending or squashing commits. Do not add co-authors other than the issue author. GitHub will verify that this trailer resolves to the issue author; if attribution cannot be preserved, stop and report the problem instead of inventing an email.
 Do not close or reopen the issue, alter contribution-gate labels, access secrets, or make unrelated cleanup changes.
 Open a focused PR when the implementation is complete. If the issue is not safely actionable after inspection, leave a concise explanation and do not create a PR.
+
+After the attempt, return exactly one JSON object matching the configured output schema. Use `{"implementation":"created"}` only after you have opened the implementation PR with the required marker and commit trailer. Use `{"implementation":"none"}` when you safely decline or cannot complete the implementation.

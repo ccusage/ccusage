@@ -1,4 +1,13 @@
-use ./core.nu [gh-api-json issue-number repository required-env write-output]
+use ./core.nu [
+    COMMENT_MARKER
+    comment-body
+    gh-api-body
+    gh-api-json
+    issue-number
+    repository
+    required-env
+    write-output
+]
 
 def pullfrog-payload [
     prompt: string
@@ -91,7 +100,17 @@ export def issue-implementation-request []: nothing -> nothing {
     let issue_author = required-env ISSUE_AUTHOR
     let issue_author_id = required-env ISSUE_AUTHOR_ID | into int
     let user = gh-api-json [$"users/($issue_author)"]
-    let coauthor_email = coauthor-email $issue_author $issue_author_id $user
+    let coauthor_email = (try {
+        coauthor-email $issue_author $issue_author_id $user
+    } catch {
+        null
+    })
+    if $coauthor_email == null {
+        let body = comment-body $COMMENT_MARKER 'Automatic implementation was not started because the issue author GitHub email could not be resolved reliably for co-author attribution. A maintainer can implement the issue manually or provide a verifiable author email.'
+        gh-api-body POST $"repos/($repo)/issues/($number)/comments" {body: $body} | ignore
+        write-output implementation none
+        return
+    }
     let implementation_marker = $"<!-- pullfrog-accepted-issue: #($number) request-(random uuid) -->"
     let coauthor_trailer = $"Co-authored-by: ($issue_author) <($coauthor_email)>"
     let prompt = render-prompt 'issue-implementation.md' {
@@ -104,4 +123,5 @@ export def issue-implementation-request []: nothing -> nothing {
     write-output implementation_marker $implementation_marker
     write-output coauthor_trailer $coauthor_trailer
     write-output coauthor_email $coauthor_email
+    write-output implementation create_pr
 }

@@ -106,7 +106,7 @@ jobs:
       contents: read
       issues: write
     outputs:
-      implementation: ${{ steps.verdict.outputs.implementation }}
+      implementation: ${{ steps.implementation_request.outputs.implementation || steps.verdict.outputs.implementation }}
       prompt: ${{ steps.implementation_request.outputs.prompt }}
       implementation_marker: ${{ steps.implementation_request.outputs.implementation_marker }}
       coauthor_trailer: ${{ steps.implementation_request.outputs.coauthor_trailer }}
@@ -171,11 +171,26 @@ jobs:
           timeout: 1h
           push: restricted
           shell: restricted
+          output_schema: |
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["implementation"],
+              "properties": {
+                "implementation": {
+                  "type": "string",
+                  "enum": ["created", "none"]
+                }
+              }
+            }
         env:
           PULLFROG_CONTRIBUTION_GATE: 'true'
 
       - name: Verify issue author co-authorship
-        if: always() && steps.pullfrog.outcome == 'success'
+        if: >-
+          always() &&
+          steps.pullfrog.outcome == 'success' &&
+          fromJSON(steps.pullfrog.outputs.result || '{"implementation":"none"}').implementation == 'created'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
