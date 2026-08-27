@@ -189,8 +189,12 @@ jobs:
       - name: Verify issue author co-authorship
         if: >-
           always() &&
-          steps.pullfrog.outcome == 'success' &&
-          fromJSON(steps.pullfrog.outputs.result || '{"implementation":"none"}').implementation == 'created'
+          needs.apply.result == 'success' &&
+          needs.apply.outputs.implementation == 'create_pr' &&
+          (
+            steps.pullfrog.outcome != 'success' ||
+            fromJSON(steps.pullfrog.outputs.result || '{"implementation":"created"}').implementation != 'none'
+          )
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

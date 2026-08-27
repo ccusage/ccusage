@@ -108,7 +108,7 @@ def patch-comment [
     }) | ignore
 }
 
-def upsert-comment [repo: string, number: int, body: string]: nothing -> nothing {
+export def upsert-comment [repo: string, number: int, body: string]: nothing -> nothing {
     let comments = (
         gh-api-json [
             '--paginate'

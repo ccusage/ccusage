@@ -1,13 +1,13 @@
 use ./core.nu [
     COMMENT_MARKER
     comment-body
-    gh-api-body
     gh-api-json
     issue-number
     repository
     required-env
     write-output
 ]
+use ./mutations.nu [upsert-comment]
 
 def pullfrog-payload [
     prompt: string
@@ -107,7 +107,7 @@ export def issue-implementation-request []: nothing -> nothing {
     })
     if $coauthor_email == null {
         let body = comment-body $COMMENT_MARKER 'Automatic implementation was not started because the issue author GitHub email could not be resolved reliably for co-author attribution. A maintainer can implement the issue manually or provide a verifiable author email.'
-        gh-api-body POST $"repos/($repo)/issues/($number)/comments" {body: $body} | ignore
+        upsert-comment $repo $number $body
         write-output implementation none
         return
     }
