@@ -159,7 +159,14 @@ def test-issue-context []: nothing -> nothing {
 def test-issue-number []: nothing -> nothing {
     expect 'parses a positive integer issue number' (parse-issue-number '42') 42
 
-    ['1.5' '0' '-1' 'abc' ''] | each {|value|
+    [
+        '1.5'
+        '1e3'
+        '0'
+        '-1'
+        'abc'
+        ''
+    ] | each {|value|
         let result = (try {
             parse-issue-number $value
             'accepted'
