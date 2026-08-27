@@ -22,8 +22,17 @@ export def optional-env [name: string, fallback: string]: nothing -> string {
 }
 
 export def repository []: nothing -> string { required-env GITHUB_REPOSITORY }
+
+export def parse-issue-number [value: string]: nothing -> int {
+    let normalized = $value | str trim
+    if not ($normalized =~ '^[1-9][0-9]*$') {
+        error make {msg: 'ISSUE_NUMBER must be a positive integer'}
+    }
+    $normalized | into int
+}
+
 export def issue-number []: nothing -> int {
-    required-env ISSUE_NUMBER | into int
+    parse-issue-number (required-env ISSUE_NUMBER)
 }
 
 # GitHub output files support a delimiter form, which preserves prompts and

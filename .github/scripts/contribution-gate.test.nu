@@ -3,6 +3,7 @@
 
 use ./contribution-gate/coauthor.nu [coauthor-validation]
 use ./contribution-gate/context.nu [issue-context-record]
+use ./contribution-gate/core.nu [parse-issue-number]
 use ./contribution-gate/requests.nu [coauthor-email render-prompt]
 
 def expect [name: string, actual, expected]: nothing -> nothing {
@@ -155,10 +156,25 @@ def test-issue-context []: nothing -> nothing {
     } | ignore
 }
 
+def test-issue-number []: nothing -> nothing {
+    expect 'parses a positive integer issue number' (parse-issue-number '42') 42
+
+    ['1.5' '0' '-1' 'abc' ''] | each {|value|
+        let result = (try {
+            parse-issue-number $value
+            'accepted'
+        } catch {
+            'rejected'
+        })
+        expect $"rejects invalid issue number ($value)" $result rejected
+    } | ignore
+}
+
 def main [] {
     test-coauthor-validation
     test-coauthor-email
     test-prompt-rendering
     test-issue-context
+    test-issue-number
     print 'contribution-gate Nushell tests passed.'
 }
