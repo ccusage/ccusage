@@ -7,6 +7,7 @@ use ./core.nu [
     required-env
     write-output
 ]
+use ./context.nu [require-open-issue]
 use ./mutations.nu [upsert-comment]
 
 def pullfrog-payload [
@@ -43,6 +44,34 @@ export def render-prompt [filename: string, values: record]: nothing -> string {
         let value = $values | get $key | into string
         $output | str replace --all $"{{($key)}}" $value
     }
+}
+
+export def existing-implementation-pull-request [pull_requests: list<record>, number: int]: nothing -> any {
+    if $number <= 0 {
+        error make {msg: 'Issue number must be positive'}
+    }
+    let marker_prefix = $"<!-- pullfrog-accepted-issue: #($number) "
+    let matches = (
+        $pull_requests
+        | where {|pull_request|
+            let body = $pull_request | get --optional body | default ''
+            ($body | describe) == 'string' and ($body | str contains $marker_prefix)
+        }
+    )
+    if ($matches | is-empty) {
+        null
+    } else {
+        $matches | first
+    }
+}
+
+def open-pull-requests [repo: string]: nothing -> list<record> {
+    gh-api-json [
+        '--paginate'
+        '--slurp'
+        $"repos/($repo)/pulls?state=open&sort=created&direction=desc&per_page=100"
+    ]
+    | flatten
 }
 
 export def issue-request []: nothing -> nothing {
@@ -97,6 +126,7 @@ export def coauthor-email [username: string, user_id: int, user: record]: nothin
 export def issue-implementation-request []: nothing -> nothing {
     let number = issue-number
     let repo = repository
+    require-open-issue | ignore
     let issue_author = required-env ISSUE_AUTHOR
     let issue_author_id = required-env ISSUE_AUTHOR_ID | into int
     let user = gh-api-json [$"users/($issue_author)"]
@@ -124,4 +154,16 @@ export def issue-implementation-request []: nothing -> nothing {
     write-output coauthor_trailer $coauthor_trailer
     write-output coauthor_email $coauthor_email
     write-output implementation create_pr
+}
+
+export def issue-implementation-guard []: nothing -> nothing {
+    let repo = repository
+    let issue = require-open-issue
+    let existing = existing-implementation-pull-request (open-pull-requests $repo) $issue.number
+    if $existing == null {
+        write-output skip 'false'
+        return
+    }
+    print $"Skipping implementation because open PR #($existing.number) already targets issue #($issue.number)."
+    write-output skip 'true'
 }

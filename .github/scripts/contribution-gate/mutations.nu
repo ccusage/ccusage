@@ -13,6 +13,7 @@ use ./core.nu [
     required-env
     write-output
 ]
+use ./context.nu [require-open-issue]
 use ./verdict.nu [issue-verdict-record pr-verdict-record]
 
 def ensure-priority-label [repo: string, label: string, color: string]: nothing -> nothing {
@@ -184,6 +185,7 @@ def report-failure [repo: string, number: int, subject: string]: nothing -> noth
 export def issue-verdict []: nothing -> nothing {
     let repo = repository
     let number = issue-number
+    require-open-issue | ignore
     let close_allowed = (required-env CLOSE_ALLOWED) == 'true'
     let outcome = optional-env JUDGE_OUTCOME failure
     let result = optional-env RESULT ''

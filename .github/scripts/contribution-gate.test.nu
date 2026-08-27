@@ -4,7 +4,11 @@
 use ./contribution-gate/coauthor.nu [coauthor-validation]
 use ./contribution-gate/context.nu [issue-context-record]
 use ./contribution-gate/core.nu [parse-issue-number]
-use ./contribution-gate/requests.nu [coauthor-email render-prompt]
+use ./contribution-gate/requests.nu [
+    coauthor-email
+    existing-implementation-pull-request
+    render-prompt
+]
 
 def expect [name: string, actual, expected]: nothing -> nothing {
     if $actual != $expected {
@@ -98,6 +102,27 @@ def test-prompt-rendering []: nothing -> nothing {
         ($rendered | str contains '{"implementation":"created"}')
         true
     )
+    (expect
+        'requires an open issue immediately before PR creation'
+        ($rendered | str contains 'Confirm the issue is still open immediately before opening the PR.')
+        true
+    )
+}
+
+def test-existing-implementation-pull-request []: nothing -> nothing {
+    let matching = {number: 100, body: '<!-- pullfrog-accepted-issue: #42 request-abc -->'}
+    let pull_requests = [
+        $matching
+        {number: 101, body: '<!-- pullfrog-accepted-issue: #420 request-def -->'}
+        {number: 102, body: null}
+    ]
+
+    expect 'finds an existing implementation PR for the same issue' (
+        existing-implementation-pull-request $pull_requests 42
+    ) $matching
+    expect 'does not match another issue number' (
+        existing-implementation-pull-request $pull_requests 7
+    ) null
 }
 
 def test-issue-context []: nothing -> nothing {
@@ -181,6 +206,7 @@ def main [] {
     test-coauthor-validation
     test-coauthor-email
     test-prompt-rendering
+    test-existing-implementation-pull-request
     test-issue-context
     test-issue-number
     print 'contribution-gate Nushell tests passed.'

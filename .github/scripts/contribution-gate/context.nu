@@ -28,11 +28,15 @@ export def issue-context-record [requested_number: int, issue: record]: nothing 
     {number: $actual_number, author: $author, author_id: $author_id}
 }
 
-export def issue-context []: nothing -> nothing {
+export def require-open-issue []: nothing -> record {
     let repo = repository
     let number = issue-number
     let issue = gh-api-json [$"repos/($repo)/issues/($number)"]
-    let context = issue-context-record $number $issue
+    issue-context-record $number $issue
+}
+
+export def issue-context []: nothing -> nothing {
+    let context = require-open-issue
 
     write-output number ($context.number | into string)
     write-output author $context.author

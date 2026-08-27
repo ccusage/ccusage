@@ -142,13 +142,6 @@ jobs:
         with:
           version: 0.114.1
 
-      - name: Revalidate issue context
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
-        run: nu .github/scripts/contribution-gate.nu issue-context
-
       - name: Apply the issue verdict
         id: verdict
         env:
@@ -179,6 +172,9 @@ jobs:
       needs.triage.result == 'success' &&
       needs.apply.result == 'success' &&
       needs.apply.outputs.implementation == 'create_pr'
+    concurrency:
+      group: ${{ github.workflow }}-implement-${{ needs.triage.outputs.issue_number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 70
     permissions:
@@ -199,16 +195,17 @@ jobs:
         with:
           version: 0.114.1
 
-      - name: Revalidate issue context
-        id: issue_context
+      - name: Guard the implementation request
+        id: implementation_guard
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
-        run: nu .github/scripts/contribution-gate.nu issue-context
+        run: nu .github/scripts/contribution-gate.nu issue-implementation-guard
 
       - name: Ask Pullfrog to implement the issue
         id: pullfrog
+        if: steps.implementation_guard.outputs.skip != 'true'
         uses: pullfrog/pullfrog@c4d0ca6f15d12382ddd20d2010bc596b405f42f0 # v0.1.60
         with:
           prompt: ${{ needs.apply.outputs.prompt }}
@@ -233,7 +230,8 @@ jobs:
       - name: Verify issue author co-authorship
         if: >-
           always() &&
-          steps.issue_context.outcome == 'success' &&
+          steps.implementation_guard.outcome == 'success' &&
+          steps.implementation_guard.outputs.skip != 'true' &&
           steps.pullfrog.outcome != 'skipped' &&
           (
             steps.pullfrog.outcome != 'success' ||
