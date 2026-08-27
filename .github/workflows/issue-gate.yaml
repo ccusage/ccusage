@@ -18,7 +18,8 @@ permissions:
 
 jobs:
   triage:
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       issues: read
@@ -141,6 +142,13 @@ jobs:
         with:
           version: 0.114.1
 
+      - name: Revalidate issue context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+        run: nu .github/scripts/contribution-gate.nu issue-context
+
       - name: Apply the issue verdict
         id: verdict
         env:
@@ -171,7 +179,8 @@ jobs:
       needs.triage.result == 'success' &&
       needs.apply.result == 'success' &&
       needs.apply.outputs.implementation == 'create_pr'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
     permissions:
       contents: write
       issues: read
@@ -184,6 +193,18 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
+
+      - name: Revalidate issue context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+        run: nu .github/scripts/contribution-gate.nu issue-context
 
       - name: Ask Pullfrog to implement the issue
         id: pullfrog
