@@ -108,6 +108,8 @@ jobs:
     outputs:
       implementation: ${{ steps.verdict.outputs.implementation }}
       prompt: ${{ steps.implementation_request.outputs.prompt }}
+      implementation_marker: ${{ steps.implementation_request.outputs.implementation_marker }}
+      coauthor_trailer: ${{ steps.implementation_request.outputs.coauthor_trailer }}
     steps:
       - name: Checkout the base repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -136,6 +138,7 @@ jobs:
         id: implementation_request
         if: steps.verdict.outcome == 'success' && steps.verdict.outputs.implementation == 'create_pr'
         env:
+          GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
@@ -168,3 +171,14 @@ jobs:
           shell: restricted
         env:
           PULLFROG_CONTRIBUTION_GATE: 'true'
+
+      - name: Verify issue author co-authorship
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          ISSUE_AUTHOR_ID: ${{ github.event.issue.user.id }}
+          IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}
+          COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
+        run: nu .github/scripts/contribution-gate.nu verify-coauthor
