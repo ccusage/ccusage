@@ -1,8 +1,8 @@
-# GitHub handles approved to bypass contribution auto-close
+# GitHub handles approved to bypass the contribution gate
 # Format: <username> <capability>
 # capability:
-#   issue  future issues stay open
-#   pr     future issues and PRs stay open
+#   issue  future issues bypass the gate
+#   pr     future issues and PRs bypass the gate
 
 AsPulse pr
 TreeOfLearning pr

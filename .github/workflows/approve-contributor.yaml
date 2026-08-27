@@ -161,13 +161,13 @@ jobs:
               body = `@${issueAuthor} is already approved.`;
             } else if (capability === 'issue') {
               body = [
-                `@${issueAuthor} approved for issues. Your future issues will not be auto-closed. PRs still require \`lgtm\`.`,
+                `@${issueAuthor} approved for issues. Your future issues will bypass the contribution gate. PRs still require \`lgtm\`.`,
                 '',
                 `See [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
               ].join('\n');
             } else {
               body = [
-                `@${issueAuthor} approved for issues and PRs. Your future issues and PRs will not be auto-closed.`,
+                `@${issueAuthor} approved for issues and PRs. Your future issues and PRs will bypass the contribution gate.`,
                 '',
                 `See [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
               ].join('\n');

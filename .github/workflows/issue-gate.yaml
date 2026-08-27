@@ -5,118 +5,112 @@ on:
     types:
       - opened
 
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
 jobs:
-  check-contributor:
+  triage:
     runs-on: ubuntu-slim
     permissions:
       contents: read
       issues: write
+      id-token: write
     steps:
-      - name: Check issue author
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      - name: Checkout the base repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          script: |
-            const APPROVED_FILE = '.github/APPROVED_CONTRIBUTORS';
-            const VALID_CAPABILITIES = new Set(['issue', 'pr']);
-            const issueAuthor = context.payload.issue.user.login;
-            const defaultBranch = context.payload.repository.default_branch;
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
 
-            if (issueAuthor.endsWith('[bot]') || issueAuthor === 'dependabot[bot]') {
-              console.log(`Skipping bot: ${issueAuthor}`);
-              return;
-            }
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
 
-            async function getPermission(username) {
-              try {
-                const { data: permissionLevel } = await github.rest.repos.getCollaboratorPermissionLevel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  username,
-                });
-                return permissionLevel.permission;
-              } catch {
-                return null;
-              }
-            }
+      - name: Check issue author
+        id: access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+        run: nu .github/scripts/contribution-gate.nu issue-access
 
-            async function getTextFile(path) {
-              const { data: fileContent } = await github.rest.repos.getContent({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                path,
-                ref: defaultBranch,
-              });
+      - name: Prepare the Pullfrog request
+        id: request
+        if: steps.access.outcome == 'success' && steps.access.outputs.skip != 'true'
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          AUTHOR_STATUS: ${{ steps.access.outputs.author_status }}
+          CLOSE_ALLOWED: ${{ steps.access.outputs.close_allowed }}
+        run: nu .github/scripts/contribution-gate.nu issue-request
 
-              if (!('content' in fileContent) || typeof fileContent.content !== 'string') {
-                throw new Error(`Expected file content for ${path}`);
-              }
-
-              return Buffer.from(fileContent.content, 'base64').toString('utf8');
-            }
-
-            function parseApprovedUsers(content) {
-              const users = new Map();
-
-              for (const rawLine of content.split('\n')) {
-                const line = rawLine.trim();
-                if (!line || line.startsWith('#')) continue;
-
-                const parts = line.split(/\s+/);
-                if (parts.length !== 2) {
-                  console.log(`Skipping malformed line: ${rawLine}`);
-                  continue;
+      - name: Ask Luna for an issue verdict
+        id: judge
+        if: steps.access.outcome == 'success' && steps.access.outputs.skip != 'true'
+        uses: pullfrog/pullfrog@c4d0ca6f15d12382ddd20d2010bc596b405f42f0 # v0.1.60
+        with:
+          prompt: ${{ steps.request.outputs.prompt }}
+          timeout: 15m
+          push: disabled
+          shell: disabled
+          progress_comments: disabled
+          output_schema: |
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["decision", "priority", "implementation", "reason"],
+              "properties": {
+                "decision": {
+                  "type": "string",
+                  "enum": ["keep_open", "close", "needs_human"]
+                },
+                "priority": {
+                  "type": "string",
+                  "enum": ["priority:critical", "priority:high", "priority:medium", "priority:low"]
+                },
+                "implementation": {
+                  "type": "string",
+                  "enum": ["create_pr", "none"]
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1200
                 }
-
-                const [username, capability] = parts;
-                const normalizedCapability = capability.toLowerCase();
-                if (!VALID_CAPABILITIES.has(normalizedCapability)) {
-                  console.log(`Skipping line with invalid capability: ${rawLine}`);
-                  continue;
-                }
-
-                users.set(username.toLowerCase(), normalizedCapability);
               }
-
-              return users;
             }
 
-            const permission = await getPermission(issueAuthor);
-            if (['admin', 'maintain', 'write'].includes(permission)) {
-              console.log(`${issueAuthor} is a collaborator with ${permission} access`);
-              return;
-            }
+      - name: Apply the issue verdict
+        id: verdict
+        if: always() && steps.access.outcome == 'success' && steps.access.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          CLOSE_ALLOWED: ${{ steps.access.outputs.close_allowed }}
+          JUDGE_OUTCOME: ${{ steps.judge.outcome }}
+          RESULT: ${{ steps.judge.outputs.result }}
+        run: nu .github/scripts/contribution-gate.nu issue-verdict
 
-            const approvedContent = await getTextFile(APPROVED_FILE);
-            const approvedUsers = parseApprovedUsers(approvedContent);
-            const capability = approvedUsers.get(issueAuthor.toLowerCase());
+      - name: Prepare the implementation request
+        id: implementation_request
+        if: steps.verdict.outcome == 'success' && steps.verdict.outputs.implementation == 'create_pr'
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: nu .github/scripts/contribution-gate.nu issue-implementation-request
 
-            if (capability === 'issue' || capability === 'pr') {
-              console.log(`${issueAuthor} is approved for ${capability}`);
-              return;
-            }
-
-            const message = [
-              'This issue was auto-closed. Issues from new contributors are auto-closed by default.',
-              '',
-              `Maintainers review auto-closed issues and reopen worthwhile ones. Issues that do not meet the quality bar in [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md) may not be reopened or receive a reply.`,
-              '',
-              'Keep the issue short, concrete, and written in your own voice.',
-              '',
-              'If a maintainer replies `lgtmi`, your future issues will stay open. If a maintainer replies `lgtm`, your future issues and PRs will stay open.',
-              '',
-              `See [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: message,
-            });
-
-            await github.rest.issues.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              state: 'closed',
-            });
+      - name: Ask Pullfrog to implement the issue
+        if: steps.implementation_request.outcome == 'success'
+        uses: pullfrog/pullfrog@c4d0ca6f15d12382ddd20d2010bc596b405f42f0 # v0.1.60
+        with:
+          prompt: ${{ steps.implementation_request.outputs.prompt }}
+          timeout: 1h
+          push: restricted
+          shell: restricted
+        env:
+          PULLFROG_CONTRIBUTION_GATE: 'true'

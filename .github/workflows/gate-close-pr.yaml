@@ -1,9 +1,6 @@
 name: Gate Close PR
 
-# Manually close a PR that the PR Gate did not auto-close (for example a PR
-# opened while the gate was misconfigured). Runs from a workflow_dispatch so the
-# comment and close are attributed to github-actions[bot], matching the gate.
-# It posts the same message as .github/workflows/pr-gate.yaml.
+# Manually close a PR when a maintainer explicitly requests it.
 
 on:
   workflow_dispatch:
@@ -21,7 +18,7 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Close PR with the contribution-gate message
+      - name: Close PR with the maintainer-requested message
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -29,11 +26,11 @@ jobs:
             const defaultBranch = context.payload.repository.default_branch;
 
             const message = [
-              'This PR was auto-closed. Only contributors approved with `lgtm` can open PRs. Open an issue first.',
+              'This PR was closed by a maintainer-run contribution gate.',
               '',
-              `Maintainers review auto-closed issues and reopen worthwhile ones. Issues that do not meet the quality bar in [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md) may not be reopened or receive a reply.`,
+              `Maintainers review contribution-gate decisions against the quality bar in [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
               '',
-              'If a maintainer replies `lgtmi`, your future issues will stay open. If a maintainer replies `lgtm`, your future issues and PRs will stay open.',
+              'If a maintainer replies `lgtmi`, future issues will bypass the gate. If a maintainer replies `lgtm`, future issues and PRs will bypass the gate.',
               '',
               `See [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
             ].join('\n');

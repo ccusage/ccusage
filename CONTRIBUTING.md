@@ -12,7 +12,9 @@ If you use an agent, run it from the repository root so it picks up `CLAUDE.md` 
 
 ## Contribution Gate
 
-Issues and PRs from new contributors are auto-closed by default.
+Issues and PRs from new contributors are assessed by an automated contribution gate.
+Clear, actionable contributions are kept open; spam, duplicates, invalid reports, and
+clearly out-of-scope work may be closed. Uncertain cases are left for maintainer review.
 
 This gate is based on the contributor approval workflow used by [earendil-works/pi](https://github.com/earendil-works/pi).
 
@@ -20,8 +22,8 @@ Start with an issue before opening a PR. Keep it short, concrete, and written in
 
 Maintainers may approve contributors by replying on an issue:
 
-- `lgtmi`: future issues will not be auto-closed
-- `lgtm`: future issues and PRs will not be auto-closed
+- `lgtmi`: future issues bypass the contribution gate
+- `lgtm`: future issues and PRs bypass the contribution gate
 
 `lgtmi` does not grant rights to submit PRs. Only `lgtm` grants rights to submit PRs.
 
@@ -39,7 +41,9 @@ Maintainers may reopen clear, useful issues and approve the author for future is
 
 ## Before Submitting a PR
 
-Do not open a PR unless you have already been approved with `lgtm`.
+Open an issue first and wait for approval with `lgtm` before submitting a PR whenever possible.
+If an unapproved PR is opened, the contribution gate assesses its content rather than closing it
+solely because of the author.
 
 Before submitting a PR, run:
 
@@ -68,9 +72,11 @@ turns that title into the commit that lands on `main`.
 
 ## FAQ
 
-### Why are new issues and PRs auto-closed?
+### How does the contribution gate work?
 
-ccusage receives agent-assisted reports and changes. Auto-closing gives maintainers a buffer to review issues on their own schedule and reopen the ones that are concrete, reproducible, and worth investigating.
+ccusage receives agent-assisted reports and changes. Pullfrog reviews new contributions from
+unapproved authors and closes only clear spam, duplicates, invalid reports, or work outside the
+repository scope. Meaningful or uncertain contributions remain available for maintainers.
 
 ### Why might an issue get no reply?
 
