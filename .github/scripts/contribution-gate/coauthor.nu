@@ -1,6 +1,6 @@
 use ./core.nu [gh-api-json repository required-env]
 
-def implementation-pull-requests [repo: string, marker: string]: nothing -> any {
+def implementation-pull-requests [repo: string, branch: string, marker: string]: nothing -> any {
     gh-api-json [
         '--paginate'
         '--slurp'
@@ -9,11 +9,13 @@ def implementation-pull-requests [repo: string, marker: string]: nothing -> any 
     | flatten
     | where {|pull_request|
         let body = $pull_request | get --optional body | default ''
-        if ($body | describe) != 'string' {
-            false
-        } else {
-            $body | str contains $marker
-        }
+        [
+            (($pull_request | get --optional user.login) == 'github-actions[bot]')
+            (($pull_request | get --optional head.repo.full_name) == $repo)
+            (($pull_request | get --optional head.ref) == $branch)
+            (($body | describe) == 'string' and ($body | str contains $marker))
+        ]
+        | all {|valid| $valid}
     }
 }
 
@@ -26,10 +28,10 @@ def pull-request-commits [repo: string, number: int]: nothing -> any {
     | flatten
 }
 
-def find-implementation-pull-request [repo: string, marker: string]: nothing -> any {
+def find-implementation-pull-request [repo: string, branch: string, marker: string]: nothing -> any {
     let max_attempts = 12
     for attempt in 0..($max_attempts - 1) {
-        let pull_requests = implementation-pull-requests $repo $marker
+        let pull_requests = implementation-pull-requests $repo $branch $marker
         if ($pull_requests | length) > 1 {
             error make {msg: 'Found multiple implementation pull requests for this issue-gate run'}
         }
@@ -119,11 +121,12 @@ def validate-commit [
 
 export def verify-coauthor []: nothing -> nothing {
     let repo = repository
+    let branch = required-env IMPLEMENTATION_BRANCH
     let marker = required-env IMPLEMENTATION_MARKER
     let expected_trailer = required-env COAUTHOR_TRAILER
     let expected_email = required-env COAUTHOR_EMAIL
     let issue_author_id = required-env ISSUE_AUTHOR_ID | into int
-    let pull_request = find-implementation-pull-request $repo $marker
+    let pull_request = find-implementation-pull-request $repo $branch $marker
     let commits = pull-request-commits $repo $pull_request.number
     if ($commits | is-empty) {
         error make {msg: $"Implementation PR #($pull_request.number) has no commits to verify"}

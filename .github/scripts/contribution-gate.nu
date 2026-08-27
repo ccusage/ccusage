@@ -9,6 +9,7 @@ use ./contribution-gate/requests.nu [
     issue-implementation-guard
     issue-implementation-request
     issue-request
+    publish-implementation
     pr-request
 ]
 
@@ -23,6 +24,7 @@ def main [operation: string]: nothing -> nothing {
         'pr-verdict' => pr-verdict
         'issue-implementation-guard' => issue-implementation-guard
         'issue-implementation-request' => issue-implementation-request
+        'publish-implementation' => publish-implementation
         'verify-coauthor' => verify-coauthor
         _ => (error make {msg: $"Unknown contribution-gate operation: ($operation)"})
     }

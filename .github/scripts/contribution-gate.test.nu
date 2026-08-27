@@ -7,6 +7,9 @@ use ./contribution-gate/core.nu [parse-issue-number]
 use ./contribution-gate/requests.nu [
     coauthor-email
     existing-implementation-pull-request
+    implementation-branch
+    implementation-pull-request-body
+    implementation-result
     render-prompt
 ]
 
@@ -74,8 +77,6 @@ def test-prompt-rendering []: nothing -> nothing {
     let rendered = render-prompt 'issue-implementation.md' {
         ISSUE_NUMBER: '42'
         REPOSITORY: 'ccusage/ccusage'
-        IMPLEMENTATION_MARKER: '<!-- marker -->'
-        COAUTHOR_TRAILER: 'Co-authored-by: alice <alice@example.com>'
     }
     (expect
         'renders prompt values'
@@ -83,13 +84,13 @@ def test-prompt-rendering []: nothing -> nothing {
         true
     )
     (expect
-        'renders the implementation marker'
-        ($rendered | str contains '<!-- marker -->')
+        'leaves implementation changes uncommitted'
+        ($rendered | str contains 'Do not commit, push, or create a pull request.')
         true
     )
     (expect
-        'renders the co-author trailer'
-        ($rendered | str contains 'Co-authored-by: alice <alice@example.com>')
+        'requests PR metadata with a prepared result'
+        ($rendered | str contains '"implementation":"prepared"')
         true
     )
     (expect
@@ -97,32 +98,99 @@ def test-prompt-rendering []: nothing -> nothing {
         ($rendered | str contains '{{')
         false
     )
-    (expect
-        'requests a structured implementation result'
-        ($rendered | str contains '{"implementation":"created"}')
-        true
-    )
-    (expect
-        'requires an open issue immediately before PR creation'
-        ($rendered | str contains 'Confirm the issue is still open immediately before opening the PR.')
-        true
-    )
 }
 
 def test-existing-implementation-pull-request []: nothing -> nothing {
-    let matching = {number: 100, body: '<!-- pullfrog-accepted-issue: #42 request-abc -->'}
+    let matching = {
+        number: 100
+        body: '<!-- pullfrog-accepted-issue: #42 request-abc -->'
+        user: {login: 'github-actions[bot]'}
+        head: {
+            ref: 'pullfrog/issue-42-run-123'
+            repo: {full_name: 'ccusage/ccusage'}
+        }
+    }
     let pull_requests = [
         $matching
-        {number: 101, body: '<!-- pullfrog-accepted-issue: #420 request-def -->'}
-        {number: 102, body: null}
+        {
+            number: 101
+            body: '<!-- pullfrog-accepted-issue: #42 request-forged -->'
+            user: {login: alice}
+            head: {
+                ref: 'feature/copied-marker'
+                repo: {full_name: 'alice/ccusage'}
+            }
+        }
+        {
+            number: 102
+            body: null
+            user: {login: 'github-actions[bot]'}
+            head: {
+                ref: 'pullfrog/issue-420-run-456'
+                repo: {full_name: 'ccusage/ccusage'}
+            }
+        }
     ]
 
     expect 'finds an existing implementation PR for the same issue' (
-        existing-implementation-pull-request $pull_requests 42
+        existing-implementation-pull-request $pull_requests 'ccusage/ccusage' 42
     ) $matching
-    expect 'does not match another issue number' (
-        existing-implementation-pull-request $pull_requests 7
+    expect 'does not trust a copied marker in an external PR' (
+        existing-implementation-pull-request ($pull_requests | skip 1 | take 1) 'ccusage/ccusage' 42
     ) null
+    expect 'does not match another issue branch' (
+        existing-implementation-pull-request $pull_requests 'ccusage/ccusage' 7
+    ) null
+}
+
+def test-implementation-result []: nothing -> nothing {
+    expect 'accepts prepared PR metadata' (
+        implementation-result '{"implementation":"prepared","title":"fix: count cache writes","body":"Fixes the missing cost.\n\nTests: focused adapter test."}'
+    ) {implementation: prepared, title: 'fix: count cache writes', body: "Fixes the missing cost.\n\nTests: focused adapter test."}
+    expect 'accepts a declined implementation' (
+        implementation-result '{"implementation":"none","title":"","body":""}'
+    ) {implementation: none, title: '', body: ''}
+
+    let invalid_results = [
+        '{"implementation":"prepared","title":"","body":"body"}'
+        '{"implementation":"prepared","title":"title\nsecond line","body":"body"}'
+        '{"implementation":"prepared","title":"title","body":""}'
+        '{"implementation":"created","title":"title","body":"body"}'
+        'not json'
+    ]
+    $invalid_results | each {|result|
+        let outcome = (try {
+            implementation-result $result
+            'accepted'
+        } catch {
+            'rejected'
+        })
+        expect $"rejects invalid implementation result ($result)" $outcome 'rejected'
+    } | ignore
+}
+
+def test-implementation-publication []: nothing -> nothing {
+    expect 'uses a run-owned implementation branch' (
+        implementation-branch 42 123 2
+    ) 'pullfrog/issue-42-run-123-attempt-2'
+
+    let invalid_run_values = [
+        {run_id: 0, run_attempt: 1}
+        {run_id: 123, run_attempt: 0}
+    ]
+    $invalid_run_values | each {|value|
+        let outcome = (try {
+            implementation-branch 42 $value.run_id $value.run_attempt
+            'accepted'
+        } catch {
+            'rejected'
+        })
+        expect 'rejects an invalid workflow run identity' $outcome 'rejected'
+    } | ignore
+
+    expect 'adds workflow-owned PR metadata' (
+        implementation-pull-request-body '<!-- marker -->' "Implemented the fix.\n\nTests: focused test." 42
+    ) "<!-- marker -->\n\nImplemented the fix.\n\nTests: focused test.\n\nCloses #42"
 }
 
 def test-issue-context []: nothing -> nothing {
@@ -207,6 +275,8 @@ def main [] {
     test-coauthor-email
     test-prompt-rendering
     test-existing-implementation-pull-request
+    test-implementation-result
+    test-implementation-publication
     test-issue-context
     test-issue-number
     print 'contribution-gate Nushell tests passed.'

@@ -16,6 +16,10 @@ permissions:
   issues: read
   pull-requests: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
 jobs:
   triage:
     runs-on: ubuntu-latest
@@ -127,6 +131,7 @@ jobs:
       implementation: ${{ steps.implementation_request.outputs.implementation || steps.verdict.outputs.implementation }}
       prompt: ${{ steps.implementation_request.outputs.prompt }}
       implementation_marker: ${{ steps.implementation_request.outputs.implementation_marker }}
+      implementation_branch: ${{ steps.implementation_request.outputs.implementation_branch }}
       coauthor_trailer: ${{ steps.implementation_request.outputs.coauthor_trailer }}
       coauthor_email: ${{ steps.implementation_request.outputs.coauthor_email }}
     steps:
@@ -172,16 +177,16 @@ jobs:
       needs.triage.result == 'success' &&
       needs.apply.result == 'success' &&
       needs.apply.outputs.implementation == 'create_pr'
-    concurrency:
-      group: ${{ github.workflow }}-implement-${{ needs.triage.outputs.issue_number }}
-      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 70
     permissions:
-      contents: write
+      contents: read
       issues: read
-      pull-requests: write
+      pull-requests: read
       id-token: write
+    outputs:
+      base_sha: ${{ steps.base.outputs.base_sha }}
+      implementation: ${{ steps.artifact.outputs.implementation }}
     steps:
       - name: Checkout the base repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -194,6 +199,16 @@ jobs:
         uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
         with:
           version: 0.114.1
+
+      - name: Record the implementation base
+        id: base
+        shell: nu {0}
+        run: |
+          let result = run-external git rev-parse HEAD | complete
+          if $result.exit_code != 0 {
+              error make {msg: $"Could not resolve the implementation base: ($result.stderr | str trim)"}
+          }
+          $"base_sha=($result.stdout | str trim)\n" | save --append $env.GITHUB_OUTPUT
 
       - name: Guard the implementation request
         id: implementation_guard
@@ -210,38 +225,215 @@ jobs:
         with:
           prompt: ${{ needs.apply.outputs.prompt }}
           timeout: 1h
-          push: restricted
+          push: disabled
           shell: restricted
+          progress_comments: disabled
           output_schema: |
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["implementation"],
+              "required": ["implementation", "title", "body"],
               "properties": {
                 "implementation": {
                   "type": "string",
-                  "enum": ["created", "none"]
+                  "enum": ["prepared", "none"]
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 240
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 20000
                 }
-              }
+              },
+              "oneOf": [
+                {
+                  "properties": {
+                    "implementation": {"const": "prepared"},
+                    "title": {"minLength": 1},
+                    "body": {"minLength": 1}
+                  }
+                },
+                {
+                  "properties": {
+                    "implementation": {"const": "none"},
+                    "title": {"maxLength": 0},
+                    "body": {"maxLength": 0}
+                  }
+                }
+              ]
             }
         env:
           PULLFROG_CONTRIBUTION_GATE: 'true'
 
-      - name: Verify issue author co-authorship
-        if: >-
-          always() &&
-          steps.implementation_guard.outcome == 'success' &&
-          steps.implementation_guard.outputs.skip != 'true' &&
-          steps.pullfrog.outcome != 'skipped' &&
-          (
-            steps.pullfrog.outcome != 'success' ||
-            fromJSON(steps.pullfrog.outputs.result || '{"implementation":"created"}').implementation != 'none'
-          )
+      - name: Prepare the implementation artifact
+        id: artifact
+        if: steps.pullfrog.outcome == 'success'
+        shell: nu {0}
+        env:
+          RESULT: ${{ steps.pullfrog.outputs.result }}
+          BASE_SHA: ${{ steps.base.outputs.base_sha }}
+          IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation.patch
+          IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation.json
+        run: |
+          def git-complete [args: list<string>]: nothing -> record {
+              run-external git ...$args | complete
+          }
+
+          def git-run [args: list<string>]: nothing -> nothing {
+              let result = git-complete $args
+              if $result.exit_code != 0 {
+                  error make {
+                      msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"
+                  }
+              }
+          }
+
+          let result = try {
+              $env.RESULT | from json
+          } catch {
+              error make {msg: 'Pullfrog returned invalid implementation JSON'}
+          }
+          let expected_fields = [body implementation title]
+          if ($result | describe) !~ '^record' or ($result | columns | sort) != $expected_fields {
+              error make {msg: 'Pullfrog returned unexpected implementation fields'}
+          }
+
+          let head = git-complete [rev-parse HEAD]
+          if $head.exit_code != 0 or ($head.stdout | str trim) != $env.BASE_SHA {
+              error make {msg: 'Pullfrog must leave the checked-out base commit unchanged'}
+          }
+
+          if $result.implementation == 'none' {
+              let status = git-complete [status --porcelain]
+              if $status.exit_code != 0 or ($status.stdout | str trim | is-not-empty) {
+                  error make {msg: 'Pullfrog declined implementation after changing the working tree'}
+              }
+          } else if $result.implementation == 'prepared' {
+              let metadata_is_valid = [
+                  (($result.title | str trim | is-not-empty) and (($result.title | lines | length) == 1))
+                  (($result.title | str length) <= 240)
+                  (($result.body | str trim | is-not-empty) and (($result.body | str length) <= 20000))
+              ] | all {|valid| $valid}
+              if not $metadata_is_valid {
+                  error make {msg: 'Pullfrog returned invalid implementation PR metadata'}
+              }
+
+              let untracked_result = git-complete [ls-files --others --exclude-standard '-z']
+              if $untracked_result.exit_code != 0 {
+                  error make {msg: $"Could not inspect untracked files: ($untracked_result.stderr | str trim)"}
+              }
+              let untracked = $untracked_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
+              if ($untracked | length) > 100 {
+                  error make {msg: 'Pullfrog created too many untracked files for automatic publication'}
+              }
+              if ($untracked | is-not-empty) {
+                  git-run [add --intent-to-add -- ...$untracked]
+              }
+
+              let changed_paths_result = git-complete [diff --name-only '-z' HEAD --]
+              if $changed_paths_result.exit_code != 0 {
+                  error make {msg: $"Could not inspect changed paths: ($changed_paths_result.stderr | str trim)"}
+              }
+              let changed_paths = $changed_paths_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
+              if ($changed_paths | is-empty) or ($changed_paths | length) > 100 {
+                  error make {msg: 'Pullfrog implementation must change between 1 and 100 files'}
+              }
+
+              let changed = git-complete [diff --quiet HEAD --]
+              if $changed.exit_code == 0 {
+                  error make {msg: 'Pullfrog reported a prepared implementation without any changes'}
+              }
+              if $changed.exit_code != 1 {
+                  error make {msg: $"Could not inspect implementation changes: ($changed.stderr | str trim)"}
+              }
+              git-run [diff --check HEAD --]
+
+              let patch = git-complete [diff --binary --full-index HEAD --]
+              if $patch.exit_code != 0 {
+                  error make {msg: $"Could not create the implementation patch: ($patch.stderr | str trim)"}
+              }
+              if ($patch.stdout | str length) > 5000000 {
+                  error make {msg: 'Pullfrog implementation patch exceeds the 5 MB publication limit'}
+              }
+              $patch.stdout | save --raw $env.IMPLEMENTATION_PATCH
+              $result | to json | save --raw $env.IMPLEMENTATION_METADATA
+          } else {
+              error make {msg: 'Pullfrog returned an unknown implementation result'}
+          }
+
+          $"implementation=($result.implementation)\n" | save --append $env.GITHUB_OUTPUT
+
+      - name: Upload the implementation artifact
+        if: steps.artifact.outputs.implementation == 'prepared'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-${{ needs.triage.outputs.issue_number }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/implementation.patch
+            ${{ runner.temp }}/implementation.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs:
+      - triage
+      - apply
+      - implement
+    if: >-
+      needs.triage.result == 'success' &&
+      needs.apply.result == 'success' &&
+      needs.implement.result == 'success' &&
+      needs.implement.outputs.implementation == 'prepared'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: write
+      id-token: none
+    steps:
+      - name: Checkout the implementation base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.implement.outputs.base_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
+
+      - name: Download the implementation artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: issue-${{ needs.triage.outputs.issue_number }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/implementation
+
+      - name: Publish the implementation pull request
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_AUTHOR: ${{ needs.triage.outputs.issue_author }}
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+          IMPLEMENTATION_BASE_SHA: ${{ needs.implement.outputs.base_sha }}
+          IMPLEMENTATION_BRANCH: ${{ needs.apply.outputs.implementation_branch }}
+          IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}
+          IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation/implementation.json
+          IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation/implementation.patch
+          COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
+        run: nu .github/scripts/contribution-gate.nu publish-implementation
+
+      - name: Verify issue author co-authorship
+        if: steps.publish.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_AUTHOR_ID: ${{ needs.triage.outputs.issue_author_id }}
+          IMPLEMENTATION_BRANCH: ${{ needs.apply.outputs.implementation_branch }}
           IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
           COAUTHOR_EMAIL: ${{ needs.apply.outputs.coauthor_email }}
