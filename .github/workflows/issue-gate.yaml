@@ -138,6 +138,8 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          ISSUE_AUTHOR_ID: ${{ github.event.issue.user.id }}
         run: nu .github/scripts/contribution-gate.nu issue-implementation-request
 
   implement:
