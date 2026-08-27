@@ -8,7 +8,19 @@ def collaborator-permission [repo: string, username: string]: nothing -> any {
         } catch {
             null
         })
-        return {status: 'ok', permission: $permission}
+        let valid_permissions = [
+            admin
+            maintain
+            write
+            triage
+            read
+            none
+        ]
+        if ($permission | describe) == 'string' and $permission in $valid_permissions {
+            return {status: 'ok', permission: $permission}
+        }
+        print --stderr $"Could not determine collaborator access: malformed permission response for ($username)"
+        return {status: 'unknown', permission: null}
     }
     if ($result.stderr | str contains 'HTTP 404') {
         return {status: 'not_collaborator', permission: null}

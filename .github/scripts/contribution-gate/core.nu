@@ -29,7 +29,7 @@ export def issue-number []: nothing -> int {
 # GitHub output files support a delimiter form, which preserves prompts and
 # model reasons without serializing them into shell syntax.
 export def write-output [name: string, value: string]: nothing -> nothing {
-    let delimiter = $"pullfrog_($name)_output"
+    let delimiter = $"pullfrog_($name)_(random uuid)"
     [
         $"($name)<<($delimiter)"
         $value

@@ -50,14 +50,6 @@ def apply-priority-label [repo: string, number: int, priority: string]: nothing 
         | flatten
     )
 
-    $labels
-    | where {|label|
-        let name = $label | get --optional name
-        ($name in $PRIORITY_LABELS) and $name != $priority
-    }
-    | each {|label| gh-api-delete $"repos/($repo)/issues/($number)/labels/($label.name)" }
-    | ignore
-
     (gh-api-body
         POST
         $"repos/($repo)/issues/($number)/labels"
@@ -65,6 +57,55 @@ def apply-priority-label [repo: string, number: int, priority: string]: nothing 
             labels: [$priority]
         }
     ) | ignore
+
+    $labels
+    | where {|label|
+        let name = $label | get --optional name
+        ($name in $PRIORITY_LABELS) and $name != $priority
+    }
+    | each {|label| gh-api-delete $"repos/($repo)/issues/($number)/labels/($label.name)" }
+    | ignore
+}
+
+def create-comment [repo: string, number: int, body: string]: nothing -> nothing {
+    (gh-api-body
+        POST
+        $"repos/($repo)/issues/($number)/comments"
+        {body: $body}
+    ) | ignore
+}
+
+def patch-comment [
+    repo: string
+    number: int
+    comment_id: int
+    body: string
+]: nothing -> nothing {
+    let endpoint = $"repos/($repo)/issues/comments/($comment_id)"
+    let result = (
+        {body: $body}
+        | to json
+        | gh-api-complete [
+            '--method'
+            PATCH
+            '--header'
+            'Content-Type: application/json'
+            $endpoint
+            '--input'
+            '-'
+        ]
+    )
+
+    if $result.exit_code == 0 {
+        return
+    }
+    if ($result.stderr | str contains 'HTTP 404') {
+        create-comment $repo $number $body
+        return
+    }
+    (error make {
+        msg: (format-gh-error ['PATCH' $endpoint] $result)
+    }) | ignore
 }
 
 def upsert-comment [repo: string, number: int, body: string]: nothing -> nothing {
@@ -88,18 +129,10 @@ def upsert-comment [repo: string, number: int, body: string]: nothing -> nothing
 
     match ($existing | get --optional id) {
         null => {
-            (gh-api-body
-                POST
-                $"repos/($repo)/issues/($number)/comments"
-                {body: $body}
-            ) | ignore
+            create-comment $repo $number $body
         }
         $comment_id => {
-            (gh-api-body
-                PATCH
-                $"repos/($repo)/issues/comments/($comment_id)"
-                {body: $body}
-            ) | ignore
+            patch-comment $repo $number $comment_id $body
         }
     }
 }
@@ -170,10 +203,10 @@ export def issue-verdict []: nothing -> nothing {
 
     ensure-priority-labels $repo
     apply-priority-label $repo $number $verdict.priority
-    upsert-comment $repo $number (issue-comment $verdict)
     if $verdict.decision == 'close' and $close_allowed {
         close-issue $repo $number
     }
+    upsert-comment $repo $number (issue-comment $verdict)
     write-output decision $verdict.decision
     write-output priority $verdict.priority
     write-output reason $verdict.reason
@@ -200,10 +233,10 @@ export def pr-verdict []: nothing -> nothing {
         exit 1
     }
 
-    upsert-comment $repo $number (pr-comment $verdict)
     if $verdict.decision == 'close' {
         close-pr $repo $number
     }
+    upsert-comment $repo $number (pr-comment $verdict)
     write-output decision $verdict.decision
     write-output reason $verdict.reason
 }

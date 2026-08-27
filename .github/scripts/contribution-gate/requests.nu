@@ -4,13 +4,14 @@ def pullfrog-payload [
     prompt: string
     trigger: string
     number: int
+    author_permission: string
     is_pr: bool
     silent: bool
 ]: nothing -> string {
     let event = {
         trigger: $trigger
         issue_number: $number
-        authorPermission: 'none'
+        authorPermission: $author_permission
         silent: $silent
     }
     let event = if $is_pr {
@@ -47,7 +48,7 @@ export def issue-request []: nothing -> nothing {
         'When uncertain, choose needs_human and leave the issue open.'
         'Keep the reason concise, factual, and in simple English. Do not include secrets or reproduce large user-provided text.'
     ] | str join "\n"
-    write-output prompt (pullfrog-payload $prompt issues_opened $number false true)
+    write-output prompt (pullfrog-payload $prompt issues_opened $number none false true)
 }
 
 export def pr-request []: nothing -> nothing {
@@ -66,7 +67,7 @@ export def pr-request []: nothing -> nothing {
         'The author being unapproved is not, by itself, a reason to close the PR.'
         'Keep the reason concise, factual, and in simple English. Do not include secrets or reproduce large user-provided text.'
     ] | str join "\n"
-    write-output prompt (pullfrog-payload $prompt pull_request_opened $number true true)
+    write-output prompt (pullfrog-payload $prompt pull_request_opened $number none true true)
 }
 
 export def issue-implementation-request []: nothing -> nothing {
@@ -82,5 +83,5 @@ export def issue-implementation-request []: nothing -> nothing {
         'Do not close or reopen the issue, alter contribution-gate labels, access secrets, or make unrelated cleanup changes.'
         'Open a focused PR when the implementation is complete. If the issue is not safely actionable after inspection, leave a concise explanation and do not create a PR.'
     ] | str join "\n"
-    write-output prompt (pullfrog-payload $prompt issues_opened $number false false)
+    write-output prompt (pullfrog-payload $prompt issues_opened $number write false false)
 }
