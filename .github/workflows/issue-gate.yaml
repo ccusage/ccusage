@@ -265,6 +265,7 @@ jobs:
               ]
             }
         env:
+          GH_TOKEN: ${{ github.token }}
           PULLFROG_CONTRIBUTION_GATE: 'true'
 
       - name: Prepare the implementation artifact
