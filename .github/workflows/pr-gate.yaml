@@ -74,6 +74,7 @@ jobs:
           timeout: 15m
           push: disabled
           shell: disabled
+          status_checks: disabled
           progress_comments: disabled
           output_schema: |
             {
@@ -92,6 +93,8 @@ jobs:
                 }
               }
             }
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   apply:
     needs: check-contributor
