@@ -59,22 +59,37 @@ def commit-trailers [message: string]: nothing -> list<string> {
     | where {|line| $line | str starts-with 'Co-authored-by:'}
 }
 
+export def coauthor-validation [
+    message: string
+    authors: list<int>
+    expected_trailer: string
+    issue_author_id: int
+]: nothing -> record {
+    let trailers = commit-trailers $message
+    let expected_count = $trailers | where {|trailer| $trailer == $expected_trailer } | length
+    let unexpected_count = $trailers | where {|trailer| $trailer != $expected_trailer } | length
+    {
+        trailer_ok: (($expected_count == 1) and ($unexpected_count == 0))
+        author_ok: ($issue_author_id in $authors)
+    }
+}
+
 def validate-commit [
     repo: string
     commit: record
     expected_trailer: string
     issue_author_id: int
 ]: nothing -> record {
-    let trailers = commit-trailers $commit.commit.message
-    let expected_count = $trailers | where {|trailer| $trailer == $expected_trailer } | length
-    let unexpected_count = $trailers | where {|trailer| $trailer != $expected_trailer } | length
+
     # GitHub resolves the authors connection from both the commit author and trailer emails, so this checks attribution rather than text alone.
     let authors = commit-authors $repo $commit.sha
-    {
-        sha: $commit.sha
-        trailer_ok: (($expected_count == 1) and ($unexpected_count == 0))
-        author_ok: ($issue_author_id in $authors)
-    }
+    let validation = (coauthor-validation
+        $commit.commit.message
+        $authors
+        $expected_trailer
+        $issue_author_id
+    )
+    {sha: $commit.sha, trailer_ok: $validation.trailer_ok, author_ok: $validation.author_ok}
 }
 
 export def verify-coauthor []: nothing -> nothing {

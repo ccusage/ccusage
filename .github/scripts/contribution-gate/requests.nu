@@ -70,12 +70,7 @@ export def pr-request []: nothing -> nothing {
     write-output prompt (pullfrog-payload $prompt pull_request_opened $number none true true)
 }
 
-export def issue-implementation-request []: nothing -> nothing {
-    let number = issue-number
-    let repo = repository
-    let issue_author = required-env ISSUE_AUTHOR
-    let issue_author_id = required-env ISSUE_AUTHOR_ID
-    let user = gh-api-json [$"users/($issue_author)"]
+export def coauthor-email [username: string, user_id: int, user: record]: nothing -> string {
     let public_email = $user | get --optional email | default ''
     let public_email = match $public_email {
         $value if ($value | describe) == 'string' => ($value | str trim)
@@ -86,17 +81,27 @@ export def issue-implementation-request []: nothing -> nothing {
     } else {
         let created_at = $user | get --optional created_at
         if ($created_at | describe) != 'string' {
-            error make {msg: $"Could not determine when GitHub account ($issue_author) was created"}
+            error make {msg: $"Could not determine when GitHub account ($username) was created"}
         }
         let created_at = $created_at | into datetime
         let legacy_cutoff = '2017-07-18T00:00:00Z' | into datetime
         # GitHub's no-reply format changed for older accounts; the cutoff mirrors its documented address formats.
         if $created_at < $legacy_cutoff {
-            $"($issue_author)@users.noreply.github.com"
+            $"($username)@users.noreply.github.com"
         } else {
-            $"($issue_author_id)+($issue_author)@users.noreply.github.com"
+            $"($user_id)+($username)@users.noreply.github.com"
         }
     }
+    $coauthor_email
+}
+
+export def issue-implementation-request []: nothing -> nothing {
+    let number = issue-number
+    let repo = repository
+    let issue_author = required-env ISSUE_AUTHOR
+    let issue_author_id = required-env ISSUE_AUTHOR_ID | into int
+    let user = gh-api-json [$"users/($issue_author)"]
+    let coauthor_email = coauthor-email $issue_author $issue_author_id $user
     let implementation_marker = $"<!-- pullfrog-accepted-issue: #($number) request-(random uuid) -->"
     let coauthor_trailer = $"Co-authored-by: ($issue_author) <($coauthor_email)>"
     let prompt = [
