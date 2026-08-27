@@ -9,7 +9,6 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
-  id-token: write
 
 jobs:
   triage:
@@ -18,7 +17,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
-      id-token: write
+      id-token: none
     outputs:
       access_outcome: ${{ steps.access.outcome }}
       skip: ${{ steps.access.outputs.skip }}
@@ -66,7 +65,6 @@ jobs:
           timeout: 15m
           push: disabled
           shell: disabled
-          status_checks: disabled
           progress_comments: disabled
           output_schema: |
             {
