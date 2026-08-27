@@ -26,6 +26,7 @@ jobs:
       access_outcome: ${{ steps.access.outcome }}
       skip: ${{ steps.access.outputs.skip }}
       bypass: ${{ steps.access.outputs.bypass }}
+      close_allowed: ${{ steps.access.outputs.close_allowed }}
       judge_outcome: ${{ steps.judge.outcome }}
       result: ${{ steps.judge.outputs.result }}
     steps:
@@ -123,6 +124,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.pull_request.number }}
+          CLOSE_ALLOWED: ${{ needs.check-contributor.outputs.close_allowed }}
           JUDGE_OUTCOME: ${{ needs.check-contributor.outputs.judge_outcome }}
           RESULT: ${{ needs.check-contributor.outputs.result }}
         run: nu .github/scripts/contribution-gate.nu pr-verdict

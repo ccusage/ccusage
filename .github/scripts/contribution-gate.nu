@@ -175,7 +175,7 @@ def author-access [kind: string]: nothing -> record {
         return {
             skip: false
             close_allowed: false
-            bypass: true
+            bypass: false
             author_status: 'permission-unknown'
         }
     }
@@ -215,6 +215,7 @@ def pr-access []: nothing -> nothing {
     let access = author-access pr
     write-output skip ($access.skip | into string)
     write-output bypass ($access.bypass | into string)
+    write-output close_allowed ($access.close_allowed | into string)
     print $"PR author status: ($access.author_status)"
 }
 
@@ -334,11 +335,15 @@ def issue-verdict-record [result: string, close_allowed: bool]: nothing -> recor
 
     # The workflow, rather than the model, owns the hard safety constraints for
     # automatic closure and implementation.
-    let verdict = if (not $close_allowed) and $verdict.decision == 'close' {
-        $verdict
-        | update decision needs_human
-        | update implementation none
-        | update reason $"The author bypasses automatic closure; maintainer review is required. ($verdict.reason)"
+    let verdict = if not $close_allowed {
+        let verdict = if $verdict.decision == 'close' {
+            $verdict
+            | update decision needs_human
+            | update reason $"Automatic closure is disabled because author permissions could not be verified; maintainer review is required. ($verdict.reason)"
+        } else {
+            $verdict
+        }
+        $verdict | update implementation none
     } else {
         $verdict
     }
@@ -349,11 +354,18 @@ def issue-verdict-record [result: string, close_allowed: bool]: nothing -> recor
     }
 }
 
-def pr-verdict-record [result: string]: nothing -> record {
+def pr-verdict-record [result: string, close_allowed: bool]: nothing -> record {
     let raw = parse-result $result
-    {
+    let verdict = {
         decision: (parse-required-enum $raw decision [keep_open close needs_human])
         reason: (parse-reason $raw)
+    }
+    if (not $close_allowed) and $verdict.decision == 'close' {
+        $verdict
+        | update decision needs_human
+        | update reason $"Automatic closure is disabled because author permissions could not be verified; maintainer review is required. ($verdict.reason)"
+    } else {
+        $verdict
     }
 }
 
@@ -529,6 +541,7 @@ def issue-verdict []: nothing -> nothing {
 def pr-verdict []: nothing -> nothing {
     let repo = repository
     let number = issue-number
+    let close_allowed = (required-env CLOSE_ALLOWED) == 'true'
     let outcome = optional-env JUDGE_OUTCOME failure
     let result = optional-env RESULT ''
 
@@ -538,7 +551,7 @@ def pr-verdict []: nothing -> nothing {
         exit 1
     }
 
-    let verdict = (try { pr-verdict-record $result } catch { null })
+    let verdict = (try { pr-verdict-record $result $close_allowed } catch { null })
     if $verdict == null {
         report-failure $repo $number PR
         write-output decision needs_human
