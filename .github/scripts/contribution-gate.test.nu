@@ -15,12 +15,24 @@ def expect [name: string, actual, expected]: nothing -> nothing {
 def test-coauthor-validation []: nothing -> nothing {
     let trailer = 'Co-authored-by: alice <alice@users.noreply.github.com>'
     let message = $"Implement the fix\n\n($trailer)"
-    expect 'accepts exact resolved attribution' (coauthor-validation $message [42] $trailer 42) {trailer_ok: true, author_ok: true}
-    expect 'rejects a missing trailer' (coauthor-validation 'Implement the fix' [42] $trailer 42) {trailer_ok: false, author_ok: true}
+    (expect
+        'accepts exact resolved attribution'
+        (coauthor-validation $message [42] $trailer 42)
+        {trailer_ok: true, author_ok: true}
+    )
+    (expect
+        'rejects a missing trailer'
+        (coauthor-validation 'Implement the fix' [42] $trailer 42)
+        {trailer_ok: false, author_ok: true}
+    )
     expect 'rejects an additional co-author' (
         coauthor-validation $"($message)\nCo-authored-by: bob <bob@example.com>" [42 99] $trailer 42
     ) {trailer_ok: false, author_ok: true}
-    expect 'rejects unresolved attribution' (coauthor-validation $message [] $trailer 42) {trailer_ok: true, author_ok: false}
+    (expect
+        'rejects unresolved attribution'
+        (coauthor-validation $message [] $trailer 42)
+        {trailer_ok: true, author_ok: false}
+    )
 }
 
 def test-coauthor-email []: nothing -> nothing {
