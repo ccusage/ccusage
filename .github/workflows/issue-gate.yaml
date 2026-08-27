@@ -4,6 +4,12 @@ on:
   issues:
     types:
       - opened
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Existing open issue to triage
+        required: true
+        type: number
 
 permissions:
   contents: read
@@ -19,6 +25,9 @@ jobs:
       pull-requests: read
       id-token: none
     outputs:
+      issue_number: ${{ steps.issue.outputs.number }}
+      issue_author: ${{ steps.issue.outputs.author }}
+      issue_author_id: ${{ steps.issue.outputs.author_id }}
       access_outcome: ${{ steps.access.outcome }}
       skip: ${{ steps.access.outputs.skip }}
       close_allowed: ${{ steps.access.outputs.close_allowed }}
@@ -37,12 +46,20 @@ jobs:
         with:
           version: 0.114.1
 
+      - name: Resolve issue context
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: nu .github/scripts/contribution-gate.nu issue-context
+
       - name: Check issue author
         id: access
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          AUTHOR: ${{ github.event.issue.user.login }}
+          AUTHOR: ${{ steps.issue.outputs.author }}
         run: nu .github/scripts/contribution-gate.nu issue-access
 
       - name: Prepare the Pullfrog request
@@ -50,7 +67,7 @@ jobs:
         if: steps.access.outcome == 'success' && steps.access.outputs.skip != 'true'
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
           AUTHOR_STATUS: ${{ steps.access.outputs.author_status }}
           CLOSE_ALLOWED: ${{ steps.access.outputs.close_allowed }}
         run: nu .github/scripts/contribution-gate.nu issue-request
@@ -129,7 +146,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
           CLOSE_ALLOWED: ${{ needs.triage.outputs.close_allowed }}
           JUDGE_OUTCOME: ${{ needs.triage.outputs.judge_outcome }}
           RESULT: ${{ needs.triage.outputs.result }}
@@ -141,14 +158,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-          ISSUE_AUTHOR_ID: ${{ github.event.issue.user.id }}
+          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+          ISSUE_AUTHOR: ${{ needs.triage.outputs.issue_author }}
+          ISSUE_AUTHOR_ID: ${{ needs.triage.outputs.issue_author_id }}
         run: nu .github/scripts/contribution-gate.nu issue-implementation-request
 
   implement:
-    needs: apply
-    if: needs.apply.result == 'success' && needs.apply.outputs.implementation == 'create_pr'
+    needs:
+      - triage
+      - apply
+    if: >-
+      needs.triage.result == 'success' &&
+      needs.apply.result == 'success' &&
+      needs.apply.outputs.implementation == 'create_pr'
     runs-on: ubuntu-slim
     permissions:
       contents: write
@@ -196,8 +218,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-          ISSUE_AUTHOR_ID: ${{ github.event.issue.user.id }}
+          ISSUE_AUTHOR: ${{ needs.triage.outputs.issue_author }}
+          ISSUE_AUTHOR_ID: ${{ needs.triage.outputs.issue_author_id }}
           IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
           COAUTHOR_EMAIL: ${{ needs.apply.outputs.coauthor_email }}

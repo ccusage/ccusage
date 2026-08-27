@@ -3,11 +3,13 @@
 
 use ./contribution-gate/access.nu [issue-access pr-access]
 use ./contribution-gate/coauthor.nu [verify-coauthor]
+use ./contribution-gate/context.nu [issue-context]
 use ./contribution-gate/mutations.nu [issue-verdict pr-verdict]
 use ./contribution-gate/requests.nu [issue-request pr-request issue-implementation-request]
 
 def main [operation: string]: nothing -> nothing {
     match $operation {
+        'issue-context' => issue-context
         'issue-access' => issue-access
         'pr-access' => pr-access
         'issue-request' => issue-request

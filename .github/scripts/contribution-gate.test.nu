@@ -2,6 +2,7 @@
 #! nix shell --inputs-from ../.. nixpkgs#nushell --command nu
 
 use ./contribution-gate/coauthor.nu [coauthor-validation]
+use ./contribution-gate/context.nu [issue-context-record]
 use ./contribution-gate/requests.nu [coauthor-email render-prompt]
 
 def expect [name: string, actual, expected]: nothing -> nothing {
@@ -98,9 +99,66 @@ def test-prompt-rendering []: nothing -> nothing {
     )
 }
 
+def test-issue-context []: nothing -> nothing {
+    expect 'normalizes an open issue' (
+        issue-context-record 42 {
+            number: 42
+            state: open
+            user: {login: alice id: 99}
+        }
+    ) {number: 42, author: alice, author_id: 99}
+
+    let invalid_records = [
+        {
+            name: 'rejects a pull request payload'
+            issue: {
+                number: 42
+                state: open
+                user: {login: alice, id: 99}
+                pull_request: {}
+            }
+        }
+        {
+            name: 'rejects a mismatched issue number'
+            issue: {
+                number: 41
+                state: open
+                user: {login: alice, id: 99}
+            }
+        }
+        {
+            name: 'rejects a closed issue'
+            issue: {
+                number: 42
+                state: closed
+                user: {login: alice, id: 99}
+            }
+        }
+        {
+            name: 'rejects malformed author data'
+            issue: {
+                number: 42
+                state: open
+                user: {login: '', id: 0}
+            }
+        }
+    ]
+
+    $invalid_records | each {|case|
+        let result = (try {
+            issue-context-record 42 $case.issue
+            'accepted'
+        } catch {
+            'rejected'
+        })
+        expect $case.name $result rejected
+    } | ignore
+}
+
 def main [] {
     test-coauthor-validation
     test-coauthor-email
     test-prompt-rendering
+    test-issue-context
     print 'contribution-gate Nushell tests passed.'
 }
