@@ -10,8 +10,8 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
+  issues: read
+  pull-requests: read
   id-token: write
 
 jobs:
@@ -19,9 +19,15 @@ jobs:
     runs-on: ubuntu-slim
     permissions:
       contents: read
-      issues: write
-      pull-requests: write
+      issues: read
+      pull-requests: read
       id-token: write
+    outputs:
+      access_outcome: ${{ steps.access.outcome }}
+      skip: ${{ steps.access.outputs.skip }}
+      bypass: ${{ steps.access.outputs.bypass }}
+      judge_outcome: ${{ steps.judge.outcome }}
+      result: ${{ steps.judge.outputs.result }}
     steps:
       - name: Checkout the base repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,7 +51,10 @@ jobs:
 
       - name: Prepare the Pullfrog request
         id: request
-        if: steps.access.outcome == 'success' && steps.access.outputs.bypass != 'true'
+        if: >-
+          steps.access.outcome == 'success' &&
+          steps.access.outputs.skip != 'true' &&
+          steps.access.outputs.bypass != 'true'
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.pull_request.number }}
@@ -53,7 +62,11 @@ jobs:
 
       - name: Ask Luna for a PR verdict
         id: judge
-        if: steps.access.outcome == 'success' && steps.access.outputs.bypass != 'true'
+        if: >-
+          steps.access.outcome == 'success' &&
+          steps.access.outputs.skip != 'true' &&
+          steps.access.outputs.bypass != 'true'
+        continue-on-error: true
         uses: pullfrog/pullfrog@c4d0ca6f15d12382ddd20d2010bc596b405f42f0 # v0.1.60
         with:
           prompt: ${{ steps.request.outputs.prompt }}
@@ -79,13 +92,37 @@ jobs:
               }
             }
 
+  apply:
+    needs: check-contributor
+    if: >-
+      always() &&
+      needs.check-contributor.result != 'cancelled' &&
+      needs.check-contributor.outputs.access_outcome == 'success' &&
+      needs.check-contributor.outputs.skip != 'true' &&
+      needs.check-contributor.outputs.bypass != 'true'
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout the base repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
+
       - name: Apply the PR verdict
-        id: verdict
-        if: always() && steps.access.outcome == 'success' && steps.access.outputs.bypass != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.pull_request.number }}
-          JUDGE_OUTCOME: ${{ steps.judge.outcome }}
-          RESULT: ${{ steps.judge.outputs.result }}
+          JUDGE_OUTCOME: ${{ needs.check-contributor.outputs.judge_outcome }}
+          RESULT: ${{ needs.check-contributor.outputs.result }}
         run: nu .github/scripts/contribution-gate.nu pr-verdict

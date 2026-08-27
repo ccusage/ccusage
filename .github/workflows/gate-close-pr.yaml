@@ -30,7 +30,7 @@ jobs:
               '',
               `Maintainers review contribution-gate decisions against the quality bar in [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
               '',
-              'If a maintainer replies `lgtmi`, future issues will bypass the gate. If a maintainer replies `lgtm`, future issues and PRs will bypass the gate.',
+              'Approval replies are processed on issues, not pull requests. On an issue, a maintainer can reply `lgtmi` to bypass the gate for future issues or `lgtm` to bypass it for future issues and pull requests.',
               '',
               `See [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
             ].join('\n');

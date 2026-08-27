@@ -7,7 +7,8 @@ on:
 
 permissions:
   contents: read
-  issues: write
+  issues: read
+  pull-requests: read
   id-token: write
 
 jobs:
@@ -15,8 +16,15 @@ jobs:
     runs-on: ubuntu-slim
     permissions:
       contents: read
-      issues: write
+      issues: read
+      pull-requests: read
       id-token: write
+    outputs:
+      access_outcome: ${{ steps.access.outcome }}
+      skip: ${{ steps.access.outputs.skip }}
+      close_allowed: ${{ steps.access.outputs.close_allowed }}
+      judge_outcome: ${{ steps.judge.outcome }}
+      result: ${{ steps.judge.outputs.result }}
     steps:
       - name: Checkout the base repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,6 +59,7 @@ jobs:
       - name: Ask Luna for an issue verdict
         id: judge
         if: steps.access.outcome == 'success' && steps.access.outputs.skip != 'true'
+        continue-on-error: true
         uses: pullfrog/pullfrog@c4d0ca6f15d12382ddd20d2010bc596b405f42f0 # v0.1.60
         with:
           prompt: ${{ steps.request.outputs.prompt }}
@@ -84,16 +93,43 @@ jobs:
               }
             }
 
+  apply:
+    needs: triage
+    if: >-
+      always() &&
+      needs.triage.result != 'cancelled' &&
+      needs.triage.outputs.access_outcome == 'success' &&
+      needs.triage.outputs.skip != 'true'
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    outputs:
+      implementation: ${{ steps.verdict.outputs.implementation }}
+      prompt: ${{ steps.implementation_request.outputs.prompt }}
+    steps:
+      - name: Checkout the base repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
+
       - name: Apply the issue verdict
         id: verdict
-        if: always() && steps.access.outcome == 'success' && steps.access.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          CLOSE_ALLOWED: ${{ steps.access.outputs.close_allowed }}
-          JUDGE_OUTCOME: ${{ steps.judge.outcome }}
-          RESULT: ${{ steps.judge.outputs.result }}
+          CLOSE_ALLOWED: ${{ needs.triage.outputs.close_allowed }}
+          JUDGE_OUTCOME: ${{ needs.triage.outputs.judge_outcome }}
+          RESULT: ${{ needs.triage.outputs.result }}
         run: nu .github/scripts/contribution-gate.nu issue-verdict
 
       - name: Prepare the implementation request
@@ -104,11 +140,20 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: nu .github/scripts/contribution-gate.nu issue-implementation-request
 
+  implement:
+    needs: apply
+    if: needs.apply.result == 'success' && needs.apply.outputs.implementation == 'create_pr'
+    runs-on: ubuntu-slim
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: write
+      id-token: write
+    steps:
       - name: Ask Pullfrog to implement the issue
-        if: steps.implementation_request.outcome == 'success'
         uses: pullfrog/pullfrog@c4d0ca6f15d12382ddd20d2010bc596b405f42f0 # v0.1.60
         with:
-          prompt: ${{ steps.implementation_request.outputs.prompt }}
+          prompt: ${{ needs.apply.outputs.prompt }}
           timeout: 1h
           push: restricted
           shell: restricted
