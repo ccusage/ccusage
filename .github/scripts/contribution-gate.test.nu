@@ -2,7 +2,7 @@
 #! nix shell --inputs-from ../.. nixpkgs#nushell --command nu
 
 use ./contribution-gate/coauthor.nu [coauthor-validation]
-use ./contribution-gate/requests.nu [coauthor-email]
+use ./contribution-gate/requests.nu [coauthor-email render-prompt]
 
 def expect [name: string, actual, expected]: nothing -> nothing {
     if $actual != $expected {
@@ -47,8 +47,38 @@ def test-coauthor-email []: nothing -> nothing {
     ) '42+alice@users.noreply.github.com'
 }
 
+def test-prompt-rendering []: nothing -> nothing {
+    let rendered = render-prompt 'issue-implementation.md' {
+        ISSUE_NUMBER: '42'
+        REPOSITORY: 'ccusage/ccusage'
+        IMPLEMENTATION_MARKER: '<!-- marker -->'
+        COAUTHOR_TRAILER: 'Co-authored-by: alice <alice@example.com>'
+    }
+    (expect
+        'renders prompt values'
+        ($rendered | str contains 'Issue number: #42 in ccusage/ccusage.')
+        true
+    )
+    (expect
+        'renders the implementation marker'
+        ($rendered | str contains '<!-- marker -->')
+        true
+    )
+    (expect
+        'renders the co-author trailer'
+        ($rendered | str contains 'Co-authored-by: alice <alice@example.com>')
+        true
+    )
+    (expect
+        'does not leave template placeholders'
+        ($rendered | str contains '{{')
+        false
+    )
+}
+
 def main [] {
     test-coauthor-validation
     test-coauthor-email
+    test-prompt-rendering
     print 'contribution-gate Nushell tests passed.'
 }
