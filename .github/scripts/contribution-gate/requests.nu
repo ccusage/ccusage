@@ -75,9 +75,9 @@ export def coauthor-email [username: string, user_id: int, user: record]: nothin
         }
         let created_at = $created_at | into datetime
         let legacy_cutoff = '2017-07-18T00:00:00Z' | into datetime
-        # GitHub's no-reply format changed for older accounts; the cutoff mirrors its documented address formats.
         if $created_at < $legacy_cutoff {
-            $"($username)@users.noreply.github.com"
+            # GitHub does not expose whether a legacy account switched no-reply formats, so age alone cannot yield a reliable address.
+            error make {msg: $"Could not resolve a GitHub email for legacy account ($username) without a public email"}
         } else {
             $"($user_id)+($username)@users.noreply.github.com"
         }
@@ -103,4 +103,5 @@ export def issue-implementation-request []: nothing -> nothing {
     write-output prompt (pullfrog-payload $prompt issues_opened $number write false false)
     write-output implementation_marker $implementation_marker
     write-output coauthor_trailer $coauthor_trailer
+    write-output coauthor_email $coauthor_email
 }

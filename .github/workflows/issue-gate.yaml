@@ -110,6 +110,7 @@ jobs:
       prompt: ${{ steps.implementation_request.outputs.prompt }}
       implementation_marker: ${{ steps.implementation_request.outputs.implementation_marker }}
       coauthor_trailer: ${{ steps.implementation_request.outputs.coauthor_trailer }}
+      coauthor_email: ${{ steps.implementation_request.outputs.coauthor_email }}
     steps:
       - name: Checkout the base repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,6 +164,7 @@ jobs:
           persist-credentials: false
 
       - name: Ask Pullfrog to implement the issue
+        id: pullfrog
         uses: pullfrog/pullfrog@c4d0ca6f15d12382ddd20d2010bc596b405f42f0 # v0.1.60
         with:
           prompt: ${{ needs.apply.outputs.prompt }}
@@ -173,7 +175,7 @@ jobs:
           PULLFROG_CONTRIBUTION_GATE: 'true'
 
       - name: Verify issue author co-authorship
-        if: always()
+        if: always() && steps.pullfrog.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -181,4 +183,5 @@ jobs:
           ISSUE_AUTHOR_ID: ${{ github.event.issue.user.id }}
           IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
+          COAUTHOR_EMAIL: ${{ needs.apply.outputs.coauthor_email }}
         run: nu .github/scripts/contribution-gate.nu verify-coauthor
