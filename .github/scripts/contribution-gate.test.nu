@@ -10,6 +10,7 @@ use ./contribution-gate/requests.nu [
     implementation-branch
     implementation-pull-request-body
     implementation-result
+    neutralize-closing-references
     render-prompt
 ]
 
@@ -92,6 +93,14 @@ def test-prompt-rendering []: nothing -> nothing {
         'requests PR metadata with a prepared result'
         ($rendered | str contains '"implementation":"prepared"')
         true
+    )
+    (expect
+        'states the PR metadata validation contract'
+        [
+            ($rendered | str contains 'The title must be exactly one line.')
+            ($rendered | str contains 'The body must be non-empty.')
+        ]
+        [true true]
     )
     (expect
         'does not leave template placeholders'
@@ -189,8 +198,12 @@ def test-implementation-publication []: nothing -> nothing {
     } | ignore
 
     expect 'adds workflow-owned PR metadata' (
-        implementation-pull-request-body '<!-- marker -->' "Implemented the fix.\n\nTests: focused test." 42
-    ) "<!-- marker -->\n\nImplemented the fix.\n\nTests: focused test.\n\nCloses #42"
+        implementation-pull-request-body '<!-- marker -->' "Fixes #7.\n\nImplemented the fix.\n\nTests: focused test." 42
+    ) "<!-- marker -->\n\nReferences #7.\n\nImplemented the fix.\n\nTests: focused test.\n\nCloses #42"
+
+    expect 'neutralizes model-provided closing references only' (
+        neutralize-closing-references "Fixes #7. resolves ccusage/ccusage#8. CLOSES https://github.com/ccusage/ccusage/issues/9. Fixed the parser."
+    ) "References #7. References ccusage/ccusage#8. References https://github.com/ccusage/ccusage/issues/9. Fixed the parser."
 }
 
 def test-issue-context []: nothing -> nothing {

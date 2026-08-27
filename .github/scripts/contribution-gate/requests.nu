@@ -125,13 +125,18 @@ export def implementation-branch [number: int, run_id: int, run_attempt: int]: n
     $"pullfrog/issue-($number)-run-($run_id)-attempt-($run_attempt)"
 }
 
+export def neutralize-closing-references [body: string]: nothing -> string {
+    let closing_reference = '(?i)\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?)(?=\s*:?[\s]*(?:(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[1-9][0-9]*|https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull)/[1-9][0-9]*))'
+    $body | str replace --all --regex $closing_reference References
+}
+
 export def implementation-pull-request-body [marker: string, body: string, number: int]: nothing -> string {
     if $number <= 0 or ($marker | str trim | is-empty) or ($body | str trim | is-empty) {
         error make {msg: 'Implementation PR metadata is incomplete'}
     }
     [
         $marker
-        ($body | str trim)
+        (neutralize-closing-references ($body | str trim))
         $"Closes #($number)"
     ] | str join "\n\n"
 }

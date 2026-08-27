@@ -354,7 +354,7 @@ jobs:
               if $patch.exit_code != 0 {
                   error make {msg: $"Could not create the implementation patch: ($patch.stderr | str trim)"}
               }
-              if ($patch.stdout | str length) > 5000000 {
+              if ($patch.stdout | encode utf8 | bytes length) > 5000000 {
                   error make {msg: 'Pullfrog implementation patch exceeds the 5 MB publication limit'}
               }
               $patch.stdout | save --raw $env.IMPLEMENTATION_PATCH
