@@ -15,6 +15,26 @@
 	},
 	"minimumReleaseAge": "3 days",
 	"mode": "full",
+	"packageRules": [
+		{
+			"description": "Keep schemars on the 0.x API until its schema generator is migrated deliberately.",
+			"matchPackageNames": ["schemars"],
+			"allowedVersions": "<0.9.0"
+		},
+		{
+			"description": "The Rust compiler must stay paired with the pinned cargo-hawk binary and rust-overlay.",
+			"matchManagers": ["rust-toolchain"],
+			"matchDepTypes": ["toolchain"],
+			"enabled": false
+		}
+	],
+	"postUpgradeTasks": {
+		"commands": ["nix run .#generate-bun-nix"],
+		"executionMode": "branch",
+		"installTools": {
+			"nix": {}
+		}
+	},
 	"postUpdateOptions": ["pnpmDedupe"],
 	"rangeStrategy": "bump",
 	"vulnerabilityAlerts": {

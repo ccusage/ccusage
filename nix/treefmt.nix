@@ -62,6 +62,20 @@ in
           fi
         '';
       };
+      generateBunNix = pkgs.writeShellApplication {
+        name = "generate-bun-nix";
+        runtimeInputs = [
+          inputs.bun2nix.packages.${system}.default
+          pkgs.coreutils
+        ];
+        text = ''
+          for lockfile in nix/tools/*/bun.lock; do
+            toolDir="$(dirname "$lockfile")"
+            echo "Regenerating $toolDir"
+            (cd "$toolDir" && bun2nix -o bun.nix)
+          done
+        '';
+      };
     in
     {
       treefmt = {
@@ -211,6 +225,14 @@ in
       apps.generate-schema = {
         type = "app";
         program = lib.getExe schemaGen;
+      };
+      # `nix run .#generate-bun-nix` derives every committed bun.nix from its
+      # sibling bun.lock. Renovate uses this before committing dependency
+      # updates, while contributors can use `just gen-bun-nix` when a manifest
+      # also needs Bun to resolve a new lockfile.
+      apps.generate-bun-nix = {
+        type = "app";
+        program = lib.getExe generateBunNix;
       };
     };
 }
