@@ -11,6 +11,8 @@ use ./core.nu [
 use ./context.nu [require-open-issue]
 use ./mutations.nu [upsert-comment]
 
+export const CLOSING_PULL_REQUEST_QUERY = 'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 100, includeClosedPrs: false) { nodes { number state url } } } } }'
+
 def pullfrog-payload [
     prompt: string
     trigger: string
@@ -186,11 +188,10 @@ def closing-pull-requests [repo: string, number: int]: nothing -> list<record> {
     }
     let owner = $parts | get 0
     let name = $parts | get 1
-    let query = 'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 100, includeClosedPrs: false) { nodes { number state url } } } } }'
     let response = gh-api-json [
         graphql
         --field
-        $"query=($query)"
+        $"query=($CLOSING_PULL_REQUEST_QUERY)"
         --field
         $"owner=($owner)"
         --field
@@ -398,6 +399,13 @@ export def publish-implementation []: nothing -> nothing {
     git-run [push --set-upstream origin $"HEAD:refs/heads/($branch)"]
 
     require-open-issue | ignore
+    let existing = existing-issue-pull-request $repo $issue.number
+    if $existing != null {
+        git-run [push origin --delete $branch]
+        print $"Skipping publication because open PR #($existing.number) now targets issue #($issue.number)."
+        write-output skip 'true'
+        return
+    }
     let body = (implementation-pull-request-body
         (required-env IMPLEMENTATION_MARKER)
         $result.body

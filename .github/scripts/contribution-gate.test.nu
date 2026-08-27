@@ -6,6 +6,7 @@ use ./contribution-gate/context.nu [issue-context-record]
 use ./contribution-gate/core.nu [parse-issue-number]
 use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
+    CLOSING_PULL_REQUEST_QUERY
     coauthor-email
     existing-implementation-pull-request
     implementation-branch
@@ -160,8 +161,17 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
     expect 'ignores a closed pull request' (
         open-closing-pull-request [($closing_pull_request | update state CLOSED)]
     ) null
-    expect 'does not treat a mention-only cross-reference as a closing pull request' (
+    expect 'queries GitHub normalized closing relationships' (
+        $CLOSING_PULL_REQUEST_QUERY | str contains 'closedByPullRequestsReferences'
+    ) true
+    expect 'does not query generic timeline cross-references' (
+        $CLOSING_PULL_REQUEST_QUERY | str contains 'timeline'
+    ) false
+    expect 'returns null when GitHub reports no closing pull request' (
         open-closing-pull-request []
+    ) null
+    expect 'ignores a mention-only timeline record outside the GraphQL relationship' (
+        open-closing-pull-request [{event: cross-referenced, source: {type: issue}}]
     ) null
     expect 'ignores malformed closing pull request data' (
         open-closing-pull-request [{number: 0, state: OPEN, url: ''}]
@@ -328,6 +338,9 @@ def test-forced-issue-implementation []: nothing -> nothing {
     expect 'preserves the model reason for a manually forced issue' (
         $verdict.reason | str contains 'The request is low impact.'
     ) true
+    expect 'does not retain the automatic-closure review warning in forced mode' (
+        $verdict.reason | str contains 'maintainer review is required'
+    ) false
 }
 
 def main [] {

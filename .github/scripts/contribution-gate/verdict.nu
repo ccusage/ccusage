@@ -63,7 +63,7 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
         $verdict
         | update decision keep_open
         | update implementation create_pr
-        | update reason $"A maintainer explicitly requested an implementation attempt. ($verdict.reason)"
+        | update reason $"A maintainer explicitly requested an implementation attempt. ($reason)"
     } else if ($verdict.decision != 'keep_open') or (not ($verdict.priority in $IMPLEMENTATION_PRIORITIES)) {
         $verdict | update implementation none
     } else {
