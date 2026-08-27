@@ -189,8 +189,6 @@ jobs:
       - name: Verify issue author co-authorship
         if: >-
           always() &&
-          needs.apply.result == 'success' &&
-          needs.apply.outputs.implementation == 'create_pr' &&
           (
             steps.pullfrog.outcome != 'success' ||
             fromJSON(steps.pullfrog.outputs.result || '{"implementation":"created"}').implementation != 'none'
