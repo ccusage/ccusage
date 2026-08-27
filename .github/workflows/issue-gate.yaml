@@ -200,6 +200,7 @@ jobs:
           version: 0.114.1
 
       - name: Revalidate issue context
+        id: issue_context
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -232,6 +233,8 @@ jobs:
       - name: Verify issue author co-authorship
         if: >-
           always() &&
+          steps.issue_context.outcome == 'success' &&
+          steps.pullfrog.outcome != 'skipped' &&
           (
             steps.pullfrog.outcome != 'success' ||
             fromJSON(steps.pullfrog.outputs.result || '{"implementation":"created"}').implementation != 'none'
