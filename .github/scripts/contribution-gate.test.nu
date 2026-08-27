@@ -7,7 +7,9 @@ use ./contribution-gate/core.nu [parse-issue-number]
 use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
     CLOSING_PULL_REQUEST_QUERY
+    closing-pull-request-nodes
     coauthor-email
+    competing-closing-pull-request
     existing-implementation-pull-request
     implementation-branch
     implementation-pull-request-body
@@ -164,6 +166,9 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
     expect 'queries GitHub normalized closing relationships' (
         $CLOSING_PULL_REQUEST_QUERY | str contains 'closedByPullRequestsReferences'
     ) true
+    expect 'requests closing-relationship pagination state' (
+        $CLOSING_PULL_REQUEST_QUERY | str contains 'pageInfo { hasNextPage }'
+    ) true
     expect 'does not query generic timeline cross-references' (
         $CLOSING_PULL_REQUEST_QUERY | str contains 'timeline'
     ) false
@@ -175,6 +180,33 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
     ) null
     expect 'ignores malformed closing pull request data' (
         open-closing-pull-request [{number: 0, state: OPEN, url: ''}]
+    ) null
+
+    let connection = {
+        nodes: [$closing_pull_request]
+        pageInfo: {hasNextPage: false}
+    }
+    expect 'accepts a complete closing pull request page' (
+        closing-pull-request-nodes $connection
+    ) [$closing_pull_request]
+    let incomplete_page = try {
+        closing-pull-request-nodes ($connection | update pageInfo.hasNextPage true)
+        'accepted'
+    } catch {
+        'rejected'
+    }
+    (expect
+        'fails closed when closing pull requests exceed one page'
+        $incomplete_page
+        rejected
+    )
+
+    let own_pull_request = $closing_pull_request | update number 1300
+    expect 'finds another closing pull request after publication' (
+        competing-closing-pull-request [$own_pull_request $closing_pull_request] 1300
+    ) {number: 1209, html_url: 'https://github.com/ccusage/ccusage/pull/1209'}
+    expect 'does not treat the newly created pull request as its own competitor' (
+        competing-closing-pull-request [$own_pull_request] 1300
     ) null
 }
 

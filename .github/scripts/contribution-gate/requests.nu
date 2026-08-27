@@ -11,7 +11,7 @@ use ./core.nu [
 use ./context.nu [require-open-issue]
 use ./mutations.nu [upsert-comment]
 
-export const CLOSING_PULL_REQUEST_QUERY = 'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 100, includeClosedPrs: false) { nodes { number state url } } } } }'
+export const CLOSING_PULL_REQUEST_QUERY = 'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 100, includeClosedPrs: false) { nodes { number state url } pageInfo { hasNextPage } } } } }'
 
 def pullfrog-payload [
     prompt: string
@@ -98,6 +98,32 @@ export def open-closing-pull-request [pull_requests: list<record>]: nothing -> a
         let pull_request = $matches | first
         {number: $pull_request.number, html_url: $pull_request.url}
     }
+}
+
+export def closing-pull-request-nodes [connection: record]: nothing -> list<record> {
+    let has_next_page = $connection | get --optional pageInfo.hasNextPage
+    if ($has_next_page | describe) != 'bool' {
+        error make {msg: 'GitHub returned invalid closing pull request pagination data'}
+    }
+    if $has_next_page {
+        error make {msg: 'Closing pull request lookup exceeded one page; refusing incomplete duplicate detection'}
+    }
+    let nodes = $connection | get --optional nodes
+    if ($nodes | describe) !~ '^(list|table)' {
+        error make {msg: 'GitHub returned invalid closing pull request data'}
+    }
+    $nodes
+}
+
+export def competing-closing-pull-request [pull_requests: list<record>, own_number: int]: nothing -> any {
+    if $own_number <= 0 {
+        error make {msg: 'Pull request number must be positive'}
+    }
+    open-closing-pull-request (
+        $pull_requests | where {|pull_request|
+            ($pull_request | get --optional number) != $own_number
+        }
+    )
 }
 
 export def implementation-result [value: string]: nothing -> record {
@@ -199,7 +225,7 @@ def closing-pull-requests [repo: string, number: int]: nothing -> list<record> {
         --field
         $"number=($number)"
     ]
-    $response.data.repository.issue.closedByPullRequestsReferences.nodes
+    closing-pull-request-nodes $response.data.repository.issue.closedByPullRequestsReferences
 }
 
 def existing-issue-pull-request [repo: string, number: int]: nothing -> any {
@@ -231,6 +257,11 @@ def git-output [args: list<string>]: nothing -> string {
         error make {msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"}
     }
     $result.stdout | str trim
+}
+
+def discard-created-pull-request [repo: string, number: int, branch: string]: nothing -> nothing {
+    gh-api-body PATCH $"repos/($repo)/pulls/($number)" {state: closed} | ignore
+    git-run [push origin --delete $branch]
 }
 
 def setup-git-auth []: nothing -> nothing {
@@ -420,6 +451,19 @@ export def publish-implementation []: nothing -> nothing {
     let pull_number = $pull_request | get --optional number
     if ($pull_number | describe) != 'int' or $pull_number <= 0 {
         error make {msg: 'GitHub returned an invalid implementation pull request'}
+    }
+    let closing_pull_requests = try {
+        closing-pull-requests $repo $issue.number
+    } catch {
+        discard-created-pull-request $repo $pull_number $branch
+        error make {msg: 'Could not reconcile competing pull requests after publication; the workflow-created pull request was closed'}
+    }
+    let competing = competing-closing-pull-request $closing_pull_requests $pull_number
+    if $competing != null {
+        discard-created-pull-request $repo $pull_number $branch
+        print $"Closed implementation PR #($pull_number) because PR #($competing.number) also targets issue #($issue.number)."
+        write-output skip 'true'
+        return
     }
     print $"Created implementation PR #($pull_number) for issue #($issue.number)."
     write-output pull_request_number ($pull_number | into string)
