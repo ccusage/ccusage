@@ -181,7 +181,7 @@ def author-access [kind: string]: nothing -> record {
     }
     if $permission.status == 'ok' and $permission.permission in $COLLABORATOR_PERMISSIONS {
         return {
-            skip: false
+            skip: true
             close_allowed: false
             bypass: true
             author_status: 'collaborator'
@@ -196,7 +196,7 @@ def author-access [kind: string]: nothing -> record {
     }
 
     {
-        skip: false
+        skip: $approved
         close_allowed: (not $approved)
         bypass: $approved
         author_status: (if $approved { $"approved:($capability)" } else { 'new' })
