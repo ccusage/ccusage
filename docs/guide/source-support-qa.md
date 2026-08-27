@@ -19,16 +19,6 @@ Local transcript text alone is not enough. A transcript can be useful for debugg
 
 ## Unsupported Sources Investigated
 
-::: details Why is Antigravity CLI not supported?
-Antigravity CLI is separate from Gemini CLI. The Antigravity CLI binary is exposed as `agy`, and it stores state under `~/.gemini/antigravity-cli/`.
-
-The current local data has conversation files such as `conversations/<conversation-id>.pb`, plus lightweight history and cache JSON files. The `.pb` files are opaque binary payloads and do not expose readable token usage, model usage, or per-turn accounting without Antigravity's private schema and storage semantics.
-
-The CLI log files include operational events such as conversation creation, streaming, prompt length, auth, and model configuration messages. They do not include input, output, cache, or reasoning token counts. Quota-oriented tools can inspect remaining Antigravity quota, but quota snapshots are not the same as historical per-session token usage.
-
-Because the local files do not expose the token accounting needed for ccusage reports, Antigravity CLI is not supported right now.
-:::
-
 ::: details Why is Devin CLI not supported?
 Devin CLI usage information appears to live in Devin's cloud service rather than in a local usage log that ccusage can read. The locally available data did not provide direct access to historical token usage or costs.
 
@@ -36,6 +26,10 @@ ccusage is a local, read-only analyzer. It does not scrape private cloud service
 :::
 
 ## Previously Unsupported, Now Supported
+
+::: details Antigravity (CLI, IDE, Desktop)
+Earlier investigations noted that Antigravity stores `.pb` payloads. Antigravity is now supported: ccusage parses the protobuf wire blobs stored in `steps.metadata` (`CortexStepMetadata`) and `gen_metadata.data` (`ChatModelMetadata`) across SQLite conversation databases under `~/.gemini/antigravity/`, `~/.gemini/antigravity-cli/`, and `~/.config/Antigravity/`. See [Antigravity Data Source](/guide/antigravity/).
+:::
 
 ::: details Grok Build CLI
 Earlier investigations looked at local Grok data that did not expose usable token

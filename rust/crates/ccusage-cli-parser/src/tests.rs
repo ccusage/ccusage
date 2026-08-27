@@ -204,6 +204,8 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
+        Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
+
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
     }
 }
@@ -647,7 +649,8 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok",
+        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "antigravity",
+
     ];
 
     for agent in agents {
@@ -1110,6 +1113,16 @@ fn parses_opencode_weekly_options() {
     let cli = parse(&["ccusage", "opencode", "weekly", "--json"]);
     let Some(Command::OpenCode(args)) = cli.command else {
         panic!("expected opencode command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert!(args.shared.json);
+}
+
+#[test]
+fn parses_antigravity_weekly_options() {
+    let cli = parse(&["ccusage", "antigravity", "weekly", "--json"]);
+    let Some(Command::Antigravity(args)) = cli.command else {
+        panic!("expected antigravity command");
     };
     assert_eq!(args.kind, AgentReportKind::Weekly);
     assert!(args.shared.json);

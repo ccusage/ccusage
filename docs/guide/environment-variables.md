@@ -23,6 +23,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `QWEN_DATA_DIR`                   | Qwen           | `~/.qwen`                          |
 | `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file             |
 | `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                    |
+| `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity`            |
 | `GROK_HOME`                       | Grok Build CLI | `~/.grok`                          |
 
 Example:
@@ -42,6 +43,7 @@ export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
+export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export GROK_HOME="/path/to/grok-home"
 ccusage daily
 ```
