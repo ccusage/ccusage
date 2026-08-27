@@ -32,7 +32,7 @@ def parse-result [result: string]: nothing -> record {
     }
 }
 
-export def issue-verdict-record [result: string, close_allowed: bool]: nothing -> record {
+export def issue-verdict-record [result: string, close_allowed: bool, --force-implementation]: nothing -> record {
     let raw = parse-result $result
     let decision = parse-required-enum $raw decision [keep_open close needs_human]
     let priority = parse-required-enum $raw priority $PRIORITY_LABELS
@@ -59,7 +59,12 @@ export def issue-verdict-record [result: string, close_allowed: bool]: nothing -
     } else {
         $verdict
     }
-    if ($verdict.decision != 'keep_open') or (not ($verdict.priority in $IMPLEMENTATION_PRIORITIES)) {
+    if $force_implementation {
+        $verdict
+        | update decision keep_open
+        | update implementation create_pr
+        | update reason $"A maintainer explicitly requested an implementation attempt. ($verdict.reason)"
+    } else if ($verdict.decision != 'keep_open') or (not ($verdict.priority in $IMPLEMENTATION_PRIORITIES)) {
         $verdict | update implementation none
     } else {
         $verdict

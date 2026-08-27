@@ -10,6 +10,11 @@ on:
         description: Existing open issue to triage
         required: true
         type: number
+      force_implementation:
+        description: Attempt implementation regardless of the triage priority
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -69,7 +74,7 @@ jobs:
 
       - name: Prepare the Pullfrog request
         id: request
-        if: steps.access.outcome == 'success' && steps.access.outputs.skip != 'true'
+        if: steps.access.outcome == 'success' && (steps.access.outputs.skip != 'true' || inputs.force_implementation == true)
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
@@ -79,7 +84,7 @@ jobs:
 
       - name: Ask Luna for an issue verdict
         id: judge
-        if: steps.access.outcome == 'success' && steps.access.outputs.skip != 'true'
+        if: steps.access.outcome == 'success' && (steps.access.outputs.skip != 'true' || inputs.force_implementation == true)
         continue-on-error: true
         uses: pullfrog/pullfrog@c4d0ca6f15d12382ddd20d2010bc596b405f42f0 # v0.1.60
         with:
@@ -122,7 +127,7 @@ jobs:
       always() &&
       needs.triage.result != 'cancelled' &&
       needs.triage.outputs.access_outcome == 'success' &&
-      needs.triage.outputs.skip != 'true'
+      (needs.triage.outputs.skip != 'true' || inputs.force_implementation == true)
     runs-on: ubuntu-slim
     permissions:
       contents: read
@@ -154,6 +159,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
           CLOSE_ALLOWED: ${{ needs.triage.outputs.close_allowed }}
+          FORCE_IMPLEMENTATION: ${{ inputs.force_implementation == true }}
           JUDGE_OUTCOME: ${{ needs.triage.outputs.judge_outcome }}
           RESULT: ${{ needs.triage.outputs.result }}
         run: nu .github/scripts/contribution-gate.nu issue-verdict

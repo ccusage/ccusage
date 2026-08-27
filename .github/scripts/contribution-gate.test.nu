@@ -4,6 +4,7 @@
 use ./contribution-gate/coauthor.nu [coauthor-validation]
 use ./contribution-gate/context.nu [issue-context-record]
 use ./contribution-gate/core.nu [parse-issue-number]
+use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
     coauthor-email
     existing-implementation-pull-request
@@ -11,6 +12,7 @@ use ./contribution-gate/requests.nu [
     implementation-pull-request-body
     implementation-result
     neutralize-closing-references
+    open-closing-pull-request
     render-prompt
 ]
 
@@ -150,6 +152,20 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
     expect 'does not match another issue branch' (
         existing-implementation-pull-request $pull_requests 'ccusage/ccusage' 7
     ) null
+
+    let closing_pull_request = {number: 1209, state: OPEN, url: 'https://github.com/ccusage/ccusage/pull/1209'}
+    expect 'finds an open pull request that GitHub recognizes as closing the issue' (
+        open-closing-pull-request [$closing_pull_request]
+    ) {number: 1209, html_url: 'https://github.com/ccusage/ccusage/pull/1209'}
+    expect 'ignores a closed pull request' (
+        open-closing-pull-request [($closing_pull_request | update state CLOSED)]
+    ) null
+    expect 'does not treat a mention-only cross-reference as a closing pull request' (
+        open-closing-pull-request []
+    ) null
+    expect 'ignores malformed closing pull request data' (
+        open-closing-pull-request [{number: 0, state: OPEN, url: ''}]
+    ) null
 }
 
 def test-implementation-result []: nothing -> nothing {
@@ -283,6 +299,37 @@ def test-issue-number []: nothing -> nothing {
     } | ignore
 }
 
+def test-forced-issue-implementation []: nothing -> nothing {
+    let result = '{"decision":"close","priority":"priority:low","implementation":"none","reason":"The request is low impact."}'
+    let automatic_verdict = issue-verdict-record $result false
+    let verdict = issue-verdict-record $result false --force-implementation
+
+    (expect
+        'keeps automatic low-priority implementation disabled'
+        $automatic_verdict.implementation
+        none
+    )
+    (expect
+        'keeps automatic closure safety in place'
+        $automatic_verdict.decision
+        needs_human
+    )
+    expect 'keeps a manually forced issue open' $verdict.decision keep_open
+    (expect
+        'preserves the triage priority for a manually forced issue'
+        $verdict.priority
+        'priority:low'
+    )
+    (expect
+        'requests implementation for a manually forced issue'
+        $verdict.implementation
+        create_pr
+    )
+    expect 'preserves the model reason for a manually forced issue' (
+        $verdict.reason | str contains 'The request is low impact.'
+    ) true
+}
+
 def main [] {
     test-coauthor-validation
     test-coauthor-email
@@ -292,5 +339,6 @@ def main [] {
     test-implementation-publication
     test-issue-context
     test-issue-number
+    test-forced-issue-implementation
     print 'contribution-gate Nushell tests passed.'
 }

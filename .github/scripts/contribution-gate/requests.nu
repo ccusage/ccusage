@@ -72,6 +72,32 @@ export def existing-implementation-pull-request [pull_requests: list<record>, re
     }
 }
 
+export def open-closing-pull-request [pull_requests: list<record>]: nothing -> any {
+    let matches = (
+        $pull_requests
+        | where {|pull_request|
+            let number = $pull_request | get --optional number
+            let number_is_valid = match $number {
+                $value if ($value | describe) == 'int' => ($value > 0)
+                _ => false
+            }
+            let url = $pull_request | get --optional url
+            [
+                (($pull_request | get --optional state) == 'OPEN')
+                $number_is_valid
+                (($url | describe) == 'string' and ($url | str starts-with 'https://github.com/') and ($url | str contains '/pull/'))
+            ]
+            | all {|valid| $valid}
+        }
+    )
+    if ($matches | is-empty) {
+        null
+    } else {
+        let pull_request = $matches | first
+        {number: $pull_request.number, html_url: $pull_request.url}
+    }
+}
+
 export def implementation-result [value: string]: nothing -> record {
     let result = try {
         $value | from json
@@ -148,6 +174,43 @@ def open-pull-requests [repo: string]: nothing -> list<record> {
         $"repos/($repo)/pulls?state=open&sort=created&direction=desc&per_page=100"
     ]
     | flatten
+}
+
+def closing-pull-requests [repo: string, number: int]: nothing -> list<record> {
+    if $number <= 0 {
+        error make {msg: 'Issue number must be positive'}
+    }
+    let parts = $repo | split row '/'
+    if ($parts | length) != 2 or ($parts | any {|part| $part | is-empty}) {
+        error make {msg: 'GITHUB_REPOSITORY must contain an owner and repository name'}
+    }
+    let owner = $parts | get 0
+    let name = $parts | get 1
+    let query = 'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 100, includeClosedPrs: false) { nodes { number state url } } } } }'
+    let response = gh-api-json [
+        graphql
+        --field
+        $"query=($query)"
+        --field
+        $"owner=($owner)"
+        --field
+        $"name=($name)"
+        --field
+        $"number=($number)"
+    ]
+    $response.data.repository.issue.closedByPullRequestsReferences.nodes
+}
+
+def existing-issue-pull-request [repo: string, number: int]: nothing -> any {
+    let generated = (existing-implementation-pull-request
+        (open-pull-requests $repo)
+        $repo
+        $number
+    )
+    if $generated != null {
+        return $generated
+    }
+    open-closing-pull-request (closing-pull-requests $repo $number)
 }
 
 def git-complete [args: list<string>]: nothing -> record {
@@ -265,11 +328,7 @@ export def issue-implementation-request []: nothing -> nothing {
 export def issue-implementation-guard []: nothing -> nothing {
     let repo = repository
     let issue = require-open-issue
-    let existing = (existing-implementation-pull-request
-        (open-pull-requests $repo)
-        $repo
-        $issue.number
-    )
+    let existing = existing-issue-pull-request $repo $issue.number
     if $existing == null {
         write-output skip 'false'
         return
@@ -281,11 +340,7 @@ export def issue-implementation-guard []: nothing -> nothing {
 export def publish-implementation []: nothing -> nothing {
     let repo = repository
     let issue = require-open-issue
-    let existing = (existing-implementation-pull-request
-        (open-pull-requests $repo)
-        $repo
-        $issue.number
-    )
+    let existing = existing-issue-pull-request $repo $issue.number
     if $existing != null {
         print $"Skipping publication because open PR #($existing.number) already targets issue #($issue.number)."
         write-output skip 'true'
