@@ -4,6 +4,7 @@
 use ./contribution-gate/coauthor.nu [coauthor-validation]
 use ./contribution-gate/context.nu [issue-context-record]
 use ./contribution-gate/core.nu [parse-issue-number]
+use ./contribution-gate/mutations.nu [is-contribution-gate-comment]
 use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
     CLOSING_PULL_REQUEST_QUERY
@@ -540,6 +541,22 @@ def test-forced-issue-implementation []: nothing -> nothing {
     ) false
 }
 
+def test-contribution-gate-comment []: nothing -> nothing {
+    let comment = {
+        user: {login: 'github-actions[bot]'}
+        body: 'Automated result. <!-- pullfrog-contribution-gate -->'
+    }
+    expect 'recognizes the contribution gate comment' (
+        is-contribution-gate-comment $comment
+    ) true
+    expect 'rejects a comment from another author' (
+        is-contribution-gate-comment ($comment | upsert user.login pullfrog)
+    ) false
+    expect 'rejects a comment without the marker' (
+        is-contribution-gate-comment ($comment | upsert body 'Automated result.')
+    ) false
+}
+
 def main [] {
     test-coauthor-validation
     test-coauthor-email
@@ -550,5 +567,6 @@ def main [] {
     test-issue-context
     test-issue-number
     test-forced-issue-implementation
+    test-contribution-gate-comment
     print 'contribution-gate Nushell tests passed.'
 }

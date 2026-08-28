@@ -126,6 +126,13 @@ def patch-comment [
     }) | ignore
 }
 
+export def is-contribution-gate-comment [comment: record]: nothing -> bool {
+    (
+        (($comment | get --optional user.login) == 'github-actions[bot]')
+        and (($comment | get --optional body | default '') | str contains $COMMENT_MARKER)
+    )
+}
+
 export def upsert-comment [
     repo: string
     number: int
@@ -142,10 +149,7 @@ export def upsert-comment [
     )
     let existing = (
         $comments
-        | where {|comment|
-            ($comment | get --optional user.login) == 'github-actions[bot]'
-            and (($comment | get --optional body | default '') | str contains $COMMENT_MARKER)
-        }
+        | where {|comment| is-contribution-gate-comment $comment}
         | sort-by created_at
         | last
     )
