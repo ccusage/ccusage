@@ -33,7 +33,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
-      id-token: none
+      id-token: write
     outputs:
       issue_number: ${{ steps.issue.outputs.number }}
       issue_author: ${{ steps.issue.outputs.author }}
