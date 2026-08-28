@@ -74,6 +74,27 @@ export def existing-implementation-pull-request [pull_requests: list<record>, re
     }
 }
 
+export def implementation-pull-request-for-branch [pull_requests: list<record>, repo: string, branch: string]: nothing -> any {
+    let matches = (
+        $pull_requests
+        | where {|pull_request|
+            let number = $pull_request | get --optional number
+            [
+                (($number | describe) == 'int' and $number > 0)
+                (($pull_request | get --optional user.login) == 'github-actions[bot]')
+                (($pull_request | get --optional head.repo.full_name) == $repo)
+                (($pull_request | get --optional head.ref) == $branch)
+            ]
+            | all {|valid| $valid}
+        }
+    )
+    if ($matches | is-empty) {
+        null
+    } else {
+        $matches | first
+    }
+}
+
 export def open-closing-pull-request [pull_requests: list<record>]: nothing -> any {
     let matches = (
         $pull_requests
@@ -284,6 +305,18 @@ export def cleanup-operation-errors [close_pull_request: closure, delete_branch:
     [$close_error $delete_error] | compact
 }
 
+export def cleanup-unvalidated-publication [find_pull_request: closure, close_pull_request: closure, delete_branch: closure]: nothing -> list<string> {
+    (cleanup-operation-errors
+        {||
+            let pull_request = do $find_pull_request
+            if $pull_request != null {
+                do $close_pull_request $pull_request.number
+            }
+        }
+        $delete_branch
+    )
+}
+
 export def with-failure-cleanup [operation: closure, cleanup: closure] {
     try {
         do $operation
@@ -308,6 +341,17 @@ def discard-created-pull-request [repo: string, number: int, branch: string]: no
     )
     if ($errors | is-not-empty) {
         error make {msg: $"Could not fully discard implementation PR #($number) on branch ($branch): ($errors | str join '; ')"}
+    }
+}
+
+def discard-unvalidated-publication [repo: string, branch: string]: nothing -> nothing {
+    let errors = (cleanup-unvalidated-publication
+        {|| implementation-pull-request-for-branch (open-pull-requests $repo) $repo $branch }
+        {|number| gh-api-body PATCH $"repos/($repo)/pulls/($number)" {state: closed} | ignore }
+        {|| git-run [push origin --delete $branch] }
+    )
+    if ($errors | is-not-empty) {
+        error make {msg: $"Could not fully discard an unvalidated implementation publication on branch ($branch): ($errors | str join '; ')"}
     }
 }
 
@@ -518,7 +562,7 @@ export def publish-implementation []: nothing -> nothing {
             }
             $pull_number
         }
-        {|| git-run [push origin --delete $branch] }
+        {|| discard-unvalidated-publication $repo $branch }
     )
     let reconciliation = try {
         require-open-issue | ignore

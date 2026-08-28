@@ -7,6 +7,7 @@ use ./contribution-gate/core.nu [parse-issue-number]
 use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
     CLOSING_PULL_REQUEST_QUERY
+    cleanup-unvalidated-publication
     cleanup-operation-errors
     closing-pull-request-nodes
     coauthor-email
@@ -14,6 +15,7 @@ use ./contribution-gate/requests.nu [
     existing-implementation-pull-request
     implementation-branch
     implementation-pull-request-body
+    implementation-pull-request-for-branch
     implementation-result
     implementation-title
     neutralize-closing-references
@@ -157,6 +159,18 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
     ) null
     expect 'does not match another issue branch' (
         existing-implementation-pull-request $pull_requests 'ccusage/ccusage' 7
+    ) null
+    expect 'finds the run-owned pull request by its exact branch' (
+        implementation-pull-request-for-branch
+            $pull_requests
+            'ccusage/ccusage'
+            'pullfrog/issue-42-run-123'
+    ) $matching
+    expect 'does not use another run-owned branch as a publication fallback' (
+        implementation-pull-request-for-branch
+            $pull_requests
+            'ccusage/ccusage'
+            'pullfrog/issue-42-run-999'
     ) null
 
     let closing_pull_request = {number: 1209, state: OPEN, url: 'https://github.com/ccusage/ccusage/pull/1209'}
@@ -317,6 +331,22 @@ def test-implementation-publication []: nothing -> nothing {
     } catch {|error|
         $error.msg
     }) 'publication failed; cleanup also failed: branch cleanup failed'
+
+    expect 'recovers and closes an unvalidated publication before deleting its branch' (
+        cleanup-unvalidated-publication
+            { {number: 77} }
+            {|number| error make {msg: $"close ($number) failed"} }
+            { error make {msg: 'branch delete failed'} }
+    ) [
+        'close pull request: close 77 failed'
+        'delete branch: branch delete failed'
+    ]
+    expect 'skips pull request closure when publication did not create one' (
+        cleanup-unvalidated-publication
+            { null }
+            {|_| error make {msg: 'close must not run'} }
+            { null }
+    ) []
 }
 
 def test-issue-context []: nothing -> nothing {
