@@ -95,6 +95,22 @@ export def implementation-pull-request-for-branch [pull_requests: list<record>, 
     }
 }
 
+export def retry-pull-request-lookup [lookup: closure, wait: closure, max_attempts: int = 12]: nothing -> any {
+    if $max_attempts <= 0 {
+        error make {msg: 'Pull request lookup attempts must be positive'}
+    }
+    for attempt in 1..$max_attempts {
+        let pull_request = do $lookup $attempt
+        if $pull_request != null {
+            return $pull_request
+        }
+        if $attempt < $max_attempts {
+            do $wait $attempt | ignore
+        }
+    }
+    null
+}
+
 export def open-closing-pull-request [pull_requests: list<record>]: nothing -> any {
     let matches = (
         $pull_requests
@@ -238,6 +254,21 @@ def open-pull-requests [repo: string]: nothing -> list<record> {
     | flatten
 }
 
+def open-pull-requests-for-branch [repo: string, branch: string]: nothing -> list<record> {
+    let owner = $repo | split row '/' | first
+    gh-api-json [
+        --method
+        GET
+        $"repos/($repo)/pulls"
+        --raw-field
+        $"head=($owner):($branch)"
+        --raw-field
+        'state=open'
+        --raw-field
+        'per_page=100'
+    ]
+}
+
 def closing-pull-requests [repo: string, number: int]: nothing -> list<record> {
     if $number <= 0 {
         error make {msg: 'Issue number must be positive'}
@@ -346,7 +377,12 @@ def discard-created-pull-request [repo: string, number: int, branch: string]: no
 
 def discard-unvalidated-publication [repo: string, branch: string]: nothing -> nothing {
     let errors = (cleanup-unvalidated-publication
-        {|| implementation-pull-request-for-branch (open-pull-requests $repo) $repo $branch }
+        {||
+            (retry-pull-request-lookup
+                {|_| implementation-pull-request-for-branch (open-pull-requests-for-branch $repo $branch) $repo $branch }
+                {|_| sleep 5sec }
+            )
+        }
         {|number| gh-api-body PATCH $"repos/($repo)/pulls/($number)" {state: closed} | ignore }
         {|| git-run [push origin --delete $branch] }
     )

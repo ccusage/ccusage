@@ -21,6 +21,7 @@ use ./contribution-gate/requests.nu [
     neutralize-closing-references
     open-closing-pull-request
     render-prompt
+    retry-pull-request-lookup
     with-failure-cleanup
 ]
 
@@ -347,6 +348,18 @@ def test-implementation-publication []: nothing -> nothing {
             {|_| error make {msg: 'close must not run'} }
             { null }
     ) []
+    expect 'retries an eventually consistent pull request lookup' (
+        retry-pull-request-lookup
+            {|attempt| if $attempt == 3 { {number: 77} } else { null } }
+            {|_| null }
+            3
+    ) {number: 77}
+    expect 'returns null after exhausting pull request lookup retries' (
+        retry-pull-request-lookup
+            {|_| null }
+            {|_| null }
+            3
+    ) null
 }
 
 def test-issue-context []: nothing -> nothing {
