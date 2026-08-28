@@ -7,6 +7,7 @@ use ./contribution-gate/core.nu [parse-issue-number]
 use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
     CLOSING_PULL_REQUEST_QUERY
+    cleanup-operation-errors
     closing-pull-request-nodes
     coauthor-email
     competing-closing-pull-request
@@ -14,6 +15,7 @@ use ./contribution-gate/requests.nu [
     implementation-branch
     implementation-pull-request-body
     implementation-result
+    implementation-title
     neutralize-closing-references
     open-closing-pull-request
     render-prompt
@@ -262,6 +264,34 @@ def test-implementation-publication []: nothing -> nothing {
     expect 'neutralizes model-provided closing references only' (
         neutralize-closing-references "Fixes #7. resolves ccusage/ccusage#8. CLOSES https://github.com/ccusage/ccusage/issues/9. Fixed the parser."
     ) "References #7. References ccusage/ccusage#8. References https://github.com/ccusage/ccusage/issues/9. Fixed the parser."
+
+    expect 'neutralizes closing references in implementation titles' (
+        implementation-title 'fix: resolves #999 without closing the reported issue'
+    ) 'fix: References #999 without closing the reported issue'
+
+    let maximum_raw_title = $"Fixes #9(1..232 | each { 'x' } | str join)"
+    expect 'rejects a sanitized implementation title over 240 characters' (try {
+        implementation-title $maximum_raw_title
+        'accepted'
+    } catch {
+        'rejected'
+    }) 'rejected'
+
+    expect 'attempts every discard operation before reporting failures' (
+        cleanup-operation-errors
+            { error make {msg: 'close failed'} }
+            { error make {msg: 'branch delete failed'} }
+    ) ['close pull request: close failed' 'delete branch: branch delete failed']
+    expect 'reports only a pull request close failure' (
+        cleanup-operation-errors
+            { error make {msg: 'close failed'} }
+            { null }
+    ) ['close pull request: close failed']
+    expect 'reports only a branch deletion failure' (
+        cleanup-operation-errors
+            { null }
+            { error make {msg: 'branch delete failed'} }
+    ) ['delete branch: branch delete failed']
 }
 
 def test-issue-context []: nothing -> nothing {

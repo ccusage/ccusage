@@ -184,6 +184,19 @@ export def neutralize-closing-references [body: string]: nothing -> string {
     $body | str replace --all --regex $closing_reference References
 }
 
+export def implementation-title [title: string]: nothing -> string {
+    let sanitized = neutralize-closing-references $title
+    let valid = [
+        ($sanitized | str trim | is-not-empty)
+        (($sanitized | lines | length) == 1)
+        (($sanitized | str length) <= 240)
+    ] | all {|condition| $condition }
+    if not $valid {
+        error make {msg: 'The sanitized implementation title must be one non-empty line of at most 240 characters'}
+    }
+    $sanitized
+}
+
 export def implementation-pull-request-body [marker: string, body: string, number: int]: nothing -> string {
     if $number <= 0 or ($marker | str trim | is-empty) or ($body | str trim | is-empty) {
         error make {msg: 'Implementation PR metadata is incomplete'}
@@ -259,9 +272,26 @@ def git-output [args: list<string>]: nothing -> string {
     $result.stdout | str trim
 }
 
+export def cleanup-operation-errors [close_pull_request: closure, delete_branch: closure]: nothing -> list<string> {
+    let close_error = try {
+        do $close_pull_request
+        null
+    } catch {|error| $"close pull request: ($error.msg)" }
+    let delete_error = try {
+        do $delete_branch
+        null
+    } catch {|error| $"delete branch: ($error.msg)" }
+    [$close_error $delete_error] | compact
+}
+
 def discard-created-pull-request [repo: string, number: int, branch: string]: nothing -> nothing {
-    gh-api-body PATCH $"repos/($repo)/pulls/($number)" {state: closed} | ignore
-    git-run [push origin --delete $branch]
+    let errors = (cleanup-operation-errors
+        {|| gh-api-body PATCH $"repos/($repo)/pulls/($number)" {state: closed} | ignore }
+        {|| git-run [push origin --delete $branch] }
+    )
+    if ($errors | is-not-empty) {
+        error make {msg: $"Could not fully discard implementation PR #($number) on branch ($branch): ($errors | str join '; ')"}
+    }
 }
 
 def setup-git-auth []: nothing -> nothing {
@@ -417,10 +447,11 @@ export def publish-implementation []: nothing -> nothing {
     git-run [config user.name 'github-actions[bot]']
     git-run [config user.email '41898282+github-actions[bot]@users.noreply.github.com']
     git-run [switch '-c' $branch]
+    let title = implementation-title $result.title
     git-run [
         commit
         '-m'
-        $result.title
+        $title
         '-m'
         (required-env COAUTHOR_TRAILER)
     ]
@@ -443,7 +474,7 @@ export def publish-implementation []: nothing -> nothing {
         $issue.number
     )
     let pull_request = gh-api-body POST $"repos/($repo)/pulls" {
-        title: $result.title
+        title: $title
         head: $branch
         base: (required-env GITHUB_DEFAULT_BRANCH)
         body: $body
