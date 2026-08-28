@@ -19,6 +19,7 @@ use ./contribution-gate/requests.nu [
     neutralize-closing-references
     open-closing-pull-request
     render-prompt
+    with-failure-cleanup
 ]
 
 def expect [name: string, actual, expected]: nothing -> nothing {
@@ -292,6 +293,30 @@ def test-implementation-publication []: nothing -> nothing {
             { null }
             { error make {msg: 'branch delete failed'} }
     ) ['delete branch: branch delete failed']
+
+    expect 'does not clean up a successful publication operation' (
+        with-failure-cleanup
+            { 'published' }
+            { error make {msg: 'cleanup must not run'} }
+    ) published
+    expect 'preserves a publication failure after successful cleanup' (try {
+        (with-failure-cleanup
+            { error make {msg: 'publication failed'} }
+            { null }
+        )
+        'accepted'
+    } catch {|error|
+        $error.msg
+    }) 'publication failed'
+    expect 'reports publication and cleanup failures together' (try {
+        (with-failure-cleanup
+            { error make {msg: 'publication failed'} }
+            { error make {msg: 'branch cleanup failed'} }
+        )
+        'accepted'
+    } catch {|error|
+        $error.msg
+    }) 'publication failed; cleanup also failed: branch cleanup failed'
 }
 
 def test-issue-context []: nothing -> nothing {

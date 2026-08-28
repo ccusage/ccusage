@@ -284,6 +284,23 @@ export def cleanup-operation-errors [close_pull_request: closure, delete_branch:
     [$close_error $delete_error] | compact
 }
 
+export def with-failure-cleanup [operation: closure, cleanup: closure] {
+    try {
+        do $operation
+    } catch {|operation_error|
+        let cleanup_error = try {
+            do $cleanup
+            null
+        } catch {|cleanup_error| $cleanup_error.msg }
+        let message = if $cleanup_error == null {
+            $operation_error.msg
+        } else {
+            $"($operation_error.msg); cleanup also failed: ($cleanup_error)"
+        }
+        error make {msg: $message}
+    }
+}
+
 def discard-created-pull-request [repo: string, number: int, branch: string]: nothing -> nothing {
     let errors = (cleanup-operation-errors
         {|| gh-api-body PATCH $"repos/($repo)/pulls/($number)" {state: closed} | ignore }
@@ -418,6 +435,7 @@ export def publish-implementation []: nothing -> nothing {
     if $branch != $expected_branch {
         error make {msg: 'Implementation branch does not match this workflow run'}
     }
+    let default_branch = required-env GITHUB_DEFAULT_BRANCH
 
     let result = implementation-result (open --raw (required-env IMPLEMENTATION_METADATA))
     if $result.implementation != 'prepared' {
@@ -460,36 +478,59 @@ export def publish-implementation []: nothing -> nothing {
     require-open-issue | ignore
     git-run [push --set-upstream origin $"HEAD:refs/heads/($branch)"]
 
-    require-open-issue | ignore
-    let existing = existing-issue-pull-request $repo $issue.number
-    if $existing != null {
+    let pre_create = (with-failure-cleanup
+        {||
+            require-open-issue | ignore
+            let existing = existing-issue-pull-request $repo $issue.number
+            if $existing != null {
+                {existing: $existing, body: null}
+            } else {
+                {
+                    existing: null
+                    body: (implementation-pull-request-body
+                        (required-env IMPLEMENTATION_MARKER)
+                        $result.body
+                        $issue.number
+                    )
+                }
+            }
+        }
+        {|| git-run [push origin --delete $branch] }
+    )
+    if $pre_create.existing != null {
         git-run [push origin --delete $branch]
-        print $"Skipping publication because open PR #($existing.number) now targets issue #($issue.number)."
+        print $"Skipping publication because open PR #($pre_create.existing.number) now targets issue #($issue.number)."
         write-output skip 'true'
         return
     }
-    let body = (implementation-pull-request-body
-        (required-env IMPLEMENTATION_MARKER)
-        $result.body
-        $issue.number
+    let pull_number = (with-failure-cleanup
+        {||
+            require-open-issue | ignore
+            let created = gh-api-body POST $"repos/($repo)/pulls" {
+                title: $title
+                head: $branch
+                base: $default_branch
+                body: $pre_create.body
+            } | from json
+            let pull_number = $created | get --optional number
+            if ($pull_number | describe) != 'int' or $pull_number <= 0 {
+                error make {msg: 'GitHub returned an invalid implementation pull request'}
+            }
+            $pull_number
+        }
+        {|| git-run [push origin --delete $branch] }
     )
-    let pull_request = gh-api-body POST $"repos/($repo)/pulls" {
-        title: $title
-        head: $branch
-        base: (required-env GITHUB_DEFAULT_BRANCH)
-        body: $body
-    } | from json
-    let pull_number = $pull_request | get --optional number
-    if ($pull_number | describe) != 'int' or $pull_number <= 0 {
-        error make {msg: 'GitHub returned an invalid implementation pull request'}
-    }
-    let closing_pull_requests = try {
-        closing-pull-requests $repo $issue.number
+    let reconciliation = try {
+        require-open-issue | ignore
+        let closing_pull_requests = closing-pull-requests $repo $issue.number
+        {
+            competing: (competing-closing-pull-request $closing_pull_requests $pull_number)
+        }
     } catch {
         discard-created-pull-request $repo $pull_number $branch
         error make {msg: 'Could not reconcile competing pull requests after publication; the workflow-created pull request was closed'}
     }
-    let competing = competing-closing-pull-request $closing_pull_requests $pull_number
+    let competing = $reconciliation.competing
     if $competing != null {
         discard-created-pull-request $repo $pull_number $branch
         print $"Closed implementation PR #($pull_number) because PR #($competing.number) also targets issue #($issue.number)."
