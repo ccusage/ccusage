@@ -95,14 +95,49 @@ export def implementation-pull-request-for-branch [pull_requests: list<record>, 
     }
 }
 
+def transient-pull-request-lookup-error [message: string]: nothing -> bool {
+    let normalized = $message | str lowercase
+    [
+        ($normalized =~ '\bhttp (?:429|5[0-9]{2})\b')
+        ($normalized | str contains 'rate limit')
+        ($normalized | str contains 'timed out')
+        ($normalized | str contains 'timeout')
+        ($normalized | str contains 'error connecting')
+        ($normalized | str contains 'connection reset')
+        ($normalized | str contains 'connection refused')
+        ($normalized | str contains 'dial tcp')
+        ($normalized | str contains 'proxyconnect tcp')
+        ($normalized | str contains 'network is unreachable')
+        ($normalized | str contains 'no such host')
+        ($normalized | str contains 'temporary failure')
+        ($normalized | str contains 'could not resolve host')
+        ($normalized | str contains 'unexpected eof')
+        ($normalized | str contains 'abuse detection mechanism')
+    ]
+    | any {|retryable| $retryable}
+}
+
 export def retry-pull-request-lookup [lookup: closure, wait: closure, max_attempts: int = 12]: nothing -> any {
     if $max_attempts <= 0 {
         error make {msg: 'Pull request lookup attempts must be positive'}
     }
     for attempt in 1..$max_attempts {
-        let pull_request = do $lookup $attempt
-        if $pull_request != null {
-            return $pull_request
+        let outcome = try {
+            {
+                pull_request: (do $lookup $attempt)
+                transient_error: null
+            }
+        } catch {|lookup_error|
+            if not (transient-pull-request-lookup-error $lookup_error.msg) {
+                error make {msg: $lookup_error.msg}
+            }
+            {pull_request: null, transient_error: $lookup_error.msg}
+        }
+        if $outcome.pull_request != null {
+            return $outcome.pull_request
+        }
+        if $attempt == $max_attempts and $outcome.transient_error != null {
+            error make {msg: $"Pull request lookup still failed after retrying: ($outcome.transient_error)"}
         }
         if $attempt < $max_attempts {
             do $wait $attempt | ignore

@@ -360,6 +360,46 @@ def test-implementation-publication []: nothing -> nothing {
             {|_| null }
             3
     ) null
+    let transient_lookup_errors = [
+        'gh api failed: HTTP 503'
+        'dial tcp: lookup api.github.com: no such host'
+        'proxyconnect tcp: connection refused'
+        'network is unreachable'
+        'You have triggered an abuse detection mechanism (HTTP 403)'
+    ]
+    $transient_lookup_errors | each {|message|
+        expect 'retries a transient GitHub lookup failure' (
+            retry-pull-request-lookup
+                {|attempt|
+                    if $attempt == 1 {
+                        error make {msg: $message}
+                    }
+                    {number: 77}
+                }
+                {|_| null }
+                2
+        ) {number: 77}
+    } | ignore
+    expect 'fails closed without retrying an authentication error' (try {
+        (retry-pull-request-lookup
+            {|_| error make {msg: 'gh api failed: HTTP 401'} }
+            {|_| error make {msg: 'wait must not run'} }
+            3
+        )
+        'accepted'
+    } catch {|error|
+        $error.msg
+    }) 'gh api failed: HTTP 401'
+    expect 'fails closed after exhausting transient lookup retries' (try {
+        (retry-pull-request-lookup
+            {|_| error make {msg: 'API rate limit exceeded (HTTP 403)'} }
+            {|_| null }
+            2
+        )
+        'accepted'
+    } catch {|error|
+        $error.msg
+    }) 'Pull request lookup still failed after retrying: API rate limit exceeded (HTTP 403)'
 }
 
 def test-issue-context []: nothing -> nothing {
