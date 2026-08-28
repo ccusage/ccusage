@@ -21,6 +21,7 @@ use ./contribution-gate/requests.nu [
     neutralize-closing-references
     open-closing-pull-request
     render-prompt
+    retryable-gh-api-command-error
     retry-pull-request-lookup
     with-failure-cleanup
 ]
@@ -361,11 +362,11 @@ def test-implementation-publication []: nothing -> nothing {
             3
     ) null
     let transient_lookup_errors = [
-        'gh api failed: HTTP 503'
-        'dial tcp: lookup api.github.com: no such host'
-        'proxyconnect tcp: connection refused'
-        'network is unreachable'
-        'You have triggered an abuse detection mechanism (HTTP 403)'
+        'Transient GitHub pull request lookup: gh api failed: HTTP 503'
+        'Transient GitHub pull request lookup: dial tcp: lookup api.github.com: no such host'
+        'Transient GitHub pull request lookup: proxyconnect tcp: connection refused'
+        'Transient GitHub pull request lookup: network is unreachable'
+        'Transient GitHub pull request lookup: You have triggered an abuse detection mechanism (HTTP 403)'
     ]
     $transient_lookup_errors | each {|message|
         expect 'retries a transient GitHub lookup failure' (
@@ -392,14 +393,40 @@ def test-implementation-publication []: nothing -> nothing {
     }) 'gh api failed: HTTP 401'
     expect 'fails closed after exhausting transient lookup retries' (try {
         (retry-pull-request-lookup
-            {|_| error make {msg: 'API rate limit exceeded (HTTP 403)'} }
+            {|_| error make {msg: 'Transient GitHub pull request lookup: API rate limit exceeded (HTTP 403)'} }
             {|_| null }
             2
         )
         'accepted'
     } catch {|error|
         $error.msg
-    }) 'Pull request lookup still failed after retrying: API rate limit exceeded (HTTP 403)'
+    }) 'Pull request lookup still failed after retrying: Transient GitHub pull request lookup: API rate limit exceeded (HTTP 403)'
+    expect 'does not retry malformed JSON containing a retry keyword' (try {
+        (retry-pull-request-lookup
+            {|_| error make {msg: 'gh api returned invalid JSON: {"message":"rate limit"}'} }
+            {|_| error make {msg: 'wait must not run'} }
+            3
+        )
+        'accepted'
+    } catch {|error|
+        $error.msg
+    }) 'gh api returned invalid JSON: {"message":"rate limit"}'
+
+    let retryable_command_errors = [
+        'gh: upstream failed (HTTP 503)'
+        'gh: API rate limit exceeded (HTTP 403)'
+        'dial tcp: lookup api.github.com: no such host'
+        'proxyconnect tcp: connection refused'
+        'network is unreachable'
+    ]
+    $retryable_command_errors | each {|message|
+        expect 'classifies a trusted command failure as retryable' (
+            retryable-gh-api-command-error $message
+        ) true
+    } | ignore
+    expect 'does not classify an ordinary permission response as retryable' (
+        retryable-gh-api-command-error 'gh: Resource not accessible by integration (HTTP 403)'
+    ) false
 }
 
 def test-issue-context []: nothing -> nothing {

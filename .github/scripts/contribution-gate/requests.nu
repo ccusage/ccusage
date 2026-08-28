@@ -1,6 +1,8 @@
 use ./core.nu [
     COMMENT_MARKER
     comment-body
+    format-gh-error
+    gh-api-complete
     gh-api-body
     gh-api-json
     issue-number
@@ -95,11 +97,23 @@ export def implementation-pull-request-for-branch [pull_requests: list<record>, 
     }
 }
 
-def transient-pull-request-lookup-error [message: string]: nothing -> bool {
-    let normalized = $message | str lowercase
+const TRANSIENT_PULL_REQUEST_LOOKUP_PREFIX = 'Transient GitHub pull request lookup: '
+
+export def retryable-gh-api-command-error [stderr: string]: nothing -> bool {
+    let normalized = $stderr | str lowercase
+    let has_http_status = $normalized =~ '\bhttp [0-9]{3}\b'
+    if $has_http_status {
+        let retryable_status = $normalized =~ '\bhttp (?:429|5[0-9]{2})\b'
+        let retryable_403 = (
+            ($normalized =~ '\bhttp 403\b')
+            and (
+                ($normalized | str contains 'rate limit')
+                or ($normalized | str contains 'abuse detection mechanism')
+            )
+        )
+        return ($retryable_status or $retryable_403)
+    }
     [
-        ($normalized =~ '\bhttp (?:429|5[0-9]{2})\b')
-        ($normalized | str contains 'rate limit')
         ($normalized | str contains 'timed out')
         ($normalized | str contains 'timeout')
         ($normalized | str contains 'error connecting')
@@ -112,7 +126,6 @@ def transient-pull-request-lookup-error [message: string]: nothing -> bool {
         ($normalized | str contains 'temporary failure')
         ($normalized | str contains 'could not resolve host')
         ($normalized | str contains 'unexpected eof')
-        ($normalized | str contains 'abuse detection mechanism')
     ]
     | any {|retryable| $retryable}
 }
@@ -128,7 +141,7 @@ export def retry-pull-request-lookup [lookup: closure, wait: closure, max_attemp
                 transient_error: null
             }
         } catch {|lookup_error|
-            if not (transient-pull-request-lookup-error $lookup_error.msg) {
+            if not ($lookup_error.msg | str starts-with $TRANSIENT_PULL_REQUEST_LOOKUP_PREFIX) {
                 error make {msg: $lookup_error.msg}
             }
             {pull_request: null, transient_error: $lookup_error.msg}
@@ -291,7 +304,7 @@ def open-pull-requests [repo: string]: nothing -> list<record> {
 
 def open-pull-requests-for-branch [repo: string, branch: string]: nothing -> list<record> {
     let owner = $repo | split row '/' | first
-    gh-api-json [
+    let args = [
         --method
         GET
         $"repos/($repo)/pulls"
@@ -302,6 +315,23 @@ def open-pull-requests-for-branch [repo: string, branch: string]: nothing -> lis
         --raw-field
         'per_page=100'
     ]
+    let result = gh-api-complete $args
+    if $result.exit_code != 0 {
+        let message = format-gh-error $args $result
+        if (retryable-gh-api-command-error $result.stderr) {
+            error make {msg: $"($TRANSIENT_PULL_REQUEST_LOOKUP_PREFIX)($message)"}
+        }
+        error make {msg: $message}
+    }
+    let pull_requests = try {
+        $result.stdout | from json
+    } catch {
+        error make {msg: $"gh api returned invalid JSON: ($result.stdout | str trim)"}
+    }
+    if ($pull_requests | describe) !~ '^(list|table)' {
+        error make {msg: 'GitHub returned invalid pull request lookup data'}
+    }
+    $pull_requests
 }
 
 def closing-pull-requests [repo: string, number: int]: nothing -> list<record> {
