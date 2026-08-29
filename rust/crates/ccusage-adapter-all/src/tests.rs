@@ -673,7 +673,8 @@ fn codex_usage_line(timestamp: &str, model: &str, input_tokens: u64) -> String {
 fn uses_non_cached_codex_input_tokens_in_all_rows() {
     let mut group = CodexGroup {
         input_tokens: 100,
-        cached_input_tokens: 90,
+        cached_input_tokens: 70,
+        cache_creation_tokens: 20,
         output_tokens: 5,
         total_tokens: 105,
         ..CodexGroup::default()
@@ -682,7 +683,8 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
         "gpt-5".to_string(),
         CodexModelUsage {
             input_tokens: 100,
-            cached_input_tokens: 90,
+            cached_input_tokens: 70,
+            cache_creation_tokens: 20,
             output_tokens: 5,
             total_tokens: 105,
             ..CodexModelUsage::default()
@@ -696,7 +698,8 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
     );
 
     assert_eq!(row.input_tokens, 10);
-    assert_eq!(row.cache_read_tokens, 90);
+    assert_eq!(row.cache_creation_tokens, 20);
+    assert_eq!(row.cache_read_tokens, 70);
     assert_eq!(row.total_tokens, 105);
 }
 

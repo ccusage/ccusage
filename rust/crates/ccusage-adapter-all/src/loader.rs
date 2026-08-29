@@ -801,9 +801,8 @@ where
         .map(|(model, usage)| {
             let input = codex::non_cached_input_tokens(
                 usage.input_tokens,
-                usage
-                    .cached_input_tokens
-                    .saturating_add(usage.cache_creation_tokens),
+                usage.cached_input_tokens,
+                usage.cache_creation_tokens,
             );
             ModelBreakdown {
                 model_name: model.clone(),
@@ -824,9 +823,8 @@ where
         models_used: group.models.keys().cloned().collect(),
         input_tokens: codex::non_cached_input_tokens(
             group.input_tokens,
-            group
-                .cached_input_tokens
-                .saturating_add(group.cache_creation_tokens),
+            group.cached_input_tokens,
+            group.cache_creation_tokens,
         ),
         output_tokens: group.output_tokens,
         cache_creation_tokens: group.cache_creation_tokens,

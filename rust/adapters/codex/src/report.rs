@@ -56,7 +56,7 @@ fn group_json(
     speed: CodexSpeedPolicy,
 ) -> Value {
     let cost = calculate_group_cost(group, pricing, speed);
-    let input_tokens = non_cached_codex_input_tokens(
+    let input_tokens = non_cached_input_tokens(
         group.input_tokens,
         group.cached_input_tokens,
         group.cache_creation_tokens,
@@ -86,24 +86,17 @@ fn group_json(
     row
 }
 
-pub fn non_cached_input_tokens(input_tokens: u64, cached_input_tokens: u64) -> u64 {
-    input_tokens.saturating_sub(cached_input_tokens)
-}
-
-fn non_cached_codex_input_tokens(
+pub fn non_cached_input_tokens(
     input_tokens: u64,
     cached_input_tokens: u64,
     cache_creation_tokens: u64,
 ) -> u64 {
-    non_cached_input_tokens(
-        input_tokens,
-        cached_input_tokens.saturating_add(cache_creation_tokens),
-    )
+    input_tokens.saturating_sub(cached_input_tokens.saturating_add(cache_creation_tokens))
 }
 
 fn model_usage_json(usage: &CodexModelUsage) -> Value {
     json!({
-        "inputTokens": non_cached_codex_input_tokens(
+        "inputTokens": non_cached_input_tokens(
             usage.input_tokens,
             usage.cached_input_tokens,
             usage.cache_creation_tokens,
@@ -130,7 +123,7 @@ fn totals_json<'a>(
     let mut total = 0;
     let mut cost = 0.0;
     for group in groups {
-        input += non_cached_codex_input_tokens(
+        input += non_cached_input_tokens(
             group.input_tokens,
             group.cached_input_tokens,
             group.cache_creation_tokens,
@@ -352,7 +345,7 @@ fn codex_table_row(
     no_cost: bool,
     terminal_width: usize,
 ) -> (Vec<String>, u64, f64) {
-    let input_tokens = non_cached_codex_input_tokens(
+    let input_tokens = non_cached_input_tokens(
         group.input_tokens,
         group.cached_input_tokens,
         group.cache_creation_tokens,
@@ -511,6 +504,12 @@ pub(super) fn print_table_from_groups(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_cached_input_tokens_excludes_cache_reads_and_creation() {
+        assert_eq!(non_cached_input_tokens(100, 60, 30), 10);
+        assert_eq!(non_cached_input_tokens(100, 90, 20), 0);
+    }
 
     #[test]
     fn table_rows_and_totals_render_cache_creation_tokens() {
