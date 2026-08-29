@@ -32,10 +32,6 @@ pub fn load_codex_events_from_directory(
     Ok(events)
 }
 
-pub fn load_codex_events(shared: &SharedArgs) -> Result<Vec<CodexTokenUsageEvent>> {
-    load_codex_events_with_detection(shared).map(|(events, _)| events)
-}
-
 /// Loads Codex usage events and reports whether any source file existed before
 /// date filtering narrowed the files to parse.
 pub fn load_codex_events_with_detection(
