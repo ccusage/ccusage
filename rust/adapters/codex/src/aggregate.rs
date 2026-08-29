@@ -109,7 +109,7 @@ fn load_groups_from_sources(
             aggregate_files_with_dedupe(
                 &CodexAggregateRun {
                     sessions_dir: &group.dir,
-                    files: &files,
+                    files,
                     shared,
                     kind,
                     replay_plan: &replay_plan,

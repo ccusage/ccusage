@@ -117,7 +117,7 @@ fn load_codex_events_from_sources_with_files(
         events.append(&mut source_events);
     }
     dedupe_codex_events(&mut events);
-    let detected = if shared.is_some_and(|shared| has_date_bounds(shared)) {
+    let detected = if shared.is_some_and(has_date_bounds) {
         detected_before_filter
     } else {
         !events.is_empty()

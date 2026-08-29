@@ -172,9 +172,9 @@ fn utc_path_date(millis: i64) -> Option<Date> {
     let timestamp = jiff::Timestamp::from_millisecond(millis).ok()?;
     let zoned = timestamp.to_zoned(JiffTimeZone::get("UTC").ok()?);
     Date::new(
-        i16::from(zoned.year()),
-        i8::from(zoned.month()),
-        i8::from(zoned.day()),
+        zoned.year(),
+        zoned.month(),
+        zoned.day(),
     )
     .ok()
 }
