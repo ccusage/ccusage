@@ -155,6 +155,7 @@ fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
             event.model.as_deref().map(CompactString::new),
             event.input_tokens,
             event.cached_input_tokens,
+            event.cache_creation_tokens,
             event.output_tokens,
             event.reasoning_output_tokens,
             event.total_tokens,
@@ -187,6 +188,7 @@ mod tests {
             model: Some("gpt-5".to_string()),
             input_tokens: 100,
             cached_input_tokens: 10,
+            cache_creation_tokens: 0,
             output_tokens: 50,
             reasoning_output_tokens: 0,
             total_tokens: 150,
@@ -768,6 +770,61 @@ mod tests {
         assert_eq!(events[1].cached_input_tokens, 10);
         assert_eq!(events[1].output_tokens, 25);
         assert_eq!(events[1].total_tokens, 125);
+    }
+
+    #[test]
+    fn subtracts_cache_write_usage_from_cumulative_token_totals() {
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({
+                    "timestamp": "2026-01-02T00:00:01.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "model": "gpt-5.6-terra",
+                            "total_token_usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 60,
+                                "cache_write_input_tokens": 20,
+                                "output_tokens": 10,
+                                "total_tokens": 110,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-01-02T00:00:02.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "model": "gpt-5.6-terra",
+                            "total_token_usage": {
+                                "input_tokens": 200,
+                                "cached_input_tokens": 100,
+                                "cache_write_input_tokens": 50,
+                                "output_tokens": 25,
+                                "total_tokens": 225,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].cache_creation_tokens, 20);
+        assert_eq!(events[1].input_tokens, 100);
+        assert_eq!(events[1].cached_input_tokens, 40);
+        assert_eq!(events[1].cache_creation_tokens, 30);
+        assert_eq!(events[1].output_tokens, 15);
+        assert_eq!(events[1].total_tokens, 115);
     }
 
     #[test]

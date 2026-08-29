@@ -799,13 +799,17 @@ where
         .models
         .iter()
         .map(|(model, usage)| {
-            let input =
-                codex::non_cached_input_tokens(usage.input_tokens, usage.cached_input_tokens);
+            let input = codex::non_cached_input_tokens(
+                usage.input_tokens,
+                usage
+                    .cached_input_tokens
+                    .saturating_add(usage.cache_creation_tokens),
+            );
             ModelBreakdown {
                 model_name: model.clone(),
                 input_tokens: input,
                 output_tokens: usage.output_tokens,
-                cache_creation_tokens: 0,
+                cache_creation_tokens: usage.cache_creation_tokens,
                 cache_read_tokens: usage.cached_input_tokens,
                 extra_total_tokens: 0,
                 cost: codex::calculate_codex_model_cost(model, usage, pricing, speed),
@@ -818,9 +822,14 @@ where
         period: period.to_string(),
         agent: "codex",
         models_used: group.models.keys().cloned().collect(),
-        input_tokens: codex::non_cached_input_tokens(group.input_tokens, group.cached_input_tokens),
+        input_tokens: codex::non_cached_input_tokens(
+            group.input_tokens,
+            group
+                .cached_input_tokens
+                .saturating_add(group.cache_creation_tokens),
+        ),
         output_tokens: group.output_tokens,
-        cache_creation_tokens: 0,
+        cache_creation_tokens: group.cache_creation_tokens,
         cache_read_tokens: group.cached_input_tokens,
         total_tokens: group.total_tokens,
         total_cost: codex::calculate_group_cost(group, pricing, speed),
@@ -945,6 +954,50 @@ mod tests {
         assert!((focused_cost - 40e-6).abs() < f64::EPSILON);
         assert!((unified.total_cost - focused_cost).abs() < f64::EPSILON);
         assert!((unified.model_breakdowns[0].cost - focused_cost).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn unified_row_reports_codex_cache_write_tokens_and_cost() {
+        let pricing = PricingMap::load_embedded();
+        let usage = crate::CodexModelUsage {
+            input_tokens: 935_040,
+            cached_input_tokens: 875_306,
+            cache_creation_tokens: 57_610,
+            output_tokens: 11_150,
+            total_tokens: 946_190,
+            long_context_input_tokens: 935_040,
+            long_context_cached_input_tokens: 875_306,
+            long_context_cache_creation_tokens: 57_610,
+            long_context_output_tokens: 11_150,
+            ..crate::CodexModelUsage::default()
+        };
+        let mut group = CodexGroup {
+            input_tokens: 935_040,
+            cached_input_tokens: 875_306,
+            cache_creation_tokens: 57_610,
+            output_tokens: 11_150,
+            total_tokens: 946_190,
+            ..CodexGroup::default()
+        };
+        group.models.insert("gpt-5.6-terra".to_string(), usage);
+
+        let row = codex_group_row(
+            "2026-08-20",
+            &group,
+            &pricing,
+            codex::CodexSpeedPolicy::Forced(codex::CodexServiceTier::Standard),
+        );
+        let expected_cost =
+            2_124.0 * 4e-6 + 875_306.0 * 0.4e-6 + 57_610.0 * 5e-6 + 11_150.0 * 18e-6;
+
+        assert_eq!(row.input_tokens, 2_124);
+        assert_eq!(row.cache_creation_tokens, 57_610);
+        assert_eq!(row.cache_read_tokens, 875_306);
+        assert!((row.total_cost - expected_cost).abs() < 1e-12);
+        assert_eq!(row.model_breakdowns[0].input_tokens, 2_124);
+        assert_eq!(row.model_breakdowns[0].cache_creation_tokens, 57_610);
+        assert_eq!(row.model_breakdowns[0].cache_read_tokens, 875_306);
+        assert!((row.model_breakdowns[0].cost - expected_cost).abs() < 1e-12);
     }
 
     fn pi_path_subcommand_rows(

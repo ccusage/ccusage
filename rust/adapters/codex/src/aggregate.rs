@@ -29,6 +29,7 @@ struct CodexEventKey {
     model_len: usize,
     input_tokens: u64,
     cached_input_tokens: u64,
+    cache_creation_tokens: u64,
     output_tokens: u64,
     reasoning_output_tokens: u64,
     total_tokens: u64,
@@ -347,6 +348,7 @@ fn accumulate_codex_event_into_group(
 ) {
     group.input_tokens += event.input_tokens;
     group.cached_input_tokens += event.cached_input_tokens;
+    group.cache_creation_tokens += event.cache_creation_tokens;
     group.output_tokens += event.output_tokens;
     group.reasoning_output_tokens += event.reasoning_output_tokens;
     group.total_tokens += event.total_tokens;
@@ -361,6 +363,7 @@ fn accumulate_codex_event_into_group(
     let model_usage = group.models.entry(model.to_string()).or_default();
     model_usage.input_tokens += event.input_tokens;
     model_usage.cached_input_tokens += event.cached_input_tokens;
+    model_usage.cache_creation_tokens += event.cache_creation_tokens;
     model_usage.output_tokens += event.output_tokens;
     model_usage.reasoning_output_tokens += event.reasoning_output_tokens;
     model_usage.total_tokens += event.total_tokens;
@@ -373,6 +376,7 @@ fn accumulate_codex_event_into_group(
     if is_long_context {
         model_usage.long_context_input_tokens += event.input_tokens;
         model_usage.long_context_cached_input_tokens += event.cached_input_tokens;
+        model_usage.long_context_cache_creation_tokens += event.cache_creation_tokens;
         model_usage.long_context_output_tokens += event.output_tokens;
     }
     if record_service_tier {
@@ -395,10 +399,12 @@ fn accumulate_codex_event_into_usage_bucket(
 ) {
     usage.input_tokens += event.input_tokens;
     usage.cached_input_tokens += event.cached_input_tokens;
+    usage.cache_creation_tokens += event.cache_creation_tokens;
     usage.output_tokens += event.output_tokens;
     if is_long_context {
         usage.long_context_input_tokens += event.input_tokens;
         usage.long_context_cached_input_tokens += event.cached_input_tokens;
+        usage.long_context_cache_creation_tokens += event.cache_creation_tokens;
         usage.long_context_output_tokens += event.output_tokens;
     }
 }
@@ -406,9 +412,11 @@ fn accumulate_codex_event_into_usage_bucket(
 fn merge_codex_usage_bucket(target: &mut CodexUsageBucket, source: CodexUsageBucket) {
     target.input_tokens += source.input_tokens;
     target.cached_input_tokens += source.cached_input_tokens;
+    target.cache_creation_tokens += source.cache_creation_tokens;
     target.output_tokens += source.output_tokens;
     target.long_context_input_tokens += source.long_context_input_tokens;
     target.long_context_cached_input_tokens += source.long_context_cached_input_tokens;
+    target.long_context_cache_creation_tokens += source.long_context_cache_creation_tokens;
     target.long_context_output_tokens += source.long_context_output_tokens;
 }
 
@@ -455,10 +463,16 @@ fn apply_recorded_usage_entries<'a>(
         let usage = CodexUsageBucket {
             input_tokens: key.input_tokens,
             cached_input_tokens: key.cached_input_tokens,
+            cache_creation_tokens: key.cache_creation_tokens,
             output_tokens: key.output_tokens,
             long_context_input_tokens: if is_long_context { key.input_tokens } else { 0 },
             long_context_cached_input_tokens: if is_long_context {
                 key.cached_input_tokens
+            } else {
+                0
+            },
+            long_context_cache_creation_tokens: if is_long_context {
+                key.cache_creation_tokens
             } else {
                 0
             },
@@ -547,6 +561,7 @@ fn codex_event_key(
         model_len: model.len(),
         input_tokens: event.input_tokens,
         cached_input_tokens: event.cached_input_tokens,
+        cache_creation_tokens: event.cache_creation_tokens,
         output_tokens: event.output_tokens,
         reasoning_output_tokens: event.reasoning_output_tokens,
         total_tokens: event.total_tokens,
@@ -564,6 +579,7 @@ fn merge_groups(target: &mut BTreeMap<String, CodexGroup>, source: BTreeMap<Stri
         let target_group = target.entry(period).or_default();
         target_group.input_tokens += group.input_tokens;
         target_group.cached_input_tokens += group.cached_input_tokens;
+        target_group.cache_creation_tokens += group.cache_creation_tokens;
         target_group.output_tokens += group.output_tokens;
         target_group.reasoning_output_tokens += group.reasoning_output_tokens;
         target_group.total_tokens += group.total_tokens;
@@ -579,11 +595,14 @@ fn merge_groups(target: &mut BTreeMap<String, CodexGroup>, source: BTreeMap<Stri
             let target_usage = target_group.models.entry(model).or_default();
             target_usage.input_tokens += usage.input_tokens;
             target_usage.cached_input_tokens += usage.cached_input_tokens;
+            target_usage.cache_creation_tokens += usage.cache_creation_tokens;
             target_usage.output_tokens += usage.output_tokens;
             target_usage.reasoning_output_tokens += usage.reasoning_output_tokens;
             target_usage.total_tokens += usage.total_tokens;
             target_usage.long_context_input_tokens += usage.long_context_input_tokens;
             target_usage.long_context_cached_input_tokens += usage.long_context_cached_input_tokens;
+            target_usage.long_context_cache_creation_tokens +=
+                usage.long_context_cache_creation_tokens;
             target_usage.long_context_output_tokens += usage.long_context_output_tokens;
             merge_codex_usage_bucket(
                 &mut target_usage.recorded_standard_usage,
@@ -658,7 +677,7 @@ mod tests {
     use serde_json::json;
 
     use crate::{
-        PricingMap, cli::CodexSpeed, model_aliases::set_model_aliases_for_tests,
+        CodexModelUsage, PricingMap, cli::CodexSpeed, model_aliases::set_model_aliases_for_tests,
         paths::CodexUsageSource,
     };
 
@@ -965,6 +984,7 @@ mod tests {
                        service_tier: &str,
                        input_tokens: u64,
                        cached_input_tokens: u64,
+                       cache_creation_tokens: u64,
                        output_tokens: u64| {
             [
                 json!({
@@ -986,6 +1006,7 @@ mod tests {
                             "last_token_usage": {
                                 "input_tokens": input_tokens,
                                 "cached_input_tokens": cached_input_tokens,
+                                "cache_write_input_tokens": cache_creation_tokens,
                                 "output_tokens": output_tokens,
                                 "total_tokens": input_tokens + output_tokens,
                             },
@@ -1002,6 +1023,7 @@ mod tests {
             "priority",
             280_000,
             20_000,
+            30_000,
             500,
         );
         let standard_short = rollout(
@@ -1010,6 +1032,7 @@ mod tests {
             "default",
             100_000,
             50_000,
+            10_000,
             300,
         );
         let fixture = fs_fixture!({
@@ -1033,15 +1056,57 @@ mod tests {
             let usage = &groups["2026-07-09"].models["gpt-5.6-sol"];
 
             assert_eq!(usage.input_tokens, 380_000);
+            assert_eq!(usage.cache_creation_tokens, 40_000);
             assert_eq!(usage.long_context_input_tokens, 280_000);
+            assert_eq!(usage.long_context_cache_creation_tokens, 30_000);
             assert_eq!(usage.recorded_fast_usage.input_tokens, 280_000);
+            assert_eq!(usage.recorded_fast_usage.cache_creation_tokens, 30_000);
             assert_eq!(usage.recorded_fast_usage.long_context_input_tokens, 280_000);
+            assert_eq!(
+                usage.recorded_fast_usage.long_context_cache_creation_tokens,
+                30_000
+            );
             assert_eq!(usage.recorded_standard_usage.input_tokens, 100_000);
+            assert_eq!(usage.recorded_standard_usage.cache_creation_tokens, 10_000);
             assert_eq!(usage.recorded_standard_usage.long_context_input_tokens, 0);
             observed.push((usage.recorded_fast_usage, usage.recorded_standard_usage));
         }
 
         assert_eq!(observed[0], observed[1]);
+    }
+
+    #[test]
+    fn merges_cache_creation_usage_into_groups_and_recorded_buckets() {
+        let usage = CodexModelUsage {
+            cache_creation_tokens: 30,
+            long_context_cache_creation_tokens: 20,
+            recorded_standard_usage: CodexUsageBucket {
+                cache_creation_tokens: 30,
+                long_context_cache_creation_tokens: 20,
+                ..CodexUsageBucket::default()
+            },
+            ..CodexModelUsage::default()
+        };
+        let mut source_group = CodexGroup {
+            cache_creation_tokens: 30,
+            ..CodexGroup::default()
+        };
+        source_group.models.insert("gpt-test".to_string(), usage);
+        let source = BTreeMap::from([("2026-07-09".to_string(), source_group)]);
+        let mut target = BTreeMap::new();
+
+        merge_groups(&mut target, source);
+
+        let merged = &target["2026-07-09"];
+        let merged_usage = &merged.models["gpt-test"];
+        assert_eq!(merged.cache_creation_tokens, 30);
+        assert_eq!(merged_usage.cache_creation_tokens, 30);
+        assert_eq!(
+            merged_usage
+                .recorded_standard_usage
+                .long_context_cache_creation_tokens,
+            20
+        );
     }
 
     #[test]

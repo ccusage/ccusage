@@ -183,6 +183,7 @@ pub(super) fn visit_codex_session_file(
                     let usage = CodexRawUsage {
                         input_tokens: event.input_tokens,
                         cached_input_tokens: event.cached_input_tokens,
+                        cache_creation_tokens: event.cache_creation_tokens,
                         output_tokens: event.output_tokens,
                         reasoning_output_tokens: event.reasoning_output_tokens,
                         total_tokens: event.total_tokens,
@@ -338,6 +339,7 @@ fn visit_codex_session_entry(
     };
     if raw_usage.input_tokens == 0
         && raw_usage.cached_input_tokens == 0
+        && raw_usage.cache_creation_tokens == 0
         && raw_usage.output_tokens == 0
         && raw_usage.reasoning_output_tokens == 0
     {
@@ -358,7 +360,8 @@ fn visit_codex_session_entry(
         timestamp,
         model,
         input_tokens: raw_usage.input_tokens,
-        cached_input_tokens: raw_usage.cached_input_tokens.min(raw_usage.input_tokens),
+        cached_input_tokens: raw_usage.cached_input_tokens,
+        cache_creation_tokens: raw_usage.cache_creation_tokens,
         output_tokens: raw_usage.output_tokens,
         reasoning_output_tokens: raw_usage.reasoning_output_tokens,
         total_tokens: raw_usage.total_tokens,
@@ -447,7 +450,8 @@ fn visit_codex_exec_usage_event(
         timestamp: timestamps.event,
         model,
         input_tokens: raw_usage.input_tokens,
-        cached_input_tokens: raw_usage.cached_input_tokens.min(raw_usage.input_tokens),
+        cached_input_tokens: raw_usage.cached_input_tokens,
+        cache_creation_tokens: raw_usage.cache_creation_tokens,
         output_tokens: raw_usage.output_tokens,
         reasoning_output_tokens: raw_usage.reasoning_output_tokens,
         total_tokens: raw_usage.total_tokens,
@@ -1025,6 +1029,7 @@ fn normalize_headless_codex_usage(value: &CodexLogEntry<'_>) -> Option<CodexRawU
     let usage = usage_from_result(value)?;
     if usage.input_tokens == 0
         && usage.cached_input_tokens == 0
+        && usage.cache_creation_tokens == 0
         && usage.output_tokens == 0
         && usage.reasoning_output_tokens == 0
         && usage.total_tokens == 0
@@ -1038,6 +1043,7 @@ fn normalize_headless_codex_usage_value(value: &Value) -> Option<CodexRawUsage> 
     let usage = usage_from_result_value(value)?;
     if usage.input_tokens == 0
         && usage.cached_input_tokens == 0
+        && usage.cache_creation_tokens == 0
         && usage.output_tokens == 0
         && usage.reasoning_output_tokens == 0
         && usage.total_tokens == 0
@@ -1071,6 +1077,9 @@ fn subtract_codex_raw_usage(
         cached_input_tokens: current
             .cached_input_tokens
             .saturating_sub(previous.map_or(0, |usage| usage.cached_input_tokens)),
+        cache_creation_tokens: current
+            .cache_creation_tokens
+            .saturating_sub(previous.map_or(0, |usage| usage.cache_creation_tokens)),
         output_tokens: current
             .output_tokens
             .saturating_sub(previous.map_or(0, |usage| usage.output_tokens)),

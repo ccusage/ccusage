@@ -204,6 +204,7 @@ fn read_usage_events(sessions_dir: &Path, path: &Path) -> Vec<(String, CodexRawU
             CodexRawUsage {
                 input_tokens: event.input_tokens,
                 cached_input_tokens: event.cached_input_tokens,
+                cache_creation_tokens: event.cache_creation_tokens,
                 output_tokens: event.output_tokens,
                 reasoning_output_tokens: event.reasoning_output_tokens,
                 total_tokens: event.total_tokens,

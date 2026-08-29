@@ -82,6 +82,16 @@ pub struct Pricing {
 pub(crate) const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
 
 impl Pricing {
+    /// Returns the per-token rate for cache creation input.
+    pub fn cache_creation_input_token_cost(&self) -> f64 {
+        self.cache_create
+    }
+
+    /// Returns the per-token rate for cache creation input above the long-context threshold.
+    pub fn cache_creation_input_token_cost_above_200k_tokens(&self) -> Option<f64> {
+        self.cache_create_above_200k
+    }
+
     const fn empty() -> Self {
         Self {
             input: 0.0,
@@ -3570,6 +3580,11 @@ mod tests {
         let terra = pricing.find("gpt-5.6-terra").unwrap();
         assert_eq!(terra.input, 2e-6);
         assert_eq!(terra.output, 12e-6);
+        assert_eq!(terra.cache_creation_input_token_cost(), 2.5e-6);
+        assert_eq!(
+            terra.cache_creation_input_token_cost_above_200k_tokens(),
+            Some(5e-6)
+        );
         assert_eq!(terra.input_above_200k, Some(4e-6));
         assert_eq!(terra.output_above_200k, Some(18e-6));
 
