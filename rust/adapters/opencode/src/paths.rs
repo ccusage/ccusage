@@ -8,13 +8,17 @@ const XDG_DATA_HOME_ENV: &str = "XDG_DATA_HOME";
 pub(super) fn paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
-    if let Ok(env_paths) = env::var(OPENCODE_DATA_DIR_ENV) {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = PathBuf::from(raw);
+    if let Some(env_paths) = env::var_os(OPENCODE_DATA_DIR_ENV) {
+        let configured_paths = match env_paths.into_string() {
+            Ok(env_paths) => env_paths
+                .split(',')
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+                .collect(),
+            Err(env_path) => vec![PathBuf::from(env_path)],
+        };
+        for path in configured_paths {
             if path.is_dir() && seen.insert(path.clone()) {
                 paths.push(path);
             }
@@ -112,6 +116,47 @@ mod tests {
         );
 
         assert_eq!(paths().unwrap(), vec![first, second]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn does_not_fall_back_when_configured_data_dir_is_non_utf8() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let _guard = isolated_env(
+            Some(OsString::from_vec(b"opencode-\xFF".to_vec())),
+            None,
+            None,
+        );
+
+        assert!(paths().unwrap().is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn discovers_non_utf8_configured_data_directory() {
+        use std::{os::unix::ffi::OsStringExt, path::PathBuf};
+
+        let fixture = fs_fixture!({});
+        let configured_dir =
+            fixture.create_dir_all(PathBuf::from(OsString::from_vec(b"opencode-\xFF".to_vec())));
+        let _guard = isolated_env(Some(configured_dir.clone().into_os_string()), None, None);
+
+        assert_eq!(paths().unwrap(), vec![configured_dir]);
+    }
+
+    #[test]
+    fn does_not_fall_back_when_configured_data_dir_is_empty() {
+        let fixture = fs_fixture!({
+            "home/.local/share/opencode/opencode.db": "",
+        });
+        let _guard = isolated_env(
+            Some(OsString::new()),
+            None,
+            Some(fixture.path("home").into_os_string()),
+        );
+
+        assert!(paths().unwrap().is_empty());
     }
 
     #[test]
