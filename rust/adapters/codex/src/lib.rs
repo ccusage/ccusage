@@ -13,9 +13,9 @@ mod types;
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
 pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
-pub use loader::load_codex_events;
 #[doc(hidden)]
 pub use loader::load_codex_events_from_directory;
+pub use loader::{load_codex_events, load_codex_events_with_detection};
 pub use report::{
     calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
     non_cached_input_tokens,
