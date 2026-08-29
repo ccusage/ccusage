@@ -113,8 +113,10 @@ struct DailyLoadedFile {
 
 #[derive(Debug)]
 struct DailyLoadedEntry {
+    timestamp: TimestampMs,
     date: String,
     project: Arc<str>,
+    session_id: Arc<str>,
     usage: TokenUsageRaw,
     cost: f64,
     model: Option<String>,
@@ -152,7 +154,7 @@ impl DailyUsageLine {
                 timestamp: entry.data.message.timestamp,
                 message: entry.data.message.message,
                 version: None,
-                session_id: None,
+                session_id: entry.session_id,
                 cost_usd: entry.data.message.cost_usd,
                 request_id: entry.data.message.request_id,
                 is_sidechain: entry.data.message.is_sidechain,
@@ -163,6 +165,8 @@ impl DailyUsageLine {
 
 #[derive(Debug, Deserialize)]
 struct DailyAgentProgressEntry {
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
     data: DailyAgentProgressData,
 }
 
@@ -245,6 +249,8 @@ fn read_daily_usage_file(
     pricing: Option<&PricingMap>,
 ) -> DailyLoadedFile {
     let project: Arc<str> = Arc::from(extract_project(path));
+    let (path_session_id, _) = super::paths::extract_session_parts(path);
+    let path_session_id: Arc<str> = Arc::from(path_session_id);
     let mut loaded_file = DailyLoadedFile {
         timestamp: None,
         entries: Vec::new(),
@@ -301,11 +307,18 @@ fn read_daily_usage_file(
             }
         });
         let date = format_date_tz(timestamp, tz);
+        let session_id: Arc<str> = data
+            .session_id
+            .as_deref()
+            .map(Arc::from)
+            .unwrap_or_else(|| Arc::clone(&path_session_id));
         let message_id = data.message.id.clone();
         let request_id = data.request_id.clone();
         loaded_file.entries.push(DailyLoadedEntry {
+            timestamp,
             date: date.clone(),
             project: Arc::clone(&project),
+            session_id: Arc::clone(&session_id),
             usage,
             cost,
             model,
@@ -323,8 +336,10 @@ fn read_daily_usage_file(
                 pricing,
             );
             loaded_file.entries.push(DailyLoadedEntry {
+                timestamp,
                 date: date.clone(),
                 project: Arc::clone(&project),
+                session_id: Arc::clone(&session_id),
                 usage: advisor.usage,
                 cost: calculate_cost_for_usage(
                     Some(&advisor.model),
@@ -400,22 +415,32 @@ fn push_deduped_daily_entry(
 ) {
     let dedupe_lookup = entry.message_id.as_deref().map(|message_id| {
         let request_id = entry.request_id.as_deref();
-        let exact_hash = usage_dedupe_hash(message_id, request_id);
+        let exact_hash = usage_dedupe_hash(
+            message_id,
+            request_id,
+            entry.session_id.as_ref(),
+            entry.timestamp,
+        );
         let existing_index = deduped_indexes
             .get(&exact_hash)
             .and_then(|indexes| {
                 indexes.iter().copied().find(|&index| {
                     deduped[index].message_id.as_deref() == Some(message_id)
                         && deduped[index].request_id.as_deref() == request_id
+                        && deduped[index].session_id == entry.session_id
+                        && (request_id.is_some() || deduped[index].timestamp == entry.timestamp)
                 })
             })
             .or_else(|| {
                 // /btw sidechain logs can replay parent messages with new request IDs.
-                let message_hash = usage_dedupe_hash(message_id, None);
+                let message_hash =
+                    usage_dedupe_hash(message_id, None, entry.session_id.as_ref(), entry.timestamp);
                 let candidate_is_sidechain = is_sidechain_daily_entry(&entry);
                 deduped_indexes.get(&message_hash).and_then(|indexes| {
                     indexes.iter().copied().find(|&index| {
                         deduped[index].message_id.as_deref() == Some(message_id)
+                            && deduped[index].session_id == entry.session_id
+                            && deduped[index].timestamp == entry.timestamp
                             && (candidate_is_sidechain || is_sidechain_daily_entry(&deduped[index]))
                     })
                 })
@@ -423,9 +448,22 @@ fn push_deduped_daily_entry(
         (exact_hash, existing_index)
     });
 
-    if let Some((_, Some(index))) = dedupe_lookup {
+    if let Some((hash, Some(index))) = dedupe_lookup {
         if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
             deduped[index] = entry;
+            push_deduped_daily_index(deduped_indexes, hash, index);
+            if let Some(message_id) = deduped[index].message_id.as_deref() {
+                push_deduped_daily_index(
+                    deduped_indexes,
+                    usage_dedupe_hash(
+                        message_id,
+                        None,
+                        deduped[index].session_id.as_ref(),
+                        deduped[index].timestamp,
+                    ),
+                    index,
+                );
+            }
         }
         return;
     }
@@ -435,7 +473,16 @@ fn push_deduped_daily_entry(
     if let Some((hash, None)) = dedupe_lookup {
         push_deduped_daily_index(deduped_indexes, hash, index);
         if let Some(message_id) = deduped[index].message_id.as_deref() {
-            push_deduped_daily_index(deduped_indexes, usage_dedupe_hash(message_id, None), index);
+            push_deduped_daily_index(
+                deduped_indexes,
+                usage_dedupe_hash(
+                    message_id,
+                    None,
+                    deduped[index].session_id.as_ref(),
+                    deduped[index].timestamp,
+                ),
+                index,
+            );
         }
     }
 }
@@ -545,8 +592,9 @@ impl DailyAccumulator {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DailyLoadedEntry, push_deduped_daily_entry};
-    use crate::TokenUsageRaw;
+    use super::{DailyLoadedEntry, push_deduped_daily_entry, read_daily_usage_file};
+    use crate::{TimestampMs, TokenUsageRaw, cli::CostMode};
+    use ccusage_test_support::fs_fixture;
 
     #[test]
     fn keeps_parent_daily_usage_when_sidechain_replays_message_with_new_request_id() {
@@ -599,14 +647,111 @@ mod tests {
     }
 
     #[test]
+    fn refreshes_daily_dedupe_indexes_when_parent_replaces_sidechain_replay() {
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        push_deduped_daily_entry(
+            daily_loaded_entry(DailyEntryFixture {
+                message_id: "msg-parent",
+                request_id: "req-sidechain-replay",
+                is_sidechain: true,
+                cache_read_tokens: 50_000,
+                output_tokens: 10,
+            }),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+        push_deduped_daily_entry(
+            daily_loaded_entry(DailyEntryFixture {
+                message_id: "msg-parent",
+                request_id: "req-parent",
+                is_sidechain: false,
+                cache_read_tokens: 20,
+                output_tokens: 10,
+            }),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+        push_deduped_daily_entry(
+            daily_loaded_entry(DailyEntryFixture {
+                message_id: "msg-parent",
+                request_id: "req-parent",
+                is_sidechain: false,
+                cache_read_tokens: 5,
+                output_tokens: 5,
+            }),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
+    }
+
+    #[test]
     fn propagates_sidechain_metadata_from_agent_progress_lines() {
         let data = serde_json::from_str::<super::DailyUsageLine>(
-            r#"{"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
+            r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
         )
         .unwrap()
         .into_entry();
 
+        assert_eq!(data.session_id.as_deref(), Some("session-a"));
         assert_eq!(data.is_sidechain, Some(true));
+    }
+
+    #[test]
+    fn keeps_gateway_daily_usage_from_distinct_sessions_with_reused_message_id() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":300,"output_tokens":1}}}"#,
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        for path in [
+            fixture.path("projects/project-a/session-a/chat.jsonl"),
+            fixture.path("projects/project-a/session-b/chat.jsonl"),
+        ] {
+            let loaded = read_daily_usage_file(&path, None, CostMode::Display, None);
+            for entry in loaded.entries {
+                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+            }
+        }
+
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(
+            deduped
+                .iter()
+                .map(|entry| entry.usage.input_tokens)
+                .sum::<u64>(),
+            400
+        );
+    }
+
+    #[test]
+    fn dedupes_copied_daily_transcripts_with_the_same_serialized_session_id() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        for path in [
+            fixture.path("projects/project-a/session-a/chat.jsonl"),
+            fixture.path("projects/project-a/session-b/chat.jsonl"),
+        ] {
+            let loaded = read_daily_usage_file(&path, None, CostMode::Display, None);
+            for entry in loaded.entries {
+                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+            }
+        }
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].usage.input_tokens, 200);
     }
 
     struct DailyEntryFixture {
@@ -619,8 +764,10 @@ mod tests {
 
     fn daily_loaded_entry(fixture: DailyEntryFixture) -> DailyLoadedEntry {
         DailyLoadedEntry {
+            timestamp: TimestampMs::from_millis(1_774_000_000_000),
             date: "2026-03-29".to_string(),
             project: Arc::from("project-a"),
+            session_id: Arc::from("session-a"),
             usage: TokenUsageRaw {
                 input_tokens: 0,
                 output_tokens: fixture.output_tokens,

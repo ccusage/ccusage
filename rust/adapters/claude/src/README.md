@@ -29,6 +29,9 @@ Sidechain entries:
   with their own message IDs are still counted.
 - This behavior fixes the overcounting reported in
   [#913](https://github.com/ccusage/ccusage/issues/913).
+- When `requestId` is missing, deduplication also uses the effective session ID
+  and timestamp. This keeps distinct gateway responses that reuse a message ID
+  separate while still collapsing same-session duplicate writes.
 
 The term `session` has two meanings in this codebase:
 

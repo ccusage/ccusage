@@ -146,23 +146,32 @@ fn push_deduped_entry(
 ) {
     let dedupe_lookup = entry.data.message.id.as_deref().map(|message_id| {
         let request_id = entry.data.request_id.as_deref();
-        let exact_hash = usage_dedupe_hash(message_id, request_id);
+        let session_id = loaded_entry_session_id(&entry);
+        let exact_hash = usage_dedupe_hash(message_id, request_id, session_id, entry.timestamp);
         let existing_index = deduped_indexes
             .get(&exact_hash)
             .and_then(|indexes| {
                 indexes.iter().copied().find(|&index| {
-                    loaded_entry_matches_dedupe_key(&deduped[index], message_id, request_id)
+                    loaded_entry_matches_dedupe_key(
+                        &deduped[index],
+                        message_id,
+                        request_id,
+                        session_id,
+                        entry.timestamp,
+                    )
                 })
             })
             .or_else(|| {
                 // /btw sidechain logs can replay parent messages with new request IDs.
-                let message_hash = usage_dedupe_hash(message_id, None);
+                let message_hash = usage_dedupe_hash(message_id, None, session_id, entry.timestamp);
                 let candidate_is_sidechain = is_sidechain_usage_entry(&entry.data);
                 deduped_indexes.get(&message_hash).and_then(|indexes| {
                     indexes.iter().copied().find(|&index| {
                         loaded_entry_matches_sidechain_dedupe_key(
                             &deduped[index],
                             message_id,
+                            session_id,
+                            entry.timestamp,
                             candidate_is_sidechain,
                         )
                     })
@@ -176,7 +185,12 @@ fn push_deduped_entry(
             deduped[index] = entry;
             push_deduped_index(deduped_indexes, hash, index);
             if let Some(message_id) = deduped[index].data.message.id.as_deref() {
-                push_deduped_index(deduped_indexes, usage_dedupe_hash(message_id, None), index);
+                let session_id = loaded_entry_session_id(&deduped[index]);
+                push_deduped_index(
+                    deduped_indexes,
+                    usage_dedupe_hash(message_id, None, session_id, deduped[index].timestamp),
+                    index,
+                );
             }
         }
         return;
@@ -187,33 +201,63 @@ fn push_deduped_entry(
     if let Some((hash, None)) = dedupe_lookup {
         push_deduped_index(deduped_indexes, hash, index);
         if let Some(message_id) = deduped[index].data.message.id.as_deref() {
-            push_deduped_index(deduped_indexes, usage_dedupe_hash(message_id, None), index);
+            let session_id = loaded_entry_session_id(&deduped[index]);
+            push_deduped_index(
+                deduped_indexes,
+                usage_dedupe_hash(message_id, None, session_id, deduped[index].timestamp),
+                index,
+            );
         }
     }
 }
 
-fn usage_dedupe_hash(message_id: &str, request_id: Option<&str>) -> u64 {
+fn usage_dedupe_hash(
+    message_id: &str,
+    request_id: Option<&str>,
+    session_id: &str,
+    timestamp: TimestampMs,
+) -> u64 {
     let mut hasher = FxHasher::default();
     message_id.hash(&mut hasher);
     request_id.hash(&mut hasher);
+    session_id.hash(&mut hasher);
+    if request_id.is_none() {
+        timestamp.hash(&mut hasher);
+    }
     hasher.finish()
+}
+
+fn loaded_entry_session_id(entry: &LoadedEntry) -> &str {
+    entry
+        .data
+        .session_id
+        .as_deref()
+        .unwrap_or(entry.session_id.as_ref())
 }
 
 fn loaded_entry_matches_dedupe_key(
     entry: &LoadedEntry,
     message_id: &str,
     request_id: Option<&str>,
+    session_id: &str,
+    timestamp: TimestampMs,
 ) -> bool {
     entry.data.message.id.as_deref() == Some(message_id)
         && entry.data.request_id.as_deref() == request_id
+        && loaded_entry_session_id(entry) == session_id
+        && (request_id.is_some() || entry.timestamp == timestamp)
 }
 
 fn loaded_entry_matches_sidechain_dedupe_key(
     entry: &LoadedEntry,
     message_id: &str,
+    session_id: &str,
+    timestamp: TimestampMs,
     candidate_is_sidechain: bool,
 ) -> bool {
     entry.data.message.id.as_deref() == Some(message_id)
+        && loaded_entry_session_id(entry) == session_id
+        && entry.timestamp == timestamp
         && (candidate_is_sidechain || is_sidechain_usage_entry(&entry.data))
 }
 
@@ -685,6 +729,58 @@ mod tests {
         assert_eq!(loaded.entries[0].cost, 1.23);
         assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
         assert_eq!(loaded.entries[1].cost, 26.0);
+    }
+
+    #[test]
+    fn keeps_gateway_usage_from_distinct_sessions_with_reused_message_id() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":300,"output_tokens":1}}}"#,
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        for path in [
+            fixture.path("projects/project-a/session-a/chat.jsonl"),
+            fixture.path("projects/project-a/session-b/chat.jsonl"),
+        ] {
+            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            for entry in loaded.entries {
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+            }
+        }
+
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(
+            deduped
+                .iter()
+                .map(|entry| entry.data.message.usage.input_tokens)
+                .sum::<u64>(),
+            400
+        );
+    }
+
+    #[test]
+    fn dedupes_copied_transcripts_with_the_same_serialized_session_id() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        for path in [
+            fixture.path("projects/project-a/session-a/chat.jsonl"),
+            fixture.path("projects/project-a/session-b/chat.jsonl"),
+        ] {
+            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            for entry in loaded.entries {
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+            }
+        }
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].data.message.usage.input_tokens, 200);
     }
 
     #[test]
