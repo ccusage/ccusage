@@ -6,14 +6,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ccusage_adapter_common::filter_loaded_entries_by_date;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::pricing::PricingMap;
 use crate::{
     BucketKind, Color, Context, DEFAULT_RECENT_DAYS, DEFAULT_SESSION_DURATION_HOURS,
-    MILLIS_PER_DAY, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs, block_json,
-    calculate_burn_rate,
+    MILLIS_PER_DAY, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs, UsageSummary,
+    block_json, calculate_burn_rate,
     cli::{
         BlocksArgs, CostSource, DailyArgs, SessionArgs, SharedArgs, SortOrder, StatuslineArgs,
         VisualBurnRate, WeekDay, WeeklyArgs,
@@ -149,43 +150,7 @@ pub(crate) fn run_session(args: SessionArgs) -> Result<()> {
 
     let mut session_shared = shared.clone();
     session_shared.order = SortOrder::Desc;
-    let entries = load_entries(&session_shared, None)?;
-    let mut grouped = Vec::<SessionAccumulator>::new();
-    let mut group_indexes = FxHashMap::<(Arc<str>, Arc<str>), usize>::default();
-    for entry in &entries {
-        let key = (
-            Arc::clone(&entry.project_path),
-            Arc::clone(&entry.session_id),
-        );
-        let index = *group_indexes.entry(key).or_insert_with(|| {
-            let index = grouped.len();
-            grouped.push(SessionAccumulator::default());
-            index
-        });
-        grouped[index].add_entry(entry);
-    }
-
-    let mut rows = Vec::with_capacity(grouped.len());
-    for group in grouped {
-        rows.push(group.into_summary()?);
-    }
-    if session_shared.since.is_some() || session_shared.until.is_some() {
-        rows.retain(|row| {
-            let date = row
-                .last_activity
-                .as_deref()
-                .unwrap_or_default()
-                .replace('-', "");
-            session_shared
-                .since
-                .as_ref()
-                .is_none_or(|since| &date >= since)
-                && session_shared
-                    .until
-                    .as_ref()
-                    .is_none_or(|until| &date <= until)
-        });
-    }
+    let mut rows = load_session_rows(&session_shared)?;
     rows.retain(|row| {
         row.input_tokens + row.output_tokens + row.cache_creation_tokens + row.cache_read_tokens > 0
     });
@@ -214,8 +179,34 @@ pub(crate) fn run_session(args: SessionArgs) -> Result<()> {
     Ok(())
 }
 
+fn load_session_rows(shared: &SharedArgs) -> Result<Vec<UsageSummary>> {
+    let mut entries = load_entries(shared, None)?;
+    filter_loaded_entries_by_date(&mut entries, shared);
+    let mut grouped = Vec::<SessionAccumulator>::new();
+    let mut group_indexes = FxHashMap::<(Arc<str>, Arc<str>), usize>::default();
+    for entry in &entries {
+        let key = (
+            Arc::clone(&entry.project_path),
+            Arc::clone(&entry.session_id),
+        );
+        let index = *group_indexes.entry(key).or_insert_with(|| {
+            let index = grouped.len();
+            grouped.push(SessionAccumulator::default());
+            index
+        });
+        grouped[index].add_entry(entry);
+    }
+
+    let mut rows = Vec::with_capacity(grouped.len());
+    for group in grouped {
+        rows.push(group.into_summary()?);
+    }
+    Ok(rows)
+}
+
 fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
-    let entries = load_entries(shared, None)?;
+    let mut entries = load_entries(shared, None)?;
+    filter_loaded_entries_by_date(&mut entries, shared);
     let mut session_entries = entries
         .into_iter()
         .filter(|entry| {
@@ -853,7 +844,72 @@ mod tests {
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     use super::*;
-    use crate::cli::{Cli, Command};
+    use crate::cli::{Cli, Command, CostMode};
+
+    #[test]
+    fn claude_session_totals_only_include_entries_inside_date_window() {
+        let rows = claude_session_rows(
+            &[
+                r#"{"timestamp":"2026-08-12T12:00:00.000Z","sessionId":"session-a","requestId":"request-old","costUSD":1.25,"message":{"id":"message-old","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+                r#"{"timestamp":"2026-08-13T12:00:00.000Z","sessionId":"session-a","requestId":"request-new","costUSD":2.5,"message":{"id":"message-new","model":"claude-sonnet-4-20250514","usage":{"input_tokens":30,"output_tokens":4}}}"#,
+            ]
+            .join("\n"),
+            SharedArgs {
+                mode: CostMode::Display,
+                since: Some("20260813".to_string()),
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].input_tokens, 30);
+        assert_eq!(rows[0].output_tokens, 4);
+        assert_eq!(rows[0].total_tokens(), 34);
+        assert_eq!(rows[0].total_cost, 2.5);
+    }
+
+    #[test]
+    fn claude_session_until_includes_the_boundary_date() {
+        let rows = claude_session_rows(
+            r#"{"timestamp":"2026-08-14T09:38:56.467Z","sessionId":"session-a","requestId":"request-boundary","costUSD":3.75,"message":{"id":"message-boundary","model":"claude-sonnet-4-20250514","usage":{"input_tokens":40,"output_tokens":5}}}"#,
+            SharedArgs {
+                mode: CostMode::Display,
+                until: Some("20260814".to_string()),
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].total_tokens(), 45);
+        assert_eq!(rows[0].total_cost, 3.75);
+    }
+
+    #[test]
+    fn claude_session_date_window_uses_requested_timezone() {
+        let rows = claude_session_rows(
+            r#"{"timestamp":"2026-08-14T23:30:00.000Z","sessionId":"session-a","requestId":"request-timezone","costUSD":4.5,"message":{"id":"message-timezone","model":"claude-sonnet-4-20250514","usage":{"input_tokens":50,"output_tokens":6}}}"#,
+            SharedArgs {
+                mode: CostMode::Display,
+                since: Some("20260815".to_string()),
+                timezone: Some("Asia/Tokyo".to_string()),
+                ..SharedArgs::default()
+            },
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].total_tokens(), 56);
+        assert_eq!(rows[0].total_cost, 4.5);
+    }
+
+    fn claude_session_rows(log: &str, shared: SharedArgs) -> Vec<UsageSummary> {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": log,
+        });
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        load_session_rows(&shared).unwrap()
+    }
 
     #[test]
     fn statusline_invocation_passes_config_pricing_overrides_to_cost_loading() {

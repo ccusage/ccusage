@@ -87,8 +87,8 @@ Sessions are displayed using the last two segments of their full identifier:
 
 - **Input/Output Tokens**: Total tokens exchanged in the conversation
 - **Cache Tokens**: Cache creation and read tokens for context efficiency
-- **Cost**: Estimated USD cost for the entire conversation
-- **Last Activity**: Date of the most recent message in the session
+- **Cost**: Estimated USD cost for the usage shown; without a date filter, the entire conversation
+- **Last Activity**: Date of the most recent message included in the report
 
 ### Sorting
 
@@ -120,18 +120,20 @@ ccusage session -i <session-id>
 
 ### Date Filtering
 
-Filter sessions by their last activity date:
+For Claude Code, filter session usage by the local date of each entry:
 
 ```bash
 # Show sessions active since May 10th
-ccusage session --since 20260510
+ccusage claude session --since 20260510
 
 # Show sessions active in a specific date range
-ccusage session --since 20260501 --until 20260516
+ccusage claude session --since 20260501 --until 20260516
 
 # Show only recent sessions (last week)
-ccusage session --since $(date -d '7 days ago' +%Y%m%d)
+ccusage claude session --since $(date -d '7 days ago' +%Y%m%d)
 ```
+
+For `ccusage claude session`, date filters are applied before session totals are calculated, so token and cost totals represent only the entries inside the selected window. Both bounds are inclusive, and `--timezone` determines the local date used for filtering.
 
 ### Cost Calculation Modes
 
