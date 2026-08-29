@@ -15,7 +15,7 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 ## Data source
 
-- `${OPENCODE_DATA_DIR:-~/.local/share/opencode}`
+- `OPENCODE_DATA_DIR`, or `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` when unset
 
 Record shapes, token mapping, and cost rules are documented in [`src/README.md`](src/README.md).
 

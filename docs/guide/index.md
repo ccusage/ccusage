@@ -76,7 +76,7 @@ ccusage reads from local coding CLI data directories:
 | -------------- | ---------- | ------------------------------------------------- |
 | Claude Code    | `claude`   | `~/.config/claude/projects/`, `~/.claude/`        |
 | Codex          | `codex`    | `${CODEX_HOME:-~/.codex}`                         |
-| OpenCode       | `opencode` | `${OPENCODE_DATA_DIR:-~/.local/share/opencode}`   |
+| OpenCode       | `opencode` | `${OPENCODE_DATA_DIR-${XDG_DATA_HOME:-$HOME/.local/share}/opencode}` |
 | Amp            | `amp`      | `${AMP_DATA_DIR:-~/.local/share/amp}`             |
 | Droid          | `droid`    | `${DROID_SESSIONS_DIR:-~/.factory/sessions}`      |
 | Codebuff       | `codebuff` | `${CODEBUFF_DATA_DIR:-~/.config/manicode}`        |
@@ -90,6 +90,8 @@ ccusage reads from local coding CLI data directories:
 | Copilot CLI    | `copilot`  | `~/.copilot/otel/*.jsonl`                         |
 | Gemini CLI     | `gemini`   | `${GEMINI_DATA_DIR:-~/.gemini/tmp}`               |
 | Grok Build CLI | `grok`     | `${GROK_HOME:-~/.grok}`                           |
+
+For OpenCode, the `OPENCODE_DATA_DIR` fallback applies only when the variable is unset. A set-but-empty value disables default-path discovery.
 
 The tool automatically detects available data and aggregates all supported coding CLIs by default.
 Source-specific environment variables that support multiple roots can contain comma-separated directories, which lets unified reports combine current profiles and archives.

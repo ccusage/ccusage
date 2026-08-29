@@ -164,7 +164,7 @@ If ccusage shows no data, check:
 2. **Data directory exists** - Common locations:
    - Claude Code: `~/.config/claude/projects/` or `~/.claude/projects/`
    - Codex: `${CODEX_HOME:-~/.codex}`
-   - OpenCode: `${OPENCODE_DATA_DIR:-~/.local/share/opencode}`
+   - OpenCode: `${OPENCODE_DATA_DIR-${XDG_DATA_HOME:-$HOME/.local/share}/opencode}` (the fallback applies only when `OPENCODE_DATA_DIR` is unset)
    - Amp: `${AMP_DATA_DIR:-~/.local/share/amp}`
    - Droid: `${DROID_SESSIONS_DIR:-~/.factory/sessions}`
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`

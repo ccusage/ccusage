@@ -10,7 +10,7 @@ ccusage detects supported data source files from conventional locations by defau
 | --------------------------------- | -------------- | ---------------------------------- |
 | `CLAUDE_CONFIG_DIR`               | Claude Code    | `~/.config/claude` and `~/.claude` |
 | `CODEX_HOME`                      | Codex          | `~/.codex`                         |
-| `OPENCODE_DATA_DIR`               | OpenCode       | `~/.local/share/opencode`          |
+| `OPENCODE_DATA_DIR`               | OpenCode       | `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` |
 | `AMP_DATA_DIR`                    | Amp            | `~/.local/share/amp`               |
 | `DROID_SESSIONS_DIR`              | Droid          | `~/.factory/sessions`              |
 | `CODEBUFF_DATA_DIR`               | Codebuff       | `~/.config/manicode`               |
