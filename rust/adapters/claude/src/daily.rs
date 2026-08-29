@@ -19,10 +19,10 @@ use crate::{
 };
 
 use super::{
-    advisor_usages_from_line, chunk_file_indexes_by_size, has_unsupported_null_field,
-    is_semver_prefix,
+    advisor_usages_from_line, chunk_file_indexes_by_size, daily_usage_dedupe_hash,
+    has_unsupported_null_field, is_semver_prefix,
     paths::{claude_paths, extract_project, usage_files},
-    sidechain_replay_dedupe_hash, usage_dedupe_hash,
+    sidechain_replay_dedupe_hash,
 };
 
 pub(super) fn load_daily_summaries_inner(
@@ -415,7 +415,7 @@ fn push_deduped_daily_entry(
 ) {
     let dedupe_lookup = entry.message_id.as_deref().map(|message_id| {
         let request_id = entry.request_id.as_deref();
-        let exact_hash = usage_dedupe_hash(
+        let exact_hash = daily_usage_dedupe_hash(
             message_id,
             request_id,
             entry.session_id.as_ref(),
