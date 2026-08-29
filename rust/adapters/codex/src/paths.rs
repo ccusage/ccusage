@@ -171,12 +171,7 @@ impl CodexFileEligibility {
 fn utc_path_date(millis: i64) -> Option<Date> {
     let timestamp = jiff::Timestamp::from_millisecond(millis).ok()?;
     let zoned = timestamp.to_zoned(JiffTimeZone::get("UTC").ok()?);
-    Date::new(
-        zoned.year(),
-        zoned.month(),
-        zoned.day(),
-    )
-    .ok()
+    Date::new(zoned.year(), zoned.month(), zoned.day()).ok()
 }
 
 fn file_modified_millis(path: &Path) -> Option<i64> {
