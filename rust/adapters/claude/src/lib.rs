@@ -227,6 +227,14 @@ fn usage_dedupe_hash(
     hasher.finish()
 }
 
+fn sidechain_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64 {
+    let mut hasher = FxHasher::default();
+    "sidechain-replay".hash(&mut hasher);
+    message_id.hash(&mut hasher);
+    session_id.hash(&mut hasher);
+    hasher.finish()
+}
+
 fn loaded_entry_session_id(entry: &LoadedEntry) -> &str {
     entry
         .data

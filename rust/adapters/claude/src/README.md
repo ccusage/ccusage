@@ -27,6 +27,9 @@ Sidechain entries:
 - ccusage keeps the parent entry and drops the replayed sidechain copy when at
   least one duplicate carries `isSidechain: true`. Distinct sidechain responses
   with their own message IDs are still counted.
+- Daily summary sidechain replay matching is scoped to the effective session ID
+  and does not require matching timestamps. The regular usage loader requires
+  matching timestamps.
 - This behavior fixes the overcounting reported in
   [#913](https://github.com/ccusage/ccusage/issues/913).
 - When `requestId` is missing, deduplication also uses the effective session ID
