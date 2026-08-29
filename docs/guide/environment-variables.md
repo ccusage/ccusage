@@ -6,24 +6,24 @@ ccusage supports several environment variables for configuration and customizati
 
 ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; the Copilot variable points at one explicit JSONL export file, and `GROK_HOME` accepts a single root only:
 
-| Variable                          | Agent          | Default                            |
-| --------------------------------- | -------------- | ---------------------------------- |
-| `CLAUDE_CONFIG_DIR`               | Claude Code    | `~/.config/claude` and `~/.claude` |
-| `CODEX_HOME`                      | Codex          | `~/.codex`                         |
+| Variable                          | Agent          | Default                                         |
+| --------------------------------- | -------------- | ----------------------------------------------- |
+| `CLAUDE_CONFIG_DIR`               | Claude Code    | `~/.config/claude` and `~/.claude`              |
+| `CODEX_HOME`                      | Codex          | `~/.codex`                                      |
 | `OPENCODE_DATA_DIR`               | OpenCode       | `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` |
-| `AMP_DATA_DIR`                    | Amp            | `~/.local/share/amp`               |
-| `DROID_SESSIONS_DIR`              | Droid          | `~/.factory/sessions`              |
-| `CODEBUFF_DATA_DIR`               | Codebuff       | `~/.config/manicode`               |
-| `HERMES_HOME`                     | Hermes Agent   | `~/.hermes`                        |
-| `PI_AGENT_DIR`                    | pi-agent       | `~/.pi/agent/sessions`             |
-| `GOOSE_PATH_ROOT`                 | Goose          | Standard Goose data roots          |
-| `OPENCLAW_DIR`                    | OpenClaw       | `~/.openclaw`                      |
-| `KILO_DATA_DIR`                   | Kilo           | `~/.local/share/kilo`              |
-| `KIMI_DATA_DIR`                   | Kimi           | `~/.kimi`, `~/.kimi-code`          |
-| `QWEN_DATA_DIR`                   | Qwen           | `~/.qwen`                          |
-| `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file             |
-| `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                    |
-| `GROK_HOME`                       | Grok Build CLI | `~/.grok`                          |
+| `AMP_DATA_DIR`                    | Amp            | `~/.local/share/amp`                            |
+| `DROID_SESSIONS_DIR`              | Droid          | `~/.factory/sessions`                           |
+| `CODEBUFF_DATA_DIR`               | Codebuff       | `~/.config/manicode`                            |
+| `HERMES_HOME`                     | Hermes Agent   | `~/.hermes`                                     |
+| `PI_AGENT_DIR`                    | pi-agent       | `~/.pi/agent/sessions`                          |
+| `GOOSE_PATH_ROOT`                 | Goose          | Standard Goose data roots                       |
+| `OPENCLAW_DIR`                    | OpenClaw       | `~/.openclaw`                                   |
+| `KILO_DATA_DIR`                   | Kilo           | `~/.local/share/kilo`                           |
+| `KIMI_DATA_DIR`                   | Kimi           | `~/.kimi`, `~/.kimi-code`                       |
+| `QWEN_DATA_DIR`                   | Qwen           | `~/.qwen`                                       |
+| `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file                          |
+| `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                                 |
+| `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                       |
 
 Example:
 

@@ -71,7 +71,7 @@ OpenCode supports subagent sessions. The session report displays:
 | Variable            | Description                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------ |
 | `OPENCODE_DATA_DIR` | Override the root directory, or comma-separated root directories, containing OpenCode data |
-| `XDG_DATA_HOME`     | Base directory for OpenCode data when `OPENCODE_DATA_DIR` is not set                      |
+| `XDG_DATA_HOME`     | Base directory for OpenCode data when `OPENCODE_DATA_DIR` is not set                       |
 | `LOG_LEVEL`         | Adjust verbosity (0 silent ... 5 trace)                                                    |
 
 ## Cost Calculation

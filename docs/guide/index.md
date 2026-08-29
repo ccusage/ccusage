@@ -72,26 +72,26 @@ Each data source page covers the details that only apply to that source, includi
 
 ccusage reads from local coding CLI data directories:
 
-| Agent          | ID         | Default data location                             |
-| -------------- | ---------- | ------------------------------------------------- |
-| Claude Code    | `claude`   | `~/.config/claude/projects/`, `~/.claude/`        |
-| Codex          | `codex`    | `${CODEX_HOME:-~/.codex}`                         |
+| Agent          | ID         | Default data location                                                |
+| -------------- | ---------- | -------------------------------------------------------------------- |
+| Claude Code    | `claude`   | `~/.config/claude/projects/`, `~/.claude/`                           |
+| Codex          | `codex`    | `${CODEX_HOME:-~/.codex}`                                            |
 | OpenCode       | `opencode` | `${OPENCODE_DATA_DIR-${XDG_DATA_HOME:-$HOME/.local/share}/opencode}` |
-| Amp            | `amp`      | `${AMP_DATA_DIR:-~/.local/share/amp}`             |
-| Droid          | `droid`    | `${DROID_SESSIONS_DIR:-~/.factory/sessions}`      |
-| Codebuff       | `codebuff` | `${CODEBUFF_DATA_DIR:-~/.config/manicode}`        |
-| Hermes Agent   | `hermes`   | `${HERMES_HOME:-~/.hermes}/state.db`              |
-| pi-agent       | `pi`       | `${PI_AGENT_DIR:-~/.pi/agent/sessions}`           |
-| Goose          | `goose`    | Standard Goose data roots or `GOOSE_PATH_ROOT`    |
-| OpenClaw       | `openclaw` | `${OPENCLAW_DIR:-~/.openclaw}`                    |
-| Kilo           | `kilo`     | `${KILO_DATA_DIR:-~/.local/share/kilo}`           |
-| Kimi           | `kimi`     | `${KIMI_DATA_DIR:-~/.kimi}` (also `~/.kimi-code`) |
-| Qwen           | `qwen`     | `${QWEN_DATA_DIR:-~/.qwen}`                       |
-| Copilot CLI    | `copilot`  | `~/.copilot/otel/*.jsonl`                         |
-| Gemini CLI     | `gemini`   | `${GEMINI_DATA_DIR:-~/.gemini/tmp}`               |
-| Grok Build CLI | `grok`     | `${GROK_HOME:-~/.grok}`                           |
+| Amp            | `amp`      | `${AMP_DATA_DIR:-~/.local/share/amp}`                                |
+| Droid          | `droid`    | `${DROID_SESSIONS_DIR:-~/.factory/sessions}`                         |
+| Codebuff       | `codebuff` | `${CODEBUFF_DATA_DIR:-~/.config/manicode}`                           |
+| Hermes Agent   | `hermes`   | `${HERMES_HOME:-~/.hermes}/state.db`                                 |
+| pi-agent       | `pi`       | `${PI_AGENT_DIR:-~/.pi/agent/sessions}`                              |
+| Goose          | `goose`    | Standard Goose data roots or `GOOSE_PATH_ROOT`                       |
+| OpenClaw       | `openclaw` | `${OPENCLAW_DIR:-~/.openclaw}`                                       |
+| Kilo           | `kilo`     | `${KILO_DATA_DIR:-~/.local/share/kilo}`                              |
+| Kimi           | `kimi`     | `${KIMI_DATA_DIR:-~/.kimi}` (also `~/.kimi-code`)                    |
+| Qwen           | `qwen`     | `${QWEN_DATA_DIR:-~/.qwen}`                                          |
+| Copilot CLI    | `copilot`  | `~/.copilot/otel/*.jsonl`                                            |
+| Gemini CLI     | `gemini`   | `${GEMINI_DATA_DIR:-~/.gemini/tmp}`                                  |
+| Grok Build CLI | `grok`     | `${GROK_HOME:-~/.grok}`                                              |
 
-For OpenCode, the `OPENCODE_DATA_DIR` fallback applies only when the variable is unset. A set-but-empty value disables default-path discovery.
+For OpenCode, `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` is the default-path fallback. When set, `OPENCODE_DATA_DIR` overrides that path; an explicitly empty value disables fallback discovery.
 
 The tool automatically detects available data and aggregates all supported coding CLIs by default.
 Source-specific environment variables that support multiple roots can contain comma-separated directories, which lets unified reports combine current profiles and archives.
