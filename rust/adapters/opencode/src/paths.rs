@@ -22,8 +22,11 @@ pub(super) fn paths() -> Result<Vec<PathBuf>> {
         return Ok(paths);
     }
 
-    let data_home = match env::var_os(XDG_DATA_HOME_ENV).filter(|path| !path.is_empty()) {
-        Some(path) => PathBuf::from(path),
+    let data_home = match env::var_os(XDG_DATA_HOME_ENV)
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+    {
+        Some(path) => path,
         None => {
             let home = crate::home::home_dir()
                 .ok_or_else(|| crate::cli_error("home directory is not set"))?;
@@ -112,6 +115,19 @@ mod tests {
     }
 
     #[test]
+    fn falls_back_to_home_data_directory_when_xdg_data_home_is_unset() {
+        let fixture = fs_fixture!({
+            "home/.local/share/opencode/opencode.db": "",
+        });
+        let _guard = isolated_env(None, None, Some(fixture.path("home").into_os_string()));
+
+        assert_eq!(
+            paths().unwrap(),
+            vec![fixture.path("home/.local/share/opencode")]
+        );
+    }
+
+    #[test]
     fn falls_back_to_home_data_directory_when_xdg_data_home_is_empty() {
         let fixture = fs_fixture!({
             "home/.local/share/opencode/opencode.db": "",
@@ -119,6 +135,23 @@ mod tests {
         let _guard = isolated_env(
             None,
             Some(OsString::new()),
+            Some(fixture.path("home").into_os_string()),
+        );
+
+        assert_eq!(
+            paths().unwrap(),
+            vec![fixture.path("home/.local/share/opencode")]
+        );
+    }
+
+    #[test]
+    fn falls_back_to_home_data_directory_when_xdg_data_home_is_relative() {
+        let fixture = fs_fixture!({
+            "home/.local/share/opencode/opencode.db": "",
+        });
+        let _guard = isolated_env(
+            None,
+            Some(OsString::from("relative-xdg-data-home")),
             Some(fixture.path("home").into_os_string()),
         );
 
