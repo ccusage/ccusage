@@ -436,13 +436,9 @@ fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePa
     };
     if parents_by_id
         .values()
-        .filter(|parent| parent.is_none())
-        .count()
-        != 1
-        || parents_by_id
-            .values()
-            .flatten()
-            .any(|parent| !parents_by_id.contains_key(parent))
+        .flatten()
+        .any(|parent| !parents_by_id.contains_key(parent))
+        || has_cyclic_entry_links(&parents_by_id)
     {
         return PiReplayUsagePath::Invalid;
     }
@@ -473,6 +469,32 @@ fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePa
     }
     active_usage.reverse();
     PiReplayUsagePath::Active(active_usage)
+}
+
+fn has_cyclic_entry_links(parents_by_id: &HashMap<String, Option<String>>) -> bool {
+    let mut validated = HashSet::new();
+    for start in parents_by_id.keys() {
+        if validated.contains(start) {
+            continue;
+        }
+
+        let mut path = HashSet::new();
+        let mut entry_id = start.clone();
+        while !validated.contains(&entry_id) {
+            if !path.insert(entry_id.clone()) {
+                return true;
+            }
+            let Some(parent_id) = parents_by_id.get(&entry_id) else {
+                return true;
+            };
+            let Some(parent_id) = parent_id else {
+                break;
+            };
+            entry_id = parent_id.clone();
+        }
+        validated.extend(path);
+    }
+    false
 }
 
 fn replay_billed_cost_bits(mode: CostMode, cost: f64) -> Option<u64> {

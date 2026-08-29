@@ -553,6 +553,75 @@ mod tests {
     }
 
     #[test]
+    fn skips_copied_branch_when_parent_has_multiple_disconnected_roots() {
+        let fixture = Fixture::new();
+        let parent = fixture.write_file(
+            "sessions/project-a/root.jsonl",
+            [
+                session_line("root", "2026-01-01T00:00:00.000Z", None),
+                linked_usage_line("unrelated-root", None, "2026-01-02T09:00:00.000Z", 50),
+                linked_usage_line("active-root", None, "2026-01-02T10:00:00.000Z", 100),
+                linked_usage_line(
+                    "active-leaf",
+                    Some("active-root"),
+                    "2026-01-02T11:00:00.000Z",
+                    200,
+                ),
+            ]
+            .join("\n"),
+        );
+        let _ = fixture.write_file(
+            "sessions/project-a/child.jsonl",
+            [
+                session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
+                linked_usage_line("copy-root", None, "2026-01-02T10:00:00.000Z", 100),
+                linked_usage_line(
+                    "copy-leaf",
+                    Some("copy-root"),
+                    "2026-01-02T11:00:00.000Z",
+                    200,
+                ),
+                linked_usage_line(
+                    "child-only",
+                    Some("copy-leaf"),
+                    "2026-01-03T01:00:00.000Z",
+                    300,
+                ),
+            ]
+            .join("\n"),
+        );
+
+        for single_thread in [true, false] {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread,
+                ..SharedArgs::default()
+            };
+            let entries = load_entries_from_paths(
+                &shared,
+                vec![fixture.path("sessions")],
+                None,
+                PiLoadScope::Default,
+            )
+            .unwrap();
+
+            assert_eq!(entries.len(), 4, "single_thread={single_thread}");
+            assert!(entries.iter().any(|entry| {
+                entry.session_id.as_ref() == "root" && entry.data.message.usage.input_tokens == 50
+            }));
+            let child_entries = entries
+                .iter()
+                .filter(|entry| entry.session_id.as_ref() == "child")
+                .collect::<Vec<_>>();
+            assert_eq!(child_entries.len(), 1, "single_thread={single_thread}");
+            assert_eq!(
+                child_entries[0].data.message.usage.input_tokens, 300,
+                "single_thread={single_thread}"
+            );
+        }
+    }
+
+    #[test]
     fn fails_open_for_missing_malformed_and_unrelated_same_token_sessions() {
         let fixture = Fixture::new();
         let missing_parent = fixture.path("sessions/project-a/missing.jsonl");
