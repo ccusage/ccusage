@@ -1,11 +1,13 @@
 use std::{
     ffi::OsString,
+    fs::{File, FileTimes},
+    path::Path,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use serde_json::json;
@@ -523,6 +525,47 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
     let shared = fixture_shared("20990201", "20990202");
 
     assert_daily_family_and_session_sections_match_standalone(&shared);
+}
+
+#[test]
+fn unified_report_filters_codex_paths_before_loading_historical_rows() {
+    let resumed_usage = codex_usage_line("2026-03-15T08:01:00.000Z", "gpt-5", 1_000);
+    let historical_usage = codex_usage_line("2026-03-15T08:02:00.000Z", "gpt-5", 9_999);
+    let fixture = fs_fixture!({
+        "codex/sessions/2025/01/01/resumed.jsonl": &resumed_usage,
+        "codex/sessions/2025/01/02/historical.jsonl": &historical_usage,
+    });
+    set_file_modified(
+        &fixture.path("codex/sessions/2025/01/01/resumed.jsonl"),
+        "2026-03-15T08:01:00.000Z",
+    );
+    set_file_modified(
+        &fixture.path("codex/sessions/2025/01/02/historical.jsonl"),
+        "2025-01-02T08:01:00.000Z",
+    );
+    let _env = isolated_agent_env(
+        &fixture,
+        "CODEX_HOME",
+        fixture.path("codex").into_os_string(),
+    );
+    let shared = fixture_shared("20260315", "20260315");
+
+    let result = load_rows(AgentReportKind::Daily, &shared).unwrap();
+
+    assert_eq!(result.rows.len(), 1);
+    assert_eq!(result.rows[0].period, "2026-03-15");
+    assert_eq!(result.rows[0].total_tokens, 1_300);
+    assert_eq!(result.detected_agents, vec!["codex"]);
+}
+
+fn set_file_modified(path: &Path, timestamp: &str) {
+    let milliseconds = u64::try_from(parse_ts_timestamp(timestamp).unwrap().as_millis()).unwrap();
+    File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)))
+        .unwrap();
 }
 
 fn fixture_shared(since: &str, until: &str) -> SharedArgs {

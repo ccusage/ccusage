@@ -1,9 +1,20 @@
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
-use crate::{Result, cli_error, fast::FxHashSet, home};
+#[cfg(test)]
+use std::{
+    fs::{File, FileTimes},
+    time::Duration,
+};
+
+use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
+
+use crate::{
+    Result, cli::SharedArgs, cli_error, date_range_bounds_ms, fast::FxHashSet, home, parse_tz,
+};
 
 pub(super) fn codex_usage_sources() -> Result<Vec<CodexUsageSource>> {
     Ok(codex_usage_sources_from_homes(codex_home_paths()?))
@@ -96,6 +107,122 @@ pub(super) fn collect_deduped_codex_usage_files(
     groups
 }
 
+pub(super) fn filter_codex_usage_files(
+    sessions_dir: &Path,
+    files: &[PathBuf],
+    shared: &SharedArgs,
+) -> Vec<PathBuf> {
+    let Some(eligibility) = CodexFileEligibility::from_shared(shared) else {
+        return files.to_vec();
+    };
+    files
+        .iter()
+        .filter(|file| {
+            eligibility.contains(
+                codex_file_date(sessions_dir, file),
+                file_modified_millis(file),
+            )
+        })
+        .cloned()
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+struct CodexFileEligibility {
+    since_date: Option<Date>,
+    until_path_date: Option<Date>,
+    since_millis: Option<i64>,
+}
+
+impl CodexFileEligibility {
+    fn from_shared(shared: &SharedArgs) -> Option<Self> {
+        let timezone =
+            parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
+        let since_date = shared.since.as_deref().and_then(parse_compact_date);
+        let until_date = shared.until.as_deref().and_then(parse_compact_date);
+        let (since_millis, until_millis) = date_range_bounds_ms(
+            shared.since.as_deref(),
+            shared.until.as_deref(),
+            timezone.as_ref(),
+        );
+        if since_date.is_none() && until_date.is_none() {
+            return None;
+        }
+        Some(Self {
+            since_date,
+            until_path_date: until_millis.and_then(utc_path_date),
+            since_millis,
+        })
+    }
+
+    fn contains(self, start_date: Option<Date>, modified_millis: Option<i64>) -> bool {
+        self.until_path_date
+            .is_none_or(|until| start_date.is_none_or(|date| date <= until))
+            && self.since_date.is_none_or(|since| {
+                start_date.is_none_or(|date| date >= since)
+                    || modified_millis.is_none_or(|modified| {
+                        self.since_millis
+                            .is_none_or(|since_millis| modified >= since_millis)
+                    })
+            })
+    }
+}
+
+fn utc_path_date(millis: i64) -> Option<Date> {
+    let timestamp = jiff::Timestamp::from_millisecond(millis).ok()?;
+    let zoned = timestamp.to_zoned(JiffTimeZone::get("UTC").ok()?);
+    Date::new(
+        i16::from(zoned.year()),
+        i8::from(zoned.month()),
+        i8::from(zoned.day()),
+    )
+    .ok()
+}
+
+fn file_modified_millis(path: &Path) -> Option<i64> {
+    fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_millis()
+        .try_into()
+        .ok()
+}
+
+fn codex_file_date(sessions_dir: &Path, file: &Path) -> Option<Date> {
+    let relative = file.strip_prefix(sessions_dir).ok()?;
+    let components = relative
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .collect::<Vec<_>>();
+    components.windows(3).find_map(|parts| {
+        let year = parse_date_part(parts[0], 4)?;
+        let month = parse_date_part(parts[1], 2)?;
+        let day = parse_date_part(parts[2], 2)?;
+        Date::new(year as i16, month as i8, day as i8).ok()
+    })
+}
+
+fn parse_compact_date(value: &str) -> Option<Date> {
+    if value.len() != 8 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let year = parse_date_part(&value[..4], 4)?;
+    let month = parse_date_part(&value[4..6], 2)?;
+    let day = parse_date_part(&value[6..], 2)?;
+    Date::new(year as i16, month as i8, day as i8).ok()
+}
+
+fn parse_date_part(value: &str, length: usize) -> Option<u16> {
+    (value.len() == length && value.bytes().all(|byte| byte.is_ascii_digit())).then(|| {
+        value
+            .bytes()
+            .fold(0_u16, |number, byte| number * 10 + u16::from(byte - b'0'))
+    })
+}
+
 fn codex_usage_file_key(source: &CodexUsageSource, file: &Path) -> (PathBuf, PathBuf) {
     let relative = file.strip_prefix(&source.dir).unwrap_or(file).to_path_buf();
     (source.dedupe_scope.clone(), relative)
@@ -113,6 +240,17 @@ pub(super) fn codex_home_paths() -> Result<Vec<PathBuf>> {
 
     let home = home::home_dir().ok_or_else(|| cli_error("home directory is not set"))?;
     Ok(vec![home.join(".codex")])
+}
+
+#[cfg(test)]
+pub(super) fn set_file_modified(path: &Path, timestamp: crate::TimestampMs) {
+    let milliseconds = u64::try_from(timestamp.as_millis()).unwrap();
+    File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)))
+        .unwrap();
 }
 
 #[cfg(test)]
@@ -247,6 +385,52 @@ mod tests {
         assert_eq!(
             codex_usage_file_key(&source, &source.dir.join(&file_name)),
             (PathBuf::from("/codex"), file_name)
+        );
+    }
+
+    #[test]
+    fn keeps_a_resumed_session_that_started_more_than_a_month_before_since() {
+        let fixture = Fixture::new();
+        let sessions_dir = fixture.create_dir_all("codex/sessions");
+        let historical = fixture.write_file("codex/sessions/2025/01/01/historical.jsonl", "");
+        let resumed = fixture.write_file("codex/sessions/2026/01/01/resumed.jsonl", "");
+        let current = fixture.write_file("codex/sessions/2026/03/15/current.jsonl", "");
+        set_file_modified(
+            &historical,
+            crate::parse_ts_timestamp("2025-01-01T00:00:00.000Z").unwrap(),
+        );
+        set_file_modified(
+            &resumed,
+            crate::parse_ts_timestamp("2026-03-15T12:00:00.000Z").unwrap(),
+        );
+        let shared = SharedArgs {
+            since: Some("20260315".to_string()),
+            until: Some("20260315".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let filtered = filter_codex_usage_files(
+            &sessions_dir,
+            &[historical, resumed.clone(), current.clone()],
+            &shared,
+        );
+
+        assert_eq!(filtered, vec![resumed, current]);
+    }
+
+    #[test]
+    fn keeps_undated_files_when_date_filter_cannot_prove_their_range() {
+        let fixture = Fixture::new();
+        let sessions_dir = fixture.create_dir_all("codex/sessions");
+        let file = fixture.write_file("codex/sessions/custom.jsonl", "");
+        let shared = SharedArgs {
+            since: Some("20260131".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_eq!(
+            filter_codex_usage_files(&sessions_dir, std::slice::from_ref(&file), &shared),
+            vec![file]
         );
     }
 }

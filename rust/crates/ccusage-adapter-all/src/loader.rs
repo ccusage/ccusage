@@ -640,8 +640,7 @@ fn load_codex_rows(
         });
     }
 
-    let mut events = codex::load_codex_events(shared)?;
-    let detected = !events.is_empty();
+    let (mut events, detected) = codex::load_codex_events_with_detection(shared)?;
     codex::filter_events_by_date(&mut events, shared)?;
     let groups = codex::aggregate_events(&events, kind, shared.timezone.as_deref())?;
     let speed = codex::resolve_codex_speed(CodexSpeed::Auto);

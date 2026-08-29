@@ -75,21 +75,41 @@ fn load_groups_from_sources(
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let file_groups = paths::collect_deduped_codex_usage_files(sources);
-    let replay_plan = CodexReplayPlan::new(
-        file_groups
-            .iter()
-            .map(|group| (group.dir.as_path(), group.files.as_slice())),
-        shared.single_thread,
-    );
+    let files_by_group = file_groups
+        .iter()
+        .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, shared))
+        .collect::<Vec<_>>();
+    let replay_plan = if shared.since.is_some() || shared.until.is_some() {
+        CodexReplayPlan::for_bounded_files(
+            file_groups
+                .iter()
+                .zip(&files_by_group)
+                .map(|(group, files)| (group.dir.as_path(), files.as_slice())),
+            file_groups
+                .iter()
+                .map(|group| (group.dir.as_path(), group.files.as_slice())),
+            shared.single_thread,
+        )
+    } else {
+        CodexReplayPlan::new(
+            file_groups
+                .iter()
+                .map(|group| (group.dir.as_path(), group.files.as_slice())),
+            shared.single_thread,
+        )
+    };
     let mut groups = BTreeMap::new();
     let seen = create_dedupe_shards();
-    for group in &file_groups {
+    for (group, files) in file_groups.iter().zip(&files_by_group) {
+        if files.is_empty() {
+            continue;
+        }
         merge_groups(
             &mut groups,
             aggregate_files_with_dedupe(
                 &CodexAggregateRun {
                     sessions_dir: &group.dir,
-                    files: &group.files,
+                    files: &files,
                     shared,
                     kind,
                     replay_plan: &replay_plan,
@@ -107,9 +127,17 @@ pub(super) fn load_groups_from_directory(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    let files = paths::collect_codex_usage_files(sessions_dir);
-    let replay_plan =
-        CodexReplayPlan::new([(sessions_dir, files.as_slice())], shared.single_thread);
+    let all_files = paths::collect_codex_usage_files(sessions_dir);
+    let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
+    let replay_plan = if shared.since.is_some() || shared.until.is_some() {
+        CodexReplayPlan::for_bounded_files(
+            [(sessions_dir, files.as_slice())],
+            [(sessions_dir, all_files.as_slice())],
+            shared.single_thread,
+        )
+    } else {
+        CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
+    };
     let run = CodexAggregateRun {
         sessions_dir,
         files: &files,
@@ -678,7 +706,7 @@ mod tests {
 
     use crate::{
         CodexModelUsage, PricingMap, cli::CodexSpeed, model_aliases::set_model_aliases_for_tests,
-        paths::CodexUsageSource,
+        paths::CodexUsageSource, replay,
     };
 
     #[test]
@@ -745,6 +773,153 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn skips_historical_files_before_parsing_but_keeps_long_running_sessions() {
+        let usage_line = |timestamp: &str, input_tokens: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "model": "gpt-5",
+                        "last_token_usage": {
+                            "input_tokens": input_tokens,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 1,
+                            "total_tokens": input_tokens + 1,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        };
+        let historical = [
+            json!({
+                "timestamp": "2025-01-01T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {"id": "historical"},
+            })
+            .to_string(),
+            usage_line("2026-03-15T08:01:00.000Z", 999),
+        ]
+        .join("\n");
+        let long_running = [
+            json!({
+                "timestamp": "2026-01-01T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {"id": "long-running"},
+            })
+            .to_string(),
+            usage_line("2026-01-01T08:01:00.000Z", 10),
+            usage_line("2026-03-15T08:01:00.000Z", 100),
+        ]
+        .join("\n");
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/historical.jsonl": &historical,
+            "sessions/2026/01/01/long-running.jsonl": &long_running,
+        });
+        let historical_path = fixture.path("sessions/2025/01/01/historical.jsonl");
+        let long_running_path = fixture.path("sessions/2026/01/01/long-running.jsonl");
+        crate::paths::set_file_modified(
+            &historical_path,
+            parse_ts_timestamp("2025-01-01T08:01:00.000Z").unwrap(),
+        );
+        crate::paths::set_file_modified(
+            &long_running_path,
+            parse_ts_timestamp("2026-03-15T08:01:00.000Z").unwrap(),
+        );
+        let shared = SharedArgs {
+            since: Some("20260315".to_string()),
+            until: Some("20260315".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        for single_thread in [true, false] {
+            let _ = replay::take_observed_file_reads();
+            let bounded = load_groups_from_directory(
+                &fixture.path("sessions"),
+                &SharedArgs {
+                    single_thread,
+                    ..shared.clone()
+                },
+                AgentReportKind::Daily,
+            )
+            .unwrap();
+            let group = &bounded["2026-03-15"];
+            assert_eq!(group.input_tokens, 100);
+            assert_eq!(group.output_tokens, 1);
+            assert_eq!(group.total_tokens, 101);
+            if single_thread {
+                let reads = replay::take_observed_file_reads();
+                assert!(reads.contains(&long_running_path));
+                assert!(!reads.contains(&historical_path));
+            }
+
+            let unbounded = load_groups_from_directory(
+                &fixture.path("sessions"),
+                &SharedArgs {
+                    single_thread,
+                    ..SharedArgs::default()
+                },
+                AgentReportKind::Daily,
+            )
+            .unwrap();
+            assert_eq!(unbounded["2026-03-15"].input_tokens, 1_099);
+        }
+    }
+
+    #[test]
+    fn retains_next_utc_path_day_for_local_until_boundary() {
+        let late_utc = [
+            json!({
+                "timestamp": "2026-03-16T06:29:00.000Z",
+                "type": "session_meta",
+                "payload": {"id": "late-utc"},
+            })
+            .to_string(),
+            json!({
+                "timestamp": "2026-03-16T06:30:00.000Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "model": "gpt-5",
+                        "last_token_usage": {
+                            "input_tokens": 100,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 1,
+                            "total_tokens": 101,
+                        },
+                    },
+                },
+            })
+            .to_string(),
+        ]
+        .join("\n");
+        let fixture = fs_fixture!({
+            "sessions/2026/03/16/late-utc.jsonl": &late_utc,
+        });
+        let late_utc_path = fixture.path("sessions/2026/03/16/late-utc.jsonl");
+        let shared = SharedArgs {
+            since: Some("20260315".to_string()),
+            until: Some("20260315".to_string()),
+            timezone: Some("America/Los_Angeles".to_string()),
+            single_thread: true,
+            ..SharedArgs::default()
+        };
+
+        let _ = replay::take_observed_file_reads();
+        let groups =
+            load_groups_from_directory(&fixture.path("sessions"), &shared, AgentReportKind::Daily)
+                .unwrap();
+
+        assert_eq!(groups["2026-03-15"].input_tokens, 100);
+        assert_eq!(groups["2026-03-15"].total_tokens, 101);
+        assert!(replay::take_observed_file_reads().contains(&late_utc_path));
     }
 
     #[test]
