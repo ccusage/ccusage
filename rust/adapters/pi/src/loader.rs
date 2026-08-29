@@ -227,28 +227,18 @@ impl PiReplayPlan {
             if !has_valid_lineage(child_index, &parent_by_child, &invalid_lineage) {
                 continue;
             }
-            let Some(child_usage) = loaded
-                .get(child_index)
-                .and_then(|data| data.as_ref())
-                .map(|data| data.usage.as_slice())
-            else {
-                continue;
-            };
-            let Some(parent_usage) = loaded
+            let Some(parent) = loaded
                 .get(replay.parent_index)
                 .and_then(|data| data.as_ref())
-                .map(|data| data.usage.as_slice())
             else {
                 continue;
             };
-            let parent_prefix = parent_usage
-                .iter()
-                .take_while(|entry| entry.timestamp <= replay.fork_timestamp);
-            let matched = child_usage
-                .iter()
-                .zip(parent_prefix)
-                .take_while(|(child, parent)| child == parent)
-                .count();
+            let Some(child) = loaded.get(child_index).and_then(|data| data.as_ref()) else {
+                continue;
+            };
+            let Some(matched) = parent.matching_replay_prefix(child, replay.fork_timestamp) else {
+                continue;
+            };
             if matched > 0 {
                 skip_by_file.insert(child_index, matched);
             }
@@ -385,6 +375,27 @@ mod tests {
         )
     }
 
+    fn linked_usage_line(id: &str, parent_id: Option<&str>, timestamp: &str, input: u64) -> String {
+        let mut line = json!({
+            "type": "message",
+            "id": id,
+            "timestamp": timestamp,
+            "message": {
+                "role": "assistant",
+                "model": "gpt-5",
+                "usage": {
+                    "input": input,
+                    "output": 10,
+                    "cacheRead": 20,
+                    "cacheWrite": 3,
+                    "totalTokens": input + 33,
+                },
+            },
+        });
+        line["parentId"] = parent_id.map_or(serde_json::Value::Null, |parent_id| json!(parent_id));
+        line.to_string()
+    }
+
     fn usage_line_with_display_cost(timestamp: &str, display_cost: f64) -> String {
         json!({
             "type": "message",
@@ -475,6 +486,67 @@ mod tests {
                     .usage
                     .cache_creation_input_tokens,
                 999,
+                "single_thread={single_thread}"
+            );
+        }
+    }
+
+    #[test]
+    fn skips_the_copied_active_parent_branch_after_an_abandoned_sibling() {
+        let fixture = Fixture::new();
+        let parent = fixture.write_file(
+            "sessions/project-a/root.jsonl",
+            [
+                session_line("root", "2026-01-01T00:00:00.000Z", None),
+                linked_usage_line("a", None, "2026-01-02T10:00:00.000Z", 100),
+                linked_usage_line("x", Some("a"), "2026-01-02T11:00:00.000Z", 200),
+                linked_usage_line("y", Some("a"), "2026-01-02T12:00:00.000Z", 300),
+                linked_usage_line("z", Some("y"), "2026-01-02T13:00:00.000Z", 400),
+            ]
+            .join("\n"),
+        );
+        let _ = fixture.write_file(
+            "sessions/project-a/child.jsonl",
+            [
+                session_line("child", "2026-01-03T00:00:00.000Z", Some(&parent)),
+                linked_usage_line("copy-a", None, "2026-01-02T10:00:00.000Z", 100),
+                linked_usage_line("copy-y", Some("copy-a"), "2026-01-02T12:00:00.000Z", 300),
+                linked_usage_line("copy-z", Some("copy-y"), "2026-01-02T13:00:00.000Z", 400),
+                linked_usage_line(
+                    "child-only",
+                    Some("copy-z"),
+                    "2026-01-03T01:00:00.000Z",
+                    500,
+                ),
+            ]
+            .join("\n"),
+        );
+
+        for single_thread in [true, false] {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread,
+                ..SharedArgs::default()
+            };
+            let entries = load_entries_from_paths(
+                &shared,
+                vec![fixture.path("sessions")],
+                None,
+                PiLoadScope::Default,
+            )
+            .unwrap();
+
+            assert_eq!(entries.len(), 5, "single_thread={single_thread}");
+            assert!(entries.iter().any(|entry| {
+                entry.session_id.as_ref() == "root" && entry.data.message.usage.input_tokens == 200
+            }));
+            let child_entries = entries
+                .iter()
+                .filter(|entry| entry.session_id.as_ref() == "child")
+                .collect::<Vec<_>>();
+            assert_eq!(child_entries.len(), 1, "single_thread={single_thread}");
+            assert_eq!(
+                child_entries[0].data.message.usage.input_tokens, 500,
                 "single_thread={single_thread}"
             );
         }

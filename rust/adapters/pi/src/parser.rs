@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -28,7 +29,24 @@ struct PiLine {
         deserialize_with = "jsonl::non_empty_string"
     )]
     parent_session: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    id: Option<String>,
     message: Option<PiMessage>,
+}
+
+/// The link fields carried by every tree-format pi session entry.
+#[derive(Debug, Deserialize)]
+struct PiEntryLink {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    r#type: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    id: Option<String>,
+    #[serde(
+        rename = "parentId",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    parent_id: Option<String>,
 }
 
 /// The pi `message` block carried by assistant records.
@@ -76,28 +94,66 @@ struct PiCost {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct PiSessionHeader {
-    pub(super) parent_session: Option<PathBuf>,
-    pub(super) parent_session_is_malformed: bool,
-    pub(super) timestamp: Option<crate::TimestampMs>,
+pub(crate) struct PiSessionHeader {
+    pub(crate) parent_session: Option<PathBuf>,
+    pub(crate) parent_session_is_malformed: bool,
+    pub(crate) timestamp: Option<crate::TimestampMs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct PiUsageSignature {
-    pub(super) timestamp: crate::TimestampMs,
-    pub(super) model: Option<String>,
-    pub(super) input_tokens: u64,
-    pub(super) output_tokens: u64,
-    pub(super) cache_creation_input_tokens: u64,
-    pub(super) cache_read_input_tokens: u64,
-    pub(super) effective_total_tokens: u64,
-    pub(super) billed_cost_bits: Option<u64>,
+struct PiUsageSignature {
+    timestamp: crate::TimestampMs,
+    model: Option<String>,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_creation_input_tokens: u64,
+    cache_read_input_tokens: u64,
+    effective_total_tokens: u64,
+    billed_cost_bits: Option<u64>,
 }
 
-pub(super) struct PiSessionData {
-    pub(super) header: Option<PiSessionHeader>,
-    pub(super) usage: Vec<PiUsageSignature>,
-    pub(super) entries: Vec<LoadedEntry>,
+struct PiUsageRecord {
+    signature: PiUsageSignature,
+    entry_id: Option<String>,
+}
+
+enum PiReplayUsagePath {
+    Linear,
+    Active(Vec<usize>),
+    Invalid,
+}
+
+pub(crate) struct PiSessionData {
+    pub(crate) header: Option<PiSessionHeader>,
+    usage: Vec<PiUsageRecord>,
+    replay_usage_path: PiReplayUsagePath,
+    pub(crate) entries: Vec<LoadedEntry>,
+}
+
+impl PiSessionData {
+    pub(crate) fn matching_replay_prefix(
+        &self,
+        child: &Self,
+        fork_timestamp: crate::TimestampMs,
+    ) -> Option<usize> {
+        if matches!(&child.replay_usage_path, PiReplayUsagePath::Invalid) {
+            return None;
+        }
+
+        match &self.replay_usage_path {
+            PiReplayUsagePath::Linear => Some(matching_replay_prefix(
+                child.usage.iter().map(|usage| &usage.signature),
+                self.usage.iter().map(|usage| &usage.signature),
+                fork_timestamp,
+            )),
+            PiReplayUsagePath::Active(indices) => Some(matching_replay_prefix(
+                child.usage.iter().map(|usage| &usage.signature),
+                indices.iter().map(|&index| &self.usage[index].signature),
+                fork_timestamp,
+            )),
+            PiReplayUsagePath::Invalid => None,
+        }
+    }
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -111,7 +167,7 @@ pub fn read_session_file(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn read_session_file_for_store(
+fn read_session_file_for_store(
     path: &Path,
     store_root: &Path,
     tz: Option<&JiffTimeZone>,
@@ -122,7 +178,7 @@ pub(super) fn read_session_file_for_store(
     Ok(read_session_file_data_for_store(path, store_root, tz, mode, pricing, store_name)?.entries)
 }
 
-pub(super) fn read_session_file_data(
+pub(crate) fn read_session_file_data(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
@@ -131,7 +187,7 @@ pub(super) fn read_session_file_data(
     read_session_file_data_with_context(path, tz, mode, pricing, PiStoreContext::Default)
 }
 
-pub(super) fn read_session_file_data_for_store(
+pub(crate) fn read_session_file_data_for_store(
     path: &Path,
     store_root: &Path,
     tz: Option<&JiffTimeZone>,
@@ -231,7 +287,7 @@ fn read_session_file_data_with_context(
     // `message` object, so require both substrings before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""usage""#, br#""message""#]);
     let mut entries = Vec::new();
-    let mut usage_signatures = Vec::new();
+    let mut usage_records = Vec::new();
 
     for record in jsonl::records::<PiLine>(&content, Some(&prefilter)) {
         if !is_pi_message_usage(&record) {
@@ -279,16 +335,19 @@ fn read_session_file_data_with_context(
             mode,
             pricing,
         );
-        usage_signatures.push(PiUsageSignature {
-            timestamp,
-            model: raw_model.clone(),
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-            cache_creation_input_tokens: usage.cache_creation_input_tokens,
-            cache_read_input_tokens: usage.cache_read_input_tokens,
-            effective_total_tokens: crate::total_usage_tokens(usage)
-                .saturating_add(extra_total_tokens),
-            billed_cost_bits: replay_billed_cost_bits(mode, cost),
+        usage_records.push(PiUsageRecord {
+            signature: PiUsageSignature {
+                timestamp,
+                model: raw_model.clone(),
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+                cache_creation_input_tokens: usage.cache_creation_input_tokens,
+                cache_read_input_tokens: usage.cache_read_input_tokens,
+                effective_total_tokens: crate::total_usage_tokens(usage)
+                    .saturating_add(extra_total_tokens),
+                billed_cost_bits: replay_billed_cost_bits(mode, cost),
+            },
+            entry_id: record.id.clone(),
         });
         let missing_pricing_model = context.missing_pricing_model(
             raw_model.as_deref(),
@@ -330,9 +389,90 @@ fn read_session_file_data_with_context(
     }
     Ok(PiSessionData {
         header,
-        usage: usage_signatures,
+        replay_usage_path: replay_usage_path(&content, &usage_records),
+        usage: usage_records,
         entries,
     })
+}
+
+fn matching_replay_prefix<'a>(
+    child_usage: impl Iterator<Item = &'a PiUsageSignature>,
+    parent_usage: impl Iterator<Item = &'a PiUsageSignature>,
+    fork_timestamp: crate::TimestampMs,
+) -> usize {
+    child_usage
+        .zip(parent_usage.take_while(|usage| usage.timestamp <= fork_timestamp))
+        .take_while(|(child, parent)| child == parent)
+        .count()
+}
+
+fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePath {
+    let links = jsonl::records::<PiEntryLink>(content, None)
+        .filter(|link| link.r#type.as_deref() != Some("session"))
+        .collect::<Vec<_>>();
+    if links
+        .iter()
+        .all(|link| link.id.is_none() && link.parent_id.is_none())
+    {
+        // Version 1 sessions predate entry links, so their physical order is
+        // the only available linear history.
+        return PiReplayUsagePath::Linear;
+    }
+
+    let mut parents_by_id = HashMap::new();
+    let mut leaf_id = None;
+    for link in links {
+        // A partially linked session cannot identify an active branch safely.
+        let Some(id) = link.id else {
+            return PiReplayUsagePath::Invalid;
+        };
+        if parents_by_id.insert(id.clone(), link.parent_id).is_some() {
+            return PiReplayUsagePath::Invalid;
+        }
+        leaf_id = Some(id);
+    }
+    let Some(mut entry_id) = leaf_id else {
+        return PiReplayUsagePath::Linear;
+    };
+    if parents_by_id
+        .values()
+        .filter(|parent| parent.is_none())
+        .count()
+        != 1
+        || parents_by_id
+            .values()
+            .flatten()
+            .any(|parent| !parents_by_id.contains_key(parent))
+    {
+        return PiReplayUsagePath::Invalid;
+    }
+
+    let usage_by_id = usage
+        .iter()
+        .enumerate()
+        .filter_map(|(index, usage)| usage.entry_id.as_deref().map(|id| (id, index)))
+        .collect::<HashMap<_, _>>();
+    let mut active_usage = Vec::new();
+    let mut visited = HashSet::new();
+    loop {
+        // Pi writes the current leaf last; walking its parents excludes sibling
+        // branches that remain earlier in the same physical JSONL file.
+        if !visited.insert(entry_id.clone()) {
+            return PiReplayUsagePath::Invalid;
+        }
+        if let Some(&usage_index) = usage_by_id.get(entry_id.as_str()) {
+            active_usage.push(usage_index);
+        }
+        let Some(parent_id) = parents_by_id.get(&entry_id) else {
+            return PiReplayUsagePath::Invalid;
+        };
+        let Some(parent_id) = parent_id else {
+            break;
+        };
+        entry_id = parent_id.clone();
+    }
+    active_usage.reverse();
+    PiReplayUsagePath::Active(active_usage)
 }
 
 fn replay_billed_cost_bits(mode: CostMode, cost: f64) -> Option<u64> {
@@ -410,7 +550,7 @@ fn extract_project_for_store(path: &Path, store_root: &Path) -> String {
     extract_project(path)
 }
 
-pub(super) fn entry_id(entry: &LoadedEntry) -> String {
+pub(crate) fn entry_id(entry: &LoadedEntry) -> String {
     entry_id_for_store("pi", entry)
 }
 
@@ -476,7 +616,7 @@ fn store_pricing(
         .or_else(|| raw_model.and_then(|model| pricing.find(model)))
 }
 
-pub(super) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> String {
+pub(crate) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> String {
     [
         store_name,
         entry.project.as_ref(),
