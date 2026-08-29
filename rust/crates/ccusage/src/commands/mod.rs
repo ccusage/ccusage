@@ -331,10 +331,7 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
 
     let hook: StatuslineHook =
         serde_json::from_str(stdin.trim()).context("Invalid input format")?;
-    let shared = SharedArgs {
-        offline: args.offline && !args.no_offline,
-        ..SharedArgs::default()
-    };
+    let shared = statusline_shared(&args);
     let cache_enabled = args.cache && !args.no_cache;
     let cache_path = statusline_cache_path(&hook.session_id);
     let transcript_path = Path::new(&hook.transcript_path);
@@ -384,6 +381,14 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn statusline_shared(args: &StatuslineArgs) -> SharedArgs {
+    SharedArgs {
+        offline: args.offline && !args.no_offline,
+        pricing_overrides: args.pricing_overrides.clone(),
+        ..SharedArgs::default()
+    }
 }
 
 /// Resolve the model label shown in the statusline.
@@ -842,9 +847,92 @@ struct HookContext {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_test_support::fs_fixture;
+    use std::ffi::OsString;
+
+    use ccusage_config::ConfigContext;
+    use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     use super::*;
+    use crate::cli::{Cli, Command};
+
+    #[test]
+    fn statusline_invocation_passes_config_pricing_overrides_to_cost_loading() {
+        let fixture = fs_fixture!({
+            "ccusage.json": r#"{
+                "defaults": {
+                    "pricingOverrides": {
+                        "third-party-model": {
+                            "inputCostPerToken": 0.000001,
+                            "outputCostPerToken": 0.000002
+                        }
+                    }
+                },
+                "commands": {
+                    "statusline": {
+                        "pricingOverrides": {
+                            "third-party-model": {
+                                "outputCostPerToken": 0.000003
+                            }
+                        }
+                    }
+                }
+            }"#,
+            "projects/project/session.jsonl": r#"{"timestamp":"2020-01-01T00:00:00.000Z","sessionId":"session","message":{"id":"message","model":"third-party-model","usage":{"input_tokens":100000,"output_tokens":100000}}}"#,
+        });
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let config_path = fixture.path("ccusage.json");
+        let config_path = config_path.to_string_lossy().into_owned();
+        let config_args = vec![
+            "statusline".to_string(),
+            "--config".to_string(),
+            config_path.clone(),
+        ];
+        let config = ConfigContext::from_args(&config_args);
+        let cli = Cli::parse_from_with_config(
+            [
+                "ccusage",
+                "statusline",
+                "--config",
+                config_path.as_str(),
+                "--cost-source",
+                "ccusage",
+            ]
+            .into_iter()
+            .map(OsString::from),
+            &config,
+            DEFAULT_SESSION_DURATION_HOURS,
+            env!("CCUSAGE_VERSION"),
+        )
+        .unwrap();
+        let Some(Command::Statusline(args)) = cli.command else {
+            panic!("expected statusline command");
+        };
+
+        let shared = statusline_shared(&args);
+        let pricing = &shared.pricing_overrides["third-party-model"];
+        assert_eq!(pricing.input_cost_per_token, Some(0.000001));
+        assert_eq!(pricing.output_cost_per_token, Some(0.000003));
+
+        let hook = StatuslineHook {
+            session_id: "session".to_string(),
+            transcript_path: fixture
+                .path("transcript.jsonl")
+                .to_string_lossy()
+                .into_owned(),
+            model: HookModel {
+                id: Some("third-party-model".to_string()),
+                display_name: "Third-party model".to_string(),
+            },
+            cost: None,
+            context_window: Some(HookContext {
+                total_input_tokens: 100_000,
+                context_window_size: 200_000,
+            }),
+            effort: None,
+        };
+        let output = render_statusline(&hook, &args, &shared).unwrap();
+        assert!(output.contains("💰 $0.40 session"), "{output}");
+    }
 
     #[test]
     fn calculates_context_tokens_from_latest_assistant_transcript_line() {

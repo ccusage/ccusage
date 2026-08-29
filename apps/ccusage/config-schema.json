@@ -1435,6 +1435,58 @@
 											"markdownDescription": "Use cached pricing data where supported.",
 											"type": "boolean"
 										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
 										"refreshInterval": {
 											"default": 1,
 											"description": "Statusline refresh interval in seconds.",
@@ -3953,6 +4005,58 @@
 									"description": "Use cached pricing data where supported.",
 									"markdownDescription": "Use cached pricing data where supported.",
 									"type": "boolean"
+								},
+								"pricingOverrides": {
+									"additionalProperties": {
+										"additionalProperties": false,
+										"properties": {
+											"cacheCreationInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheCreationInputTokenCostAbove200kTokens": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheReadInputTokenCost": {
+												"format": "double",
+												"type": "number"
+											},
+											"cacheReadInputTokenCostAbove200kTokens": {
+												"format": "double",
+												"type": "number"
+											},
+											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"inputCostPerToken": {
+												"format": "double",
+												"type": "number"
+											},
+											"inputCostPerTokenAbove200kTokens": {
+												"format": "double",
+												"type": "number"
+											},
+											"maxInputTokens": {
+												"format": "uint64",
+												"minimum": 0.0,
+												"type": "integer"
+											},
+											"outputCostPerToken": {
+												"format": "double",
+												"type": "number"
+											},
+											"outputCostPerTokenAbove200kTokens": {
+												"format": "double",
+												"type": "number"
+											}
+										},
+										"type": "object"
+									},
+									"description": "Runtime pricing overrides keyed by raw model name.",
+									"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+									"type": "object"
 								},
 								"refreshInterval": {
 									"default": 1,

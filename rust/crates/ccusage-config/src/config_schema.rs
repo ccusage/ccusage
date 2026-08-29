@@ -471,6 +471,8 @@ pub struct StatuslineSpecificOptions {
     pub debug: Option<bool>,
     /// Map model identifiers to short display labels.
     pub model_label_aliases: Option<HashMap<String, String>>,
+    /// Runtime pricing overrides keyed by raw model name.
+    pub pricing_overrides: Option<BTreeMap<String, ConfigPricingOverride>>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -638,6 +640,7 @@ impl StatuslineSpecificOptions {
             timezone: string_option(map, "timezone"),
             debug: bool_option(map, "debug"),
             model_label_aliases: hashmap_option(map, "modelLabelAliases"),
+            pricing_overrides: pricing_override_map_option(map, "pricingOverrides"),
         }
     }
 }
@@ -1071,6 +1074,7 @@ mod tests {
                 "noCache",
                 "noOffline",
                 "offline",
+                "pricingOverrides",
                 "refreshInterval",
                 "timezone",
                 "visualBurnRate",

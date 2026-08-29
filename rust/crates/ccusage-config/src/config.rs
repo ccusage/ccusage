@@ -498,6 +498,9 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
         if let Some(aliases) = options.model_label_aliases {
             args.model_label_aliases = aliases;
         }
+        if let Some(pricing_overrides) = options.pricing_overrides {
+            merge_pricing_overrides(&mut args.pricing_overrides, pricing_overrides);
+        }
     }
 }
 

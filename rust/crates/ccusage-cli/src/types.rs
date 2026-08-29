@@ -163,6 +163,7 @@ pub struct StatuslineArgs {
     pub config: Option<PathBuf>,
     pub debug: bool,
     pub model_label_aliases: HashMap<String, String>,
+    pub pricing_overrides: BTreeMap<String, PricingOverride>,
 }
 
 #[derive(Clone)]
@@ -227,6 +228,7 @@ impl Default for StatuslineArgs {
             config: None,
             debug: false,
             model_label_aliases: HashMap::new(),
+            pricing_overrides: BTreeMap::new(),
         }
     }
 }
