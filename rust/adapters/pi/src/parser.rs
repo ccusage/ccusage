@@ -1,4 +1,8 @@
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
@@ -18,6 +22,12 @@ struct PiLine {
     r#type: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     timestamp: Option<String>,
+    #[serde(
+        rename = "parentSession",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    parent_session: Option<String>,
     message: Option<PiMessage>,
 }
 
@@ -65,15 +75,42 @@ struct PiCost {
     total: Option<f64>,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct PiSessionHeader {
+    pub(super) parent_session: Option<PathBuf>,
+    pub(super) parent_session_is_malformed: bool,
+    pub(super) timestamp: Option<crate::TimestampMs>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PiUsageSignature {
+    pub(super) timestamp: crate::TimestampMs,
+    pub(super) model: Option<String>,
+    pub(super) input_tokens: u64,
+    pub(super) output_tokens: u64,
+    pub(super) cache_creation_input_tokens: u64,
+    pub(super) cache_read_input_tokens: u64,
+    pub(super) effective_total_tokens: u64,
+    pub(super) billed_cost_bits: Option<u64>,
+}
+
+pub(super) struct PiSessionData {
+    pub(super) header: Option<PiSessionHeader>,
+    pub(super) usage: Vec<PiUsageSignature>,
+    pub(super) entries: Vec<LoadedEntry>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn read_session_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
-    read_session_file_with_context(path, tz, mode, pricing, PiStoreContext::Default)
+    Ok(read_session_file_data(path, tz, mode, pricing)?.entries)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn read_session_file_for_store(
     path: &Path,
     store_root: &Path,
@@ -82,7 +119,27 @@ pub(super) fn read_session_file_for_store(
     pricing: Option<&PricingMap>,
     store_name: &str,
 ) -> Result<Vec<LoadedEntry>> {
-    read_session_file_with_context(
+    Ok(read_session_file_data_for_store(path, store_root, tz, mode, pricing, store_name)?.entries)
+}
+
+pub(super) fn read_session_file_data(
+    path: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Result<PiSessionData> {
+    read_session_file_data_with_context(path, tz, mode, pricing, PiStoreContext::Default)
+}
+
+pub(super) fn read_session_file_data_for_store(
+    path: &Path,
+    store_root: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    store_name: &str,
+) -> Result<PiSessionData> {
+    read_session_file_data_with_context(
         path,
         tz,
         mode,
@@ -159,20 +216,22 @@ impl<'a> PiStoreContext<'a> {
     }
 }
 
-fn read_session_file_with_context(
+fn read_session_file_data_with_context(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     context: PiStoreContext<'_>,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<PiSessionData> {
     let content = fs::read(path)?;
     let project = context.project(path);
     let session_id = extract_session_id(path);
+    let header = parse_session_header(&content);
     // Usable pi lines carry token counts under a `usage` key nested in a
     // `message` object, so require both substrings before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""usage""#, br#""message""#]);
     let mut entries = Vec::new();
+    let mut usage_signatures = Vec::new();
 
     for record in jsonl::records::<PiLine>(&content, Some(&prefilter)) {
         if !is_pi_message_usage(&record) {
@@ -208,10 +267,10 @@ fn read_session_file_with_context(
             continue;
         }
         let raw_model = message.model.clone();
+        let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
         let model = raw_model
             .as_ref()
             .map(|model| format!("[{}] {model}", context.store_name()));
-        let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
         let cost = context.cost(
             raw_model.as_deref(),
             model.as_deref(),
@@ -220,6 +279,17 @@ fn read_session_file_with_context(
             mode,
             pricing,
         );
+        usage_signatures.push(PiUsageSignature {
+            timestamp,
+            model: raw_model.clone(),
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cache_creation_input_tokens: usage.cache_creation_input_tokens,
+            cache_read_input_tokens: usage.cache_read_input_tokens,
+            effective_total_tokens: crate::total_usage_tokens(usage)
+                .saturating_add(extra_total_tokens),
+            billed_cost_bits: replay_billed_cost_bits(mode, cost),
+        });
         let missing_pricing_model = context.missing_pricing_model(
             raw_model.as_deref(),
             model.as_deref(),
@@ -258,7 +328,40 @@ fn read_session_file_with_context(
             missing_pricing_model,
         });
     }
-    Ok(entries)
+    Ok(PiSessionData {
+        header,
+        usage: usage_signatures,
+        entries,
+    })
+}
+
+fn replay_billed_cost_bits(mode: CostMode, cost: f64) -> Option<u64> {
+    if mode == CostMode::Calculate {
+        return None;
+    }
+    Some(if cost == 0.0 {
+        0.0_f64.to_bits()
+    } else {
+        cost.to_bits()
+    })
+}
+
+fn parse_session_header(content: &[u8]) -> Option<PiSessionHeader> {
+    let first_line = content.split(|byte| *byte == b'\n').next()?;
+    let value = serde_json::from_slice::<serde_json::Value>(first_line).ok()?;
+    let header = serde_json::from_value::<PiLine>(value.clone()).ok()?;
+    (header.r#type.as_deref() == Some("session")).then(|| PiSessionHeader {
+        parent_session: header.parent_session.map(PathBuf::from),
+        parent_session_is_malformed: value.get("parentSession").is_some_and(|parent| {
+            !parent
+                .as_str()
+                .is_some_and(|parent| !parent.trim().is_empty())
+        }),
+        timestamp: header
+            .timestamp
+            .as_deref()
+            .and_then(crate::parse_ts_timestamp),
+    })
 }
 
 fn is_pi_message_usage(record: &PiLine) -> bool {
