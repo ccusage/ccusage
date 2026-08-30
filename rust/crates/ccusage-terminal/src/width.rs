@@ -46,6 +46,13 @@ pub(crate) fn visible_width_max_line(value: &str) -> usize {
     value.lines().map(visible_width).max().unwrap_or_default()
 }
 
+pub(crate) fn ensure_ansi_reset(value: &str) -> String {
+    if !contains_ansi(value) || value.ends_with("\x1b[0m") {
+        return value.to_string();
+    }
+    format!("{value}\x1b[0m")
+}
+
 /// Shorten `value` to at most `width` display columns, marking the cut with `…`.
 ///
 /// The result never exceeds `width`, so a `width` of zero yields an empty
