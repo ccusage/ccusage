@@ -14,6 +14,9 @@ const require = createRequire(import.meta.url);
  * @typedef {{ error?: Error; signal?: NodeJS.Signals | null; status: number | null }} NativeSpawnResult
  * @typedef {(command: string, args: string[]) => Promise<NativeSpawnResult>} NativeSpawner
  * @typedef {{ argvEntry?: string; moduleUrl: string; realpathPath?: (path: string) => string }} MainModuleOptions
+ * @typedef {{ off: (signal: NodeJS.Signals, handler: () => void) => unknown; on: (signal: NodeJS.Signals, handler: () => void) => unknown }} SignalSource
+ * @typedef {{ kill: (signal: NodeJS.Signals) => unknown; on: import('node:events').EventEmitter['on'] }} NativeChild
+ * @typedef {(command: string, args: string[], options: { stdio: 'inherit' }) => NativeChild} NativeSpawnProcess
  */
 
 /**
@@ -157,13 +160,52 @@ function isMainModule({ argvEntry = process.argv[1], moduleUrl, realpathPath = r
 }
 
 /**
+ * @param {string} [platform]
+ * @returns {NodeJS.Signals[]}
+ */
+function getForwardedSignals(platform = process.platform) {
+	if (platform === 'win32') {
+		return ['SIGINT', 'SIGTERM'];
+	}
+
+	return ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT'];
+}
+
+/**
+ * @param {{ signalSource?: SignalSource; spawnProcess?: NativeSpawnProcess; platform?: string }} [options]
  * @returns {NativeSpawner}
  */
-function createNativeSpawner() {
+function createNativeSpawner({
+	platform = process.platform,
+	signalSource = process,
+	spawnProcess = spawn,
+} = {}) {
+	const forwardedSignals = getForwardedSignals(platform);
+
 	return async (command, args) =>
 		new Promise((resolve) => {
-			const child = spawn(command, args, { stdio: 'inherit' });
+			const child = spawnProcess(command, args, { stdio: 'inherit' });
+			const signalHandlers = new Map();
+			const forwardedSignalSet = new Set();
+			const cleanup = () => {
+				for (const [signal, handler] of signalHandlers) {
+					signalSource.off(signal, handler);
+				}
+				signalHandlers.clear();
+			};
+			/**
+			 * @param {NodeJS.Signals} signal
+			 */
+			const handleSignal = (signal) => {
+				if (forwardedSignalSet.has(signal)) {
+					return;
+				}
+				forwardedSignalSet.add(signal);
+				child.kill(signal);
+			};
+
 			child.on('error', (error) => {
+				cleanup();
 				resolve({
 					error,
 					signal: null,
@@ -171,11 +213,20 @@ function createNativeSpawner() {
 				});
 			});
 			child.on('exit', (status, signal) => {
+				cleanup();
 				resolve({
 					signal,
 					status,
 				});
 			});
+
+			for (const signal of forwardedSignals) {
+				const handler = () => handleSignal(signal);
+				try {
+					signalSource.on(signal, handler);
+					signalHandlers.set(signal, handler);
+				} catch {}
+			}
 		});
 }
 
@@ -215,4 +266,10 @@ if (isMainModule({ moduleUrl: import.meta.url })) {
 	process.exitCode = await runCli(process.argv.slice(2));
 }
 
-export { ensureNativeBinaryExecutable, isMainModule, resolveCliRuntime, resolveNativeBinary };
+export {
+	createNativeSpawner,
+	ensureNativeBinaryExecutable,
+	isMainModule,
+	resolveCliRuntime,
+	resolveNativeBinary,
+};
