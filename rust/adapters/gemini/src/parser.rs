@@ -218,6 +218,158 @@ pub(super) fn parse_jsonl_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
     Ok(events)
 }
 
+pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
+    let fallback_timestamp = file_modified_timestamp(path);
+    let Ok(connection) =
+        sqlite::Connection::open_with_flags(path, sqlite::OpenFlags::new().with_read_only())
+    else {
+        return Ok(Vec::new());
+    };
+    let Ok(mut statement) = connection.prepare("SELECT idx, data FROM gen_metadata") else {
+        return Ok(Vec::new());
+    };
+
+    let session_id = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let mut events = Vec::new();
+    while let Ok(sqlite::State::Row) = statement.next() {
+        let idx: i64 = statement.read(0).unwrap_or_default();
+        let blob: Vec<u8> = statement.read(1).unwrap_or_default();
+        if blob.is_empty() {
+            continue;
+        }
+        let parsed = parse_antigravity_protobuf(&blob);
+        let model = parsed
+            .get("1.3")
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "gemini-internal-model".to_string());
+        let input_tokens = parsed.get("1.4.2").copied().unwrap_or(0);
+        let output_tokens = parsed.get("1.4.3").copied().unwrap_or(0);
+        let cache_read_tokens = parsed.get("1.4.5").copied().unwrap_or(0);
+        let reasoning_tokens = parsed.get("1.4.9").copied().unwrap_or(0);
+        let visible_tokens = parsed.get("1.4.10").copied().unwrap_or(0);
+        let timestamp = parsed
+            .get("1.9.4.1")
+            .copied()
+            .and_then(|value| i64::try_from(value).ok())
+            .and_then(|ms| {
+                if ms > 0 {
+                    Some(TimestampMs::from_millis(ms * 1000))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(fallback_timestamp);
+        if input_tokens == 0
+            && output_tokens == 0
+            && cache_read_tokens == 0
+            && reasoning_tokens == 0
+            && visible_tokens == 0
+        {
+            continue;
+        }
+        let event = build_event(
+            Some(&model),
+            &session_id,
+            timestamp,
+            GeminiTokens {
+                input: input_tokens,
+                output: output_tokens,
+                cached: cache_read_tokens,
+                thoughts: reasoning_tokens.max(visible_tokens.saturating_sub(output_tokens)),
+                tool: 0,
+                total: Some(input_tokens + output_tokens + cache_read_tokens + reasoning_tokens),
+            },
+            normalize_session_input,
+            Some(format!("antigravity-gen-{idx}")),
+        );
+        if let Some(event) = event {
+            events.push(event);
+        }
+    }
+    Ok(events)
+}
+
+fn parse_antigravity_protobuf(blob: &[u8]) -> HashMap<String, u64> {
+    let mut out = HashMap::new();
+    parse_antigravity_protobuf_fields(blob, &mut out, "");
+    out
+}
+
+fn parse_antigravity_protobuf_fields(blob: &[u8], out: &mut HashMap<String, u64>, prefix: &str) {
+    let mut cursor = 0usize;
+    while cursor < blob.len() {
+        let Some((tag, next)) = read_varint(blob, cursor) else {
+            break;
+        };
+        cursor = next;
+        let field = tag >> 3;
+        let wire = tag & 0x7;
+        let path = if prefix.is_empty() {
+            field.to_string()
+        } else {
+            format!("{prefix}.{field}")
+        };
+        match wire {
+            0 => {
+                let Some((value, next)) = read_varint(blob, cursor) else {
+                    break;
+                };
+                cursor = next;
+                out.insert(path, value);
+            }
+            2 => {
+                let Some((len, next)) = read_varint(blob, cursor) else {
+                    break;
+                };
+                cursor = next;
+                let Some(end) = usize::try_from(len)
+                    .ok()
+                    .and_then(|len_usize| cursor.checked_add(len_usize))
+                    .filter(|&end| end <= blob.len())
+                else {
+                    break;
+                };
+                let payload = &blob[cursor..end];
+                let mut nested = HashMap::new();
+                parse_antigravity_protobuf_fields(payload, &mut nested, &path);
+                if nested.is_empty() {
+                    out.insert(path, 0);
+                } else {
+                    for (nested_path, value) in nested {
+                        out.insert(nested_path, value);
+                    }
+                }
+                cursor = end;
+            }
+            1 => cursor += 8,
+            5 => cursor += 4,
+            _ => break,
+        }
+    }
+}
+
+fn read_varint(blob: &[u8], mut offset: usize) -> Option<(u64, usize)> {
+    let mut value = 0u64;
+    let mut shift = 0u32;
+    loop {
+        if offset >= blob.len() || shift >= 64 {
+            return None;
+        }
+        let byte = blob[offset];
+        offset += 1;
+        value |= u64::from(byte & 0x7F) << shift;
+        if byte & 0x80 == 0 {
+            return Some((value, offset));
+        }
+        shift += 7;
+    }
+}
+
 fn parse_direct_event(
     record: &Map<String, Value>,
     model_hint: Option<&str>,

@@ -26,6 +26,13 @@ fn paths() -> Result<Vec<PathBuf>> {
         if path.is_dir() && seen.insert(path.clone()) {
             paths.push(path);
         }
+        let antigravity_dir = home
+            .join(".gemini")
+            .join("antigravity")
+            .join("conversations");
+        if antigravity_dir.is_dir() && seen.insert(antigravity_dir.clone()) {
+            paths.push(antigravity_dir);
+        }
     }
     Ok(paths)
 }
@@ -35,6 +42,7 @@ pub(super) fn discover_log_files() -> Result<Vec<PathBuf>> {
     for path in paths()? {
         collect_files_with_extension(&path, "json", &mut files);
         collect_files_with_extension(&path, "jsonl", &mut files);
+        collect_files_with_extension(&path, "db", &mut files);
     }
     files.sort();
     files.dedup();
