@@ -218,6 +218,11 @@ pub(super) fn parse_jsonl_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
     Ok(events)
 }
 
+/// Parses an Antigravity SQLite conversation database file.
+///
+/// Reads generation metadata records from the `gen_metadata` table ordered by `idx ASC`
+/// to guarantee deterministic chronological sequence and ensure model names propagate
+/// accurately to continuation rows.
 pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
     let fallback_timestamp = file_modified_timestamp(path);
     let Ok(connection) =
@@ -225,7 +230,9 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
     else {
         return Ok(Vec::new());
     };
-    let Ok(mut statement) = connection.prepare("SELECT idx, data FROM gen_metadata") else {
+    let Ok(mut statement) =
+        connection.prepare("SELECT idx, data FROM gen_metadata ORDER BY idx ASC")
+    else {
         return Ok(Vec::new());
     };
 
@@ -237,83 +244,91 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
 
     let mut current_model = None::<String>;
     let mut events = Vec::new();
-    while let Ok(sqlite::State::Row) = statement.next() {
-        let idx: i64 = statement.read(0).unwrap_or_default();
-        let blob: Vec<u8> = statement.read(1).unwrap_or_default();
-        if blob.is_empty() {
-            continue;
-        }
-        let parsed = parse_antigravity_protobuf(&blob);
-        let row_model = parsed
-            .strings
-            .get("1.19")
-            .or_else(|| parsed.strings.get("1.21"))
-            .or_else(|| parsed.strings.get("1.3"))
-            .map(|s| normalize_antigravity_model(s));
-
-        if let Some(ref m) = row_model {
-            current_model = Some(m.clone());
-        }
-
-        let model = row_model
-            .or_else(|| current_model.clone())
-            .unwrap_or_else(|| "gemini-internal-model".to_string());
-        let input_tokens = parsed.numbers.get("1.4.2").copied().unwrap_or(0);
-        let output_tokens = parsed.numbers.get("1.4.3").copied().unwrap_or(0);
-        let cache_read_tokens = parsed.numbers.get("1.4.5").copied().unwrap_or(0);
-        let reasoning_tokens = parsed.numbers.get("1.4.9").copied().unwrap_or(0);
-        let visible_tokens = parsed.numbers.get("1.4.10").copied().unwrap_or(0);
-        let timestamp_seconds = parsed.numbers.get("1.9.4.1").copied();
-        let timestamp_nanos = parsed
-            .numbers
-            .get("1.9.4.2")
-            .copied()
-            .unwrap_or(0)
-            .min(999_999_999);
-        let timestamp = timestamp_seconds
-            .and_then(|value| i64::try_from(value).ok())
-            .and_then(|secs| {
-                if secs > 0 {
-                    let ms = secs
-                        .saturating_mul(1000)
-                        .saturating_add((timestamp_nanos / 1_000_000) as i64);
-                    Some(TimestampMs::from_millis(ms))
-                } else {
-                    None
+    loop {
+        match statement.next() {
+            Ok(sqlite::State::Row) => {
+                let idx: i64 = statement.read(0).unwrap_or_default();
+                let blob: Vec<u8> = statement.read(1).unwrap_or_default();
+                if blob.is_empty() {
+                    continue;
                 }
-            })
-            .unwrap_or(fallback_timestamp);
-        if input_tokens == 0
-            && output_tokens == 0
-            && cache_read_tokens == 0
-            && reasoning_tokens == 0
-            && visible_tokens == 0
-        {
-            continue;
-        }
-        let event = build_event(
-            Some(&model),
-            &session_id,
-            timestamp,
-            GeminiTokens {
-                input: input_tokens,
-                output: output_tokens,
-                cached: cache_read_tokens,
-                thoughts: reasoning_tokens.max(visible_tokens.saturating_sub(output_tokens)),
-                tool: 0,
-                total: Some(input_tokens + output_tokens + cache_read_tokens + reasoning_tokens),
-            },
-            normalize_session_input,
-            Some(format!("antigravity-gen-{idx}")),
-        );
-        if let Some(event) = event {
-            events.push(event);
+                let parsed = parse_antigravity_protobuf(&blob);
+                let row_model = parsed
+                    .strings
+                    .get("1.19")
+                    .or_else(|| parsed.strings.get("1.21"))
+                    .or_else(|| parsed.strings.get("1.3"))
+                    .map(|s| normalize_antigravity_model(s));
+
+                if let Some(ref m) = row_model {
+                    current_model = Some(m.clone());
+                }
+
+                let model = row_model
+                    .or_else(|| current_model.clone())
+                    .unwrap_or_else(|| "gemini-internal-model".to_string());
+                let input_tokens = parsed.numbers.get("1.4.2").copied().unwrap_or(0);
+                let output_tokens = parsed.numbers.get("1.4.3").copied().unwrap_or(0);
+                let cache_read_tokens = parsed.numbers.get("1.4.5").copied().unwrap_or(0);
+                let reasoning_tokens = parsed.numbers.get("1.4.9").copied().unwrap_or(0);
+                let visible_tokens = parsed.numbers.get("1.4.10").copied().unwrap_or(0);
+                let timestamp_seconds = parsed.numbers.get("1.9.4.1").copied();
+                let timestamp_nanos = parsed
+                    .numbers
+                    .get("1.9.4.2")
+                    .copied()
+                    .unwrap_or(0)
+                    .min(999_999_999);
+                let timestamp = timestamp_seconds
+                    .and_then(|value| i64::try_from(value).ok())
+                    .and_then(|secs| {
+                        if secs > 0 {
+                            let ms = secs
+                                .saturating_mul(1000)
+                                .saturating_add((timestamp_nanos / 1_000_000) as i64);
+                            Some(TimestampMs::from_millis(ms))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(fallback_timestamp);
+                if input_tokens == 0
+                    && output_tokens == 0
+                    && cache_read_tokens == 0
+                    && reasoning_tokens == 0
+                    && visible_tokens == 0
+                {
+                    continue;
+                }
+                let thoughts = reasoning_tokens.max(visible_tokens.saturating_sub(output_tokens));
+                let event = build_event(
+                    Some(&model),
+                    &session_id,
+                    timestamp,
+                    GeminiTokens {
+                        input: input_tokens,
+                        output: output_tokens,
+                        cached: cache_read_tokens,
+                        thoughts,
+                        tool: 0,
+                        total: Some(input_tokens + output_tokens + cache_read_tokens + thoughts),
+                    },
+                    normalize_session_input,
+                    Some(format!("antigravity-gen-{idx}")),
+                );
+                if let Some(event) = event {
+                    events.push(event);
+                }
+            }
+            Ok(sqlite::State::Done) => break,
+            Err(_) => break,
         }
     }
     Ok(events)
 }
 
-fn normalize_antigravity_model(raw: &str) -> String {
+/// Normalizes Antigravity model identifiers and display strings into standard model IDs.
+pub(super) fn normalize_antigravity_model(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return "gemini-internal-model".to_string();
@@ -327,11 +342,14 @@ fn normalize_antigravity_model(raw: &str) -> String {
     };
 
     match base {
+        "gemini 3.7 flash" | "gemini 3.7 flash thinking" => "gemini-3.7-flash".to_string(),
+        "gemini 3.7 pro" | "gemini 3.7 pro thinking" => "gemini-3.7-pro".to_string(),
         "gemini 3.6 flash" | "gemini 3 flash" => "gemini-3.6-flash".to_string(),
         "gemini 3.6 pro" | "gemini 3 pro" => "gemini-3.6-pro".to_string(),
         "gemini 2.5 flash" => "gemini-2.5-flash".to_string(),
         "gemini 2.5 pro" => "gemini-2.5-pro".to_string(),
         "gemini 2.0 flash" | "gemini 2 flash" => "gemini-2.0-flash".to_string(),
+        "gemini 2.0 pro" => "gemini-2.0-pro".to_string(),
         "gemini 1.5 flash" => "gemini-1.5-flash".to_string(),
         "gemini 1.5 pro" => "gemini-1.5-pro".to_string(),
         "claude 3.7 sonnet" | "claude 3.7 sonnet thinking" => "claude-3-7-sonnet".to_string(),
@@ -352,20 +370,24 @@ fn normalize_antigravity_model(raw: &str) -> String {
     }
 }
 
+/// Maximum recursion depth allowed during nested protobuf message parsing.
 const MAX_PROTOBUF_DEPTH: usize = 16;
 
+/// Intermediate storage for decoded protobuf field numbers and values.
 #[derive(Default)]
 struct AntigravityProtobuf {
     numbers: HashMap<String, u64>,
     strings: HashMap<String, String>,
 }
 
+/// Decodes raw protobuf payload into numeric and string field maps.
 fn parse_antigravity_protobuf(blob: &[u8]) -> AntigravityProtobuf {
     let mut out = AntigravityProtobuf::default();
     parse_antigravity_protobuf_fields(blob, &mut out, "", 0);
     out
 }
 
+/// Recursively parses protobuf wire-format fields up to `MAX_PROTOBUF_DEPTH`.
 fn parse_antigravity_protobuf_fields(
     blob: &[u8],
     out: &mut AntigravityProtobuf,
@@ -427,6 +449,7 @@ fn parse_antigravity_protobuf_fields(
     }
 }
 
+/// Reads a single varint from `blob` starting at `offset`, checking for 10th-byte overflow.
 fn read_varint(blob: &[u8], mut offset: usize) -> Option<(u64, usize)> {
     let mut value = 0u64;
     let mut shift = 0u32;

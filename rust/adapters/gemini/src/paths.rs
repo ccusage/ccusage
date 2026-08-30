@@ -3,7 +3,9 @@ use std::{collections::HashSet, env, path::PathBuf};
 use crate::{Result, collect_files_with_extension};
 
 pub(super) const GEMINI_DATA_DIR_ENV: &str = "GEMINI_DATA_DIR";
+pub(super) const ANTIGRAVITY_DATA_DIR_ENV: &str = "ANTIGRAVITY_DATA_DIR";
 
+/// Returns all discovery candidate directories for Gemini and Antigravity logs.
 fn paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
@@ -21,22 +23,48 @@ fn paths() -> Result<Vec<PathBuf>> {
         return Ok(paths);
     }
 
+    if let Ok(env_paths) = env::var(ANTIGRAVITY_DATA_DIR_ENV) {
+        for raw in env_paths
+            .split(',')
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+        {
+            let path = PathBuf::from(raw);
+            if path.is_dir() && seen.insert(path.clone()) {
+                paths.push(path);
+            }
+        }
+    }
+
     if let Some(home) = crate::home::home_dir() {
         let path = home.join(".gemini").join("tmp");
         if path.is_dir() && seen.insert(path.clone()) {
             paths.push(path);
         }
-        let antigravity_dir = home
-            .join(".gemini")
-            .join("antigravity")
-            .join("conversations");
-        if antigravity_dir.is_dir() && seen.insert(antigravity_dir.clone()) {
-            paths.push(antigravity_dir);
+        let antigravity_dirs = [
+            home.join(".gemini")
+                .join("antigravity")
+                .join("conversations"),
+            home.join(".gemini")
+                .join("antigravity-cli")
+                .join("conversations"),
+            home.join(".gemini")
+                .join("antigravity-ide")
+                .join("conversations"),
+            home.join(".gemini")
+                .join("antigravity-backup")
+                .join("conversations"),
+        ];
+        for dir in antigravity_dirs {
+            if dir.is_dir() && seen.insert(dir.clone()) {
+                paths.push(dir);
+            }
         }
     }
     Ok(paths)
 }
 
+/// Discovers all `.json`, `.jsonl`, and SQLite `.db` log files across known directories.
 pub(super) fn discover_log_files() -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for path in paths()? {

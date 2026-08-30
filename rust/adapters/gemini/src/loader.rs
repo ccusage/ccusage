@@ -7,6 +7,7 @@ use super::{
     paths::discover_log_files,
 };
 
+/// Loads Gemini CLI and Antigravity entries with progress tracking.
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("Gemini CLI"),
@@ -15,6 +16,7 @@ pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<Loa
     )
 }
 
+/// Internal loader function that discovers and parses Gemini and Antigravity log files in parallel.
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
     let files = discover_log_files()?;
@@ -118,12 +120,6 @@ mod tests {
         blob.push(field1_payload.len() as u8);
         blob.extend_from_slice(&field1_payload);
 
-        let mut statement = connection
-            .prepare("INSERT INTO gen_metadata (idx, data) VALUES (1, ?)")
-            .unwrap();
-        statement.bind((1, blob.as_slice())).unwrap();
-        statement.next().unwrap();
-
         // Row 2: Continuation row with tokens only (no model field)
         let cont_tokens = vec![
             0x10, 0x90, 0x03, // 2: varint 400
@@ -143,11 +139,18 @@ mod tests {
         cont_blob.push(cont_field1.len() as u8);
         cont_blob.extend_from_slice(&cont_field1);
 
+        // Insert Row 2 first and Row 1 second to verify ORDER BY idx ASC
         let mut stmt2 = connection
             .prepare("INSERT INTO gen_metadata (idx, data) VALUES (2, ?)")
             .unwrap();
         stmt2.bind((1, cont_blob.as_slice())).unwrap();
         stmt2.next().unwrap();
+
+        let mut statement = connection
+            .prepare("INSERT INTO gen_metadata (idx, data) VALUES (1, ?)")
+            .unwrap();
+        statement.bind((1, blob.as_slice())).unwrap();
+        statement.next().unwrap();
 
         let _env_guard = super::super::GeminiDataDirEnvGuard::set(fixture.root());
         let shared = SharedArgs {
@@ -157,7 +160,7 @@ mod tests {
         let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 2);
-        // Row 1: Normalized from "Gemini 2.5 Flash (High)"
+        // Row 1 (idx=1): Normalized from "Gemini 2.5 Flash (High)"
         assert_eq!(entries[0].session_id.as_ref(), "session-db");
         assert_eq!(entries[0].model.as_deref(), Some("gemini-2.5-flash"));
         assert_eq!(entries[0].data.message.usage.input_tokens, 1000);
@@ -166,7 +169,7 @@ mod tests {
         assert_eq!(entries[0].extra_total_tokens, 50);
         assert!(entries[0].cost > 0.0);
 
-        // Row 2: Inherited from active session model
+        // Row 2 (idx=2): Inherited from active session model
         assert_eq!(entries[1].model.as_deref(), Some("gemini-2.5-flash"));
         assert_eq!(entries[1].data.message.usage.input_tokens, 400);
         assert_eq!(entries[1].data.message.usage.output_tokens, 100);
