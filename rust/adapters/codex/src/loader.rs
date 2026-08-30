@@ -1999,10 +1999,17 @@ mod tests {
             .join("\n"),
         });
 
-        assert_eq!(
-            replay_input_tokens_by_session(fixture.root()),
-            [("self".to_string(), 100), ("self".to_string(), 200)]
-        );
+        for single_thread in [true, false] {
+            let events = load_codex_events_from_directory(fixture.root(), single_thread).unwrap();
+            assert_eq!(
+                events
+                    .iter()
+                    .map(|event| (event.session_id.clone(), event.input_tokens))
+                    .collect::<Vec<_>>(),
+                [("self".to_string(), 100), ("self".to_string(), 200)],
+                "single_thread={single_thread}"
+            );
+        }
     }
 
     #[test]
@@ -2399,6 +2406,52 @@ mod tests {
             assert!(detected, "single_thread={single_thread}");
             assert_eq!(events.len(), 1, "single_thread={single_thread}");
             assert_eq!(events[0].input_tokens, 50, "single_thread={single_thread}");
+        }
+    }
+
+    #[test]
+    fn unbounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/aaa-child.jsonl": [
+                replay_metadata(
+                    "2026-03-15T08:00:00.000Z",
+                    "shared-id",
+                    Some("shared-id"),
+                ),
+                replay_token_count("2026-03-15T08:00:01.000Z", 100),
+                replay_token_count("2026-03-15T08:01:00.000Z", 50),
+            ]
+            .join("\n"),
+            "sessions/2025/01/02/zzz-parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "shared-id", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+            ]
+            .join("\n"),
+        });
+        let child = fixture.path("sessions/2025/01/01/aaa-child.jsonl");
+        let parent = fixture.path("sessions/2025/01/02/zzz-parent.jsonl");
+        crate::paths::set_file_modified(
+            &child,
+            crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
+        );
+        crate::paths::set_file_modified(
+            &parent,
+            crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
+        );
+
+        for single_thread in [true, false] {
+            let events =
+                load_codex_events_from_directory(&fixture.path("sessions"), single_thread).unwrap();
+            let child_events = events
+                .iter()
+                .filter(|event| event.session_id.ends_with("2025/01/01/aaa-child"))
+                .collect::<Vec<_>>();
+
+            assert_eq!(child_events.len(), 1, "single_thread={single_thread}");
+            assert_eq!(
+                child_events[0].input_tokens, 50,
+                "single_thread={single_thread}"
+            );
         }
     }
 

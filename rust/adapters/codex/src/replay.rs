@@ -95,34 +95,8 @@ impl CodexReplayPlan {
     ) -> Self {
         let files = collect_replay_files(groups);
         let metadata = read_session_metadata(&files, single_thread);
-        // The same session can be reachable from more than one source directory,
-        // so keep the first file and stay independent of source ordering.
-        let mut files_by_session_id = HashMap::new();
-        for ((path, _), metadata) in files.iter().zip(&metadata) {
-            if let Some(session_id) = metadata.session_id.as_deref() {
-                files_by_session_id.entry(session_id).or_insert(path);
-            }
-        }
-        let parent_by_child = files
-            .iter()
-            .zip(&metadata)
-            .filter_map(|((child, _), metadata)| {
-                let parent_id = metadata.parent_id.as_deref()?;
-                let path = files_by_session_id
-                    .get(parent_id)
-                    // A session listing itself as its own parent would match its
-                    // whole stream and drop every event it recorded.
-                    .filter(|parent| **parent != child)
-                    .map(|parent| (*parent).clone());
-                Some((
-                    child.clone(),
-                    ParentReplay {
-                        path,
-                        forked_at: metadata.timestamp,
-                    },
-                ))
-            })
-            .collect::<HashMap<_, _>>();
+        let files_by_session_id = index_session_paths(&files, &metadata);
+        let parent_by_child = build_parent_replays(&files, metadata, &files_by_session_id);
         let parent_paths = parent_by_child
             .values()
             .filter_map(|parent| parent.path.clone())
@@ -147,16 +121,9 @@ impl CodexReplayPlan {
         let children = collect_replay_files(children);
         let available_files = collect_replay_files(available_files);
         let available_metadata = read_session_metadata(&available_files, single_thread);
-        let mut files_by_session_id =
-            HashMap::<String, Vec<PathBuf>>::with_capacity(available_files.len());
+        let files_by_session_id = index_session_paths(&available_files, &available_metadata);
         let mut metadata_by_path = HashMap::with_capacity(available_files.len());
         for ((path, _), metadata) in available_files.iter().zip(available_metadata) {
-            if let Some(session_id) = metadata.session_id.as_deref() {
-                files_by_session_id
-                    .entry(session_id.to_string())
-                    .or_default()
-                    .push(path.clone());
-            }
             metadata_by_path.entry(path.clone()).or_insert(metadata);
         }
         let child_metadata = children.iter().map(|(child, _)| {
@@ -165,28 +132,7 @@ impl CodexReplayPlan {
                 .cloned()
                 .unwrap_or_else(|| read_codex_session_metadata(child))
         });
-        let parent_by_child = children
-            .iter()
-            .zip(child_metadata)
-            .filter_map(|((child, _), metadata)| {
-                let parent_id = metadata.parent_id.as_deref()?;
-                let path = files_by_session_id
-                    .get(parent_id)
-                    .and_then(|candidates| {
-                        candidates
-                            .iter()
-                            .find(|candidate| candidate.as_path() != child)
-                    })
-                    .cloned();
-                Some((
-                    child.clone(),
-                    ParentReplay {
-                        path,
-                        forked_at: metadata.timestamp,
-                    },
-                ))
-            })
-            .collect::<HashMap<_, _>>();
+        let parent_by_child = build_parent_replays(&children, child_metadata, &files_by_session_id);
         let parent_paths = parent_by_child
             .values()
             .filter_map(|parent| parent.path.clone())
@@ -228,6 +174,55 @@ impl CodexReplayPlan {
         });
         Some(&stream.usage[..replay_len])
     }
+}
+
+fn index_session_paths(
+    files: &[(PathBuf, &Path)],
+    metadata: &[CodexSessionMetadata],
+) -> HashMap<String, Vec<PathBuf>> {
+    let mut files_by_session_id = HashMap::<String, Vec<PathBuf>>::with_capacity(files.len());
+    for ((path, _), metadata) in files.iter().zip(metadata) {
+        if let Some(session_id) = metadata.session_id.as_deref() {
+            files_by_session_id
+                .entry(session_id.to_string())
+                .or_default()
+                .push(path.clone());
+        }
+    }
+    files_by_session_id
+}
+
+fn build_parent_replays(
+    children: &[(PathBuf, &Path)],
+    metadata: impl IntoIterator<Item = CodexSessionMetadata>,
+    files_by_session_id: &HashMap<String, Vec<PathBuf>>,
+) -> HashMap<PathBuf, ParentReplay> {
+    children
+        .iter()
+        .zip(metadata)
+        .filter_map(|((child, _), metadata)| {
+            let parent_id = metadata.parent_id.as_deref()?;
+            Some((
+                child.clone(),
+                ParentReplay {
+                    path: first_non_child_path(files_by_session_id, parent_id, child),
+                    forked_at: metadata.timestamp,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn first_non_child_path(
+    files_by_session_id: &HashMap<String, Vec<PathBuf>>,
+    parent_id: &str,
+    child: &Path,
+) -> Option<PathBuf> {
+    files_by_session_id
+        .get(parent_id)?
+        .iter()
+        .find(|candidate| candidate.as_path() != child)
+        .cloned()
 }
 
 fn collect_replay_files<'a>(
