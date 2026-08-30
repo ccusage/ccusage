@@ -235,6 +235,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
         .unwrap_or("unknown")
         .to_string();
 
+    let mut current_model = None::<String>;
     let mut events = Vec::new();
     while let Ok(sqlite::State::Row) = statement.next() {
         let idx: i64 = statement.read(0).unwrap_or_default();
@@ -243,12 +244,19 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
             continue;
         }
         let parsed = parse_antigravity_protobuf(&blob);
-        let model = parsed
+        let row_model = parsed
             .strings
             .get("1.19")
             .or_else(|| parsed.strings.get("1.21"))
             .or_else(|| parsed.strings.get("1.3"))
-            .cloned()
+            .map(|s| normalize_antigravity_model(s));
+
+        if let Some(ref m) = row_model {
+            current_model = Some(m.clone());
+        }
+
+        let model = row_model
+            .or_else(|| current_model.clone())
             .unwrap_or_else(|| "gemini-internal-model".to_string());
         let input_tokens = parsed.numbers.get("1.4.2").copied().unwrap_or(0);
         let output_tokens = parsed.numbers.get("1.4.3").copied().unwrap_or(0);
@@ -303,6 +311,45 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
         }
     }
     Ok(events)
+}
+
+fn normalize_antigravity_model(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "gemini-internal-model".to_string();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+
+    let base = if let Some(idx) = lower.find('(') {
+        lower[..idx].trim()
+    } else {
+        lower.as_str()
+    };
+
+    match base {
+        "gemini 3.6 flash" | "gemini 3 flash" => "gemini-3.6-flash".to_string(),
+        "gemini 3.6 pro" | "gemini 3 pro" => "gemini-3.6-pro".to_string(),
+        "gemini 2.5 flash" => "gemini-2.5-flash".to_string(),
+        "gemini 2.5 pro" => "gemini-2.5-pro".to_string(),
+        "gemini 2.0 flash" | "gemini 2 flash" => "gemini-2.0-flash".to_string(),
+        "gemini 1.5 flash" => "gemini-1.5-flash".to_string(),
+        "gemini 1.5 pro" => "gemini-1.5-pro".to_string(),
+        "claude 3.7 sonnet" | "claude 3.7 sonnet thinking" => "claude-3-7-sonnet".to_string(),
+        "claude 3.5 sonnet" => "claude-3-5-sonnet".to_string(),
+        "claude 3.5 haiku" => "claude-3-5-haiku".to_string(),
+        "claude 3 opus" => "claude-3-opus".to_string(),
+        _ => {
+            let converted = base.replace(' ', "-");
+            if converted.starts_with("gemini-")
+                || converted.starts_with("claude-")
+                || converted.starts_with("gpt-")
+            {
+                converted
+            } else {
+                trimmed.to_string()
+            }
+        }
+    }
 }
 
 const MAX_PROTOBUF_DEPTH: usize = 16;
