@@ -375,6 +375,43 @@ fn renders_opt_in_codex_source_breakdowns_in_unified_json_and_table_rows() {
 }
 
 #[test]
+fn sanitizes_unknown_codex_source_only_in_unified_table_rows() {
+    let source = "future\nclient\u{1b}[31m";
+    let value = json!({
+        "source": source,
+        "modelsUsed": [],
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cacheCreationTokens": 0,
+        "cacheReadTokens": 0,
+        "totalCost": 0.0,
+    });
+
+    assert_eq!(
+        source_table_row(&value, false, false)[1],
+        r#"- future\nclient\u{1b}[31m"#
+    );
+    let row = AllRow {
+        period: "2026-08-20".to_string(),
+        agent: "codex",
+        models_used: Vec::new(),
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        total_tokens: 0,
+        total_cost: 0.0,
+        metadata: Some(json!({ "sourceBreakdowns": [value] })),
+        metadata_agents: Some(vec!["codex"]),
+        agent_breakdowns: None,
+        model_breakdowns: Vec::new(),
+    };
+    let report = report_json_with_options(&[row], AgentReportKind::Daily, false, true);
+
+    assert_eq!(report["daily"][0]["sourceBreakdowns"][0]["source"], source);
+}
+
+#[test]
 fn renders_by_agent_json_breakdowns_when_requested() {
     let rows = vec![AllRow {
         period: "2026-01-02".to_string(),

@@ -23,6 +23,7 @@ use super::{parser, paths, replay::CodexReplayPlan};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct CodexEventKey {
+    source: CompactString,
     session_hash: u64,
     session_len: usize,
     timestamp: crate::TimestampMs,
@@ -618,6 +619,7 @@ fn codex_event_key(
         (0, 0)
     };
     CodexEventKey {
+        source: CompactString::new(normalize_codex_originator(event.source.as_deref())),
         session_hash,
         session_len,
         timestamp,
@@ -1065,6 +1067,82 @@ mod tests {
             }
         }
         assert!(costs.windows(2).all(|pair| pair[0] == pair[1]));
+    }
+
+    #[test]
+    fn keeps_cross_originator_duplicates_distinct_across_grouping_paths() {
+        let rollout = |originator: &str| {
+            [
+                json!({
+                    "timestamp": "2026-01-02T00:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": { "originator": originator },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-01-02T00:00:01.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "model": "gpt-5",
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "output_tokens": 50,
+                                "total_tokens": 150,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n")
+        };
+        let fixture = fs_fixture!({
+            "sessions/2026/01/02/cli.jsonl": &rollout("codex-tui"),
+            "sessions/2026/01/02/exec.jsonl": &rollout("codex_exec"),
+        });
+        let mut observed = Vec::new();
+        for bounded in [false, true] {
+            for single_thread in [true, false] {
+                let shared = SharedArgs {
+                    single_thread,
+                    timezone: Some("UTC".to_string()),
+                    since: bounded.then(|| "20260102".to_string()),
+                    until: bounded.then(|| "20260102".to_string()),
+                    ..SharedArgs::default()
+                };
+                let groups = load_groups_from_directory(
+                    &fixture.path("sessions"),
+                    &shared,
+                    AgentReportKind::Daily,
+                )
+                .unwrap();
+                let group = groups.get("2026-01-02").unwrap();
+                assert_eq!(group.input_tokens, 200);
+                assert_eq!(group.total_tokens, 300);
+                assert_eq!(
+                    group
+                        .sources
+                        .iter()
+                        .map(|(source, usage)| (source.clone(), usage.input_tokens))
+                        .collect::<Vec<_>>(),
+                    vec![("CLI".to_string(), 100), ("Exec".to_string(), 100)]
+                );
+                observed.push((
+                    group.input_tokens,
+                    group.total_tokens,
+                    group
+                        .sources
+                        .iter()
+                        .map(|(source, usage)| (source.clone(), usage.input_tokens))
+                        .collect::<Vec<_>>(),
+                ));
+            }
+        }
+        for pair in observed.windows(2) {
+            assert_eq!(pair[0], pair[1]);
+        }
     }
 
     #[test]

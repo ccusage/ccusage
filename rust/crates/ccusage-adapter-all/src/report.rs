@@ -14,7 +14,7 @@ use crate::{
     cli::{AgentReportKind, SharedArgs, SortOrder},
     cli_error, color, format_currency, format_models_multiline, format_number, json_float,
     output::strip_cost_json,
-    print_box_title, short_model_name, should_use_compact_layout,
+    print_box_title, sanitize_terminal_text, short_model_name, should_use_compact_layout,
 };
 
 use super::types::{AllRow, SOURCE_BREAKDOWNS_METADATA_KEY, merge_source_breakdowns};
@@ -471,6 +471,7 @@ pub(super) fn source_table_row(source: &Value, compact: bool, no_cost: bool) -> 
         .get("source")
         .and_then(Value::as_str)
         .unwrap_or("Uncategorized");
+    let source_name = sanitize_terminal_text(source_name);
     let input = crate::json_value_u64(source.get("inputTokens"));
     let output = crate::json_value_u64(source.get("outputTokens"));
     let cache_creation = crate::json_value_u64(source.get("cacheCreationTokens"));

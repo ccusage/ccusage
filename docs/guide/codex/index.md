@@ -41,10 +41,12 @@ These views support `--json`, `--compact`, `--offline`, `--speed auto|standard|f
 
 `--by-source` groups Codex usage by the `session_meta.payload.originator` value. The built-in
 labels are `CLI` (`codex-tui` and `codex_cli_rs`), `Exec` (`codex_exec`), and `Desktop App`
-(`Codex Desktop` and `codex_work_desktop`); other non-empty values are kept unchanged, while
-missing or empty values are reported as `Uncategorized`. Tables add source rows below each
-period, and JSON adds `sourceBreakdowns` to the period and totals objects without changing the
-default output.
+(`Codex Desktop` and `codex_work_desktop`), `VS Code` (`codex_vscode`), and `SDK`
+(`codex_python_sdk`); other non-empty values are kept unchanged, while missing or empty values
+are reported as `Uncategorized`. Same-source copies of a usage event are deduplicated, while
+different normalized originators remain distinct so their totals are preserved. Tables add source
+rows below each period, and JSON adds `sourceBreakdowns` to the period and totals objects without
+changing the default output.
 
 ## Monthly Example
 

@@ -31,7 +31,7 @@ ccusage daily --by-agent --json
 ccusage daily --by-source --json
 ```
 
-`--sections` accepts `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included, and table output prints each requested section as a separate table. `--by-agent` adds an `agents` array to daily, weekly, and monthly JSON rows; session rows are already source-specific. `--by-source` adds Codex client/originator breakdowns to unified JSON rows and totals, and adds indented source rows to unified tables. Codex maps known originators to `CLI`, `Exec`, and `Desktop App`, preserves unknown values, and groups missing or empty values under `Uncategorized`.
+`--sections` accepts `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included, and table output prints each requested section as a separate table. `--by-agent` adds an `agents` array to daily, weekly, and monthly JSON rows; session rows are already source-specific. `--by-source` adds Codex client/originator breakdowns to unified JSON rows and totals, and adds indented source rows to unified tables. Codex maps known originators to `CLI`, `Exec`, `Desktop App`, `VS Code`, and `SDK`, preserves unknown values, and groups missing or empty values under `Uncategorized`.
 
 ## How Unified Views Work
 

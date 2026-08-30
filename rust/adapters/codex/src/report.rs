@@ -8,7 +8,7 @@ use crate::{
     cli::{AgentReportKind, SharedArgs},
     color, format_currency, format_models_multiline, format_number, json_float,
     missing_pricing_model_for_token_total, print_box_title,
-    print_missing_pricing_warnings_for_models,
+    print_missing_pricing_warnings_for_models, sanitize_terminal_text,
 };
 
 use super::speed::CodexSpeedPolicy;
@@ -520,6 +520,7 @@ fn codex_table_row(
 }
 
 fn codex_table_label(label: &str, kind: AgentReportKind, terminal_width: usize) -> String {
+    let label = sanitize_terminal_text(label);
     if matches!(kind, AgentReportKind::Daily) && terminal_width <= 120 {
         let bytes = label.as_bytes();
         if bytes.len() == 10
@@ -532,7 +533,7 @@ fn codex_table_label(label: &str, kind: AgentReportKind, terminal_width: usize) 
             return format!("{}\n{}", &label[..4], &label[5..]);
         }
     }
-    label.to_string()
+    label
 }
 
 #[derive(Default)]
@@ -773,6 +774,43 @@ mod tests {
         ];
 
         insta::assert_debug_snapshot!(rows);
+    }
+
+    #[test]
+    fn sanitizes_unknown_source_only_in_focused_table_rows() {
+        let source = "future\nclient\u{1b}[31m";
+        let group = CodexGroup::default();
+
+        let (row, _, _) = codex_table_row(
+            &format!("  {source}"),
+            AgentReportKind::Daily,
+            &group,
+            &PricingMap::default(),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            false,
+            160,
+        );
+
+        assert_eq!(row[0], r#"  future\nclient\u{1b}[31m"#);
+    }
+
+    #[test]
+    fn preserves_unknown_source_control_characters_in_focused_json() {
+        let source = "future\nclient\u{1b}[31m";
+        let group = CodexGroup {
+            sources: BTreeMap::from([(source.to_string(), CodexSourceUsage::default())]),
+            ..CodexGroup::default()
+        };
+
+        let report = report_from_groups_with_source(
+            &BTreeMap::from([("2026-08-20".to_string(), group)]),
+            AgentReportKind::Daily,
+            &PricingMap::default(),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            true,
+        );
+
+        assert_eq!(report["daily"][0]["sourceBreakdowns"][0]["source"], source);
     }
 
     #[test]

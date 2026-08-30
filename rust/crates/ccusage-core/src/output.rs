@@ -511,6 +511,18 @@ pub fn format_currency(value: f64) -> String {
     format!("${value:.2}")
 }
 
+pub fn sanitize_terminal_text(value: &str) -> String {
+    let mut sanitized = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character.is_control() {
+            sanitized.extend(character.escape_default());
+        } else {
+            sanitized.push(character);
+        }
+    }
+    sanitized
+}
+
 pub fn strip_cost_json(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -776,6 +788,14 @@ mod tests {
         ];
 
         insta::assert_snapshot!(format_models_multiline(&models));
+    }
+
+    #[test]
+    fn sanitizes_terminal_control_characters_as_visible_escapes() {
+        assert_eq!(
+            sanitize_terminal_text("future\nclient\t\u{1b}[31m"),
+            r#"future\nclient\t\u{1b}[31m"#
+        );
     }
 
     fn snapshot_summary(period: &str, project: Option<&str>, credits: Option<f64>) -> UsageSummary {

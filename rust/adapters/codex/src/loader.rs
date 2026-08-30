@@ -18,6 +18,7 @@ use super::{
         collect_deduped_codex_usage_files,
     },
     replay::CodexReplayPlan,
+    source::normalize_codex_originator,
 };
 
 pub fn load_codex_events_from_directory(
@@ -247,6 +248,7 @@ fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
             event.output_tokens,
             event.reasoning_output_tokens,
             event.total_tokens,
+            CompactString::new(normalize_codex_originator(event.source.as_deref())),
         );
         if let Some(index) = indexes.get(&key).copied() {
             let retained = &mut deduped[index];
@@ -624,6 +626,90 @@ mod tests {
                 events[0].service_tier,
                 Some(crate::CodexServiceTier::Standard)
             );
+        }
+    }
+
+    #[test]
+    fn keeps_cross_originator_duplicates_distinct_across_loading_paths() {
+        let usage = |originator: &str| {
+            [
+                json!({
+                    "timestamp": "2026-01-02T00:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": { "originator": originator },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-01-02T00:00:01.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "model": "gpt-5",
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "output_tokens": 50,
+                                "total_tokens": 150,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n")
+        };
+        let fixture = fs_fixture!({
+            "sessions/2026/01/02/cli.jsonl": &usage("codex-tui"),
+            "sessions/2026/01/02/exec.jsonl": &usage("codex_exec"),
+        });
+        let sources = [CodexUsageSource::new_for_test(
+            fixture.path("sessions"),
+            fixture.root().to_path_buf(),
+        )];
+        let bounded = SharedArgs {
+            since: Some("20260102".to_string()),
+            until: Some("20260102".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let mut loaded = Vec::new();
+        for single_thread in [true, false] {
+            loaded.push(
+                load_codex_events_from_directory(&fixture.path("sessions"), single_thread).unwrap(),
+            );
+            loaded.push(
+                load_codex_events_from_sources_with_shared(
+                    &sources,
+                    &SharedArgs {
+                        single_thread,
+                        ..bounded.clone()
+                    },
+                )
+                .unwrap()
+                .0,
+            );
+        }
+
+        for events in &loaded {
+            assert_eq!(events.len(), 2);
+            assert_eq!(
+                events
+                    .iter()
+                    .map(|event| event.source.as_deref())
+                    .collect::<Vec<_>>(),
+                vec![Some("CLI"), Some("Exec")]
+            );
+            assert_eq!(
+                events.iter().map(|event| event.input_tokens).sum::<u64>(),
+                200
+            );
+            assert_eq!(
+                events.iter().map(|event| event.total_tokens).sum::<u64>(),
+                300
+            );
+        }
+        for pair in loaded.windows(2) {
+            assert_eq!(pair[0], pair[1]);
         }
     }
 
