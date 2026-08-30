@@ -301,6 +301,10 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
                     continue;
                 }
                 let thoughts = reasoning_tokens.max(visible_tokens.saturating_sub(output_tokens));
+                let total_tokens = input_tokens
+                    .saturating_add(output_tokens)
+                    .saturating_add(cache_read_tokens)
+                    .saturating_add(thoughts);
                 let event = build_event(
                     Some(&model),
                     &session_id,
@@ -311,7 +315,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
                         cached: cache_read_tokens,
                         thoughts,
                         tool: 0,
-                        total: Some(input_tokens + output_tokens + cache_read_tokens + thoughts),
+                        total: Some(total_tokens),
                     },
                     normalize_session_input,
                     Some(format!("antigravity-gen-{idx}")),

@@ -9,31 +9,25 @@ pub(super) const ANTIGRAVITY_DATA_DIR_ENV: &str = "ANTIGRAVITY_DATA_DIR";
 fn paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
-    if let Ok(env_paths) = env::var(GEMINI_DATA_DIR_ENV) {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = PathBuf::from(raw);
-            if path.is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-        return Ok(paths);
-    }
 
-    if let Ok(env_paths) = env::var(ANTIGRAVITY_DATA_DIR_ENV) {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = PathBuf::from(raw);
-            if path.is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
+    let mut env_override = false;
+    for env_var in [GEMINI_DATA_DIR_ENV, ANTIGRAVITY_DATA_DIR_ENV] {
+        if let Ok(env_paths) = env::var(env_var) {
+            env_override = true;
+            for raw in env_paths
+                .split(',')
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+            {
+                let path = PathBuf::from(raw);
+                if path.is_dir() && seen.insert(path.clone()) {
+                    paths.push(path);
+                }
             }
         }
+    }
+    if env_override {
+        return Ok(paths);
     }
 
     if let Some(home) = crate::home::home_dir() {
@@ -41,24 +35,12 @@ fn paths() -> Result<Vec<PathBuf>> {
         if path.is_dir() && seen.insert(path.clone()) {
             paths.push(path);
         }
-        let antigravity_dirs = [
-            home.join(".gemini")
-                .join("antigravity")
-                .join("conversations"),
-            home.join(".gemini")
-                .join("antigravity-cli")
-                .join("conversations"),
-            home.join(".gemini")
-                .join("antigravity-ide")
-                .join("conversations"),
-            home.join(".gemini")
-                .join("antigravity-backup")
-                .join("conversations"),
-        ];
-        for dir in antigravity_dirs {
-            if dir.is_dir() && seen.insert(dir.clone()) {
-                paths.push(dir);
-            }
+        let antigravity_dir = home
+            .join(".gemini")
+            .join("antigravity")
+            .join("conversations");
+        if antigravity_dir.is_dir() && seen.insert(antigravity_dir.clone()) {
+            paths.push(antigravity_dir);
         }
     }
     Ok(paths)

@@ -84,7 +84,7 @@ mod tests {
         let db_path = fixture.path("session-db.db");
         let connection = sqlite::open(&db_path).unwrap();
         connection
-            .execute("CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);")
+            .execute("CREATE TABLE gen_metadata (idx INTEGER, data BLOB);")
             .unwrap();
 
         // 1.4: tokens submessage (1.4.2 = 1000, 1.4.3 = 200, 1.4.5 = 500, 1.4.9 = 50)
