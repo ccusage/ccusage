@@ -37,7 +37,14 @@ CODEX_HOME="$HOME/.codex,$HOME/.codex-work,$HOME/codex-exec-logs" ccusage codex 
 | `ccusage codex monthly` | Aggregate usage by month     | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage codex session` | Group usage by Codex session | [Session Usage](/guide/session-reports) |
 
-These views support `--json`, `--compact`, `--offline`, and `--speed auto|standard|fast`.
+These views support `--json`, `--compact`, `--offline`, `--speed auto|standard|fast`, and the opt-in `--by-source` breakdown.
+
+`--by-source` groups Codex usage by the `session_meta.payload.originator` value. The built-in
+labels are `CLI` (`codex-tui` and `codex_cli_rs`), `Exec` (`codex_exec`), and `Desktop App`
+(`Codex Desktop` and `codex_work_desktop`); other non-empty values are kept unchanged, while
+missing or empty values are reported as `Uncategorized`. Tables add source rows below each
+period, and JSON adds `sourceBreakdowns` to the period and totals objects without changing the
+default output.
 
 ## Monthly Example
 
@@ -79,6 +86,9 @@ ccusage codex daily --speed fast
 
 # Force standard pricing
 ccusage codex daily --speed standard
+
+# Show usage by Codex client/originator
+ccusage codex daily --by-source
 ```
 
 ## JSON Output
@@ -89,9 +99,10 @@ Codex focused views use the same JSON mode as the shared reports:
 ccusage codex daily --json
 ccusage codex monthly --json
 ccusage codex session --json
+ccusage codex daily --by-source --json
 ```
 
-Session JSON includes per-model breakdowns, cached token counts, `lastActivity`, and `isFallback` flags for any events that required the legacy `gpt-5` pricing fallback.
+Session JSON includes per-model breakdowns, cached token counts, `lastActivity`, and `isFallback` flags for any events that required the legacy `gpt-5` pricing fallback. With `--by-source`, each source breakdown has the same token and model totals, and source totals conserve the report totals exactly.
 
 Have feedback or ideas? [Open an issue](https://github.com/ccusage/ccusage/issues/new) so we can improve Codex support.
 

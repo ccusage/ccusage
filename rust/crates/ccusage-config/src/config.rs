@@ -506,6 +506,7 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
 
 fn apply_config_to_agent_args(
     codex_speed: &mut CodexSpeed,
+    mut by_source: Option<&mut bool>,
     mut pi_path: Option<&mut Option<String>>,
     mut open_claw_path: Option<&mut Option<String>>,
     config: &ConfigContext,
@@ -514,6 +515,11 @@ fn apply_config_to_agent_args(
         let codex_options = CodexOptions::from_map(options);
         if let Some(speed) = codex_options.speed {
             *codex_speed = speed.into();
+        }
+        if let Some(by_source) = by_source.as_deref_mut()
+            && let Some(value) = codex_options.by_source
+        {
+            *by_source = value;
         }
         if let Some(pi_path) = pi_path.as_deref_mut()
             && let Some(path) = PiOptions::from_map(options).pi_path
@@ -557,10 +563,11 @@ impl ccusage_cli::CliConfig for ConfigContext {
     fn apply_agent_args(
         &self,
         codex_speed: &mut CodexSpeed,
+        by_source: Option<&mut bool>,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
     ) {
-        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, self);
+        apply_config_to_agent_args(codex_speed, by_source, pi_path, open_claw_path, self);
     }
 }
 
@@ -932,15 +939,18 @@ mod tests {
         assert_eq!(weekly.start_of_week, WeekDay::Monday);
 
         let mut speed = CodexSpeed::Auto;
+        let mut by_source = false;
         apply_config_to_agent_args(
             &mut speed,
+            Some(&mut by_source),
             None,
             None,
             &context(
                 json!({
                     "codex": {
                         "defaults": {
-                            "speed": "fast"
+                            "speed": "fast",
+                            "bySource": true
                         }
                     }
                 }),
@@ -951,11 +961,13 @@ mod tests {
         );
 
         assert_eq!(speed, CodexSpeed::Fast);
+        assert!(by_source);
 
         let mut speed = CodexSpeed::Auto;
         let mut pi_path = None;
         apply_config_to_agent_args(
             &mut speed,
+            None,
             Some(&mut pi_path),
             None,
             &context(
@@ -978,6 +990,7 @@ mod tests {
         let mut open_claw_path = None;
         apply_config_to_agent_args(
             &mut speed,
+            None,
             None,
             Some(&mut open_claw_path),
             &context(

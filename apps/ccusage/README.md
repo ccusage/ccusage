@@ -121,6 +121,7 @@ bunx ccusage statusline  # Claude Code status line for hooks (Beta)
 # Source-focused reports and options
 bunx ccusage claude daily --mode display
 bunx ccusage codex daily --speed fast
+bunx ccusage codex daily --by-source
 bunx ccusage opencode weekly
 bunx ccusage amp session
 bunx ccusage droid daily
@@ -141,6 +142,7 @@ bunx ccusage pi daily --pi-path /path/to/sessions,/archive/pi/sessions
 bunx ccusage daily --all
 bunx ccusage daily --sections daily,monthly,session --json
 bunx ccusage daily --by-agent --json
+bunx ccusage daily --by-source --json
 
 # Filters and options
 bunx ccusage daily --since 2026-04-25 --until 2026-05-16

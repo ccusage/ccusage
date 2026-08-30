@@ -54,6 +54,7 @@ fn main() -> Result<()> {
                 kind: AgentReportKind::Daily,
                 sections: None,
                 by_agent: false,
+                by_source: false,
                 pi_path: None,
                 open_claw_path: None,
                 codex_speed: cli::CodexSpeed::Auto,
@@ -573,6 +574,7 @@ mod tests {
             total_tokens: 150,
             is_fallback_model: false,
             service_tier: None,
+            source: None,
         }];
 
         let report = adapter::codex::report_json(
@@ -616,6 +618,7 @@ mod tests {
             total_tokens: 131,
             is_fallback_model: false,
             service_tier: None,
+            source: None,
         }];
 
         let report = adapter::codex::report_json(
@@ -655,6 +658,7 @@ mod tests {
             total_tokens: 15,
             is_fallback_model: false,
             service_tier: None,
+            source: None,
         }];
 
         let standard = adapter::codex::report_json(
@@ -693,6 +697,7 @@ mod tests {
             total_tokens: 110,
             is_fallback_model: false,
             service_tier: None,
+            source: None,
         }];
 
         let standard = adapter::codex::report_json(

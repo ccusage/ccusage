@@ -128,7 +128,8 @@ Configure Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-a
 	"codex": {
 		"defaults": {
 			"json": true,
-			"offline": true
+			"offline": true,
+			"bySource": true
 		},
 		"commands": {
 			"daily": {

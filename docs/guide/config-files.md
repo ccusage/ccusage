@@ -192,7 +192,8 @@ Use data source namespaces to set defaults and report overrides. Supported names
 	"codex": {
 		"defaults": {
 			"json": true,
-			"offline": true
+			"offline": true,
+			"bySource": true
 		},
 		"commands": {
 			"daily": {

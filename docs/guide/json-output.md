@@ -33,9 +33,10 @@ Unified reports also support JSON-oriented flags for dashboard-style consumers:
 
 ```bash
 ccusage daily --sections daily,monthly,session --by-agent --json
+ccusage daily --by-source --json
 ```
 
-`--sections` emits each requested unified section from one load. The invoked command's section is always included, and the top-level `totals` object remains the total for that invoked section. JSON keys are emitted with the invoked section first, then remaining sections in `daily`, `weekly`, `monthly`, `session` order, with `totals` last. `--by-agent` adds an `agents` array to daily, weekly, and monthly rows; session rows are already per-agent.
+`--sections` emits each requested unified section from one load. The invoked command's section is always included, and the top-level `totals` object remains the total for that invoked section. JSON keys are emitted with the invoked section first, then remaining sections in `daily`, `weekly`, `monthly`, `session` order, with `totals` last. `--by-agent` adds an `agents` array to daily, weekly, and monthly rows; session rows are already per-agent. `--by-source` adds `sourceBreakdowns` to Codex rows and the applicable totals. Focused Codex JSON uses the same field name. Source token and cost totals conserve their containing Codex totals; unknown originators remain unchanged and missing or empty values use `Uncategorized`.
 
 ```json
 {

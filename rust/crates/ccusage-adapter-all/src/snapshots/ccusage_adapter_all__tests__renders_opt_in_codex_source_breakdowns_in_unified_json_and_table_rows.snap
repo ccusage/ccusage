@@ -1,0 +1,139 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: report
+---
+{
+  "daily": [
+    {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 150,
+      "metadata": {
+        "lastActivity": null,
+        "reasoningOutputTokens": 0
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 150,
+          "modelName": "gpt-5",
+          "outputTokens": 15
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 15,
+      "period": "2026-01-02",
+      "sourceBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 100,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0,
+              "inputTokens": 100,
+              "modelName": "gpt-5",
+              "outputTokens": 10
+            }
+          ],
+          "modelsUsed": [
+            "gpt-5"
+          ],
+          "outputTokens": 10,
+          "reasoningOutputTokens": 0,
+          "source": "CLI",
+          "totalCost": 0,
+          "totalTokens": 110
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 50,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0,
+              "inputTokens": 50,
+              "modelName": "gpt-5",
+              "outputTokens": 5
+            }
+          ],
+          "modelsUsed": [
+            "gpt-5"
+          ],
+          "outputTokens": 5,
+          "reasoningOutputTokens": 0,
+          "source": "Exec",
+          "totalCost": 0,
+          "totalTokens": 55
+        }
+      ],
+      "totalCost": 0,
+      "totalTokens": 165
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 0,
+    "inputTokens": 150,
+    "outputTokens": 15,
+    "sourceBreakdowns": [
+      {
+        "cacheCreationTokens": 0,
+        "cacheReadTokens": 0,
+        "inputTokens": 100,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 0,
+            "cacheReadTokens": 0,
+            "cost": 0.0,
+            "inputTokens": 100,
+            "modelName": "gpt-5",
+            "outputTokens": 10
+          }
+        ],
+        "modelsUsed": [
+          "gpt-5"
+        ],
+        "outputTokens": 10,
+        "reasoningOutputTokens": 0,
+        "source": "CLI",
+        "totalCost": 0,
+        "totalTokens": 110
+      },
+      {
+        "cacheCreationTokens": 0,
+        "cacheReadTokens": 0,
+        "inputTokens": 50,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 0,
+            "cacheReadTokens": 0,
+            "cost": 0.0,
+            "inputTokens": 50,
+            "modelName": "gpt-5",
+            "outputTokens": 5
+          }
+        ],
+        "modelsUsed": [
+          "gpt-5"
+        ],
+        "outputTokens": 5,
+        "reasoningOutputTokens": 0,
+        "source": "Exec",
+        "totalCost": 0,
+        "totalTokens": 55
+      }
+    ],
+    "totalCost": 0,
+    "totalTokens": 165
+  }
+}

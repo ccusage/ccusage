@@ -43,6 +43,7 @@ struct TestConfig {
     statusline_cost_source: Option<CostSource>,
     statusline_refresh_interval: Option<u64>,
     codex_speed: Option<CodexSpeed>,
+    codex_by_source: Option<bool>,
     pi_path: Option<&'static str>,
     open_claw_path: Option<&'static str>,
 }
@@ -99,11 +100,15 @@ impl CliConfig for TestConfig {
     fn apply_agent_args(
         &self,
         codex_speed: &mut CodexSpeed,
+        by_source: Option<&mut bool>,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
     ) {
         if let Some(speed) = self.codex_speed {
             *codex_speed = speed;
+        }
+        if let (Some(value), Some(by_source)) = (self.codex_by_source, by_source) {
+            *by_source = value;
         }
         if let (Some(path), Some(pi_path)) = (self.pi_path, pi_path) {
             *pi_path = Some(path.to_string());
@@ -374,6 +379,7 @@ fn parses_unified_sections_and_by_agent_flags() {
         "--sections",
         "monthly,session",
         "--by-agent",
+        "--by-source",
     ]);
     let Some(Command::All(args)) = cli.command else {
         panic!("expected all-agent command");
@@ -384,6 +390,7 @@ fn parses_unified_sections_and_by_agent_flags() {
         Some(&[AgentReportKind::Monthly, AgentReportKind::Session][..])
     );
     assert!(args.by_agent);
+    assert!(args.by_source);
 }
 
 #[test]
@@ -475,6 +482,12 @@ fn rejects_sections_and_by_agent_with_top_level_session_id() {
         by_agent_error,
         "The --sections and --by-agent options cannot be used with session --id."
     );
+
+    let by_source_error = parse_error(&["ccusage", "session", "--id", "abc", "--by-source"]);
+    assert_eq!(
+        by_source_error,
+        "The --by-source option cannot be used with session --id."
+    );
 }
 
 #[test]
@@ -548,6 +561,7 @@ fn applies_config_defaults_and_command_options_before_cli_options() {
 fn applies_agent_namespace_config_to_codex_speed() {
     let config = TestConfig {
         codex_speed: Some(CodexSpeed::Fast),
+        codex_by_source: Some(true),
         ..TestConfig::default()
     };
 
@@ -556,6 +570,7 @@ fn applies_agent_namespace_config_to_codex_speed() {
         panic!("expected codex command");
     };
     assert_eq!(args.codex_speed, CodexSpeed::Fast);
+    assert!(args.by_source);
 }
 
 #[test]
@@ -678,6 +693,7 @@ fn contextual_codex_help_lists_speed_choices() {
     assert!(help.contains("Show Codex token usage grouped by day"));
     assert!(help.contains("USAGE:\n  ccusage codex daily <OPTIONS>"));
     assert!(help.contains("choices: auto | standard | fast"));
+    assert!(help.contains("--by-source"));
 }
 
 #[test]
@@ -1046,6 +1062,15 @@ fn parses_codex_speed_option() {
         panic!("expected codex command");
     };
     assert_eq!(args.codex_speed, CodexSpeed::Fast);
+}
+
+#[test]
+fn parses_codex_by_source_option() {
+    let cli = parse(&["ccusage", "codex", "daily", "--by-source"]);
+    let Some(Command::Codex(args)) = cli.command else {
+        panic!("expected codex command");
+    };
+    assert!(args.by_source);
 }
 
 #[test]

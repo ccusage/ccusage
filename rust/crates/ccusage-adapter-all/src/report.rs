@@ -17,11 +17,11 @@ use crate::{
     print_box_title, short_model_name, should_use_compact_layout,
 };
 
-use super::types::AllRow;
+use super::types::{AllRow, SOURCE_BREAKDOWNS_METADATA_KEY, merge_source_breakdowns};
 
 #[cfg(test)]
 pub(super) fn report_json(rows: &[AllRow], kind: AgentReportKind) -> Value {
-    report_json_with_agents(rows, kind, false)
+    report_json_with_options(rows, kind, false, false)
 }
 
 pub(super) fn report_json_with_agents(
@@ -29,16 +29,35 @@ pub(super) fn report_json_with_agents(
     kind: AgentReportKind,
     include_agents: bool,
 ) -> Value {
+    report_json_with_options(rows, kind, include_agents, false)
+}
+
+pub(super) fn report_json_with_options(
+    rows: &[AllRow],
+    kind: AgentReportKind,
+    include_agents: bool,
+    include_sources: bool,
+) -> Value {
     json!({
-        rows_key(kind): rows.iter().map(|row| row_json(row, include_agents)).collect::<Vec<_>>(),
-        "totals": totals_json(rows),
+        rows_key(kind): rows.iter().map(|row| row_json(row, include_agents, include_sources)).collect::<Vec<_>>(),
+        "totals": totals_json(rows, include_sources),
     })
 }
 
+#[cfg(test)]
 pub(super) fn sections_report_json(
     sections: &[(AgentReportKind, Vec<AllRow>)],
     command_kind: AgentReportKind,
     include_agents: bool,
+) -> OrderedJsonMap {
+    sections_report_json_with_options(sections, command_kind, include_agents, false)
+}
+
+fn sections_report_json_with_options(
+    sections: &[(AgentReportKind, Vec<AllRow>)],
+    command_kind: AgentReportKind,
+    include_agents: bool,
+    include_sources: bool,
 ) -> OrderedJsonMap {
     let mut fields = Vec::with_capacity(sections.len() + 1);
     for (kind, rows) in sections {
@@ -46,7 +65,7 @@ pub(super) fn sections_report_json(
             rows_key(*kind),
             Value::Array(
                 rows.iter()
-                    .map(|row| row_json(row, include_agents))
+                    .map(|row| row_json(row, include_agents, include_sources))
                     .collect(),
             ),
         ));
@@ -55,7 +74,7 @@ pub(super) fn sections_report_json(
         .iter()
         .find_map(|(kind, rows)| (*kind == command_kind).then_some(rows.as_slice()))
         .unwrap_or(&[]);
-    fields.push(("totals", totals_json(command_rows)));
+    fields.push(("totals", totals_json(command_rows, include_sources)));
     OrderedJsonMap { fields }
 }
 
@@ -66,7 +85,26 @@ pub(super) fn print_sections_report_json(
     jq: Option<&str>,
     no_cost: bool,
 ) -> Result<()> {
-    let mut report = sections_report_json(sections, command_kind, include_agents);
+    print_sections_report_json_with_options(
+        sections,
+        command_kind,
+        include_agents,
+        false,
+        jq,
+        no_cost,
+    )
+}
+
+pub(super) fn print_sections_report_json_with_options(
+    sections: &[(AgentReportKind, Vec<AllRow>)],
+    command_kind: AgentReportKind,
+    include_agents: bool,
+    include_sources: bool,
+    jq: Option<&str>,
+    no_cost: bool,
+) -> Result<()> {
+    let mut report =
+        sections_report_json_with_options(sections, command_kind, include_agents, include_sources);
     if no_cost {
         report.strip_costs();
     }
@@ -129,20 +167,25 @@ impl Serialize for OrderedJsonMap {
     }
 }
 
-fn row_json(row: &AllRow, include_agents: bool) -> Value {
-    let mut value = agent_json(row);
+fn row_json(row: &AllRow, include_agents: bool, include_sources: bool) -> Value {
+    let mut value = agent_json_with_sources(row, include_sources);
     if let Some(obj) = value.as_object_mut() {
         obj.insert("period".to_string(), json!(row.period));
+    }
+    let mut metadata = row.metadata.clone();
+    if let Some(metadata_object) = metadata.as_mut().and_then(Value::as_object_mut) {
+        metadata_object.remove(SOURCE_BREAKDOWNS_METADATA_KEY);
+        if metadata_object.is_empty() {
+            metadata = None;
+        }
     }
     if let (Some(obj), Some(agents)) = (value.as_object_mut(), row.metadata_agents.as_ref()) {
         obj.insert(
             "metadata".to_string(),
-            row.metadata
-                .clone()
-                .unwrap_or_else(|| json!({ "agents": agents })),
+            metadata.unwrap_or_else(|| json!({ "agents": agents })),
         );
-    } else if let (Some(obj), Some(metadata)) = (value.as_object_mut(), row.metadata.as_ref()) {
-        obj.insert("metadata".to_string(), metadata.clone());
+    } else if let (Some(obj), Some(metadata)) = (value.as_object_mut(), metadata) {
+        obj.insert("metadata".to_string(), metadata);
     }
     if include_agents
         && let (Some(obj), Some(agent_breakdowns)) =
@@ -150,7 +193,26 @@ fn row_json(row: &AllRow, include_agents: bool) -> Value {
     {
         obj.insert(
             "agents".to_string(),
-            Value::Array(agent_breakdowns.iter().map(agent_json).collect()),
+            Value::Array(
+                agent_breakdowns
+                    .iter()
+                    .map(|row| agent_json_with_sources(row, include_sources))
+                    .collect(),
+            ),
+        );
+    }
+    value
+}
+
+fn agent_json_with_sources(row: &AllRow, include_sources: bool) -> Value {
+    let mut value = agent_json(row);
+    if include_sources
+        && let Some(source_breakdowns) = source_breakdowns_for_row(row)
+        && let Some(obj) = value.as_object_mut()
+    {
+        obj.insert(
+            SOURCE_BREAKDOWNS_METADATA_KEY.to_string(),
+            source_breakdowns,
         );
     }
     value
@@ -170,15 +232,57 @@ fn agent_json(row: &AllRow) -> Value {
     })
 }
 
-fn totals_json(rows: &[AllRow]) -> Value {
-    json!({
+fn totals_json(rows: &[AllRow], include_sources: bool) -> Value {
+    let mut totals = json!({
         "inputTokens": rows.iter().map(|row| row.input_tokens).sum::<u64>(),
         "outputTokens": rows.iter().map(|row| row.output_tokens).sum::<u64>(),
         "cacheCreationTokens": rows.iter().map(|row| row.cache_creation_tokens).sum::<u64>(),
         "cacheReadTokens": rows.iter().map(|row| row.cache_read_tokens).sum::<u64>(),
         "totalTokens": rows.iter().map(|row| row.total_tokens).sum::<u64>(),
         "totalCost": json_float(rows.iter().map(|row| row.total_cost).sum::<f64>()),
-    })
+    });
+    if include_sources {
+        totals[SOURCE_BREAKDOWNS_METADATA_KEY] = source_breakdowns_for_rows(rows);
+    }
+    totals
+}
+
+fn source_breakdowns_for_row(row: &AllRow) -> Option<Value> {
+    if let Some(metadata) = row.metadata.as_ref()
+        && let Some(source_breakdowns) = metadata.get(SOURCE_BREAKDOWNS_METADATA_KEY)
+    {
+        return Some(source_breakdowns.clone());
+    }
+    if row.agent != "all" {
+        return None;
+    }
+    let mut metadata = None;
+    for breakdown in row
+        .agent_breakdowns
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter(|breakdown| breakdown.agent == "codex")
+    {
+        merge_source_breakdowns(&mut metadata, breakdown.metadata.clone());
+    }
+    metadata.and_then(|metadata| metadata.get(SOURCE_BREAKDOWNS_METADATA_KEY).cloned())
+}
+
+fn source_breakdowns_for_rows(rows: &[AllRow]) -> Value {
+    let mut metadata = None;
+    for row in rows {
+        let Some(source_breakdowns) = source_breakdowns_for_row(row) else {
+            continue;
+        };
+        merge_source_breakdowns(
+            &mut metadata,
+            Some(json!({ SOURCE_BREAKDOWNS_METADATA_KEY: source_breakdowns })),
+        );
+    }
+    metadata
+        .and_then(|metadata| metadata.get(SOURCE_BREAKDOWNS_METADATA_KEY).cloned())
+        .unwrap_or_else(|| Value::Array(Vec::new()))
 }
 
 fn rows_key(kind: AgentReportKind) -> &'static str {
@@ -195,6 +299,16 @@ pub(super) fn print_table(
     kind: AgentReportKind,
     shared: &SharedArgs,
     detected_agents: &[&'static str],
+) -> Result<()> {
+    print_table_with_options(rows, kind, shared, detected_agents, false)
+}
+
+pub(super) fn print_table_with_options(
+    rows: &[AllRow],
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+    detected_agents: &[&'static str],
+    include_sources: bool,
 ) -> Result<()> {
     print_box_title(&all_report_title(kind, rows, detected_agents), shared);
     if rows.is_empty() {
@@ -219,6 +333,9 @@ pub(super) fn print_table(
         if let Some(agent_breakdowns) = row.agent_breakdowns.as_ref() {
             for breakdown in agent_breakdowns {
                 table.push(all_table_row(breakdown, compact, true, shared.no_cost));
+                if include_sources {
+                    push_source_breakdown_rows(&mut table, breakdown, compact, shared);
+                }
                 if shared.breakdown && !breakdown.model_breakdowns.is_empty() {
                     push_model_breakdown_rows(
                         &mut table,
@@ -228,12 +345,17 @@ pub(super) fn print_table(
                     );
                 }
             }
-        } else if shared.breakdown && !row.model_breakdowns.is_empty() {
-            push_model_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared);
+        } else {
+            if include_sources {
+                push_source_breakdown_rows(&mut table, row, compact, shared);
+            }
+            if shared.breakdown && !row.model_breakdowns.is_empty() {
+                push_model_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared);
+            }
         }
     }
     table.separator();
-    let totals = totals_json(rows);
+    let totals = totals_json(rows, include_sources);
     let table_total_tokens = rows.iter().map(table_total_tokens).sum::<u64>();
     if compact {
         let mut total_row = vec![
@@ -314,6 +436,149 @@ pub(super) fn print_table(
         eprintln!("Expand terminal width to see cache metrics and total tokens");
     }
     Ok(())
+}
+
+fn push_source_breakdown_rows(
+    table: &mut SimpleTable,
+    row: &AllRow,
+    compact: bool,
+    shared: &SharedArgs,
+) {
+    let Some(Value::Array(source_breakdowns)) = source_breakdowns_for_row(row) else {
+        return;
+    };
+    for source_breakdown in source_breakdowns {
+        table.push(source_table_row(&source_breakdown, compact, shared.no_cost));
+        if shared.breakdown {
+            push_source_model_breakdown_rows(table, &source_breakdown, compact, shared);
+        }
+    }
+}
+
+pub(super) fn source_table_row(source: &Value, compact: bool, no_cost: bool) -> Vec<String> {
+    let models = source
+        .get("modelsUsed")
+        .and_then(Value::as_array)
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let source_name = source
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or("Uncategorized");
+    let input = crate::json_value_u64(source.get("inputTokens"));
+    let output = crate::json_value_u64(source.get("outputTokens"));
+    let cache_creation = crate::json_value_u64(source.get("cacheCreationTokens"));
+    let cache_read = crate::json_value_u64(source.get("cacheReadTokens"));
+    let cost = source
+        .get("totalCost")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let mut values = if compact {
+        vec![
+            String::new(),
+            format!("- {source_name}"),
+            format_models_multiline(&models),
+            format_number(input),
+            format_number(output),
+            format_currency(cost),
+        ]
+    } else {
+        vec![
+            String::new(),
+            format!("- {source_name}"),
+            format_models_multiline(&models),
+            format_number(input),
+            format_number(output),
+            format_number(cache_creation),
+            format_number(cache_read),
+            format_number(
+                input
+                    .saturating_add(output)
+                    .saturating_add(cache_creation)
+                    .saturating_add(cache_read),
+            ),
+            format_currency(cost),
+        ]
+    };
+    if no_cost {
+        values.pop();
+    }
+    values
+}
+
+fn push_source_model_breakdown_rows(
+    table: &mut SimpleTable,
+    source: &Value,
+    compact: bool,
+    shared: &SharedArgs,
+) {
+    let Some(Value::Array(model_breakdowns)) = source.get("modelBreakdowns") else {
+        return;
+    };
+    for model_breakdown in model_breakdowns {
+        let model = color(
+            shared,
+            format!(
+                "- {}",
+                short_model_name(
+                    model_breakdown
+                        .get("modelName")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown")
+                )
+            ),
+            Color::Grey,
+        );
+        let input = crate::json_value_u64(model_breakdown.get("inputTokens"));
+        let output = crate::json_value_u64(model_breakdown.get("outputTokens"));
+        let cache_creation = crate::json_value_u64(model_breakdown.get("cacheCreationTokens"));
+        let cache_read = crate::json_value_u64(model_breakdown.get("cacheReadTokens"));
+        let cost = model_breakdown
+            .get("cost")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
+        let mut row = if compact {
+            vec![
+                String::new(),
+                String::new(),
+                model,
+                color(shared, format_number(input), Color::Grey),
+                color(shared, format_number(output), Color::Grey),
+                color(shared, format_currency(cost), Color::Grey),
+            ]
+        } else {
+            vec![
+                String::new(),
+                String::new(),
+                model,
+                color(shared, format_number(input), Color::Grey),
+                color(shared, format_number(output), Color::Grey),
+                color(shared, format_number(cache_creation), Color::Grey),
+                color(shared, format_number(cache_read), Color::Grey),
+                color(
+                    shared,
+                    format_number(
+                        input
+                            .saturating_add(output)
+                            .saturating_add(cache_creation)
+                            .saturating_add(cache_read),
+                    ),
+                    Color::Grey,
+                ),
+                color(shared, format_currency(cost), Color::Grey),
+            ]
+        };
+        if shared.no_cost {
+            row.pop();
+        }
+        table.push(row);
+    }
 }
 
 fn all_rows_as_usage_summaries(rows: &[AllRow]) -> Vec<UsageSummary> {

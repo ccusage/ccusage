@@ -93,6 +93,11 @@
 			"default": "false"
 		},
 		{
+			"flags": "--by-source",
+			"description": "Include Codex originator breakdowns in unified report rows",
+			"default": "false"
+		},
+		{
 			"flags": "-O, --offline",
 			"description": "Use cached pricing data where supported",
 			"default": "false"
@@ -194,6 +199,11 @@
 			"description": "Cost speed tier: auto uses recorded settings, then Codex config.toml; use standard or fast to override",
 			"default": "auto",
 			"choices": ["auto", "standard", "fast"]
+		},
+		{
+			"flags": "--by-source",
+			"description": "Show Codex usage breakdown by client or originator",
+			"default": "false"
 		},
 		{
 			"flags": "--compact",
