@@ -268,7 +268,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
                     .or_else(|| current_model.clone())
                     .unwrap_or_else(|| "gemini-internal-model".to_string());
                 let input_tokens = parsed.numbers.get("1.4.2").copied().unwrap_or(0);
-                let output_tokens = parsed.numbers.get("1.4.3").copied().unwrap_or(0);
+                let total_output_tokens = parsed.numbers.get("1.4.3").copied().unwrap_or(0);
                 let cache_read_tokens = parsed.numbers.get("1.4.5").copied().unwrap_or(0);
                 let reasoning_tokens = parsed.numbers.get("1.4.9").copied().unwrap_or(0);
                 let visible_tokens = parsed.numbers.get("1.4.10").copied().unwrap_or(0);
@@ -293,27 +293,34 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
                     })
                     .unwrap_or(fallback_timestamp);
                 if input_tokens == 0
-                    && output_tokens == 0
+                    && total_output_tokens == 0
                     && cache_read_tokens == 0
                     && reasoning_tokens == 0
                     && visible_tokens == 0
                 {
                     continue;
                 }
-                let thoughts = reasoning_tokens.max(visible_tokens.saturating_sub(output_tokens));
+                let effective_output = if visible_tokens > 0 {
+                    visible_tokens
+                } else {
+                    total_output_tokens.saturating_sub(reasoning_tokens)
+                };
+                let effective_thoughts =
+                    reasoning_tokens.max(total_output_tokens.saturating_sub(effective_output));
+                let effective_total_output = total_output_tokens
+                    .max(effective_output.saturating_add(effective_thoughts));
                 let total_tokens = input_tokens
-                    .saturating_add(output_tokens)
                     .saturating_add(cache_read_tokens)
-                    .saturating_add(thoughts);
+                    .saturating_add(effective_total_output);
                 let event = build_event(
                     Some(&model),
                     &session_id,
                     timestamp,
                     GeminiTokens {
                         input: input_tokens,
-                        output: output_tokens,
+                        output: effective_output,
                         cached: cache_read_tokens,
-                        thoughts,
+                        thoughts: effective_thoughts,
                         tool: 0,
                         total: Some(total_tokens),
                     },

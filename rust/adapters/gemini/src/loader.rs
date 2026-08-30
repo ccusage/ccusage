@@ -87,12 +87,13 @@ mod tests {
             .execute("CREATE TABLE gen_metadata (idx INTEGER, data BLOB);")
             .unwrap();
 
-        // 1.4: tokens submessage (1.4.2 = 1000, 1.4.3 = 200, 1.4.5 = 500, 1.4.9 = 50)
+        // 1.4: tokens submessage (1.4.2 = 1000, 1.4.3 = 200, 1.4.5 = 500, 1.4.9 = 50, 1.4.10 = 150)
         let tokens_bytes = vec![
             0x10, 0xE8, 0x07, // 2: varint 1000
             0x18, 0xC8, 0x01, // 3: varint 200
             0x28, 0xF4, 0x03, // 5: varint 500
             0x48, 50, // 9: varint 50
+            0x50, 0x96, 0x01, // 10: varint 150
         ];
         // 1.9.4.1 = 1779000000 (0x6A0BB9C0 -> varint: C0 B3 AF D0 06)
         let ts_inner = vec![0x08, 0xC0, 0xB3, 0xAF, 0xD0, 0x06];
@@ -120,10 +121,12 @@ mod tests {
         blob.push(field1_payload.len() as u8);
         blob.extend_from_slice(&field1_payload);
 
-        // Row 2: Continuation row with tokens only (no model field)
+        // Row 2: Continuation row with tokens only (1.4.2 = 400, 1.4.3 = 100, 1.4.9 = 25, 1.4.10 = 75)
         let cont_tokens = vec![
             0x10, 0x90, 0x03, // 2: varint 400
             0x18, 0x64, // 3: varint 100
+            0x48, 25, // 9: varint 25
+            0x50, 75, // 10: varint 75
         ];
         let mut cont_field1 = Vec::new();
         cont_field1.push(0x22);
@@ -164,7 +167,7 @@ mod tests {
         assert_eq!(entries[0].session_id.as_ref(), "session-db");
         assert_eq!(entries[0].model.as_deref(), Some("gemini-2.5-flash"));
         assert_eq!(entries[0].data.message.usage.input_tokens, 1000);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 200);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 150);
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 500);
         assert_eq!(entries[0].extra_total_tokens, 50);
         assert!(entries[0].cost > 0.0);
@@ -172,7 +175,8 @@ mod tests {
         // Row 2 (idx=2): Inherited from active session model
         assert_eq!(entries[1].model.as_deref(), Some("gemini-2.5-flash"));
         assert_eq!(entries[1].data.message.usage.input_tokens, 400);
-        assert_eq!(entries[1].data.message.usage.output_tokens, 100);
+        assert_eq!(entries[1].data.message.usage.output_tokens, 75);
+        assert_eq!(entries[1].extra_total_tokens, 25);
         assert!(entries[1].cost > 0.0);
     }
 }
