@@ -237,12 +237,13 @@ impl<'a> PiStoreContext<'a> {
         mode: CostMode,
         pricing: Option<&PricingMap>,
     ) -> f64 {
+        let source_cost = source_cost_for_mode(display_cost, mode);
         match self {
             Self::Default => {
-                calculate_cost_for_usage(display_model, usage, display_cost, mode, pricing)
+                calculate_cost_for_usage(display_model, usage, source_cost, mode, pricing)
             }
             Self::Named { .. } => {
-                calculate_store_cost(raw_model, display_model, usage, display_cost, mode, pricing)
+                calculate_store_cost(raw_model, display_model, usage, source_cost, mode, pricing)
             }
         }
     }
@@ -256,15 +257,16 @@ impl<'a> PiStoreContext<'a> {
         mode: CostMode,
         pricing: Option<&PricingMap>,
     ) -> Option<String> {
+        let source_cost = source_cost_for_mode(display_cost, mode);
         match self {
             Self::Default => {
-                missing_pricing_model_for_usage(display_model, usage, display_cost, mode, pricing)
+                missing_pricing_model_for_usage(display_model, usage, source_cost, mode, pricing)
             }
             Self::Named { .. } => missing_store_pricing_model(
                 raw_model,
                 display_model,
                 usage,
-                display_cost,
+                source_cost,
                 mode,
                 pricing,
             ),
@@ -595,6 +597,14 @@ fn calculate_store_cost(
     }
 }
 
+fn source_cost_for_mode(display_cost: Option<f64>, mode: CostMode) -> Option<f64> {
+    if mode == CostMode::Auto {
+        display_cost.filter(|cost| cost.is_finite() && *cost >= 0.0)
+    } else {
+        display_cost
+    }
+}
+
 fn calculate_store_cost_from_tokens(
     raw_model: Option<&str>,
     display_model: Option<&str>,
@@ -664,6 +674,32 @@ pub(crate) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> Strin
 mod tests {
     use super::*;
     use ccusage_test_support::fs_fixture;
+    use std::path::Path;
+
+    fn pricing_for_cost_tests() -> PricingMap {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "[pi] test-model": {
+                    "input_cost_per_token": 0.000002,
+                    "output_cost_per_token": 0.000008
+                },
+                "[omp] test-model": {
+                    "input_cost_per_token": 0.000002,
+                    "output_cost_per_token": 0.000008
+                }
+            }"#,
+        );
+        pricing
+    }
+
+    fn usage_for_cost_tests() -> crate::TokenUsageRaw {
+        crate::TokenUsageRaw {
+            input_tokens: 1000,
+            output_tokens: 2000,
+            ..crate::TokenUsageRaw::default()
+        }
+    }
 
     #[test]
     fn falls_back_to_total_tokens_when_pi_parts_are_missing() {
@@ -895,5 +931,133 @@ mod tests {
         .unwrap();
 
         assert_ne!(entry_id(&pi), entry_id_for_store("omp", &omp));
+    }
+
+    #[test]
+    fn auto_recalculates_negative_but_keeps_zero_source_cost_for_default_and_named_stores() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": [
+                r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"test-model","usage":{"input":1000,"output":2000,"cost":{"total":-1.25}}}}"#,
+                r#"{"type":"message","timestamp":"2026-01-02T00:01:00.000Z","message":{"role":"assistant","model":"test-model","usage":{"input":1000,"output":2000,"cost":{"total":0}}}}"#,
+            ]
+            .join("\n"),
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let pricing = pricing_for_cost_tests();
+        let expected_cost = 0.018000000000000002;
+
+        let default_entries =
+            read_session_file(&file, None, CostMode::Auto, Some(&pricing)).unwrap();
+        assert_eq!(default_entries.len(), 2);
+        assert_eq!(default_entries[0].cost, expected_cost);
+        assert_eq!(default_entries[0].data.cost_usd, Some(-1.25));
+        assert_eq!(default_entries[1].cost, 0.0);
+        assert_eq!(default_entries[1].data.cost_usd, Some(0.0));
+
+        let named_entries = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Auto,
+            Some(&pricing),
+            "omp",
+        )
+        .unwrap();
+        assert_eq!(named_entries.len(), 2);
+        assert_eq!(named_entries[0].cost, expected_cost);
+        assert_eq!(named_entries[0].data.cost_usd, Some(-1.25));
+        assert_eq!(named_entries[1].cost, 0.0);
+        assert_eq!(named_entries[1].data.cost_usd, Some(0.0));
+    }
+
+    #[test]
+    fn auto_recalculates_non_finite_source_cost_while_display_preserves_it() {
+        let pricing = pricing_for_cost_tests();
+        let usage = usage_for_cost_tests();
+        let expected_cost = 0.018000000000000002;
+        let contexts = [
+            PiStoreContext::Default,
+            PiStoreContext::Named {
+                root: Path::new("."),
+                name: "omp",
+            },
+        ];
+
+        for context in contexts {
+            let display_cost = context.cost(
+                Some("test-model"),
+                Some(match context {
+                    PiStoreContext::Default => "[pi] test-model",
+                    PiStoreContext::Named { .. } => "[omp] test-model",
+                }),
+                usage,
+                Some(f64::NAN),
+                CostMode::Display,
+                Some(&pricing),
+            );
+            assert!(display_cost.is_nan());
+
+            let auto_cost = context.cost(
+                Some("test-model"),
+                Some(match context {
+                    PiStoreContext::Default => "[pi] test-model",
+                    PiStoreContext::Named { .. } => "[omp] test-model",
+                }),
+                usage,
+                Some(f64::INFINITY),
+                CostMode::Auto,
+                Some(&pricing),
+            );
+            assert_eq!(auto_cost, expected_cost);
+
+            let calculated_cost = context.cost(
+                Some("test-model"),
+                Some(match context {
+                    PiStoreContext::Default => "[pi] test-model",
+                    PiStoreContext::Named { .. } => "[omp] test-model",
+                }),
+                usage,
+                Some(f64::NEG_INFINITY),
+                CostMode::Calculate,
+                Some(&pricing),
+            );
+            assert_eq!(calculated_cost, expected_cost);
+        }
+    }
+
+    #[test]
+    fn auto_reports_missing_pricing_for_invalid_source_cost() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"unknown-model","usage":{"input":1000,"output":2000,"cost":{"total":-1.25}}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let pricing = PricingMap::default();
+
+        let default_entry = read_session_file(&file, None, CostMode::Auto, Some(&pricing))
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(default_entry.cost, 0.0);
+        assert_eq!(
+            default_entry.missing_pricing_model.as_deref(),
+            Some("[pi] unknown-model")
+        );
+
+        let named_entry = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Auto,
+            Some(&pricing),
+            "omp",
+        )
+        .unwrap()
+        .pop()
+        .unwrap();
+        assert_eq!(named_entry.cost, 0.0);
+        assert_eq!(
+            named_entry.missing_pricing_model.as_deref(),
+            Some("unknown-model")
+        );
     }
 }
