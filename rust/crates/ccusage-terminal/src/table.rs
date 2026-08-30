@@ -6,6 +6,8 @@ use crate::{
     width::{truncate_to_width, visible_width, visible_width_max_line},
 };
 
+const MAX_MODELS_CONTENT_WIDTH: usize = 25;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Align {
     Left,
@@ -98,15 +100,29 @@ impl SimpleTable {
     }
 
     fn column_widths(&self) -> Vec<usize> {
+        let model_column = self.headers.iter().position(|header| header == "Models");
         let content_widths = self
             .headers
             .iter()
-            .map(|header| visible_width_max_line(header))
+            .enumerate()
+            .map(|(index, header)| {
+                let width = visible_width_max_line(header);
+                if model_column == Some(index) {
+                    width.min(MAX_MODELS_CONTENT_WIDTH)
+                } else {
+                    width
+                }
+            })
             .collect::<Vec<_>>();
         let mut content_widths = content_widths;
         for row in self.rows.iter().flatten() {
             for (index, cell) in row.iter().enumerate() {
                 let cell_width = visible_width_max_line(cell);
+                let cell_width = if model_column == Some(index) {
+                    cell_width.min(MAX_MODELS_CONTENT_WIDTH)
+                } else {
+                    cell_width
+                };
                 if let Some(width) = content_widths.get_mut(index) {
                     *width = (*width).max(cell_width);
                 }
@@ -116,7 +132,9 @@ impl SimpleTable {
             .iter()
             .enumerate()
             .map(|(index, width)| {
-                if self.aligns.get(index) == Some(&Align::Right) {
+                if model_column == Some(index) {
+                    (width + 2).clamp(15, MAX_MODELS_CONTENT_WIDTH + 2)
+                } else if self.aligns.get(index) == Some(&Align::Right) {
                     (width + 3).max(11)
                 } else if index == 1 {
                     (width + 2).max(15)
@@ -131,11 +149,24 @@ impl SimpleTable {
         } else {
             10
         };
-        fit_widths_to_terminal(widths, &self.aligns, self.terminal_width, first_column_min)
+        fit_widths_to_terminal(
+            widths,
+            &self.aligns,
+            self.terminal_width,
+            first_column_min,
+            model_column,
+        )
     }
 
     fn compact_date_row(&self, row: &[String], widths: &[usize]) -> Vec<String> {
-        if !self.compact_dates || widths.first().copied().unwrap_or_default() > 10 {
+        if !self.compact_dates
+            || widths
+                .first()
+                .copied()
+                .unwrap_or_default()
+                .saturating_sub(2)
+                >= 10
+        {
             return row.to_vec();
         }
         let mut row = row.to_vec();
@@ -178,6 +209,7 @@ fn fit_widths_to_terminal(
     aligns: &[Align],
     terminal_width: usize,
     first_column_min: usize,
+    model_column: Option<usize>,
 ) -> Vec<usize> {
     if cli_table_required_width(&widths) <= terminal_width {
         return widths;
@@ -191,7 +223,7 @@ fn fit_widths_to_terminal(
                 10
             } else if index == 0 {
                 first_column_min
-            } else if index == 1 {
+            } else if model_column == Some(index) || (model_column.is_none() && index == 1) {
                 12
             } else {
                 8
@@ -356,6 +388,7 @@ mod tests {
             &[Align::Left, Align::Left, Align::Right, Align::Right],
             60,
             12,
+            None,
         );
 
         assert!(cli_table_required_width(&widths) <= 60);
@@ -473,5 +506,188 @@ mod tests {
             models_width <= widest_line + 3,
             "Models width ({models_width}) should be close to widest line width ({widest_line}), not {sum_of_lines}"
         );
+    }
+
+    #[test]
+    fn caps_wide_models_without_truncating_large_numeric_values() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input", "Output", "Total Tokens"],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(120);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "- provider/this-is-a-deliberately-wide-model-name".to_string(),
+            "13,044".to_string(),
+            "125,061".to_string(),
+            "43,633".to_string(),
+        ]);
+        table.separator();
+        table.push(vec![
+            "Total".to_string(),
+            String::new(),
+            "99,999,999".to_string(),
+            "88,888,888".to_string(),
+            "77,777,777".to_string(),
+        ]);
+
+        let widths = table.column_widths();
+        assert_eq!(widths[1], 27);
+        assert_eq!(widths[2], 13);
+        assert_eq!(widths[3], 13);
+        assert_eq!(widths[4], 15);
+
+        let rendered = table.render_lines().join("\n");
+        assert!(rendered.contains("13,044"));
+        assert!(rendered.contains("99,999,999"));
+        assert!(rendered.contains("88,888,888"));
+        assert!(rendered.contains("77,777,777"));
+        assert!(rendered.contains("43,633"));
+    }
+
+    #[test]
+    fn caps_models_column_after_agent_column() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Agent", "Models", "Input", "Output", "Total Tokens"],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(120);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "codex".to_string(),
+            "- provider/this-is-a-deliberately-wide-model-name".to_string(),
+            "13,044".to_string(),
+            "125,061".to_string(),
+            "43,633".to_string(),
+        ]);
+
+        let widths = table.column_widths();
+        assert_eq!(widths[2], 27);
+        assert!(table.render_lines().join("\n").contains("codex"));
+    }
+
+    #[test]
+    fn keeps_date_and_numeric_columns_readable_at_eighty_columns() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input", "Output", "Total Tokens"],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(80)
+        .with_date_compaction(true);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "- provider/this-is-a-deliberately-wide-model-name".to_string(),
+            "13,044".to_string(),
+            "125,061".to_string(),
+            "43,633".to_string(),
+        ]);
+        table.separator();
+        table.push(vec![
+            "Total".to_string(),
+            String::new(),
+            "99,999,999".to_string(),
+            "88,888,888".to_string(),
+            "77,777,777".to_string(),
+        ]);
+
+        let rendered = table.render_lines().join("\n");
+        assert!(rendered.lines().all(|line| visible_width(line) <= 80));
+        assert!(rendered.contains("2026"));
+        assert!(rendered.contains("05-18"));
+        assert!(rendered.contains("13,044"));
+        assert!(rendered.contains("99,999,999"));
+        assert!(rendered.contains("88,888,888"));
+        assert!(rendered.contains("77,777,777"));
+        assert!(!rendered.contains("2026-05-"));
+    }
+
+    #[test]
+    fn caps_ansi_multiline_models_by_visible_width() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input"],
+            vec![Align::Left, Align::Left, Align::Right],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(120);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "\x1b[32m- 表表表表表表表表表表表表表表\x1b[0m\n- short".to_string(),
+            "1,234".to_string(),
+        ]);
+
+        let widths = table.column_widths();
+        assert_eq!(widths[1], 27);
+
+        let rendered = table.render_lines().join("\n");
+        assert!(rendered.contains("\x1b[0m…"));
+        assert!(rendered.lines().all(|line| visible_width(line) <= 120));
+    }
+
+    #[test]
+    fn compact_date_layout_remains_stable_with_a_long_model() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input", "Output", "Cost (USD)"],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(56)
+        .with_date_compaction(true);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "- provider/this-is-a-deliberately-wide-model-name".to_string(),
+            "123,456,789".to_string(),
+            "9,876,543".to_string(),
+            "$12345.67".to_string(),
+        ]);
+
+        let rendered = table.render_lines().join("\n");
+        assert!(rendered.contains("2026"));
+        assert!(rendered.contains("05-18"));
+        assert!(rendered.contains("Models"));
+        assert!(rendered.contains("Input"));
+        assert!(rendered.contains("Cost"));
     }
 }
