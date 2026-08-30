@@ -231,6 +231,7 @@ fn fit_widths_to_terminal(
         })
         .collect::<Vec<_>>();
 
+    let natural_widths = widths.clone();
     let available_width = terminal_width.saturating_sub(widths.len() + 1);
     let total_content_width = widths.iter().sum::<usize>();
     if total_content_width > 0 {
@@ -246,12 +247,43 @@ fn fit_widths_to_terminal(
             .iter()
             .enumerate()
             .filter(|(index, width)| **width > minimums[*index])
-            .max_by_key(|(_, width)| **width)
+            .max_by_key(|(index, width)| (aligns.get(*index) != Some(&Align::Right), **width))
             .map(|(index, _)| index)
         else {
             break;
         };
         widths[index] -= 1;
+    }
+
+    let mut spare = terminal_width.saturating_sub(cli_table_required_width(&widths));
+    for index in widths
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| aligns.get(*index) == Some(&Align::Right))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>()
+    {
+        while widths[index] < natural_widths[index] {
+            if spare > 0 {
+                widths[index] += 1;
+                spare -= 1;
+                continue;
+            }
+            let Some(text_index) = widths
+                .iter()
+                .enumerate()
+                .filter(|(text_index, width)| {
+                    aligns.get(*text_index) != Some(&Align::Right)
+                        && **width > minimums[*text_index]
+                })
+                .max_by_key(|(_, width)| **width)
+                .map(|(text_index, _)| text_index)
+            else {
+                break;
+            };
+            widths[text_index] -= 1;
+            widths[index] += 1;
+        }
     }
     widths
 }
@@ -392,6 +424,20 @@ mod tests {
         );
 
         assert!(cli_table_required_width(&widths) <= 60);
+    }
+
+    #[test]
+    fn numeric_columns_keep_the_reverted_minimum_when_space_is_tight() {
+        let widths = fit_widths_to_terminal(
+            vec![20, 40, 14, 14],
+            &[Align::Left, Align::Left, Align::Right, Align::Right],
+            49,
+            12,
+            None,
+        );
+
+        assert_eq!(widths[2], 10);
+        assert_eq!(widths[3], 10);
     }
 
     #[test]
@@ -585,6 +631,75 @@ mod tests {
         let widths = table.column_widths();
         assert_eq!(widths[2], 27);
         assert!(table.render_lines().join("\n").contains("codex"));
+    }
+
+    #[test]
+    fn preserves_large_numeric_cells_when_eight_columns_can_fit() {
+        let mut table = SimpleTable::new(
+            vec![
+                "Date",
+                "Models",
+                "Input",
+                "Output",
+                "Reasoning",
+                "Cache Read",
+                "Total Tokens",
+                "Cost (USD)",
+            ],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(120);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "- provider/this-is-a-deliberately-wide-model-name".to_string(),
+            "1,234".to_string(),
+            "5,678".to_string(),
+            "9,012".to_string(),
+            "3,456".to_string(),
+            "7,890".to_string(),
+            "$12.34".to_string(),
+        ]);
+        table.separator();
+        table.push(vec![
+            "Total".to_string(),
+            String::new(),
+            "99,999,999".to_string(),
+            "88,888,888".to_string(),
+            "77,777,777".to_string(),
+            "66,666,666".to_string(),
+            "987,654,321".to_string(),
+            "$12345.67".to_string(),
+        ]);
+
+        let rendered = table.render_lines().join("\n");
+        let total_line = rendered
+            .lines()
+            .find(|line| line.starts_with("│ Total"))
+            .expect("rendered table should include a Total row");
+        assert!(!total_line.contains('…'), "{total_line}");
+        for value in [
+            "99,999,999",
+            "88,888,888",
+            "77,777,777",
+            "66,666,666",
+            "987,654,321",
+            "$12345.67",
+        ] {
+            assert!(rendered.contains(value), "missing {value} in {rendered}");
+        }
     }
 
     #[test]
