@@ -87,13 +87,13 @@ mod tests {
             .execute("CREATE TABLE gen_metadata (idx INTEGER, data BLOB);")
             .unwrap();
 
-        // 1.4: tokens submessage (1.4.2 = 1000, 1.4.3 = 200, 1.4.5 = 500, 1.4.9 = 50, 1.4.10 = 150)
+        // 1.4: tokens submessage (1.4.2 = 1000, 1.4.3 = 200, 1.4.5 = 500, 1.4.9 = 150, 1.4.10 = 50)
         let tokens_bytes = vec![
             0x10, 0xE8, 0x07, // 2: varint 1000
             0x18, 0xC8, 0x01, // 3: varint 200
             0x28, 0xF4, 0x03, // 5: varint 500
-            0x48, 50, // 9: varint 50
-            0x50, 0x96, 0x01, // 10: varint 150
+            0x48, 0x96, 0x01, // 9: varint 150 (text output)
+            0x50, 50, // 10: varint 50 (thinking)
         ];
         // 1.9.4.1 = 1779000000 (0x6A0BB9C0 -> varint: C0 B3 AF D0 06)
         let ts_inner = vec![0x08, 0xC0, 0xB3, 0xAF, 0xD0, 0x06];
@@ -121,12 +121,12 @@ mod tests {
         blob.push(field1_payload.len() as u8);
         blob.extend_from_slice(&field1_payload);
 
-        // Row 2: Continuation row with tokens only (1.4.2 = 400, 1.4.3 = 100, 1.4.9 = 25, 1.4.10 = 75)
+        // Row 2: Continuation row with tokens only (1.4.2 = 400, 1.4.3 = 100, 1.4.9 = 75, 1.4.10 = 25)
         let cont_tokens = vec![
             0x10, 0x90, 0x03, // 2: varint 400
             0x18, 0x64, // 3: varint 100
-            0x48, 25, // 9: varint 25
-            0x50, 75, // 10: varint 75
+            0x48, 75, // 9: varint 75 (text output)
+            0x50, 25, // 10: varint 25 (thinking)
         ];
         let mut cont_field1 = Vec::new();
         cont_field1.push(0x22);

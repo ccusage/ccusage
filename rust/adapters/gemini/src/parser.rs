@@ -270,8 +270,8 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
                 let input_tokens = parsed.numbers.get("1.4.2").copied().unwrap_or(0);
                 let total_output_tokens = parsed.numbers.get("1.4.3").copied().unwrap_or(0);
                 let cache_read_tokens = parsed.numbers.get("1.4.5").copied().unwrap_or(0);
-                let reasoning_tokens = parsed.numbers.get("1.4.9").copied().unwrap_or(0);
-                let visible_tokens = parsed.numbers.get("1.4.10").copied().unwrap_or(0);
+                let text_output_tokens = parsed.numbers.get("1.4.9").copied().unwrap_or(0);
+                let thinking_tokens = parsed.numbers.get("1.4.10").copied().unwrap_or(0);
                 let timestamp_seconds = parsed.numbers.get("1.9.4.1").copied();
                 let timestamp_nanos = parsed
                     .numbers
@@ -295,20 +295,20 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
                 if input_tokens == 0
                     && total_output_tokens == 0
                     && cache_read_tokens == 0
-                    && reasoning_tokens == 0
-                    && visible_tokens == 0
+                    && text_output_tokens == 0
+                    && thinking_tokens == 0
                 {
                     continue;
                 }
-                let effective_output = if visible_tokens > 0 {
-                    visible_tokens
+                let effective_output = if text_output_tokens > 0 {
+                    text_output_tokens
                 } else {
-                    total_output_tokens.saturating_sub(reasoning_tokens)
+                    total_output_tokens.saturating_sub(thinking_tokens)
                 };
                 let effective_thoughts =
-                    reasoning_tokens.max(total_output_tokens.saturating_sub(effective_output));
-                let effective_total_output = total_output_tokens
-                    .max(effective_output.saturating_add(effective_thoughts));
+                    thinking_tokens.max(total_output_tokens.saturating_sub(effective_output));
+                let effective_total_output =
+                    total_output_tokens.max(effective_output.saturating_add(effective_thoughts));
                 let total_tokens = input_tokens
                     .saturating_add(cache_read_tokens)
                     .saturating_add(effective_total_output);
