@@ -839,7 +839,7 @@ mod tests {
         };
 
         for single_thread in [true, false] {
-            let _ = replay::take_observed_file_reads();
+            let _ = replay::take_observed_file_read_events();
             let bounded = load_groups_from_directory(
                 &fixture.path("sessions"),
                 &SharedArgs {
@@ -854,9 +854,19 @@ mod tests {
             assert_eq!(group.output_tokens, 1);
             assert_eq!(group.total_tokens, 101);
             if single_thread {
-                let reads = replay::take_observed_file_reads();
-                assert!(reads.contains(&long_running_path));
-                assert!(!reads.contains(&historical_path));
+                let reads = replay::take_observed_file_read_events();
+                assert!(reads.iter().any(|read| matches!(
+                    read,
+                    replay::ObservedFileRead::MetadataProbe(path) if path == &long_running_path
+                )));
+                assert!(reads.iter().any(|read| matches!(
+                    read,
+                    replay::ObservedFileRead::MetadataProbe(path) if path == &historical_path
+                )));
+                assert!(!reads.iter().any(|read| matches!(
+                    read,
+                    replay::ObservedFileRead::ParentUsage(path) if path == &historical_path
+                )));
             }
 
             let unbounded = load_groups_from_directory(

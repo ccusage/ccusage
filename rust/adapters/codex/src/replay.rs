@@ -16,19 +16,55 @@ use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_tim
 use super::parser::{codex_value_timestamp, visit_codex_session_file};
 
 #[cfg(test)]
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum ObservedFileRead {
+    MetadataProbe(PathBuf),
+    ParentUsage(PathBuf),
+}
+
+#[cfg(test)]
 thread_local! {
-    static OBSERVED_FILE_READS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+    static OBSERVED_FILE_READS: RefCell<Vec<ObservedFileRead>> = const { RefCell::new(Vec::new()) };
 }
 
 #[cfg(test)]
 pub(super) fn take_observed_file_reads() -> Vec<PathBuf> {
+    take_observed_file_read_events()
+        .into_iter()
+        .map(|read| match read {
+            ObservedFileRead::MetadataProbe(path) | ObservedFileRead::ParentUsage(path) => path,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(super) fn take_observed_file_read_events() -> Vec<ObservedFileRead> {
     OBSERVED_FILE_READS.with(|paths| std::mem::take(&mut *paths.borrow_mut()))
 }
 
-fn observe_file_read(path: &Path) {
+fn observe_metadata_probe(path: &Path) {
     #[cfg(test)]
     {
-        OBSERVED_FILE_READS.with(|paths| paths.borrow_mut().push(path.to_path_buf()));
+        OBSERVED_FILE_READS.with(|paths| {
+            paths
+                .borrow_mut()
+                .push(ObservedFileRead::MetadataProbe(path.to_path_buf()));
+        });
+    }
+    #[cfg(not(test))]
+    {
+        let _ = path;
+    }
+}
+
+fn observe_parent_usage(path: &Path) {
+    #[cfg(test)]
+    {
+        OBSERVED_FILE_READS.with(|paths| {
+            paths
+                .borrow_mut()
+                .push(ObservedFileRead::ParentUsage(path.to_path_buf()));
+        });
     }
     #[cfg(not(test))]
     {
@@ -110,18 +146,32 @@ impl CodexReplayPlan {
     ) -> Self {
         let children = collect_replay_files(children);
         let available_files = collect_replay_files(available_files);
-        let metadata = read_session_metadata(&children, single_thread);
+        let available_metadata = read_session_metadata(&available_files, single_thread);
+        let mut files_by_session_id = HashMap::with_capacity(available_files.len());
+        let mut metadata_by_path = HashMap::with_capacity(available_files.len());
+        for ((path, _), metadata) in available_files.iter().zip(available_metadata) {
+            if let Some(session_id) = metadata.session_id.as_deref() {
+                files_by_session_id
+                    .entry(session_id.to_string())
+                    .or_insert_with(|| path.clone());
+            }
+            metadata_by_path.entry(path.clone()).or_insert(metadata);
+        }
+        let child_metadata = children.iter().map(|(child, _)| {
+            metadata_by_path
+                .get(child)
+                .cloned()
+                .unwrap_or_else(|| read_codex_session_metadata(child))
+        });
         let parent_by_child = children
             .iter()
-            .zip(&metadata)
+            .zip(child_metadata)
             .filter_map(|((child, _), metadata)| {
                 let parent_id = metadata.parent_id.as_deref()?;
-                let path = available_files
-                    .iter()
-                    .find(|(parent, _)| {
-                        parent != child && session_file_matches_id(parent, parent_id)
-                    })
-                    .map(|(parent, _)| parent.clone());
+                let path = files_by_session_id
+                    .get(parent_id)
+                    .filter(|parent| **parent != *child)
+                    .cloned();
                 Some((
                     child.clone(),
                     ParentReplay {
@@ -183,17 +233,6 @@ fn collect_replay_files<'a>(
             files.iter().map(move |path| (path.clone(), sessions_dir))
         })
         .collect()
-}
-
-fn session_file_matches_id(path: &Path, session_id: &str) -> bool {
-    path.file_stem()
-        .and_then(|stem| stem.to_str())
-        .is_some_and(|stem| {
-            stem == session_id
-                || stem
-                    .strip_suffix(session_id)
-                    .is_some_and(|prefix| prefix.ends_with('-'))
-        })
 }
 
 fn replay_worker_count(files: usize, single_thread: bool) -> usize {
@@ -292,7 +331,7 @@ fn read_parent_usage_file(path: &Path, sessions_dir: &Path) -> (PathBuf, ParentU
 }
 
 fn read_usage_events(sessions_dir: &Path, path: &Path) -> Vec<(String, CodexRawUsage)> {
-    observe_file_read(path);
+    observe_parent_usage(path);
     let mut usage = Vec::new();
     let _ = visit_codex_session_file(sessions_dir, path, None, |event| {
         usage.push((
@@ -311,7 +350,7 @@ fn read_usage_events(sessions_dir: &Path, path: &Path) -> Vec<(String, CodexRawU
     usage
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct CodexSessionMetadata {
     session_id: Option<String>,
     parent_id: Option<String>,
@@ -319,7 +358,7 @@ struct CodexSessionMetadata {
 }
 
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
-    observe_file_read(path);
+    observe_metadata_probe(path);
     let Ok(file) = File::open(path) else {
         return CodexSessionMetadata::default();
     };

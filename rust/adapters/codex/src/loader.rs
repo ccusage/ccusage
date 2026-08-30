@@ -2156,7 +2156,197 @@ mod tests {
     }
 
     #[test]
-    fn bounded_loading_reads_an_old_parent_but_not_unrelated_history() {
+    fn bounded_loading_resolves_thread_id_rollout_parent_by_payload_id() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/2025-01-01T08-00-00-thread_id_rollout.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "parent-id", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+            ]
+            .join("\n"),
+            "sessions/2026/03/15/child.jsonl": [
+                replay_metadata("2026-03-15T08:00:00.000Z", "child", Some("parent-id")),
+                replay_token_count("2026-03-15T08:00:00.000Z", 100),
+                replay_token_count("2026-03-15T08:01:00.000Z", 50),
+            ]
+            .join("\n"),
+        });
+        let parent =
+            fixture.path("sessions/2025/01/01/2025-01-01T08-00-00-thread_id_rollout.jsonl");
+        let child = fixture.path("sessions/2026/03/15/child.jsonl");
+        crate::paths::set_file_modified(
+            &parent,
+            crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
+        );
+        crate::paths::set_file_modified(
+            &child,
+            crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
+        );
+        let sources = [CodexUsageSource::new_for_test(
+            fixture.path("sessions"),
+            fixture.root().to_path_buf(),
+        )];
+        let shared = SharedArgs {
+            since: Some("20260315".to_string()),
+            until: Some("20260315".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        for single_thread in [true, false] {
+            let (events, detected) = load_codex_events_from_sources_with_shared(
+                &sources,
+                &SharedArgs {
+                    single_thread,
+                    ..shared.clone()
+                },
+            )
+            .unwrap();
+
+            assert!(detected, "single_thread={single_thread}");
+            assert_eq!(events.len(), 1, "single_thread={single_thread}");
+            assert_eq!(
+                events[0].session_id, "2026/03/15/child",
+                "single_thread={single_thread}"
+            );
+            assert_eq!(events[0].input_tokens, 50, "single_thread={single_thread}");
+        }
+    }
+
+    #[test]
+    fn bounded_loading_does_not_select_a_misleading_filename() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/aaa-target-id.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "different-id", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 999),
+            ]
+            .join("\n"),
+            "sessions/2025/01/02/zzz-actual-parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "target-id", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+            ]
+            .join("\n"),
+            "sessions/2026/03/15/child.jsonl": [
+                replay_metadata("2026-03-15T08:00:00.000Z", "child", Some("target-id")),
+                replay_token_count("2026-03-15T08:00:00.000Z", 100),
+                replay_token_count("2026-03-15T08:01:00.000Z", 50),
+            ]
+            .join("\n"),
+        });
+        let misleading = fixture.path("sessions/2025/01/01/aaa-target-id.jsonl");
+        let parent = fixture.path("sessions/2025/01/02/zzz-actual-parent.jsonl");
+        let child = fixture.path("sessions/2026/03/15/child.jsonl");
+        for path in [&misleading, &parent] {
+            crate::paths::set_file_modified(
+                path,
+                crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
+            );
+        }
+        crate::paths::set_file_modified(
+            &child,
+            crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
+        );
+        let sources = [CodexUsageSource::new_for_test(
+            fixture.path("sessions"),
+            fixture.root().to_path_buf(),
+        )];
+        let shared = SharedArgs {
+            since: Some("20260315".to_string()),
+            until: Some("20260315".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        for single_thread in [true, false] {
+            let _ = crate::replay::take_observed_file_read_events();
+            let (events, detected) = load_codex_events_from_sources_with_shared(
+                &sources,
+                &SharedArgs {
+                    single_thread,
+                    ..shared.clone()
+                },
+            )
+            .unwrap();
+
+            assert!(detected, "single_thread={single_thread}");
+            assert_eq!(events.len(), 1, "single_thread={single_thread}");
+            assert_eq!(events[0].input_tokens, 50, "single_thread={single_thread}");
+            if single_thread {
+                let reads = crate::replay::take_observed_file_read_events();
+                assert!(reads.iter().any(|read| matches!(
+                    read,
+                    crate::replay::ObservedFileRead::ParentUsage(path) if path == &parent
+                )));
+                assert!(!reads.iter().any(|read| matches!(
+                    read,
+                    crate::replay::ObservedFileRead::ParentUsage(path) if path == &misleading
+                )));
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_loading_uses_the_first_duplicate_parent_id() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/aaa-first-parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "parent-id", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+            ]
+            .join("\n"),
+            "sessions/2025/01/02/zzz-second-parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "parent-id", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 200),
+            ]
+            .join("\n"),
+            "sessions/2026/03/15/child.jsonl": [
+                replay_metadata("2026-03-15T08:00:00.000Z", "child", Some("parent-id")),
+                replay_token_count("2026-03-15T08:00:00.000Z", 100),
+                replay_token_count("2026-03-15T08:01:00.000Z", 50),
+            ]
+            .join("\n"),
+        });
+        let first_parent = fixture.path("sessions/2025/01/01/aaa-first-parent.jsonl");
+        let second_parent = fixture.path("sessions/2025/01/02/zzz-second-parent.jsonl");
+        let child = fixture.path("sessions/2026/03/15/child.jsonl");
+        for path in [&first_parent, &second_parent] {
+            crate::paths::set_file_modified(
+                path,
+                crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
+            );
+        }
+        crate::paths::set_file_modified(
+            &child,
+            crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
+        );
+        let sources = [CodexUsageSource::new_for_test(
+            fixture.path("sessions"),
+            fixture.root().to_path_buf(),
+        )];
+        let shared = SharedArgs {
+            since: Some("20260315".to_string()),
+            until: Some("20260315".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        for single_thread in [true, false] {
+            let (events, detected) = load_codex_events_from_sources_with_shared(
+                &sources,
+                &SharedArgs {
+                    single_thread,
+                    ..shared.clone()
+                },
+            )
+            .unwrap();
+
+            assert!(detected, "single_thread={single_thread}");
+            assert_eq!(events.len(), 1, "single_thread={single_thread}");
+            assert_eq!(events[0].session_id, "2026/03/15/child");
+            assert_eq!(events[0].input_tokens, 50, "single_thread={single_thread}");
+        }
+    }
+
+    #[test]
+    fn bounded_loading_metadata_probes_history_but_reads_parent_usage_only() {
         let fixture = fs_fixture!({
             "sessions/2025/01/01/parent.jsonl": [
                 replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
@@ -2208,10 +2398,21 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].session_id, "2026/03/15/child");
         assert_eq!(events[0].input_tokens, 50);
-        let reads = crate::replay::take_observed_file_reads();
-        assert!(reads.contains(&child));
-        assert!(reads.contains(&parent));
-        assert!(!reads.contains(&unrelated));
+        let reads = crate::replay::take_observed_file_read_events();
+        for path in [&child, &parent, &unrelated] {
+            assert!(reads.iter().any(|read| matches!(
+                read,
+                crate::replay::ObservedFileRead::MetadataProbe(observed) if observed == path
+            )));
+        }
+        let parent_usage_reads = reads
+            .iter()
+            .filter_map(|read| match read {
+                crate::replay::ObservedFileRead::ParentUsage(path) => Some(path.clone()),
+                crate::replay::ObservedFileRead::MetadataProbe(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(parent_usage_reads, vec![parent]);
     }
 
     fn replay_metadata(timestamp: &str, id: &str, parent: Option<&str>) -> String {
