@@ -244,21 +244,32 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
         }
         let parsed = parse_antigravity_protobuf(&blob);
         let model = parsed
-            .get("1.3")
-            .map(|value| value.to_string())
+            .strings
+            .get("1.19")
+            .or_else(|| parsed.strings.get("1.21"))
+            .or_else(|| parsed.strings.get("1.3"))
+            .cloned()
             .unwrap_or_else(|| "gemini-internal-model".to_string());
-        let input_tokens = parsed.get("1.4.2").copied().unwrap_or(0);
-        let output_tokens = parsed.get("1.4.3").copied().unwrap_or(0);
-        let cache_read_tokens = parsed.get("1.4.5").copied().unwrap_or(0);
-        let reasoning_tokens = parsed.get("1.4.9").copied().unwrap_or(0);
-        let visible_tokens = parsed.get("1.4.10").copied().unwrap_or(0);
-        let timestamp = parsed
-            .get("1.9.4.1")
+        let input_tokens = parsed.numbers.get("1.4.2").copied().unwrap_or(0);
+        let output_tokens = parsed.numbers.get("1.4.3").copied().unwrap_or(0);
+        let cache_read_tokens = parsed.numbers.get("1.4.5").copied().unwrap_or(0);
+        let reasoning_tokens = parsed.numbers.get("1.4.9").copied().unwrap_or(0);
+        let visible_tokens = parsed.numbers.get("1.4.10").copied().unwrap_or(0);
+        let timestamp_seconds = parsed.numbers.get("1.9.4.1").copied();
+        let timestamp_nanos = parsed
+            .numbers
+            .get("1.9.4.2")
             .copied()
+            .unwrap_or(0)
+            .min(999_999_999);
+        let timestamp = timestamp_seconds
             .and_then(|value| i64::try_from(value).ok())
-            .and_then(|ms| {
-                if ms > 0 {
-                    Some(TimestampMs::from_millis(ms * 1000))
+            .and_then(|secs| {
+                if secs > 0 {
+                    let ms = secs
+                        .saturating_mul(1000)
+                        .saturating_add((timestamp_nanos / 1_000_000) as i64);
+                    Some(TimestampMs::from_millis(ms))
                 } else {
                     None
                 }
@@ -294,13 +305,29 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<GeminiUsageEvent>> {
     Ok(events)
 }
 
-fn parse_antigravity_protobuf(blob: &[u8]) -> HashMap<String, u64> {
-    let mut out = HashMap::new();
-    parse_antigravity_protobuf_fields(blob, &mut out, "");
+const MAX_PROTOBUF_DEPTH: usize = 16;
+
+#[derive(Default)]
+struct AntigravityProtobuf {
+    numbers: HashMap<String, u64>,
+    strings: HashMap<String, String>,
+}
+
+fn parse_antigravity_protobuf(blob: &[u8]) -> AntigravityProtobuf {
+    let mut out = AntigravityProtobuf::default();
+    parse_antigravity_protobuf_fields(blob, &mut out, "", 0);
     out
 }
 
-fn parse_antigravity_protobuf_fields(blob: &[u8], out: &mut HashMap<String, u64>, prefix: &str) {
+fn parse_antigravity_protobuf_fields(
+    blob: &[u8],
+    out: &mut AntigravityProtobuf,
+    prefix: &str,
+    depth: usize,
+) {
+    if depth >= MAX_PROTOBUF_DEPTH {
+        return;
+    }
     let mut cursor = 0usize;
     while cursor < blob.len() {
         let Some((tag, next)) = read_varint(blob, cursor) else {
@@ -320,7 +347,7 @@ fn parse_antigravity_protobuf_fields(blob: &[u8], out: &mut HashMap<String, u64>
                     break;
                 };
                 cursor = next;
-                out.insert(path, value);
+                out.numbers.insert(path, value);
             }
             2 => {
                 let Some((len, next)) = read_varint(blob, cursor) else {
@@ -335,15 +362,15 @@ fn parse_antigravity_protobuf_fields(blob: &[u8], out: &mut HashMap<String, u64>
                     break;
                 };
                 let payload = &blob[cursor..end];
-                let mut nested = HashMap::new();
-                parse_antigravity_protobuf_fields(payload, &mut nested, &path);
-                if nested.is_empty() {
-                    out.insert(path, 0);
-                } else {
-                    for (nested_path, value) in nested {
-                        out.insert(nested_path, value);
-                    }
+                if let Ok(text) = std::str::from_utf8(payload)
+                    && !text.is_empty()
+                    && text
+                        .chars()
+                        .all(|c| !c.is_control() || c == '\n' || c == '\t')
+                {
+                    out.strings.insert(path.clone(), text.to_string());
                 }
+                parse_antigravity_protobuf_fields(payload, out, &path, depth + 1);
                 cursor = end;
             }
             1 => cursor += 8,
@@ -362,7 +389,11 @@ fn read_varint(blob: &[u8], mut offset: usize) -> Option<(u64, usize)> {
         }
         let byte = blob[offset];
         offset += 1;
-        value |= u64::from(byte & 0x7F) << shift;
+        let payload = byte & 0x7F;
+        if shift == 63 && payload > 1 {
+            return None;
+        }
+        value |= u64::from(payload) << shift;
         if byte & 0x80 == 0 {
             return Some((value, offset));
         }
