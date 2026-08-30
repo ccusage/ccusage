@@ -48,6 +48,8 @@ struct OpenCodeTokens {
     input: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     output: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    reasoning: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_object")]
     cache: Option<OpenCodeCache>,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -70,6 +72,75 @@ struct OpenCodeTime {
     created: Option<i64>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeModelReference {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    id: Option<String>,
+    #[serde(
+        rename = "modelID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    model_id: Option<String>,
+    #[serde(
+        rename = "providerID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    provider_id: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeV2Message {
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    model: Option<OpenCodeModelReference>,
+    #[serde(
+        rename = "modelID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    model_id: Option<String>,
+    #[serde(
+        rename = "providerID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    provider_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    tokens: Option<OpenCodeTokens>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    time: Option<OpenCodeTime>,
+    #[serde(default, deserialize_with = "jsonl::lenient_f64")]
+    cost: Option<f64>,
+}
+
+impl OpenCodeV2Message {
+    fn into_legacy_message(self, id: String, session_id: String, created: i64) -> OpenCodeMessage {
+        let model_id = self
+            .model
+            .as_ref()
+            .and_then(|model| model.id.clone().or_else(|| model.model_id.clone()))
+            .or(self.model_id);
+        let provider_id = self
+            .model
+            .and_then(|model| model.provider_id)
+            .or(self.provider_id);
+        let time = Some(OpenCodeTime {
+            created: self.time.and_then(|time| time.created).or(Some(created)),
+        });
+
+        OpenCodeMessage {
+            tokens: self.tokens,
+            model_id,
+            provider_id,
+            time,
+            id: Some(id),
+            session_id: Some(session_id),
+            cost: self.cost,
+        }
+    }
+}
+
 pub fn message_value_to_entry(
     value: &OpenCodeMessage,
     id: Option<String>,
@@ -77,6 +148,18 @@ pub fn message_value_to_entry(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
+) -> Option<LoadedEntry> {
+    message_value_to_entry_inner(value, id, session_id, tz, mode, pricing, false)
+}
+
+fn message_value_to_entry_inner(
+    value: &OpenCodeMessage,
+    id: Option<String>,
+    session_id: Option<String>,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    allow_cost_only: bool,
 ) -> Option<LoadedEntry> {
     let tokens = value.tokens.as_ref()?;
     let cache = tokens.cache.as_ref();
@@ -89,12 +172,14 @@ pub fn message_value_to_entry(
         cache_creation: None,
     };
     let total_tokens = tokens.total;
-    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total_tokens);
+    let (usage, extra_total_tokens) =
+        apply_total_token_fallback(usage, tokens.reasoning, total_tokens);
     if usage.input_tokens == 0
         && usage.output_tokens == 0
         && usage.cache_creation_input_tokens == 0
         && usage.cache_read_input_tokens == 0
         && extra_total_tokens == 0
+        && !(allow_cost_only && value.cost.is_some_and(|cost| cost > 0.0))
     {
         return None;
     }
@@ -157,6 +242,71 @@ pub fn message_value_to_entry(
         missing_pricing_model,
         data,
     })
+}
+
+pub(crate) fn session_message_value_to_entry(
+    data: &str,
+    id: String,
+    session_id: String,
+    created: i64,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Option<LoadedEntry> {
+    let value = serde_json::from_str::<OpenCodeV2Message>(data).ok()?;
+    let value = value.into_legacy_message(id, session_id, created);
+    message_value_to_entry(&value, None, None, tz, mode, pricing)
+}
+
+pub(crate) struct OpenCodeSessionAggregate {
+    pub(crate) session_id: String,
+    pub(crate) created: i64,
+    pub(crate) model: String,
+    pub(crate) provider: String,
+    pub(crate) input_tokens: u64,
+    pub(crate) output_tokens: u64,
+    pub(crate) reasoning_tokens: u64,
+    pub(crate) cache_read_tokens: u64,
+    pub(crate) cache_write_tokens: u64,
+    pub(crate) cost: Option<f64>,
+}
+
+pub(crate) fn session_value_to_entry(
+    aggregate: OpenCodeSessionAggregate,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Option<LoadedEntry> {
+    if aggregate.input_tokens == 0
+        && aggregate.output_tokens == 0
+        && aggregate.reasoning_tokens == 0
+        && aggregate.cache_read_tokens == 0
+        && aggregate.cache_write_tokens == 0
+        && aggregate.cost.unwrap_or(0.0) <= 0.0
+    {
+        return None;
+    }
+    let value = OpenCodeMessage {
+        tokens: Some(OpenCodeTokens {
+            input: aggregate.input_tokens,
+            output: aggregate.output_tokens,
+            reasoning: aggregate.reasoning_tokens,
+            cache: Some(OpenCodeCache {
+                read: aggregate.cache_read_tokens,
+                write: aggregate.cache_write_tokens,
+            }),
+            total: 0,
+        }),
+        model_id: Some(aggregate.model),
+        provider_id: Some(aggregate.provider),
+        time: Some(OpenCodeTime {
+            created: Some(aggregate.created),
+        }),
+        id: Some(format!("session:{}", aggregate.session_id)),
+        session_id: Some(aggregate.session_id),
+        cost: aggregate.cost,
+    };
+    message_value_to_entry_inner(&value, None, None, tz, mode, pricing, true)
 }
 
 fn calculate_open_code_cost(

@@ -7,7 +7,10 @@ use std::{
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{OpenCodeMessage, message_value_to_entry},
+    parser::{
+        OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry,
+        session_message_value_to_entry, session_value_to_entry,
+    },
     paths::paths,
 };
 use crate::{
@@ -184,6 +187,15 @@ fn is_channel_db_name(name: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
 }
 
+struct DatabaseLoadContext<'a> {
+    tz: Option<&'a JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&'a PricingMap>,
+    window: DateWindow,
+    shared: &'a SharedArgs,
+    db_path: &'a Path,
+}
+
 fn load_entries_from_database(
     db_path: &Path,
     tz: Option<&JiffTimeZone>,
@@ -201,78 +213,203 @@ fn load_entries_from_database(
         );
         return Vec::new();
     };
-    // Push the window into SQL only while a sample of `time_created` still looks
-    // millisecond-scaled. The sample cannot prove the whole column is, which is
-    // why the payload check in the loop stays authoritative either way.
-    let pushdown = if window.is_unbounded() || time_created_looks_like_millis(&connection) {
-        window.widened_for_pushdown()
-    } else {
-        debug_log(
-            shared,
-            format!(
-                "OpenCode time_created is not millisecond-scale; scanning unfiltered: {}",
-                db_path.display()
-            ),
-        );
-        DateWindow::UNBOUNDED
-    };
-    let statement = prepare_message_query(&connection, pushdown).or_else(|| {
-        // A pre-SQLite-era schema has no `time_created` column, so the filtered
-        // query cannot prepare. Scan unfiltered rather than return nothing.
-        debug_log(
-            shared,
-            format!(
-                "Failed to prepare filtered OpenCode query; scanning unfiltered: {}",
-                db_path.display()
-            ),
-        );
-        prepare_message_query(&connection, DateWindow::UNBOUNDED)
-    });
-    let Some(mut statement) = statement else {
-        debug_log(
-            shared,
-            format!("Failed to read OpenCode database: {}", db_path.display()),
-        );
-        return Vec::new();
-    };
     let mut entries = Vec::new();
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                let Ok(id) = statement.read::<String, _>(0) else {
-                    continue;
-                };
-                let Ok(session_id) = statement.read::<String, _>(1) else {
-                    continue;
-                };
-                let Ok(data) = statement.read::<String, _>(2) else {
-                    continue;
-                };
-                if !window.is_unbounded()
-                    && let Some(millis) = extract_message_timestamp(&data)
-                    && !window.contains(millis)
-                {
-                    continue;
-                }
-                let Ok(value) = serde_json::from_str::<OpenCodeMessage>(&data) else {
-                    continue;
-                };
-                if let Some(entry) =
-                    message_value_to_entry(&value, Some(id), Some(session_id), tz, mode, pricing)
-                {
-                    entries.push(entry);
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(_) => {
+
+    let mut seen_message_ids = HashSet::new();
+    let mut message_sessions = HashSet::new();
+
+    if table_exists(&connection, "message") {
+        // Push the window into SQL only while a sample of `time_created` still
+        // looks millisecond-scaled. The payload check remains authoritative.
+        let pushdown =
+            if window.is_unbounded() || time_created_looks_like_millis(&connection, "message") {
+                window.widened_for_pushdown()
+            } else {
                 debug_log(
                     shared,
-                    format!("Failed to query OpenCode database: {}", db_path.display()),
+                    format!(
+                        "OpenCode time_created is not millisecond-scale; scanning unfiltered: {}",
+                        db_path.display()
+                    ),
                 );
-                break;
+                DateWindow::UNBOUNDED
+            };
+        let statement = prepare_message_query(&connection, pushdown).or_else(|| {
+            // A pre-SQLite-era schema has no `time_created` column, so the
+            // filtered query cannot prepare. Scan unfiltered instead.
+            debug_log(
+                shared,
+                format!(
+                    "Failed to prepare filtered OpenCode query; scanning unfiltered: {}",
+                    db_path.display()
+                ),
+            );
+            prepare_message_query(&connection, DateWindow::UNBOUNDED)
+        });
+        if let Some(mut statement) = statement {
+            loop {
+                match statement.next() {
+                    Ok(sqlite::State::Row) => {
+                        let Ok(id) = statement.read::<String, _>(0) else {
+                            continue;
+                        };
+                        let Ok(session_id) = statement.read::<String, _>(1) else {
+                            continue;
+                        };
+                        let Ok(data) = statement.read::<String, _>(2) else {
+                            continue;
+                        };
+                        if !window.is_unbounded()
+                            && let Some(millis) = extract_message_timestamp(&data)
+                            && !window.contains(millis)
+                        {
+                            continue;
+                        }
+                        let Ok(value) = serde_json::from_str::<OpenCodeMessage>(&data) else {
+                            continue;
+                        };
+                        if let Some(entry) = message_value_to_entry(
+                            &value,
+                            Some(id),
+                            Some(session_id),
+                            tz,
+                            mode,
+                            pricing,
+                        ) {
+                            let session_key = entry.session_id.to_string();
+                            message_sessions.insert(session_key);
+                            push_unique_entry(&mut entries, &mut seen_message_ids, entry);
+                        }
+                    }
+                    Ok(sqlite::State::Done) => break,
+                    Err(_) => {
+                        debug_log(
+                            shared,
+                            format!("Failed to query OpenCode database: {}", db_path.display()),
+                        );
+                        break;
+                    }
+                }
             }
+        } else {
+            debug_log(
+                shared,
+                format!("Failed to read OpenCode database: {}", db_path.display()),
+            );
         }
     }
+
+    let has_session_messages = table_exists(&connection, "session_message");
+    if has_session_messages {
+        let pushdown = if window.is_unbounded()
+            || time_created_looks_like_millis(&connection, "session_message")
+        {
+            window.widened_for_pushdown()
+        } else {
+            DateWindow::UNBOUNDED
+        };
+        let statement = prepare_session_message_query(&connection, pushdown).or_else(|| {
+            debug_log(
+                shared,
+                format!(
+                    "Failed to prepare filtered OpenCode v2 query; scanning unfiltered: {}",
+                    db_path.display()
+                ),
+            );
+            prepare_session_message_query(&connection, DateWindow::UNBOUNDED)
+        });
+        let mut v2_rows = 0;
+        let mut v2_entries = 0;
+        if let Some(mut statement) = statement {
+            loop {
+                match statement.next() {
+                    Ok(sqlite::State::Row) => {
+                        v2_rows += 1;
+                        let Ok(id) = statement.read::<String, _>(0) else {
+                            continue;
+                        };
+                        let Ok(session_id) = statement.read::<String, _>(1) else {
+                            continue;
+                        };
+                        let Ok(message_type) = statement.read::<String, _>(2) else {
+                            continue;
+                        };
+                        if message_type != "assistant" {
+                            continue;
+                        }
+                        let Ok(data) = statement.read::<String, _>(3) else {
+                            continue;
+                        };
+                        let created = statement
+                            .read::<i64, _>(4)
+                            .ok()
+                            .or_else(|| statement.read::<f64, _>(4).ok().map(|value| value as i64))
+                            .unwrap_or(0);
+                        if !window.is_unbounded()
+                            && let Some(millis) = extract_message_timestamp(&data)
+                            && !window.contains(millis)
+                        {
+                            continue;
+                        }
+                        let Some(entry) = session_message_value_to_entry(
+                            &data, id, session_id, created, tz, mode, pricing,
+                        ) else {
+                            continue;
+                        };
+                        let session_key = entry.session_id.to_string();
+                        v2_entries += 1;
+                        message_sessions.insert(session_key);
+                        push_unique_entry(&mut entries, &mut seen_message_ids, entry);
+                    }
+                    Ok(sqlite::State::Done) => break,
+                    Err(_) => {
+                        debug_log(
+                            shared,
+                            format!(
+                                "Failed to query OpenCode v2 database: {}",
+                                db_path.display()
+                            ),
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+        if v2_rows > 0 && v2_entries == 0 {
+            debug_log(
+                shared,
+                format!(
+                    "OpenCode v2 rows produced no usage entries: {v2_rows} rows in {}",
+                    db_path.display()
+                ),
+            );
+        }
+    }
+
+    let mut aggregate_tables = Vec::new();
+    if table_exists(&connection, "session_v2") {
+        aggregate_tables.push("session_v2");
+    }
+    if has_session_messages && table_exists(&connection, "session") {
+        aggregate_tables.push("session");
+    }
+    let aggregate_context = DatabaseLoadContext {
+        tz,
+        mode,
+        pricing,
+        window,
+        shared,
+        db_path,
+    };
+    for table in aggregate_tables {
+        for entry in load_session_aggregate_entries(&connection, table, &aggregate_context) {
+            if message_sessions.contains(entry.session_id.as_ref()) {
+                continue;
+            }
+            push_unique_entry(&mut entries, &mut seen_message_ids, entry);
+        }
+    }
+
     entries
 }
 
@@ -308,6 +445,277 @@ fn read_message_file(
     }
     let value = serde_json::from_slice::<OpenCodeMessage>(&content).ok()?;
     message_value_to_entry(&value, None, None, tz, mode, pricing)
+}
+
+fn push_unique_entry(
+    entries: &mut Vec<LoadedEntry>,
+    seen_message_ids: &mut HashSet<String>,
+    entry: LoadedEntry,
+) -> bool {
+    if let Some(id) = entry_id(&entry)
+        && !seen_message_ids.insert(id.to_string())
+    {
+        return false;
+    }
+    entries.push(entry);
+    true
+}
+
+fn table_exists(connection: &sqlite::Connection, table: &str) -> bool {
+    let Ok(mut statement) = connection
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
+    else {
+        return false;
+    };
+    if statement.bind((1, table)).is_err() {
+        return false;
+    }
+    matches!(statement.next(), Ok(sqlite::State::Row))
+}
+
+fn table_columns(connection: &sqlite::Connection, table: &str) -> HashSet<String> {
+    let sql = match table {
+        "message" => "SELECT * FROM message LIMIT 0",
+        "session" => "SELECT * FROM session LIMIT 0",
+        "session_v2" => "SELECT * FROM session_v2 LIMIT 0",
+        "session_message" => "SELECT * FROM session_message LIMIT 0",
+        _ => return HashSet::new(),
+    };
+    let Ok(statement) = connection.prepare(sql) else {
+        return HashSet::new();
+    };
+    let mut columns = HashSet::new();
+    for index in 0..statement.column_count() {
+        if let Ok(name) = statement.column_name(index) {
+            columns.insert(name.to_string());
+        }
+    }
+    columns
+}
+
+fn prepare_session_message_query(
+    connection: &sqlite::Connection,
+    window: DateWindow,
+) -> Option<sqlite::Statement<'_>> {
+    let columns = table_columns(connection, "session_message");
+    if !["id", "session_id", "type", "data"]
+        .into_iter()
+        .all(|column| columns.contains(column))
+    {
+        return None;
+    }
+    let has_time_created = columns.contains("time_created");
+    let time_created = if has_time_created {
+        "time_created"
+    } else {
+        "NULL"
+    };
+    let sql = if has_time_created {
+        match (window.start, window.end) {
+            (Some(_), Some(_)) => format!(
+                "SELECT id, session_id, type, data, {time_created} FROM session_message \
+                 WHERE time_created >= ?1 AND time_created < ?2"
+            ),
+            (Some(_), None) => format!(
+                "SELECT id, session_id, type, data, {time_created} FROM session_message \
+                 WHERE time_created >= ?1"
+            ),
+            (None, Some(_)) => format!(
+                "SELECT id, session_id, type, data, {time_created} FROM session_message \
+                 WHERE time_created < ?1"
+            ),
+            (None, None) => {
+                format!("SELECT id, session_id, type, data, {time_created} FROM session_message")
+            }
+        }
+    } else {
+        "SELECT id, session_id, type, data, NULL FROM session_message".to_string()
+    };
+    let mut statement = connection.prepare(&sql).ok()?;
+    if has_time_created {
+        for (index, bound) in [window.start, window.end].into_iter().flatten().enumerate() {
+            statement.bind((index + 1, bound)).ok()?;
+        }
+    }
+    Some(statement)
+}
+
+fn prepare_session_aggregate_query<'a>(
+    connection: &'a sqlite::Connection,
+    table: &str,
+) -> Option<sqlite::Statement<'a>> {
+    let table = match table {
+        "session" => "session",
+        "session_v2" => "session_v2",
+        _ => return None,
+    };
+    let columns = table_columns(connection, table);
+    if ![
+        "id",
+        "time_created",
+        "cost",
+        "tokens_input",
+        "tokens_output",
+        "tokens_cache_read",
+        "tokens_cache_write",
+    ]
+    .into_iter()
+    .all(|column| columns.contains(column))
+    {
+        return None;
+    }
+    let reasoning = if columns.contains("tokens_reasoning") {
+        "tokens_reasoning"
+    } else {
+        "0"
+    };
+    let model = if columns.contains("model") {
+        "model"
+    } else {
+        "NULL"
+    };
+    let sql = format!(
+        "SELECT id, time_created, cost, tokens_input, tokens_output, \
+         tokens_cache_read, tokens_cache_write, {reasoning}, {model} FROM {table}"
+    );
+    connection.prepare(&sql).ok()
+}
+
+fn load_session_aggregate_entries(
+    connection: &sqlite::Connection,
+    table: &str,
+    context: &DatabaseLoadContext<'_>,
+) -> Vec<LoadedEntry> {
+    let Some(mut statement) = prepare_session_aggregate_query(connection, table) else {
+        debug_log(
+            context.shared,
+            format!(
+                "Failed to read OpenCode {table} table: {}",
+                context.db_path.display()
+            ),
+        );
+        return Vec::new();
+    };
+    let mut entries = Vec::new();
+    loop {
+        match statement.next() {
+            Ok(sqlite::State::Row) => {
+                let Ok(session_id) = statement.read::<String, _>(0) else {
+                    continue;
+                };
+                let Some(created) = read_f64(&statement, 1)
+                    .filter(|value| value.is_finite())
+                    .map(|value| value.trunc() as i64)
+                else {
+                    continue;
+                };
+                if !context.window.is_unbounded() && !context.window.contains(created) {
+                    continue;
+                }
+                let cost = read_f64(&statement, 2);
+                let input_tokens = read_u64(&statement, 3);
+                let output_tokens = read_u64(&statement, 4);
+                let cache_read_tokens = read_u64(&statement, 5);
+                let cache_write_tokens = read_u64(&statement, 6);
+                let reasoning_tokens = read_u64(&statement, 7);
+                let model = statement.read::<String, _>(8).ok();
+                let (model, provider) = parse_session_model(model.as_deref())
+                    .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
+                if let Some(entry) = session_value_to_entry(
+                    OpenCodeSessionAggregate {
+                        session_id,
+                        created,
+                        model,
+                        provider,
+                        input_tokens,
+                        output_tokens,
+                        reasoning_tokens,
+                        cache_read_tokens,
+                        cache_write_tokens,
+                        cost,
+                    },
+                    context.tz,
+                    context.mode,
+                    context.pricing,
+                ) {
+                    entries.push(entry);
+                }
+            }
+            Ok(sqlite::State::Done) => break,
+            Err(_) => {
+                debug_log(
+                    context.shared,
+                    format!(
+                        "Failed to query OpenCode {table} table: {}",
+                        context.db_path.display()
+                    ),
+                );
+                break;
+            }
+        }
+    }
+    entries
+}
+
+fn parse_session_model(value: Option<&str>) -> Option<(String, String)> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(value) {
+        if let Some(model) = json
+            .as_str()
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+        {
+            return Some((model.to_string(), "unknown".to_string()));
+        }
+        if let Some(object) = json.as_object() {
+            let model = object
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| object.get("modelID").and_then(serde_json::Value::as_str))
+                .map(str::trim)
+                .filter(|model| !model.is_empty())?;
+            let provider = object
+                .get("providerID")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| object.get("provider").and_then(serde_json::Value::as_str))
+                .map(str::trim)
+                .filter(|provider| !provider.is_empty())
+                .unwrap_or("unknown");
+            return Some((model.to_string(), provider.to_string()));
+        }
+    }
+    Some((value.to_string(), "unknown".to_string()))
+}
+
+fn read_u64(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
+    statement
+        .read::<i64, _>(index)
+        .ok()
+        .and_then(|value| u64::try_from(value.max(0)).ok())
+        .or_else(|| {
+            statement
+                .read::<f64, _>(index)
+                .ok()
+                .filter(|value| value.is_finite() && *value > 0.0)
+                .map(|value| value.trunc() as u64)
+        })
+        .unwrap_or(0)
+}
+
+fn read_f64(statement: &sqlite::Statement<'_>, index: usize) -> Option<f64> {
+    statement
+        .read::<f64, _>(index)
+        .ok()
+        .filter(|value| value.is_finite())
+        .or_else(|| {
+            statement
+                .read::<i64, _>(index)
+                .ok()
+                .map(|value| value as f64)
+        })
 }
 
 fn entry_id(entry: &LoadedEntry) -> Option<&str> {
@@ -439,10 +847,18 @@ const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
 /// does catch is a build that stored seconds, or left the column at zero, where
 /// millisecond bounds would otherwise exclude every row — those disable the
 /// push-down and leave the payload check to filter.
-fn time_created_looks_like_millis(connection: &sqlite::Connection) -> bool {
-    let Ok(mut statement) = connection
-        .prepare("SELECT max(time_created) FROM (SELECT time_created FROM message LIMIT 8)")
-    else {
+fn time_created_looks_like_millis(connection: &sqlite::Connection, table: &str) -> bool {
+    let sql = match table {
+        "message" => "SELECT max(time_created) FROM (SELECT time_created FROM message LIMIT 8)",
+        "session_message" => {
+            "SELECT max(time_created) FROM (SELECT time_created FROM session_message LIMIT 8)"
+        }
+        _ => return false,
+    };
+    if !table_columns(connection, table).contains("time_created") {
+        return false;
+    }
+    let Ok(mut statement) = connection.prepare(sql) else {
         return false;
     };
     match statement.next() {
@@ -513,6 +929,107 @@ mod tests {
         statement.next().unwrap();
     }
 
+    fn create_db_session_message_table(path: &Path, with_time_created: bool) {
+        let db = sqlite::open(path).unwrap();
+        let schema = if with_time_created {
+            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, data TEXT)"
+        } else {
+            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, data TEXT)"
+        };
+        db.execute(schema).unwrap();
+    }
+
+    fn insert_db_session_message(
+        path: &Path,
+        id: &str,
+        session_id: &str,
+        message_type: &str,
+        time_created: i64,
+        data: &str,
+        with_time_created: bool,
+    ) {
+        let db = sqlite::open(path).unwrap();
+        if with_time_created {
+            let mut statement = db
+                .prepare(
+                    "INSERT INTO session_message (id, session_id, type, time_created, data) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .unwrap();
+            statement.bind((1, id)).unwrap();
+            statement.bind((2, session_id)).unwrap();
+            statement.bind((3, message_type)).unwrap();
+            statement.bind((4, time_created)).unwrap();
+            statement.bind((5, data)).unwrap();
+            statement.next().unwrap();
+        } else {
+            let mut statement = db
+                .prepare(
+                    "INSERT INTO session_message (id, session_id, type, data) \
+                     VALUES (?1, ?2, ?3, ?4)",
+                )
+                .unwrap();
+            statement.bind((1, id)).unwrap();
+            statement.bind((2, session_id)).unwrap();
+            statement.bind((3, message_type)).unwrap();
+            statement.bind((4, data)).unwrap();
+            statement.next().unwrap();
+        }
+    }
+
+    fn create_db_session_aggregate_table(path: &Path, table: &str) {
+        let schema = match table {
+            "session_v2" => {
+                "CREATE TABLE session_v2 (id TEXT PRIMARY KEY, time_created INTEGER, cost REAL, tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT)"
+            }
+            "session" => {
+                "CREATE TABLE session (id TEXT PRIMARY KEY, time_created INTEGER, cost REAL, tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT)"
+            }
+            _ => panic!("unsupported test session table: {table}"),
+        };
+        sqlite::open(path).unwrap().execute(schema).unwrap();
+    }
+
+    struct SessionAggregateFixture<'a> {
+        session_id: &'a str,
+        time_created: i64,
+        model: &'a str,
+        cost: f64,
+        input_tokens: i64,
+        output_tokens: i64,
+        cache_read_tokens: i64,
+        cache_write_tokens: i64,
+        reasoning_tokens: i64,
+    }
+
+    fn insert_db_session_aggregate(
+        path: &Path,
+        table: &str,
+        fixture: &SessionAggregateFixture<'_>,
+    ) {
+        let sql = match table {
+            "session_v2" => {
+                "INSERT INTO session_v2 (id, time_created, cost, tokens_input, tokens_output, tokens_cache_read, tokens_cache_write, tokens_reasoning, model) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+            }
+            "session" => {
+                "INSERT INTO session (id, time_created, cost, tokens_input, tokens_output, tokens_cache_read, tokens_cache_write, tokens_reasoning, model) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+            }
+            _ => panic!("unsupported test session table: {table}"),
+        };
+        let db = sqlite::open(path).unwrap();
+        let mut statement = db.prepare(sql).unwrap();
+        statement.bind((1, fixture.session_id)).unwrap();
+        statement.bind((2, fixture.time_created)).unwrap();
+        statement.bind((3, fixture.cost)).unwrap();
+        statement.bind((4, fixture.input_tokens)).unwrap();
+        statement.bind((5, fixture.output_tokens)).unwrap();
+        statement.bind((6, fixture.cache_read_tokens)).unwrap();
+        statement.bind((7, fixture.cache_write_tokens)).unwrap();
+        statement.bind((8, fixture.reasoning_tokens)).unwrap();
+        statement.bind((9, fixture.model)).unwrap();
+        statement.next().unwrap();
+    }
+
     #[test]
     fn loads_message_json_files() {
         let fixture = fs_fixture!({
@@ -572,6 +1089,221 @@ mod tests {
         );
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 12);
         assert_eq!(entries[0].cost, 0.03);
+    }
+
+    #[test]
+    fn loads_nested_v2_assistant_usage_and_ignores_session_aggregate() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_db_session_message(
+            &db_path,
+            "msg-v2-user",
+            "v2-session",
+            "user",
+            1_767_312_000_000,
+            r#"{"text":"hello","time":{"created":1767312000000}}"#,
+            true,
+        );
+        insert_db_session_message(
+            &db_path,
+            "msg-v2-assistant",
+            "v2-session",
+            "assistant",
+            1_767_312_000_001,
+            r#"{"model":{"id":"gpt-test","providerID":"openai"},"time":{"created":1767312000000},"tokens":{"input":120,"output":60,"reasoning":10,"cache":{"read":12,"write":24}},"cost":0.03}"#,
+            true,
+        );
+        create_db_session_aggregate_table(&db_path, "session");
+        insert_db_session_aggregate(
+            &db_path,
+            "session",
+            &SessionAggregateFixture {
+                session_id: "v2-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 9.99,
+                input_tokens: 9_999,
+                output_tokens: 9_999,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].data.message.id.as_deref(),
+            Some("msg-v2-assistant")
+        );
+        assert_eq!(entries[0].session_id.as_ref(), "v2-session");
+        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 60);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            24
+        );
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 12);
+        assert_eq!(entries[0].extra_total_tokens, 10);
+        assert_eq!(entries[0].cost, 0.03);
+    }
+
+    #[test]
+    fn loads_v2_messages_without_a_time_created_column() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, false);
+        insert_db_session_message(
+            &db_path,
+            "msg-v2-no-time-column",
+            "v2-session",
+            "assistant",
+            1_767_312_000_000,
+            r#"{"model":{"id":"gpt-test","providerID":"openai"},"time":{"created":1767312000000},"tokens":{"input":2,"output":3},"cost":0.01}"#,
+            false,
+        );
+
+        let entries = load_entries_from_directory(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].date, "2026-01-02");
+        assert_eq!(
+            entries[0].data.message.id.as_deref(),
+            Some("msg-v2-no-time-column")
+        );
+    }
+
+    #[test]
+    fn deduplicates_legacy_and_v2_rows_by_message_id() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_message(
+            &db_path,
+            "msg-shared",
+            "legacy-session",
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":120,"output":60},"cost":0.03}"#,
+        );
+        create_db_session_message_table(&db_path, true);
+        insert_db_session_message(
+            &db_path,
+            "msg-shared",
+            "v2-session",
+            "assistant",
+            1_767_312_000_000,
+            r#"{"model":{"id":"gpt-test","providerID":"openai"},"time":{"created":1767312000000},"tokens":{"input":999,"output":999},"cost":9.99}"#,
+            true,
+        );
+
+        let entries = load_entries_from_directory(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "legacy-session");
+        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].cost, 0.03);
+    }
+
+    #[test]
+    fn uses_session_v2_aggregate_when_no_message_level_usage_exists() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_aggregate_table(&db_path, "session_v2");
+        insert_db_session_aggregate(
+            &db_path,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "aggregate-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 0.25,
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_read_tokens: 10,
+                cache_write_tokens: 20,
+                reasoning_tokens: 5,
+            },
+        );
+
+        let entries = load_entries_from_directory(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "aggregate-session");
+        assert_eq!(
+            entries[0].data.message.id.as_deref(),
+            Some("session:aggregate-session")
+        );
+        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].extra_total_tokens, 5);
+        assert_eq!(entries[0].cost, 0.25);
+    }
+
+    #[test]
+    fn uses_current_session_table_as_v2_aggregate_fallback() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        create_db_session_aggregate_table(&db_path, "session");
+        insert_db_session_aggregate(
+            &db_path,
+            "session",
+            &SessionAggregateFixture {
+                session_id: "current-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 0.5,
+                input_tokens: 200,
+                output_tokens: 100,
+                cache_read_tokens: 20,
+                cache_write_tokens: 40,
+                reasoning_tokens: 0,
+            },
+        );
+
+        let entries = load_entries_from_directory(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "current-session");
+        assert_eq!(entries[0].data.message.usage.input_tokens, 200);
+        assert_eq!(entries[0].cost, 0.5);
     }
 
     #[test]
