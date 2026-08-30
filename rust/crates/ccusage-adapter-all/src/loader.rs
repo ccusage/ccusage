@@ -135,7 +135,7 @@ fn load_base_rows(
                     "opencode",
                     load_kind,
                     &loader_shared,
-                    || opencode::load_entries(&loader_shared),
+                    || opencode::load_entries(&loader_shared, load_kind),
                     opencode::summarize_entries,
                 )?;
                 // The OpenCode loader narrows to the date window as it reads, so

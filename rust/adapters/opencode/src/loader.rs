@@ -15,23 +15,32 @@ use super::{
 };
 use crate::{
     LoadedEntry, PricingMap, Result,
-    cli::{CostMode, SharedArgs},
+    cli::{AgentReportKind, CostMode, SharedArgs},
     collect_files_with_extension, date_range_bounds_ms, debug_log, parse_tz, read_files_parallel,
 };
 
-pub fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
+pub fn load_entries(shared: &SharedArgs, report_kind: AgentReportKind) -> Result<Vec<LoadedEntry>> {
+    let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
     crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("OpenCode"),
         shared.json,
-        || load_entries_inner(shared),
+        || load_entries_inner(shared, allow_aggregate_fallback),
     )
 }
 
-fn load_entries_inner(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
+fn load_entries_inner(
+    shared: &SharedArgs,
+    allow_aggregate_fallback: bool,
+) -> Result<Vec<LoadedEntry>> {
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
+    let mut message_sessions = HashSet::new();
+    let mut aggregate_entries = Vec::new();
     for path in paths()? {
-        for entry in load_entries_from_directory(&path, shared)? {
+        let directory_entries =
+            load_entries_from_directory_parts(&path, shared, allow_aggregate_fallback)?;
+        for entry in directory_entries.message_entries {
+            message_sessions.insert(entry.session_id.to_string());
             if let Some(id) = entry_id(&entry)
                 && !seen.insert(id.to_string())
             {
@@ -39,15 +48,66 @@ fn load_entries_inner(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
             }
             entries.push(entry);
         }
+        aggregate_entries.extend(directory_entries.aggregate_entries);
     }
+    append_aggregate_entries(
+        &mut entries,
+        &mut seen,
+        &message_sessions,
+        aggregate_entries,
+    );
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
-pub fn load_entries_from_directory(
+#[cfg(test)]
+fn load_entries_from_directory(
     opencode_dir: &Path,
     shared: &SharedArgs,
 ) -> Result<Vec<LoadedEntry>> {
+    let directory_entries = load_entries_from_directory_parts(opencode_dir, shared, false)?;
+    let message_sessions = message_session_ids(&directory_entries.message_entries);
+    let mut seen = entry_ids(&directory_entries.message_entries);
+    let mut entries = directory_entries.message_entries;
+    append_aggregate_entries(
+        &mut entries,
+        &mut seen,
+        &message_sessions,
+        directory_entries.aggregate_entries,
+    );
+    entries.sort_by_key(|entry| entry.timestamp);
+    Ok(entries)
+}
+
+#[cfg(test)]
+fn load_entries_from_directory_for_report(
+    opencode_dir: &Path,
+    shared: &SharedArgs,
+    report_kind: AgentReportKind,
+) -> Result<Vec<LoadedEntry>> {
+    let directory_entries = load_entries_from_directory_parts(
+        opencode_dir,
+        shared,
+        report_kind == AgentReportKind::Session,
+    )?;
+    let message_sessions = message_session_ids(&directory_entries.message_entries);
+    let mut seen = entry_ids(&directory_entries.message_entries);
+    let mut entries = directory_entries.message_entries;
+    append_aggregate_entries(
+        &mut entries,
+        &mut seen,
+        &message_sessions,
+        directory_entries.aggregate_entries,
+    );
+    entries.sort_by_key(|entry| entry.timestamp);
+    Ok(entries)
+}
+
+fn load_entries_from_directory_parts(
+    opencode_dir: &Path,
+    shared: &SharedArgs,
+    allow_aggregate_fallback: bool,
+) -> Result<DirectoryLoadResult> {
     let pricing = if shared.mode == CostMode::Display {
         None
     } else {
@@ -59,7 +119,7 @@ pub fn load_entries_from_directory(
     };
     let tz = parse_tz(shared.timezone.as_deref());
     let window = DateWindow::from_shared(shared, tz.as_ref());
-    let mut entries = Vec::new();
+    let mut message_entries = Vec::new();
     let mut seen = HashSet::new();
     let mut aggregate_entries = Vec::new();
     if let Some(db_path) = db_path(opencode_dir) {
@@ -70,6 +130,7 @@ pub fn load_entries_from_directory(
             pricing.as_ref(),
             shared,
             window,
+            allow_aggregate_fallback,
         );
         for entry in database_entries.message_entries {
             if let Some(id) = entry_id(&entry)
@@ -77,7 +138,7 @@ pub fn load_entries_from_directory(
             {
                 continue;
             }
-            entries.push(entry);
+            message_entries.push(entry);
         }
         aggregate_entries = database_entries.aggregate_entries;
     }
@@ -119,26 +180,13 @@ pub fn load_entries_from_directory(
         {
             continue;
         }
-        entries.push(entry);
+        message_entries.push(entry);
     }
 
-    let message_sessions = entries
-        .iter()
-        .map(|entry| entry.session_id.to_string())
-        .collect::<HashSet<_>>();
-    for entry in aggregate_entries {
-        if message_sessions.contains(entry.session_id.as_ref()) {
-            continue;
-        }
-        if let Some(id) = entry_id(&entry)
-            && !seen.insert(id.to_string())
-        {
-            continue;
-        }
-        entries.push(entry);
-    }
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
+    Ok(DirectoryLoadResult {
+        message_entries,
+        aggregate_entries,
+    })
 }
 
 /// Reports whether `opencode_dir` holds any usage source at all: the SQLite
@@ -221,6 +269,12 @@ struct DatabaseLoadResult {
     aggregate_entries: Vec<LoadedEntry>,
 }
 
+#[derive(Default)]
+struct DirectoryLoadResult {
+    message_entries: Vec<LoadedEntry>,
+    aggregate_entries: Vec<LoadedEntry>,
+}
+
 fn load_entries_from_database(
     db_path: &Path,
     tz: Option<&JiffTimeZone>,
@@ -228,6 +282,7 @@ fn load_entries_from_database(
     pricing: Option<&PricingMap>,
     shared: &SharedArgs,
     window: DateWindow,
+    allow_aggregate_fallback: bool,
 ) -> DatabaseLoadResult {
     let Ok(connection) =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
@@ -412,7 +467,7 @@ fn load_entries_from_database(
     }
 
     let mut aggregate_entries = Vec::new();
-    if window.is_unbounded() {
+    if allow_aggregate_fallback && !has_temporal_filter(shared) {
         // Session aggregates are cumulative and cannot be sliced safely for a
         // bounded report, so only unbounded reports may use this fallback.
         let mut aggregate_tables = Vec::new();
@@ -492,6 +547,42 @@ fn push_unique_entry(
     }
     entries.push(entry);
     true
+}
+
+#[cfg(test)]
+fn entry_ids(entries: &[LoadedEntry]) -> HashSet<String> {
+    entries
+        .iter()
+        .filter_map(entry_id)
+        .map(str::to_string)
+        .collect()
+}
+
+#[cfg(test)]
+fn message_session_ids(entries: &[LoadedEntry]) -> HashSet<String> {
+    entries
+        .iter()
+        .map(|entry| entry.session_id.to_string())
+        .collect()
+}
+
+fn append_aggregate_entries(
+    entries: &mut Vec<LoadedEntry>,
+    seen: &mut HashSet<String>,
+    message_sessions: &HashSet<String>,
+    aggregate_entries: Vec<LoadedEntry>,
+) {
+    for entry in aggregate_entries {
+        if message_sessions.contains(entry.session_id.as_ref()) {
+            continue;
+        }
+        if let Some(id) = entry_id(&entry)
+            && !seen.insert(id.to_string())
+        {
+            continue;
+        }
+        entries.push(entry);
+    }
 }
 
 fn table_exists(connection: &sqlite::Connection, table: &str) -> bool {
@@ -792,6 +883,10 @@ struct DateWindow {
     end: Option<i64>,
 }
 
+fn has_temporal_filter(shared: &SharedArgs) -> bool {
+    shared.since.is_some() || shared.until.is_some() || shared.last.is_some()
+}
+
 impl DateWindow {
     const UNBOUNDED: Self = Self {
         start: None,
@@ -904,11 +999,13 @@ fn time_created_looks_like_millis(connection: &sqlite::Connection, table: &str) 
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{ffi::OsString, path::Path};
 
-    use super::load_entries_from_directory;
-    use crate::cli::{CostMode, SharedArgs};
-    use ccusage_test_support::fs_fixture;
+    use super::{
+        load_entries, load_entries_from_directory, load_entries_from_directory_for_report,
+    };
+    use crate::cli::{AgentReportKind, CostMode, SharedArgs};
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     // Mirrors the real OpenCode schema, where `time_created` repeats the
     // payload's `time.created`, so tests exercise the range push-down.
@@ -1169,7 +1266,12 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &shared,
+            AgentReportKind::Session,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
@@ -1281,13 +1383,14 @@ mod tests {
             },
         );
 
-        let entries = load_entries_from_directory(
+        let entries = load_entries_from_directory_for_report(
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
                 timezone: Some("UTC".to_string()),
                 ..SharedArgs::default()
             },
+            AgentReportKind::Session,
         )
         .unwrap();
 
@@ -1322,13 +1425,14 @@ mod tests {
             },
         );
 
-        let entries = load_entries_from_directory(
+        let entries = load_entries_from_directory_for_report(
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
                 timezone: Some("UTC".to_string()),
                 ..SharedArgs::default()
             },
+            AgentReportKind::Session,
         )
         .unwrap();
 
@@ -1367,7 +1471,7 @@ mod tests {
 
         // The cumulative aggregate includes usage outside this window, so it
         // cannot be attributed safely to the requested date range.
-        let entries = load_entries_from_directory(
+        let entries = load_entries_from_directory_for_report(
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
@@ -1376,10 +1480,209 @@ mod tests {
                 until: Some("20260103".to_string()),
                 ..SharedArgs::default()
             },
+            AgentReportKind::Session,
         )
         .unwrap();
 
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn keeps_message_rows_but_excludes_aggregate_for_partial_since_bound() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_message(
+            &db_path,
+            "partial-since-message",
+            "partial-since-message-session",
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1},"cost":0.01}"#,
+        );
+        create_db_session_aggregate_table(&db_path, "session_v2");
+        insert_db_session_aggregate(
+            &db_path,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "partial-since-aggregate-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 9.99,
+                input_tokens: 9_999,
+                output_tokens: 9_999,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+
+        let entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                since: Some("2026".to_string()),
+                ..SharedArgs::default()
+            },
+            AgentReportKind::Session,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].data.message.id.as_deref(),
+            Some("partial-since-message")
+        );
+    }
+
+    #[test]
+    fn keeps_message_rows_but_excludes_aggregate_for_partial_until_bound() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_message(
+            &db_path,
+            "partial-until-message",
+            "partial-until-message-session",
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1},"cost":0.01}"#,
+        );
+        create_db_session_aggregate_table(&db_path, "session_v2");
+        insert_db_session_aggregate(
+            &db_path,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "partial-until-aggregate-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 9.99,
+                input_tokens: 9_999,
+                output_tokens: 9_999,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+
+        let entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                until: Some("2026-02".to_string()),
+                ..SharedArgs::default()
+            },
+            AgentReportKind::Session,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].data.message.id.as_deref(),
+            Some("partial-until-message")
+        );
+    }
+
+    #[test]
+    fn suppresses_aggregate_when_message_usage_is_in_another_configured_directory() {
+        let aggregate_fixture = fs_fixture!({});
+        let aggregate_db_path = aggregate_fixture.path("opencode.db");
+        create_db_session_aggregate_table(&aggregate_db_path, "session_v2");
+        insert_db_session_aggregate(
+            &aggregate_db_path,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "cross-directory-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 9.99,
+                input_tokens: 9_999,
+                output_tokens: 9_999,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+        let message_fixture = fs_fixture!({
+            "storage/message/cross-directory-session/cross-directory-message.json": r#"{"id":"cross-directory-message","sessionID":"cross-directory-session","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":12,"output":6},"cost":0.03}"#,
+        });
+        let _guard = EnvVarsGuard::set_many([(
+            "OPENCODE_DATA_DIR",
+            Some(OsString::from(format!(
+                "{},{}",
+                aggregate_fixture.root().display(),
+                message_fixture.root().display()
+            ))),
+        )]);
+
+        let entries = load_entries(
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+            AgentReportKind::Session,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].data.message.id.as_deref(),
+            Some("cross-directory-message")
+        );
+        assert_eq!(entries[0].cost, 0.03);
+    }
+
+    #[test]
+    fn only_session_reports_use_cumulative_session_aggregate_fallback() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_message(
+            &db_path,
+            "period-message",
+            "period-message-session",
+            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1},"cost":0.01}"#,
+        );
+        create_db_session_aggregate_table(&db_path, "session_v2");
+        insert_db_session_aggregate(
+            &db_path,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "period-aggregate-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 9.99,
+                input_tokens: 9_999,
+                output_tokens: 9_999,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+        let _guard = EnvVarsGuard::set_many([(
+            "OPENCODE_DATA_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        for report_kind in [
+            AgentReportKind::Daily,
+            AgentReportKind::Weekly,
+            AgentReportKind::Monthly,
+        ] {
+            let entries = load_entries(&shared, report_kind).unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(
+                entries[0].data.message.id.as_deref(),
+                Some("period-message")
+            );
+        }
+
+        let session_entries = load_entries(&shared, AgentReportKind::Session).unwrap();
+        assert_eq!(session_entries.len(), 2);
+        assert!(session_entries.iter().any(|entry| {
+            entry.data.message.id.as_deref() == Some("session:period-aggregate-session")
+        }));
     }
 
     #[test]
@@ -1404,13 +1707,14 @@ mod tests {
             },
         );
 
-        let entries = load_entries_from_directory(
+        let entries = load_entries_from_directory_for_report(
             fixture.root(),
             &SharedArgs {
                 mode: CostMode::Display,
                 timezone: Some("UTC".to_string()),
                 ..SharedArgs::default()
             },
+            AgentReportKind::Session,
         )
         .unwrap();
 
