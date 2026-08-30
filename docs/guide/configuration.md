@@ -56,6 +56,7 @@ export AMP_DATA_DIR="$HOME/.local/share/amp"
 export PI_AGENT_DIR="$HOME/.pi/agent/sessions"
 export KILO_DATA_DIR="$HOME/.local/share/kilo"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="$HOME/.copilot/otel/copilot-otel.jsonl"
+export ZCODE_HOME="$HOME/.zcode"
 ```
 
 Use comma-separated directories when you want reports to combine multiple profiles or archives:
@@ -109,7 +110,7 @@ For individual developers working on multiple projects:
 
 ### Multiple Sources
 
-Configure Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI separately with data source namespaces:
+Configure Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Grok Build CLI, and ZCode separately with data source namespaces:
 
 ```json
 // ~/.config/claude/ccusage.json

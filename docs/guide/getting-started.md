@@ -115,6 +115,7 @@ ccusage daily --since 2026-05-01 --until 2026-05-16
 ```bash
 ccusage codex daily
 ccusage claude monthly
+ccusage zcode daily
 ```
 
 ### Use Source-Specific Options
@@ -177,6 +178,7 @@ If ccusage shows no data, check:
    - Qwen: `${QWEN_DATA_DIR:-~/.qwen}`
    - GitHub Copilot CLI: `~/.copilot/otel/*.jsonl` or `COPILOT_OTEL_FILE_EXPORTER_PATH`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
+   - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
 
 ### Custom Data Directory
 
@@ -198,9 +200,10 @@ export KIMI_DATA_DIR="/path/to/kimi"
 export QWEN_DATA_DIR="/path/to/qwen"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
+export ZCODE_HOME="/path/to/zcode-home"
 ```
 
-Each source-specific path variable can also contain comma-separated directories, except `GROK_HOME`, which takes a single root:
+Each source-specific path variable can also contain comma-separated directories, except `GROK_HOME`, which takes a single root. `ZCODE_HOME` accepts multiple roots and deduplicates them:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"
@@ -215,6 +218,7 @@ export OPENCLAW_DIR="/path/to/openclaw,/archive/openclaw"
 export KILO_DATA_DIR="/path/to/kilo,/archive/kilo"
 export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
+export ZCODE_HOME="/path/to/zcode,/archive/zcode"
 ```
 
 ## Getting Help
