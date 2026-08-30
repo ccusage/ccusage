@@ -61,15 +61,17 @@ pub fn load_entries_from_directory(
     let window = DateWindow::from_shared(shared, tz.as_ref());
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
+    let mut aggregate_entries = Vec::new();
     if let Some(db_path) = db_path(opencode_dir) {
-        for entry in load_entries_from_database(
+        let database_entries = load_entries_from_database(
             &db_path,
             tz.as_ref(),
             shared.mode,
             pricing.as_ref(),
             shared,
             window,
-        ) {
+        );
+        for entry in database_entries.message_entries {
             if let Some(id) = entry_id(&entry)
                 && !seen.insert(id.to_string())
             {
@@ -77,6 +79,7 @@ pub fn load_entries_from_directory(
             }
             entries.push(entry);
         }
+        aggregate_entries = database_entries.aggregate_entries;
     }
 
     let messages_dir = opencode_dir.join("storage").join("message");
@@ -111,6 +114,22 @@ pub fn load_entries_from_directory(
         )
     });
     for entry in loaded.into_iter().flatten() {
+        if let Some(id) = entry_id(&entry)
+            && !seen.insert(id.to_string())
+        {
+            continue;
+        }
+        entries.push(entry);
+    }
+
+    let message_sessions = entries
+        .iter()
+        .map(|entry| entry.session_id.to_string())
+        .collect::<HashSet<_>>();
+    for entry in aggregate_entries {
+        if message_sessions.contains(entry.session_id.as_ref()) {
+            continue;
+        }
         if let Some(id) = entry_id(&entry)
             && !seen.insert(id.to_string())
         {
@@ -196,6 +215,12 @@ struct DatabaseLoadContext<'a> {
     db_path: &'a Path,
 }
 
+#[derive(Default)]
+struct DatabaseLoadResult {
+    message_entries: Vec<LoadedEntry>,
+    aggregate_entries: Vec<LoadedEntry>,
+}
+
 fn load_entries_from_database(
     db_path: &Path,
     tz: Option<&JiffTimeZone>,
@@ -203,7 +228,7 @@ fn load_entries_from_database(
     pricing: Option<&PricingMap>,
     shared: &SharedArgs,
     window: DateWindow,
-) -> Vec<LoadedEntry> {
+) -> DatabaseLoadResult {
     let Ok(connection) =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
     else {
@@ -211,9 +236,9 @@ fn load_entries_from_database(
             shared,
             format!("Failed to open OpenCode database: {}", db_path.display()),
         );
-        return Vec::new();
+        return DatabaseLoadResult::default();
     };
-    let mut entries = Vec::new();
+    let mut message_entries = Vec::new();
 
     let mut seen_message_ids = HashSet::new();
     let mut message_sessions = HashSet::new();
@@ -278,7 +303,7 @@ fn load_entries_from_database(
                         ) {
                             let session_key = entry.session_id.to_string();
                             message_sessions.insert(session_key);
-                            push_unique_entry(&mut entries, &mut seen_message_ids, entry);
+                            push_unique_entry(&mut message_entries, &mut seen_message_ids, entry);
                         }
                     }
                     Ok(sqlite::State::Done) => break,
@@ -359,7 +384,7 @@ fn load_entries_from_database(
                         let session_key = entry.session_id.to_string();
                         v2_entries += 1;
                         message_sessions.insert(session_key);
-                        push_unique_entry(&mut entries, &mut seen_message_ids, entry);
+                        push_unique_entry(&mut message_entries, &mut seen_message_ids, entry);
                     }
                     Ok(sqlite::State::Done) => break,
                     Err(_) => {
@@ -386,31 +411,39 @@ fn load_entries_from_database(
         }
     }
 
-    let mut aggregate_tables = Vec::new();
-    if table_exists(&connection, "session_v2") {
-        aggregate_tables.push("session_v2");
-    }
-    if has_session_messages && table_exists(&connection, "session") {
-        aggregate_tables.push("session");
-    }
-    let aggregate_context = DatabaseLoadContext {
-        tz,
-        mode,
-        pricing,
-        window,
-        shared,
-        db_path,
-    };
-    for table in aggregate_tables {
-        for entry in load_session_aggregate_entries(&connection, table, &aggregate_context) {
-            if message_sessions.contains(entry.session_id.as_ref()) {
-                continue;
+    let mut aggregate_entries = Vec::new();
+    if window.is_unbounded() {
+        // Session aggregates are cumulative and cannot be sliced safely for a
+        // bounded report, so only unbounded reports may use this fallback.
+        let mut aggregate_tables = Vec::new();
+        if table_exists(&connection, "session_v2") {
+            aggregate_tables.push("session_v2");
+        }
+        if has_session_messages && table_exists(&connection, "session") {
+            aggregate_tables.push("session");
+        }
+        let aggregate_context = DatabaseLoadContext {
+            tz,
+            mode,
+            pricing,
+            window,
+            shared,
+            db_path,
+        };
+        for table in aggregate_tables {
+            for entry in load_session_aggregate_entries(&connection, table, &aggregate_context) {
+                if message_sessions.contains(entry.session_id.as_ref()) {
+                    continue;
+                }
+                push_unique_entry(&mut aggregate_entries, &mut seen_message_ids, entry);
             }
-            push_unique_entry(&mut entries, &mut seen_message_ids, entry);
         }
     }
 
-    entries
+    DatabaseLoadResult {
+        message_entries,
+        aggregate_entries,
+    }
 }
 
 fn read_message_file(
@@ -1226,6 +1259,49 @@ mod tests {
     }
 
     #[test]
+    fn suppresses_session_aggregate_when_legacy_json_has_message() {
+        let fixture = fs_fixture!({
+            "storage/message/legacy-json-session/legacy-json-message.json": r#"{"id":"legacy-json-message","sessionID":"legacy-json-session","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":120,"output":60},"cost":0.03}"#,
+        });
+        let db_path = fixture.path("opencode.db");
+        create_db_session_aggregate_table(&db_path, "session_v2");
+        insert_db_session_aggregate(
+            &db_path,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "legacy-json-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 9.99,
+                input_tokens: 9_999,
+                output_tokens: 9_999,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+
+        let entries = load_entries_from_directory(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "legacy-json-session");
+        assert_eq!(
+            entries[0].data.message.id.as_deref(),
+            Some("legacy-json-message")
+        );
+        assert_eq!(entries[0].data.message.usage.input_tokens, 120);
+        assert_eq!(entries[0].cost, 0.03);
+    }
+
+    #[test]
     fn uses_session_v2_aggregate_when_no_message_level_usage_exists() {
         let fixture = fs_fixture!({});
         let db_path = fixture.path("opencode.db");
@@ -1266,6 +1342,44 @@ mod tests {
         assert_eq!(entries[0].data.message.usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 5);
         assert_eq!(entries[0].cost, 0.25);
+    }
+
+    #[test]
+    fn excludes_cumulative_session_aggregate_from_bounded_window() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_aggregate_table(&db_path, "session_v2");
+        insert_db_session_aggregate(
+            &db_path,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "spanning-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 0.25,
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_read_tokens: 10,
+                cache_write_tokens: 20,
+                reasoning_tokens: 5,
+            },
+        );
+
+        // The cumulative aggregate includes usage outside this window, so it
+        // cannot be attributed safely to the requested date range.
+        let entries = load_entries_from_directory(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                since: Some("20260102".to_string()),
+                until: Some("20260103".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap();
+
+        assert!(entries.is_empty());
     }
 
     #[test]
