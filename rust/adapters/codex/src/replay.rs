@@ -147,13 +147,15 @@ impl CodexReplayPlan {
         let children = collect_replay_files(children);
         let available_files = collect_replay_files(available_files);
         let available_metadata = read_session_metadata(&available_files, single_thread);
-        let mut files_by_session_id = HashMap::with_capacity(available_files.len());
+        let mut files_by_session_id =
+            HashMap::<String, Vec<PathBuf>>::with_capacity(available_files.len());
         let mut metadata_by_path = HashMap::with_capacity(available_files.len());
         for ((path, _), metadata) in available_files.iter().zip(available_metadata) {
             if let Some(session_id) = metadata.session_id.as_deref() {
                 files_by_session_id
                     .entry(session_id.to_string())
-                    .or_insert_with(|| path.clone());
+                    .or_default()
+                    .push(path.clone());
             }
             metadata_by_path.entry(path.clone()).or_insert(metadata);
         }
@@ -170,7 +172,11 @@ impl CodexReplayPlan {
                 let parent_id = metadata.parent_id.as_deref()?;
                 let path = files_by_session_id
                     .get(parent_id)
-                    .filter(|parent| **parent != *child)
+                    .and_then(|candidates| {
+                        candidates
+                            .iter()
+                            .find(|candidate| candidate.as_path() != child)
+                    })
                     .cloned();
                 Some((
                     child.clone(),
