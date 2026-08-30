@@ -127,7 +127,7 @@ void describe(resolveCliRuntime.name, () => {
 });
 
 void describe(createNativeSpawner.name, () => {
-	void it('forwards each supported launcher signal once', async () => {
+	void it('forwards every supported launcher signal delivery', async () => {
 		const signalSource = new EventEmitter();
 		const kill = mock.fn(() => true);
 		const child = /** @type {import('node:child_process').ChildProcess} */ (
@@ -150,7 +150,16 @@ void describe(createNativeSpawner.name, () => {
 		assert.deepEqual(await resultPromise, { signal: null, status: 0 });
 		assert.deepEqual(
 			kill.mock.calls.map((call) => call.arguments),
-			[['SIGINT'], ['SIGTERM'], ['SIGHUP'], ['SIGQUIT']],
+			[
+				['SIGINT'],
+				['SIGINT'],
+				['SIGTERM'],
+				['SIGTERM'],
+				['SIGHUP'],
+				['SIGHUP'],
+				['SIGQUIT'],
+				['SIGQUIT'],
+			],
 		);
 		const spawnCall = spawnProcess.mock.calls[0];
 		assert.ok(spawnCall);
@@ -159,6 +168,41 @@ void describe(createNativeSpawner.name, () => {
 			['statusline'],
 			{ stdio: 'inherit' },
 		]);
+	});
+
+	void it('forwards the supported Windows console signals', async () => {
+		const signalSource = new EventEmitter();
+		const kill = mock.fn(() => true);
+		const child = /** @type {import('node:child_process').ChildProcess} */ (
+			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
+		);
+		const spawnNative = createNativeSpawner({
+			platform: 'win32',
+			signalSource,
+			spawnProcess: () => child,
+		});
+
+		const resultPromise = spawnNative('/native/bin/ccusage.exe', []);
+		assert.deepEqual(
+			['SIGINT', 'SIGBREAK', 'SIGHUP'].map((signal) => signalSource.listenerCount(signal)),
+			[1, 1, 1],
+		);
+		signalSource.emit('SIGINT');
+		signalSource.emit('SIGBREAK');
+		signalSource.emit('SIGHUP');
+		signalSource.emit('SIGTERM');
+		assert.equal(signalSource.listenerCount('SIGTERM'), 0);
+		assert.deepEqual(
+			kill.mock.calls.map((call) => call.arguments),
+			[['SIGINT'], ['SIGBREAK'], ['SIGHUP']],
+		);
+		child.emit('exit', 0, null);
+
+		assert.deepEqual(await resultPromise, { signal: null, status: 0 });
+		assert.deepEqual(
+			['SIGINT', 'SIGBREAK', 'SIGHUP'].map((signal) => signalSource.listenerCount(signal)),
+			[0, 0, 0],
+		);
 	});
 
 	void it('removes signal listeners after the child exits', async () => {

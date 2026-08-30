@@ -165,7 +165,7 @@ function isMainModule({ argvEntry = process.argv[1], moduleUrl, realpathPath = r
  */
 function getForwardedSignals(platform = process.platform) {
 	if (platform === 'win32') {
-		return ['SIGINT', 'SIGTERM'];
+		return ['SIGINT', 'SIGBREAK', 'SIGHUP'];
 	}
 
 	return ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT'];
@@ -186,7 +186,6 @@ function createNativeSpawner({
 		new Promise((resolve) => {
 			const child = spawnProcess(command, args, { stdio: 'inherit' });
 			const signalHandlers = new Map();
-			const forwardedSignalSet = new Set();
 			const cleanup = () => {
 				for (const [signal, handler] of signalHandlers) {
 					signalSource.off(signal, handler);
@@ -197,10 +196,6 @@ function createNativeSpawner({
 			 * @param {NodeJS.Signals} signal
 			 */
 			const handleSignal = (signal) => {
-				if (forwardedSignalSet.has(signal)) {
-					return;
-				}
-				forwardedSignalSet.add(signal);
 				child.kill(signal);
 			};
 
