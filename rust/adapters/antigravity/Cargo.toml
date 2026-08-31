@@ -14,3 +14,4 @@ sqlite.workspace = true
 [dev-dependencies]
 ccusage-core = { workspace = true, features = ["fetch-litellm-pricing"] }
 ccusage-test-support.workspace = true
+insta.workspace = true

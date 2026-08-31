@@ -1,4 +1,6 @@
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz, read_files_parallel};
+use crate::{
+    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
+};
 
 use super::{
     parser::{event_to_loaded, parse_json_file, parse_jsonl_file},
@@ -21,11 +23,17 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     // Read each log file in parallel; the events keep their original file order
     // before the stable sort, so output is identical to the sequential read.
     let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        match file.extension().and_then(|extension| extension.to_str()) {
+        let parsed = match file.extension().and_then(|extension| extension.to_str()) {
             Some("jsonl") => parse_jsonl_file(file),
             _ => parse_json_file(file),
-        }
-        .unwrap_or_default()
+        };
+        parsed.unwrap_or_else(|error| {
+            debug_log(
+                shared,
+                format!("Failed to read Gemini log file {}: {error}", file.display()),
+            );
+            Vec::new()
+        })
     });
     let mut events: Vec<_> = loaded.into_iter().flatten().collect();
     events.sort_by_key(|event| event.timestamp);

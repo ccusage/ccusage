@@ -6,8 +6,8 @@ from the Gemini CLI adapter so unified reports preserve source attribution.
 
 ## Owns
 
-- `loader.rs` — database discovery, ordered parallel reads, and response-ID deduplication.
-- `parser.rs` — SQLite row handling, GeneratorMetadata protobuf decoding, token buckets, and model naming.
+- `loader.rs` — database discovery, bounded ordered reads, and identity-based deduplication.
+- `parser.rs` — SQLite row handling, GeneratorMetadata/CortexStepMetadata protobuf decoding, token buckets, retries, and model naming.
 - `paths.rs` — environment variables, default roots, and `.db` discovery.
 - `report.rs` — the JSON and table shapes where they differ from the shared ones.
 
@@ -24,7 +24,10 @@ The adapter reads `.db` files below these default roots:
 `ANTIGRAVITY_DATA_DIR` accepts one or more comma-separated data roots. Each
 root may contain a `conversations/` child or be the conversation directory
 itself. Databases are opened read-only and must provide the `gen_metadata`
-table.
+table. When present, the real `steps` schema contributes step and retry usage,
+and `trajectory_metadata_blob` supplies the timestamp fallback. SQLite,
+row-iteration, and protobuf failures are reported instead of becoming empty or
+partial reports.
 
 ## Public surface
 

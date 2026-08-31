@@ -1,0 +1,264 @@
+---
+source: adapters/antigravity/src/loader.rs
+expression: reports
+---
+{
+  "daily": {
+    "json": {
+      "daily": [
+        {
+          "cacheCreationTokens": 5,
+          "cacheReadTokens": 20,
+          "date": "2026-05-05",
+          "inputTokens": 100,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.0006965000000000001,
+              "inputTokens": 100,
+              "modelName": "gemini-3-pro",
+              "outputTokens": 30
+            }
+          ],
+          "modelsUsed": [
+            "gemini-3-pro"
+          ],
+          "outputTokens": 30,
+          "totalCost": 0.0006965000000000001,
+          "totalTokens": 165
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "date": "2026-06-08",
+          "inputTokens": 200,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.000675,
+              "inputTokens": 200,
+              "modelName": "gemini-3.6-flash",
+              "outputTokens": 50
+            }
+          ],
+          "modelsUsed": [
+            "gemini-3.6-flash"
+          ],
+          "outputTokens": 50,
+          "totalCost": 0.000675,
+          "totalTokens": 250
+        }
+      ],
+      "totals": {
+        "cacheCreationTokens": 5,
+        "cacheReadTokens": 20,
+        "inputTokens": 300,
+        "outputTokens": 80,
+        "totalCost": 0.0013715,
+        "totalTokens": 415
+      }
+    },
+    "table": [
+      {
+        "cacheCreate": 5,
+        "cacheRead": 20,
+        "cost": 0.0006965000000000001,
+        "firstColumn": "Date",
+        "input": 100,
+        "models": [
+          "gemini-3-pro"
+        ],
+        "output": 30,
+        "period": "2026-05-05",
+        "total": 165
+      },
+      {
+        "cacheCreate": 0,
+        "cacheRead": 0,
+        "cost": 0.000675,
+        "firstColumn": "Date",
+        "input": 200,
+        "models": [
+          "gemini-3.6-flash"
+        ],
+        "output": 50,
+        "period": "2026-06-08",
+        "total": 250
+      }
+    ]
+  },
+  "monthly": {
+    "json": {
+      "monthly": [
+        {
+          "cacheCreationTokens": 5,
+          "cacheReadTokens": 20,
+          "inputTokens": 100,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.0006965000000000001,
+              "inputTokens": 100,
+              "modelName": "gemini-3-pro",
+              "outputTokens": 30
+            }
+          ],
+          "modelsUsed": [
+            "gemini-3-pro"
+          ],
+          "month": "2026-05",
+          "outputTokens": 30,
+          "totalCost": 0.0006965000000000001,
+          "totalTokens": 165
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 200,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.000675,
+              "inputTokens": 200,
+              "modelName": "gemini-3.6-flash",
+              "outputTokens": 50
+            }
+          ],
+          "modelsUsed": [
+            "gemini-3.6-flash"
+          ],
+          "month": "2026-06",
+          "outputTokens": 50,
+          "totalCost": 0.000675,
+          "totalTokens": 250
+        }
+      ],
+      "totals": {
+        "cacheCreationTokens": 5,
+        "cacheReadTokens": 20,
+        "inputTokens": 300,
+        "outputTokens": 80,
+        "totalCost": 0.0013715,
+        "totalTokens": 415
+      }
+    },
+    "table": [
+      {
+        "cacheCreate": 5,
+        "cacheRead": 20,
+        "cost": 0.0006965000000000001,
+        "firstColumn": "Month",
+        "input": 100,
+        "models": [
+          "gemini-3-pro"
+        ],
+        "output": 30,
+        "period": "2026-05",
+        "total": 165
+      },
+      {
+        "cacheCreate": 0,
+        "cacheRead": 0,
+        "cost": 0.000675,
+        "firstColumn": "Month",
+        "input": 200,
+        "models": [
+          "gemini-3.6-flash"
+        ],
+        "output": 50,
+        "period": "2026-06",
+        "total": 250
+      }
+    ]
+  },
+  "session": {
+    "json": {
+      "sessions": [
+        {
+          "cacheCreationTokens": 5,
+          "cacheReadTokens": 20,
+          "inputTokens": 100,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.0006965000000000001,
+              "inputTokens": 100,
+              "modelName": "gemini-3-pro",
+              "outputTokens": 30
+            }
+          ],
+          "modelsUsed": [
+            "gemini-3-pro"
+          ],
+          "outputTokens": 30,
+          "sessionId": "first",
+          "totalCost": 0.0006965000000000001,
+          "totalTokens": 165
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 200,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.000675,
+              "inputTokens": 200,
+              "modelName": "gemini-3.6-flash",
+              "outputTokens": 50
+            }
+          ],
+          "modelsUsed": [
+            "gemini-3.6-flash"
+          ],
+          "outputTokens": 50,
+          "sessionId": "second",
+          "totalCost": 0.000675,
+          "totalTokens": 250
+        }
+      ],
+      "totals": {
+        "cacheCreationTokens": 5,
+        "cacheReadTokens": 20,
+        "inputTokens": 300,
+        "outputTokens": 80,
+        "totalCost": 0.0013715,
+        "totalTokens": 415
+      }
+    },
+    "table": [
+      {
+        "cacheCreate": 5,
+        "cacheRead": 20,
+        "cost": 0.0006965000000000001,
+        "firstColumn": "Session",
+        "input": 100,
+        "models": [
+          "gemini-3-pro"
+        ],
+        "output": 30,
+        "period": "first",
+        "total": 165
+      },
+      {
+        "cacheCreate": 0,
+        "cacheRead": 0,
+        "cost": 0.000675,
+        "firstColumn": "Session",
+        "input": 200,
+        "models": [
+          "gemini-3.6-flash"
+        ],
+        "output": 50,
+        "period": "second",
+        "total": 250
+      }
+    ]
+  }
+}

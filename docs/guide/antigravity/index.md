@@ -41,14 +41,17 @@ ANTIGRAVITY_DATA_DIR="$HOME/.gemini/antigravity-cli,/backup/antigravity" \
 ```
 
 Only `.db` files are read. ccusage opens them read-only and reads the
-`gen_metadata` rows in ascending `idx` order.
+`gen_metadata` rows in ascending `idx` order. When present, the real `steps`
+schema contributes step and retry usage, and `trajectory_metadata_blob` supplies
+the timestamp fallback. SQLite, row-iteration, and protobuf failures are
+reported instead of becoming empty or partial reports.
 
 ## What Gets Calculated
 
-- **Input tokens** - The system-prompt and fresh-input buckets are combined.
-- **Cache reads** - The cache-read bucket remains separate from uncached input.
-- **Output and reasoning** - Visible output and thinking tokens are reported in
-  their corresponding output and reasoning fields.
+- **Input tokens** - The fresh-input bucket is reported independently.
+- **Cache writes and reads** - Both cache buckets remain separate from uncached input.
+- **Output and reasoning** - Total output is split into visible output and
+  thinking/reasoning tokens.
 - **Model names** - Antigravity display names and known internal aliases are
   normalized to pricing model IDs. For example, `Gemini 3 Pro` is reported as
   `gemini-3-pro`.
@@ -56,8 +59,9 @@ Only `.db` files are read. ccusage opens them read-only and reads the
   matching model is available. Use `--offline` to avoid a pricing refresh.
 
 Continuation rows inherit the most recently observed model in their database.
-Rows with a response ID are deduplicated when the same conversation is found in
-multiple configured roots.
+Usage in generation metadata and step metadata is combined, including retry
+records. Successful, retry, and source copies are deduplicated by their response,
+provider-assigned message, or message identity.
 
 ## Configuration
 

@@ -12,5 +12,4 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-core = { workspace = true, features = ["fetch-litellm-pricing"] }
 ccusage-test-support.workspace = true
