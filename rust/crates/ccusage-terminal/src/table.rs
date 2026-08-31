@@ -3,11 +3,15 @@ use std::io::{self, Write};
 use crate::{
     style::{Color, TerminalStyle, color},
     terminal::DEFAULT_TERMINAL_WIDTH,
-    width::{ensure_ansi_reset, truncate_to_width, visible_width, visible_width_max_line},
+    width::{
+        ansi_continuation, ensure_ansi_reset, truncate_to_width, visible_width,
+        visible_width_max_line,
+    },
 };
 
 const MAX_MODELS_CONTENT_WIDTH: usize = 25;
 const MIN_WRAP_COLUMN_WIDTH: usize = 8;
+const MAX_FALLBACK_TEXT_WIDTH: usize = 12;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Align {
@@ -22,6 +26,11 @@ pub struct SimpleTable {
     style: TerminalStyle,
     terminal_width: usize,
     compact_dates: bool,
+}
+
+struct ContentWidths<'a> {
+    numeric: &'a [usize],
+    text: &'a [usize],
 }
 
 impl SimpleTable {
@@ -119,6 +128,23 @@ impl SimpleTable {
                     .unwrap_or_default()
             })
             .collect::<Vec<_>>();
+        let text_content_widths = self
+            .aligns
+            .iter()
+            .enumerate()
+            .map(|(index, align)| {
+                if *align == Align::Right {
+                    return 0;
+                }
+                self.rows
+                    .iter()
+                    .flatten()
+                    .filter_map(|row| row.get(index))
+                    .map(|cell| visible_width_max_line(cell))
+                    .max()
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
         let content_widths = self
             .headers
             .iter()
@@ -173,7 +199,10 @@ impl SimpleTable {
             self.terminal_width,
             first_column_min,
             model_column,
-            &numeric_content_widths,
+            ContentWidths {
+                numeric: &numeric_content_widths,
+                text: &text_content_widths,
+            },
             self.compact_dates,
         )
     }
@@ -230,7 +259,7 @@ fn fit_widths_to_terminal(
     terminal_width: usize,
     first_column_min: usize,
     model_column: Option<usize>,
-    numeric_content_widths: &[usize],
+    content_widths: ContentWidths<'_>,
     compact_dates: bool,
 ) -> Vec<usize> {
     if cli_table_required_width(&widths) <= terminal_width {
@@ -248,7 +277,13 @@ fn fit_widths_to_terminal(
             } else if model_column == Some(index) || (model_column.is_none() && index == 1) {
                 12
             } else {
-                8
+                content_widths
+                    .text
+                    .get(index)
+                    .copied()
+                    .unwrap_or_default()
+                    .saturating_add(2)
+                    .clamp(MIN_WRAP_COLUMN_WIDTH, MAX_FALLBACK_TEXT_WIDTH)
             }
         })
         .collect::<Vec<_>>();
@@ -259,7 +294,8 @@ fn fit_widths_to_terminal(
         .map(|(index, minimum)| {
             if aligns.get(index) == Some(&Align::Right) {
                 (*minimum).max(
-                    numeric_content_widths
+                    content_widths
+                        .numeric
                         .get(index)
                         .copied()
                         .unwrap_or_default()
@@ -277,7 +313,12 @@ fn fit_widths_to_terminal(
             .filter(|(index, width)| {
                 aligns.get(*index) != Some(&Align::Right) && **width > MIN_WRAP_COLUMN_WIDTH
             })
-            .max_by_key(|(_, width)| **width)
+            .max_by_key(|(index, width)| {
+                (
+                    model_column == Some(*index) || (model_column.is_none() && *index == 1),
+                    **width,
+                )
+            })
             .map(|(index, _)| index)
         else {
             break;
@@ -352,12 +393,19 @@ fn wrap_cell_lines(cell: &str, width: usize) -> Vec<String> {
         return vec![String::new()];
     }
     let mut lines = Vec::new();
+    let mut continuation = String::new();
     for line in cell.lines() {
-        if visible_width(line) <= width {
-            lines.push(line.to_string());
-            continue;
+        let line = if continuation.is_empty() {
+            line.to_string()
+        } else {
+            format!("{continuation}{line}")
+        };
+        if visible_width(&line) <= width {
+            lines.push(line.clone());
+        } else {
+            lines.extend(wrap_cell_line(&line, width));
         }
-        lines.extend(wrap_cell_line(line, width));
+        continuation = ansi_continuation(&line);
     }
     lines
 }
@@ -477,7 +525,10 @@ mod tests {
             60,
             12,
             None,
-            &[],
+            ContentWidths {
+                numeric: &[],
+                text: &[],
+            },
             false,
         );
 
@@ -492,7 +543,10 @@ mod tests {
             49,
             12,
             None,
-            &[],
+            ContentWidths {
+                numeric: &[],
+                text: &[],
+            },
             false,
         );
 
@@ -1051,5 +1105,72 @@ mod tests {
         assert!(rendered.contains("Models"));
         assert!(rendered.contains("Input"));
         assert!(rendered.contains("Cost"));
+    }
+
+    #[test]
+    fn preserves_status_markers_when_models_is_not_the_second_column() {
+        let mut table = SimpleTable::new(
+            vec!["Block Start", "Duration/Status", "Models", "Tokens", "Cost"],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(56);
+        table.push(vec![
+            "08/31, 10:00 AM".to_string(),
+            "(inactive)".to_string(),
+            "- gpt-5".to_string(),
+            "123".to_string(),
+            "$1.23".to_string(),
+        ]);
+
+        let rendered = table.render_lines().join("\n");
+        let status_line = rendered
+            .lines()
+            .find(|line| line.contains("(inactive)"))
+            .expect("status marker should remain visible");
+        assert!(!status_line.contains('…'), "{status_line}");
+        assert!(rendered.lines().all(|line| visible_width(line) <= 56));
+    }
+
+    #[test]
+    fn preserves_ansi_continuation_across_multiline_cells_without_leaking() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input"],
+            vec![Align::Left, Align::Left, Align::Right],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(120);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "\x1b[32m- first\n- second".to_string(),
+            "1,234".to_string(),
+        ]);
+
+        let rendered = table.render_lines();
+        let model_lines = rendered
+            .iter()
+            .filter(|line| line.contains("- first") || line.contains("- second"))
+            .collect::<Vec<_>>();
+        assert_eq!(model_lines.len(), 2, "{rendered:?}");
+        for line in model_lines {
+            let model_cell = line
+                .split('│')
+                .nth(2)
+                .expect("rendered row should include the Models cell");
+            assert!(model_cell.contains("\x1b[32m"), "{line:?}");
+            assert!(model_cell.trim_end().ends_with("\x1b[0m"), "{line:?}");
+        }
     }
 }
