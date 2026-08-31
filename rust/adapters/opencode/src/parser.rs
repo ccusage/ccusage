@@ -157,9 +157,16 @@ pub fn message_value_to_entry(
         tz,
         mode,
         pricing,
-        false,
-        open_code_timestamp(value),
+        MessageEntryOptions {
+            allow_cost_only: false,
+            pricing_timestamp: open_code_timestamp(value),
+        },
     )
+}
+
+struct MessageEntryOptions {
+    allow_cost_only: bool,
+    pricing_timestamp: Option<crate::TimestampMs>,
 }
 
 fn message_value_to_entry_inner(
@@ -169,8 +176,7 @@ fn message_value_to_entry_inner(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-    allow_cost_only: bool,
-    pricing_timestamp: Option<crate::TimestampMs>,
+    options: MessageEntryOptions,
 ) -> Option<LoadedEntry> {
     let tokens = value.tokens.as_ref()?;
     let cache = tokens.cache.as_ref();
@@ -190,7 +196,7 @@ fn message_value_to_entry_inner(
         && usage.cache_creation_input_tokens == 0
         && usage.cache_read_input_tokens == 0
         && extra_total_tokens == 0
-        && !(allow_cost_only && value.cost.is_some_and(|cost| cost > 0.0))
+        && !(options.allow_cost_only && value.cost.is_some_and(|cost| cost > 0.0))
     {
         return None;
     }
@@ -224,7 +230,7 @@ fn message_value_to_entry_inner(
         &provider,
         cost_usage,
         data.cost_usd,
-        pricing_timestamp,
+        options.pricing_timestamp,
         mode,
         pricing,
     );
@@ -319,7 +325,18 @@ pub(crate) fn session_value_to_entry(
         session_id: Some(aggregate.session_id),
         cost: aggregate.cost,
     };
-    message_value_to_entry_inner(&value, None, None, tz, mode, pricing, true, None)
+    message_value_to_entry_inner(
+        &value,
+        None,
+        None,
+        tz,
+        mode,
+        pricing,
+        MessageEntryOptions {
+            allow_cost_only: true,
+            pricing_timestamp: None,
+        },
+    )
 }
 
 fn open_code_timestamp(value: &OpenCodeMessage) -> Option<crate::TimestampMs> {
