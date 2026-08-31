@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use ccusage_adapter_common::read_files_parallel;
-
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz};
 
 use super::{
@@ -21,14 +19,11 @@ pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<Loa
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     let timezone = parse_tz(shared.timezone.as_deref());
     let database_paths = conversation_db_paths()?;
-    let parsed = read_files_parallel(&database_paths, shared.single_thread, parse_sqlite_file);
-    let mut events = deduplicate_events(
-        parsed
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten(),
-    );
+    let mut parsed_events = Vec::new();
+    for database_path in database_paths {
+        parsed_events.extend(parse_sqlite_file(&database_path)?);
+    }
+    let mut events = deduplicate_events(parsed_events);
     events.sort_by_key(|event| event.timestamp);
     Ok(events
         .into_iter()
@@ -105,11 +100,42 @@ mod tests {
     }
 
     fn load_from_fixture(fixture: &Fixture, single_thread: bool) -> Vec<LoadedEntry> {
+        let pricing = PricingMap::load_embedded();
+        load_from_fixture_with_pricing(fixture, single_thread, &pricing)
+    }
+
+    fn load_from_fixture_with_pricing(
+        fixture: &Fixture,
+        single_thread: bool,
+        pricing: &PricingMap,
+    ) -> Vec<LoadedEntry> {
         let _guard = EnvVarsGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
-        load_entries(&shared(single_thread), &PricingMap::load_embedded()).unwrap()
+        load_entries(&shared(single_thread), pricing).unwrap()
+    }
+
+    fn snapshot_pricing() -> PricingMap {
+        let mut pricing = PricingMap::default();
+        assert_eq!(
+            pricing.load_json(
+                r#"{
+                    "gemini-3-pro": {
+                        "input_cost_per_token": 0.000001,
+                        "output_cost_per_token": 0.000002,
+                        "cache_creation_input_token_cost": 0.000001,
+                        "cache_read_input_token_cost": 0.0000001
+                    },
+                    "gemini-3.6-flash": {
+                        "input_cost_per_token": 0.000003,
+                        "output_cost_per_token": 0.000004
+                    }
+                }"#
+            ),
+            2
+        );
+        pricing
     }
 
     #[test]
@@ -216,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn parallel_and_single_threaded_database_reads_match() {
+    fn loads_multiple_databases_consistently() {
         let fixture = Fixture::new();
         create_database(
             &fixture.path("one/conversations/one.db"),
@@ -270,20 +296,20 @@ mod tests {
             Some(OsString::from(override_value)),
         )]);
 
-        let sequential = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
-        let parallel = load_entries(&shared(false), &PricingMap::load_embedded()).unwrap();
+        let single_threaded = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
+        let default_mode = load_entries(&shared(false), &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(
-            sequential
+            single_threaded
                 .iter()
                 .map(|entry| entry.data.message.id.clone())
                 .collect::<Vec<_>>(),
-            parallel
+            default_mode
                 .iter()
                 .map(|entry| entry.data.message.id.clone())
                 .collect::<Vec<_>>()
         );
-        assert_eq!(sequential.len(), 2);
+        assert_eq!(single_threaded.len(), 2);
     }
 
     #[test]
@@ -647,9 +673,11 @@ mod tests {
             &[],
             &[],
         );
-        let entries = load_from_fixture(&fixture, true);
+        let pricing = snapshot_pricing();
+        let entries = load_from_fixture_with_pricing(&fixture, true, &pricing);
         let periods = [
             crate::cli::AgentReportKind::Daily,
+            crate::cli::AgentReportKind::Weekly,
             crate::cli::AgentReportKind::Monthly,
             crate::cli::AgentReportKind::Session,
         ];
