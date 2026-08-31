@@ -1,4 +1,4 @@
 not json
 {"type":"session.start","timestamp":"2026-01-02T01:20:00.000Z","data":{"prompt":"private prompt must not appear in reports"}}
 {"type":"session.shutdown","id":"shutdown-a-old","timestamp":"2026-01-02T01:20:00.000Z","data":{"modelMetrics":{"claude-opus-4.6-1m":{"usage":{"inputTokens":100,"outputTokens":50,"cacheReadTokens":10,"cacheWriteTokens":20,"reasoningTokens":5},"requests":{"count":1,"cost":999}}},"privatePrompt":"do not expose"}}
-{"type":"session.shutdown","id":"shutdown-a-latest","timestamp":"2026-01-03T01:20:00.000Z","data":{"modelMetrics":{"claude-opus-4.6-1m":{"usage":{"inputTokens":200,"outputTokens":80,"cacheReadTokens":20,"cacheWriteTokens":30,"reasoningTokens":10}}}}}
+{"type":"session.shutdown","id":"shutdown-a-latest","timestamp":"2026-01-03T01:20:00.000Z","data":{"modelMetrics":{"claude-opus-4.6-1m":{"usage":{"inputTokens":200,"outputTokens":80,"cacheReadTokens":20,"cacheWriteTokens":30,"reasoningTokens":10},"requests":{"count":3}}}}}

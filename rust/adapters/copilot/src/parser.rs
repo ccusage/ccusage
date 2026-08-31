@@ -62,9 +62,9 @@ pub(super) struct CopilotUsageEntry {
     pub(super) output_tokens: u64,
     pub(super) cache_creation_tokens: u64,
     pub(super) cache_read_tokens: u64,
-    #[allow(dead_code)]
     pub(super) reasoning_output_tokens: u64,
     pub(super) extra_total_tokens: u64,
+    pub(super) request_count: u64,
     pub(super) dedup_key: String,
 }
 
@@ -129,6 +129,7 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
             cache_read_tokens: candidate.cache_read_tokens,
             reasoning_output_tokens: candidate.reasoning_output_tokens,
             extra_total_tokens: candidate.extra_total_tokens,
+            request_count: 0,
             dedup_key: candidate.dedup_key,
         })
         .collect())
@@ -160,6 +161,14 @@ struct CopilotSessionStateData {
 struct CopilotSessionModelMetrics {
     #[serde(default, deserialize_with = "jsonl::lenient_object")]
     usage: Option<CopilotSessionUsage>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    requests: Option<CopilotSessionRequests>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CopilotSessionRequests {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    count: u64,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -207,6 +216,10 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<Vec<CopilotUsageEn
         };
         for (model, metrics) in model_metrics {
             let model = normalize_copilot_model(&model);
+            let request_count = metrics
+                .requests
+                .as_ref()
+                .map_or(0, |requests| requests.count);
             let Some(usage) = metrics.usage else {
                 continue;
             };
@@ -216,6 +229,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<Vec<CopilotUsageEn
                     && usage.cache_read_tokens == 0
                     && usage.cache_write_tokens == 0
                     && usage.reasoning_tokens == 0
+                    && request_count == 0
             {
                 continue;
             }
@@ -226,6 +240,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<Vec<CopilotUsageEn
                 &timestamp_text,
                 &model,
                 &usage,
+                request_count,
             );
             entries.push(CopilotUsageEntry {
                 timestamp,
@@ -238,6 +253,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<Vec<CopilotUsageEn
                 cache_read_tokens: usage.cache_read_tokens,
                 reasoning_output_tokens: usage.reasoning_tokens,
                 extra_total_tokens: 0,
+                request_count,
                 dedup_key,
             });
         }
@@ -251,16 +267,18 @@ fn session_state_dedup_key(
     timestamp_text: &str,
     model: &str,
     usage: &CopilotSessionUsage,
+    request_count: u64,
 ) -> String {
     event_id.map_or_else(
         || {
             format!(
-                "shutdown:{session_id}:{timestamp_text}:{model}:{}:{}:{}:{}:{}",
+                "shutdown:{session_id}:{timestamp_text}:{model}:{}:{}:{}:{}:{}:{}",
                 usage.input_tokens,
                 usage.output_tokens,
                 usage.cache_read_tokens,
                 usage.cache_write_tokens,
                 usage.reasoning_tokens,
+                request_count,
             )
         },
         |event_id| format!("shutdown:{session_id}:{event_id}:{model}"),
@@ -832,5 +850,6 @@ mod session_state_tests {
         );
         assert_eq!(entries[1].cache_creation_tokens, 4);
         assert_eq!(entries[1].cache_read_tokens, 3);
+        assert_eq!(entries[0].request_count, 1);
     }
 }

@@ -8,8 +8,8 @@ use super::{
 };
 use crate::{
     LoadedEntry, Result, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage,
-    cli::CostMode, debug_log, format_date_tz, missing_pricing_model_for_usage, parse_tz,
-    read_files_parallel,
+    cli::CostMode, date_range_bounds_ms, debug_log, format_date_tz,
+    missing_pricing_model_for_usage, parse_tz, read_files_parallel,
 };
 
 pub fn load_entries(
@@ -67,8 +67,15 @@ fn load_entries_inner(
             CopilotSourceKind::SessionState => session_state_entries.extend(file_entries),
         }
     }
-    session_state_entries = retain_latest_session_entries(session_state_entries);
-    let latest_shutdown_timestamps = session_state_entries
+    let (since_millis, until_millis) = date_range_bounds_ms(
+        shared.since.as_deref(),
+        shared.until.as_deref(),
+        tz.as_ref(),
+    );
+    let session_state =
+        reconcile_session_state_entries(session_state_entries, since_millis, until_millis);
+    let latest_shutdown_timestamps = session_state
+        .shutdown_entries
         .iter()
         .map(|entry| {
             (
@@ -83,7 +90,8 @@ fn load_entries_inner(
             .is_none_or(|shutdown_timestamp| entry.timestamp > *shutdown_timestamp)
     });
 
-    let mut entries = session_state_entries
+    let mut entries = session_state
+        .entries
         .into_iter()
         .chain(otel_entries)
         .map(|entry| usage_entry_to_loaded(entry, tz.as_ref(), shared.mode, pricing))
@@ -92,23 +100,114 @@ fn load_entries_inner(
     Ok(entries)
 }
 
-fn retain_latest_session_entries(entries: Vec<CopilotUsageEntry>) -> Vec<CopilotUsageEntry> {
+struct SessionStateReconciliation {
+    entries: Vec<CopilotUsageEntry>,
+    shutdown_entries: Vec<CopilotUsageEntry>,
+}
+
+// Session-state usage is cumulative, so a range needs the latest visible
+// snapshot and the latest snapshot before its lower bound as a subtraction baseline.
+fn reconcile_session_state_entries(
+    entries: Vec<CopilotUsageEntry>,
+    since_millis: Option<i64>,
+    until_millis: Option<i64>,
+) -> SessionStateReconciliation {
+    let entries = deduplicate_session_entries(entries);
     let mut latest_by_key = HashMap::<(String, String), usize>::new();
+    let mut baseline_by_key = HashMap::<(String, String), usize>::new();
     for (index, entry) in entries.iter().enumerate() {
         let key = (entry.session_id.clone(), entry.model.clone());
-        if latest_by_key
-            .get(&key)
-            .is_none_or(|previous| entries[*previous].timestamp <= entry.timestamp)
+        if until_millis.is_none_or(|end| entry.timestamp.as_millis() < end)
+            && latest_by_key
+                .get(&key)
+                .is_none_or(|previous| entries[*previous].timestamp <= entry.timestamp)
         {
             latest_by_key.insert(key, index);
+        }
+        let key = (entry.session_id.clone(), entry.model.clone());
+        if since_millis.is_some_and(|start| entry.timestamp.as_millis() < start)
+            && baseline_by_key
+                .get(&key)
+                .is_none_or(|previous| entries[*previous].timestamp <= entry.timestamp)
+        {
+            baseline_by_key.insert(key, index);
         }
     }
     let mut latest_indices = latest_by_key.into_values().collect::<Vec<_>>();
     latest_indices.sort_unstable();
-    latest_indices
+    let shutdown_entries = latest_indices
+        .iter()
+        .map(|index| entries[*index].clone())
+        .collect();
+    let entries = latest_indices
+        .into_iter()
+        .filter_map(|index| {
+            let entry = &entries[index];
+            let key = (entry.session_id.clone(), entry.model.clone());
+            let reconciled = baseline_by_key.get(&key).map_or_else(
+                || entry.clone(),
+                |baseline| subtract_usage(entry, &entries[*baseline]),
+            );
+            has_usage(&reconciled).then_some(reconciled)
+        })
+        .collect();
+    SessionStateReconciliation {
+        entries,
+        shutdown_entries,
+    }
+}
+
+fn deduplicate_session_entries(entries: Vec<CopilotUsageEntry>) -> Vec<CopilotUsageEntry> {
+    let mut indexes = HashMap::<String, usize>::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if indexes
+            .get(&entry.dedup_key)
+            .is_none_or(|previous| entries[*previous].timestamp <= entry.timestamp)
+        {
+            indexes.insert(entry.dedup_key.clone(), index);
+        }
+    }
+    let mut indexes = indexes.into_values().collect::<Vec<_>>();
+    indexes.sort_unstable();
+    indexes
         .into_iter()
         .map(|index| entries[index].clone())
         .collect()
+}
+
+fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> CopilotUsageEntry {
+    CopilotUsageEntry {
+        timestamp: current.timestamp,
+        timestamp_text: current.timestamp_text.clone(),
+        session_id: current.session_id.clone(),
+        model: current.model.clone(),
+        input_tokens: current.input_tokens.saturating_sub(baseline.input_tokens),
+        output_tokens: current.output_tokens.saturating_sub(baseline.output_tokens),
+        cache_creation_tokens: current
+            .cache_creation_tokens
+            .saturating_sub(baseline.cache_creation_tokens),
+        cache_read_tokens: current
+            .cache_read_tokens
+            .saturating_sub(baseline.cache_read_tokens),
+        reasoning_output_tokens: current
+            .reasoning_output_tokens
+            .saturating_sub(baseline.reasoning_output_tokens),
+        extra_total_tokens: current
+            .extra_total_tokens
+            .saturating_sub(baseline.extra_total_tokens),
+        request_count: current.request_count.saturating_sub(baseline.request_count),
+        dedup_key: current.dedup_key.clone(),
+    }
+}
+
+fn has_usage(entry: &CopilotUsageEntry) -> bool {
+    entry.input_tokens > 0
+        || entry.output_tokens > 0
+        || entry.cache_creation_tokens > 0
+        || entry.cache_read_tokens > 0
+        || entry.reasoning_output_tokens > 0
+        || entry.extra_total_tokens > 0
+        || entry.request_count > 0
 }
 
 fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<Vec<CopilotUsageEntry>> {
@@ -145,7 +244,11 @@ fn usage_entry_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let cost_usage = usage;
+    let cost_usage = TokenUsageRaw {
+        output_tokens: usage.output_tokens.saturating_add(entry.extra_total_tokens),
+        cache_creation: None,
+        ..usage
+    };
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
         timestamp: entry.timestamp_text,
@@ -172,7 +275,7 @@ fn usage_entry_to_loaded(
         cost,
         extra_total_tokens: entry.extra_total_tokens,
         credits: None,
-        message_count: None,
+        message_count: (entry.request_count > 1).then_some(entry.request_count),
         model: Some(entry.model),
         data,
         usage_limit_reset_time: None,
@@ -349,6 +452,48 @@ mod tests {
     }
 
     #[test]
+    fn includes_separate_otel_reasoning_tokens_in_total_and_cost() {
+        let fixture = fs_fixture!({
+            "copilot.jsonl": format!(
+                "{}\n",
+                json!({
+                    "type": "span",
+                    "traceId": "trace-1",
+                    "spanId": "span-1",
+                    "name": "chat test-model",
+                    "endTime": [1_775_934_264_u64, 0_u64],
+                    "attributes": {
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.response.model": "test-model",
+                        "gen_ai.conversation.id": "conv-1",
+                        "gen_ai.usage.input_tokens": 100,
+                        "gen_ai.usage.output_tokens": 50,
+                        "gen_ai.usage.cache_read.input_tokens": 10,
+                        "gen_ai.usage.cache_creation.input_tokens": 20,
+                        "gen_ai.usage.reasoning.output_tokens": 5,
+                        "gen_ai.usage.total_tokens": 175,
+                    },
+                })
+            ),
+        });
+        let file = fixture.path("copilot.jsonl");
+        let mut pricing = crate::PricingMap::default();
+        pricing.load_json(
+            r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
+        );
+
+        let loaded = read_otel_file(&file, None, CostMode::Auto, &pricing).unwrap();
+        let rows = summarize_entries(&loaded, AgentReportKind::Daily).unwrap();
+        let report = report_from_rows(&rows, AgentReportKind::Daily);
+
+        assert_eq!(loaded[0].extra_total_tokens, 5);
+        assert_eq!(report["daily"][0]["outputTokens"], 50);
+        assert_eq!(report["daily"][0]["totalTokens"], 175);
+        assert_eq!(report["daily"][0]["totalCost"], 300.0);
+        assert_eq!(report["daily"][0]["modelBreakdowns"][0]["cost"], 300.0);
+    }
+
+    #[test]
     fn falls_back_to_total_tokens_when_copilot_parts_are_missing() {
         let fixture = fs_fixture!({
             "copilot.jsonl":
@@ -399,7 +544,7 @@ mod tests {
                                     "cacheWriteTokens": 20,
                                     "reasoningTokens": 5
                                 },
-                                "requests": {"count": 1, "cost": 999}
+                                "requests": {"count": 3, "cost": 999}
                             }
                         }
                     }
@@ -438,7 +583,171 @@ mod tests {
         );
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 0);
+        assert_eq!(entries[0].message_count, Some(3));
         assert_eq!(entries[0].cost, 270.0);
+    }
+
+    #[test]
+    fn uses_shutdown_snapshot_as_of_until_for_otel_reconciliation() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-old",
+                    "timestamp": "2026-01-02T01:20:00.000Z",
+                    "data": {"modelMetrics": {"test-model": {"usage": {
+                        "inputTokens": 100,
+                        "outputTokens": 50,
+                        "cacheReadTokens": 10,
+                        "cacheWriteTokens": 20
+                    }}}}
+                })
+                .to_string(),
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-latest",
+                    "timestamp": "2026-01-03T01:20:00.000Z",
+                    "data": {"modelMetrics": {"test-model": {"usage": {
+                        "inputTokens": 200,
+                        "outputTokens": 80,
+                        "cacheReadTokens": 20,
+                        "cacheWriteTokens": 30
+                    }}}}
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": json!({
+                "type": "span",
+                "traceId": "trace-between-shutdowns",
+                "spanId": "span-between-shutdowns",
+                "name": "chat test-model",
+                "endTime": [1_767_320_400_u64, 0_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "test-model",
+                    "gen_ai.conversation.id": "session-1",
+                    "gen_ai.usage.input_tokens": 11,
+                    "gen_ai.usage.output_tokens": 12
+                }
+            })
+            .to_string(),
+        });
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let shared = crate::cli::SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            until: Some("20260102".to_string()),
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let mut entries = entries;
+        ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 70);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[1].data.message.usage.input_tokens, 11);
+        assert_eq!(entries[1].data.message.usage.output_tokens, 12);
+    }
+
+    #[test]
+    fn subtracts_the_pre_since_shutdown_before_retaining_resumed_otel_rows() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-old",
+                    "timestamp": "2026-01-02T01:20:00.000Z",
+                    "data": {"modelMetrics": {"test-model": {
+                        "usage": {
+                            "inputTokens": 100,
+                            "outputTokens": 50,
+                            "cacheReadTokens": 10,
+                            "cacheWriteTokens": 20
+                        },
+                        "requests": {"count": 1}
+                    }}}
+                })
+                .to_string(),
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-latest",
+                    "timestamp": "2026-01-03T01:20:00.000Z",
+                    "data": {"modelMetrics": {"test-model": {
+                        "usage": {
+                            "inputTokens": 200,
+                            "outputTokens": 80,
+                            "cacheReadTokens": 20,
+                            "cacheWriteTokens": 30
+                        },
+                        "requests": {"count": 3}
+                    }}}
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": json!({
+                "type": "span",
+                "traceId": "trace-resumed",
+                "spanId": "span-resumed",
+                "name": "chat test-model",
+                "endTime": [1_767_406_800_u64, 0_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "test-model",
+                    "gen_ai.conversation.id": "session-1",
+                    "gen_ai.usage.input_tokens": 13,
+                    "gen_ai.usage.output_tokens": 14
+                }
+            })
+            .to_string(),
+        });
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let shared = crate::cli::SharedArgs {
+            single_thread: true,
+            since: Some("20260103".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let mut entries = entries;
+        ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, &shared);
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 80);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 30);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            10
+        );
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].message_count, Some(2));
+        assert_eq!(entries[1].data.message.usage.input_tokens, 13);
+        assert_eq!(entries[1].data.message.usage.output_tokens, 14);
+        assert_eq!(entries[1].message_count, None);
     }
 
     #[test]
