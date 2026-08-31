@@ -138,6 +138,87 @@ fn aggregates_daily_agent_rows_by_period() {
 }
 
 #[test]
+fn saturates_unified_daily_and_weekly_reports_for_extreme_counters() {
+    let rows = vec![
+        extreme_all_row("2099-01-02", u64::MAX),
+        extreme_all_row("2099-01-03", 1),
+    ];
+    let daily_rows = aggregate_rows(rows.clone(), AgentReportKind::Daily);
+    let daily_report = report_json_with_options(&daily_rows, AgentReportKind::Daily, false, true);
+    let weekly_rows = aggregate_rows(rows, AgentReportKind::Weekly);
+    let weekly_report =
+        report_json_with_options(&weekly_rows, AgentReportKind::Weekly, false, true);
+
+    for report in [daily_report, weekly_report] {
+        for key in [
+            "inputTokens",
+            "outputTokens",
+            "cacheCreationTokens",
+            "cacheReadTokens",
+            "totalTokens",
+        ] {
+            assert_eq!(report["totals"][key], u64::MAX, "{key}");
+        }
+        assert_eq!(
+            report["totals"]["sourceBreakdowns"][0]["inputTokens"],
+            u64::MAX
+        );
+        assert_eq!(
+            report["totals"]["sourceBreakdowns"][0]["modelBreakdowns"][0]["inputTokens"],
+            u64::MAX
+        );
+    }
+    assert_eq!(weekly_rows[0].model_breakdowns[0].input_tokens, u64::MAX);
+    assert_eq!(weekly_rows[0].model_breakdowns[0].output_tokens, u64::MAX);
+}
+
+fn extreme_all_row(period: &str, tokens: u64) -> AllRow {
+    AllRow {
+        period: period.to_string(),
+        agent: "codex",
+        models_used: vec!["gpt-5".to_string()],
+        input_tokens: tokens,
+        output_tokens: tokens,
+        cache_creation_tokens: tokens,
+        cache_read_tokens: tokens,
+        total_tokens: tokens,
+        total_cost: 0.0,
+        metadata: Some(json!({
+            "sourceBreakdowns": [{
+                "source": "Responses API",
+                "modelsUsed": ["gpt-5"],
+                "inputTokens": tokens,
+                "outputTokens": tokens,
+                "cacheCreationTokens": tokens,
+                "cacheReadTokens": tokens,
+                "reasoningOutputTokens": tokens,
+                "totalTokens": tokens,
+                "totalCost": 0.0,
+                "modelBreakdowns": [{
+                    "modelName": "gpt-5",
+                    "inputTokens": tokens,
+                    "outputTokens": tokens,
+                    "cacheCreationTokens": tokens,
+                    "cacheReadTokens": tokens,
+                    "cost": 0.0
+                }]
+            }]
+        })),
+        metadata_agents: Some(vec!["codex"]),
+        agent_breakdowns: None,
+        model_breakdowns: vec![ModelBreakdown {
+            model_name: "gpt-5".to_string(),
+            input_tokens: tokens,
+            output_tokens: tokens,
+            cache_creation_tokens: tokens,
+            cache_read_tokens: tokens,
+            extra_total_tokens: tokens,
+            ..ModelBreakdown::default()
+        }],
+    }
+}
+
+#[test]
 fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
     let rows = aggregate_rows(
         vec![
