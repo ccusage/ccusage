@@ -17,30 +17,31 @@ pub(super) fn discover_session_files() -> Result<Vec<PathBuf>> {
 }
 
 fn gjc_sessions_dir() -> Result<PathBuf> {
-    if let Some(agent_dir) = non_empty_env(GJC_CODING_AGENT_DIR_ENV) {
-        return Ok(PathBuf::from(agent_dir).join("sessions"));
+    if let Some(agent_dir) = non_empty_env_path(GJC_CODING_AGENT_DIR_ENV) {
+        return Ok(agent_dir.join("sessions"));
+    }
+    if let Some(sessions_dir) = xdg_sessions_dir() {
+        return Ok(sessions_dir);
     }
     let home =
         crate::home::home_dir().ok_or_else(|| crate::cli_error("home directory is not set"))?;
-    Ok(gjc_sessions_dir_for_home(&home))
+    Ok(home_sessions_dir(&home))
 }
 
-fn gjc_sessions_dir_for_home(home: &Path) -> PathBuf {
-    if let Some(xdg_data_home) = non_empty_env("XDG_DATA_HOME") {
-        let xdg_data_home = PathBuf::from(xdg_data_home);
-        let xdg_root = xdg_data_home.join("gjc");
-        if xdg_data_home.is_absolute() && xdg_root.is_dir() {
-            return xdg_root.join("sessions");
-        }
-    }
+fn home_sessions_dir(home: &Path) -> PathBuf {
     home.join(config_dir_name()).join("agent").join("sessions")
 }
 
+fn xdg_sessions_dir() -> Option<PathBuf> {
+    let xdg_data_home = non_empty_env_path("XDG_DATA_HOME")?;
+    let xdg_root = xdg_data_home.join("gjc");
+    (xdg_data_home.is_absolute() && xdg_root.is_dir()).then(|| xdg_root.join("sessions"))
+}
+
 fn config_dir_name() -> PathBuf {
-    let Some(value) = non_empty_env(GJC_CONFIG_DIR_ENV) else {
+    let Some(path) = non_empty_env_path(GJC_CONFIG_DIR_ENV) else {
         return PathBuf::from(DEFAULT_CONFIG_DIR_NAME);
     };
-    let path = Path::new(&value);
     if path
         .components()
         .any(|component| component == Component::ParentDir)
@@ -55,11 +56,16 @@ fn config_dir_name() -> PathBuf {
         .collect()
 }
 
-fn non_empty_env(name: &str) -> Option<String> {
-    env::var(name)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+fn non_empty_env_path(name: &str) -> Option<PathBuf> {
+    let value = env::var_os(name)?;
+    if value.is_empty() {
+        return None;
+    }
+    if let Some(value) = value.to_str() {
+        let value = value.trim();
+        return (!value.is_empty()).then(|| PathBuf::from(value));
+    }
+    Some(PathBuf::from(value))
 }
 
 #[cfg(test)]
@@ -93,7 +99,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            gjc_sessions_dir_for_home(fixture.root()),
+            home_sessions_dir(fixture.root()),
             fixture.root().join(".gjc-alt/agent/sessions")
         );
     }
@@ -107,14 +113,14 @@ mod tests {
         ]);
 
         assert_eq!(
-            gjc_sessions_dir_for_home(fixture.root()),
+            home_sessions_dir(fixture.root()),
             fixture.root().join(".gjc/agent/sessions")
         );
     }
 
     #[test]
     fn ignores_relative_xdg_data_home() {
-        let fixture = fs_fixture!({
+        let _fixture = fs_fixture!({
             "relative/gjc/sessions/session.jsonl": "{}\n",
         });
         let _guard = EnvVarsGuard::set_many([
@@ -122,10 +128,7 @@ mod tests {
             ("XDG_DATA_HOME", Some(OsString::from("relative"))),
         ]);
 
-        assert_eq!(
-            gjc_sessions_dir_for_home(fixture.root()),
-            fixture.root().join(".gjc/agent/sessions")
-        );
+        assert!(xdg_sessions_dir().is_none());
     }
 
     #[test]
@@ -142,8 +145,41 @@ mod tests {
         ]);
 
         assert_eq!(
-            gjc_sessions_dir_for_home(Path::new("/unused-home")),
-            fixture.root().join("gjc/sessions")
+            xdg_sessions_dir(),
+            Some(fixture.root().join("gjc/sessions"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_non_utf8_agent_directory_overrides() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let value = OsString::from_vec(b"/tmp/gjc-\xFF".to_vec());
+        let _guard = EnvVarGuard::set(GJC_CODING_AGENT_DIR_ENV, &value);
+
+        assert_eq!(
+            gjc_sessions_dir().unwrap(),
+            PathBuf::from(value).join("sessions")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_non_utf8_config_directory_names() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let value = OsString::from_vec(b".gjc-\xFF".to_vec());
+        let _guard = EnvVarsGuard::set_many([
+            (GJC_CONFIG_DIR_ENV, Some(value.clone())),
+            ("XDG_DATA_HOME", None),
+        ]);
+
+        assert_eq!(
+            home_sessions_dir(Path::new("/home/user")),
+            PathBuf::from("/home/user")
+                .join(value)
+                .join("agent/sessions")
         );
     }
 }
