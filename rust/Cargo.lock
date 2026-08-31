@@ -467,6 +467,8 @@ name = "ccusage-test-support"
 version = "0.0.0"
 dependencies = [
  "assert_fs",
+ "jiff",
+ "sqlite",
 ]
 
 [[package]]
