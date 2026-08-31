@@ -281,7 +281,7 @@ ccusage copilot monthly
 ccusage gemini daily
 ```
 
-Source-specific settings are also applied when running unified reports such as `ccusage daily`. In that case, each source receives its own merged options before data is loaded.
+Source-specific report settings apply only to the focused commands shown above. In particular, `codex.defaults.bySource` is honored only by focused Codex commands. Unified reports such as `ccusage daily` do not apply agent-specific options; use the unified `--by-source` flag to request Codex client/originator breakdowns there.
 
 Use `pi.stores` for additional pi-format session stores, such as tools or forks that write sessions outside `~/.pi/agent/sessions`. Named stores are additive to the default `pi` agent in unified reports, use their own agent name in JSON and tables, and prefix models with `[name]` followed by a space. Store names must match `^[a-z][a-z0-9_-]{0,31}$`, must be unique, and cannot use a built-in agent name. Each store path can be one sessions directory or a comma-separated list; `~` is expanded for store paths, nonexistent paths are treated as empty, and resolved paths that overlap the default `pi` store or another named store — including one path nested inside another — are rejected. They do not create focused commands such as `ccusage omp daily`; `PI_AGENT_DIR`, `--pi-path`, and `pi.defaults.piPath` still affect only the default `pi` agent.
 
