@@ -175,7 +175,7 @@ If ccusage shows no data, check:
    - Kimi: `${KIMI_DATA_DIR:-~/.kimi}` (also scans `~/.kimi-code`)
    - OpenClaw: `${OPENCLAW_DIR:-~/.openclaw}` (also scans `~/.clawdbot`, `~/.moltbot`, `~/.moldbot`)
    - Qwen: `${QWEN_DATA_DIR:-~/.qwen}`
-   - GitHub Copilot CLI: `~/.copilot/otel/*.jsonl` or `COPILOT_OTEL_FILE_EXPORTER_PATH`
+   - GitHub Copilot CLI: `${COPILOT_HOME:-~/.copilot}/session-state/*/events.jsonl`, `${COPILOT_HOME:-~/.copilot}/otel/*.jsonl`, or `COPILOT_OTEL_FILE_EXPORTER_PATH`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
 
 ### Custom Data Directory
@@ -196,11 +196,12 @@ export OPENCLAW_DIR="/path/to/openclaw"
 export KILO_DATA_DIR="/path/to/kilo"
 export KIMI_DATA_DIR="/path/to/kimi"
 export QWEN_DATA_DIR="/path/to/qwen"
+export COPILOT_HOME="/path/to/copilot"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
 ```
 
-Each source-specific path variable can also contain comma-separated directories, except `GROK_HOME`, which takes a single root:
+Each source-specific directory variable can also contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` is a single explicit file:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"

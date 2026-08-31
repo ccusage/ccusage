@@ -1,6 +1,6 @@
 # ccusage-adapter-copilot
 
-The GitHub Copilot CLI adapter: it turns OpenTelemetry JSONL that the CLI exports to a file
+The GitHub Copilot CLI adapter: it turns Copilot session-state and OpenTelemetry JSONL files
 into the usage entries the reports render.
 
 ## Owns
@@ -15,7 +15,18 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 ## Data source
 
-- `${COPILOT_OTEL_FILE_EXPORTER_PATH:-~/.copilot/otel}/**/*.jsonl`
+- `${COPILOT_HOME:-~/.copilot}/session-state/*/events.jsonl`
+- `${COPILOT_HOME:-~/.copilot}/otel/**/*.jsonl`
+- `COPILOT_HOME` (single relocated Copilot data root)
+- `COPILOT_OTEL_FILE_EXPORTER_PATH` (one explicit JSONL file)
+
+Session-state shutdown records are preferred for an exact `(session, model)` pair when both
+sources contain it. Other OpenTelemetry records remain available, while duplicate shutdown
+records are collapsed by their event identity. Session-state `inputTokens` includes cache reads
+and writes, so the adapter reports the uncached remainder as input and keeps the cache buckets
+separate. Reasoning tokens are already included in output tokens and are not added to totals or
+costs. Internal model suffixes such as `-1m-internal` are removed before pricing and source
+deduplication.
 
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.

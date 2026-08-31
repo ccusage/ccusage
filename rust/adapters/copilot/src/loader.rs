@@ -1,10 +1,14 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    sync::Arc,
+};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{CopilotUsageEntry, parse_otel_file},
-    paths::paths,
+    parser::{CopilotUsageEntry, parse_otel_file, parse_session_state_file},
+    paths::{CopilotSourceKind, paths},
 };
 use crate::{
     LoadedEntry, Result, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage,
@@ -28,36 +32,79 @@ fn load_entries_inner(
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
-    let files = paths()?;
-    // Read OTEL files in parallel; entries keep their original file order before
-    // the stable sort, so output is identical to the sequential read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |path| {
-        read_otel_file(path, tz.as_ref(), shared.mode, pricing).unwrap_or_else(|error| {
+    let sources = paths()?;
+    let source_kinds = sources
+        .iter()
+        .map(|source| (source.path.clone(), source.kind))
+        .collect::<HashMap<_, _>>();
+    let files = sources
+        .iter()
+        .map(|source| source.path.clone())
+        .collect::<Vec<_>>();
+    // Read source files in parallel; entries keep their original file order before
+    // the stable sort, so OTel-only output is identical to the previous read.
+    let parsed = read_files_parallel(&files, shared.single_thread, |path| {
+        let kind = source_kinds
+            .get(path)
+            .copied()
+            .unwrap_or(CopilotSourceKind::Otel);
+        read_source_file(path, kind).unwrap_or_else(|error| {
+            let source_name = match kind {
+                CopilotSourceKind::Otel => "OTEL",
+                CopilotSourceKind::SessionState => "session-state",
+            };
             debug_log(
                 shared,
                 format!(
-                    "Failed to read Copilot OTEL file {}: {error}",
-                    path.display()
+                    "Failed to read Copilot {source_name} file {}: {error}",
+                    path.display(),
                 ),
             );
             Vec::new()
         })
     });
-    let mut entries = Vec::new();
-    for file_entries in loaded {
-        entries.extend(file_entries);
+    let mut otel_entries = Vec::new();
+    let mut session_state_entries = Vec::new();
+    for (source, file_entries) in sources.iter().map(|source| source.kind).zip(parsed) {
+        match source {
+            CopilotSourceKind::Otel => otel_entries.extend(file_entries),
+            CopilotSourceKind::SessionState => session_state_entries.extend(file_entries),
+        }
     }
+    let mut seen_session_entries = HashSet::new();
+    session_state_entries.retain(|entry| seen_session_entries.insert(entry.dedup_key.clone()));
+    let session_usage_keys = session_state_entries
+        .iter()
+        .map(|entry| (entry.session_id.as_str(), entry.model.as_str()))
+        .collect::<HashSet<_>>();
+    otel_entries.retain(|entry| {
+        !session_usage_keys.contains(&(entry.session_id.as_str(), entry.model.as_str()))
+    });
+
+    let mut entries = session_state_entries
+        .into_iter()
+        .chain(otel_entries)
+        .map(|entry| usage_entry_to_loaded(entry, tz.as_ref(), shared.mode, pricing))
+        .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
+fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<Vec<CopilotUsageEntry>> {
+    match kind {
+        CopilotSourceKind::Otel => parse_otel_file(path),
+        CopilotSourceKind::SessionState => parse_session_state_file(path),
+    }
+}
+
+#[cfg(test)]
 fn read_otel_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
-    Ok(parse_otel_file(path)?
+    Ok(read_source_file(path, CopilotSourceKind::Otel)?
         .into_iter()
         .map(|entry| usage_entry_to_loaded(entry, tz, mode, pricing))
         .collect())
@@ -77,11 +124,7 @@ fn usage_entry_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let cost_usage = TokenUsageRaw {
-        output_tokens: entry.output_tokens + entry.reasoning_output_tokens,
-        cache_creation: None,
-        ..usage
-    };
+    let cost_usage = usage;
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
         timestamp: entry.timestamp_text,
@@ -106,7 +149,7 @@ fn usage_entry_to_loaded(
         session_id: Arc::from(entry.session_id),
         project_path: Arc::from("GitHub Copilot CLI"),
         cost,
-        extra_total_tokens: entry.reasoning_output_tokens,
+        extra_total_tokens: entry.extra_total_tokens,
         credits: None,
         message_count: None,
         model: Some(entry.model),
@@ -121,7 +164,9 @@ use super::report::{report_from_rows, summarize_entries};
 
 #[cfg(test)]
 mod tests {
-    use ccusage_test_support::fs_fixture;
+    use std::ffi::OsString;
+
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use serde_json::json;
 
     use super::super::parser::parse_otel_file;
@@ -231,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn includes_reasoning_tokens_in_total_tokens() {
+    fn does_not_double_count_reasoning_tokens() {
         let fixture = fs_fixture!({
             "copilot.jsonl":
             format!(
@@ -267,8 +312,8 @@ mod tests {
 
         assert_eq!(report["daily"][0]["inputTokens"], 90);
         assert_eq!(report["daily"][0]["outputTokens"], 50);
-        assert_eq!(report["daily"][0]["totalTokens"], 175);
-        assert_eq!(report["daily"][0]["totalCost"], 300.0);
+        assert_eq!(report["daily"][0]["totalTokens"], 170);
+        assert_eq!(report["daily"][0]["totalCost"], 290.0);
         assert_eq!(
             report["daily"][0]["modelBreakdowns"],
             json!([{
@@ -277,7 +322,7 @@ mod tests {
                 "outputTokens": 50,
                 "cacheCreationTokens": 20,
                 "cacheReadTokens": 10,
-                "cost": 300.0
+                "cost": 290.0
             }])
         );
     }
@@ -299,6 +344,7 @@ mod tests {
                         "gen_ai.response.model": "test-model",
                         "gen_ai.conversation.id": "conv-1",
                         "gen_ai.usage.total_tokens": 567,
+                        "gen_ai.usage.reasoning_tokens": 5,
                     },
                 })
             ),
@@ -309,6 +355,266 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].output_tokens, 567);
-        assert_eq!(entries[0].reasoning_output_tokens, 0);
+        assert_eq!(entries[0].reasoning_output_tokens, 5);
+        assert_eq!(entries[0].extra_total_tokens, 0);
+    }
+
+    #[test]
+    fn loads_session_state_tokens_and_calculates_token_cost() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": format!(
+                "{}\n",
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-1",
+                    "timestamp": "2026-04-15T09:52:27.352Z",
+                    "data": {
+                        "modelMetrics": {
+                            "test-model": {
+                                "usage": {
+                                    "inputTokens": 100,
+                                    "outputTokens": 50,
+                                    "cacheReadTokens": 10,
+                                    "cacheWriteTokens": 20,
+                                    "reasoningTokens": 5
+                                },
+                                "requests": {"count": 1, "cost": 999}
+                            }
+                        }
+                    }
+                })
+            ),
+        });
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let mut pricing = crate::PricingMap::default();
+        pricing.load_json(
+            r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
+        );
+        let shared = crate::cli::SharedArgs {
+            mode: CostMode::Auto,
+            single_thread: true,
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &pricing).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 70);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            20
+        );
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].extra_total_tokens, 0);
+        assert_eq!(entries[0].cost, 270.0);
+    }
+
+    #[test]
+    fn normalizes_copilot_internal_model_for_pricing_and_otel_dedupe() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": format!(
+                "{}\n",
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-1",
+                    "timestamp": "2026-08-30T12:00:00Z",
+                    "data": {
+                        "modelMetrics": {
+                            "claude-opus-4.7-1m-internal": {
+                                "usage": {
+                                    "inputTokens": 100,
+                                    "outputTokens": 50,
+                                    "cacheReadTokens": 10,
+                                    "cacheWriteTokens": 20,
+                                    "reasoningTokens": 5
+                                }
+                            }
+                        }
+                    }
+                })
+            ),
+            "home/.copilot/otel/session.jsonl": format!(
+                "{}\n",
+                json!({
+                    "type": "span",
+                    "traceId": "trace-1",
+                    "spanId": "span-1",
+                    "name": "chat claude-opus-4.7-1m-internal",
+                    "endTime": [1_775_934_264_u64, 0_u64],
+                    "attributes": {
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.response.model": "claude-opus-4.7-1m-internal",
+                        "gen_ai.conversation.id": "session-1",
+                        "gen_ai.usage.input_tokens": 999,
+                        "gen_ai.usage.output_tokens": 999
+                    }
+                })
+            )
+        });
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let shared = crate::cli::SharedArgs {
+            mode: CostMode::Auto,
+            single_thread: true,
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &crate::PricingMap::load_embedded()).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("claude-opus-4.7"));
+        assert_eq!(entries[0].data.message.usage.input_tokens, 70);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            20
+        );
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].extra_total_tokens, 0);
+        assert!((entries[0].cost - 0.00173).abs() < 1e-12);
+    }
+
+    #[test]
+    fn deduplicates_session_shutdowns_and_keeps_unmatched_otel_rows() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-1",
+                    "timestamp": "2026-04-15T09:52:27.352Z",
+                    "data": {"modelMetrics": {"test-model": {"usage": {
+                        "inputTokens": 10,
+                        "outputTokens": 20
+                    }}}}
+                })
+                .to_string(),
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-1",
+                    "timestamp": "2026-04-15T09:52:27.352Z",
+                    "data": {"modelMetrics": {"test-model": {"usage": {
+                        "inputTokens": 10,
+                        "outputTokens": 20
+                    }}}}
+                })
+                .to_string(),
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-2",
+                    "timestamp": "2026-04-15T09:52:27.352Z",
+                    "data": {"modelMetrics": {"test-model": {"usage": {
+                        "inputTokens": 30,
+                        "outputTokens": 40
+                    }}}}
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": [
+                json!({
+                    "type": "span",
+                    "traceId": "trace-duplicate",
+                    "spanId": "span-duplicate",
+                    "name": "chat test-model",
+                    "endTime": [1_775_934_264_u64, 0_u64],
+                    "attributes": {
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.response.model": "test-model",
+                        "gen_ai.conversation.id": "session-1",
+                        "gen_ai.usage.input_tokens": 100,
+                        "gen_ai.usage.output_tokens": 200
+                    }
+                })
+                .to_string(),
+                json!({
+                    "type": "span",
+                    "traceId": "trace-other-model",
+                    "spanId": "span-other-model",
+                    "name": "chat other-model",
+                    "endTime": [1_775_934_264_u64, 0_u64],
+                    "attributes": {
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.response.model": "other-model",
+                        "gen_ai.conversation.id": "session-1",
+                        "gen_ai.usage.input_tokens": 3,
+                        "gen_ai.usage.output_tokens": 4
+                    }
+                })
+                .to_string(),
+                json!({
+                    "type": "span",
+                    "traceId": "trace-other-session",
+                    "spanId": "span-other-session",
+                    "name": "chat test-model",
+                    "endTime": [1_775_934_264_u64, 0_u64],
+                    "attributes": {
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.response.model": "test-model",
+                        "gen_ai.conversation.id": "session-2",
+                        "gen_ai.usage.input_tokens": 5,
+                        "gen_ai.usage.output_tokens": 6
+                    }
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let shared = crate::cli::SharedArgs {
+            single_thread: true,
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+        let rows = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.session_id.to_string(),
+                    entry.model.clone().unwrap_or_default(),
+                    entry.data.message.usage.input_tokens,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            rows,
+            vec![
+                ("session-1".to_string(), "other-model".to_string(), 3),
+                ("session-2".to_string(), "test-model".to_string(), 5),
+                ("session-1".to_string(), "test-model".to_string(), 10),
+                ("session-1".to_string(), "test-model".to_string(), 30),
+            ]
+        );
     }
 }

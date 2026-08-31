@@ -55,7 +55,8 @@ export OPENCODE_DATA_DIR="$HOME/.local/share/opencode"
 export AMP_DATA_DIR="$HOME/.local/share/amp"
 export PI_AGENT_DIR="$HOME/.pi/agent/sessions"
 export KILO_DATA_DIR="$HOME/.local/share/kilo"
-export COPILOT_OTEL_FILE_EXPORTER_PATH="$HOME/.copilot/otel/copilot-otel.jsonl"
+export COPILOT_HOME="$HOME/.copilot"
+export COPILOT_OTEL_FILE_EXPORTER_PATH="$COPILOT_HOME/otel/copilot-otel.jsonl"
 ```
 
 Use comma-separated directories when you want reports to combine multiple profiles or archives:

@@ -51,7 +51,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 }
 
 fn empty_usage_message() -> &'static str {
-    "No GitHub Copilot CLI usage data found.\nEnable Copilot OpenTelemetry file export before starting or resuming Copilot sessions.\nSee https://ccusage.com/guide/copilot/#data-source"
+    "No GitHub Copilot CLI usage data found.\nSession-state events are read from ${COPILOT_HOME:-~/.copilot}/session-state/<session-id>/events.jsonl; OpenTelemetry file export remains supported.\nSee https://ccusage.com/guide/copilot/#data-source"
 }
 
 #[cfg(test)]

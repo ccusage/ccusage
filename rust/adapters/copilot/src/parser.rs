@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::Path,
 };
@@ -7,7 +7,10 @@ use std::{
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::{Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter};
+use crate::{
+    Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter,
+    parse_ts_timestamp,
+};
 use ccusage_adapter_common::jsonl;
 
 /// A single parsed Copilot OpenTelemetry record. Only the fields ccusage
@@ -59,7 +62,9 @@ pub(super) struct CopilotUsageEntry {
     pub(super) output_tokens: u64,
     pub(super) cache_creation_tokens: u64,
     pub(super) cache_read_tokens: u64,
+    #[allow(dead_code)]
     pub(super) reasoning_output_tokens: u64,
+    pub(super) extra_total_tokens: u64,
     pub(super) dedup_key: String,
 }
 
@@ -90,6 +95,7 @@ struct CopilotUsageCandidate {
     cache_creation_tokens: u64,
     cache_read_tokens: u64,
     reasoning_output_tokens: u64,
+    extra_total_tokens: u64,
     dedup_key: String,
 }
 
@@ -122,9 +128,143 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
             cache_creation_tokens: candidate.cache_creation_tokens,
             cache_read_tokens: candidate.cache_read_tokens,
             reasoning_output_tokens: candidate.reasoning_output_tokens,
+            extra_total_tokens: candidate.extra_total_tokens,
             dedup_key: candidate.dedup_key,
         })
         .collect())
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CopilotSessionStateEvent {
+    #[serde(rename = "type", default, deserialize_with = "jsonl::non_empty_string")]
+    event_type: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    timestamp: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    data: Option<CopilotSessionStateData>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CopilotSessionStateData {
+    #[serde(
+        rename = "modelMetrics",
+        default,
+        deserialize_with = "jsonl::lenient_object"
+    )]
+    model_metrics: Option<BTreeMap<String, CopilotSessionModelMetrics>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CopilotSessionModelMetrics {
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    usage: Option<CopilotSessionUsage>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CopilotSessionUsage {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    input_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    output_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cache_read_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cache_write_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    reasoning_tokens: u64,
+}
+
+pub(super) fn parse_session_state_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
+    let session_id = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string);
+    let Some(session_id) = session_id else {
+        return Ok(Vec::new());
+    };
+
+    let content = fs::read(path)?;
+    let prefilter = LinePrefilter::all(&[b"session.shutdown"]);
+    let mut entries = Vec::new();
+    for event in jsonl::records::<CopilotSessionStateEvent>(&content, Some(&prefilter)) {
+        if event.event_type.as_deref() != Some("session.shutdown") {
+            continue;
+        }
+        let Some(timestamp_text) = event.timestamp.as_deref() else {
+            continue;
+        };
+        let Some(timestamp) = parse_ts_timestamp(timestamp_text) else {
+            continue;
+        };
+        let Some(model_metrics) = event.data.and_then(|data| data.model_metrics) else {
+            continue;
+        };
+        for (model, metrics) in model_metrics {
+            let model = normalize_copilot_model(&model);
+            let Some(usage) = metrics.usage else {
+                continue;
+            };
+            if model.is_empty()
+                || usage.input_tokens == 0
+                    && usage.output_tokens == 0
+                    && usage.cache_read_tokens == 0
+                    && usage.cache_write_tokens == 0
+                    && usage.reasoning_tokens == 0
+            {
+                continue;
+            }
+            let timestamp_text = crate::format_rfc3339_millis(timestamp);
+            let dedup_key = session_state_dedup_key(
+                &session_id,
+                event.id.as_deref(),
+                &timestamp_text,
+                &model,
+                &usage,
+            );
+            entries.push(CopilotUsageEntry {
+                timestamp,
+                timestamp_text,
+                session_id: session_id.clone(),
+                model,
+                input_tokens: uncached_session_input_tokens(&usage),
+                output_tokens: usage.output_tokens,
+                cache_creation_tokens: usage.cache_write_tokens,
+                cache_read_tokens: usage.cache_read_tokens,
+                reasoning_output_tokens: usage.reasoning_tokens,
+                extra_total_tokens: 0,
+                dedup_key,
+            });
+        }
+    }
+    Ok(entries)
+}
+
+fn session_state_dedup_key(
+    session_id: &str,
+    event_id: Option<&str>,
+    timestamp_text: &str,
+    model: &str,
+    usage: &CopilotSessionUsage,
+) -> String {
+    event_id.map_or_else(
+        || {
+            format!(
+                "shutdown:{session_id}:{timestamp_text}:{model}:{}:{}:{}:{}:{}",
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_read_tokens,
+                usage.cache_write_tokens,
+                usage.reasoning_tokens,
+            )
+        },
+        |event_id| format!("shutdown:{session_id}:{event_id}:{model}"),
+    )
 }
 
 fn collect_trace_contexts(records: &[CopilotRecord]) -> HashMap<String, TraceContext> {
@@ -140,7 +280,7 @@ fn collect_trace_contexts(records: &[CopilotRecord]) -> HashMap<String, TraceCon
             .entry(trace_id)
             .or_insert_with(TraceContext::default);
         if context.model.is_none() {
-            context.model = first_non_empty_attr(attributes, MODEL_ATTRS);
+            context.model = first_non_empty_model_attr(attributes);
         }
         if let Some((session_id, priority)) = best_session_attr(attributes)
             && priority > context.session_id_priority
@@ -202,14 +342,14 @@ fn to_candidate(
         speed: None,
         cache_creation: None,
     };
-    let (usage, reasoning) = apply_total_token_fallback(usage, reasoning, total);
-    if crate::total_usage_tokens(usage) + reasoning == 0 {
+    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total);
+    if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
         return None;
     }
     let trace_id = trace_id_from_record(record);
     let trace_context = trace_id.as_ref().and_then(|id| trace_contexts.get(id));
     let response_id = attr_string(attributes, "gen_ai.response.id");
-    let model = first_non_empty_attr(attributes, MODEL_ATTRS)
+    let model = first_non_empty_model_attr(attributes)
         .or_else(|| trace_context.and_then(|context| context.model.clone()))
         .unwrap_or_else(|| "unknown".to_string());
     let session_id = best_session_attr(attributes)
@@ -239,6 +379,7 @@ fn to_candidate(
         cache_creation_tokens: usage.cache_creation_input_tokens,
         cache_read_tokens: usage.cache_read_input_tokens,
         reasoning_output_tokens: reasoning,
+        extra_total_tokens,
         dedup_key,
     })
 }
@@ -337,6 +478,26 @@ const SESSION_ATTRS: &[(&str, u8)] = &[
     ("github.copilot.interaction_id", 2),
     ("gen_ai.response.id", 1),
 ];
+
+fn normalize_copilot_model(model: &str) -> String {
+    let model = model.trim();
+    model
+        .strip_suffix("-1m-internal")
+        .unwrap_or(model)
+        .to_string()
+}
+
+fn first_non_empty_model_attr(attributes: &Map<String, Value>) -> Option<String> {
+    first_non_empty_attr(attributes, MODEL_ATTRS).map(|model| normalize_copilot_model(&model))
+}
+
+fn uncached_session_input_tokens(usage: &CopilotSessionUsage) -> u64 {
+    usage.input_tokens.saturating_sub(
+        usage
+            .cache_read_tokens
+            .saturating_add(usage.cache_write_tokens),
+    )
+}
 
 fn is_span_record(record: &CopilotRecord) -> bool {
     if let Some(record_type) = record.record_type.as_ref().and_then(Value::as_str) {
@@ -523,4 +684,148 @@ fn file_modified_timestamp(path: &Path) -> TimestampMs {
         .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|duration| TimestampMs::from_millis(duration.as_millis().min(i64::MAX as u128) as i64))
         .unwrap_or_else(crate::utc_now)
+}
+
+#[cfg(test)]
+mod session_state_tests {
+    use ccusage_test_support::fs_fixture;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn parses_session_shutdown_model_metrics() {
+        let fixture = fs_fixture!({
+            "session-1/events.jsonl": json!({
+                "type": "session.shutdown",
+                "id": "shutdown-1",
+                "timestamp": "2026-04-15T09:52:27.352Z",
+                "data": {
+                    "modelMetrics": {
+                        "test-model": {
+                            "usage": {
+                                "inputTokens": 100,
+                                "outputTokens": 50,
+                                "cacheReadTokens": 10,
+                                "cacheWriteTokens": 20,
+                                "reasoningTokens": 5
+                            }
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        });
+
+        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl"))
+            .expect("session-state file should parse");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp_text, "2026-04-15T09:52:27.352Z");
+        assert_eq!(entries[0].session_id, "session-1");
+        assert_eq!(entries[0].model, "test-model");
+        assert_eq!(entries[0].input_tokens, 70);
+        assert_eq!(entries[0].output_tokens, 50);
+        assert_eq!(entries[0].cache_creation_tokens, 20);
+        assert_eq!(entries[0].cache_read_tokens, 10);
+        assert_eq!(entries[0].reasoning_output_tokens, 5);
+        assert_eq!(
+            entries[0].dedup_key,
+            "shutdown:session-1:shutdown-1:test-model"
+        );
+    }
+
+    #[test]
+    fn normalizes_copilot_internal_model_ids() {
+        assert_eq!(
+            normalize_copilot_model(" claude-opus-4.7-1m-internal "),
+            "claude-opus-4.7"
+        );
+        assert_eq!(normalize_copilot_model("gpt-5.4"), "gpt-5.4");
+    }
+
+    #[test]
+    fn skips_malformed_lines_and_non_shutdown_events() {
+        let fixture = fs_fixture!({
+            "session-1/events.jsonl": format!(
+                "not json\n{}\n{}",
+                json!({
+                    "type": "tool",
+                    "data": {"message": "session.shutdown"}
+                }),
+                json!({
+                    "type": "session.shutdown",
+                    "timestamp": "2026-04-15T09:52:27.352Z",
+                    "data": {
+                        "modelMetrics": {
+                            "test-model": {
+                                "usage": {
+                                    "inputTokens": 1,
+                                    "outputTokens": 2
+                                }
+                            }
+                        }
+                    }
+                })
+            ),
+        });
+
+        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl")).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].input_tokens, 1);
+        assert_eq!(entries[0].output_tokens, 2);
+        assert!(
+            entries[0]
+                .dedup_key
+                .starts_with("shutdown:session-1:2026-04-15T09:52:27.352Z:test-model:")
+        );
+    }
+
+    #[test]
+    fn parses_each_model_and_ignores_request_cost_and_empty_usage() {
+        let fixture = fs_fixture!({
+            "session-1/events.jsonl": json!({
+                "type": "session.shutdown",
+                "id": "shutdown-1",
+                "timestamp": "2026-04-15T09:52:27.352Z",
+                "data": {
+                    "modelMetrics": {
+                        "first-model": {
+                            "usage": {
+                                "inputTokens": 10,
+                                "outputTokens": 20
+                            },
+                            "requests": {"count": 1, "cost": 999}
+                        },
+                        "empty-model": {
+                            "usage": {
+                                "inputTokens": 0,
+                                "outputTokens": 0
+                            }
+                        },
+                        "second-model": {
+                            "usage": {
+                                "cacheReadTokens": 3,
+                                "cacheWriteTokens": 4
+                            }
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        });
+
+        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl")).unwrap();
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.model.as_str())
+                .collect::<Vec<_>>(),
+            ["first-model", "second-model"]
+        );
+        assert_eq!(entries[1].cache_creation_tokens, 4);
+        assert_eq!(entries[1].cache_read_tokens, 3);
+    }
 }

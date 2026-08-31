@@ -247,6 +247,7 @@ dependencies = [
  "ccusage-adapter-common",
  "ccusage-core",
  "ccusage-test-support",
+ "insta",
  "jiff",
  "serde",
  "serde_json",
