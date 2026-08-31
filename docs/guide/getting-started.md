@@ -175,7 +175,7 @@ If ccusage shows no data, check:
    - Kimi: `${KIMI_DATA_DIR:-~/.kimi}` (also scans `~/.kimi-code`)
    - OpenClaw: `${OPENCLAW_DIR:-~/.openclaw}` (also scans `~/.clawdbot`, `~/.moltbot`, `~/.moldbot`)
    - Qwen: `${QWEN_DATA_DIR:-~/.qwen}`
-   - GitHub Copilot CLI: `${COPILOT_HOME:-~/.copilot}/session-state/*/events.jsonl`, `${COPILOT_HOME:-~/.copilot}/otel/*.jsonl`, or `COPILOT_OTEL_FILE_EXPORTER_PATH`
+   - GitHub Copilot CLI: `${COPILOT_HOME:-~/.copilot}/session-state/*/events.jsonl`, `${COPILOT_HOME:-~/.copilot}/otel/**/*.jsonl`, or the single file specified by `COPILOT_OTEL_FILE_EXPORTER_PATH`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
 
 ### Custom Data Directory

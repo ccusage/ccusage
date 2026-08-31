@@ -26,9 +26,9 @@ Matching OpenTelemetry rows are suppressed only when their timestamps are at or 
 canonical shutdown timestamp for that pair; rows emitted after that timestamp by a resumed session
 are retained. Other OpenTelemetry records remain available. Session-state `inputTokens` includes cache reads
 and writes, so the adapter reports the uncached remainder as input and keeps the cache buckets
-separate. Reasoning tokens are already included in output tokens and are not added to totals or
-costs. Internal model suffixes such as `-1m` and `-1m-internal` are removed before pricing and
-source deduplication.
+separate. Session-state reasoning tokens are already included in output tokens; OpenTelemetry
+reasoning is included when total usage metadata shows it is separate. Internal model suffixes such
+as `-1m` and `-1m-internal` are removed before pricing and source deduplication.
 
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.
