@@ -57,7 +57,7 @@ ccusage openclaw daily --since 2026-05-01 --until 2026-05-16
 
 ## Cost Calculation
 
-OpenClaw session messages embed a `cost.total` value per assistant message. In the default mode, ccusage uses these embedded costs directly, so reports work offline without `--offline`. With `--mode calculate`, ccusage resolves the raw model identity through the LiteLLM pricing database; this includes timestamp-aware DeepSeek V4 rates when applicable.
+OpenClaw session messages embed a `cost.total` value per assistant message. In the default mode, ccusage uses these embedded costs directly, so reports work offline without `--offline`. With `--mode calculate`, ccusage resolves the raw model identity through the merged LiteLLM and models.dev pricing data; this includes timestamp-aware DeepSeek V4 rates when applicable.
 
 ## Model Attribution
 
