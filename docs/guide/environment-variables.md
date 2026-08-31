@@ -26,6 +26,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity` |
 | `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                            |
 | `ZCODE_HOME`                      | ZCode          | `~/.zcode`                                           |
+| `GJC_CONFIG_DIR`                  | GJC            | `~/.gjc`                                             |
 
 Example:
 
@@ -47,6 +48,7 @@ export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export GROK_HOME="/path/to/grok-home"
 export ZCODE_HOME="/path/to/zcode-home,/archive/zcode-home"
+export GJC_CONFIG_DIR="/path/to/.gjc"
 ccusage daily
 ```
 

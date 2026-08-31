@@ -50,6 +50,7 @@ fn main() -> Result<()> {
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
         Some(Command::Grok(args)) => adapter::grok::run(args),
         Some(Command::ZCode(args)) => adapter::zcode::run(args),
+        Some(Command::Gjc(args)) => adapter::gjc::run(args),
         None => {
             let args = AgentCommandArgs {
                 shared: cli.shared,
