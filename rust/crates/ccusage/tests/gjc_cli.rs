@@ -24,7 +24,7 @@ fn gjc_cli_reports_daily_monthly_and_session_json() {
             .env_clear()
             .env("HOME", fixture.path("home"))
             .env("USERPROFILE", fixture.path("userprofile"))
-            .env("GJC_CONFIG_DIR", fixture.path("gjc"))
+            .env("GJC_CODING_AGENT_DIR", fixture.path("gjc/agent"))
             .args(["gjc", kind, "--json", "--timezone", "UTC"])
             .output()
             .expect("failed to run ccusage");

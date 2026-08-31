@@ -132,7 +132,7 @@ mod tests {
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     use super::super::{
-        paths::GJC_CONFIG_DIR_ENV,
+        paths::GJC_CODING_AGENT_DIR_ENV,
         report::{report_from_rows, summarize_entries},
     };
     use super::*;
@@ -147,7 +147,7 @@ mod tests {
                 "{\"type\":\"message\",\"id\":\"tool-1\",\"timestamp\":\"2026-08-28T01:02:04.000Z\",\"message\":{\"role\":\"toolResult\"}}\n"
             ),
         });
-        let _guard = EnvVarGuard::set(GJC_CONFIG_DIR_ENV, fixture.root());
+        let _guard = EnvVarGuard::set(GJC_CODING_AGENT_DIR_ENV, fixture.path("agent"));
         let shared = SharedArgs {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()

@@ -181,7 +181,7 @@ If ccusage shows no data, check:
    - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
    - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
-   - GJC: `${GJC_CONFIG_DIR:-~/.gjc}/agent/sessions/**/*.jsonl`
+   - GJC: `~/${GJC_CONFIG_DIR:-.gjc}/agent/sessions/**/*.jsonl`
 
 ### Custom Data Directory
 
@@ -205,7 +205,7 @@ export ANTIGRAVITY_DATA_DIR="/path/to/antigravity"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
 export ZCODE_HOME="/path/to/zcode-home"
-export GJC_CONFIG_DIR="/path/to/.gjc"
+export GJC_CODING_AGENT_DIR="/path/to/.gjc/agent"
 ```
 
 Directory variables can contain comma-separated directories. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, `GROK_HOME` accepts one root, and `ZCODE_HOME` supports multiple roots and deduplicates them:

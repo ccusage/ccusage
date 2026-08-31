@@ -17,10 +17,10 @@ Use `ccusage daily`, `ccusage monthly`, or `ccusage session` to include GJC with
 GJC stores JSONL transcripts below its config root:
 
 ```text
-${GJC_CONFIG_DIR:-~/.gjc}/agent/sessions/**/*.jsonl
+~/${GJC_CONFIG_DIR:-.gjc}/agent/sessions/**/*.jsonl
 ```
 
-ccusage walks the sessions directory recursively, so top-level sessions and subagent transcripts are included. Set `GJC_CONFIG_DIR` when GJC uses a non-default config root.
+ccusage walks the sessions directory recursively, so top-level sessions and subagent transcripts are included. `GJC_CONFIG_DIR` is a directory name below the home directory, matching GJC itself. Set `GJC_CODING_AGENT_DIR` to an explicit agent directory. When GJC has migrated data to an existing `$XDG_DATA_HOME/gjc` directory, ccusage reads sessions from there.
 
 ## Token and Cost Handling
 
@@ -60,5 +60,5 @@ See [Configuration Files](/guide/config-files), [Environment Variables](/guide/e
 ## Troubleshooting
 
 ::: details No GJC usage data found
-Ensure `${GJC_CONFIG_DIR:-~/.gjc}/agent/sessions` exists and contains GJC JSONL session transcripts. Use `--debug` to report unreadable files.
+Ensure `~/${GJC_CONFIG_DIR:-.gjc}/agent/sessions` or `$GJC_CODING_AGENT_DIR/sessions` exists and contains GJC JSONL session transcripts. Use `--debug` to report unreadable files.
 :::

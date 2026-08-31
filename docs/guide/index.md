@@ -92,7 +92,7 @@ ccusage reads from local coding CLI data directories:
 | Antigravity    | `antigravity` | `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity` |
 | Grok Build CLI | `grok`        | `${GROK_HOME:-~/.grok}`                                                      |
 | ZCode          | `zcode`       | `${ZCODE_HOME:-~/.zcode}`                                                    |
-| GJC            | `gjc`         | `${GJC_CONFIG_DIR:-~/.gjc}/agent/sessions`                                   |
+| GJC            | `gjc`         | `~/${GJC_CONFIG_DIR:-.gjc}/agent/sessions`                                   |
 
 For OpenCode, `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` is the default-path fallback. When set, `OPENCODE_DATA_DIR` overrides that path; an explicitly empty value disables fallback discovery.
 
