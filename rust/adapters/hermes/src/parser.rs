@@ -186,7 +186,7 @@ fn calculate_hermes_cost(entry: &HermesEntry, pricing: &PricingMap) -> f64 {
         cache_creation: None,
         ..entry.usage
     };
-    for candidate in model_candidates(entry) {
+    for candidate in model_candidates(entry, pricing) {
         let cost = calculate_cost_for_usage_at(
             Some(&candidate),
             usage,
@@ -213,16 +213,19 @@ fn missing_hermes_pricing(entry: &HermesEntry, pricing: &PricingMap) -> Option<S
     };
     missing_pricing_model_for_candidates(
         &entry.model,
-        model_candidates(entry),
+        model_candidates(entry, pricing),
         crate::total_usage_tokens(usage),
         Some(pricing),
     )
 }
 
-fn model_candidates(entry: &HermesEntry) -> Vec<String> {
+fn model_candidates(entry: &HermesEntry, pricing: &PricingMap) -> Vec<String> {
     let mut candidates = Vec::new();
     if entry.provider != "hermes" {
-        candidates.push(format!("{}/{}", entry.provider, entry.model));
+        let qualified = format!("{}/{}", entry.provider, entry.model);
+        if pricing.find_exact(&qualified).is_some() {
+            candidates.push(qualified);
+        }
     }
     candidates.push(entry.model.clone());
     let mut seen = HashSet::new();
@@ -333,9 +336,52 @@ mod tests {
             cost_usd: None,
         };
 
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "openai/gpt-5.5": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002
+                }
+            }"#,
+        );
+
         assert_eq!(
-            model_candidates(&entry),
+            model_candidates(&entry, &pricing),
             vec!["openai/gpt-5.5".to_string(), "gpt-5.5".to_string()]
+        );
+    }
+
+    #[test]
+    fn uses_raw_model_for_timestamped_pricing_when_provider_match_is_fuzzy() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek-v4-flash": {
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028
+                }
+            }"#,
+        );
+        let entry = HermesEntry {
+            timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
+            timestamp_text: "2026-08-17T01:00:00.000Z".to_string(),
+            session_id: "session-deepseek".to_string(),
+            model: "deepseek-v4-flash".to_string(),
+            provider: "deepseek".to_string(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000_000,
+                ..TokenUsageRaw::default()
+            },
+            reasoning_tokens: 0,
+            message_count: 1,
+            cost_usd: None,
+        };
+
+        assert!((calculate_hermes_cost(&entry, &pricing) - 0.44).abs() < 1e-12);
+        assert_eq!(
+            model_candidates(&entry, &pricing),
+            vec!["deepseek-v4-flash"]
         );
     }
 }
