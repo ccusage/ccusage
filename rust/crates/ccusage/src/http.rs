@@ -371,10 +371,15 @@ mod tests {
         );
         let handle = thread::spawn(move || {
             let mut requests = Vec::new();
-            for response in responses {
-                let Some(mut stream) = accept_until_idle(&listener, Duration::from_millis(250))?
-                else {
-                    break;
+            for (response_index, response) in responses.into_iter().enumerate() {
+                let mut stream = if response_index == 0 {
+                    accept_with_timeout(&listener)?
+                } else {
+                    let Some(stream) = accept_until_idle(&listener, Duration::from_millis(250))?
+                    else {
+                        break;
+                    };
+                    stream
                 };
                 requests.push(read_request(&mut stream)?);
                 stream.write_all(response.as_bytes())?;
