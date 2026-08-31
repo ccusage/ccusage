@@ -209,7 +209,7 @@ export ZCODE_HOME="/path/to/zcode-home"
 export GJC_CODING_AGENT_DIR="/path/to/.gjc/agent"
 ```
 
-Directory variables can contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` supports multiple roots and deduplicates them:
+Directory variables can contain comma-separated directories, except `COPILOT_HOME`, `GROK_HOME`, `GJC_CONFIG_DIR`, and `GJC_CODING_AGENT_DIR`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` supports multiple roots and deduplicates them:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"
