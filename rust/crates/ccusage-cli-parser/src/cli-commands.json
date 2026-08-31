@@ -112,6 +112,10 @@
 			{
 				"name": "zcode",
 				"description": "Show ZCode usage commands"
+			},
+			{
+				"name": "gjc",
+				"description": "Show GJC token usage commands"
 			}
 		]
 	},
@@ -856,6 +860,43 @@
 			"path": ["zcode", "session"],
 			"description": "Show ZCode usage grouped by session",
 			"usage": "ccusage zcode session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["gjc"],
+			"description": "Usage reports for GJC.",
+			"usage": "ccusage gjc <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show GJC token usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show GJC token usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show GJC token usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["gjc", "daily"],
+			"description": "Show GJC token usage grouped by date",
+			"usage": "ccusage gjc daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["gjc", "monthly"],
+			"description": "Show GJC token usage grouped by month",
+			"usage": "ccusage gjc monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["gjc", "session"],
+			"description": "Show GJC token usage grouped by session",
+			"usage": "ccusage gjc session <OPTIONS>",
 			"options": "agent_options"
 		}
 	]

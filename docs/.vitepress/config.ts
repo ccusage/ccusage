@@ -86,6 +86,7 @@ export default defineConfig({
 						{ text: 'OpenClaw', link: '/guide/openclaw/' },
 						{ text: 'Grok Build CLI', link: '/guide/grok/' },
 						{ text: 'ZCode', link: '/guide/zcode/' },
+						{ text: 'GJC', link: '/guide/gjc/' },
 						{ text: 'Source Support Q&A', link: '/guide/source-support-qa' },
 					],
 				},

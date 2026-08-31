@@ -356,6 +356,9 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::ZCode,
         ),
+        "gjc" => {
+            parse_basic_agent_command(parser, shared, "gjc", STANDARD_AGENT_REPORTS, Command::Gjc)
+        }
         _ => Err(format!("Unknown command '{command}'")),
     }
 }
@@ -813,6 +816,7 @@ fn is_command(arg: &str) -> bool {
             | "qwen"
             | "grok"
             | "zcode"
+            | "gjc"
     )
 }
 
@@ -975,6 +979,7 @@ fn is_agent_command(command: &str) -> bool {
             | "openclaw"
             | "grok"
             | "zcode"
+            | "gjc"
     )
 }
 
@@ -987,7 +992,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
+        | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" | "gjc" => {
             matches!(report, "daily" | "monthly" | "session")
         }
         _ => false,
@@ -1014,6 +1019,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "openclaw" => "OpenClaw",
         "grok" => "Grok",
         "zcode" => "ZCode",
+        "gjc" => "GJC",
         _ => unreachable!("agent is prevalidated"),
     }
 }
@@ -1096,7 +1102,8 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
             | Command::Qwen(args)
             | Command::OpenClaw(args)
             | Command::Grok(args)
-            | Command::ZCode(args),
+            | Command::ZCode(args)
+            | Command::Gjc(args),
         ) => (&args.shared, args.kind != AgentReportKind::Session),
     };
     shared.last?;
