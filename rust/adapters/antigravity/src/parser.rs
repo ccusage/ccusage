@@ -4,7 +4,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage, cli::CostMode, cli_error, format_date_tz,
+    calculate_cost_for_usage_at, cli::CostMode, cli_error, format_date_tz,
     missing_pricing_model_for_candidates,
 };
 
@@ -904,7 +904,14 @@ pub(super) fn event_to_loaded(
     let extra_total_tokens = event
         .total_output_tokens
         .saturating_sub(event.output_tokens);
-    let cost = calculate_antigravity_cost(&event.model, event.provider, cost_usage, mode, pricing);
+    let cost = calculate_antigravity_cost(
+        &event.model,
+        event.provider,
+        cost_usage,
+        event.timestamp,
+        mode,
+        pricing,
+    );
     let missing_pricing_model =
         missing_antigravity_pricing(&event.model, event.provider, cost_usage, mode, pricing);
     let data = UsageEntry {
@@ -942,6 +949,7 @@ fn calculate_antigravity_cost(
     model: &str,
     provider: Option<u64>,
     usage: TokenUsageRaw,
+    timestamp: TimestampMs,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> f64 {
@@ -951,10 +959,11 @@ fn calculate_antigravity_cost(
             .into_iter()
             .find_map(|candidate| {
                 pricing.find(&candidate).map(|_| {
-                    calculate_cost_for_usage(
+                    calculate_cost_for_usage_at(
                         Some(&candidate),
                         usage,
                         None,
+                        Some(timestamp),
                         CostMode::Calculate,
                         Some(pricing),
                     )
