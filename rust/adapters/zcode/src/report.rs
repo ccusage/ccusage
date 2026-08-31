@@ -136,6 +136,7 @@ mod tests {
         let entries = snapshot_entries();
         let daily = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
         let monthly = summarize_entries(&entries, AgentReportKind::Monthly).unwrap();
+        let weekly = summarize_entries(&entries, AgentReportKind::Weekly).unwrap();
         let session = summarize_entries(&entries, AgentReportKind::Session).unwrap();
 
         insta::assert_json_snapshot!(
@@ -145,6 +146,10 @@ mod tests {
         insta::assert_json_snapshot!(
             "focused_zcode_monthly_json",
             report_from_rows(&monthly, AgentReportKind::Monthly)
+        );
+        insta::assert_json_snapshot!(
+            "focused_zcode_weekly_json",
+            report_from_rows(&weekly, AgentReportKind::Weekly)
         );
         insta::assert_json_snapshot!(
             "focused_zcode_session_json",
