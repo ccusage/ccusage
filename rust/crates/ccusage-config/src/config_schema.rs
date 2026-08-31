@@ -46,6 +46,8 @@ pub struct CcusageConfig {
     pub copilot: Option<CopilotConfig>,
     /// Gemini CLI configuration.
     pub gemini: Option<GeminiConfig>,
+    /// Antigravity configuration.
+    pub antigravity: Option<AntigravityConfig>,
     /// Kimi configuration.
     pub kimi: Option<KimiConfig>,
     /// Qwen configuration.
@@ -273,6 +275,21 @@ pub struct GeminiConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AntigravityConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<AntigravityCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AntigravityCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
@@ -1121,6 +1138,7 @@ mod tests {
             &with_keys(&shared, &["openClawPath"]),
         );
         assert_schema_properties(&schema, &["grok", "defaults"], &shared);
+        assert_schema_properties(&schema, &["antigravity", "defaults"], &shared);
         assert_schema_properties(&schema, &["zcode", "defaults"], &shared);
     }
 
@@ -1140,6 +1158,7 @@ mod tests {
         assert!(schema_property(&schema, &["openclaw", "defaults", "openClawPath"]).is_some());
         assert!(schema_property(&schema, &["kilo", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["gemini", "defaults", "openClawPath"]).is_none());
+        assert!(schema_property(&schema, &["antigravity", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["kimi", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["qwen", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["grok", "defaults", "grokPath"]).is_none());
@@ -1176,9 +1195,27 @@ mod tests {
             &schema,
             "ccusage-config",
             &[
-                "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
-                "droid", "gemini", "goose", "grok", "hermes", "kilo", "kimi", "opencode",
-                "openclaw", "pi", "qwen", "zcode",
+                "$schema",
+                "amp",
+                "claude",
+                "codebuff",
+                "codex",
+                "commands",
+                "copilot",
+                "defaults",
+                "droid",
+                "gemini",
+                "antigravity",
+                "goose",
+                "grok",
+                "hermes",
+                "kilo",
+                "kimi",
+                "opencode",
+                "openclaw",
+                "pi",
+                "qwen",
+                "zcode",
             ],
         );
         assert!(

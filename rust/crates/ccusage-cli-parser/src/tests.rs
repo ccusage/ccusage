@@ -206,6 +206,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Kilo(args)) => agent_command_snapshot("kilo", args),
         Some(Command::Copilot(args)) => agent_command_snapshot("copilot", args),
         Some(Command::Gemini(args)) => agent_command_snapshot("gemini", args),
+        Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
@@ -879,6 +880,10 @@ fn snapshots_representative_cli_parse_shapes() {
         json!({
             "case": "grok daily",
             "cli": cli_snapshot(parse(&["ccusage", "grok", "daily", "--json"])),
+        }),
+        json!({
+            "case": "antigravity session",
+            "cli": cli_snapshot(parse(&["ccusage", "antigravity", "session", "--json"])),
         }),
         json!({
             "case": "zcode daily",

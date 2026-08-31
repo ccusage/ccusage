@@ -17,6 +17,7 @@ fetch-litellm-pricing = ["ccusage-core/fetch-litellm-pricing"]
 [dependencies]
 ccusage-adapter-all.workspace = true
 ccusage-adapter-amp.workspace = true
+ccusage-adapter-antigravity.workspace = true
 ccusage-adapter-claude.workspace = true
 ccusage-adapter-codebuff.workspace = true
 ccusage-adapter-codex.workspace = true

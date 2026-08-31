@@ -7,6 +7,7 @@ use super::{
     paths::discover_log_files,
 };
 
+/// Loads Gemini CLI entries with progress tracking.
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("Gemini CLI"),
@@ -15,16 +16,16 @@ pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<Loa
     )
 }
 
+/// Internal loader function that discovers and parses Gemini CLI log files in parallel.
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
     let tz = parse_tz(shared.timezone.as_deref());
     let files = discover_log_files()?;
     // Read each log file in parallel; the events keep their original file order
     // before the stable sort, so output is identical to the sequential read.
     let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        let parsed = if file.extension().and_then(|extension| extension.to_str()) == Some("jsonl") {
-            parse_jsonl_file(file)
-        } else {
-            parse_json_file(file)
+        let parsed = match file.extension().and_then(|extension| extension.to_str()) {
+            Some("jsonl") => parse_jsonl_file(file),
+            _ => parse_json_file(file),
         };
         parsed.unwrap_or_else(|error| {
             debug_log(

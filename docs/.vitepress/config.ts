@@ -81,6 +81,7 @@ export default defineConfig({
 						{ text: 'Qwen', link: '/guide/qwen/' },
 						{ text: 'GitHub Copilot CLI', link: '/guide/copilot/' },
 						{ text: 'Gemini CLI', link: '/guide/gemini/' },
+						{ text: 'Antigravity', link: '/guide/antigravity/' },
 						{ text: 'Kimi', link: '/guide/kimi/' },
 						{ text: 'OpenClaw', link: '/guide/openclaw/' },
 						{ text: 'Grok Build CLI', link: '/guide/grok/' },

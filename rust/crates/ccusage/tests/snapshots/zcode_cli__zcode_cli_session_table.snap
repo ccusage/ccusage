@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage/tests/zcode_cli.rs
+assertion_line: 41
 expression: "format!(\"stdout:\\n{stdout}\\nstderr:\\n{stderr}\")"
 ---
 stdout:

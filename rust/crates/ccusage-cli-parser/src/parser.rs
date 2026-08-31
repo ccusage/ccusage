@@ -320,6 +320,13 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::Gemini,
         ),
+        "antigravity" => parse_basic_agent_command(
+            parser,
+            shared,
+            "antigravity",
+            STANDARD_AGENT_REPORTS,
+            Command::Antigravity,
+        ),
         "kimi" => parse_basic_agent_command(
             parser,
             shared,
@@ -801,6 +808,7 @@ fn is_command(arg: &str) -> bool {
             | "kilo"
             | "copilot"
             | "gemini"
+            | "antigravity"
             | "kimi"
             | "qwen"
             | "grok"
@@ -961,6 +969,7 @@ fn is_agent_command(command: &str) -> bool {
             | "kilo"
             | "copilot"
             | "gemini"
+            | "antigravity"
             | "kimi"
             | "qwen"
             | "openclaw"
@@ -978,7 +987,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
+        | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
             matches!(report, "daily" | "monthly" | "session")
         }
         _ => false,
@@ -999,6 +1008,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "kilo" => "Kilo",
         "copilot" => "GitHub Copilot CLI",
         "gemini" => "Gemini CLI",
+        "antigravity" => "Antigravity",
         "kimi" => "Kimi",
         "qwen" => "Qwen",
         "openclaw" => "OpenClaw",
@@ -1081,6 +1091,7 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
             | Command::Kilo(args)
             | Command::Copilot(args)
             | Command::Gemini(args)
+            | Command::Antigravity(args)
             | Command::Kimi(args)
             | Command::Qwen(args)
             | Command::OpenClaw(args)
