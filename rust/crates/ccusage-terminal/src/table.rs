@@ -7,6 +7,7 @@ use crate::{
 };
 
 const MAX_MODELS_CONTENT_WIDTH: usize = 25;
+const MIN_WRAP_COLUMN_WIDTH: usize = 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Align {
@@ -252,7 +253,7 @@ fn fit_widths_to_terminal(
         })
         .collect::<Vec<_>>();
 
-    let content_minimums = fallback_minimums
+    let mut content_minimums = fallback_minimums
         .iter()
         .enumerate()
         .map(|(index, minimum)| {
@@ -269,6 +270,20 @@ fn fit_widths_to_terminal(
             }
         })
         .collect::<Vec<_>>();
+    while cli_table_required_width(&content_minimums) > terminal_width {
+        let Some(index) = content_minimums
+            .iter()
+            .enumerate()
+            .filter(|(index, width)| {
+                aligns.get(*index) != Some(&Align::Right) && **width > MIN_WRAP_COLUMN_WIDTH
+            })
+            .max_by_key(|(_, width)| **width)
+            .map(|(index, _)| index)
+        else {
+            break;
+        };
+        content_minimums[index] -= 1;
+    }
     let natural_widths = widths.clone();
     let mut expansion_limits = natural_widths.clone();
     if compact_dates && let Some(first) = expansion_limits.first_mut() {
@@ -818,6 +833,83 @@ mod tests {
         assert!(!total_line.contains('…'), "{total_line}");
         assert!(total_line.contains("1,048,000,000"), "{total_line}");
         assert!(total_line.contains("$123456.78"), "{total_line}");
+    }
+
+    #[test]
+    fn preserves_numeric_cells_at_the_codex_120_column_boundary() {
+        let mut table = SimpleTable::new(
+            vec![
+                "Date",
+                "Models",
+                "Input",
+                "Output",
+                "Reasoning",
+                "Cache Create",
+                "Cache Read",
+                "Total Tokens",
+                "Cost (USD)",
+            ],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(120)
+        .with_date_compaction(true);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "- provider/this-is-a-deliberately-wide-model-name".to_string(),
+            "123,456,789".to_string(),
+            "1,234,567".to_string(),
+            "9,876,543".to_string(),
+            "1,234,567".to_string(),
+            "12,345,678,901".to_string(),
+            "12,345,678,901".to_string(),
+            "$12345.67".to_string(),
+        ]);
+        table.separator();
+        table.push(vec![
+            "Total".to_string(),
+            String::new(),
+            "123,456,789".to_string(),
+            "1,234,567".to_string(),
+            "9,876,543".to_string(),
+            "1,234,567".to_string(),
+            "12,345,678,901".to_string(),
+            "12,345,678,901".to_string(),
+            "$12345.67".to_string(),
+        ]);
+
+        let widths = table.column_widths();
+        assert_eq!(cli_table_required_width(&widths), 120);
+        assert!(widths[0] < 10 || widths[1] < 12, "{widths:?}");
+        assert!(widths[2] >= 13, "{widths:?}");
+        assert!(widths[6] >= 16, "{widths:?}");
+        assert!(widths[7] >= 16, "{widths:?}");
+
+        let rendered = table.render_lines().join("\n");
+        let total_line = rendered
+            .lines()
+            .find(|line| line.starts_with("│ Total"))
+            .expect("rendered table should include a Total row");
+        assert!(!total_line.contains('…'), "{total_line}");
+        for value in ["123,456,789", "12,345,678,901"] {
+            assert!(
+                total_line.contains(value),
+                "missing {value} in {total_line}"
+            );
+        }
     }
 
     #[test]
