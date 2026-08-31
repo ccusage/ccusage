@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
+    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, format_date_tz,
     missing_pricing_model_for_candidates,
 };
 use ccusage_adapter_common::jsonl;
@@ -206,12 +206,16 @@ fn calculate_kilo_cost_from_tokens(
     let Some(model) = data.message.model.as_deref() else {
         return 0.0;
     };
+    let Some(timestamp) = crate::parse_ts_timestamp(&data.timestamp) else {
+        return 0.0;
+    };
     for candidate in model_candidates(model, provider) {
         if pricing.find(&candidate).is_some() {
-            return calculate_cost_for_usage(
+            return calculate_cost_for_usage_at(
                 Some(&candidate),
                 data.message.usage,
                 None,
+                Some(timestamp),
                 CostMode::Calculate,
                 Some(pricing),
             );

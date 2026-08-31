@@ -4,7 +4,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage, cli::CostMode, format_date_tz, format_rfc3339_millis,
+    calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
     missing_pricing_model_for_candidates,
 };
 
@@ -187,10 +187,11 @@ fn calculate_hermes_cost(entry: &HermesEntry, pricing: &PricingMap) -> f64 {
         ..entry.usage
     };
     for candidate in model_candidates(entry) {
-        let cost = calculate_cost_for_usage(
+        let cost = calculate_cost_for_usage_at(
             Some(&candidate),
             usage,
             None,
+            Some(entry.timestamp),
             CostMode::Calculate,
             Some(pricing),
         );

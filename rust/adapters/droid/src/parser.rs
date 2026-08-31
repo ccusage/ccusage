@@ -3,7 +3,7 @@ use std::{collections::HashSet, fs, io, path::Path};
 use serde_json::Value;
 
 use crate::{
-    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage,
+    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage_at,
     cli::CostMode, format_rfc3339_millis, json_value_u64, missing_pricing_model_for_candidates,
     parse_ts_timestamp,
 };
@@ -146,10 +146,11 @@ pub(super) fn calculate_droid_cost(entry: &DroidEntry, pricing: &PricingMap) -> 
         ..entry.usage
     };
     for candidate in droid_model_candidates(entry) {
-        let cost = calculate_cost_for_usage(
+        let cost = calculate_cost_for_usage_at(
             Some(&candidate),
             usage,
             None,
+            Some(entry.timestamp),
             CostMode::Calculate,
             Some(pricing),
         );

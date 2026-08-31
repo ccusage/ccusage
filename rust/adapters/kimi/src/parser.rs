@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, fast::LinePrefilter,
+    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
     format_date_tz, missing_pricing_model_for_candidates,
 };
 use ccusage_adapter_common::jsonl;
@@ -380,10 +380,11 @@ fn calculate_kimi_cost(
         CostMode::Auto | CostMode::Calculate => {
             for candidate in model_candidates(entry) {
                 if pricing.find(&candidate).is_some() {
-                    return calculate_cost_for_usage(
+                    return calculate_cost_for_usage_at(
                         Some(&candidate),
                         usage,
                         None,
+                        Some(entry.timestamp),
                         CostMode::Calculate,
                         Some(pricing),
                     );

@@ -5,7 +5,8 @@ use serde::Deserialize;
 
 use crate::{
     LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
-    calculate_cost_for_usage, cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
+    calculate_cost_for_usage_at, cli::CostMode, format_date_tz,
+    missing_pricing_model_for_candidates,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -213,8 +214,15 @@ fn message_value_to_entry_inner(
         cache_creation: None,
         ..usage
     };
-    let cost =
-        calculate_open_code_cost(&model, &provider, cost_usage, data.cost_usd, mode, pricing);
+    let cost = calculate_open_code_cost(
+        &model,
+        &provider,
+        cost_usage,
+        data.cost_usd,
+        timestamp,
+        mode,
+        pricing,
+    );
     // If we already have a usable positive cost (calculated or stored), skip
     // the redundant missing-pricing check — it would iterate through the same
     // model candidates and find nothing missing.
@@ -314,6 +322,7 @@ fn calculate_open_code_cost(
     provider: &str,
     usage: TokenUsageRaw,
     cost_usd: Option<f64>,
+    timestamp: crate::TimestampMs,
     _mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> f64 {
@@ -321,8 +330,14 @@ fn calculate_open_code_cost(
         return cost;
     }
     for candidate in open_code_model_candidates(model, provider) {
-        let cost =
-            calculate_cost_for_usage(Some(&candidate), usage, None, CostMode::Calculate, pricing);
+        let cost = calculate_cost_for_usage_at(
+            Some(&candidate),
+            usage,
+            None,
+            Some(timestamp),
+            CostMode::Calculate,
+            pricing,
+        );
         if cost > 0.0 {
             return cost;
         }

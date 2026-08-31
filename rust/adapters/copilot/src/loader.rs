@@ -7,7 +7,7 @@ use super::{
     paths::paths,
 };
 use crate::{
-    LoadedEntry, Result, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage,
+    LoadedEntry, Result, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage_at,
     cli::CostMode, debug_log, format_date_tz, missing_pricing_model_for_usage, parse_tz,
     read_files_parallel,
 };
@@ -96,7 +96,14 @@ fn usage_entry_to_loaded(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let cost = calculate_cost_for_usage(Some(&entry.model), cost_usage, None, mode, Some(pricing));
+    let cost = calculate_cost_for_usage_at(
+        Some(&entry.model),
+        cost_usage,
+        None,
+        Some(entry.timestamp),
+        mode,
+        Some(pricing),
+    );
     let missing_pricing_model =
         missing_pricing_model_for_usage(Some(&entry.model), cost_usage, None, mode, Some(pricing));
     LoadedEntry {

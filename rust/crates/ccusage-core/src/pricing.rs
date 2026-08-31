@@ -9,7 +9,10 @@ use ccusage_cli::PricingOverride;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::fast::{FxHashMap, FxHashSet};
+use crate::{
+    MILLIS_PER_DAY, MILLIS_PER_HOUR, TimestampMs,
+    fast::{FxHashMap, FxHashSet},
+};
 
 // The embedded snapshots ship deflated - the models.dev one alone would
 // otherwise add a quarter megabyte of JSON to the binary - and are inflated
@@ -110,6 +113,94 @@ impl Pricing {
     }
 }
 
+const DEEPSEEK_V4_PRICING_CUTOFF_MS: i64 = 1_786_838_400_000;
+
+#[derive(Clone, Copy)]
+struct DeepSeekV4Rates {
+    input: f64,
+    output: f64,
+    cache_read: f64,
+}
+
+fn deepseek_v4_rates(model: &str, timestamp: TimestampMs) -> Option<DeepSeekV4Rates> {
+    let (old, off_peak, peak) = match model {
+        "deepseek-v4-flash" => (
+            DeepSeekV4Rates {
+                input: 0.14e-6,
+                output: 0.28e-6,
+                cache_read: 0.0028e-6,
+            },
+            DeepSeekV4Rates {
+                input: 0.22e-6,
+                output: 0.66e-6,
+                cache_read: 0.007e-6,
+            },
+            DeepSeekV4Rates {
+                input: 0.44e-6,
+                output: 1.32e-6,
+                cache_read: 0.014e-6,
+            },
+        ),
+        "deepseek-v4-pro" => (
+            DeepSeekV4Rates {
+                input: 0.435e-6,
+                output: 0.87e-6,
+                cache_read: 0.003625e-6,
+            },
+            DeepSeekV4Rates {
+                input: 0.66e-6,
+                output: 1.98e-6,
+                cache_read: 0.022e-6,
+            },
+            DeepSeekV4Rates {
+                input: 1.32e-6,
+                output: 3.96e-6,
+                cache_read: 0.044e-6,
+            },
+        ),
+        _ => return None,
+    };
+    if timestamp.as_millis() < DEEPSEEK_V4_PRICING_CUTOFF_MS {
+        return Some(old);
+    }
+    Some(if deepseek_v4_peak(timestamp) {
+        peak
+    } else {
+        off_peak
+    })
+}
+
+fn deepseek_v4_peak(timestamp: TimestampMs) -> bool {
+    // DeepSeek publishes these windows in UTC, so use the epoch instant rather
+    // than a report's display timezone when deriving the calendar buckets.
+    let days_since_epoch = timestamp.as_millis().div_euclid(MILLIS_PER_DAY);
+    // Unix epoch Thursday is weekday 4 when Sunday is zero; Euclidean modulo
+    // keeps the mapping valid for timestamps before the epoch as well.
+    let weekday_from_sunday = (days_since_epoch + 4).rem_euclid(7);
+    // Saturdays and Sundays are always off-peak.
+    if !(1..=5).contains(&weekday_from_sunday) {
+        return false;
+    }
+    // The published windows are half-open, so their ending hours are excluded.
+    let hour = timestamp.as_millis().rem_euclid(MILLIS_PER_DAY) / MILLIS_PER_HOUR;
+    (1..4).contains(&hour) || (6..10).contains(&hour)
+}
+
+fn apply_deepseek_v4_schedule(
+    model: &str,
+    timestamp: TimestampMs,
+    mut pricing: Pricing,
+) -> Pricing {
+    let Some(rates) = deepseek_v4_rates(model, timestamp) else {
+        return pricing;
+    };
+    pricing.input = rates.input;
+    pricing.output = rates.output;
+    pricing.cache_read = rates.cache_read;
+    pricing.cache_read_explicit = true;
+    pricing
+}
+
 /// Whether a lookup may fall back to the fuzzy scan, or has to answer from
 /// exact entries because a fuzzy match would shadow an exact-only id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +212,8 @@ enum Fuzzy {
 #[derive(Debug)]
 pub struct PricingMap {
     entries: FxHashMap<String, Pricing>,
+    /// Direct model overrides must remain authoritative over time-based rates.
+    user_overrides: FxHashSet<String>,
     /// Entries that only a request recording that exact id may use.
     ///
     /// A separately priced tier such as `kimi-k2.7-code-highspeed` is the right
@@ -219,6 +312,7 @@ impl Default for PricingMap {
     fn default() -> Self {
         Self {
             entries: FxHashMap::default(),
+            user_overrides: FxHashSet::default(),
             exact_only: ExactOnlyKeys::default(),
             context_limits: FxHashMap::default(),
             enable_models_dev_fallback: false,
@@ -1034,6 +1128,20 @@ impl PricingMap {
         result
     }
 
+    /// Finds the pricing that applies to one usage event.
+    ///
+    /// The timestamp-aware DeepSeek schedule is applied only to the two direct
+    /// model ids. Provider and reseller names continue through static lookup.
+    pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
+        self.find(model).map(|pricing| {
+            if self.user_overrides.contains(model) {
+                pricing
+            } else {
+                apply_deepseek_v4_schedule(model, timestamp, pricing)
+            }
+        })
+    }
+
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
         self.entries.get(model).copied()
     }
@@ -1184,6 +1292,7 @@ impl PricingMap {
     }
 
     fn apply_override(&mut self, model: &str, override_value: &PricingOverride) {
+        self.user_overrides.insert(model.to_string());
         let base = self
             .entries
             .get(model)
@@ -2191,6 +2300,164 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         assert!(pricing.len() > 0);
         assert!(pricing.find("claude-sonnet-4-20250514").is_some());
+    }
+
+    fn direct_deepseek_pricing() -> PricingMap {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek-v4-flash": {
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028,
+                    "cache_creation_input_token_cost": 0.000000123,
+                    "cache_read_input_token_cost": 0.0000000028
+                },
+                "deepseek-v4-pro": {
+                    "input_cost_per_token": 0.000000435,
+                    "output_cost_per_token": 0.00000087,
+                    "cache_creation_input_token_cost": 0.000000456,
+                    "cache_read_input_token_cost": 0.000000003625
+                },
+                "openrouter/deepseek-v4-flash": {
+                    "input_cost_per_token": 0.000009,
+                    "output_cost_per_token": 0.000010,
+                    "cache_creation_input_token_cost": 0.000007,
+                    "cache_read_input_token_cost": 0.000008
+                }
+            }"#,
+        );
+        pricing
+    }
+
+    fn timestamp(value: &str) -> crate::TimestampMs {
+        crate::parse_ts_timestamp(value).unwrap()
+    }
+
+    #[test]
+    fn applies_deepseek_v4_rates_by_effective_period_for_both_models() {
+        let pricing = direct_deepseek_pricing();
+        let cases = [
+            (
+                "2026-08-15T23:59:59Z",
+                [0.14, 0.28, 0.0028],
+                [0.435, 0.87, 0.003625],
+            ),
+            (
+                "2026-08-16T00:00:00Z",
+                [0.22, 0.66, 0.007],
+                [0.66, 1.98, 0.022],
+            ),
+            (
+                "2026-08-17T01:00:00Z",
+                [0.44, 1.32, 0.014],
+                [1.32, 3.96, 0.044],
+            ),
+        ];
+
+        for (timestamp_text, flash_expected, pro_expected) in cases {
+            let flash = pricing
+                .find_at("deepseek-v4-flash", timestamp(timestamp_text))
+                .unwrap();
+            for (actual, expected) in [flash.input, flash.output, flash.cache_read]
+                .map(|rate| rate * 1e6)
+                .into_iter()
+                .zip(flash_expected)
+            {
+                assert!((actual - expected).abs() < 1e-12);
+            }
+
+            let pro = pricing
+                .find_at("deepseek-v4-pro", timestamp(timestamp_text))
+                .unwrap();
+            for (actual, expected) in [pro.input, pro.output, pro.cache_read]
+                .map(|rate| rate * 1e6)
+                .into_iter()
+                .zip(pro_expected)
+            {
+                assert!((actual - expected).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn deepseek_v4_peak_windows_are_utc_weekday_half_open_and_offset_aware() {
+        let pricing = direct_deepseek_pricing();
+        let cases = [
+            ("2026-08-17T00:59:59Z", 0.22),
+            ("2026-08-17T01:00:00Z", 0.44),
+            ("2026-08-17T03:59:59Z", 0.44),
+            ("2026-08-17T04:00:00Z", 0.22),
+            ("2026-08-17T05:59:59Z", 0.22),
+            ("2026-08-17T06:00:00Z", 0.44),
+            ("2026-08-17T09:59:59Z", 0.44),
+            ("2026-08-17T10:00:00Z", 0.22),
+            ("2026-08-22T02:00:00Z", 0.22),
+            ("2026-08-17T09:00:00+08:00", 0.44),
+        ];
+
+        for (timestamp_text, expected_input_per_million) in cases {
+            let flash = pricing
+                .find_at("deepseek-v4-flash", timestamp(timestamp_text))
+                .unwrap();
+            assert!((flash.input * 1e6 - expected_input_per_million).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn deepseek_v4_schedule_requires_exact_direct_model_names_and_keeps_cache_creation() {
+        let pricing = direct_deepseek_pricing();
+        let direct = pricing
+            .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
+            .unwrap();
+        assert_eq!(direct.cache_creation_input_token_cost() * 1e6, 0.123);
+
+        let reseller = pricing
+            .find_at(
+                "openrouter/deepseek-v4-flash",
+                timestamp("2026-08-17T01:00:00Z"),
+            )
+            .unwrap();
+        assert_eq!(reseller.input * 1e6, 9.0);
+        assert_eq!(reseller.output * 1e6, 10.0);
+        assert_eq!(reseller.cache_read * 1e6, 8.0);
+        assert_eq!(reseller.cache_creation_input_token_cost() * 1e6, 7.0);
+    }
+
+    #[test]
+    fn offline_embedded_pricing_uses_the_deepseek_v4_schedule() {
+        let pricing = PricingMap::load_with_overrides(
+            true,
+            false,
+            std::iter::empty::<(&String, &ccusage_cli::PricingOverride)>(),
+        );
+        let flash = pricing
+            .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
+            .unwrap();
+
+        assert!((flash.input * 1e6 - 0.44).abs() < 1e-12);
+        assert!((flash.output * 1e6 - 1.32).abs() < 1e-12);
+        assert!((flash.cache_read * 1e6 - 0.014).abs() < 1e-12);
+    }
+
+    #[test]
+    fn user_deepseek_v4_overrides_remain_authoritative() {
+        let model = "deepseek-v4-flash".to_string();
+        let override_value = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(9e-6),
+            output_cost_per_token: Some(10e-6),
+            cache_creation_input_token_cost: Some(7e-6),
+            cache_read_input_token_cost: Some(8e-6),
+            ..Default::default()
+        };
+        let pricing = PricingMap::load_with_overrides(true, false, [(&model, &override_value)]);
+        let flash = pricing
+            .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
+            .unwrap();
+
+        assert_eq!(flash.input * 1e6, 9.0);
+        assert_eq!(flash.output * 1e6, 10.0);
+        assert_eq!(flash.cache_read * 1e6, 8.0);
+        assert_eq!(flash.cache_creation_input_token_cost() * 1e6, 7.0);
     }
 
     #[test]

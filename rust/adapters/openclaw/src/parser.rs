@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, fast::LinePrefilter,
+    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
     format_date_tz, missing_pricing_model_for_usage,
 };
 use ccusage_adapter_common::jsonl;
@@ -308,7 +308,14 @@ fn openclaw_entry_to_loaded(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let cost = calculate_cost_for_usage(Some(&entry.model), usage, entry.cost, mode, pricing);
+    let cost = calculate_cost_for_usage_at(
+        Some(&entry.model),
+        usage,
+        entry.cost,
+        Some(entry.timestamp),
+        mode,
+        pricing,
+    );
     let missing_pricing_model =
         missing_pricing_model_for_usage(Some(&entry.model), usage, entry.cost, mode, pricing);
     LoadedEntry {
