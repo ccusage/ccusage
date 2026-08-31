@@ -123,6 +123,10 @@ struct DeepSeekV4Rates {
     cache_read: f64,
 }
 
+fn deepseek_v4_model_identity(model: &str) -> Option<&str> {
+    matches!(model, "deepseek-v4-flash" | "deepseek-v4-pro").then_some(model)
+}
+
 fn deepseek_v4_rates(model: &str, timestamp: TimestampMs) -> Option<DeepSeekV4Rates> {
     let (old, off_peak, peak) = match model {
         "deepseek-v4-flash" => (
@@ -205,6 +209,10 @@ fn apply_deepseek_v4_schedule(
     pricing.output = rates.output;
     pricing.cache_create = rates.cache_create;
     pricing.cache_read = rates.cache_read;
+    pricing.input_above_200k = Some(rates.input);
+    pricing.output_above_200k = Some(rates.output);
+    pricing.cache_create_above_200k = Some(rates.cache_create);
+    pricing.cache_read_above_200k = Some(rates.cache_read);
     pricing.cache_create_explicit = true;
     pricing.cache_read_explicit = true;
     pricing
@@ -1172,11 +1180,27 @@ impl PricingMap {
 
     /// Finds the pricing that applies to one usage event.
     ///
-    /// The timestamp-aware DeepSeek schedule is applied only to the two direct
-    /// model ids. Provider and reseller names continue through static lookup.
+    /// The timestamp-aware DeepSeek schedule is applied to the two direct model
+    /// ids and aliases that resolve to them. Provider and reseller names
+    /// continue through static lookup.
     pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
-        let mut pricing = apply_deepseek_v4_schedule(model, timestamp, self.find(model)?);
-        if let Some(override_value) = self.user_overrides.get(model) {
+        let resolved_model = if deepseek_v4_model_identity(model).is_some() {
+            Cow::Borrowed(model)
+        } else {
+            let resolved_model = crate::model_aliases::resolve_model_name(model);
+            if deepseek_v4_model_identity(resolved_model.as_ref()).is_none() {
+                return self.find(model);
+            }
+            resolved_model
+        };
+        let scheduled_model = deepseek_v4_model_identity(resolved_model.as_ref())?;
+        let mut pricing = apply_deepseek_v4_schedule(scheduled_model, timestamp, self.find(model)?);
+        let override_value = self.user_overrides.get(model).or_else(|| {
+            (resolved_model.as_ref() != model)
+                .then(|| self.user_overrides.get(resolved_model.as_ref()))
+                .flatten()
+        });
+        if let Some(override_value) = override_value {
             apply_explicit_pricing_override(&mut pricing, override_value);
         }
         Some(pricing)
@@ -2462,6 +2486,49 @@ mod tests {
         assert_eq!(reseller.output * 1e6, 10.0);
         assert_eq!(reseller.cache_read * 1e6, 8.0);
         assert_eq!(reseller.cache_creation_input_token_cost() * 1e6, 7.0);
+    }
+
+    #[test]
+    fn find_at_applies_deepseek_schedule_after_model_alias_resolution() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+            "deepseek-latest",
+            "deepseek-v4-flash",
+        )]);
+        let pricing = direct_deepseek_pricing();
+
+        let resolved = pricing
+            .find_at("deepseek-latest", timestamp("2026-08-17T01:00:00Z"))
+            .unwrap();
+
+        assert_eq!(resolved.input * 1e6, 0.44);
+    }
+
+    #[test]
+    fn find_at_replaces_stale_deepseek_long_context_rates() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek-v4-flash": {
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028,
+                    "cache_creation_input_token_cost": 0.00000014,
+                    "cache_read_input_token_cost": 0.0000000028,
+                    "input_cost_per_token_above_200k_tokens": 0.000009,
+                    "output_cost_per_token_above_200k_tokens": 0.000010,
+                    "cache_creation_input_token_cost_above_200k_tokens": 0.000011,
+                    "cache_read_input_token_cost_above_200k_tokens": 0.000012
+                }
+            }"#,
+        );
+
+        let peak = pricing
+            .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
+            .unwrap();
+
+        assert_eq!(peak.input_above_200k, Some(0.44e-6));
+        assert_eq!(peak.output_above_200k, Some(1.32e-6));
+        assert_eq!(peak.cache_create_above_200k, Some(0.44e-6));
+        assert_eq!(peak.cache_read_above_200k, Some(0.014e-6));
     }
 
     #[test]

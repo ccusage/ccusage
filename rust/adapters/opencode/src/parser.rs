@@ -150,7 +150,16 @@ pub fn message_value_to_entry(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<LoadedEntry> {
-    message_value_to_entry_inner(value, id, session_id, tz, mode, pricing, false)
+    message_value_to_entry_inner(
+        value,
+        id,
+        session_id,
+        tz,
+        mode,
+        pricing,
+        false,
+        open_code_timestamp(value),
+    )
 }
 
 fn message_value_to_entry_inner(
@@ -161,6 +170,7 @@ fn message_value_to_entry_inner(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     allow_cost_only: bool,
+    pricing_timestamp: Option<crate::TimestampMs>,
 ) -> Option<LoadedEntry> {
     let tokens = value.tokens.as_ref()?;
     let cache = tokens.cache.as_ref();
@@ -186,12 +196,7 @@ fn message_value_to_entry_inner(
     }
     let model = value.model_id.clone()?;
     let provider = value.provider_id.clone()?;
-    let millis = value
-        .time
-        .as_ref()
-        .and_then(|time| time.created)
-        .unwrap_or(0);
-    let timestamp = crate::TimestampMs::from_millis(millis);
+    let timestamp = open_code_timestamp(value).unwrap_or(crate::TimestampMs::UNIX_EPOCH);
     let timestamp_text = crate::format_rfc3339_millis(timestamp);
     let message_id = id.or_else(|| value.id.clone());
     let session_id = session_id.or_else(|| value.session_id.clone());
@@ -219,7 +224,7 @@ fn message_value_to_entry_inner(
         &provider,
         cost_usage,
         data.cost_usd,
-        timestamp,
+        pricing_timestamp,
         mode,
         pricing,
     );
@@ -314,7 +319,16 @@ pub(crate) fn session_value_to_entry(
         session_id: Some(aggregate.session_id),
         cost: aggregate.cost,
     };
-    message_value_to_entry_inner(&value, None, None, tz, mode, pricing, true)
+    message_value_to_entry_inner(&value, None, None, tz, mode, pricing, true, None)
+}
+
+fn open_code_timestamp(value: &OpenCodeMessage) -> Option<crate::TimestampMs> {
+    value
+        .time
+        .as_ref()
+        .and_then(|time| time.created)
+        .filter(|millis| *millis > 0)
+        .map(crate::TimestampMs::from_millis)
 }
 
 fn calculate_open_code_cost(
@@ -322,7 +336,7 @@ fn calculate_open_code_cost(
     provider: &str,
     usage: TokenUsageRaw,
     cost_usd: Option<f64>,
-    timestamp: crate::TimestampMs,
+    timestamp: Option<crate::TimestampMs>,
     _mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> f64 {
@@ -334,7 +348,7 @@ fn calculate_open_code_cost(
             Some(&candidate),
             usage,
             None,
-            Some(timestamp),
+            timestamp,
             CostMode::Calculate,
             pricing,
         );
@@ -416,7 +430,10 @@ fn normalize_open_code_model_name(model: &str) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::{OpenCodeMessage, message_value_to_entry, open_code_model_candidates};
+    use super::{
+        OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry,
+        open_code_model_candidates, session_value_to_entry,
+    };
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
 
     fn message(value: serde_json::Value) -> OpenCodeMessage {
@@ -673,5 +690,66 @@ mod tests {
                 "unknownProvider": open_code_model_candidates("gpt-test", "unknown"),
             }
         }));
+    }
+
+    fn deepseek_pricing(input: f64) -> PricingMap {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(&format!(
+            "{{\"deepseek-v4-flash\":{{\"input_cost_per_token\":{input},\"output_cost_per_token\":0.00000028}}}}"
+        ));
+        pricing
+    }
+
+    #[test]
+    fn keeps_epoch_for_display_but_omits_missing_message_timestamp_for_pricing() {
+        let pricing = deepseek_pricing(0.000009);
+        let entry = message_value_to_entry(
+            &message(json!({
+                "id": "message-a",
+                "sessionID": "session-a",
+                "providerID": "deepseek",
+                "modelID": "deepseek-v4-flash",
+                "tokens": { "input": 1_000_000 },
+                "cost": 0
+            })),
+            None,
+            None,
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        )
+        .unwrap();
+
+        assert_eq!(entry.timestamp.as_millis(), 0);
+        assert_eq!(entry.cost, 9.0);
+    }
+
+    #[test]
+    fn prices_cumulative_session_aggregates_with_static_rates() {
+        let pricing = deepseek_pricing(0.00000014);
+        let created = crate::parse_ts_timestamp("2026-08-17T01:00:00Z")
+            .unwrap()
+            .as_millis();
+        let entry = session_value_to_entry(
+            OpenCodeSessionAggregate {
+                session_id: "session-a".to_string(),
+                created,
+                model: "deepseek-v4-flash".to_string(),
+                provider: "deepseek".to_string(),
+                input_tokens: 1_000_000,
+                output_tokens: 0,
+                reasoning_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                cost: None,
+            },
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        )
+        .unwrap();
+
+        assert_eq!(entry.timestamp.as_millis(), created);
+        assert_eq!(entry.cost, 0.14);
     }
 }

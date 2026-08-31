@@ -206,16 +206,14 @@ fn calculate_kilo_cost_from_tokens(
     let Some(model) = data.message.model.as_deref() else {
         return 0.0;
     };
-    let Some(timestamp) = crate::parse_ts_timestamp(&data.timestamp) else {
-        return 0.0;
-    };
-    for candidate in model_candidates(model, provider) {
+    let timestamp = crate::parse_ts_timestamp(&data.timestamp);
+    for candidate in model_candidates(model, provider, pricing) {
         if pricing.find(&candidate).is_some() {
             return calculate_cost_for_usage_at(
                 Some(&candidate),
                 data.message.usage,
                 None,
-                Some(timestamp),
+                timestamp,
                 CostMode::Calculate,
                 Some(pricing),
             );
@@ -236,19 +234,22 @@ fn missing_kilo_pricing(
     let model = data.message.model.as_deref()?;
     missing_pricing_model_for_candidates(
         model,
-        model_candidates(model, provider),
+        model_candidates(model, provider, pricing),
         crate::total_usage_tokens(data.message.usage),
         Some(pricing),
     )
 }
 
-fn model_candidates(model: &str, provider: Option<&str>) -> Vec<String> {
+fn model_candidates(model: &str, provider: Option<&str>, pricing: &PricingMap) -> Vec<String> {
     let mut candidates = Vec::with_capacity(2);
     if let Some(provider) = provider
         .map(normalize_provider)
         .filter(|provider| provider != "unknown" && provider != "kilo")
     {
-        candidates.push(format!("{provider}/{model}"));
+        let qualified = format!("{provider}/{model}");
+        if pricing.find_exact(&qualified).is_some() {
+            candidates.push(qualified);
+        }
     }
     candidates.push(model.to_string());
     let mut seen = std::collections::HashSet::new();
@@ -318,5 +319,75 @@ mod tests {
 
         assert_eq!(entry.data.message.usage.output_tokens, 234);
         assert_eq!(entry.extra_total_tokens, 0);
+    }
+
+    fn deepseek_pricing() -> PricingMap {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek-v4-flash": {
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028
+                }
+            }"#,
+        );
+        pricing
+    }
+
+    fn usage_entry(timestamp: &str) -> UsageEntry {
+        UsageEntry {
+            session_id: Some("session-a".to_string()),
+            timestamp: timestamp.to_string(),
+            version: None,
+            message: UsageMessage {
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000_000,
+                    ..TokenUsageRaw::default()
+                },
+                model: Some("deepseek-v4-flash".to_string()),
+                id: Some("message-a".to_string()),
+            },
+            cost_usd: None,
+            request_id: None,
+            is_api_error_message: None,
+            is_sidechain: None,
+        }
+    }
+
+    #[test]
+    fn uses_raw_model_for_timestamped_pricing_when_provider_match_is_not_exact() {
+        let pricing = deepseek_pricing();
+        let data = usage_entry("2026-08-17T01:00:00Z");
+
+        assert!(
+            (calculate_kilo_cost_from_tokens(&data, Some("deepseek"), &pricing) - 0.44) < 1e-12
+        );
+    }
+
+    #[test]
+    fn falls_back_to_static_pricing_when_kilo_timestamp_is_invalid() {
+        let pricing = deepseek_pricing();
+        let data = usage_entry("not-a-timestamp");
+
+        assert_eq!(calculate_kilo_cost_from_tokens(&data, None, &pricing), 0.14);
+    }
+
+    #[test]
+    fn uses_exact_provider_qualified_pricing_when_available() {
+        let mut pricing = deepseek_pricing();
+        pricing.load_json(
+            r#"{
+                "deepseek/deepseek-v4-flash": {
+                    "input_cost_per_token": 0.000009,
+                    "output_cost_per_token": 0.000010
+                }
+            }"#,
+        );
+        let data = usage_entry("2026-08-17T01:00:00Z");
+
+        assert_eq!(
+            calculate_kilo_cost_from_tokens(&data, Some("deepseek"), &pricing),
+            9.0
+        );
     }
 }
