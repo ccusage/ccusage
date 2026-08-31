@@ -118,7 +118,7 @@ fn fetch_json_with_cache_dir_inner(
         PRICING_FETCH_MAX_BYTES,
     )
     .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
-    if !endpoint.validates(&body) {
+    if !endpoint.validates_shape(&body) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("pricing response failed {endpoint:?} validation"),
@@ -276,6 +276,7 @@ mod tests {
         r#"{"gpt-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
     const MODELS_DEV_BODY: &str =
         r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
+    const ZERO_LOADED_MODELS_DEV_BODY: &str = r#"{"openai":{"models":{"unpriced":{"modalities":{"input":[],"output":["text"]},"cost":{"input":1.0,"output":2.0}}}}}"#;
 
     fn accept_with_timeout(listener: &TcpListener) -> io::Result<TcpStream> {
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -327,6 +328,54 @@ mod tests {
             let mut requests = Vec::new();
             for response in responses {
                 let mut stream = accept_with_timeout(&listener)?;
+                requests.push(read_request(&mut stream)?);
+                stream.write_all(response.as_bytes())?;
+            }
+            Ok(requests)
+        });
+        (url, handle)
+    }
+
+    fn accept_until_idle(
+        listener: &TcpListener,
+        idle_timeout: Duration,
+    ) -> io::Result<Option<TcpStream>> {
+        let deadline = Instant::now() + idle_timeout;
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false)?;
+                    return Ok(Some(stream));
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return Ok(None);
+                    }
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    fn serve_responses_allowing_missing_tail(
+        responses: Vec<String>,
+    ) -> (String, thread::JoinHandle<io::Result<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        listener
+            .set_nonblocking(true)
+            .expect("make test server nonblocking");
+        let url = format!(
+            "http://{}/pricing.json",
+            listener.local_addr().expect("test server address")
+        );
+        let handle = thread::spawn(move || {
+            let mut requests = Vec::new();
+            for response in responses {
+                let Some(mut stream) = accept_until_idle(&listener, Duration::from_millis(250))?
+                else {
+                    break;
+                };
                 requests.push(read_request(&mut stream)?);
                 stream.write_all(response.as_bytes())?;
             }
@@ -518,6 +567,40 @@ mod tests {
         let cached = entry.read().expect("fresh cache entry");
         assert_eq!(cached.etag, "\"fresh\"");
         assert_eq!(cached.body, LITELLM_BODY);
+    }
+
+    #[test]
+    fn recovers_after_a_200_models_dev_body_loads_zero_entries_before_304() {
+        let fixture = Fixture::new();
+        let dir = fixture.path("http-cache");
+        let (url, server) = serve_responses_allowing_missing_tail(vec![
+            ok_response("\"poisoned\"", ZERO_LOADED_MODELS_DEV_BODY),
+            not_modified_response(),
+            ok_response("\"fresh\"", MODELS_DEV_BODY),
+        ]);
+
+        let first = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::ModelsDev)
+            .expect("structurally valid 200 should reach the loader");
+        assert_eq!(first, ZERO_LOADED_MODELS_DEV_BODY);
+        assert!(PricingEndpoint::ModelsDev.validates_shape(&first));
+        assert!(!PricingEndpoint::ModelsDev.validates(&first));
+
+        let second = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::ModelsDev)
+            .expect("a zero-loaded cache body must be refreshed after 304");
+        let requests = server
+            .join()
+            .expect("test server")
+            .expect("server response");
+
+        assert_eq!(second, MODELS_DEV_BODY);
+        assert_eq!(requests.len(), 3, "200 -> 304 -> unconditional 200");
+        assert!(!requests[0].to_ascii_lowercase().contains("if-none-match"));
+        assert!(
+            requests[1]
+                .to_ascii_lowercase()
+                .contains("if-none-match: \"poisoned\"")
+        );
+        assert!(!requests[2].to_ascii_lowercase().contains("if-none-match"));
     }
 
     #[test]

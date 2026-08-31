@@ -73,8 +73,16 @@ impl PricingEndpoint {
         }
     }
 
-    /// Returns whether a body has a non-empty pricing shape for this endpoint.
+    /// Returns whether a body contains at least one entry the endpoint loader can use.
     pub fn validates(self, json: &str) -> bool {
+        match self {
+            Self::LiteLlm => litellm_json_has_loader_usable_entry(json),
+            Self::ModelsDev => models_dev_json_has_loader_usable_entry(json),
+        }
+    }
+
+    /// Returns whether a body has a non-empty pricing shape for this endpoint.
+    pub fn validates_shape(self, json: &str) -> bool {
         let Ok(Value::Object(entries)) = serde_json::from_str::<Value>(json) else {
             return false;
         };
@@ -83,6 +91,33 @@ impl PricingEndpoint {
             Self::LiteLlm => entries.values().any(litellm_entry_has_required_cost),
             Self::ModelsDev => models_dev_object_has_required_shape(&entries),
         }
+    }
+}
+
+fn litellm_json_has_loader_usable_entry(json: &str) -> bool {
+    let Ok(Value::Object(entries)) = serde_json::from_str::<Value>(json) else {
+        return false;
+    };
+    entries
+        .values()
+        .any(|value| parse_litellm_pricing(value.clone()).is_some())
+}
+
+fn models_dev_json_has_loader_usable_entry(json: &str) -> bool {
+    let Some(raw) = parse_models_dev_json(json) else {
+        return false;
+    };
+    let rules = models_dev_catalog_rules();
+    match raw {
+        ModelsDevJson::Providers(providers) => providers.values().any(|provider| {
+            provider
+                .models
+                .iter()
+                .any(|(model_key, model)| models_dev_usable_cost(rules, model_key, model).is_some())
+        }),
+        ModelsDevJson::Models(models) => models
+            .iter()
+            .any(|(model_key, model)| models_dev_usable_cost(rules, model_key, model).is_some()),
     }
 }
 
@@ -698,6 +733,20 @@ fn per_token(per_million: f64) -> f64 {
     per_million / 1_000_000.0
 }
 
+fn models_dev_usable_cost<'a>(
+    rules: &ModelsDevCatalogRules,
+    source_model_id: &str,
+    model: &'a ModelsDevModel,
+) -> Option<&'a ModelsDevCost> {
+    if !rules.is_token_priced(source_model_id, model.modalities.as_ref()) {
+        return None;
+    }
+    let cost = model.cost.as_ref()?;
+    let input = cost.input?;
+    let output = cost.output?;
+    (input != 0.0 || output != 0.0).then_some(cost)
+}
+
 #[derive(Debug, Deserialize)]
 struct ModelsDevLimit {
     context: Option<u64>,
@@ -935,9 +984,9 @@ impl PricingMap {
             // slip past and bill per-image or per-second rates as per-token ones.
             // It is generation's only remaining gate, so the online refresh
             // carries the same ids the snapshot does.
-            if !rules.is_token_priced(&model_key, model.modalities.as_ref()) {
+            let Some(cost) = models_dev_usable_cost(rules, &model_key, &model) else {
                 continue;
-            }
+            };
             // Same reason: the tier half of the verdict reads the source key,
             // before it is resolved away.
             let declared_id = model.id.as_deref().filter(|id| !id.is_empty());
@@ -949,8 +998,8 @@ impl PricingMap {
             // An empty declared id falls back to the source key, exactly as the
             // generator's `selectModelsDevPricingKey` does: keeping "" would
             // store the model under a name no lookup ever asks for.
-            let model_id = match model.id.filter(|id| !id.is_empty()) {
-                Some(id) => id,
+            let model_id = match model.id.as_ref().filter(|id| !id.is_empty()) {
+                Some(id) => id.clone(),
                 None => source_key.clone(),
             };
             // Dotted, dashed and case spellings name one model, so they contend
@@ -962,21 +1011,13 @@ impl PricingMap {
             if claimed.is_none() && self.entries.contains_key(&model_id) {
                 continue;
             }
-            let Some(cost) = model.cost else {
-                continue;
-            };
             let Some(input) = cost.input else {
                 continue;
             };
             let Some(output) = cost.output else {
                 continue;
             };
-            // Flat-fee subscription catalogs such as `kimi-for-coding` publish
-            // all-zero token costs, which would report every request as free.
-            if input == 0.0 && output == 0.0 {
-                continue;
-            }
-            let context_limit = model.limit.and_then(|limit| limit.context);
+            let context_limit = model.limit.as_ref().and_then(|limit| limit.context);
             let long_context = cost.long_context_tier();
             let claim = ModelsDevClaim {
                 trust,
@@ -2296,21 +2337,29 @@ mod tests {
     }
 
     #[test]
-    fn validates_only_the_schema_for_each_pricing_endpoint() {
+    fn validates_pricing_documents_per_endpoint() {
         let litellm =
             r#"{"gpt-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
         let models_dev =
             r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
+        let zero_loaded_models_dev = r#"{"openai":{"models":{"unpriced":{"modalities":{"input":[],"output":["text"]},"cost":{"input":1.0,"output":2.0}}}}}"#;
 
         assert!(PricingEndpoint::LiteLlm.validates(litellm));
         assert!(PricingEndpoint::LiteLlm.validates(r#"{"gpt-test":{"i":1.0,"o":2.0}}"#));
         assert!(!PricingEndpoint::LiteLlm.validates(models_dev));
+        assert!(PricingEndpoint::ModelsDev.validates_shape(models_dev));
         assert!(PricingEndpoint::ModelsDev.validates(models_dev));
         assert!(!PricingEndpoint::ModelsDev.validates(litellm));
         assert!(!PricingEndpoint::ModelsDev.validates("{}"));
-        assert!(
-            !PricingEndpoint::ModelsDev
-                .validates(r#"{"openai":{"models":{"free":{"cost":{"input":0.0,"output":0.0}}}}}"#)
+        assert!(!PricingEndpoint::ModelsDev.validates_shape(
+            r#"{"openai":{"models":{"free":{"cost":{"input":0.0,"output":0.0}}}}}"#
+        ));
+        assert!(PricingEndpoint::ModelsDev.validates_shape(zero_loaded_models_dev));
+        assert!(!PricingEndpoint::ModelsDev.validates(zero_loaded_models_dev));
+        let mut pricing = PricingMap::default();
+        assert_eq!(
+            pricing.load_models_dev_json_missing(zero_loaded_models_dev),
+            Some(0)
         );
     }
 
