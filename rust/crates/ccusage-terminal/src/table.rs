@@ -393,19 +393,12 @@ fn wrap_cell_lines(cell: &str, width: usize) -> Vec<String> {
         return vec![String::new()];
     }
     let mut lines = Vec::new();
-    let mut continuation = String::new();
     for line in cell.lines() {
-        let line = if continuation.is_empty() {
-            line.to_string()
+        if visible_width(line) <= width {
+            lines.push(line.to_string());
         } else {
-            format!("{continuation}{line}")
-        };
-        if visible_width(&line) <= width {
-            lines.push(line.clone());
-        } else {
-            lines.extend(wrap_cell_line(&line, width));
+            lines.extend(wrap_cell_line(line, width));
         }
-        continuation = ansi_continuation(&line);
     }
     lines
 }
@@ -430,6 +423,7 @@ fn wrap_cell_line(line: &str, width: usize) -> Vec<String> {
 
     let mut lines = Vec::new();
     let mut current = String::new();
+    let mut current_source = String::new();
     for word in words {
         let candidate_width = if current.is_empty() {
             visible_width(&word)
@@ -439,32 +433,36 @@ fn wrap_cell_line(line: &str, width: usize) -> Vec<String> {
         if candidate_width <= width {
             if !current.is_empty() {
                 current.push(' ');
+                current_source.push(' ');
             }
             current.push_str(&word);
+            current_source.push_str(&word);
         } else {
             if !current.is_empty() {
-                lines.push(current);
+                lines.push((current, current_source));
             }
-            current = if visible_width(&word) > width {
-                truncate_to_width(&word, width)
+            if visible_width(&word) > width {
+                current = truncate_to_width(&word, width);
+                current_source = word;
             } else {
-                word
-            };
+                current_source = word.clone();
+                current = word;
+            }
         }
     }
     if !current.is_empty() {
-        lines.push(current);
+        lines.push((current, current_source));
     }
     let mut continuation = String::new();
     lines
         .into_iter()
-        .map(|line| {
+        .map(|(line, source)| {
             let line = if continuation.is_empty() {
                 line
             } else {
                 format!("{continuation}{line}")
             };
-            continuation = ansi_continuation(&line);
+            continuation = ansi_continuation(&format!("{continuation}{source}"));
             line
         })
         .collect()
@@ -1175,7 +1173,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_ansi_continuation_across_multiline_cells_without_leaking() {
+    fn resets_ansi_continuation_at_explicit_newlines() {
         let mut table = SimpleTable::new(
             vec!["Date", "Models", "Input"],
             vec![Align::Left, Align::Left, Align::Right],
@@ -1197,14 +1195,17 @@ mod tests {
             .filter(|line| line.contains("- first") || line.contains("- second"))
             .collect::<Vec<_>>();
         assert_eq!(model_lines.len(), 2, "{rendered:?}");
-        for line in model_lines {
-            let model_cell = line
-                .split('│')
-                .nth(2)
-                .expect("rendered row should include the Models cell");
-            assert!(model_cell.contains("\x1b[32m"), "{line:?}");
-            assert!(model_cell.trim_end().ends_with("\x1b[0m"), "{line:?}");
-        }
+        let first_cell = model_lines[0]
+            .split('│')
+            .nth(2)
+            .expect("rendered row should include the Models cell");
+        let second_cell = model_lines[1]
+            .split('│')
+            .nth(2)
+            .expect("rendered row should include the Models cell");
+        assert!(first_cell.contains("\x1b[32m"), "{rendered:?}");
+        assert!(first_cell.trim_end().ends_with("\x1b[0m"), "{rendered:?}");
+        assert!(!second_cell.contains("\x1b[32m"), "{rendered:?}");
     }
 
     #[test]
@@ -1275,5 +1276,62 @@ mod tests {
             assert!(model_cell.trim_end().ends_with("\x1b[0m"), "{line:?}");
             assert!(!input_cell.contains("\x1b[32m"), "{line:?}");
         }
+    }
+
+    #[test]
+    fn preserves_ansi_continuation_after_truncation_in_a_narrow_table() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input", "Output", "Cost (USD)"],
+            vec![
+                Align::Left,
+                Align::Left,
+                Align::Right,
+                Align::Right,
+                Align::Right,
+            ],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(56)
+        .with_date_compaction(true);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "\x1b[32m- provider/very-long-model-name another-model".to_string(),
+            "1,234".to_string(),
+            "5,678".to_string(),
+            "$1.23".to_string(),
+        ]);
+
+        let rendered = table.render_lines();
+        insta::assert_snapshot!(rendered.join("\n"));
+        assert!(
+            rendered.iter().all(|line| visible_width(line) == 56),
+            "{rendered:?}"
+        );
+        let model_lines = rendered
+            .iter()
+            .filter(|line| line.contains("\x1b[32m") || line.contains("another"))
+            .collect::<Vec<_>>();
+        assert_eq!(model_lines.len(), 2, "{rendered:?}");
+        for line in &model_lines {
+            let model_cell = line
+                .split('│')
+                .nth(2)
+                .expect("rendered row should include the Models cell");
+            assert!(model_cell.contains("\x1b[32m"), "{line:?}");
+            assert!(model_cell.trim_end().ends_with("\x1b[0m"), "{line:?}");
+        }
+        let later_model_cell = model_lines[1]
+            .split('│')
+            .nth(2)
+            .expect("rendered row should include the Models cell");
+        assert!(later_model_cell.contains("\x1b[32manother"), "{rendered:?}");
+        let later_input_cell = model_lines[1]
+            .split('│')
+            .nth(3)
+            .expect("rendered row should include the Input cell");
+        assert!(!later_input_cell.contains("\x1b[32m"), "{rendered:?}");
     }
 }
