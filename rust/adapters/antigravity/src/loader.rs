@@ -441,6 +441,69 @@ mod tests {
     }
 
     #[test]
+    fn attributes_step_and_retry_usage_to_their_token_models() {
+        let fixture = Fixture::new();
+        let step_usage = UsageFixture {
+            model_id: Some(246),
+            input_tokens: 10,
+            total_output_tokens: 5,
+            visible_output_tokens: 5,
+            response_id: Some("step-pro"),
+            ..UsageFixture::default()
+        };
+        let retry_usage = UsageFixture {
+            model_id: Some(290),
+            input_tokens: 20,
+            total_output_tokens: 4,
+            visible_output_tokens: 4,
+            response_id: Some("retry-opus"),
+            ..UsageFixture::default()
+        };
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(1, metadata_blob(Some("gemini-2.5-flash"), None, None, &[]))],
+            &[(
+                1,
+                step_metadata_blob(
+                    None,
+                    Some(step_usage),
+                    Some((1_778_400_000, 0)),
+                    &[retry_usage],
+                    None,
+                ),
+            )],
+            &[],
+        );
+
+        let _guard = EnvVarsGuard::set_many([(
+            super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(fixture.root())),
+        )]);
+        let pricing = PricingMap::load_embedded();
+        let entries = load_entries(&shared(true), &pricing).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        let step = entries
+            .iter()
+            .find(|entry| entry.data.message.id.as_deref() == Some("step-pro"))
+            .unwrap();
+        let retry = entries
+            .iter()
+            .find(|entry| entry.data.message.id.as_deref() == Some("retry-opus"))
+            .unwrap();
+        assert_eq!(step.model.as_deref(), Some("gemini-2.5-pro"));
+        assert_eq!(retry.model.as_deref(), Some("claude-4-opus"));
+        let step_pricing = pricing.find("gemini-2.5-pro").unwrap();
+        let retry_pricing = pricing.find("claude-4-opus").unwrap();
+        let expected_step_cost = 10.0 * step_pricing.input + 5.0 * step_pricing.output;
+        let expected_retry_cost = 20.0 * retry_pricing.input + 4.0 * retry_pricing.output;
+        assert!((step.cost - expected_step_cost).abs() < 1e-15);
+        assert!((retry.cost - expected_retry_cost).abs() < 1e-15);
+        assert!(step.missing_pricing_model.is_none());
+        assert!(retry.missing_pricing_model.is_none());
+    }
+
+    #[test]
     fn maps_required_aliases_and_keeps_unprovided_models_unprefixed() {
         let fixture = Fixture::new();
         let aliases = [

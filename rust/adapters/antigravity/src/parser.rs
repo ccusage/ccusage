@@ -470,15 +470,11 @@ fn append_usage_event(
     let reasoning_tokens = usage
         .reasoning_tokens
         .max(total_output_tokens.saturating_sub(output_tokens));
-    let model = context
-        .model
-        .and_then(normalize_antigravity_model)
-        .or_else(|| {
-            usage
-                .model_id
-                .map(model_name_from_id)
-                .and_then(|model| normalize_antigravity_model(&model))
-        })
+    let model = usage
+        .model_id
+        .map(model_name_from_id)
+        .and_then(|model| normalize_antigravity_model(&model))
+        .or_else(|| context.model.and_then(normalize_antigravity_model))
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
     let provider = usage.provider.or(context.provider);
     let (message_id, message_id_rank) = usage.preferred_message_id();
@@ -1131,8 +1127,7 @@ pub(super) mod test_support {
             let usage_blob = model_usage_blob(usage);
             field_bytes(9, &usage_blob, &mut metadata);
         }
-        if model.is_some() || usage.and_then(|value| value.model_id).is_some() || provider.is_some()
-        {
+        if model.is_some() || provider.is_some() {
             let mut model_info = Vec::new();
             if let Some(usage) = usage
                 && let Some(model_id) = usage.model_id
