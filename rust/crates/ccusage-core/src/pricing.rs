@@ -1229,17 +1229,38 @@ impl PricingMap {
     /// Unlike [`Self::find`], this lookup does not resolve aliases or use
     /// separator and fuzzy matching.
     pub fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
-        self.find_exact(model)
+        self.find_exact_normalized(model)
             .or_else(|| {
                 self.enable_models_dev_fallback
-                    .then(|| models_dev_pricing().and_then(|pricing| pricing.find_exact(model)))
+                    .then(|| {
+                        models_dev_pricing()
+                            .and_then(|pricing| pricing.find_exact_normalized(model))
+                    })
                     .flatten()
             })
             .or_else(|| {
                 self.enable_embedded_models_dev_fallback
-                    .then(|| embedded_models_dev_pricing().find_exact(model))
+                    .then(|| embedded_models_dev_pricing().find_exact_normalized(model))
                     .flatten()
             })
+    }
+
+    fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
+        self.find_exact(model).or_else(|| {
+            if self.exact_only.contains_any_spelling(model) {
+                return self
+                    .exact_only
+                    .id_spelled_by(model)
+                    .and_then(|id| self.entries.get(id).copied());
+            }
+
+            let normalized_model = normalized_pricing_key(model);
+            let mut matches = self.entries.iter().filter(|(candidate, _)| {
+                normalized_pricing_key(candidate).as_ref() == normalized_model.as_ref()
+            });
+            let (_, pricing) = matches.next()?;
+            matches.next().is_none().then_some(*pricing)
+        })
     }
 
     fn find_entry_or_alias(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
@@ -2831,6 +2852,46 @@ mod tests {
         assert!((dotted.output * 1e6 - 60.0).abs() < 1e-9);
         assert!(dotted.input > base.input);
         assert_eq!(pricing.context_limit("claude-opus-5.fast"), Some(1_000_000));
+    }
+
+    #[test]
+    fn exact_fallback_lookup_resolves_separator_spellings_of_exact_only_ids() {
+        let pricing = PricingMap::load_embedded();
+        let expected = pricing
+            .find_exact_with_fallback("claude-opus-5@eu")
+            .expect("the embedded snapshot should contain the exact-only regional id");
+
+        for spelling in ["claude-opus-5-eu", "claude-opus-5.eu"] {
+            let resolved = pricing
+                .find_exact_with_fallback(spelling)
+                .expect("separator-equivalent exact-only ids should resolve");
+            assert_eq!(resolved.input, expected.input, "{spelling}");
+            assert_eq!(resolved.output, expected.output, "{spelling}");
+        }
+        assert!(
+            pricing
+                .find_exact_with_fallback("claude-opus-5-eu-preview")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn exact_fallback_lookup_prefers_primary_normalized_entries() {
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(
+            r#"{
+                "claude-opus-5.eu": {
+                    "input_cost_per_token": 0.000009,
+                    "output_cost_per_token": 0.000010
+                }
+            }"#,
+        );
+
+        let resolved = pricing
+            .find_exact_with_fallback("claude-opus-5-eu")
+            .expect("the normalized primary entry should resolve");
+        assert_eq!(resolved.input, 0.000009);
+        assert_eq!(resolved.output, 0.000010);
     }
 
     #[test]
