@@ -74,9 +74,8 @@ fn rows_key(kind: AgentReportKind) -> &'static str {
 mod tests {
     use super::*;
     use crate::{
-        TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, first_column, format_currency,
-        format_models_multiline, format_number, format_rfc3339_millis, parse_ts_timestamp,
-        summary_period,
+        TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage, format_rfc3339_millis,
+        parse_ts_timestamp,
     };
     use std::sync::Arc;
 
@@ -133,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshots_focused_zcode_cli_reports_for_daily_monthly_and_session() {
+    fn snapshots_focused_zcode_json_reports_for_daily_monthly_and_session() {
         let entries = snapshot_entries();
         let daily = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
         let monthly = summarize_entries(&entries, AgentReportKind::Monthly).unwrap();
@@ -150,20 +149,6 @@ mod tests {
         insta::assert_json_snapshot!(
             "focused_zcode_session_json",
             report_from_rows(&session, AgentReportKind::Session)
-        );
-        insta::assert_snapshot!(
-            "focused_zcode_daily_table",
-            serde_json::to_string_pretty(&table_snapshot(&daily, AgentReportKind::Daily)).unwrap()
-        );
-        insta::assert_snapshot!(
-            "focused_zcode_monthly_table",
-            serde_json::to_string_pretty(&table_snapshot(&monthly, AgentReportKind::Monthly))
-                .unwrap()
-        );
-        insta::assert_snapshot!(
-            "focused_zcode_session_table",
-            serde_json::to_string_pretty(&table_snapshot(&session, AgentReportKind::Session))
-                .unwrap()
         );
     }
 
@@ -260,89 +245,5 @@ mod tests {
             },
         )
         .collect()
-    }
-
-    fn table_snapshot(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
-        let show_cache_creation = rows.iter().any(|row| row.cache_creation_tokens > 0);
-        let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
-        let mut headers = vec![first_column(kind), "Models", "Input", "Output"];
-        if show_cache_creation {
-            headers.push("Cache Create");
-        }
-        headers.extend(["Cache Read", "Total Tokens", "Cost (USD)"]);
-        if include_last_activity {
-            headers.push("Last Activity");
-        }
-
-        let mut rendered_rows = rows
-            .iter()
-            .map(|row| {
-                json!({
-                    "kind": "row",
-                    "cells": table_row(row, show_cache_creation, include_last_activity),
-                })
-            })
-            .collect::<Vec<_>>();
-        let totals = report_from_rows(rows, kind)["totals"].clone();
-        let mut total_cells = vec![
-            "Total".to_string(),
-            String::new(),
-            format_number(totals["inputTokens"].as_u64().unwrap()),
-            format_number(totals["outputTokens"].as_u64().unwrap()),
-        ];
-        if show_cache_creation {
-            total_cells.push(format_number(
-                totals["cacheCreationTokens"].as_u64().unwrap(),
-            ));
-        }
-        total_cells.extend([
-            format_number(totals["cacheReadTokens"].as_u64().unwrap()),
-            format_number(totals["totalTokens"].as_u64().unwrap()),
-            format_currency(totals["totalCost"].as_f64().unwrap()),
-        ]);
-        if include_last_activity {
-            total_cells.push(String::new());
-        }
-        rendered_rows.push(json!({
-            "kind": "total",
-            "cells": total_cells,
-        }));
-
-        json!({
-            "title": "ZCode Token Usage Report",
-            "headers": headers,
-            "rows": rendered_rows,
-        })
-    }
-
-    fn table_row(
-        row: &crate::UsageSummary,
-        show_cache_creation: bool,
-        include_last_activity: bool,
-    ) -> Vec<String> {
-        let mut cells = vec![
-            summary_period(row).to_string(),
-            format_models_multiline(&row.models_used),
-            format_number(row.input_tokens),
-            format_number(row.output_tokens),
-        ];
-        if show_cache_creation {
-            cells.push(format_number(row.cache_creation_tokens));
-        }
-        cells.extend([
-            format_number(row.cache_read_tokens),
-            format_number(row.total_tokens()),
-            format_currency(row.total_cost),
-        ]);
-        if include_last_activity {
-            cells.push(
-                row.last_activity
-                    .as_deref()
-                    .and_then(|value| value.get(..10))
-                    .unwrap_or_default()
-                    .to_string(),
-            );
-        }
-        cells
     }
 }
