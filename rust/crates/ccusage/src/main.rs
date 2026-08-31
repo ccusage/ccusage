@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn agent_commands_are_exposed_by_independent_crates() {
-        let runs: [fn(AgentCommandArgs) -> Result<()>; 17] = [
+        let runs: [fn(AgentCommandArgs) -> Result<()>; 18] = [
             ccusage_adapter_amp::run,
             ccusage_adapter_antigravity::run,
             ccusage_adapter_codebuff::run,
@@ -98,6 +98,7 @@ mod tests {
             ccusage_adapter_copilot::run,
             ccusage_adapter_droid::run,
             ccusage_adapter_gemini::run,
+            ccusage_adapter_gjc::run,
             ccusage_adapter_goose::run,
             ccusage_adapter_grok::run,
             ccusage_adapter_hermes::run,
@@ -110,7 +111,7 @@ mod tests {
             ccusage_adapter_zcode::run,
         ];
 
-        assert_eq!(runs.len(), 17);
+        assert_eq!(runs.len(), 18);
     }
 
     #[test]

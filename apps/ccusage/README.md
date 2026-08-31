@@ -82,7 +82,6 @@ ccusage reads local usage data from coding agent CLIs and turns it into daily, w
 | Grok Build CLI     | `ccusage grok daily`        |
 | ZCode              | `ccusage zcode daily`       |
 | GJC                | `ccusage gjc daily`         |
-| GJC                | `ccusage gjc daily`         |
 
 Use `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session` to include every detected source in one report.
 
@@ -141,7 +140,6 @@ bunx ccusage gemini daily
 bunx ccusage antigravity daily
 bunx ccusage grok daily
 bunx ccusage zcode daily
-bunx ccusage gjc daily
 bunx ccusage gjc daily
 bunx ccusage pi daily --pi-path /path/to/sessions
 bunx ccusage pi daily --pi-path /path/to/sessions,/archive/pi/sessions

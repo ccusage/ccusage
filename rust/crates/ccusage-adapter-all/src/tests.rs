@@ -977,6 +977,7 @@ fn isolated_agent_env(
         "QWEN_DATA_DIR",
         "GROK_HOME",
         "ZCODE_HOME",
+        "GJC_CONFIG_DIR",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))
@@ -987,6 +988,14 @@ fn isolated_agent_env(
         Some(fixture.path("empty-userprofile").into_os_string()),
     ));
     vars.push(("XDG_CONFIG_HOME", Some(xdg_config)));
+    vars.push((
+        "XDG_DATA_HOME",
+        Some(fixture.path("empty-xdg-data").into_os_string()),
+    ));
+    vars.push((
+        "GJC_CODING_AGENT_DIR",
+        Some(fixture.path("empty-gjc-agent").into_os_string()),
+    ));
     vars.push((source_key, Some(source_value)));
     EnvVarsGuard::set_many(vars)
 }

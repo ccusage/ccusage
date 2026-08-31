@@ -4,7 +4,7 @@ ccusage supports several environment variables for configuration and customizati
 
 ## Agent Data Directories
 
-ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; the Copilot variable points at one explicit JSONL export file, and `GROK_HOME` accepts a single root only:
+ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; the Copilot variable points at one explicit JSONL export file, while `GROK_HOME`, `GJC_CONFIG_DIR`, and `GJC_CODING_AGENT_DIR` select one root only:
 
 | Variable                          | Agent          | Default                                              |
 | --------------------------------- | -------------- | ---------------------------------------------------- |
@@ -26,8 +26,8 @@ ccusage detects supported data source files from conventional locations by defau
 | `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity` |
 | `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                            |
 | `ZCODE_HOME`                      | ZCode          | `~/.zcode`                                           |
-| `GJC_CONFIG_DIR`                  | GJC            | Home-relative config name `.gjc`                     |
-| `GJC_CODING_AGENT_DIR`            | GJC            | Explicit GJC agent directory                         |
+| `GJC_CONFIG_DIR`                  | GJC            | Home-relative config name `.gjc`; existing `$XDG_DATA_HOME/gjc/sessions` takes precedence |
+| `GJC_CODING_AGENT_DIR`            | GJC            | Explicit GJC agent directory; overrides XDG and config-root discovery |
 
 Example:
 
@@ -53,7 +53,7 @@ export GJC_CODING_AGENT_DIR="/path/to/.gjc/agent"
 ccusage daily
 ```
 
-Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once. A non-empty `ZCODE_HOME` containing only invalid roots does not fall back to `~/.zcode`.
+Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once. A non-empty `ZCODE_HOME` containing only invalid roots does not fall back to `~/.zcode`. `GJC_CONFIG_DIR` and `GJC_CODING_AGENT_DIR` select one directory each and do not accept comma-separated roots.
 
 ## CLAUDE_CONFIG_DIR
 

@@ -181,7 +181,7 @@ If ccusage shows no data, check:
    - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
    - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
-   - GJC: `~/${GJC_CONFIG_DIR:-.gjc}/agent/sessions/**/*.jsonl`
+   - GJC: `$XDG_DATA_HOME/gjc/sessions/**/*.jsonl` when `$XDG_DATA_HOME/gjc` exists, otherwise `~/${GJC_CONFIG_DIR:-.gjc}/agent/sessions/**/*.jsonl`
 
 ### Custom Data Directory
 

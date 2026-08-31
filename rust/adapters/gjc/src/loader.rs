@@ -36,7 +36,9 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
             Vec::new()
         })
     });
-    Ok(loaded.into_iter().flatten().collect())
+    let mut entries = loaded.into_iter().flatten().collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.timestamp);
+    Ok(entries)
 }
 
 fn read_session_file(
@@ -172,5 +174,26 @@ mod tests {
         let report = report_from_rows(&rows, AgentReportKind::Daily);
         assert_eq!(report["daily"][0]["totalTokens"], 180);
         assert_eq!(report["totals"]["totalCost"], 0.25);
+    }
+
+    #[test]
+    fn sorts_entries_across_session_files_by_timestamp() {
+        let fixture = fs_fixture!({
+            "agent/sessions/project/a.jsonl": concat!(
+                "{\"type\":\"session\",\"id\":\"session-late\",\"timestamp\":\"2026-08-29T01:00:00.000Z\",\"cwd\":\"/workspace/project\"}\n",
+                "{\"type\":\"message\",\"id\":\"assistant-late\",\"timestamp\":\"2026-08-29T01:02:03.000Z\",\"message\":{\"role\":\"assistant\",\"model\":\"gpt-5.6-sol\",\"usage\":{\"input\":2}}}\n"
+            ),
+            "agent/sessions/project/b.jsonl": concat!(
+                "{\"type\":\"session\",\"id\":\"session-early\",\"timestamp\":\"2026-08-28T01:00:00.000Z\",\"cwd\":\"/workspace/project\"}\n",
+                "{\"type\":\"message\",\"id\":\"assistant-early\",\"timestamp\":\"2026-08-28T01:02:03.000Z\",\"message\":{\"role\":\"assistant\",\"model\":\"gpt-5.6-sol\",\"usage\":{\"input\":1}}}\n"
+            ),
+        });
+        let _guard = EnvVarGuard::set(GJC_CODING_AGENT_DIR_ENV, fixture.path("agent"));
+
+        let entries = load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].session_id.as_ref(), "session-early");
+        assert_eq!(entries[1].session_id.as_ref(), "session-late");
     }
 }

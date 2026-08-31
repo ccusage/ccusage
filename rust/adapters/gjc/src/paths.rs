@@ -27,8 +27,9 @@ fn gjc_sessions_dir() -> Result<PathBuf> {
 
 fn gjc_sessions_dir_for_home(home: &Path) -> PathBuf {
     if let Some(xdg_data_home) = non_empty_env("XDG_DATA_HOME") {
-        let xdg_root = PathBuf::from(xdg_data_home).join("gjc");
-        if xdg_root.is_dir() {
+        let xdg_data_home = PathBuf::from(xdg_data_home);
+        let xdg_root = xdg_data_home.join("gjc");
+        if xdg_data_home.is_absolute() && xdg_root.is_dir() {
             return xdg_root.join("sessions");
         }
     }
@@ -108,6 +109,41 @@ mod tests {
         assert_eq!(
             gjc_sessions_dir_for_home(fixture.root()),
             fixture.root().join(".gjc/agent/sessions")
+        );
+    }
+
+    #[test]
+    fn ignores_relative_xdg_data_home() {
+        let fixture = fs_fixture!({
+            "relative/gjc/sessions/session.jsonl": "{}\n",
+        });
+        let _guard = EnvVarsGuard::set_many([
+            (GJC_CONFIG_DIR_ENV, None),
+            ("XDG_DATA_HOME", Some(OsString::from("relative"))),
+        ]);
+
+        assert_eq!(
+            gjc_sessions_dir_for_home(fixture.root()),
+            fixture.root().join(".gjc/agent/sessions")
+        );
+    }
+
+    #[test]
+    fn prefers_existing_absolute_xdg_data_home() {
+        let fixture = fs_fixture!({
+            "gjc/sessions/session.jsonl": "{}\n",
+        });
+        let _guard = EnvVarsGuard::set_many([
+            (GJC_CONFIG_DIR_ENV, None),
+            (
+                "XDG_DATA_HOME",
+                Some(fixture.root().as_os_str().to_os_string()),
+            ),
+        ]);
+
+        assert_eq!(
+            gjc_sessions_dir_for_home(Path::new("/unused-home")),
+            fixture.root().join("gjc/sessions")
         );
     }
 }

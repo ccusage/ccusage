@@ -42,5 +42,16 @@ fn gjc_cli_reports_daily_monthly_and_session_json() {
         assert_eq!(report[rows_key][0]["cacheReadTokens"], 20);
         assert_eq!(report[rows_key][0]["totalTokens"], 180);
         assert_eq!(report["totals"]["totalCost"], 0.25);
+        if kind == "session" {
+            assert_eq!(report[rows_key][0]["projectPath"], "/workspace/project");
+            assert_eq!(
+                report[rows_key][0]["firstActivity"],
+                "2099-01-02T01:02:03.000Z"
+            );
+            assert_eq!(
+                report[rows_key][0]["lastActivity"],
+                "2099-01-02T01:02:03.000Z"
+            );
+        }
     }
 }
