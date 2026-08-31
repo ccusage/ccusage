@@ -203,7 +203,7 @@ export GROK_HOME="/path/to/grok-home"
 export ZCODE_HOME="/path/to/zcode-home"
 ```
 
-Each source-specific path variable can also contain comma-separated directories, except `GROK_HOME`, which takes a single root. `ZCODE_HOME` accepts multiple roots and deduplicates them:
+Directory variables can contain comma-separated directories. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, `GROK_HOME` accepts one root, and `ZCODE_HOME` supports multiple roots and deduplicates them:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"
