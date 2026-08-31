@@ -18,10 +18,12 @@ use crate::{
     week_start,
 };
 
+use super::source::normalize_codex_originator;
 use super::{parser, paths, replay::CodexReplayPlan};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct CodexEventKey {
+    source: CompactString,
     session_hash: u64,
     session_len: usize,
     timestamp: crate::TimestampMs,
@@ -38,6 +40,7 @@ struct CodexEventKey {
 struct CodexDedupeRecord {
     service_tier: Option<CodexServiceTier>,
     model: CompactString,
+    source: CompactString,
     session_id: Option<CompactString>,
 }
 
@@ -389,6 +392,26 @@ fn accumulate_codex_event_into_group(
     }
 
     let model_usage = group.models.entry(model.to_string()).or_default();
+    accumulate_codex_event_into_model_usage(model_usage, event, model, record_service_tier);
+
+    let source = normalize_codex_originator(event.source.as_deref());
+    let source_usage = group.sources.entry(source).or_default();
+    source_usage.input_tokens += event.input_tokens;
+    source_usage.cached_input_tokens += event.cached_input_tokens;
+    source_usage.cache_creation_tokens += event.cache_creation_tokens;
+    source_usage.output_tokens += event.output_tokens;
+    source_usage.reasoning_output_tokens += event.reasoning_output_tokens;
+    source_usage.total_tokens += event.total_tokens;
+    let source_model_usage = source_usage.models.entry(model.to_string()).or_default();
+    accumulate_codex_event_into_model_usage(source_model_usage, event, model, record_service_tier);
+}
+
+fn accumulate_codex_event_into_model_usage(
+    model_usage: &mut crate::CodexModelUsage,
+    event: &CodexTokenUsageEvent,
+    model: &str,
+    record_service_tier: bool,
+) {
     model_usage.input_tokens += event.input_tokens;
     model_usage.cached_input_tokens += event.cached_input_tokens;
     model_usage.cache_creation_tokens += event.cache_creation_tokens;
@@ -480,10 +503,10 @@ fn apply_recorded_usage_entries<'a>(
         ) else {
             continue;
         };
-        let Some(model_usage) = groups
-            .get_mut(&period)
-            .and_then(|group| group.models.get_mut(record.model.as_str()))
-        else {
+        let Some(group) = groups.get_mut(&period) else {
+            continue;
+        };
+        let Some(model_usage) = group.models.get_mut(record.model.as_str()) else {
             continue;
         };
         let is_long_context =
@@ -513,6 +536,19 @@ fn apply_recorded_usage_entries<'a>(
         let recorded_usage = match service_tier {
             CodexServiceTier::Standard => &mut model_usage.recorded_standard_usage,
             CodexServiceTier::Fast => &mut model_usage.recorded_fast_usage,
+        };
+        merge_codex_usage_bucket(recorded_usage, usage);
+
+        let Some(source_usage) = group
+            .sources
+            .get_mut(record.source.as_str())
+            .and_then(|source| source.models.get_mut(record.model.as_str()))
+        else {
+            continue;
+        };
+        let recorded_usage = match service_tier {
+            CodexServiceTier::Standard => &mut source_usage.recorded_standard_usage,
+            CodexServiceTier::Fast => &mut source_usage.recorded_fast_usage,
         };
         merge_codex_usage_bucket(recorded_usage, usage);
     }
@@ -563,6 +599,7 @@ fn insert_dedupe_record(
         CodexDedupeRecord {
             service_tier: event.service_tier,
             model: CompactString::new(model),
+            source: CompactString::new(normalize_codex_originator(event.source.as_deref())),
             session_id: (kind == AgentReportKind::Session)
                 .then(|| CompactString::new(&event.session_id)),
         },
@@ -582,6 +619,7 @@ fn codex_event_key(
         (0, 0)
     };
     CodexEventKey {
+        source: CompactString::new(normalize_codex_originator(event.source.as_deref())),
         session_hash,
         session_len,
         timestamp,
@@ -621,28 +659,41 @@ fn merge_groups(target: &mut BTreeMap<String, CodexGroup>, source: BTreeMap<Stri
         }
         for (model, usage) in group.models {
             let target_usage = target_group.models.entry(model).or_default();
-            target_usage.input_tokens += usage.input_tokens;
-            target_usage.cached_input_tokens += usage.cached_input_tokens;
-            target_usage.cache_creation_tokens += usage.cache_creation_tokens;
-            target_usage.output_tokens += usage.output_tokens;
-            target_usage.reasoning_output_tokens += usage.reasoning_output_tokens;
-            target_usage.total_tokens += usage.total_tokens;
-            target_usage.long_context_input_tokens += usage.long_context_input_tokens;
-            target_usage.long_context_cached_input_tokens += usage.long_context_cached_input_tokens;
-            target_usage.long_context_cache_creation_tokens +=
-                usage.long_context_cache_creation_tokens;
-            target_usage.long_context_output_tokens += usage.long_context_output_tokens;
-            merge_codex_usage_bucket(
-                &mut target_usage.recorded_standard_usage,
-                usage.recorded_standard_usage,
-            );
-            merge_codex_usage_bucket(
-                &mut target_usage.recorded_fast_usage,
-                usage.recorded_fast_usage,
-            );
-            target_usage.is_fallback |= usage.is_fallback;
+            merge_codex_model_usage(target_usage, usage);
+        }
+        for (source, source_usage) in group.sources {
+            let target_source = target_group.sources.entry(source).or_default();
+            target_source.input_tokens += source_usage.input_tokens;
+            target_source.cached_input_tokens += source_usage.cached_input_tokens;
+            target_source.cache_creation_tokens += source_usage.cache_creation_tokens;
+            target_source.output_tokens += source_usage.output_tokens;
+            target_source.reasoning_output_tokens += source_usage.reasoning_output_tokens;
+            target_source.total_tokens += source_usage.total_tokens;
+            for (model, usage) in source_usage.models {
+                let target_usage = target_source.models.entry(model).or_default();
+                merge_codex_model_usage(target_usage, usage);
+            }
         }
     }
+}
+
+fn merge_codex_model_usage(target: &mut crate::CodexModelUsage, source: crate::CodexModelUsage) {
+    target.input_tokens += source.input_tokens;
+    target.cached_input_tokens += source.cached_input_tokens;
+    target.cache_creation_tokens += source.cache_creation_tokens;
+    target.output_tokens += source.output_tokens;
+    target.reasoning_output_tokens += source.reasoning_output_tokens;
+    target.total_tokens += source.total_tokens;
+    target.long_context_input_tokens += source.long_context_input_tokens;
+    target.long_context_cached_input_tokens += source.long_context_cached_input_tokens;
+    target.long_context_cache_creation_tokens += source.long_context_cache_creation_tokens;
+    target.long_context_output_tokens += source.long_context_output_tokens;
+    merge_codex_usage_bucket(
+        &mut target.recorded_standard_usage,
+        source.recorded_standard_usage,
+    );
+    merge_codex_usage_bucket(&mut target.recorded_fast_usage, source.recorded_fast_usage);
+    target.is_fallback |= source.is_fallback;
 }
 
 pub fn aggregate_events(
@@ -1016,6 +1067,82 @@ mod tests {
             }
         }
         assert!(costs.windows(2).all(|pair| pair[0] == pair[1]));
+    }
+
+    #[test]
+    fn keeps_cross_originator_duplicates_distinct_across_grouping_paths() {
+        let rollout = |originator: &str| {
+            [
+                json!({
+                    "timestamp": "2026-01-02T00:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": { "originator": originator },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-01-02T00:00:01.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "model": "gpt-5",
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "output_tokens": 50,
+                                "total_tokens": 150,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n")
+        };
+        let fixture = fs_fixture!({
+            "sessions/2026/01/02/cli.jsonl": &rollout("codex-tui"),
+            "sessions/2026/01/02/exec.jsonl": &rollout("codex_exec"),
+        });
+        let mut observed = Vec::new();
+        for bounded in [false, true] {
+            for single_thread in [true, false] {
+                let shared = SharedArgs {
+                    single_thread,
+                    timezone: Some("UTC".to_string()),
+                    since: bounded.then(|| "20260102".to_string()),
+                    until: bounded.then(|| "20260102".to_string()),
+                    ..SharedArgs::default()
+                };
+                let groups = load_groups_from_directory(
+                    &fixture.path("sessions"),
+                    &shared,
+                    AgentReportKind::Daily,
+                )
+                .unwrap();
+                let group = groups.get("2026-01-02").unwrap();
+                assert_eq!(group.input_tokens, 200);
+                assert_eq!(group.total_tokens, 300);
+                assert_eq!(
+                    group
+                        .sources
+                        .iter()
+                        .map(|(source, usage)| (source.clone(), usage.input_tokens))
+                        .collect::<Vec<_>>(),
+                    vec![("CLI".to_string(), 100), ("Exec".to_string(), 100)]
+                );
+                observed.push((
+                    group.input_tokens,
+                    group.total_tokens,
+                    group
+                        .sources
+                        .iter()
+                        .map(|(source, usage)| (source.clone(), usage.input_tokens))
+                        .collect::<Vec<_>>(),
+                ));
+            }
+        }
+        for pair in observed.windows(2) {
+            assert_eq!(pair[0], pair[1]);
+        }
     }
 
     #[test]

@@ -26,21 +26,22 @@ pub fn has_data() -> bool {
 }
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
+    let kind = args.kind;
     let shared = args.shared;
-    let mut entries = loader::load_entries(&shared)?;
+    let mut entries = loader::load_entries(&shared, kind)?;
     filter_loaded_entries_by_date(&mut entries, &shared);
     if wants_json(&shared) {
         return print_json_or_jq(
-            report_json(&entries, args.kind, &shared.order)?,
+            report_json(&entries, kind, &shared.order)?,
             shared.jq.as_deref(),
             shared.no_cost,
         );
     }
-    let mut rows = summarize_entries(&entries, args.kind)?;
+    let mut rows = summarize_entries(&entries, kind)?;
     sort_summaries(&mut rows, &shared.order, |row| summary_period(row));
     print_usage_table(
         "OpenCode Token Usage Report",
-        first_column(args.kind),
+        first_column(kind),
         &rows,
         &shared,
         false,

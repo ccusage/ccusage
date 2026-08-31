@@ -49,6 +49,7 @@ pub struct CodexTokenUsageEvent {
     pub total_tokens: u64,
     pub is_fallback_model: bool,
     pub service_tier: Option<CodexServiceTier>,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -86,6 +87,17 @@ pub struct CodexModelUsage {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct CodexSourceUsage {
+    pub input_tokens: u64,
+    pub cached_input_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub output_tokens: u64,
+    pub reasoning_output_tokens: u64,
+    pub total_tokens: u64,
+    pub models: BTreeMap<String, CodexModelUsage>,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct CodexGroup {
     pub input_tokens: u64,
     pub cached_input_tokens: u64,
@@ -94,6 +106,7 @@ pub struct CodexGroup {
     pub reasoning_output_tokens: u64,
     pub total_tokens: u64,
     pub models: BTreeMap<String, CodexModelUsage>,
+    pub sources: BTreeMap<String, CodexSourceUsage>,
     pub last_activity: Option<String>,
 }
 
@@ -172,6 +185,8 @@ pub(super) struct CodexPayload<'a> {
     pub(super) model: Option<Cow<'a, str>>,
     #[serde(rename = "model_name", borrow, default)]
     pub(super) model_name: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    pub(super) originator: Option<Cow<'a, str>>,
     #[serde(
         borrow,
         default,

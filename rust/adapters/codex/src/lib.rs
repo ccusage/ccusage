@@ -7,6 +7,7 @@ mod parser;
 mod paths;
 mod replay;
 mod report;
+mod source;
 mod speed;
 mod types;
 
@@ -17,16 +18,17 @@ pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
 pub use loader::load_codex_events_from_directory;
 pub use loader::load_codex_events_with_detection;
 pub use report::{
-    calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
-    non_cached_input_tokens,
+    calculate_codex_model_cost, calculate_codex_source_cost, calculate_group_cost,
+    codex_model_missing_pricing, non_cached_input_tokens,
 };
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
 pub use types::{
-    CodexGroup, CodexModelUsage, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket,
+    CodexGroup, CodexModelUsage, CodexServiceTier, CodexSourceUsage, CodexTokenUsageEvent,
+    CodexUsageBucket,
 };
 pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
-use report::{print_table_from_groups, report_from_groups};
+use report::{print_table_from_groups_with_source, report_from_groups_with_source};
 
 use crate::cli::{AgentReportKind, CodexSpeed};
 
@@ -42,10 +44,18 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let groups = load_groups(&shared, args.kind)?;
     let speed = resolve_codex_speed(args.codex_speed);
     if wants_json(&shared) {
-        let output = report_from_groups(&groups, args.kind, &pricing, speed);
+        let output = if args.by_source {
+            report_from_groups_with_source(&groups, args.kind, &pricing, speed, true)
+        } else {
+            report::report_from_groups(&groups, args.kind, &pricing, speed)
+        };
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
-    print_table_from_groups(&groups, args.kind, &pricing, speed, &shared)
+    if args.by_source {
+        print_table_from_groups_with_source(&groups, args.kind, &pricing, speed, &shared, true)
+    } else {
+        report::print_table_from_groups(&groups, args.kind, &pricing, speed, &shared)
+    }
 }
 
 #[doc(hidden)]
@@ -56,8 +66,26 @@ pub fn report_json(
     pricing: &PricingMap,
     speed: CodexSpeed,
 ) -> Result<Value> {
+    report_json_with_source(events, kind, timezone, pricing, speed, false)
+}
+
+#[doc(hidden)]
+fn report_json_with_source(
+    events: &[CodexTokenUsageEvent],
+    kind: AgentReportKind,
+    timezone: Option<&str>,
+    pricing: &PricingMap,
+    speed: CodexSpeed,
+    by_source: bool,
+) -> Result<Value> {
     let groups = aggregate_events(events, kind, timezone)?;
-    Ok(report_from_groups(&groups, kind, pricing, speed.into()))
+    Ok(report_from_groups_with_source(
+        &groups,
+        kind,
+        pricing,
+        speed.into(),
+        by_source,
+    ))
 }
 
 #[cfg(test)]
@@ -65,6 +93,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::aggregate::load_groups_from_directory;
+    use super::report::report_from_groups;
     use super::*;
     use crate::cli::SharedArgs;
     use crate::{CodexModelUsage, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket};
@@ -139,6 +168,7 @@ mod tests {
                 total_tokens: 105,
                 is_fallback_model: false,
                 service_tier: None,
+                source: None,
             }],
             AgentReportKind::Daily,
             Some("UTC"),
@@ -161,6 +191,139 @@ mod tests {
             0
         );
         assert_eq!(report["daily"][0]["models"]["gpt-5"]["cacheReadTokens"], 90);
+    }
+
+    #[test]
+    fn reports_opt_in_source_breakdowns_that_conserve_totals() {
+        let event = |source: Option<&str>,
+                     timestamp: &str,
+                     input: u64,
+                     cached: u64,
+                     creation: u64,
+                     output: u64,
+                     reasoning: u64,
+                     total: u64| CodexTokenUsageEvent {
+            session_id: "session-1".to_string(),
+            timestamp: timestamp.to_string(),
+            model: Some("gpt-5".to_string()),
+            input_tokens: input,
+            cached_input_tokens: cached,
+            cache_creation_tokens: creation,
+            output_tokens: output,
+            reasoning_output_tokens: reasoning,
+            total_tokens: total,
+            is_fallback_model: false,
+            service_tier: None,
+            source: source.map(str::to_string),
+        };
+        let events = vec![
+            event(
+                Some("CLI"),
+                "2026-01-02T00:00:00.000Z",
+                100,
+                20,
+                0,
+                10,
+                1,
+                110,
+            ),
+            event(Some("Exec"), "2026-01-02T00:01:00.000Z", 50, 0, 0, 5, 0, 55),
+            event(
+                Some("Desktop App"),
+                "2026-01-02T00:02:00.000Z",
+                25,
+                0,
+                5,
+                2,
+                0,
+                32,
+            ),
+            event(None, "2026-01-02T00:03:00.000Z", 10, 0, 0, 1, 0, 11),
+            event(
+                Some("future-client"),
+                "2026-01-02T00:04:00.000Z",
+                15,
+                0,
+                0,
+                3,
+                2,
+                18,
+            ),
+        ];
+        let pricing = PricingMap::default();
+        let default = report_json(
+            &events,
+            AgentReportKind::Daily,
+            Some("UTC"),
+            &pricing,
+            CodexSpeed::Standard,
+        )
+        .unwrap();
+        let opt_in_default = report_json_with_source(
+            &events,
+            AgentReportKind::Daily,
+            Some("UTC"),
+            &pricing,
+            CodexSpeed::Standard,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_string(&default).unwrap(),
+            serde_json::to_string(&opt_in_default).unwrap()
+        );
+        assert!(default["daily"][0].get("sourceBreakdowns").is_none());
+
+        let report = report_json_with_source(
+            &events,
+            AgentReportKind::Daily,
+            Some("UTC"),
+            &pricing,
+            CodexSpeed::Standard,
+            true,
+        )
+        .unwrap();
+        let row = &report["daily"][0];
+        let sources = row["sourceBreakdowns"].as_array().unwrap();
+        assert_eq!(
+            sources
+                .iter()
+                .map(|source| source["source"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec![
+                "CLI",
+                "Desktop App",
+                "Exec",
+                "Uncategorized",
+                "future-client"
+            ]
+        );
+        for key in [
+            "inputTokens",
+            "cacheCreationTokens",
+            "cacheReadTokens",
+            "outputTokens",
+            "reasoningOutputTokens",
+            "totalTokens",
+        ] {
+            assert_eq!(
+                sources
+                    .iter()
+                    .map(|source| source[key].as_u64().unwrap())
+                    .sum::<u64>(),
+                row[key].as_u64().unwrap(),
+                "source totals must conserve {key}"
+            );
+            assert_eq!(
+                sources
+                    .iter()
+                    .map(|source| source[key].as_u64().unwrap())
+                    .sum::<u64>(),
+                report["totals"][key].as_u64().unwrap(),
+                "row and report totals must agree for {key}"
+            );
+        }
+        insta::assert_json_snapshot!(report);
     }
 
     #[test]
@@ -255,6 +418,7 @@ mod tests {
                     total_tokens: 105,
                     is_fallback_model: false,
                     service_tier: None,
+                    source: None,
                 },
                 CodexTokenUsageEvent {
                     session_id: "session-1".to_string(),
@@ -268,6 +432,7 @@ mod tests {
                     total_tokens: 53,
                     is_fallback_model: false,
                     service_tier: None,
+                    source: None,
                 },
             ],
             AgentReportKind::Daily,
@@ -679,6 +844,7 @@ mod tests {
                 total_tokens: 147,
                 is_fallback_model: false,
                 service_tier: None,
+                source: None,
             },
             CodexTokenUsageEvent {
                 session_id: "/workspace/api/session-a.jsonl".to_string(),
@@ -692,6 +858,7 @@ mod tests {
                 total_tokens: 80,
                 is_fallback_model: true,
                 service_tier: None,
+                source: None,
             },
             CodexTokenUsageEvent {
                 session_id: "/workspace/web/session-b.jsonl".to_string(),
@@ -705,6 +872,7 @@ mod tests {
                 total_tokens: 12,
                 is_fallback_model: false,
                 service_tier: None,
+                source: None,
             },
             CodexTokenUsageEvent {
                 session_id: "ignored-missing-model".to_string(),
@@ -718,6 +886,7 @@ mod tests {
                 total_tokens: 1_998,
                 is_fallback_model: false,
                 service_tier: None,
+                source: None,
             },
         ];
 

@@ -164,9 +164,12 @@ ccusage daily --sections daily,monthly,session --json
 
 # Add per-agent breakdowns to daily, weekly, and monthly JSON rows
 ccusage daily --by-agent --json
+
+# Add Codex client/originator breakdowns to unified output
+ccusage daily --by-source --json
 ```
 
-`--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. For table output, each requested section is printed as a separate table. `--by-agent` is JSON-only; session rows are already per-agent.
+`--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. For table output, each requested section is printed as a separate table. `--by-agent` is JSON-only; session rows are already per-agent. `--by-source` is opt-in and applies to Codex-focused reports and unified reports. It adds `sourceBreakdowns` to JSON and source rows to tables while leaving output unchanged when omitted.
 
 ### Daily Command
 

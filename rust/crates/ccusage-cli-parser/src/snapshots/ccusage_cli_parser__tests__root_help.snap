@@ -64,6 +64,7 @@ OPTIONS:
   --all                                Accepted for compatibility; all detected supported agents are included by default (default: false)
   --sections <sections>                Emit multiple unified report sections from one load (daily, weekly, monthly, session)
   --by-agent                           Include per-agent JSON breakdowns in unified report rows (default: false)
+  --by-source                          Include Codex originator breakdowns in unified report rows (default: false)
   -O, --offline                        Use cached pricing data where supported (default: false)
   --no-offline                         Negatable of -O, --offline
   --compact                            Force compact table layout for narrow terminals (default: false)

@@ -18,6 +18,7 @@ use super::{
         collect_deduped_codex_usage_files,
     },
     replay::CodexReplayPlan,
+    source::normalize_codex_originator,
 };
 
 pub fn load_codex_events_from_directory(
@@ -247,6 +248,7 @@ fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
             event.output_tokens,
             event.reasoning_output_tokens,
             event.total_tokens,
+            CompactString::new(normalize_codex_originator(event.source.as_deref())),
         );
         if let Some(index) = indexes.get(&key).copied() {
             let retained = &mut deduped[index];
@@ -262,6 +264,8 @@ fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     use ccusage_test_support::fs_fixture;
@@ -282,7 +286,100 @@ mod tests {
             total_tokens: 150,
             is_fallback_model: false,
             service_tier: None,
+            source: None,
         }
+    }
+
+    #[test]
+    fn reads_codex_originator_from_top_level_session_metadata() {
+        let token_count = |timestamp: &str| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "model": "gpt-5",
+                        "last_token_usage": {
+                            "input_tokens": 10,
+                            "output_tokens": 1,
+                            "total_tokens": 11,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        };
+        let session_meta = |originator: Option<&str>| {
+            let mut payload = json!({ "id": "session" });
+            if let Some(originator) = originator {
+                payload["originator"] = json!(originator);
+            }
+            json!({
+                "timestamp": "2026-07-22T00:00:00.000Z",
+                "type": "session_meta",
+                "payload": payload,
+            })
+            .to_string()
+        };
+        let fixture = fs_fixture!({
+            "cli.jsonl": [
+                session_meta(Some("codex-tui")),
+                token_count("2026-07-22T00:00:01.000Z"),
+            ].join("\n"),
+            "exec.jsonl": [
+                session_meta(Some("codex_exec")),
+                token_count("2026-07-22T00:00:02.000Z"),
+            ].join("\n"),
+            "desktop.jsonl": [
+                session_meta(Some("Codex Desktop")),
+                token_count("2026-07-22T00:00:03.000Z"),
+            ].join("\n"),
+            "empty.jsonl": [
+                session_meta(Some("")),
+                token_count("2026-07-22T00:00:04.000Z"),
+            ].join("\n"),
+            "unknown.jsonl": [
+                session_meta(Some("future-client")),
+                token_count("2026-07-22T00:00:05.000Z"),
+            ].join("\n"),
+            "missing.jsonl": token_count("2026-07-22T00:00:06.000Z"),
+            "nested.jsonl": json!({
+                "timestamp": "2026-07-22T00:00:07.000Z",
+                "type": "event_msg",
+                "payload": {
+                    "originator": "nested-content-is-not-metadata",
+                    "type": "token_count",
+                    "info": {
+                        "model": "gpt-5",
+                        "last_token_usage": {
+                            "input_tokens": 10,
+                            "output_tokens": 1,
+                            "total_tokens": 11,
+                        },
+                    },
+                },
+            }).to_string(),
+            "whitespace.jsonl": [
+                r#"{ "timestamp": "2026-07-22T00:00:08.000Z", "type": "session_meta", "payload": { "originator": "codex_exec" } }"#.to_string(),
+                token_count("2026-07-22T00:00:09.000Z"),
+            ].join("\n"),
+        });
+
+        let sources = load_codex_events_from_directory(fixture.root(), true)
+            .unwrap()
+            .into_iter()
+            .map(|event| (event.session_id, event.source))
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(sources["cli"].as_deref(), Some("CLI"));
+        assert_eq!(sources["exec"].as_deref(), Some("Exec"));
+        assert_eq!(sources["desktop"].as_deref(), Some("Desktop App"));
+        assert_eq!(sources["empty"].as_deref(), Some("Uncategorized"));
+        assert_eq!(sources["unknown"].as_deref(), Some("future-client"));
+        assert_eq!(sources["missing"], None);
+        assert_eq!(sources["nested"], None);
+        assert_eq!(sources["whitespace"].as_deref(), Some("Exec"));
     }
 
     #[test]
@@ -533,6 +630,90 @@ mod tests {
     }
 
     #[test]
+    fn keeps_cross_originator_duplicates_distinct_across_loading_paths() {
+        let usage = |originator: &str| {
+            [
+                json!({
+                    "timestamp": "2026-01-02T00:00:00.000Z",
+                    "type": "session_meta",
+                    "payload": { "originator": originator },
+                })
+                .to_string(),
+                json!({
+                    "timestamp": "2026-01-02T00:00:01.000Z",
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "model": "gpt-5",
+                            "last_token_usage": {
+                                "input_tokens": 100,
+                                "output_tokens": 50,
+                                "total_tokens": 150,
+                            },
+                        },
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n")
+        };
+        let fixture = fs_fixture!({
+            "sessions/2026/01/02/cli.jsonl": &usage("codex-tui"),
+            "sessions/2026/01/02/exec.jsonl": &usage("codex_exec"),
+        });
+        let sources = [CodexUsageSource::new_for_test(
+            fixture.path("sessions"),
+            fixture.root().to_path_buf(),
+        )];
+        let bounded = SharedArgs {
+            since: Some("20260102".to_string()),
+            until: Some("20260102".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let mut loaded = Vec::new();
+        for single_thread in [true, false] {
+            loaded.push(
+                load_codex_events_from_directory(&fixture.path("sessions"), single_thread).unwrap(),
+            );
+            loaded.push(
+                load_codex_events_from_sources_with_shared(
+                    &sources,
+                    &SharedArgs {
+                        single_thread,
+                        ..bounded.clone()
+                    },
+                )
+                .unwrap()
+                .0,
+            );
+        }
+
+        for events in &loaded {
+            assert_eq!(events.len(), 2);
+            assert_eq!(
+                events
+                    .iter()
+                    .map(|event| event.source.as_deref())
+                    .collect::<Vec<_>>(),
+                vec![Some("CLI"), Some("Exec")]
+            );
+            assert_eq!(
+                events.iter().map(|event| event.input_tokens).sum::<u64>(),
+                200
+            );
+            assert_eq!(
+                events.iter().map(|event| event.total_tokens).sum::<u64>(),
+                300
+            );
+        }
+        for pair in loaded.windows(2) {
+            assert_eq!(pair[0], pair[1]);
+        }
+    }
+
+    #[test]
     fn dedupes_copied_branch_history_across_session_files() {
         let parent_history = [
             json!({
@@ -662,17 +843,20 @@ mod tests {
         assert_eq!(events[0].cached_input_tokens, 20);
         assert_eq!(events[0].output_tokens, 30);
         assert_eq!(events[0].total_tokens, 150);
+        assert_eq!(events[0].source.as_deref(), Some("Exec"));
         assert_eq!(events[1].timestamp, "2026-01-02T03:05:05.000Z");
         assert_eq!(events[1].model.as_deref(), Some("gpt-5.2-codex"));
         assert_eq!(events[1].input_tokens, 50);
         assert_eq!(events[1].cached_input_tokens, 5);
         assert_eq!(events[1].output_tokens, 12);
         assert_eq!(events[1].total_tokens, 62);
+        assert_eq!(events[1].source.as_deref(), Some("Exec"));
         assert_eq!(events[2].timestamp, "2026-01-02T03:06:05.000Z");
         assert_eq!(events[2].input_tokens, 9);
         assert_eq!(events[2].output_tokens, 4);
         assert_eq!(events[2].reasoning_output_tokens, 1);
         assert_eq!(events[2].total_tokens, 13);
+        assert_eq!(events[2].source.as_deref(), Some("Exec"));
     }
 
     #[test]
@@ -1453,13 +1637,14 @@ mod tests {
                     "payload": {
                         "id": "fork-abc",
                         "forked_from_id": "parent-xyz",
+                        "originator": "codex_exec",
                     },
                 })
                 .to_string(),
                 json!({
                     "timestamp": "2026-05-12T08:03:00.000Z",
                     "type": "session_meta",
-                    "payload": {"id": "parent-xyz"},
+                    "payload": {"id": "parent-xyz", "originator": "codex-tui"},
                 })
                 .to_string(),
                 // replayed parent history with timestamps rewritten to fork creation time
@@ -1555,6 +1740,7 @@ mod tests {
             assert_eq!(fork_events[0].cached_input_tokens, 10);
             assert_eq!(fork_events[0].output_tokens, 20);
             assert_eq!(fork_events[0].total_tokens, 120);
+            assert_eq!(fork_events[0].source.as_deref(), Some("Exec"));
         }
     }
 

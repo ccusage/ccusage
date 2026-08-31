@@ -38,34 +38,64 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let kind = args.kind;
     let shared = args.shared;
     let include_agents = args.by_agent;
+    let include_sources = args.by_source;
     if let Some(sections) = args.sections {
         let sections = requested_sections(kind, sections);
         let result = loader::load_sections(&sections, &shared)?;
         if wants_json(&shared) {
-            return report::print_sections_report_json(
-                &result.sections,
-                kind,
-                include_agents,
-                shared.jq.as_deref(),
-                shared.no_cost,
-            );
+            return if include_sources {
+                report::print_sections_report_json_with_options(
+                    &result.sections,
+                    kind,
+                    include_agents,
+                    true,
+                    shared.jq.as_deref(),
+                    shared.no_cost,
+                )
+            } else {
+                report::print_sections_report_json(
+                    &result.sections,
+                    kind,
+                    include_agents,
+                    shared.jq.as_deref(),
+                    shared.no_cost,
+                )
+            };
         }
         for (section_kind, rows) in &result.sections {
-            report::print_table(
-                rows,
-                *section_kind,
-                &shared,
-                result.detected_agents_for(*section_kind),
-            )?;
+            if include_sources {
+                report::print_table_with_options(
+                    rows,
+                    *section_kind,
+                    &shared,
+                    result.detected_agents_for(*section_kind),
+                    true,
+                )?;
+            } else {
+                report::print_table(
+                    rows,
+                    *section_kind,
+                    &shared,
+                    result.detected_agents_for(*section_kind),
+                )?;
+            }
         }
         return Ok(());
     }
     let result = loader::load_rows(kind, &shared)?;
     if wants_json(&shared) {
-        let output = report::report_json_with_agents(&result.rows, kind, include_agents);
+        let output = if include_sources {
+            report::report_json_with_options(&result.rows, kind, include_agents, true)
+        } else {
+            report::report_json_with_agents(&result.rows, kind, include_agents)
+        };
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
-    report::print_table(&result.rows, kind, &shared, &result.detected_agents)
+    if include_sources {
+        report::print_table_with_options(&result.rows, kind, &shared, &result.detected_agents, true)
+    } else {
+        report::print_table(&result.rows, kind, &shared, &result.detected_agents)
+    }
 }
 
 fn requested_sections(
@@ -91,7 +121,7 @@ use loader::{aggregate_rows, codex_group_row, load_agent_rows_parallel, load_row
 #[cfg(test)]
 use report::{
     all_report_title, all_table_columns, all_table_row, report_json, report_json_with_agents,
-    sections_report_json,
+    report_json_with_options, sections_report_json, source_table_row,
 };
 #[cfg(test)]
 use types::{AgentLoadSpec, AgentRows, AllRow};
