@@ -22,7 +22,9 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 Session-state shutdown records are cumulative per canonical `(session, model)` pair, so only the
 latest shutdown is retained. They are preferred for a matching pair when both sources contain it.
-Other OpenTelemetry records remain available. Session-state `inputTokens` includes cache reads
+Matching OpenTelemetry rows are suppressed only when their timestamps are at or before the latest
+canonical shutdown timestamp for that pair; rows emitted after that timestamp by a resumed session
+are retained. Other OpenTelemetry records remain available. Session-state `inputTokens` includes cache reads
 and writes, so the adapter reports the uncached remainder as input and keeps the cache buckets
 separate. Reasoning tokens are already included in output tokens and are not added to totals or
 costs. Internal model suffixes such as `-1m` and `-1m-internal` are removed before pricing and
