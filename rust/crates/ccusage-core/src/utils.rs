@@ -12,10 +12,11 @@ pub fn non_empty_json_string(value: Option<&Value>) -> Option<String> {
 }
 
 pub fn total_usage_tokens(usage: TokenUsageRaw) -> u64 {
-    usage.input_tokens
-        + usage.output_tokens
-        + usage.cache_creation_token_count()
-        + usage.cache_read_input_tokens
+    usage
+        .input_tokens
+        .saturating_add(usage.output_tokens)
+        .saturating_add(usage.cache_creation_token_count())
+        .saturating_add(usage.cache_read_input_tokens)
 }
 
 pub fn apply_total_token_fallback(
@@ -78,5 +79,27 @@ mod tests {
 
         assert_eq!(usage.output_tokens, 50);
         assert_eq!(extra_total_tokens, 25);
+    }
+
+    #[test]
+    fn saturates_total_token_fallback_for_huge_counters() {
+        let (usage, extra_total_tokens) = apply_total_token_fallback(
+            TokenUsageRaw {
+                input_tokens: u64::MAX,
+                output_tokens: u64::MAX,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: u64::MAX,
+                speed: None,
+                cache_creation: Some(crate::CacheCreationRaw {
+                    ephemeral_5m_input_tokens: u64::MAX,
+                    ephemeral_1h_input_tokens: u64::MAX,
+                }),
+            },
+            u64::MAX,
+            u64::MAX,
+        );
+
+        assert_eq!(total_usage_tokens(usage), u64::MAX);
+        assert_eq!(extra_total_tokens, u64::MAX);
     }
 }

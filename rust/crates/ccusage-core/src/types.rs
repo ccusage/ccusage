@@ -41,7 +41,8 @@ pub struct TokenUsageRaw {
 impl TokenUsageRaw {
     pub fn cache_creation_token_count(&self) -> u64 {
         if let Some(b) = &self.cache_creation {
-            b.ephemeral_5m_input_tokens + b.ephemeral_1h_input_tokens
+            b.ephemeral_5m_input_tokens
+                .saturating_add(b.ephemeral_1h_input_tokens)
         } else {
             self.cache_creation_input_tokens
         }
