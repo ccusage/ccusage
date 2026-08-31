@@ -6,6 +6,23 @@ const SINCE: &str = "20260101";
 const UNTIL: &str = "20260228";
 
 #[test]
+fn snapshots_copilot_focused_daily_stdout() {
+    let fixture = copilot_fixture();
+
+    insta::assert_snapshot!(
+        "focused_daily_json",
+        format!(
+            "Daily JSON\n{}",
+            run_cli(&fixture, ["copilot", "daily", "--json"]),
+        )
+    );
+    insta::assert_snapshot!(
+        "focused_daily_table",
+        format!("Daily\n{}", run_cli(&fixture, ["copilot", "daily"]),)
+    );
+}
+
+#[test]
 fn snapshots_copilot_focused_monthly_and_session_stdout() {
     let fixture = copilot_fixture();
 
