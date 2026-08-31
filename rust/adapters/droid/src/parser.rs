@@ -12,7 +12,7 @@ use crate::{
 pub(super) struct DroidEntry {
     pub(super) timestamp: crate::TimestampMs,
     pub(super) timestamp_text: String,
-    pub(super) pricing_timestamp: Option<crate::TimestampMs>,
+    pricing_timestamp: Option<crate::TimestampMs>,
     pub(super) session_id: String,
     pub(super) model: String,
     provider: String,
