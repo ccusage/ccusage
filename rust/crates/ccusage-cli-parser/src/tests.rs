@@ -210,6 +210,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
+        Some(Command::ZCode(args)) => agent_command_snapshot("zcode", args),
     }
 }
 
@@ -662,7 +663,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok",
+        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode",
     ];
 
     for agent in agents {
@@ -878,6 +879,10 @@ fn snapshots_representative_cli_parse_shapes() {
         json!({
             "case": "grok daily",
             "cli": cli_snapshot(parse(&["ccusage", "grok", "daily", "--json"])),
+        }),
+        json!({
+            "case": "zcode daily",
+            "cli": cli_snapshot(parse(&["ccusage", "zcode", "daily", "--json"])),
         }),
         json!({
             "case": "blocks active recent",
@@ -1271,6 +1276,16 @@ fn parses_grok_daily_options() {
     let cli = parse(&["ccusage", "grok", "daily", "--json"]);
     let Some(Command::Grok(args)) = cli.command else {
         panic!("expected grok command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Daily);
+    assert!(args.shared.json);
+}
+
+#[test]
+fn parses_zcode_daily_options() {
+    let cli = parse(&["ccusage", "zcode", "daily", "--json"]);
+    let Some(Command::ZCode(args)) = cli.command else {
+        panic!("expected zcode command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
     assert!(args.shared.json);

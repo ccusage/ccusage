@@ -1,0 +1,75 @@
+---
+source: adapters/zcode/src/report.rs
+expression: "report_from_rows(&session, AgentReportKind::Session)"
+---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 45,
+      "cacheReadTokens": 65,
+      "firstActivity": "2099-01-02T00:00:00.000Z",
+      "inputTokens": 190,
+      "lastActivity": "2099-01-15T12:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "modelName": "GLM-5.3",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "modelName": "GLM-5.2",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.2",
+        "GLM-5.3"
+      ],
+      "outputTokens": 30,
+      "projectPath": "/workspace/project-a",
+      "sessionId": "session-a",
+      "totalCost": 0.00047789999999999996,
+      "totalTokens": 330
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 10,
+      "firstActivity": "2099-02-01T00:00:00.000Z",
+      "inputTokens": 40,
+      "lastActivity": "2099-02-01T00:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "modelName": "GLM-5.3",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.3"
+      ],
+      "outputTokens": 5,
+      "projectPath": "/workspace/project-b",
+      "sessionId": "session-b",
+      "totalCost": 0.0000806,
+      "totalTokens": 55
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 45,
+    "cacheReadTokens": 75,
+    "inputTokens": 230,
+    "outputTokens": 35,
+    "totalCost": 0.0005585,
+    "totalTokens": 385
+  }
+}
