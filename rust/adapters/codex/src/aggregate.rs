@@ -343,7 +343,7 @@ fn add_deduped_event_to_groups(
         return Ok(());
     };
     let group = groups.entry(period).or_default();
-    accumulate_codex_event_into_group(group, event, model, false);
+    accumulate_codex_event_into_group(group, event, model, timestamp, false);
     Ok(())
 }
 
@@ -375,6 +375,7 @@ fn accumulate_codex_event_into_group(
     group: &mut CodexGroup,
     event: &CodexTokenUsageEvent,
     model: &str,
+    timestamp: crate::TimestampMs,
     record_service_tier: bool,
 ) {
     group.input_tokens += event.input_tokens;
@@ -392,7 +393,13 @@ fn accumulate_codex_event_into_group(
     }
 
     let model_usage = group.models.entry(model.to_string()).or_default();
-    accumulate_codex_event_into_model_usage(model_usage, event, model, record_service_tier);
+    accumulate_codex_event_into_model_usage(
+        model_usage,
+        event,
+        model,
+        timestamp,
+        record_service_tier,
+    );
 
     let source = normalize_codex_originator(event.source.as_deref());
     let source_usage = group.sources.entry(source).or_default();
@@ -403,13 +410,20 @@ fn accumulate_codex_event_into_group(
     source_usage.reasoning_output_tokens += event.reasoning_output_tokens;
     source_usage.total_tokens += event.total_tokens;
     let source_model_usage = source_usage.models.entry(model.to_string()).or_default();
-    accumulate_codex_event_into_model_usage(source_model_usage, event, model, record_service_tier);
+    accumulate_codex_event_into_model_usage(
+        source_model_usage,
+        event,
+        model,
+        timestamp,
+        record_service_tier,
+    );
 }
 
 fn accumulate_codex_event_into_model_usage(
     model_usage: &mut crate::CodexModelUsage,
     event: &CodexTokenUsageEvent,
     model: &str,
+    timestamp: crate::TimestampMs,
     record_service_tier: bool,
 ) {
     model_usage.input_tokens += event.input_tokens;
@@ -429,6 +443,29 @@ fn accumulate_codex_event_into_model_usage(
         model_usage.long_context_cached_input_tokens += event.cached_input_tokens;
         model_usage.long_context_cache_creation_tokens += event.cache_creation_tokens;
         model_usage.long_context_output_tokens += event.output_tokens;
+    }
+    {
+        let timestamped_usage = model_usage
+            .timestamped_usage
+            .entry(timestamp.as_millis())
+            .or_default();
+        accumulate_codex_event_into_usage_bucket(
+            &mut timestamped_usage.usage,
+            event,
+            is_long_context,
+        );
+        if record_service_tier {
+            let recorded_usage = match event.service_tier {
+                Some(CodexServiceTier::Standard) => {
+                    Some(&mut timestamped_usage.recorded_standard_usage)
+                }
+                Some(CodexServiceTier::Fast) => Some(&mut timestamped_usage.recorded_fast_usage),
+                None => None,
+            };
+            if let Some(recorded_usage) = recorded_usage {
+                accumulate_codex_event_into_usage_bucket(recorded_usage, event, is_long_context);
+            }
+        }
     }
     if record_service_tier {
         let recorded_usage = match event.service_tier {
@@ -469,6 +506,29 @@ fn merge_codex_usage_bucket(target: &mut CodexUsageBucket, source: CodexUsageBuc
     target.long_context_cached_input_tokens += source.long_context_cached_input_tokens;
     target.long_context_cache_creation_tokens += source.long_context_cache_creation_tokens;
     target.long_context_output_tokens += source.long_context_output_tokens;
+}
+
+fn merge_recorded_codex_usage(
+    model_usage: &mut crate::CodexModelUsage,
+    timestamp: crate::TimestampMs,
+    service_tier: CodexServiceTier,
+    usage: CodexUsageBucket,
+) {
+    let recorded_usage = match service_tier {
+        CodexServiceTier::Standard => &mut model_usage.recorded_standard_usage,
+        CodexServiceTier::Fast => &mut model_usage.recorded_fast_usage,
+    };
+    merge_codex_usage_bucket(recorded_usage, usage);
+
+    let timestamped_usage = model_usage
+        .timestamped_usage
+        .entry(timestamp.as_millis())
+        .or_default();
+    let recorded_usage = match service_tier {
+        CodexServiceTier::Standard => &mut timestamped_usage.recorded_standard_usage,
+        CodexServiceTier::Fast => &mut timestamped_usage.recorded_fast_usage,
+    };
+    merge_codex_usage_bucket(recorded_usage, usage);
 }
 
 fn apply_recorded_usage_from_shards(
@@ -533,11 +593,7 @@ fn apply_recorded_usage_entries<'a>(
                 0
             },
         };
-        let recorded_usage = match service_tier {
-            CodexServiceTier::Standard => &mut model_usage.recorded_standard_usage,
-            CodexServiceTier::Fast => &mut model_usage.recorded_fast_usage,
-        };
-        merge_codex_usage_bucket(recorded_usage, usage);
+        merge_recorded_codex_usage(model_usage, key.timestamp, service_tier, usage);
 
         let Some(source_usage) = group
             .sources
@@ -546,11 +602,7 @@ fn apply_recorded_usage_entries<'a>(
         else {
             continue;
         };
-        let recorded_usage = match service_tier {
-            CodexServiceTier::Standard => &mut source_usage.recorded_standard_usage,
-            CodexServiceTier::Fast => &mut source_usage.recorded_fast_usage,
-        };
-        merge_codex_usage_bucket(recorded_usage, usage);
+        merge_recorded_codex_usage(source_usage, key.timestamp, service_tier, usage);
     }
 }
 
@@ -693,6 +745,18 @@ fn merge_codex_model_usage(target: &mut crate::CodexModelUsage, source: crate::C
         source.recorded_standard_usage,
     );
     merge_codex_usage_bucket(&mut target.recorded_fast_usage, source.recorded_fast_usage);
+    for (timestamp, usage) in source.timestamped_usage {
+        let target_usage = target.timestamped_usage.entry(timestamp).or_default();
+        merge_codex_usage_bucket(&mut target_usage.usage, usage.usage);
+        merge_codex_usage_bucket(
+            &mut target_usage.recorded_standard_usage,
+            usage.recorded_standard_usage,
+        );
+        merge_codex_usage_bucket(
+            &mut target_usage.recorded_fast_usage,
+            usage.recorded_fast_usage,
+        );
+    }
     target.is_fallback |= source.is_fallback;
 }
 
@@ -719,7 +783,7 @@ pub fn aggregate_events(
         };
         let group = groups.entry(period).or_insert_with(CodexGroup::default);
         let model = crate::model_aliases::resolve_model_name(model);
-        accumulate_codex_event_into_group(group, event, model.as_ref(), true);
+        accumulate_codex_event_into_group(group, event, model.as_ref(), timestamp, true);
     }
     Ok(groups)
 }

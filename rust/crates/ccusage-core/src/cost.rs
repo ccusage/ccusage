@@ -7,22 +7,18 @@ use crate::{
 const CACHE_CREATE_1H_INPUT_MULTIPLIER: f64 = 2.0;
 
 pub fn calculate_cost(data: &UsageEntry, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
-    let model = data.message.model.as_deref();
-    let timestamp = crate::parse_ts_timestamp(&data.timestamp);
-    match timestamp {
-        Some(timestamp) => calculate_cost_for_usage_at(
-            model,
-            data.message.usage,
-            data.cost_usd,
-            Some(timestamp),
-            mode,
-            pricing,
-        ),
-        None => calculate_cost_for_usage(model, data.message.usage, data.cost_usd, mode, pricing),
-    }
+    calculate_cost_for_usage_at(
+        data.message.model.as_deref(),
+        data.message.usage,
+        data.cost_usd,
+        crate::parse_ts_timestamp(&data.timestamp),
+        mode,
+        pricing,
+    )
 }
 
-pub fn calculate_cost_for_usage(
+#[cfg(test)]
+fn calculate_cost_for_usage(
     model: Option<&str>,
     usage: crate::TokenUsageRaw,
     cost_usd: Option<f64>,
@@ -426,16 +422,16 @@ mod tests {
         };
         let cases = [
             (
-                "2026-08-15T23:59:59Z",
-                [("deepseek-v4-flash", 0.5458), ("deepseek-v4-pro", 1.764625)],
+                "2026-08-16T15:59:59Z",
+                [("deepseek-v4-flash", 0.5628), ("deepseek-v4-pro", 1.743625)],
             ),
             (
                 "2026-08-17T12:00:00Z",
-                [("deepseek-v4-flash", 1.01), ("deepseek-v4-pro", 3.118)],
+                [("deepseek-v4-flash", 1.107), ("deepseek-v4-pro", 3.322)],
             ),
             (
                 "2026-08-17T01:00:00Z",
-                [("deepseek-v4-flash", 1.897), ("deepseek-v4-pro", 5.78)],
+                [("deepseek-v4-flash", 2.214), ("deepseek-v4-pro", 6.644)],
             ),
         ];
 

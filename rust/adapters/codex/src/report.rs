@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 
 use crate::{
-    Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexSourceUsage, CodexUsageBucket,
-    Color, PricingMap, Result, SimpleTable,
+    Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexSourceUsage, CodexTimestampedUsage,
+    CodexUsageBucket, Color, PricingMap, Result, SimpleTable,
     cli::{AgentReportKind, SharedArgs},
     color, format_currency, format_models_multiline, format_number, json_float,
     missing_pricing_model_for_token_total, print_box_title,
@@ -266,6 +266,18 @@ fn merge_model_usage(target: &mut CodexModelUsage, source: &CodexModelUsage) {
         &source.recorded_standard_usage,
     );
     merge_usage_bucket(&mut target.recorded_fast_usage, &source.recorded_fast_usage);
+    for (timestamp, usage) in &source.timestamped_usage {
+        let target_usage = target.timestamped_usage.entry(*timestamp).or_default();
+        merge_usage_bucket(&mut target_usage.usage, &usage.usage);
+        merge_usage_bucket(
+            &mut target_usage.recorded_standard_usage,
+            &usage.recorded_standard_usage,
+        );
+        merge_usage_bucket(
+            &mut target_usage.recorded_fast_usage,
+            &usage.recorded_fast_usage,
+        );
+    }
     target.is_fallback |= source.is_fallback;
 }
 
@@ -286,21 +298,67 @@ pub fn calculate_codex_model_cost(
     pricing: &PricingMap,
     speed: impl Into<CodexSpeedPolicy>,
 ) -> f64 {
+    let speed = speed.into();
+    if !usage.timestamped_usage.is_empty() {
+        return usage
+            .timestamped_usage
+            .iter()
+            .filter_map(|(timestamp, timestamped_usage)| {
+                let pricing =
+                    pricing.find_at(model, crate::TimestampMs::from_millis(*timestamp))?;
+                Some(calculate_codex_timestamped_cost(
+                    timestamped_usage,
+                    &pricing,
+                    speed,
+                ))
+            })
+            .sum();
+    }
+
     let Some(pricing) = pricing.find(model) else {
         return 0.0;
     };
-    let total_usage = model_usage_bucket(usage);
-    let standard_cost = calculate_codex_bucket_cost(&total_usage, &pricing);
-    let fast_usage = match speed.into() {
+    calculate_codex_usage_cost(
+        model_usage_bucket(usage),
+        usage.recorded_standard_usage,
+        usage.recorded_fast_usage,
+        &pricing,
+        speed,
+    )
+}
+
+fn calculate_codex_timestamped_cost(
+    usage: &CodexTimestampedUsage,
+    pricing: &crate::Pricing,
+    speed: CodexSpeedPolicy,
+) -> f64 {
+    calculate_codex_usage_cost(
+        usage.usage,
+        usage.recorded_standard_usage,
+        usage.recorded_fast_usage,
+        pricing,
+        speed,
+    )
+}
+
+fn calculate_codex_usage_cost(
+    total_usage: CodexUsageBucket,
+    recorded_standard_usage: CodexUsageBucket,
+    recorded_fast_usage: CodexUsageBucket,
+    pricing: &crate::Pricing,
+    speed: CodexSpeedPolicy,
+) -> f64 {
+    let standard_cost = calculate_codex_bucket_cost(&total_usage, pricing);
+    let fast_usage = match speed {
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => return standard_cost,
         CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => total_usage,
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard) => usage.recorded_fast_usage,
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard) => recorded_fast_usage,
         CodexSpeedPolicy::Auto(CodexServiceTier::Fast) => {
-            subtract_codex_usage_bucket(total_usage, usage.recorded_standard_usage)
+            subtract_codex_usage_bucket(total_usage, recorded_standard_usage)
         }
     };
     standard_cost
-        + calculate_codex_bucket_cost(&fast_usage, &pricing) * (pricing.fast_multiplier - 1.0)
+        + calculate_codex_bucket_cost(&fast_usage, pricing) * (pricing.fast_multiplier - 1.0)
 }
 
 fn model_usage_bucket(usage: &CodexModelUsage) -> CodexUsageBucket {
