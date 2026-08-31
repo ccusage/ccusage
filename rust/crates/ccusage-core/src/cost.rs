@@ -7,28 +7,41 @@ use crate::{
 const CACHE_CREATE_1H_INPUT_MULTIPLIER: f64 = 2.0;
 
 pub fn calculate_cost(data: &UsageEntry, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
-    calculate_cost_for_usage(
+    calculate_cost_for_usage_at(
         data.message.model.as_deref(),
         data.message.usage,
         data.cost_usd,
+        crate::parse_ts_timestamp(&data.timestamp),
         mode,
         pricing,
     )
 }
 
-pub fn calculate_cost_for_usage(
+#[cfg(test)]
+fn calculate_cost_for_usage(
     model: Option<&str>,
     usage: crate::TokenUsageRaw,
     cost_usd: Option<f64>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> f64 {
+    calculate_cost_for_usage_at(model, usage, cost_usd, None, mode, pricing)
+}
+
+pub fn calculate_cost_for_usage_at(
+    model: Option<&str>,
+    usage: crate::TokenUsageRaw,
+    cost_usd: Option<f64>,
+    timestamp: Option<crate::TimestampMs>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> f64 {
     match mode {
         CostMode::Display => cost_usd.unwrap_or(0.0),
         CostMode::Auto => {
-            cost_usd.unwrap_or_else(|| calculate_cost_from_tokens(model, usage, pricing))
+            cost_usd.unwrap_or_else(|| calculate_cost_from_tokens(model, usage, timestamp, pricing))
         }
-        CostMode::Calculate => calculate_cost_from_tokens(model, usage, pricing),
+        CostMode::Calculate => calculate_cost_from_tokens(model, usage, timestamp, pricing),
     }
 }
 
@@ -80,12 +93,18 @@ pub fn missing_pricing_model_for_candidates(
 fn calculate_cost_from_tokens(
     model: Option<&str>,
     usage: crate::TokenUsageRaw,
+    timestamp: Option<crate::TimestampMs>,
     pricing: Option<&PricingMap>,
 ) -> f64 {
     let Some(model) = model else {
         return 0.0;
     };
-    let Some(pricing) = pricing.and_then(|pricing| pricing.find(model)) else {
+    let Some(pricing) = pricing.and_then(|pricing| {
+        timestamp.map_or_else(
+            || pricing.find(model),
+            |timestamp| pricing.find_at(model, timestamp),
+        )
+    }) else {
         return 0.0;
     };
     let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
@@ -196,10 +215,10 @@ mod tests {
     use crate::{
         cli::CostMode,
         pricing::PricingMap,
-        types::{CacheCreationRaw, TokenUsageRaw},
+        types::{CacheCreationRaw, TokenUsageRaw, UsageEntry, UsageMessage},
     };
 
-    use super::calculate_cost_for_usage;
+    use super::{calculate_cost, calculate_cost_for_usage, calculate_cost_for_usage_at};
 
     fn pricing() -> PricingMap {
         let mut pricing = PricingMap::default();
@@ -364,5 +383,172 @@ mod tests {
         .unwrap();
 
         assert_eq!(usage.cache_creation_token_count(), 300);
+    }
+
+    fn deepseek_pricing() -> PricingMap {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek-v4-flash": {
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028,
+                    "cache_creation_input_token_cost": 0.000000123,
+                    "cache_read_input_token_cost": 0.0000000028
+                },
+                "deepseek-v4-pro": {
+                    "input_cost_per_token": 0.000000435,
+                    "output_cost_per_token": 0.00000087,
+                    "cache_creation_input_token_cost": 0.000000456,
+                    "cache_read_input_token_cost": 0.000000003625
+                }
+            }"#,
+        );
+        pricing
+    }
+
+    fn timestamp(value: &str) -> crate::TimestampMs {
+        crate::parse_ts_timestamp(value).unwrap()
+    }
+
+    #[test]
+    fn calculates_all_deepseek_v4_token_buckets_at_each_scheduled_rate() {
+        let pricing = deepseek_pricing();
+        let usage = TokenUsageRaw {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_creation_input_tokens: 1_000_000,
+            cache_read_input_tokens: 1_000_000,
+            ..TokenUsageRaw::default()
+        };
+        let cases = [
+            (
+                "2026-08-16T15:59:59Z",
+                [("deepseek-v4-flash", 0.5628), ("deepseek-v4-pro", 1.743625)],
+            ),
+            (
+                "2026-08-17T12:00:00Z",
+                [("deepseek-v4-flash", 1.107), ("deepseek-v4-pro", 3.322)],
+            ),
+            (
+                "2026-08-17T01:00:00Z",
+                [("deepseek-v4-flash", 2.214), ("deepseek-v4-pro", 6.644)],
+            ),
+        ];
+
+        for (timestamp_text, models) in cases {
+            for (model, expected) in models {
+                let cost = calculate_cost_for_usage_at(
+                    Some(model),
+                    usage,
+                    None,
+                    Some(timestamp(timestamp_text)),
+                    CostMode::Calculate,
+                    Some(&pricing),
+                );
+                assert!((cost - expected).abs() < 1e-12, "{model} cost was {cost}");
+            }
+        }
+    }
+
+    #[test]
+    fn scheduled_rates_preserve_display_and_auto_cost_semantics() {
+        let pricing = deepseek_pricing();
+        let usage = TokenUsageRaw {
+            input_tokens: 1_000_000,
+            ..TokenUsageRaw::default()
+        };
+        let timestamp = Some(timestamp("2026-08-17T01:00:00Z"));
+
+        assert_eq!(
+            calculate_cost_for_usage_at(
+                Some("deepseek-v4-flash"),
+                usage,
+                Some(42.0),
+                timestamp,
+                CostMode::Display,
+                Some(&pricing),
+            ),
+            42.0
+        );
+        assert_eq!(
+            calculate_cost_for_usage_at(
+                Some("deepseek-v4-flash"),
+                usage,
+                Some(42.0),
+                timestamp,
+                CostMode::Auto,
+                Some(&pricing),
+            ),
+            42.0
+        );
+        let calculated = calculate_cost_for_usage_at(
+            Some("deepseek-v4-flash"),
+            usage,
+            Some(42.0),
+            timestamp,
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        assert!((calculated - 0.44).abs() < 1e-12);
+        let automatic = calculate_cost_for_usage_at(
+            Some("deepseek-v4-flash"),
+            usage,
+            None,
+            timestamp,
+            CostMode::Auto,
+            Some(&pricing),
+        );
+        assert!((automatic - 0.44).abs() < 1e-12);
+    }
+
+    #[test]
+    fn legacy_cost_api_keeps_static_lookup_without_a_timestamp() {
+        let pricing = deepseek_pricing();
+        let usage = TokenUsageRaw {
+            input_tokens: 1_000_000,
+            ..TokenUsageRaw::default()
+        };
+
+        assert_eq!(
+            calculate_cost_for_usage(
+                Some("deepseek-v4-flash"),
+                usage,
+                None,
+                CostMode::Calculate,
+                Some(&pricing),
+            ),
+            0.14
+        );
+    }
+
+    #[test]
+    fn usage_entry_cost_wrapper_uses_event_timestamp() {
+        let pricing = deepseek_pricing();
+        let mut entry = UsageEntry {
+            session_id: None,
+            timestamp: "2026-08-17T01:00:00Z".to_string(),
+            version: None,
+            message: UsageMessage {
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000_000,
+                    ..TokenUsageRaw::default()
+                },
+                model: Some("deepseek-v4-flash".to_string()),
+                id: None,
+            },
+            cost_usd: None,
+            request_id: None,
+            is_api_error_message: None,
+            is_sidechain: None,
+        };
+
+        let cost = calculate_cost(&entry, CostMode::Calculate, Some(&pricing));
+        assert!((cost - 0.44).abs() < 1e-12);
+
+        entry.timestamp = "not-a-timestamp".to_string();
+        assert_eq!(
+            calculate_cost(&entry, CostMode::Calculate, Some(&pricing)),
+            0.14
+        );
     }
 }

@@ -64,6 +64,13 @@ pub struct CodexUsageBucket {
     pub long_context_output_tokens: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CodexTimestampedUsage {
+    pub(crate) usage: CodexUsageBucket,
+    pub(crate) recorded_standard_usage: CodexUsageBucket,
+    pub(crate) recorded_fast_usage: CodexUsageBucket,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct CodexModelUsage {
     pub input_tokens: u64,
@@ -83,6 +90,9 @@ pub struct CodexModelUsage {
     pub long_context_output_tokens: u64,
     pub recorded_standard_usage: CodexUsageBucket,
     pub recorded_fast_usage: CodexUsageBucket,
+    /// Exact event timestamps keep time-dependent pricing available after
+    /// aggregation, including for source/originator model buckets.
+    pub timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub is_fallback: bool,
 }
 

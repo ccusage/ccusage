@@ -4,7 +4,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage,
+    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage_at,
     cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
 };
 use ccusage_adapter_common::jsonl;
@@ -67,7 +67,14 @@ pub(super) fn row_to_entry(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let cost = calculate_goose_cost(&model, &provider_id, usage, reasoning_tokens, pricing);
+    let cost = calculate_goose_cost(
+        &model,
+        &provider_id,
+        usage,
+        reasoning_tokens,
+        timestamp,
+        pricing,
+    );
     let missing_pricing_model =
         missing_goose_pricing(&model, &provider_id, usage, reasoning_tokens, pricing);
 
@@ -170,6 +177,7 @@ fn calculate_goose_cost(
     provider_id: &str,
     usage: TokenUsageRaw,
     reasoning_tokens: u64,
+    timestamp: crate::TimestampMs,
     pricing: &PricingMap,
 ) -> f64 {
     let cost_usage = TokenUsageRaw {
@@ -177,10 +185,11 @@ fn calculate_goose_cost(
         cache_creation: None,
         ..usage
     };
-    let raw = calculate_cost_for_usage(
+    let raw = calculate_cost_for_usage_at(
         Some(model),
         cost_usage,
         None,
+        Some(timestamp),
         CostMode::Calculate,
         Some(pricing),
     );
@@ -188,10 +197,11 @@ fn calculate_goose_cost(
         return raw;
     }
     let candidate = format!("{provider_id}/{model}");
-    calculate_cost_for_usage(
+    calculate_cost_for_usage_at(
         Some(&candidate),
         cost_usage,
         None,
+        Some(timestamp),
         CostMode::Calculate,
         Some(pricing),
     )

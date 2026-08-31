@@ -14,7 +14,7 @@ use ccusage_adapter_common::jsonl;
 use super::paths;
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage,
+    apply_total_token_fallback, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     debug_log,
     fast::LinePrefilter,
@@ -176,7 +176,7 @@ fn parse_line(
         cache_creation: None,
         ..display_usage
     };
-    let cost = calculate_qwen_cost(&model, billable_usage, mode, pricing);
+    let cost = calculate_qwen_cost(&model, billable_usage, timestamp, mode, pricing);
     let missing_pricing_model = missing_qwen_pricing(&model, billable_usage, mode, pricing);
     let data = UsageEntry {
         session_id: Some(session_id.clone()),
@@ -212,6 +212,7 @@ fn parse_line(
 fn calculate_qwen_cost(
     model: &str,
     usage: TokenUsageRaw,
+    timestamp: TimestampMs,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> f64 {
@@ -219,7 +220,14 @@ fn calculate_qwen_cost(
         if mode == CostMode::Display
             || pricing.is_some_and(|pricing| pricing.find(&candidate).is_some())
         {
-            return calculate_cost_for_usage(Some(&candidate), usage, None, mode, pricing);
+            return calculate_cost_for_usage_at(
+                Some(&candidate),
+                usage,
+                None,
+                Some(timestamp),
+                mode,
+                pricing,
+            );
         }
     }
     0.0
@@ -325,6 +333,7 @@ mod tests {
                 speed: None,
                 cache_creation: None,
             },
+            TimestampMs::UNIX_EPOCH,
             CostMode::Calculate,
             Some(&pricing),
         );
