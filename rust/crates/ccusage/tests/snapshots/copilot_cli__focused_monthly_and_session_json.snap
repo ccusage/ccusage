@@ -9,7 +9,7 @@ Monthly JSON
       "cacheCreationTokens": 30,
       "cacheReadTokens": 20,
       "inputTokens": 163,
-      "messageCount": 3,
+      "messageCount": 4,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 30,
@@ -32,6 +32,7 @@ Monthly JSON
       "cacheCreationTokens": 15,
       "cacheReadTokens": 10,
       "inputTokens": 72,
+      "messageCount": 1,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 15,
@@ -70,7 +71,7 @@ Session JSON
       "firstActivity": "2026-01-03T01:20:00.000Z",
       "inputTokens": 163,
       "lastActivity": "2026-01-03T02:20:00.000Z",
-      "messageCount": 3,
+      "messageCount": 4,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 30,
@@ -121,6 +122,7 @@ Session JSON
       "firstActivity": "2026-02-02T01:20:00.000Z",
       "inputTokens": 7,
       "lastActivity": "2026-02-02T01:20:00.000Z",
+      "messageCount": 1,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,

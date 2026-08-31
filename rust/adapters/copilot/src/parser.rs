@@ -58,6 +58,7 @@ pub(super) struct CopilotUsageEntry {
     pub(super) timestamp_text: String,
     pub(super) session_id: String,
     pub(super) model: String,
+    pub(super) kind: CopilotUsageKind,
     pub(super) input_tokens: u64,
     pub(super) output_tokens: u64,
     pub(super) cache_creation_tokens: u64,
@@ -66,6 +67,12 @@ pub(super) struct CopilotUsageEntry {
     pub(super) extra_total_tokens: u64,
     pub(super) request_count: u64,
     pub(super) dedup_key: String,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(super) enum CopilotUsageKind {
+    Otel,
+    SessionState,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -123,13 +130,14 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
             timestamp_text: crate::format_rfc3339_millis(candidate.timestamp),
             session_id: candidate.session_id,
             model: candidate.model,
+            kind: CopilotUsageKind::Otel,
             input_tokens: candidate.input_tokens,
             output_tokens: candidate.output_tokens,
             cache_creation_tokens: candidate.cache_creation_tokens,
             cache_read_tokens: candidate.cache_read_tokens,
             reasoning_output_tokens: candidate.reasoning_output_tokens,
             extra_total_tokens: candidate.extra_total_tokens,
-            request_count: 0,
+            request_count: 1,
             dedup_key: candidate.dedup_key,
         })
         .collect())
@@ -247,6 +255,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<Vec<CopilotUsageEn
                 timestamp_text,
                 session_id: session_id.clone(),
                 model,
+                kind: CopilotUsageKind::SessionState,
                 input_tokens: uncached_session_input_tokens(&usage),
                 output_tokens: usage.output_tokens,
                 cache_creation_tokens: usage.cache_write_tokens,

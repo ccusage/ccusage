@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{CopilotUsageEntry, parse_otel_file, parse_session_state_file},
+    parser::{CopilotUsageEntry, CopilotUsageKind, parse_otel_file, parse_session_state_file},
     paths::{CopilotSourceKind, paths},
 };
 use crate::{
@@ -181,6 +181,7 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         timestamp_text: current.timestamp_text.clone(),
         session_id: current.session_id.clone(),
         model: current.model.clone(),
+        kind: current.kind,
         input_tokens: current.input_tokens.saturating_sub(baseline.input_tokens),
         output_tokens: current.output_tokens.saturating_sub(baseline.output_tokens),
         cache_creation_tokens: current
@@ -275,7 +276,12 @@ fn usage_entry_to_loaded(
         cost,
         extra_total_tokens: entry.extra_total_tokens,
         credits: None,
-        message_count: (entry.request_count > 1).then_some(entry.request_count),
+        message_count: match entry.kind {
+            CopilotUsageKind::Otel => (entry.request_count > 0).then_some(entry.request_count),
+            CopilotUsageKind::SessionState => {
+                (entry.request_count > 1).then_some(entry.request_count)
+            }
+        },
         model: Some(entry.model),
         data,
         usage_limit_reset_time: None,
@@ -747,7 +753,7 @@ mod tests {
         assert_eq!(entries[0].message_count, Some(2));
         assert_eq!(entries[1].data.message.usage.input_tokens, 13);
         assert_eq!(entries[1].data.message.usage.output_tokens, 14);
-        assert_eq!(entries[1].message_count, None);
+        assert_eq!(entries[1].message_count, Some(1));
     }
 
     #[test]

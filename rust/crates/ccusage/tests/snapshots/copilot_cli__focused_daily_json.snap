@@ -10,7 +10,7 @@ Daily JSON
       "cacheReadTokens": 20,
       "date": "2026-01-03",
       "inputTokens": 163,
-      "messageCount": 3,
+      "messageCount": 4,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 30,
@@ -55,6 +55,7 @@ Daily JSON
       "cacheReadTokens": 0,
       "date": "2026-02-02",
       "inputTokens": 7,
+      "messageCount": 1,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
