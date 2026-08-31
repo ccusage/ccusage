@@ -6,24 +6,26 @@ ccusage supports several environment variables for configuration and customizati
 
 ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; the Copilot variable points at one explicit JSONL export file, and `GROK_HOME` accepts a single root only:
 
-| Variable                          | Agent          | Default                                         |
-| --------------------------------- | -------------- | ----------------------------------------------- |
-| `CLAUDE_CONFIG_DIR`               | Claude Code    | `~/.config/claude` and `~/.claude`              |
-| `CODEX_HOME`                      | Codex          | `~/.codex`                                      |
-| `OPENCODE_DATA_DIR`               | OpenCode       | `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` |
-| `AMP_DATA_DIR`                    | Amp            | `~/.local/share/amp`                            |
-| `DROID_SESSIONS_DIR`              | Droid          | `~/.factory/sessions`                           |
-| `CODEBUFF_DATA_DIR`               | Codebuff       | `~/.config/manicode`                            |
-| `HERMES_HOME`                     | Hermes Agent   | `~/.hermes`                                     |
-| `PI_AGENT_DIR`                    | pi-agent       | `~/.pi/agent/sessions`                          |
-| `GOOSE_PATH_ROOT`                 | Goose          | Standard Goose data roots                       |
-| `OPENCLAW_DIR`                    | OpenClaw       | `~/.openclaw`                                   |
-| `KILO_DATA_DIR`                   | Kilo           | `~/.local/share/kilo`                           |
-| `KIMI_DATA_DIR`                   | Kimi           | `~/.kimi`, `~/.kimi-code`                       |
-| `QWEN_DATA_DIR`                   | Qwen           | `~/.qwen`                                       |
-| `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file                          |
-| `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                                 |
-| `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                       |
+| Variable                          | Agent          | Default                                              |
+| --------------------------------- | -------------- | ---------------------------------------------------- |
+| `CLAUDE_CONFIG_DIR`               | Claude Code    | `~/.config/claude` and `~/.claude`                   |
+| `CODEX_HOME`                      | Codex          | `~/.codex`                                           |
+| `OPENCODE_DATA_DIR`               | OpenCode       | `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`      |
+| `AMP_DATA_DIR`                    | Amp            | `~/.local/share/amp`                                 |
+| `DROID_SESSIONS_DIR`              | Droid          | `~/.factory/sessions`                                |
+| `CODEBUFF_DATA_DIR`               | Codebuff       | `~/.config/manicode`                                 |
+| `HERMES_HOME`                     | Hermes Agent   | `~/.hermes`                                          |
+| `PI_AGENT_DIR`                    | pi-agent       | `~/.pi/agent/sessions`                               |
+| `GOOSE_PATH_ROOT`                 | Goose          | Standard Goose data roots                            |
+| `OPENCLAW_DIR`                    | OpenClaw       | `~/.openclaw`                                        |
+| `KILO_DATA_DIR`                   | Kilo           | `~/.local/share/kilo`                                |
+| `KIMI_DATA_DIR`                   | Kimi           | `~/.kimi`, `~/.kimi-code`                            |
+| `QWEN_DATA_DIR`                   | Qwen           | `~/.qwen`                                            |
+| `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file                               |
+| `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                                      |
+| `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity` |
+| `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                            |
+| `ZCODE_HOME`                      | ZCode          | `~/.zcode`                                           |
 
 Example:
 
@@ -42,11 +44,13 @@ export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
+export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export GROK_HOME="/path/to/grok-home"
+export ZCODE_HOME="/path/to/zcode-home,/archive/zcode-home"
 ccusage daily
 ```
 
-Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once.
+Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once. A non-empty `ZCODE_HOME` containing only invalid roots does not fall back to `~/.zcode`.
 
 ## CLAUDE_CONFIG_DIR
 
@@ -212,7 +216,7 @@ To see which environment variables are being used:
 
 ```bash
 # Show all environment variables
-env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|GROK|CCUSAGE|LOG_LEVEL"
+env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|GROK|ZCODE|CCUSAGE|LOG_LEVEL"
 
 # Debug mode shows environment variable usage
 LOG_LEVEL=4 ccusage daily --debug

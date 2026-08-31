@@ -18,6 +18,7 @@ publish = false
 [workspace.dependencies]
 ccusage-adapter-all = { path = "crates/ccusage-adapter-all" }
 ccusage-adapter-amp = { path = "adapters/amp" }
+ccusage-adapter-antigravity = { path = "adapters/antigravity" }
 ccusage-adapter-claude = { path = "adapters/claude" }
 ccusage-adapter-codebuff = { path = "adapters/codebuff" }
 ccusage-adapter-codex = { path = "adapters/codex" }
@@ -34,6 +35,7 @@ ccusage-adapter-openclaw = { path = "adapters/openclaw" }
 ccusage-adapter-opencode = { path = "adapters/opencode" }
 ccusage-adapter-pi = { path = "adapters/pi" }
 ccusage-adapter-qwen = { path = "adapters/qwen" }
+ccusage-adapter-zcode = { path = "adapters/zcode" }
 ccusage-cli = { path = "crates/ccusage-cli" }
 ccusage-cli-parser = { path = "crates/ccusage-cli-parser" }
 ccusage-config = { path = "crates/ccusage-config" }
@@ -63,7 +65,7 @@ smallvec = "1.15.2"
 sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
 terminal_size = "0.4.4"
 unicode-width = "0.2.2"
-ureq = { version = "3.4.0", default-features = false, features = ["rustls"] }
+ureq = { version = "3.4.0", default-features = false, features = ["rustls", "gzip"] }
 
 [profile.release]
 codegen-units = 1

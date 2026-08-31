@@ -10,16 +10,16 @@ use std::{
     time::{Duration, Instant, UNIX_EPOCH},
 };
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::*;
 use crate::{
     Align, CodexGroup, CodexModelUsage, ModelBreakdown, PricingMap,
-    cli::{AgentReportKind, CodexSpeed, SharedArgs},
+    cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs},
     model_aliases::set_model_aliases_for_tests,
 };
 use ccusage_adapter_codex::CodexSourceUsage;
-use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+use ccusage_test_support::{EnvVarsGuard, fs_fixture, zcode::create_fixture};
 
 fn test_agent_rows(agent: &'static str) -> AgentRows {
     AgentRows {
@@ -135,6 +135,87 @@ fn aggregates_daily_agent_rows_by_period() {
     assert_eq!(breakdowns[0].agent, "claude");
     assert_eq!(breakdowns[0].period, "2026-01-02");
     assert_eq!(breakdowns[1].agent, "codex");
+}
+
+#[test]
+fn saturates_unified_daily_and_weekly_reports_for_extreme_counters() {
+    let rows = vec![
+        extreme_all_row("2099-01-02", u64::MAX),
+        extreme_all_row("2099-01-03", 1),
+    ];
+    let daily_rows = aggregate_rows(rows.clone(), AgentReportKind::Daily);
+    let daily_report = report_json_with_options(&daily_rows, AgentReportKind::Daily, false, true);
+    let weekly_rows = aggregate_rows(rows, AgentReportKind::Weekly);
+    let weekly_report =
+        report_json_with_options(&weekly_rows, AgentReportKind::Weekly, false, true);
+
+    for report in [daily_report, weekly_report] {
+        for key in [
+            "inputTokens",
+            "outputTokens",
+            "cacheCreationTokens",
+            "cacheReadTokens",
+            "totalTokens",
+        ] {
+            assert_eq!(report["totals"][key], u64::MAX, "{key}");
+        }
+        assert_eq!(
+            report["totals"]["sourceBreakdowns"][0]["inputTokens"],
+            u64::MAX
+        );
+        assert_eq!(
+            report["totals"]["sourceBreakdowns"][0]["modelBreakdowns"][0]["inputTokens"],
+            u64::MAX
+        );
+    }
+    assert_eq!(weekly_rows[0].model_breakdowns[0].input_tokens, u64::MAX);
+    assert_eq!(weekly_rows[0].model_breakdowns[0].output_tokens, u64::MAX);
+}
+
+fn extreme_all_row(period: &str, tokens: u64) -> AllRow {
+    AllRow {
+        period: period.to_string(),
+        agent: "codex",
+        models_used: vec!["gpt-5".to_string()],
+        input_tokens: tokens,
+        output_tokens: tokens,
+        cache_creation_tokens: tokens,
+        cache_read_tokens: tokens,
+        total_tokens: tokens,
+        total_cost: 0.0,
+        metadata: Some(json!({
+            "sourceBreakdowns": [{
+                "source": "Responses API",
+                "modelsUsed": ["gpt-5"],
+                "inputTokens": tokens,
+                "outputTokens": tokens,
+                "cacheCreationTokens": tokens,
+                "cacheReadTokens": tokens,
+                "reasoningOutputTokens": tokens,
+                "totalTokens": tokens,
+                "totalCost": 0.0,
+                "modelBreakdowns": [{
+                    "modelName": "gpt-5",
+                    "inputTokens": tokens,
+                    "outputTokens": tokens,
+                    "cacheCreationTokens": tokens,
+                    "cacheReadTokens": tokens,
+                    "cost": 0.0
+                }]
+            }]
+        })),
+        metadata_agents: Some(vec!["codex"]),
+        agent_breakdowns: None,
+        model_breakdowns: vec![ModelBreakdown {
+            model_name: "gpt-5".to_string(),
+            input_tokens: tokens,
+            output_tokens: tokens,
+            cache_creation_tokens: tokens,
+            cache_read_tokens: tokens,
+            extra_total_tokens: tokens,
+            ..ModelBreakdown::default()
+        }],
+    }
 }
 
 #[test]
@@ -655,6 +736,119 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
 }
 
 #[test]
+fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
+    let fixture = fs_fixture!({});
+    let _ = fixture.create_dir_all("zcode/cli/db");
+    let db_path = fixture.path("zcode/cli/db/db.sqlite");
+    create_fixture(db_path);
+    let _env = isolated_agent_env(
+        &fixture,
+        "ZCODE_HOME",
+        fixture.path("zcode").into_os_string(),
+    );
+    let mut shared = fixture_shared("20990101", "20990201");
+    shared.mode = CostMode::Calculate;
+
+    let daily = load_rows(AgentReportKind::Daily, &shared).unwrap();
+    let monthly = load_rows(AgentReportKind::Monthly, &shared).unwrap();
+    let session = load_rows(AgentReportKind::Session, &shared).unwrap();
+
+    assert_eq!(daily.detected_agents, vec!["zcode"]);
+    assert_eq!(monthly.detected_agents, vec!["zcode"]);
+    assert_eq!(session.detected_agents, vec!["zcode"]);
+    assert_eq!(daily.rows.len(), 3);
+    assert_eq!(daily.rows[0].period, "2099-01-02");
+    assert_eq!(daily.rows[0].input_tokens, 60);
+    assert_eq!(daily.rows[0].output_tokens, 10);
+    assert_eq!(daily.rows[0].cache_creation_tokens, 15);
+    assert_eq!(daily.rows[0].cache_read_tokens, 25);
+    assert_eq!(daily.rows[0].total_tokens, 110);
+    assert_eq!(daily.rows[0].total_cost, 0.00015549999999999999);
+    assert_eq!(daily.rows[1].period, "2099-01-15");
+    assert_eq!(daily.rows[1].input_tokens, 130);
+    assert_eq!(daily.rows[1].output_tokens, 20);
+    assert_eq!(daily.rows[1].cache_creation_tokens, 30);
+    assert_eq!(daily.rows[1].cache_read_tokens, 40);
+    assert_eq!(daily.rows[1].total_tokens, 220);
+    assert_eq!(daily.rows[1].total_cost, 0.0003224);
+    assert_eq!(daily.rows[2].period, "2099-02-01");
+    assert_eq!(daily.rows[2].input_tokens, 40);
+    assert_eq!(daily.rows[2].output_tokens, 5);
+    assert_eq!(daily.rows[2].cache_creation_tokens, 0);
+    assert_eq!(daily.rows[2].cache_read_tokens, 10);
+    assert_eq!(daily.rows[2].total_tokens, 55);
+    assert_eq!(daily.rows[2].total_cost, 0.0000806);
+    assert_eq!(monthly.rows[0].period, "2099-01");
+    assert_eq!(monthly.rows[0].total_tokens, 330);
+    assert_eq!(monthly.rows[0].total_cost, 0.00047789999999999996);
+    assert_eq!(monthly.rows[1].period, "2099-02");
+    assert_eq!(monthly.rows[1].total_tokens, 55);
+    assert_eq!(monthly.rows[1].total_cost, 0.0000806);
+    assert_eq!(session.rows[0].period, "session-a");
+    assert_eq!(session.rows[0].total_tokens, 330);
+    assert_eq!(session.rows[0].total_cost, 0.00047789999999999996);
+    assert_eq!(session.rows[1].period, "session-b");
+    assert_eq!(session.rows[1].total_tokens, 55);
+    assert_eq!(session.rows[1].total_cost, 0.0000806);
+
+    insta::assert_json_snapshot!(
+        "zcode_fixture_daily_json",
+        report_json(&daily.rows, AgentReportKind::Daily)
+    );
+    insta::assert_json_snapshot!(
+        "zcode_fixture_monthly_json",
+        report_json(&monthly.rows, AgentReportKind::Monthly)
+    );
+    insta::assert_json_snapshot!(
+        "zcode_fixture_session_json",
+        report_json(&session.rows, AgentReportKind::Session)
+    );
+    insta::assert_snapshot!(
+        "zcode_fixture_daily_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &daily.rows,
+            AgentReportKind::Daily,
+            &daily.detected_agents,
+        ))
+        .unwrap()
+    );
+    insta::assert_snapshot!(
+        "zcode_fixture_monthly_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &monthly.rows,
+            AgentReportKind::Monthly,
+            &monthly.detected_agents,
+        ))
+        .unwrap()
+    );
+    insta::assert_snapshot!(
+        "zcode_fixture_session_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &session.rows,
+            AgentReportKind::Session,
+            &session.detected_agents,
+        ))
+        .unwrap()
+    );
+}
+
+#[test]
+fn unified_report_omits_zcode_without_usage_database() {
+    let fixture = fs_fixture!({});
+    let _env = isolated_agent_env(
+        &fixture,
+        "ZCODE_HOME",
+        fixture.path("missing-zcode").into_os_string(),
+    );
+    let shared = fixture_shared("20990101", "20990201");
+
+    let result = load_rows(AgentReportKind::Daily, &shared).unwrap();
+
+    assert!(result.rows.is_empty());
+    assert!(result.detected_agents.is_empty());
+}
+
+#[test]
 fn unified_report_filters_codex_paths_before_loading_historical_rows() {
     let resumed_usage = codex_usage_line("2026-03-15T08:01:00.000Z", "gpt-5", 1_000);
     let historical_usage = codex_usage_line("2026-03-15T08:02:00.000Z", "gpt-5", 9_999);
@@ -706,6 +900,58 @@ fn fixture_shared(since: &str, until: &str) -> SharedArgs {
     }
 }
 
+fn table_snapshot(
+    rows: &[AllRow],
+    kind: AgentReportKind,
+    detected_agents: &[&'static str],
+) -> Value {
+    let (headers, _) = all_table_columns(kind, false, false);
+    let mut rendered_rows = Vec::new();
+    for row in rows {
+        rendered_rows.push(json!({
+            "kind": "row",
+            "cells": all_table_row(row, false, false, false),
+        }));
+        if let Some(agent_breakdowns) = row.agent_breakdowns.as_ref() {
+            for breakdown in agent_breakdowns {
+                rendered_rows.push(json!({
+                    "kind": "agent-breakdown",
+                    "cells": all_table_row(breakdown, false, true, false),
+                }));
+            }
+        }
+    }
+    let totals = report_json(rows, kind)["totals"].clone();
+    let total_row = AllRow {
+        period: "Total".to_string(),
+        agent: "all",
+        models_used: Vec::new(),
+        input_tokens: totals["inputTokens"].as_u64().unwrap(),
+        output_tokens: totals["outputTokens"].as_u64().unwrap(),
+        cache_creation_tokens: totals["cacheCreationTokens"].as_u64().unwrap(),
+        cache_read_tokens: totals["cacheReadTokens"].as_u64().unwrap(),
+        total_tokens: totals["totalTokens"].as_u64().unwrap(),
+        total_cost: totals["totalCost"].as_f64().unwrap(),
+        metadata: None,
+        metadata_agents: None,
+        agent_breakdowns: None,
+        model_breakdowns: Vec::new(),
+    };
+    let mut total_cells = all_table_row(&total_row, false, false, false);
+    total_cells[1].clear();
+    total_cells[2].clear();
+    rendered_rows.push(json!({
+        "kind": "total",
+        "cells": total_cells,
+    }));
+
+    json!({
+        "title": all_report_title(kind, rows, detected_agents),
+        "headers": headers,
+        "rows": rendered_rows,
+    })
+}
+
 fn isolated_agent_env(
     fixture: &ccusage_test_support::Fixture,
     source_key: &'static str,
@@ -730,6 +976,7 @@ fn isolated_agent_env(
         "KIMI_DATA_DIR",
         "QWEN_DATA_DIR",
         "GROK_HOME",
+        "ZCODE_HOME",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))

@@ -21,7 +21,7 @@ Most users can start with unified reports such as `ccusage daily`. Add the `gemi
 
 ## Data Source
 
-The CLI reads Gemini CLI JSON and JSONL files located under `GEMINI_DATA_DIR` (defaults to `~/.gemini/tmp`). `GEMINI_DATA_DIR` can be one directory or a comma-separated list of directories.
+The CLI reads Gemini CLI JSON and JSONL files located under `GEMINI_DATA_DIR` (defaults to `~/.gemini/tmp`). `GEMINI_DATA_DIR` can be one directory or a comma-separated list of directories. Antigravity SQLite conversations are a separate source; see [Antigravity](/guide/antigravity/).
 
 ```bash
 GEMINI_DATA_DIR="$HOME/.gemini/tmp,/backup/gemini/tmp" ccusage gemini daily

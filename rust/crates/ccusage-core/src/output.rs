@@ -77,20 +77,36 @@ pub fn session_summary_json(row: &UsageSummary) -> Value {
 }
 
 pub fn totals_json(rows: &[UsageSummary]) -> Value {
-    let input = rows.iter().map(|row| row.input_tokens).sum::<u64>();
-    let output = rows.iter().map(|row| row.output_tokens).sum::<u64>();
+    let input = rows
+        .iter()
+        .map(|row| row.input_tokens)
+        .fold(0, u64::saturating_add);
+    let output = rows
+        .iter()
+        .map(|row| row.output_tokens)
+        .fold(0, u64::saturating_add);
     let cache_create = rows
         .iter()
         .map(|row| row.cache_creation_tokens)
-        .sum::<u64>();
-    let cache_read = rows.iter().map(|row| row.cache_read_tokens).sum::<u64>();
-    let extra = rows.iter().map(|row| row.extra_total_tokens).sum::<u64>();
+        .fold(0, u64::saturating_add);
+    let cache_read = rows
+        .iter()
+        .map(|row| row.cache_read_tokens)
+        .fold(0, u64::saturating_add);
+    let extra = rows
+        .iter()
+        .map(|row| row.extra_total_tokens)
+        .fold(0, u64::saturating_add);
     let mut value = json!({
         "inputTokens": input,
         "outputTokens": output,
         "cacheCreationTokens": cache_create,
         "cacheReadTokens": cache_read,
-        "totalTokens": input + output + cache_create + cache_read + extra,
+        "totalTokens": input
+            .saturating_add(output)
+            .saturating_add(cache_create)
+            .saturating_add(cache_read)
+            .saturating_add(extra),
         "totalCost": rows.iter().map(|row| row.total_cost).sum::<f64>(),
     });
     let credits = rows.iter().filter_map(|row| row.credits).sum::<f64>();
@@ -299,10 +315,12 @@ pub fn print_usage_table_with_options(
         .get("totalCost")
         .and_then(Value::as_f64)
         .unwrap_or_default();
-    let total_tokens = totals
-        .get("totalTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(input + output + cache_create + cache_read);
+    let total_tokens = totals.get("totalTokens").and_then(Value::as_u64).unwrap_or(
+        input
+            .saturating_add(output)
+            .saturating_add(cache_create)
+            .saturating_add(cache_read),
+    );
     table.separator();
     let mut total_row = vec![
         color(shared, "Total", Color::Yellow),
@@ -437,10 +455,11 @@ fn push_breakdown_rows(
     shared: &SharedArgs,
 ) {
     for breakdown in &row.model_breakdowns {
-        let total = breakdown.input_tokens
-            + breakdown.output_tokens
-            + breakdown.cache_creation_tokens
-            + breakdown.cache_read_tokens;
+        let total = breakdown
+            .input_tokens
+            .saturating_add(breakdown.output_tokens)
+            .saturating_add(breakdown.cache_creation_tokens)
+            .saturating_add(breakdown.cache_read_tokens);
         let mut values = vec![
             color(
                 shared,

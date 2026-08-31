@@ -56,8 +56,24 @@ pub const DEFAULT_RECENT_DAYS: i64 = 3;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;
 
 pub const BUILT_IN_AGENT_NAMES: &[&str] = &[
-    "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "openclaw",
-    "kilo", "copilot", "gemini", "kimi", "qwen", "grok",
+    "claude",
+    "codex",
+    "opencode",
+    "amp",
+    "droid",
+    "codebuff",
+    "hermes",
+    "pi",
+    "goose",
+    "openclaw",
+    "kilo",
+    "copilot",
+    "gemini",
+    "antigravity",
+    "kimi",
+    "qwen",
+    "grok",
+    "zcode",
 ];
 
 pub type Result<T> = std::result::Result<T, CliError>;

@@ -6,6 +6,7 @@ publish.workspace = true
 
 [dependencies]
 ccusage-adapter-amp.workspace = true
+ccusage-adapter-antigravity.workspace = true
 ccusage-adapter-claude.workspace = true
 ccusage-adapter-codebuff.workspace = true
 ccusage-adapter-codex.workspace = true
@@ -22,6 +23,7 @@ ccusage-adapter-openclaw.workspace = true
 ccusage-adapter-opencode.workspace = true
 ccusage-adapter-pi.workspace = true
 ccusage-adapter-qwen.workspace = true
+ccusage-adapter-zcode.workspace = true
 ccusage-cli.workspace = true
 ccusage-core.workspace = true
 serde.workspace = true
@@ -30,3 +32,4 @@ serde_json.workspace = true
 [dev-dependencies]
 ccusage-test-support.workspace = true
 insta.workspace = true
+sqlite.workspace = true

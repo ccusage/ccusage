@@ -1,0 +1,69 @@
+---
+source: adapters/zcode/src/report.rs
+expression: "report_from_rows(&monthly, AgentReportKind::Monthly)"
+---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 45,
+      "cacheReadTokens": 65,
+      "inputTokens": 190,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "modelName": "GLM-5.3",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "modelName": "GLM-5.2",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.2",
+        "GLM-5.3"
+      ],
+      "month": "2099-01",
+      "outputTokens": 30,
+      "totalCost": 0.00047789999999999996,
+      "totalTokens": 330
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 10,
+      "inputTokens": 40,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "modelName": "GLM-5.3",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.3"
+      ],
+      "month": "2099-02",
+      "outputTokens": 5,
+      "totalCost": 0.0000806,
+      "totalTokens": 55
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 45,
+    "cacheReadTokens": 75,
+    "inputTokens": 230,
+    "outputTokens": 35,
+    "totalCost": 0.0005585,
+    "totalTokens": 385
+  }
+}
