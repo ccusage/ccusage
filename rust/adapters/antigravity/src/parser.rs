@@ -10,6 +10,9 @@ use crate::{
 
 const DEFAULT_MODEL: &str = "gemini-internal-model";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
+const API_PROVIDER_GOOGLE_VERTEX: u64 = 3;
+const API_PROVIDER_GOOGLE_GEMINI: u64 = 24;
+const API_PROVIDER_GOOGLE_EVERGREEN: u64 = 30;
 
 #[derive(Debug, Clone)]
 pub(super) struct AntigravityUsageEvent {
@@ -754,7 +757,7 @@ fn take_length_delimited<'a>(blob: &mut &'a [u8]) -> ProtoResult<&'a [u8]> {
 }
 
 fn field_varint(fields: &[ProtoField<'_>], number: u32) -> Option<u64> {
-    fields.iter().find_map(|field| match field {
+    fields.iter().rev().find_map(|field| match field {
         ProtoField {
             number: field_number,
             value: ProtoValue::Varint(value),
@@ -787,7 +790,16 @@ fn field_bytes_all<'a>(fields: &'a [ProtoField<'a>], number: u32) -> Vec<&'a [u8
 }
 
 fn field_text(fields: &[ProtoField<'_>], number: u32) -> Option<String> {
-    field_bytes(fields, number)
+    fields
+        .iter()
+        .rev()
+        .find_map(|field| match field {
+            ProtoField {
+                number: field_number,
+                value: ProtoValue::Bytes(value),
+            } if *field_number == number => Some(*value),
+            _ => None,
+        })
         .and_then(|value| std::str::from_utf8(value).ok())
         .filter(|value| !value.trim().is_empty())
         .map(ToString::to_string)
@@ -962,17 +974,27 @@ fn missing_antigravity_pricing(
     if mode == CostMode::Display {
         return None;
     }
+    let total_tokens = usage
+        .input_tokens
+        .saturating_add(usage.output_tokens)
+        .saturating_add(usage.cache_creation_token_count())
+        .saturating_add(usage.cache_read_input_tokens);
     missing_pricing_model_for_candidates(
         model,
         model_candidates(model, provider),
-        crate::total_usage_tokens(usage),
+        total_tokens,
         Some(pricing),
     )
 }
 
 fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
     let mut candidates = vec![model.to_string()];
-    if provider.is_some() {
+    if matches!(
+        provider,
+        Some(
+            API_PROVIDER_GOOGLE_VERTEX | API_PROVIDER_GOOGLE_GEMINI | API_PROVIDER_GOOGLE_EVERGREEN
+        )
+    ) {
         candidates.extend(
             PROVIDER_PREFIXES
                 .into_iter()
@@ -1201,5 +1223,131 @@ pub(super) mod test_support {
             trajectory_statement.next().unwrap();
             trajectory_statement.reset().unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::{UsageFixture, step_metadata_blob};
+    use super::{
+        API_PROVIDER_GOOGLE_GEMINI, ProtoField, ProtoValue, field_bytes, field_bytes_all,
+        field_text, field_varint, missing_antigravity_pricing, model_candidates,
+        parse_step_metadata,
+    };
+    use crate::{PricingMap, TokenUsageRaw, cli::CostMode};
+
+    #[test]
+    fn protobuf_scalars_use_last_duplicate_and_messages_keep_merge_order() {
+        let first_text = b"first";
+        let last_text = b"last";
+        let first_message = b"message-first";
+        let second_message = b"message-second";
+        let fields = [
+            ProtoField {
+                number: 1,
+                value: ProtoValue::Varint(1),
+            },
+            ProtoField {
+                number: 1,
+                value: ProtoValue::Varint(2),
+            },
+            ProtoField {
+                number: 2,
+                value: ProtoValue::Bytes(first_text),
+            },
+            ProtoField {
+                number: 2,
+                value: ProtoValue::Bytes(last_text),
+            },
+            ProtoField {
+                number: 3,
+                value: ProtoValue::Bytes(first_message),
+            },
+            ProtoField {
+                number: 3,
+                value: ProtoValue::Bytes(second_message),
+            },
+        ];
+
+        assert_eq!(field_varint(&fields, 1), Some(2));
+        assert_eq!(field_text(&fields, 2).as_deref(), Some("last"));
+        assert_eq!(field_bytes(&fields, 3), Some(first_message.as_slice()));
+        assert_eq!(
+            field_bytes_all(&fields, 3),
+            vec![first_message.as_slice(), second_message.as_slice()]
+        );
+    }
+
+    #[test]
+    fn parses_production_step_retry_info_from_field_28() {
+        let retry = UsageFixture {
+            input_tokens: 11,
+            total_output_tokens: 22,
+            visible_output_tokens: 20,
+            response_id: Some("production-step-retry"),
+            ..UsageFixture::default()
+        };
+        let metadata = parse_step_metadata(&step_metadata_blob(
+            None,
+            None,
+            None,
+            &[retry],
+            Some(API_PROVIDER_GOOGLE_GEMINI),
+        ))
+        .unwrap();
+
+        assert_eq!(metadata.retry_usages.len(), 1);
+        assert_eq!(metadata.retry_usages[0].input_tokens, 11);
+        assert_eq!(
+            metadata.retry_usages[0].response_id.as_deref(),
+            Some("production-step-retry")
+        );
+    }
+
+    #[test]
+    fn only_google_providers_receive_google_model_candidates() {
+        let bare = "gemini-unpriced".to_string();
+        assert_eq!(
+            model_candidates("gemini-unpriced", Some(26)),
+            vec![bare.clone()]
+        );
+        assert_eq!(
+            model_candidates("gemini-unpriced", None),
+            vec![bare.clone()]
+        );
+        assert_eq!(
+            model_candidates("gemini-unpriced", Some(API_PROVIDER_GOOGLE_GEMINI)),
+            vec![
+                bare,
+                "google/gemini-unpriced".to_string(),
+                "gemini/gemini-unpriced".to_string(),
+                "vertex_ai/gemini-unpriced".to_string(),
+                "openrouter/google/gemini-unpriced".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_pricing_token_total_saturates() {
+        let pricing = PricingMap::default();
+        let result = std::panic::catch_unwind(|| {
+            missing_antigravity_pricing(
+                "antigravity-unpriced",
+                None,
+                TokenUsageRaw {
+                    input_tokens: u64::MAX,
+                    output_tokens: u64::MAX,
+                    cache_creation_input_tokens: u64::MAX,
+                    cache_read_input_tokens: u64::MAX,
+                    speed: None,
+                    cache_creation: None,
+                },
+                CostMode::Calculate,
+                &pricing,
+            )
+        });
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_some());
     }
 }
