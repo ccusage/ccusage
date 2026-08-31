@@ -414,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn excludes_fuzzy_provider_pricing_from_embedded_fallback() {
+    fn accepts_normalized_provider_pricing_and_excludes_longer_fuzzy_matches() {
         let pricing = PricingMap::load_embedded();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
@@ -433,8 +433,21 @@ mod tests {
 
         assert_eq!(
             model_candidates(&entry, &pricing),
-            vec!["deepseek.v4.flash".to_string()]
+            vec![
+                "deepseek/deepseek.v4.flash".to_string(),
+                "deepseek.v4.flash".to_string()
+            ]
         );
-        assert!((calculate_hermes_cost(&entry, &pricing) - 0.44).abs() < 1e-12);
+        assert!((calculate_hermes_cost(&entry, &pricing) - 0.14).abs() < 1e-12);
+
+        let longer_entry = HermesEntry {
+            model: "deepseek.v4.flash-preview".to_string(),
+            session_id: "session-deepseek-fuzzy-fallback".to_string(),
+            ..entry
+        };
+        assert_eq!(
+            model_candidates(&longer_entry, &pricing),
+            vec!["deepseek.v4.flash-preview".to_string()]
+        );
     }
 }
