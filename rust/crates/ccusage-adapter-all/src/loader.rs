@@ -13,7 +13,7 @@ use crate::{
     SessionAccumulator, UsageSummary,
     adapter::{
         amp, antigravity, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
-        kilo, kimi, openclaw, opencode, pi, qwen,
+        kilo, kimi, openclaw, opencode, pi, qwen, zcode,
     },
     cli::{AgentReportKind, CodexSpeed, NamedPiStore, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -339,6 +339,21 @@ fn load_base_rows(
                 )?;
                 rows.detected = rows.detected || grok::has_data();
                 Ok(rows)
+            }),
+        },
+        AgentLoadSpec {
+            index: 17,
+            agent: BUILT_IN_AGENT_NAMES[17],
+            progress_agent: crate::progress::UsageLoadAgent("ZCode"),
+            load: Box::new(|| {
+                load_priced_summary_agent_rows(
+                    "zcode",
+                    load_kind,
+                    &loader_shared,
+                    pricing,
+                    zcode::load_entries,
+                    zcode::summarize_entries,
+                )
             }),
         },
     ];

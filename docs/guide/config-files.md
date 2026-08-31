@@ -180,7 +180,7 @@ Override shared defaults for specific unified reports and legacy Claude commands
 
 ### Source-Specific Configuration
 
-Use data source namespaces to set defaults and report overrides. Supported namespaces are `claude`, `codex`, `opencode`, `amp`, `droid`, `codebuff`, `hermes`, `pi`, `goose`, `openclaw`, `kilo`, `kimi`, `qwen`, `copilot`, `gemini`, `antigravity`, and `grok`.
+Use data source namespaces to set defaults and report overrides. Supported namespaces are `claude`, `codex`, `opencode`, `amp`, `droid`, `codebuff`, `hermes`, `pi`, `goose`, `openclaw`, `kilo`, `kimi`, `qwen`, `copilot`, `gemini`, `antigravity`, `grok`, and `zcode`.
 
 ```json
 {
@@ -261,6 +261,11 @@ Use data source namespaces to set defaults and report overrides. Supported names
 		"defaults": {
 			"offline": true
 		}
+	},
+	"zcode": {
+		"defaults": {
+			"offline": true
+		}
 	}
 }
 ```
@@ -280,6 +285,7 @@ ccusage qwen daily
 ccusage copilot monthly
 ccusage gemini daily
 ccusage antigravity daily
+ccusage zcode daily
 ```
 
 Source-specific report settings apply only to the focused commands shown above. In particular, `codex.defaults.bySource` is honored only by focused Codex commands. Unified reports such as `ccusage daily` do not apply agent-specific options; use the unified `--by-source` flag to request Codex client/originator breakdowns there.

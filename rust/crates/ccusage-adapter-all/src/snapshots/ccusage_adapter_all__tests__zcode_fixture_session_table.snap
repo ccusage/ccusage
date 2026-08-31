@@ -1,0 +1,62 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "serde_json::to_string_pretty(&table_snapshot(&session.rows,\nAgentReportKind::Session, &session.detected_agents,)).unwrap()"
+---
+{
+  "headers": [
+    "Session",
+    "Agent",
+    "Models",
+    "Input",
+    "Output",
+    "Cache Create",
+    "Cache Read",
+    "Total Tokens",
+    "Cost (USD)"
+  ],
+  "rows": [
+    {
+      "cells": [
+        "session-a",
+        "ZCode",
+        "- GLM-5.2\n- GLM-5.3",
+        "190",
+        "30",
+        "45",
+        "65",
+        "330",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "session-b",
+        "ZCode",
+        "- GLM-5.3",
+        "40",
+        "5",
+        "0",
+        "10",
+        "55",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "Total",
+        "",
+        "",
+        "230",
+        "35",
+        "45",
+        "75",
+        "385",
+        "$0.00"
+      ],
+      "kind": "total"
+    }
+  ],
+  "title": "Coding (Agent) CLI Usage Report - Session\nDetected: ZCode"
+}

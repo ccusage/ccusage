@@ -50,7 +50,8 @@ fn window_target(cli: &mut Cli) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)
             | Command::Kimi(args)
             | Command::Qwen(args)
             | Command::OpenClaw(args)
-            | Command::Grok(args),
+            | Command::Grok(args)
+            | Command::ZCode(args),
         ) => agent_window_target(args),
         Some(Command::Session(_) | Command::Blocks(_) | Command::Statusline(_)) => None,
     }

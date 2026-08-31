@@ -49,6 +49,7 @@ fn main() -> Result<()> {
         Some(Command::Kimi(args)) => adapter::kimi::run(args),
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
         Some(Command::Grok(args)) => adapter::grok::run(args),
+        Some(Command::ZCode(args)) => adapter::zcode::run(args),
         None => {
             let args = AgentCommandArgs {
                 shared: cli.shared,
@@ -105,6 +106,7 @@ mod tests {
             ccusage_adapter_opencode::run,
             ccusage_adapter_pi::run,
             ccusage_adapter_qwen::run,
+            ccusage_adapter_zcode::run,
         ];
 
         assert_eq!(runs.len(), 16);

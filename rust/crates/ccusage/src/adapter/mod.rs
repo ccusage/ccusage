@@ -16,3 +16,4 @@ pub(crate) use ccusage_adapter_openclaw as openclaw;
 pub(crate) use ccusage_adapter_opencode as opencode;
 pub(crate) use ccusage_adapter_pi as pi;
 pub(crate) use ccusage_adapter_qwen as qwen;
+pub(crate) use ccusage_adapter_zcode as zcode;

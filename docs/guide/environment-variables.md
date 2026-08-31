@@ -25,6 +25,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                                      |
 | `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity` |
 | `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                            |
+| `ZCODE_HOME`                      | ZCode          | `~/.zcode`                                           |
 
 Example:
 
@@ -45,10 +46,11 @@ export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export GROK_HOME="/path/to/grok-home"
+export ZCODE_HOME="/path/to/zcode-home,/archive/zcode-home"
 ccusage daily
 ```
 
-Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once.
+Empty entries, directories that do not exist, and missing explicit files are skipped. Duplicate paths are read once. A non-empty `ZCODE_HOME` containing only invalid roots does not fall back to `~/.zcode`.
 
 ## CLAUDE_CONFIG_DIR
 
@@ -214,7 +216,7 @@ To see which environment variables are being used:
 
 ```bash
 # Show all environment variables
-env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|GROK|CCUSAGE|LOG_LEVEL"
+env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|GROK|ZCODE|CCUSAGE|LOG_LEVEL"
 
 # Debug mode shows environment variable usage
 LOG_LEVEL=4 ccusage daily --debug

@@ -26,6 +26,7 @@ mod adapter {
     pub use ccusage_adapter_opencode as opencode;
     pub use ccusage_adapter_pi as pi;
     pub use ccusage_adapter_qwen as qwen;
+    pub use ccusage_adapter_zcode as zcode;
 }
 
 use crate::{

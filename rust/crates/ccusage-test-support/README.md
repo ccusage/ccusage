@@ -8,6 +8,8 @@ Test-only helpers: filesystem fixtures and environment-variable guards.
   literal file map, so loader tests read real files instead of mocks.
 - `EnvVarGuard` and `EnvVarsGuard` — set the data-directory variables an adapter
   reads and restore them when the test ends.
+- `zcode::create_fixture` — create the representative ZCode SQLite schema and
+  usage rows shared by adapter and unified report tests.
 
 Every crate that has tests uses this as a dev-dependency; nothing depends on it
 at runtime.
@@ -17,10 +19,13 @@ at runtime.
 - `EnvVarGuard`
 - `EnvVarsGuard`
 - `Fixture`
+- `zcode::create_fixture`
 
 ## Depends on
 
 - `assert_fs`
+- `jiff`
+- `sqlite`
 
 ## Build layer
 
