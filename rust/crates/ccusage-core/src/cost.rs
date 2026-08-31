@@ -481,28 +481,24 @@ mod tests {
             ),
             42.0
         );
-        assert_eq!(
-            calculate_cost_for_usage_at(
-                Some("deepseek-v4-flash"),
-                usage,
-                Some(42.0),
-                timestamp,
-                CostMode::Calculate,
-                Some(&pricing),
-            ),
-            0.44
+        let calculated = calculate_cost_for_usage_at(
+            Some("deepseek-v4-flash"),
+            usage,
+            Some(42.0),
+            timestamp,
+            CostMode::Calculate,
+            Some(&pricing),
         );
-        assert_eq!(
-            calculate_cost_for_usage_at(
-                Some("deepseek-v4-flash"),
-                usage,
-                None,
-                timestamp,
-                CostMode::Auto,
-                Some(&pricing),
-            ),
-            0.44
+        assert!((calculated - 0.44).abs() < 1e-12);
+        let automatic = calculate_cost_for_usage_at(
+            Some("deepseek-v4-flash"),
+            usage,
+            None,
+            timestamp,
+            CostMode::Auto,
+            Some(&pricing),
         );
+        assert!((automatic - 0.44).abs() < 1e-12);
     }
 
     #[test]
@@ -546,10 +542,8 @@ mod tests {
             is_sidechain: None,
         };
 
-        assert_eq!(
-            calculate_cost(&entry, CostMode::Calculate, Some(&pricing)),
-            0.44
-        );
+        let cost = calculate_cost(&entry, CostMode::Calculate, Some(&pricing));
+        assert!((cost - 0.44).abs() < 1e-12);
 
         entry.timestamp = "not-a-timestamp".to_string();
         assert_eq!(
