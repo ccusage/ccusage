@@ -73,16 +73,85 @@ impl PricingEndpoint {
         }
     }
 
-    /// Returns whether a body contains usable pricing data for this endpoint.
+    /// Returns whether a body has a non-empty pricing shape for this endpoint.
     pub fn validates(self, json: &str) -> bool {
-        let mut map = PricingMap::default();
+        let Ok(Value::Object(entries)) = serde_json::from_str::<Value>(json) else {
+            return false;
+        };
+
         match self {
-            Self::LiteLlm => map.load_json(json) > 0,
-            Self::ModelsDev => map
-                .load_models_dev_json_missing(json)
-                .is_some_and(|loaded_count| loaded_count > 0),
+            Self::LiteLlm => entries.values().any(litellm_entry_has_required_cost),
+            Self::ModelsDev => models_dev_object_has_required_shape(&entries),
         }
     }
+}
+
+fn litellm_entry_has_required_cost(value: &Value) -> bool {
+    let Some(entry) = value.as_object() else {
+        return false;
+    };
+    let full = entry
+        .get("input_cost_per_token")
+        .is_some_and(Value::is_number)
+        && entry
+            .get("output_cost_per_token")
+            .is_some_and(Value::is_number);
+    let compact = entry.get("i").is_some_and(Value::is_number)
+        && entry.get("o").is_some_and(Value::is_number);
+    full || compact
+}
+
+fn models_dev_object_has_required_shape(entries: &serde_json::Map<String, Value>) -> bool {
+    if entries.values().any(models_dev_entry_has_models_field) {
+        return entries.values().all(models_dev_provider_has_required_shape)
+            && entries.values().any(models_dev_provider_has_required_cost);
+    }
+    entries.values().all(models_dev_entry_has_required_cost)
+        && entries.values().any(models_dev_entry_has_nonzero_cost)
+}
+
+fn models_dev_provider_has_required_shape(value: &Value) -> bool {
+    let Some(provider) = value.as_object() else {
+        return false;
+    };
+    let Some(models) = provider.get("models").and_then(Value::as_object) else {
+        return false;
+    };
+    models.values().all(Value::is_object)
+}
+
+fn models_dev_provider_has_required_cost(value: &Value) -> bool {
+    value
+        .as_object()
+        .and_then(|provider| provider.get("models"))
+        .and_then(Value::as_object)
+        .is_some_and(|models| models.values().any(models_dev_model_has_required_cost))
+}
+
+fn models_dev_model_has_required_cost(value: &Value) -> bool {
+    value
+        .as_object()
+        .and_then(|model| model.get("cost"))
+        .and_then(Value::as_object)
+        .is_some_and(models_dev_cost_has_required_rates)
+}
+
+fn models_dev_entry_has_nonzero_cost(value: &Value) -> bool {
+    value
+        .as_object()
+        .and_then(|entry| entry.get("cost"))
+        .and_then(Value::as_object)
+        .is_some_and(models_dev_cost_has_required_rates)
+}
+
+fn models_dev_cost_has_required_rates(cost: &serde_json::Map<String, Value>) -> bool {
+    let Some(input) = cost.get("input").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(output) = cost.get("output").and_then(Value::as_f64) else {
+        return false;
+    };
+    input != 0.0 || output != 0.0
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2234,10 +2303,15 @@ mod tests {
             r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
 
         assert!(PricingEndpoint::LiteLlm.validates(litellm));
+        assert!(PricingEndpoint::LiteLlm.validates(r#"{"gpt-test":{"i":1.0,"o":2.0}}"#));
         assert!(!PricingEndpoint::LiteLlm.validates(models_dev));
         assert!(PricingEndpoint::ModelsDev.validates(models_dev));
         assert!(!PricingEndpoint::ModelsDev.validates(litellm));
         assert!(!PricingEndpoint::ModelsDev.validates("{}"));
+        assert!(
+            !PricingEndpoint::ModelsDev
+                .validates(r#"{"openai":{"models":{"free":{"cost":{"input":0.0,"output":0.0}}}}}"#)
+        );
     }
 
     #[test]

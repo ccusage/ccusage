@@ -179,6 +179,9 @@ impl CacheEntry {
             return None;
         }
         let (etag, body) = raw.split_once('\n')?;
+        if body.len() as u64 > PRICING_FETCH_MAX_BYTES {
+            return None;
+        }
         let etag = etag.trim();
         if etag.is_empty()
             || etag.len() as u64 > CACHE_ETAG_MAX_BYTES
@@ -397,6 +400,24 @@ mod tests {
         );
         fs::write(&entry.path, "etag-without-newline").expect("overwrite cache");
         assert!(entry.read().is_none(), "a truncated entry must not be used");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cache_read_rejects_body_over_the_pricing_limit_after_the_etag() {
+        let dir = unique_test_dir("oversized-body");
+        let _ = fs::remove_dir_all(&dir);
+        let entry = CacheEntry::for_url(&dir, "https://example.com/pricing.json");
+
+        entry.write("etag", "small body");
+        let body = "x".repeat((PRICING_FETCH_MAX_BYTES + 1) as usize);
+        fs::write(&entry.path, format!("etag\n{body}")).expect("overwrite cache");
+
+        assert!(
+            entry.read().is_none(),
+            "the body limit must not include the ETag allowance"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
