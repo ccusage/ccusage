@@ -223,7 +223,7 @@ fn model_candidates(entry: &HermesEntry, pricing: &PricingMap) -> Vec<String> {
     let mut candidates = Vec::new();
     if entry.provider != "hermes" {
         let qualified = format!("{}/{}", entry.provider, entry.model);
-        if pricing.find_exact(&qualified).is_some() {
+        if pricing.find_exact_with_fallback(&qualified).is_some() {
             candidates.push(qualified);
         }
     }
@@ -383,5 +383,58 @@ mod tests {
             model_candidates(&entry, &pricing),
             vec!["deepseek-v4-flash"]
         );
+    }
+
+    #[test]
+    fn uses_exact_provider_pricing_from_embedded_fallback_before_timestamped_raw_model() {
+        let pricing = PricingMap::load_embedded();
+        let entry = HermesEntry {
+            timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
+            timestamp_text: "2026-08-17T01:00:00.000Z".to_string(),
+            session_id: "session-deepseek-fallback".to_string(),
+            model: "deepseek-v4-flash".to_string(),
+            provider: "deepseek".to_string(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000_000,
+                ..TokenUsageRaw::default()
+            },
+            reasoning_tokens: 0,
+            message_count: 1,
+            cost_usd: None,
+        };
+
+        assert_eq!(
+            model_candidates(&entry, &pricing),
+            vec![
+                "deepseek/deepseek-v4-flash".to_string(),
+                "deepseek-v4-flash".to_string()
+            ]
+        );
+        assert!((calculate_hermes_cost(&entry, &pricing) - 0.14).abs() < 1e-12);
+    }
+
+    #[test]
+    fn excludes_fuzzy_provider_pricing_from_embedded_fallback() {
+        let pricing = PricingMap::load_embedded();
+        let entry = HermesEntry {
+            timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
+            timestamp_text: "2026-08-17T01:00:00.000Z".to_string(),
+            session_id: "session-deepseek-fuzzy-fallback".to_string(),
+            model: "deepseek.v4.flash".to_string(),
+            provider: "deepseek".to_string(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000_000,
+                ..TokenUsageRaw::default()
+            },
+            reasoning_tokens: 0,
+            message_count: 1,
+            cost_usd: None,
+        };
+
+        assert_eq!(
+            model_candidates(&entry, &pricing),
+            vec!["deepseek.v4.flash".to_string()]
+        );
+        assert!((calculate_hermes_cost(&entry, &pricing) - 0.44).abs() < 1e-12);
     }
 }

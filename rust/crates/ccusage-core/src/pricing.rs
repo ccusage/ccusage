@@ -1223,6 +1223,25 @@ impl PricingMap {
         self.entries.get(model).copied()
     }
 
+    /// Finds pricing by exact model id in the primary map or an enabled
+    /// models.dev fallback.
+    ///
+    /// Unlike [`Self::find`], this lookup does not resolve aliases or use
+    /// separator and fuzzy matching.
+    pub fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
+        self.find_exact(model)
+            .or_else(|| {
+                self.enable_models_dev_fallback
+                    .then(|| models_dev_pricing().and_then(|pricing| pricing.find_exact(model)))
+                    .flatten()
+            })
+            .or_else(|| {
+                self.enable_embedded_models_dev_fallback
+                    .then(|| embedded_models_dev_pricing().find_exact(model))
+                    .flatten()
+            })
+    }
+
     fn find_entry_or_alias(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
         self.entries
             .get(model)
