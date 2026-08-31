@@ -13,3 +13,4 @@ sqlite.workspace = true
 
 [dev-dependencies]
 ccusage-test-support.workspace = true
+insta.workspace = true

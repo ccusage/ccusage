@@ -1,0 +1,62 @@
+---
+source: adapters/zcode/src/report.rs
+expression: "serde_json::to_string_pretty(&table_snapshot(&session,\nAgentReportKind::Session)).unwrap()"
+---
+{
+  "headers": [
+    "Session",
+    "Models",
+    "Input",
+    "Output",
+    "Cache Create",
+    "Cache Read",
+    "Total Tokens",
+    "Cost (USD)",
+    "Last Activity"
+  ],
+  "rows": [
+    {
+      "cells": [
+        "session-a",
+        "- GLM-5.2\n- GLM-5.3",
+        "190",
+        "30",
+        "45",
+        "65",
+        "330",
+        "$0.00",
+        "2099-01-15"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "session-b",
+        "- GLM-5.3",
+        "40",
+        "5",
+        "0",
+        "10",
+        "55",
+        "$0.00",
+        "2099-02-01"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "Total",
+        "",
+        "230",
+        "35",
+        "45",
+        "75",
+        "385",
+        "$0.00",
+        ""
+      ],
+      "kind": "total"
+    }
+  ],
+  "title": "ZCode Token Usage Report"
+}
