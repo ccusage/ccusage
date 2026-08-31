@@ -66,7 +66,9 @@ Z.ai provider, or for legacy rows with no provider and a GLM model. A custom
 provider UUID is not treated as a billable provider even when its model name
 matches a generic pricing entry; use an explicit model pricing override when
 that provider should be estimated. Unpriced models remain at zero cost and use
-the standard missing-pricing warning.
+the standard missing-pricing warning. Z.ai cache-creation tokens remain in the
+displayed cache-creation bucket but are estimated at the model's standard input
+rate because they represent new content.
 
 ## Configuration
 

@@ -352,6 +352,10 @@ mod tests {
 
     fn insert_current_usage(path: &Path, id: &str, status: &str) {
         let db = sqlite::open(path).unwrap();
+        insert_current_usage_on_connection(&db, id, status);
+    }
+
+    fn insert_current_usage_on_connection(db: &sqlite::Connection, id: &str, status: &str) {
         let mut statement = db
             .prepare(
                 "INSERT INTO model_usage
@@ -365,6 +369,12 @@ mod tests {
         statement.bind((1, id)).unwrap();
         statement.bind((2, status)).unwrap();
         statement.next().unwrap();
+    }
+
+    fn journal_mode(db: &sqlite::Connection) -> String {
+        let mut statement = db.prepare("PRAGMA journal_mode").unwrap();
+        assert_eq!(statement.next().unwrap(), sqlite::State::Row);
+        statement.read::<String, _>(0).unwrap()
     }
 
     fn load(root: &Path) -> Vec<LoadedEntry> {
@@ -421,6 +431,31 @@ mod tests {
         assert_eq!(entries[0].project_path.as_ref(), "ZCode");
         assert_eq!(entries[0].data.message.usage.input_tokens, 75);
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 25);
+    }
+
+    #[test]
+    fn reads_from_wal_database_without_changing_journal_mode() {
+        let fixture = fs_fixture!({});
+        let _ = fixture.create_dir_all("cli/db");
+        let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
+        create_db(&db_path, false);
+
+        let db = sqlite::open(&db_path).unwrap();
+        db.execute("PRAGMA journal_mode = WAL").unwrap();
+        db.execute("PRAGMA wal_autocheckpoint = 0").unwrap();
+        assert_eq!(journal_mode(&db), "wal");
+        db.execute("BEGIN").unwrap();
+        db.execute("INSERT INTO session VALUES ('session-1', '/project', '0.16.3')")
+            .unwrap();
+        insert_current_usage_on_connection(&db, "usage-1", "completed");
+        db.execute("COMMIT").unwrap();
+        assert!(db_path.with_extension("sqlite-wal").is_file());
+
+        let entries = load(fixture.root());
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
+        assert_eq!(journal_mode(&db), "wal");
     }
 
     #[test]

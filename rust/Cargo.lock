@@ -177,6 +177,7 @@ dependencies = [
  "insta",
  "serde",
  "serde_json",
+ "sqlite",
 ]
 
 [[package]]

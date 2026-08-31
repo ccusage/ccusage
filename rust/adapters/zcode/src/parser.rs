@@ -72,9 +72,24 @@ pub(super) fn row_to_entry(
         .directory
         .filter(|directory| !directory.trim().is_empty())
         .unwrap_or_else(|| "ZCode".to_string());
-    let cost_usage = TokenUsageRaw {
-        output_tokens: usage.output_tokens.saturating_add(extra_total_tokens),
-        ..usage
+    // Z.ai exposes new content as a cache-creation bucket for display, but
+    // bills that content at the model's standard input rate.
+    let is_zai = is_zai_provider(row.provider_id.as_deref())
+        || (row.provider_id.is_none() && is_zai_model(&raw_model.to_ascii_lowercase()));
+    let cost_usage = if is_zai {
+        TokenUsageRaw {
+            input_tokens: usage
+                .input_tokens
+                .saturating_add(usage.cache_creation_input_tokens),
+            cache_creation_input_tokens: 0,
+            output_tokens: usage.output_tokens.saturating_add(extra_total_tokens),
+            ..usage
+        }
+    } else {
+        TokenUsageRaw {
+            output_tokens: usage.output_tokens.saturating_add(extra_total_tokens),
+            ..usage
+        }
     };
     let cost = if mode == CostMode::Display {
         0.0
@@ -255,6 +270,33 @@ mod tests {
             custom.missing_pricing_model.as_deref(),
             Some("deepseek-v4-flash")
         );
+    }
+
+    #[test]
+    fn prices_zai_cache_creation_at_standard_input_rate_for_glm_52_and_53() {
+        let pricing = PricingMap::load_embedded();
+        let priced = |model: &str| {
+            let mut row = row();
+            row.model_id = model.to_string();
+            row_to_entry(
+                row,
+                Some(&JiffTimeZone::UTC),
+                CostMode::Calculate,
+                &pricing,
+                &BTreeMap::new(),
+            )
+            .unwrap()
+        };
+
+        let glm_52 = priced("GLM-5.2");
+        assert_eq!(glm_52.cost, 0.00015549999999999999);
+        assert_eq!(glm_52.data.message.usage.input_tokens, 60);
+        assert_eq!(glm_52.data.message.usage.cache_creation_input_tokens, 15);
+
+        let glm_53 = priced("GLM-5.3");
+        assert_eq!(glm_53.cost, 0.00015549999999999999);
+        assert_eq!(glm_53.data.message.usage.input_tokens, 60);
+        assert_eq!(glm_53.data.message.usage.cache_creation_input_tokens, 15);
     }
 
     #[test]

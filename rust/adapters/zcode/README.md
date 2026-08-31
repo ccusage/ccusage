@@ -61,7 +61,9 @@ ZCode records no per-request cost. `display` therefore reports zero cost;
 `calculate` and `auto` estimate from the shared pricing map. Raw model pricing
 overrides are honored. Z.ai-qualified candidates are used for explicit Z.ai
 providers and for GLM model ids from legacy rows without a provider; an unknown
-custom provider is not treated as Z.ai.
+custom provider is not treated as Z.ai. Z.ai cache-creation tokens remain in
+their displayed bucket but are priced at the model's standard input rate because
+they represent new content.
 Unknown custom model ids remain at zero and use the normal missing-pricing
 warning. No provider billing is inferred from a local provider UUID.
 
