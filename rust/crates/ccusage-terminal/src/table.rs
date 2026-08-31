@@ -411,38 +411,67 @@ fn wrap_cell_lines(cell: &str, width: usize) -> Vec<String> {
 }
 
 fn wrap_cell_line(line: &str, width: usize) -> Vec<String> {
-    if line.split_whitespace().count() <= 1 {
+    let mut remaining = line.split_whitespace();
+    let mut words = Vec::new();
+    while let Some(word) = remaining.next() {
+        if is_list_marker(word) {
+            words.push(
+                remaining
+                    .next()
+                    .map_or_else(|| word.to_string(), |next| format!("{word} {next}")),
+            );
+        } else {
+            words.push(word.to_string());
+        }
+    }
+    if words.len() <= 1 {
         return vec![truncate_to_width(line, width)];
     }
 
     let mut lines = Vec::new();
     let mut current = String::new();
-    for word in line.split_whitespace() {
+    for word in words {
         let candidate_width = if current.is_empty() {
-            visible_width(word)
+            visible_width(&word)
         } else {
-            visible_width(&current) + 1 + visible_width(word)
+            visible_width(&current) + 1 + visible_width(&word)
         };
         if candidate_width <= width {
             if !current.is_empty() {
                 current.push(' ');
             }
-            current.push_str(word);
+            current.push_str(&word);
         } else {
             if !current.is_empty() {
                 lines.push(current);
             }
-            current = if visible_width(word) > width {
-                truncate_to_width(word, width)
+            current = if visible_width(&word) > width {
+                truncate_to_width(&word, width)
             } else {
-                word.to_string()
+                word
             };
         }
     }
     if !current.is_empty() {
         lines.push(current);
     }
+    let mut continuation = String::new();
     lines
+        .into_iter()
+        .map(|line| {
+            let line = if continuation.is_empty() {
+                line
+            } else {
+                format!("{continuation}{line}")
+            };
+            continuation = ansi_continuation(&line);
+            line
+        })
+        .collect()
+}
+
+fn is_list_marker(word: &str) -> bool {
+    visible_width(word) == 1 && word.contains('-')
 }
 
 fn compact_date_cell(value: &str) -> Option<String> {
@@ -1137,7 +1166,11 @@ mod tests {
             .lines()
             .find(|line| line.contains("(inactive)"))
             .expect("status marker should remain visible");
-        assert!(!status_line.contains('…'), "{status_line}");
+        let status_cell = status_line
+            .split('│')
+            .nth(2)
+            .expect("rendered row should include the status cell");
+        assert!(!status_cell.contains('…'), "{status_line}");
         assert!(rendered.lines().all(|line| visible_width(line) <= 56));
     }
 
@@ -1171,6 +1204,76 @@ mod tests {
                 .expect("rendered row should include the Models cell");
             assert!(model_cell.contains("\x1b[32m"), "{line:?}");
             assert!(model_cell.trim_end().ends_with("\x1b[0m"), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn keeps_list_markers_attached_to_truncated_models() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input"],
+            vec![Align::Left, Align::Left, Align::Right],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(56);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "- provider/very-long-model-name".to_string(),
+            "12345678901".to_string(),
+        ]);
+
+        let rendered = table.render_lines().join("\n");
+        assert!(
+            rendered.lines().any(|line| {
+                line.split('│')
+                    .nth(2)
+                    .is_some_and(|cell| cell.contains("- provider/"))
+            }),
+            "{rendered}"
+        );
+        assert!(!rendered.lines().any(|line| {
+            line.split('│')
+                .nth(2)
+                .is_some_and(|cell| cell.trim() == "-")
+        }));
+    }
+
+    #[test]
+    fn preserves_ansi_continuation_across_word_wrapped_fragments_without_leaking() {
+        let mut table = SimpleTable::new(
+            vec!["Date", "Models", "Input"],
+            vec![Align::Left, Align::Left, Align::Right],
+            TerminalStyle {
+                no_color: true,
+                ..TerminalStyle::default()
+            },
+        )
+        .with_terminal_width(56);
+        table.push(vec![
+            "2026-05-18".to_string(),
+            "\x1b[32m- provider/foo long-model-name\x1b[0m".to_string(),
+            "1,234".to_string(),
+        ]);
+
+        let rendered = table.render_lines();
+        let model_lines = rendered
+            .iter()
+            .filter(|line| line.contains("provider/foo") || line.contains("long-model-name"))
+            .collect::<Vec<_>>();
+        assert_eq!(model_lines.len(), 2, "{rendered:?}");
+        for line in model_lines {
+            let cells = line.split('│').collect::<Vec<_>>();
+            let model_cell = cells
+                .get(2)
+                .expect("rendered row should include the Models cell");
+            let input_cell = cells
+                .get(3)
+                .expect("rendered row should include the Input cell");
+            assert!(model_cell.contains("\x1b[32m"), "{line:?}");
+            assert!(model_cell.trim_end().ends_with("\x1b[0m"), "{line:?}");
+            assert!(!input_cell.contains("\x1b[32m"), "{line:?}");
         }
     }
 }
