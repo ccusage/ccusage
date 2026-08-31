@@ -165,12 +165,6 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "markdownDescription": "Show per-model cost breakdown.",
         "type": "boolean"
       },
-      "bySource": {
-        "default": false,
-        "description": "Include usage breakdowns by Codex client or originator.",
-        "markdownDescription": "Include usage breakdowns by Codex client or originator.",
-        "type": "boolean"
-      },
       "color": {
         "description": "Enable colored output.",
         "markdownDescription": "Enable colored output.",

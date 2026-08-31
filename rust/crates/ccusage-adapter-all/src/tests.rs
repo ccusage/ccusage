@@ -18,7 +18,6 @@ use crate::{
     cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs},
     model_aliases::set_model_aliases_for_tests,
 };
-use ccusage_adapter_codex::CodexSourceUsage;
 use ccusage_test_support::{EnvVarsGuard, fs_fixture, zcode::create_fixture};
 
 fn test_agent_rows(agent: &'static str) -> AgentRows {
@@ -144,10 +143,9 @@ fn saturates_unified_daily_and_weekly_reports_for_extreme_counters() {
         extreme_all_row("2099-01-03", 1),
     ];
     let daily_rows = aggregate_rows(rows.clone(), AgentReportKind::Daily);
-    let daily_report = report_json_with_options(&daily_rows, AgentReportKind::Daily, false, true);
+    let daily_report = report_json(&daily_rows, AgentReportKind::Daily);
     let weekly_rows = aggregate_rows(rows, AgentReportKind::Weekly);
-    let weekly_report =
-        report_json_with_options(&weekly_rows, AgentReportKind::Weekly, false, true);
+    let weekly_report = report_json(&weekly_rows, AgentReportKind::Weekly);
 
     for report in [daily_report, weekly_report] {
         for key in [
@@ -159,14 +157,6 @@ fn saturates_unified_daily_and_weekly_reports_for_extreme_counters() {
         ] {
             assert_eq!(report["totals"][key], u64::MAX, "{key}");
         }
-        assert_eq!(
-            report["totals"]["sourceBreakdowns"][0]["inputTokens"],
-            u64::MAX
-        );
-        assert_eq!(
-            report["totals"]["sourceBreakdowns"][0]["modelBreakdowns"][0]["inputTokens"],
-            u64::MAX
-        );
     }
     assert_eq!(weekly_rows[0].model_breakdowns[0].input_tokens, u64::MAX);
     assert_eq!(weekly_rows[0].model_breakdowns[0].output_tokens, u64::MAX);
@@ -183,27 +173,7 @@ fn extreme_all_row(period: &str, tokens: u64) -> AllRow {
         cache_read_tokens: tokens,
         total_tokens: tokens,
         total_cost: 0.0,
-        metadata: Some(json!({
-            "sourceBreakdowns": [{
-                "source": "Responses API",
-                "modelsUsed": ["gpt-5"],
-                "inputTokens": tokens,
-                "outputTokens": tokens,
-                "cacheCreationTokens": tokens,
-                "cacheReadTokens": tokens,
-                "reasoningOutputTokens": tokens,
-                "totalTokens": tokens,
-                "totalCost": 0.0,
-                "modelBreakdowns": [{
-                    "modelName": "gpt-5",
-                    "inputTokens": tokens,
-                    "outputTokens": tokens,
-                    "cacheCreationTokens": tokens,
-                    "cacheReadTokens": tokens,
-                    "cost": 0.0
-                }]
-            }]
-        })),
+        metadata: None,
         metadata_agents: Some(vec!["codex"]),
         agent_breakdowns: None,
         model_breakdowns: vec![ModelBreakdown {
@@ -364,132 +334,6 @@ fn renders_all_report_json_with_period_and_agent_metadata() {
     assert_eq!(report["daily"][0]["agent"], "all");
     assert_eq!(report["daily"][0]["metadata"]["agents"], json!(["codex"]));
     assert_eq!(report["totals"]["totalTokens"], 130);
-}
-
-#[test]
-fn renders_opt_in_codex_source_breakdowns_in_unified_json_and_table_rows() {
-    let model_usage = |input_tokens: u64, output_tokens: u64, total_tokens: u64| CodexModelUsage {
-        input_tokens,
-        output_tokens,
-        total_tokens,
-        ..CodexModelUsage::default()
-    };
-    let cli_usage = CodexSourceUsage {
-        input_tokens: 100,
-        output_tokens: 10,
-        total_tokens: 110,
-        models: std::collections::BTreeMap::from([(
-            "gpt-5".to_string(),
-            model_usage(100, 10, 110),
-        )]),
-        ..CodexSourceUsage::default()
-    };
-    let exec_usage = CodexSourceUsage {
-        input_tokens: 50,
-        output_tokens: 5,
-        total_tokens: 55,
-        models: std::collections::BTreeMap::from([("gpt-5".to_string(), model_usage(50, 5, 55))]),
-        ..CodexSourceUsage::default()
-    };
-    let group = CodexGroup {
-        input_tokens: 150,
-        output_tokens: 15,
-        total_tokens: 165,
-        models: std::collections::BTreeMap::from([(
-            "gpt-5".to_string(),
-            model_usage(150, 15, 165),
-        )]),
-        sources: std::collections::BTreeMap::from([
-            ("CLI".to_string(), cli_usage),
-            ("Exec".to_string(), exec_usage),
-        ]),
-        ..CodexGroup::default()
-    };
-    let row = codex_group_row(
-        "2026-01-02",
-        &group,
-        &PricingMap::default(),
-        CodexSpeed::Standard,
-    );
-    let default = report_json(std::slice::from_ref(&row), AgentReportKind::Daily);
-    let report = report_json_with_options(&[row], AgentReportKind::Daily, false, true);
-
-    assert!(default["daily"][0].get("sourceBreakdowns").is_none());
-    let sources = report["daily"][0]["sourceBreakdowns"].as_array().unwrap();
-    assert_eq!(sources.len(), 2);
-    assert_eq!(sources[0]["source"], "CLI");
-    assert_eq!(sources[1]["source"], "Exec");
-    assert_eq!(
-        sources
-            .iter()
-            .map(|source| source["totalTokens"].as_u64().unwrap())
-            .sum::<u64>(),
-        report["daily"][0]["totalTokens"].as_u64().unwrap()
-    );
-    let monthly_rows = aggregate_rows(
-        vec![
-            codex_group_row(
-                "2026-01-02",
-                &group,
-                &PricingMap::default(),
-                CodexSpeed::Standard,
-            ),
-            codex_group_row(
-                "2026-01-03",
-                &group,
-                &PricingMap::default(),
-                CodexSpeed::Standard,
-            ),
-        ],
-        AgentReportKind::Monthly,
-    );
-    let monthly_report =
-        report_json_with_options(&monthly_rows, AgentReportKind::Monthly, false, true);
-    let monthly_sources = monthly_report["monthly"][0]["sourceBreakdowns"]
-        .as_array()
-        .unwrap();
-    assert_eq!(monthly_sources[0]["totalTokens"], 220);
-    assert_eq!(monthly_sources[1]["totalTokens"], 110);
-    assert_eq!(monthly_report["monthly"][0]["totalTokens"], 330);
-    insta::assert_json_snapshot!(report);
-    insta::assert_debug_snapshot!(source_table_row(&sources[0], false, false));
-}
-
-#[test]
-fn sanitizes_unknown_codex_source_only_in_unified_table_rows() {
-    let source = "future\nclient\u{1b}[31m";
-    let value = json!({
-        "source": source,
-        "modelsUsed": [],
-        "inputTokens": 0,
-        "outputTokens": 0,
-        "cacheCreationTokens": 0,
-        "cacheReadTokens": 0,
-        "totalCost": 0.0,
-    });
-
-    assert_eq!(
-        source_table_row(&value, false, false)[1],
-        r#"- future\nclient\u{1b}[31m"#
-    );
-    let row = AllRow {
-        period: "2026-08-20".to_string(),
-        agent: "codex",
-        models_used: Vec::new(),
-        input_tokens: 0,
-        output_tokens: 0,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 0,
-        total_tokens: 0,
-        total_cost: 0.0,
-        metadata: Some(json!({ "sourceBreakdowns": [value] })),
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    };
-    let report = report_json_with_options(&[row], AgentReportKind::Daily, false, true);
-
-    assert_eq!(report["daily"][0]["sourceBreakdowns"][0]["source"], source);
 }
 
 #[test]

@@ -516,8 +516,6 @@ pub struct CodexOptions {
     pub shared: SharedOptions,
     /// Codex speed normalization strategy.
     pub speed: Option<ConfigCodexSpeed>,
-    /// Include usage breakdowns by Codex client or originator.
-    pub by_source: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -686,7 +684,6 @@ impl CodexOptions {
         Self {
             shared: SharedOptions::from_map(map),
             speed: enum_option(map, "speed"),
-            by_source: bool_option(map, "bySource"),
         }
     }
 }
@@ -917,11 +914,7 @@ fn add_schema_defaults(schema: &mut Value) {
             ("debug", json!(false)),
         ],
     );
-    set_definition_defaults(
-        schema,
-        "CodexOptions",
-        &[("speed", json!("auto")), ("bySource", json!(false))],
-    );
+    set_definition_defaults(schema, "CodexOptions", &[("speed", json!("auto"))]);
 }
 
 fn set_definition_defaults(schema: &mut Value, definition: &str, defaults: &[(&str, Value)]) {
@@ -1124,7 +1117,7 @@ mod tests {
         assert_schema_properties(
             &schema,
             &["codex", "defaults"],
-            &with_keys(&shared, &["bySource", "speed"]),
+            &with_keys(&shared, &["speed"]),
         );
         assert_schema_properties(
             &schema,
@@ -1147,7 +1140,6 @@ mod tests {
         let schema = generated_schema();
 
         assert!(schema_property(&schema, &["codex", "defaults", "speed"]).is_some());
-        assert!(schema_property(&schema, &["codex", "defaults", "bySource"]).is_some());
         assert!(schema_property(&schema, &["opencode", "defaults", "speed"]).is_none());
         assert!(schema_property(&schema, &["amp", "defaults", "speed"]).is_none());
         assert!(schema_property(&schema, &["droid", "defaults", "speed"]).is_none());
@@ -1422,10 +1414,6 @@ mod tests {
         assert_eq!(
             property_default(&schema, &["codex", "defaults", "speed"]),
             Some(&json!("auto"))
-        );
-        assert_eq!(
-            property_default(&schema, &["codex", "defaults", "bySource"]),
-            Some(&json!(false))
         );
     }
 

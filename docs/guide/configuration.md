@@ -130,8 +130,7 @@ Configure Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-a
 	"codex": {
 		"defaults": {
 			"json": true,
-			"offline": true,
-			"bySource": true
+			"offline": true
 		},
 		"commands": {
 			"daily": {
@@ -143,7 +142,7 @@ Configure Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-a
 }
 ```
 
-Source sections apply to focused commands such as `ccusage codex daily` and `ccusage amp session`. The `codex.defaults.bySource` option is honored only by focused Codex commands; unified reports such as `ccusage daily` do not apply agent-specific options. Use the unified `--by-source` flag to request Codex client/originator breakdowns there.
+Source sections apply to focused commands such as `ccusage codex daily` and `ccusage amp session`. They are also used by unified reports such as `ccusage daily`, where each source receives its own merged options before data is loaded.
 
 ### Team Collaboration
 

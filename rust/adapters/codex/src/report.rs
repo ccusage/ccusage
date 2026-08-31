@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 
 use crate::{
-    Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexSourceUsage, CodexTimestampedUsage,
-    CodexUsageBucket, Color, PricingMap, Result, SimpleTable,
+    Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket,
+    Color, PricingMap, Result, SimpleTable,
     cli::{AgentReportKind, SharedArgs},
     color, format_currency, format_models_multiline, format_number, json_float,
     missing_pricing_model_for_token_total, print_box_title,
@@ -19,21 +19,11 @@ pub(super) fn report_from_groups(
     pricing: &PricingMap,
     speed: CodexSpeedPolicy,
 ) -> Value {
-    report_from_groups_with_source(groups, kind, pricing, speed, false)
-}
-
-pub(super) fn report_from_groups_with_source(
-    groups: &BTreeMap<String, CodexGroup>,
-    kind: AgentReportKind,
-    pricing: &PricingMap,
-    speed: CodexSpeedPolicy,
-    by_source: bool,
-) -> Value {
     let rows = groups
         .iter()
-        .map(|(period, group)| group_json(period, group, kind, pricing, speed, by_source))
+        .map(|(period, group)| group_json(period, group, kind, pricing, speed))
         .collect::<Vec<_>>();
-    let totals = totals_json(groups.values(), pricing, speed, by_source);
+    let totals = totals_json(groups.values(), pricing, speed);
     json!({
         rows_key(kind): rows,
         "totals": totals,
@@ -64,7 +54,6 @@ fn group_json(
     kind: AgentReportKind,
     pricing: &PricingMap,
     speed: CodexSpeedPolicy,
-    by_source: bool,
 ) -> Value {
     let cost = calculate_group_cost(group, pricing, speed);
     let input_tokens = non_cached_input_tokens(
@@ -93,9 +82,6 @@ fn group_json(
         let separator = period.rfind('/');
         row["sessionFile"] = json!(separator.map_or(period, |index| &period[index + 1..]));
         row["directory"] = json!(separator.map_or("", |index| &period[..index]));
-    }
-    if by_source {
-        row["sourceBreakdowns"] = source_breakdowns_json(group, pricing, speed);
     }
     row
 }
@@ -128,7 +114,6 @@ fn totals_json<'a>(
     groups: impl Iterator<Item = &'a CodexGroup>,
     pricing: &PricingMap,
     speed: CodexSpeedPolicy,
-    by_source: bool,
 ) -> Value {
     let mut input = 0;
     let mut cached = 0;
@@ -137,7 +122,6 @@ fn totals_json<'a>(
     let mut reasoning = 0;
     let mut total = 0;
     let mut cost = 0.0;
-    let mut source_groups = BTreeMap::<String, CodexSourceUsage>::new();
     for group in groups {
         input += non_cached_input_tokens(
             group.input_tokens,
@@ -150,12 +134,8 @@ fn totals_json<'a>(
         reasoning += group.reasoning_output_tokens;
         total += group.total_tokens;
         cost += calculate_group_cost(group, pricing, speed);
-        if by_source {
-            let sources = source_groups_for_group(group);
-            merge_source_groups(&mut source_groups, &sources);
-        }
     }
-    let mut totals = json!({
+    json!({
         "inputTokens": input,
         "cacheCreationTokens": creation,
         "cacheReadTokens": cached,
@@ -163,133 +143,7 @@ fn totals_json<'a>(
         "reasoningOutputTokens": reasoning,
         "totalTokens": total,
         "costUSD": json_float(cost),
-    });
-    if by_source {
-        totals["sourceBreakdowns"] = source_breakdowns_from_sources(&source_groups, pricing, speed);
-    }
-    totals
-}
-
-fn source_breakdowns_json(
-    group: &CodexGroup,
-    pricing: &PricingMap,
-    speed: CodexSpeedPolicy,
-) -> Value {
-    let sources = source_groups_for_group(group);
-    source_breakdowns_from_sources(&sources, pricing, speed)
-}
-
-fn source_groups_for_group(group: &CodexGroup) -> BTreeMap<String, CodexSourceUsage> {
-    if !group.sources.is_empty() {
-        return group.sources.clone();
-    }
-    BTreeMap::from([(
-        crate::source::CODEX_UNCATEGORIZED_SOURCE.to_string(),
-        CodexSourceUsage {
-            input_tokens: group.input_tokens,
-            cached_input_tokens: group.cached_input_tokens,
-            cache_creation_tokens: group.cache_creation_tokens,
-            output_tokens: group.output_tokens,
-            reasoning_output_tokens: group.reasoning_output_tokens,
-            total_tokens: group.total_tokens,
-            models: group.models.clone(),
-        },
-    )])
-}
-
-fn source_breakdowns_from_sources(
-    sources: &BTreeMap<String, CodexSourceUsage>,
-    pricing: &PricingMap,
-    speed: CodexSpeedPolicy,
-) -> Value {
-    Value::Array(
-        sources
-            .iter()
-            .map(|(source, usage)| {
-                let models = usage
-                    .models
-                    .iter()
-                    .map(|(model, usage)| (model.clone(), model_usage_json(usage)))
-                    .collect::<BTreeMap<_, _>>();
-                json!({
-                    "source": source,
-                    "inputTokens": non_cached_input_tokens(
-                        usage.input_tokens,
-                        usage.cached_input_tokens,
-                        usage.cache_creation_tokens,
-                    ),
-                    "cacheCreationTokens": usage.cache_creation_tokens,
-                    "cacheReadTokens": usage.cached_input_tokens,
-                    "outputTokens": usage.output_tokens,
-                    "reasoningOutputTokens": usage.reasoning_output_tokens,
-                    "totalTokens": usage.total_tokens,
-                    "costUSD": json_float(calculate_codex_source_cost(usage, pricing, speed)),
-                    "models": models,
-                })
-            })
-            .collect(),
-    )
-}
-
-fn merge_source_groups(
-    target: &mut BTreeMap<String, CodexSourceUsage>,
-    source: &BTreeMap<String, CodexSourceUsage>,
-) {
-    for (source_name, source_usage) in source {
-        let target_usage = target.entry(source_name.clone()).or_default();
-        target_usage.input_tokens += source_usage.input_tokens;
-        target_usage.cached_input_tokens += source_usage.cached_input_tokens;
-        target_usage.cache_creation_tokens += source_usage.cache_creation_tokens;
-        target_usage.output_tokens += source_usage.output_tokens;
-        target_usage.reasoning_output_tokens += source_usage.reasoning_output_tokens;
-        target_usage.total_tokens += source_usage.total_tokens;
-        for (model, usage) in &source_usage.models {
-            let target_model = target_usage.models.entry(model.clone()).or_default();
-            merge_model_usage(target_model, usage);
-        }
-    }
-}
-
-fn merge_model_usage(target: &mut CodexModelUsage, source: &CodexModelUsage) {
-    target.input_tokens += source.input_tokens;
-    target.cached_input_tokens += source.cached_input_tokens;
-    target.cache_creation_tokens += source.cache_creation_tokens;
-    target.output_tokens += source.output_tokens;
-    target.reasoning_output_tokens += source.reasoning_output_tokens;
-    target.total_tokens += source.total_tokens;
-    target.long_context_input_tokens += source.long_context_input_tokens;
-    target.long_context_cached_input_tokens += source.long_context_cached_input_tokens;
-    target.long_context_cache_creation_tokens += source.long_context_cache_creation_tokens;
-    target.long_context_output_tokens += source.long_context_output_tokens;
-    merge_usage_bucket(
-        &mut target.recorded_standard_usage,
-        &source.recorded_standard_usage,
-    );
-    merge_usage_bucket(&mut target.recorded_fast_usage, &source.recorded_fast_usage);
-    for (timestamp, usage) in &source.timestamped_usage {
-        let target_usage = target.timestamped_usage.entry(*timestamp).or_default();
-        merge_usage_bucket(&mut target_usage.usage, &usage.usage);
-        merge_usage_bucket(
-            &mut target_usage.recorded_standard_usage,
-            &usage.recorded_standard_usage,
-        );
-        merge_usage_bucket(
-            &mut target_usage.recorded_fast_usage,
-            &usage.recorded_fast_usage,
-        );
-    }
-    target.is_fallback |= source.is_fallback;
-}
-
-fn merge_usage_bucket(target: &mut CodexUsageBucket, source: &CodexUsageBucket) {
-    target.input_tokens += source.input_tokens;
-    target.cached_input_tokens += source.cached_input_tokens;
-    target.cache_creation_tokens += source.cache_creation_tokens;
-    target.output_tokens += source.output_tokens;
-    target.long_context_input_tokens += source.long_context_input_tokens;
-    target.long_context_cached_input_tokens += source.long_context_cached_input_tokens;
-    target.long_context_cache_creation_tokens += source.long_context_cache_creation_tokens;
-    target.long_context_output_tokens += source.long_context_output_tokens;
+    })
 }
 
 pub fn calculate_codex_model_cost(
@@ -459,22 +313,6 @@ where
 {
     let speed = speed.into();
     group
-        .models
-        .iter()
-        .map(|(model, usage)| calculate_codex_model_cost(model, usage, pricing, speed))
-        .sum()
-}
-
-pub fn calculate_codex_source_cost<S>(
-    source: &CodexSourceUsage,
-    pricing: &PricingMap,
-    speed: S,
-) -> f64
-where
-    S: Into<CodexSpeedPolicy> + Copy,
-{
-    let speed = speed.into();
-    source
         .models
         .iter()
         .map(|(model, usage)| calculate_codex_model_cost(model, usage, pricing, speed))
@@ -658,17 +496,6 @@ pub(super) fn print_table_from_groups(
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Result<()> {
-    print_table_from_groups_with_source(groups, kind, pricing, speed, shared, false)
-}
-
-pub(super) fn print_table_from_groups_with_source(
-    groups: &BTreeMap<String, CodexGroup>,
-    kind: AgentReportKind,
-    pricing: &PricingMap,
-    speed: CodexSpeedPolicy,
-    shared: &SharedArgs,
-    by_source: bool,
-) -> Result<()> {
     if groups.is_empty() {
         eprintln!("No Codex usage data found.");
         return Ok(());
@@ -709,31 +536,6 @@ pub(super) fn print_table_from_groups_with_source(
         );
         totals.add(group, input_tokens, cost);
         table.push(row);
-        if by_source {
-            let sources = source_groups_for_group(group);
-            for (source, usage) in &sources {
-                let source_group = CodexGroup {
-                    input_tokens: usage.input_tokens,
-                    cached_input_tokens: usage.cached_input_tokens,
-                    cache_creation_tokens: usage.cache_creation_tokens,
-                    output_tokens: usage.output_tokens,
-                    reasoning_output_tokens: usage.reasoning_output_tokens,
-                    total_tokens: usage.total_tokens,
-                    models: usage.models.clone(),
-                    ..CodexGroup::default()
-                };
-                let (source_row, _, _) = codex_table_row(
-                    &format!("  {source}"),
-                    kind,
-                    &source_group,
-                    pricing,
-                    speed,
-                    shared.no_cost,
-                    terminal_width,
-                );
-                table.push(source_row);
-            }
-        }
     }
     table.separator();
     table.push(codex_table_total_row(&totals, shared, shared.no_cost));
@@ -789,86 +591,6 @@ mod tests {
         assert_eq!(headers.len(), aligns.len());
         assert_eq!(row[5], "30");
         assert_eq!(total_row[5], "30");
-    }
-
-    #[test]
-    fn source_table_rows_snapshot_matches_focused_table_shape() {
-        let usage = CodexModelUsage {
-            input_tokens: 100,
-            cached_input_tokens: 20,
-            output_tokens: 10,
-            total_tokens: 110,
-            ..CodexModelUsage::default()
-        };
-        let source_group = CodexGroup {
-            input_tokens: 100,
-            cached_input_tokens: 20,
-            output_tokens: 10,
-            total_tokens: 110,
-            models: std::collections::BTreeMap::from([("gpt-5".to_string(), usage)]),
-            ..CodexGroup::default()
-        };
-        let rows = vec![
-            codex_table_row(
-                "2026-08-20",
-                AgentReportKind::Daily,
-                &source_group,
-                &PricingMap::default(),
-                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-                false,
-                160,
-            )
-            .0,
-            codex_table_row(
-                "  CLI",
-                AgentReportKind::Daily,
-                &source_group,
-                &PricingMap::default(),
-                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-                false,
-                160,
-            )
-            .0,
-        ];
-
-        insta::assert_debug_snapshot!(rows);
-    }
-
-    #[test]
-    fn sanitizes_unknown_source_only_in_focused_table_rows() {
-        let source = "future\nclient\u{1b}[31m";
-        let group = CodexGroup::default();
-
-        let (row, _, _) = codex_table_row(
-            &format!("  {source}"),
-            AgentReportKind::Daily,
-            &group,
-            &PricingMap::default(),
-            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-            false,
-            160,
-        );
-
-        assert_eq!(row[0], r#"  future\nclient\u{1b}[31m"#);
-    }
-
-    #[test]
-    fn preserves_unknown_source_control_characters_in_focused_json() {
-        let source = "future\nclient\u{1b}[31m";
-        let group = CodexGroup {
-            sources: BTreeMap::from([(source.to_string(), CodexSourceUsage::default())]),
-            ..CodexGroup::default()
-        };
-
-        let report = report_from_groups_with_source(
-            &BTreeMap::from([("2026-08-20".to_string(), group)]),
-            AgentReportKind::Daily,
-            &PricingMap::default(),
-            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-            true,
-        );
-
-        assert_eq!(report["daily"][0]["sourceBreakdowns"][0]["source"], source);
     }
 
     #[test]
