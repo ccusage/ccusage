@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-    sync::Arc,
-};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -72,12 +68,19 @@ fn load_entries_inner(
         }
     }
     session_state_entries = retain_latest_session_entries(session_state_entries);
-    let session_usage_keys = session_state_entries
+    let latest_shutdown_timestamps = session_state_entries
         .iter()
-        .map(|entry| (entry.session_id.as_str(), entry.model.as_str()))
-        .collect::<HashSet<_>>();
+        .map(|entry| {
+            (
+                (entry.session_id.as_str(), entry.model.as_str()),
+                entry.timestamp,
+            )
+        })
+        .collect::<HashMap<_, _>>();
     otel_entries.retain(|entry| {
-        !session_usage_keys.contains(&(entry.session_id.as_str(), entry.model.as_str()))
+        latest_shutdown_timestamps
+            .get(&(entry.session_id.as_str(), entry.model.as_str()))
+            .is_none_or(|shutdown_timestamp| entry.timestamp > *shutdown_timestamp)
     });
 
     let mut entries = session_state_entries
@@ -554,13 +557,28 @@ mod tests {
                     "traceId": "trace-duplicate",
                     "spanId": "span-duplicate",
                     "name": "chat test-model",
-                    "endTime": [1_775_934_264_u64, 0_u64],
+                    "endTime": [1_776_246_780_u64, 352_000_000_u64],
                     "attributes": {
                         "gen_ai.operation.name": "chat",
                         "gen_ai.response.model": "test-model",
                         "gen_ai.conversation.id": "session-1",
                         "gen_ai.usage.input_tokens": 100,
                         "gen_ai.usage.output_tokens": 200
+                    }
+                })
+                .to_string(),
+                json!({
+                    "type": "span",
+                    "traceId": "trace-post-shutdown",
+                    "spanId": "span-post-shutdown",
+                    "name": "chat test-model",
+                    "endTime": [1_776_246_840_u64, 0_u64],
+                    "attributes": {
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.response.model": "test-model",
+                        "gen_ai.conversation.id": "session-1",
+                        "gen_ai.usage.input_tokens": 7,
+                        "gen_ai.usage.output_tokens": 8
                     }
                 })
                 .to_string(),
@@ -631,6 +649,7 @@ mod tests {
                 ("session-1".to_string(), "other-model".to_string(), 3),
                 ("session-2".to_string(), "test-model".to_string(), 5),
                 ("session-1".to_string(), "test-model".to_string(), 30),
+                ("session-1".to_string(), "test-model".to_string(), 7),
             ]
         );
     }
