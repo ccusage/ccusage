@@ -4,7 +4,7 @@ layout: home
 hero:
   name: ccusage
   text: Coding (Agent) CLI Usage Analysis
-  tagline: A fast local CLI for tracking tokens and estimated costs across Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI
+  tagline: A fast local CLI for tracking tokens and estimated costs across Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, and Grok Build CLI
   image:
     src: /logo.svg
     alt: ccusage logo
@@ -27,7 +27,7 @@ features:
     link: /guide/getting-started
   - icon: 📁
     title: Local Data Sources
-    details: Reads local usage logs from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI without uploading your data
+    details: Reads local usage logs from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, and Grok Build CLI without uploading your data
     link: /guide/
   - icon: 💰
     title: Cost Analysis

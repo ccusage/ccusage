@@ -34,7 +34,7 @@ ccusage daily --by-agent --json
 
 ## How Unified Views Work
 
-ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, and Grok Build CLI. The same daily, weekly, monthly, and session views can run in two modes:
+ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, and Grok Build CLI. The same daily, weekly, monthly, and session views can run in two modes:
 
 | Mode    | Command example        | What it shows                           |
 | ------- | ---------------------- | --------------------------------------- |
@@ -46,24 +46,25 @@ Unified tables include an **Agent** column so you can compare sources in one vie
 
 ## Supported Sources
 
-| Source         | Namespace  | Example focused view      |
-| -------------- | ---------- | ------------------------- |
-| Claude Code    | `claude`   | `ccusage claude daily`    |
-| Codex          | `codex`    | `ccusage codex daily`     |
-| OpenCode       | `opencode` | `ccusage opencode weekly` |
-| Amp            | `amp`      | `ccusage amp session`     |
-| Droid          | `droid`    | `ccusage droid daily`     |
-| Codebuff       | `codebuff` | `ccusage codebuff daily`  |
-| Hermes Agent   | `hermes`   | `ccusage hermes daily`    |
-| pi-agent       | `pi`       | `ccusage pi monthly`      |
-| Goose          | `goose`    | `ccusage goose daily`     |
-| OpenClaw       | `openclaw` | `ccusage openclaw daily`  |
-| Kilo           | `kilo`     | `ccusage kilo daily`      |
-| Kimi           | `kimi`     | `ccusage kimi daily`      |
-| Qwen           | `qwen`     | `ccusage qwen daily`      |
-| Copilot CLI    | `copilot`  | `ccusage copilot daily`   |
-| Gemini CLI     | `gemini`   | `ccusage gemini daily`    |
-| Grok Build CLI | `grok`     | `ccusage grok daily`      |
+| Source         | Namespace     | Example focused view        |
+| -------------- | ------------- | --------------------------- |
+| Claude Code    | `claude`      | `ccusage claude daily`      |
+| Codex          | `codex`       | `ccusage codex daily`       |
+| OpenCode       | `opencode`    | `ccusage opencode weekly`   |
+| Amp            | `amp`         | `ccusage amp session`       |
+| Droid          | `droid`       | `ccusage droid daily`       |
+| Codebuff       | `codebuff`    | `ccusage codebuff daily`    |
+| Hermes Agent   | `hermes`      | `ccusage hermes daily`      |
+| pi-agent       | `pi`          | `ccusage pi monthly`        |
+| Goose          | `goose`       | `ccusage goose daily`       |
+| OpenClaw       | `openclaw`    | `ccusage openclaw daily`    |
+| Kilo           | `kilo`        | `ccusage kilo daily`        |
+| Kimi           | `kimi`        | `ccusage kimi daily`        |
+| Qwen           | `qwen`        | `ccusage qwen daily`        |
+| Copilot CLI    | `copilot`     | `ccusage copilot daily`     |
+| Gemini CLI     | `gemini`      | `ccusage gemini daily`      |
+| Antigravity    | `antigravity` | `ccusage antigravity daily` |
+| Grok Build CLI | `grok`        | `ccusage grok daily`        |
 
 ## When to Focus a Source
 

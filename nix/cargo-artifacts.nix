@@ -33,6 +33,7 @@ let
   ];
   agentNames = [
     "amp"
+    "antigravity"
     "claude"
     "codebuff"
     "codex"

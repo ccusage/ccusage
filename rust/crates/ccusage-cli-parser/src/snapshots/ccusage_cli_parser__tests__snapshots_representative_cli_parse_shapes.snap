@@ -437,6 +437,58 @@ expression: cases
     }
   },
   {
+    "case": "antigravity session",
+    "cli": {
+      "command": {
+        "byAgent": false,
+        "codexSpeed": "Auto",
+        "kind": "Session",
+        "openClawPath": null,
+        "piPath": null,
+        "sections": null,
+        "shared": {
+          "breakdown": false,
+          "color": false,
+          "compact": false,
+          "config": null,
+          "debug": false,
+          "debugSamples": 5,
+          "jq": null,
+          "json": true,
+          "mode": "Auto",
+          "noColor": false,
+          "noOffline": false,
+          "offline": false,
+          "order": "Asc",
+          "since": null,
+          "singleThread": false,
+          "timezone": null,
+          "until": null
+        },
+        "type": "antigravity"
+      },
+      "shared": {
+        "breakdown": false,
+        "color": false,
+        "compact": false,
+        "config": null,
+        "debug": false,
+        "debugSamples": 5,
+        "jq": null,
+        "json": false,
+        "mode": "Auto",
+        "noColor": false,
+        "noOffline": false,
+        "offline": false,
+        "order": "Asc",
+        "since": null,
+        "singleThread": false,
+        "timezone": null,
+        "until": null
+      }
+    }
+  },
+  {
     "case": "blocks active recent",
     "cli": {
       "command": {

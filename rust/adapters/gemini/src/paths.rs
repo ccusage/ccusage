@@ -3,30 +3,22 @@ use std::{collections::HashSet, env, path::PathBuf};
 use crate::{Result, collect_files_with_extension};
 
 pub(super) const GEMINI_DATA_DIR_ENV: &str = "GEMINI_DATA_DIR";
-pub(super) const ANTIGRAVITY_DATA_DIR_ENV: &str = "ANTIGRAVITY_DATA_DIR";
-
-/// Returns all discovery candidate directories for Gemini and Antigravity logs.
+/// Returns all discovery candidate directories for Gemini CLI logs.
 fn paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
 
-    let mut env_override = false;
-    for env_var in [GEMINI_DATA_DIR_ENV, ANTIGRAVITY_DATA_DIR_ENV] {
-        if let Ok(env_paths) = env::var(env_var) {
-            env_override = true;
-            for raw in env_paths
-                .split(',')
-                .map(str::trim)
-                .filter(|path| !path.is_empty())
-            {
-                let path = PathBuf::from(raw);
-                if path.is_dir() && seen.insert(path.clone()) {
-                    paths.push(path);
-                }
+    if let Ok(env_paths) = env::var(GEMINI_DATA_DIR_ENV) {
+        for raw in env_paths
+            .split(',')
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+        {
+            let path = PathBuf::from(raw);
+            if path.is_dir() && seen.insert(path.clone()) {
+                paths.push(path);
             }
         }
-    }
-    if env_override {
         return Ok(paths);
     }
 
@@ -35,24 +27,16 @@ fn paths() -> Result<Vec<PathBuf>> {
         if path.is_dir() && seen.insert(path.clone()) {
             paths.push(path);
         }
-        let antigravity_dir = home
-            .join(".gemini")
-            .join("antigravity")
-            .join("conversations");
-        if antigravity_dir.is_dir() && seen.insert(antigravity_dir.clone()) {
-            paths.push(antigravity_dir);
-        }
     }
     Ok(paths)
 }
 
-/// Discovers all `.json`, `.jsonl`, and SQLite `.db` log files across known directories.
+/// Discovers all `.json` and `.jsonl` log files across known directories.
 pub(super) fn discover_log_files() -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for path in paths()? {
         collect_files_with_extension(&path, "json", &mut files);
         collect_files_with_extension(&path, "jsonl", &mut files);
-        collect_files_with_extension(&path, "db", &mut files);
     }
     files.sort();
     files.dedup();
@@ -61,8 +45,10 @@ pub(super) fn discover_log_files() -> Result<Vec<PathBuf>> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use super::*;
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     #[test]
     fn discovers_json_and_jsonl_logs() {
@@ -78,5 +64,27 @@ mod tests {
             files,
             vec![fixture.path("chats/a.json"), fixture.path("chats/b.jsonl")]
         );
+    }
+
+    #[test]
+    fn antigravity_override_does_not_replace_gemini_discovery() {
+        let fixture = fs_fixture!({
+            "gemini/chats/a.json": "{}",
+            "antigravity/conversations/a.db": "not a Gemini log",
+        });
+        let _guard = EnvVarsGuard::set_many([
+            (
+                GEMINI_DATA_DIR_ENV,
+                Some(OsString::from(fixture.path("gemini"))),
+            ),
+            (
+                "ANTIGRAVITY_DATA_DIR",
+                Some(OsString::from(fixture.path("antigravity"))),
+            ),
+        ]);
+
+        let files = discover_log_files().unwrap();
+
+        assert_eq!(files, vec![fixture.path("gemini/chats/a.json")]);
     }
 }

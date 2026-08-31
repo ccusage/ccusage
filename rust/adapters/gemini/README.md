@@ -16,10 +16,10 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 ## Data source
 
 - `${GEMINI_DATA_DIR:-~/.gemini}/tmp/**/chats/*.{json,jsonl}`
-- `${GEMINI_DATA_DIR:-~/.gemini}/antigravity/conversations/*.db`
 
-Reads plain files and SQLite databases through `ccusage-adapter-common` and `sqlite`, which handles walking, size-balanced
-chunking, and ordered parallel reads.
+Reads plain files through `ccusage-adapter-common`, which handles walking,
+size-balanced chunking, and ordered parallel reads. Antigravity SQLite data is
+owned by the standalone `ccusage-adapter-antigravity` source.
 
 ## Public surface
 
@@ -35,7 +35,6 @@ chunking, and ordered parallel reads.
 - `jiff`
 - `serde`
 - `serde_json`
-- `sqlite`
 
 ## Build layer
 
