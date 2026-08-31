@@ -1,4 +1,4 @@
-use std::{collections::HashSet, env, path::PathBuf};
+use std::{collections::HashSet, env, fs, path::PathBuf};
 
 use ccusage_adapter_common::collect_files_with_extension;
 
@@ -46,7 +46,8 @@ pub(super) fn conversation_db_paths() -> Result<Vec<PathBuf>> {
         let mut files = Vec::new();
         collect_files_with_extension(&root, "db", &mut files);
         for path in files {
-            if seen.insert(path.clone()) {
+            let canonical_path = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if seen.insert(canonical_path) {
                 paths.push(path);
             }
         }
@@ -108,6 +109,27 @@ mod tests {
                 fixture.path("direct/conversation.db"),
                 fixture.path("parent/conversations/parent.db"),
             ]
+        );
+    }
+
+    #[test]
+    fn deduplicates_canonicalized_override_aliases() {
+        let fixture = fs_fixture!({
+            "conversations/session.db": "",
+        });
+        let override_value = format!(
+            "{},{}",
+            fixture.root().display(),
+            fixture.path("conversations/..").display()
+        );
+        let _guard = EnvVarsGuard::set_many([(
+            ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(override_value)),
+        )]);
+
+        assert_eq!(
+            conversation_db_paths().unwrap(),
+            vec![fixture.path("conversations/session.db")]
         );
     }
 }
