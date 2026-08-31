@@ -66,10 +66,12 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     let mut seen = HashSet::new();
     for db_entries in loaded {
         for entry in db_entries {
-            let Some(id) = entry.data.message.id.as_deref() else {
-                entries.push(entry);
-                continue;
-            };
+            let id = entry
+                .data
+                .message
+                .id
+                .as_deref()
+                .expect("ZCode entries always have message IDs");
             if seen.insert(id.to_string()) {
                 entries.push(entry);
             }
@@ -143,12 +145,12 @@ fn load_entries_from_database(
         "m.input_tokens + m.output_tokens"
     };
     let provider_id = if schema.has_provider_id {
-        "CAST(m.provider_id AS TEXT)"
+        "m.provider_id"
     } else {
         "NULL"
     };
     let version = if schema.has_session_version {
-        "CAST(s.version AS TEXT)"
+        "s.version"
     } else {
         "NULL"
     };
@@ -377,14 +379,18 @@ mod tests {
         statement.read::<String, _>(0).unwrap()
     }
 
-    fn load(root: &Path) -> Vec<LoadedEntry> {
+    fn load_with_mode(root: &Path, mode: CostMode) -> Vec<LoadedEntry> {
         let _guard = EnvVarGuard::set(super::super::paths::ZCODE_HOME_ENV, root);
         let shared = SharedArgs {
-            mode: CostMode::Display,
+            mode,
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
         load_entries(&shared, &PricingMap::load_embedded()).unwrap()
+    }
+
+    fn load(root: &Path) -> Vec<LoadedEntry> {
+        load_with_mode(root, CostMode::Display)
     }
 
     #[test]
@@ -405,6 +411,30 @@ mod tests {
         assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
         assert_eq!(entries[0].data.timestamp, "2026-08-16T19:37:22.666Z");
         assert_eq!(entries[0].project_path.as_ref(), "/project");
+    }
+
+    #[test]
+    fn preserves_opaque_provider_for_loader_pricing() {
+        let fixture = fs_fixture!({});
+        let _ = fixture.create_dir_all("cli/db");
+        let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
+        create_db(&db_path, false);
+        let db = sqlite::open(&db_path).unwrap();
+        db.execute("INSERT INTO session VALUES ('session-1', '/project', '0.16.3')")
+            .unwrap();
+        db.execute(
+            "INSERT INTO model_usage
+             VALUES ('usage-opaque-provider', 'session-1', 1786909042666, 'GLM-5.3',
+                     '847d13c9-0568-4f2f-818e-8bd498e5d920', 'completed', 100, 10, 15, 25, 110)",
+        )
+        .unwrap();
+        drop(db);
+
+        let entries = load_with_mode(fixture.root(), CostMode::Calculate);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 0.0);
+        assert_eq!(entries[0].missing_pricing_model.as_deref(), Some("GLM-5.3"));
     }
 
     #[test]

@@ -187,7 +187,11 @@ fn is_zai_provider(provider_id: Option<&str>) -> bool {
     provider_id.is_some_and(|provider| {
         matches!(
             provider.trim().to_ascii_lowercase().as_str(),
-            "zai" | "z.ai" | "zai-coding-plan" | "builtin:zai-coding-plan"
+            "zai"
+                | "z.ai"
+                | "zai-coding-plan"
+                | "builtin:zai-coding-plan"
+                | "builtin:bigmodel-coding-plan"
         )
     })
 }
@@ -270,6 +274,24 @@ mod tests {
             custom.missing_pricing_model.as_deref(),
             Some("deepseek-v4-flash")
         );
+    }
+
+    #[test]
+    fn prices_legacy_bigmodel_provider_with_provider_qualified_glm_pricing() {
+        let mut row = row();
+        row.provider_id = Some("builtin:bigmodel-coding-plan".to_string());
+
+        let entry = row_to_entry(
+            row,
+            Some(&JiffTimeZone::UTC),
+            CostMode::Calculate,
+            &PricingMap::load_embedded(),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+
+        assert_eq!(entry.cost, 0.00015549999999999999);
+        assert!(entry.missing_pricing_model.is_none());
     }
 
     #[test]
