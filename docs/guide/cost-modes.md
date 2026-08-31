@@ -60,7 +60,7 @@ ccusage monthly --mode calculate --breakdown
 
 1. **Ignores `costUSD` values** from Claude Code data
 2. **Uses token counts** (input, output, cache) for all entries
-3. **Applies current model pricing** from LiteLLM database
+3. **Applies model pricing** from LiteLLM, models.dev, and built-in historical schedules using each event's timestamp
 4. **Consistent methodology** across all time periods
 
 #### Best for:
@@ -176,8 +176,9 @@ When calculating costs from tokens, ccusage uses:
 
 #### Model Pricing Sources
 
-- **LiteLLM database** - Up-to-date model pricing
+- **LiteLLM database and models.dev catalog** - Up-to-date model pricing and model metadata
 - **Automatic updates** - Pricing refreshed regularly
+- **Historical schedules** - Time-varying model rates use each event's recorded timestamp
 - **Multiple models** - Supports Claude Opus 4.1, Sonnet 4.5, and other models
 
 #### Token Types

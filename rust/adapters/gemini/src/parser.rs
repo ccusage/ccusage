@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, format_date_tz,
+    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, format_date_tz,
     missing_pricing_model_for_candidates, non_empty_json_string,
 };
 use ccusage_adapter_common::jsonl;
@@ -460,7 +460,7 @@ pub(super) fn event_to_loaded(
     let extra_total_tokens = event
         .total_tokens
         .saturating_sub(event.input_tokens + event.output_tokens + event.cache_read_tokens);
-    let cost = calculate_gemini_cost(&event.model, cost_usage, mode, pricing);
+    let cost = calculate_gemini_cost(&event.model, cost_usage, event.timestamp, mode, pricing);
     let missing_pricing_model = missing_gemini_pricing(&event.model, cost_usage, mode, pricing);
     let data = UsageEntry {
         session_id: Some(event.session_id.clone()),
@@ -496,6 +496,7 @@ pub(super) fn event_to_loaded(
 fn calculate_gemini_cost(
     model: &str,
     usage: TokenUsageRaw,
+    timestamp: TimestampMs,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> f64 {
@@ -504,10 +505,11 @@ fn calculate_gemini_cost(
         CostMode::Auto | CostMode::Calculate => {
             for candidate in model_candidates(model) {
                 if pricing.find(&candidate).is_some() {
-                    return calculate_cost_for_usage(
+                    return calculate_cost_for_usage_at(
                         Some(&candidate),
                         usage,
                         None,
+                        Some(timestamp),
                         CostMode::Calculate,
                         Some(pricing),
                     );

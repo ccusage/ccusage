@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::{
     ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
-    UsageSummary, calculate_cost_for_usage,
+    UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, SmallIndexVec, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
@@ -283,10 +283,11 @@ fn read_daily_usage_file(
             continue;
         }
         let usage = data.message.usage;
-        let cost = calculate_cost_for_usage(
+        let cost = calculate_cost_for_usage_at(
             data.message.model.as_deref(),
             usage,
             data.cost_usd,
+            Some(timestamp),
             mode,
             pricing,
         );
@@ -341,10 +342,11 @@ fn read_daily_usage_file(
                 project: Arc::clone(&project),
                 session_id: Arc::clone(&session_id),
                 usage: advisor.usage,
-                cost: calculate_cost_for_usage(
+                cost: calculate_cost_for_usage_at(
                     Some(&advisor.model),
                     advisor.usage,
                     None,
+                    Some(timestamp),
                     mode,
                     pricing,
                 ),

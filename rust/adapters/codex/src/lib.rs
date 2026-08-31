@@ -23,8 +23,8 @@ pub use report::{
 };
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
 pub use types::{
-    CodexGroup, CodexModelUsage, CodexServiceTier, CodexSourceUsage, CodexTokenUsageEvent,
-    CodexUsageBucket,
+    CodexGroup, CodexModelUsage, CodexServiceTier, CodexSourceUsage, CodexTimestampedUsage,
+    CodexTokenUsageEvent, CodexUsageBucket,
 };
 pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
@@ -324,6 +324,66 @@ mod tests {
             );
         }
         insta::assert_json_snapshot!(report);
+    }
+
+    #[test]
+    fn prices_mixed_deepseek_timestamps_in_model_and_originator_totals() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek-v4-flash": {
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028,
+                    "cache_creation_input_token_cost": 0.000000123,
+                    "cache_read_input_token_cost": 0.0000000028
+                }
+            }"#,
+        );
+        let event = |timestamp: &str, source: &str| CodexTokenUsageEvent {
+            session_id: "session-1".to_string(),
+            timestamp: timestamp.to_string(),
+            model: Some("deepseek-v4-flash".to_string()),
+            input_tokens: 1_000_000,
+            cached_input_tokens: 0,
+            cache_creation_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+            total_tokens: 1_000_000,
+            is_fallback_model: false,
+            service_tier: None,
+            source: Some(source.to_string()),
+        };
+        let events = vec![
+            event("2026-08-16T15:59:59.000Z", "codex-tui"),
+            event("2026-08-16T16:00:00.000Z", "codex-tui"),
+            event("2026-08-17T01:00:00.000Z", "codex_exec"),
+        ];
+
+        let report = report_json_with_source(
+            &events,
+            AgentReportKind::Daily,
+            Some("UTC"),
+            &pricing,
+            CodexSpeed::Standard,
+            true,
+        )
+        .unwrap();
+
+        assert!((report["totals"]["costUSD"].as_f64().unwrap() - 0.80).abs() < 1e-12);
+        assert!((report["daily"][0]["costUSD"].as_f64().unwrap() - 0.36).abs() < 1e-12);
+        assert!((report["daily"][1]["costUSD"].as_f64().unwrap() - 0.44).abs() < 1e-12);
+
+        let sources = report["totals"]["sourceBreakdowns"].as_array().unwrap();
+        let cli = sources
+            .iter()
+            .find(|source| source["source"] == "CLI")
+            .unwrap();
+        let exec = sources
+            .iter()
+            .find(|source| source["source"] == "Exec")
+            .unwrap();
+        assert!((cli["costUSD"].as_f64().unwrap() - 0.36).abs() < 1e-12);
+        assert!((exec["costUSD"].as_f64().unwrap() - 0.44).abs() < 1e-12);
     }
 
     #[test]

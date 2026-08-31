@@ -4,7 +4,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage,
+    apply_total_token_fallback, calculate_cost_for_usage_at,
     cli::{CostMode, PricingOverride},
     format_date_tz, format_rfc3339_millis, total_usage_tokens,
 };
@@ -94,10 +94,11 @@ pub(super) fn row_to_entry(
     let cost = if mode == CostMode::Display {
         0.0
     } else {
-        calculate_cost_for_usage(
+        calculate_cost_for_usage_at(
             cost_model.as_deref(),
             cost_usage,
             None,
+            Some(timestamp),
             CostMode::Calculate,
             Some(pricing),
         )

@@ -177,7 +177,7 @@ If ccusage shows no data, check:
    - Kimi: `${KIMI_DATA_DIR:-~/.kimi}` (also scans `~/.kimi-code`)
    - OpenClaw: `${OPENCLAW_DIR:-~/.openclaw}` (also scans `~/.clawdbot`, `~/.moltbot`, `~/.moldbot`)
    - Qwen: `${QWEN_DATA_DIR:-~/.qwen}`
-   - GitHub Copilot CLI: `~/.copilot/otel/*.jsonl` or `COPILOT_OTEL_FILE_EXPORTER_PATH`
+   - GitHub Copilot CLI: `${COPILOT_HOME:-~/.copilot}/session-state/*/events.jsonl`, `${COPILOT_HOME:-~/.copilot}/otel/**/*.jsonl`, or the single file specified by `COPILOT_OTEL_FILE_EXPORTER_PATH`
    - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
    - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
@@ -201,6 +201,7 @@ export OPENCLAW_DIR="/path/to/openclaw"
 export KILO_DATA_DIR="/path/to/kilo"
 export KIMI_DATA_DIR="/path/to/kimi"
 export QWEN_DATA_DIR="/path/to/qwen"
+export COPILOT_HOME="/path/to/copilot"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
@@ -208,7 +209,7 @@ export ZCODE_HOME="/path/to/zcode-home"
 export GJC_CODING_AGENT_DIR="/path/to/.gjc/agent"
 ```
 
-Directory variables can contain comma-separated directories. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, `GROK_HOME` accepts one root, and `ZCODE_HOME` supports multiple roots and deduplicates them:
+Directory variables can contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` supports multiple roots and deduplicates them:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"

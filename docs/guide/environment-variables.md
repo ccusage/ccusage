@@ -4,7 +4,7 @@ ccusage supports several environment variables for configuration and customizati
 
 ## Agent Data Directories
 
-ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; the Copilot variable points at one explicit JSONL export file, while `GROK_HOME`, `GJC_CONFIG_DIR`, and `GJC_CODING_AGENT_DIR` select one root only:
+ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; `COPILOT_HOME`, `GROK_HOME`, `GJC_CONFIG_DIR`, and `GJC_CODING_AGENT_DIR` accept a single root, while `COPILOT_OTEL_FILE_EXPORTER_PATH` points at one explicit JSONL export file:
 
 | Variable                          | Agent          | Default                                              |
 | --------------------------------- | -------------- | ---------------------------------------------------- |
@@ -21,6 +21,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `KILO_DATA_DIR`                   | Kilo           | `~/.local/share/kilo`                                |
 | `KIMI_DATA_DIR`                   | Kimi           | `~/.kimi`, `~/.kimi-code`                            |
 | `QWEN_DATA_DIR`                   | Qwen           | `~/.qwen`                                            |
+| `COPILOT_HOME`                    | Copilot CLI    | `~/.copilot`                                         |
 | `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file                               |
 | `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                                      |
 | `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity` |
@@ -44,6 +45,7 @@ export OPENCLAW_DIR="/path/to/openclaw,/archive/openclaw"
 export KILO_DATA_DIR="/path/to/kilo,/archive/kilo"
 export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
+export COPILOT_HOME="/path/to/copilot"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
