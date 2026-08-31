@@ -71,8 +71,7 @@ fn load_entries_inner(
             CopilotSourceKind::SessionState => session_state_entries.extend(file_entries),
         }
     }
-    let mut seen_session_entries = HashSet::new();
-    session_state_entries.retain(|entry| seen_session_entries.insert(entry.dedup_key.clone()));
+    session_state_entries = retain_latest_session_entries(session_state_entries);
     let session_usage_keys = session_state_entries
         .iter()
         .map(|entry| (entry.session_id.as_str(), entry.model.as_str()))
@@ -88,6 +87,25 @@ fn load_entries_inner(
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
+}
+
+fn retain_latest_session_entries(entries: Vec<CopilotUsageEntry>) -> Vec<CopilotUsageEntry> {
+    let mut latest_by_key = HashMap::<(String, String), usize>::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let key = (entry.session_id.clone(), entry.model.clone());
+        if latest_by_key
+            .get(&key)
+            .is_none_or(|previous| entries[*previous].timestamp <= entry.timestamp)
+        {
+            latest_by_key.insert(key, index);
+        }
+    }
+    let mut latest_indices = latest_by_key.into_values().collect::<Vec<_>>();
+    latest_indices.sort_unstable();
+    latest_indices
+        .into_iter()
+        .map(|index| entries[index].clone())
+        .collect()
 }
 
 fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<Vec<CopilotUsageEntry>> {
@@ -421,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_copilot_internal_model_for_pricing_and_otel_dedupe() {
+    fn normalizes_copilot_model_suffixes_for_pricing_and_otel_dedupe() {
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": format!(
                 "{}\n",
@@ -431,7 +449,7 @@ mod tests {
                     "timestamp": "2026-08-30T12:00:00Z",
                     "data": {
                         "modelMetrics": {
-                            "claude-opus-4.7-1m-internal": {
+                            "claude-opus-4.6-1m": {
                                 "usage": {
                                     "inputTokens": 100,
                                     "outputTokens": 50,
@@ -450,11 +468,11 @@ mod tests {
                     "type": "span",
                     "traceId": "trace-1",
                     "spanId": "span-1",
-                    "name": "chat claude-opus-4.7-1m-internal",
+                    "name": "chat claude-opus-4.6-1m-internal",
                     "endTime": [1_775_934_264_u64, 0_u64],
                     "attributes": {
                         "gen_ai.operation.name": "chat",
-                        "gen_ai.response.model": "claude-opus-4.7-1m-internal",
+                        "gen_ai.response.model": "claude-opus-4.6-1m-internal",
                         "gen_ai.conversation.id": "session-1",
                         "gen_ai.usage.input_tokens": 999,
                         "gen_ai.usage.output_tokens": 999
@@ -482,7 +500,7 @@ mod tests {
         let entries = load_entries_inner(&shared, &crate::PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].model.as_deref(), Some("claude-opus-4.7"));
+        assert_eq!(entries[0].model.as_deref(), Some("claude-opus-4.6"));
         assert_eq!(entries[0].data.message.usage.input_tokens, 70);
         assert_eq!(entries[0].data.message.usage.output_tokens, 50);
         assert_eq!(
@@ -495,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn deduplicates_session_shutdowns_and_keeps_unmatched_otel_rows() {
+    fn keeps_only_latest_cumulative_shutdown_and_unmatched_otel_rows() {
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": [
                 json!({
@@ -521,7 +539,7 @@ mod tests {
                 json!({
                     "type": "session.shutdown",
                     "id": "shutdown-2",
-                    "timestamp": "2026-04-15T09:52:27.352Z",
+                    "timestamp": "2026-04-15T09:53:27.352Z",
                     "data": {"modelMetrics": {"test-model": {"usage": {
                         "inputTokens": 30,
                         "outputTokens": 40
@@ -612,7 +630,6 @@ mod tests {
             vec![
                 ("session-1".to_string(), "other-model".to_string(), 3),
                 ("session-2".to_string(), "test-model".to_string(), 5),
-                ("session-1".to_string(), "test-model".to_string(), 10),
                 ("session-1".to_string(), "test-model".to_string(), 30),
             ]
         );

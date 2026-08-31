@@ -483,6 +483,7 @@ fn normalize_copilot_model(model: &str) -> String {
     let model = model.trim();
     model
         .strip_suffix("-1m-internal")
+        .or_else(|| model.strip_suffix("-1m"))
         .unwrap_or(model)
         .to_string()
 }
@@ -740,6 +741,10 @@ mod session_state_tests {
         assert_eq!(
             normalize_copilot_model(" claude-opus-4.7-1m-internal "),
             "claude-opus-4.7"
+        );
+        assert_eq!(
+            normalize_copilot_model("claude-opus-4.6-1m"),
+            "claude-opus-4.6"
         );
         assert_eq!(normalize_copilot_model("gpt-5.4"), "gpt-5.4");
     }

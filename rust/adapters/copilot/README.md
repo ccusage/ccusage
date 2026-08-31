@@ -20,13 +20,13 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 - `COPILOT_HOME` (single relocated Copilot data root)
 - `COPILOT_OTEL_FILE_EXPORTER_PATH` (one explicit JSONL file)
 
-Session-state shutdown records are preferred for an exact `(session, model)` pair when both
-sources contain it. Other OpenTelemetry records remain available, while duplicate shutdown
-records are collapsed by their event identity. Session-state `inputTokens` includes cache reads
+Session-state shutdown records are cumulative per canonical `(session, model)` pair, so only the
+latest shutdown is retained. They are preferred for a matching pair when both sources contain it.
+Other OpenTelemetry records remain available. Session-state `inputTokens` includes cache reads
 and writes, so the adapter reports the uncached remainder as input and keeps the cache buckets
 separate. Reasoning tokens are already included in output tokens and are not added to totals or
-costs. Internal model suffixes such as `-1m-internal` are removed before pricing and source
-deduplication.
+costs. Internal model suffixes such as `-1m` and `-1m-internal` are removed before pricing and
+source deduplication.
 
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.

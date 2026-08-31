@@ -26,9 +26,9 @@ pnpm dlx ccusage copilot --help
 
 The CLI reads Copilot session-state shutdown events from `${COPILOT_HOME:-~/.copilot}/session-state/*/events.jsonl` by default. It also reads OpenTelemetry JSONL files from `${COPILOT_HOME:-~/.copilot}/otel/*.jsonl` and includes the explicit file pointed to by `COPILOT_OTEL_FILE_EXPORTER_PATH`. Set `COPILOT_HOME` to the Copilot data root when the default `~/.copilot` directory has been relocated.
 
-Session-state files do not require OpenTelemetry configuration. When both sources contain the same exact session/model pair, the session-state usage is used and the matching OpenTelemetry rows are skipped. OpenTelemetry rows for other session/model pairs remain available.
+Session-state files do not require OpenTelemetry configuration. Shutdown usage is cumulative per canonical session/model pair, so only the latest shutdown is retained. When both sources contain the same session/model pair, the session-state usage is used and the matching OpenTelemetry rows are skipped. OpenTelemetry rows for other session/model pairs remain available.
 
-Only `session.shutdown` events and their `data.modelMetrics.<model>.usage` fields are used. In session-state data, `inputTokens` includes both cache buckets, so ccusage derives uncached input as `max(inputTokens - cacheReadTokens - cacheWriteTokens, 0)` before populating `inputTokens`; cache reads and cache writes are then reported separately. `reasoningTokens` is a subset of `outputTokens`, so it is not added again to output, total tokens, or cost. The session-state `requests.cost` field is not treated as a USD cost; costs continue to use ccusage's normal token pricing. Copilot model IDs with internal suffixes such as `claude-opus-4.7-1m-internal` are normalized to their priced model name for pricing and source deduplication.
+Only `session.shutdown` events and their `data.modelMetrics.<model>.usage` fields are used. In session-state data, `inputTokens` includes both cache buckets, so ccusage derives uncached input as `max(inputTokens - cacheReadTokens - cacheWriteTokens, 0)` before populating `inputTokens`; cache reads and cache writes are then reported separately. `reasoningTokens` is a subset of `outputTokens`, so it is not added again to output, total tokens, or cost. The session-state `requests.cost` field is not treated as a USD cost; costs continue to use ccusage's normal token pricing. Copilot model IDs with `-1m` or `-1m-internal` suffixes, such as `claude-opus-4.6-1m`, are normalized to their priced model name for pricing and source deduplication.
 
 For example, a `claude-opus-4.7` shutdown with `inputTokens=100`, `outputTokens=50`, `cacheReadTokens=10`, and `cacheWriteTokens=20` is reported as 70 input tokens, 50 output tokens, 20 cache-creation tokens, and 10 cache-read tokens. With the embedded Opus pricing, its calculated cost is exactly `$0.00173`.
 
@@ -63,11 +63,11 @@ These views support `--json` for structured output, `--compact` for narrow termi
 
 ## What Gets Calculated
 
-- **Token usage** - session shutdown usage is read from session-state files; OTel chat spans are preferred within the OTel source, with inference logs and agent-turn logs used as fallbacks.
+- **Token usage** - the latest cumulative session shutdown usage is read from session-state files; OTel chat spans are preferred within the OTel source, with inference logs and agent-turn logs used as fallbacks.
 - **Cache tokens** - cache read and cache creation token attributes are counted when present.
 - **Input tokens** - session-state `inputTokens` is normalized to uncached input after subtracting cache reads and cache writes.
-- **Reasoning tokens** - reasoning tokens remain a separate source breakdown when present, but are already included in output tokens and are not counted again.
-- **Pricing** - costs are calculated from LiteLLM pricing data using the normalized model name.
+- **Reasoning tokens** - reasoning tokens are already included in output tokens and are not counted again.
+- **Pricing** - costs are calculated from LiteLLM pricing data using the normalized model name; both `-1m` and `-1m-internal` suffixes are removed.
 
 ## Environment Variables
 

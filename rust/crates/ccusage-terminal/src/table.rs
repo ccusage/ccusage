@@ -55,11 +55,6 @@ impl SimpleTable {
         self.headers.len()
     }
 
-    /// Renders the table using the configured terminal width and style.
-    pub fn render(&self) -> String {
-        self.render_lines().join("\n")
-    }
-
     pub fn print(&self) -> io::Result<()> {
         let stdout = io::stdout();
         let mut stdout = stdout.lock();

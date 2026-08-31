@@ -1,0 +1,150 @@
+---
+source: crates/ccusage/tests/copilot_cli.rs
+expression: "format!(\"Monthly JSON\\n{}\\nSession JSON\\n{}\",\nrun_cli(&fixture, [\"copilot\", \"monthly\", \"--json\"]),\nrun_cli(&fixture, [\"copilot\", \"session\", \"--json\"]),)"
+---
+Monthly JSON
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 30,
+      "cacheReadTokens": 20,
+      "inputTokens": 150,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0029475,
+          "inputTokens": 150,
+          "modelName": "claude-opus-4.6",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4.6"
+      ],
+      "month": "2026-01",
+      "outputTokens": 80,
+      "totalCost": 0.0029475,
+      "totalTokens": 280
+    },
+    {
+      "cacheCreationTokens": 15,
+      "cacheReadTokens": 10,
+      "inputTokens": 72,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.0007993750000000001,
+          "inputTokens": 72,
+          "modelName": "gpt-5.4",
+          "outputTokens": 38
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4"
+      ],
+      "month": "2026-02",
+      "outputTokens": 38,
+      "totalCost": 0.0007993750000000001,
+      "totalTokens": 135
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 45,
+    "cacheReadTokens": 30,
+    "inputTokens": 222,
+    "outputTokens": 118,
+    "totalCost": 0.003746875,
+    "totalTokens": 415
+  }
+}
+
+Session JSON
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 30,
+      "cacheReadTokens": 20,
+      "firstActivity": "2026-01-03T01:20:00.000Z",
+      "inputTokens": 150,
+      "lastActivity": "2026-01-03T01:20:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0029475,
+          "inputTokens": 150,
+          "modelName": "claude-opus-4.6",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4.6"
+      ],
+      "outputTokens": 80,
+      "projectPath": "GitHub Copilot CLI",
+      "sessionId": "session-a",
+      "totalCost": 0.0029475,
+      "totalTokens": 280
+    },
+    {
+      "cacheCreationTokens": 15,
+      "cacheReadTokens": 10,
+      "firstActivity": "2026-02-01T01:20:00.000Z",
+      "inputTokens": 65,
+      "lastActivity": "2026-02-01T01:20:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.000661875,
+          "inputTokens": 65,
+          "modelName": "gpt-5.4",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4"
+      ],
+      "outputTokens": 30,
+      "projectPath": "GitHub Copilot CLI",
+      "sessionId": "session-b",
+      "totalCost": 0.000661875,
+      "totalTokens": 120
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-02-02T01:20:00.000Z",
+      "inputTokens": 7,
+      "lastActivity": "2026-02-02T01:20:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001375,
+          "inputTokens": 7,
+          "modelName": "gpt-5.4",
+          "outputTokens": 8
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4"
+      ],
+      "outputTokens": 8,
+      "projectPath": "GitHub Copilot CLI",
+      "sessionId": "session-c",
+      "totalCost": 0.0001375,
+      "totalTokens": 15
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 45,
+    "cacheReadTokens": 30,
+    "inputTokens": 222,
+    "outputTokens": 118,
+    "totalCost": 0.003746875,
+    "totalTokens": 415
+  }
+}
