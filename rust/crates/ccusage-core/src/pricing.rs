@@ -56,6 +56,35 @@ const MODELS_DEV_FAILURE_RETRY_AFTER: Duration = Duration::from_secs(60);
 // suffixes are treated as distinct model versions.
 const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 
+/// Identifies the upstream document whose schema a pricing response must use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PricingEndpoint {
+    LiteLlm,
+    ModelsDev,
+}
+
+impl PricingEndpoint {
+    /// Returns the pricing endpoint represented by a fetch URL.
+    pub fn for_url(url: &str) -> Option<Self> {
+        match url {
+            LITELLM_PRICING_URL => Some(Self::LiteLlm),
+            MODELS_DEV_API_URL => Some(Self::ModelsDev),
+            _ => None,
+        }
+    }
+
+    /// Returns whether a body contains usable pricing data for this endpoint.
+    pub fn validates(self, json: &str) -> bool {
+        let mut map = PricingMap::default();
+        match self {
+            Self::LiteLlm => map.load_json(json) > 0,
+            Self::ModelsDev => map
+                .load_models_dev_json_missing(json)
+                .is_some_and(|loaded_count| loaded_count > 0),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Pricing {
     pub input: f64,
@@ -2136,7 +2165,10 @@ where
         }
     };
     let mut map = PricingMap::default();
-    if map.load_models_dev_json_missing(&json).is_none() {
+    if !map
+        .load_models_dev_json_missing(&json)
+        .is_some_and(|loaded_count| loaded_count > 0)
+    {
         if should_log_pricing_refresh_details() {
             eprintln!("WARN  Failed to parse models.dev pricing; using LiteLLM pricing.");
         }
@@ -2180,8 +2212,9 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Fuzzy, Pricing, PricingMap, build_time_models_dev_json, build_time_pricing_json,
-        embedded_models_dev_pricing, long_context_split_threshold, model_without_date_suffix,
+        Fuzzy, Pricing, PricingEndpoint, PricingMap, build_time_models_dev_json,
+        build_time_pricing_json, embedded_models_dev_pricing, long_context_split_threshold,
+        model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -2191,6 +2224,20 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         assert!(pricing.len() > 0);
         assert!(pricing.find("claude-sonnet-4-20250514").is_some());
+    }
+
+    #[test]
+    fn validates_only_the_schema_for_each_pricing_endpoint() {
+        let litellm =
+            r#"{"gpt-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
+        let models_dev =
+            r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
+
+        assert!(PricingEndpoint::LiteLlm.validates(litellm));
+        assert!(!PricingEndpoint::LiteLlm.validates(models_dev));
+        assert!(PricingEndpoint::ModelsDev.validates(models_dev));
+        assert!(!PricingEndpoint::ModelsDev.validates(litellm));
+        assert!(!PricingEndpoint::ModelsDev.validates("{}"));
     }
 
     #[test]
