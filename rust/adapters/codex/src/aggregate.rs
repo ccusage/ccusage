@@ -444,7 +444,7 @@ fn accumulate_codex_event_into_model_usage(
         model_usage.long_context_cache_creation_tokens += event.cache_creation_tokens;
         model_usage.long_context_output_tokens += event.output_tokens;
     }
-    {
+    if crate::has_time_dependent_pricing(model) {
         let timestamped_usage = model_usage
             .timestamped_usage
             .entry(timestamp.as_millis())
@@ -510,6 +510,7 @@ fn merge_codex_usage_bucket(target: &mut CodexUsageBucket, source: CodexUsageBuc
 
 fn merge_recorded_codex_usage(
     model_usage: &mut crate::CodexModelUsage,
+    model: &str,
     timestamp: crate::TimestampMs,
     service_tier: CodexServiceTier,
     usage: CodexUsageBucket,
@@ -520,15 +521,17 @@ fn merge_recorded_codex_usage(
     };
     merge_codex_usage_bucket(recorded_usage, usage);
 
-    let timestamped_usage = model_usage
-        .timestamped_usage
-        .entry(timestamp.as_millis())
-        .or_default();
-    let recorded_usage = match service_tier {
-        CodexServiceTier::Standard => &mut timestamped_usage.recorded_standard_usage,
-        CodexServiceTier::Fast => &mut timestamped_usage.recorded_fast_usage,
-    };
-    merge_codex_usage_bucket(recorded_usage, usage);
+    if crate::has_time_dependent_pricing(model) {
+        let timestamped_usage = model_usage
+            .timestamped_usage
+            .entry(timestamp.as_millis())
+            .or_default();
+        let recorded_usage = match service_tier {
+            CodexServiceTier::Standard => &mut timestamped_usage.recorded_standard_usage,
+            CodexServiceTier::Fast => &mut timestamped_usage.recorded_fast_usage,
+        };
+        merge_codex_usage_bucket(recorded_usage, usage);
+    }
 }
 
 fn apply_recorded_usage_from_shards(
@@ -593,7 +596,13 @@ fn apply_recorded_usage_entries<'a>(
                 0
             },
         };
-        merge_recorded_codex_usage(model_usage, key.timestamp, service_tier, usage);
+        merge_recorded_codex_usage(
+            model_usage,
+            record.model.as_str(),
+            key.timestamp,
+            service_tier,
+            usage,
+        );
 
         let Some(source_usage) = group
             .sources
@@ -602,7 +611,13 @@ fn apply_recorded_usage_entries<'a>(
         else {
             continue;
         };
-        merge_recorded_codex_usage(source_usage, key.timestamp, service_tier, usage);
+        merge_recorded_codex_usage(
+            source_usage,
+            record.model.as_str(),
+            key.timestamp,
+            service_tier,
+            usage,
+        );
     }
 }
 
@@ -848,6 +863,34 @@ mod tests {
                 Some(expected),
             );
         }
+    }
+
+    #[test]
+    fn stores_timestamped_usage_only_for_time_dependent_models() {
+        let event = |model: &str| CodexTokenUsageEvent {
+            session_id: "session-1".to_string(),
+            timestamp: "2026-08-17T01:00:00.000Z".to_string(),
+            model: Some(model.to_string()),
+            input_tokens: 1_000_000,
+            cached_input_tokens: 0,
+            cache_creation_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+            total_tokens: 1_000_000,
+            is_fallback_model: false,
+            service_tier: None,
+            source: None,
+        };
+        let groups = aggregate_events(
+            &[event("gpt-5"), event("deepseek-v4-flash")],
+            AgentReportKind::Daily,
+            Some("UTC"),
+        )
+        .unwrap();
+        let models = &groups["2026-08-17"].models;
+
+        assert!(models["gpt-5"].timestamped_usage.is_empty());
+        assert_eq!(models["deepseek-v4-flash"].timestamped_usage.len(), 1);
     }
 
     #[test]

@@ -37,7 +37,7 @@ pub use output::{
     sanitize_terminal_text, session_summary_json, should_use_compact_layout, summary_json,
     totals_json, wants_json,
 };
-pub use pricing::{Pricing, PricingMap};
+pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
 pub(crate) use project_names::parse_project_aliases;
 pub use project_names::{format_project_name, short_model_name};
 pub use summary::{

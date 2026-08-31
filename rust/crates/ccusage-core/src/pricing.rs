@@ -123,8 +123,21 @@ struct DeepSeekV4Rates {
     cache_read: f64,
 }
 
-fn deepseek_v4_model_identity(model: &str) -> Option<&str> {
-    matches!(model, "deepseek-v4-flash" | "deepseek-v4-pro").then_some(model)
+fn deepseek_v4_model_identity(model: &str) -> Option<&'static str> {
+    let normalized = normalized_pricing_key(model);
+    match normalized.as_ref() {
+        "deepseek-v4-flash" => Some("deepseek-v4-flash"),
+        "deepseek-v4-pro" => Some("deepseek-v4-pro"),
+        _ => None,
+    }
+}
+
+/// Reports whether a model's pricing can vary by event timestamp.
+pub fn has_time_dependent_pricing(model: &str) -> bool {
+    let resolved_model = crate::model_aliases::resolve_model_name(model);
+    deepseek_v4_model_identity(model)
+        .or_else(|| deepseek_v4_model_identity(resolved_model.as_ref()))
+        .is_some()
 }
 
 fn deepseek_v4_rates(model: &str, timestamp: TimestampMs) -> Option<DeepSeekV4Rates> {
@@ -1184,22 +1197,22 @@ impl PricingMap {
     /// ids and aliases that resolve to them. Provider and reseller names
     /// continue through static lookup.
     pub fn find_at(&self, model: &str, timestamp: TimestampMs) -> Option<Pricing> {
-        let resolved_model = if deepseek_v4_model_identity(model).is_some() {
-            Cow::Borrowed(model)
-        } else {
-            let resolved_model = crate::model_aliases::resolve_model_name(model);
-            if deepseek_v4_model_identity(resolved_model.as_ref()).is_none() {
-                return self.find(model);
-            }
-            resolved_model
+        let resolved_model = crate::model_aliases::resolve_model_name(model);
+        let Some(scheduled_model) = deepseek_v4_model_identity(model)
+            .or_else(|| deepseek_v4_model_identity(resolved_model.as_ref()))
+        else {
+            return self.find(model);
         };
-        let scheduled_model = deepseek_v4_model_identity(resolved_model.as_ref())?;
         let mut pricing = apply_deepseek_v4_schedule(scheduled_model, timestamp, self.find(model)?);
-        let override_value = self.user_overrides.get(model).or_else(|| {
-            (resolved_model.as_ref() != model)
-                .then(|| self.user_overrides.get(resolved_model.as_ref()))
-                .flatten()
-        });
+        let override_value = self
+            .user_overrides
+            .get(model)
+            .or_else(|| {
+                (resolved_model.as_ref() != model)
+                    .then(|| self.user_overrides.get(resolved_model.as_ref()))
+                    .flatten()
+            })
+            .or_else(|| self.user_overrides.get(scheduled_model));
         if let Some(override_value) = override_value {
             apply_explicit_pricing_override(&mut pricing, override_value);
         }
@@ -2482,10 +2495,18 @@ mod tests {
                 timestamp("2026-08-17T01:00:00Z"),
             )
             .unwrap();
+        let dotted_reseller = pricing
+            .find_at(
+                "openrouter/deepseek.v4.flash",
+                timestamp("2026-08-17T01:00:00Z"),
+            )
+            .unwrap();
         assert_eq!(reseller.input * 1e6, 9.0);
         assert_eq!(reseller.output * 1e6, 10.0);
         assert_eq!(reseller.cache_read * 1e6, 8.0);
         assert_eq!(reseller.cache_creation_input_token_cost() * 1e6, 7.0);
+        assert_eq!(dotted_reseller.input * 1e6, 9.0);
+        assert_eq!(dotted_reseller.output * 1e6, 10.0);
     }
 
     #[test]
@@ -2501,6 +2522,42 @@ mod tests {
             .unwrap();
 
         assert_eq!(resolved.input * 1e6, 0.44);
+    }
+
+    #[test]
+    fn find_at_applies_deepseek_schedule_to_separator_spellings_of_direct_models() {
+        let pricing = direct_deepseek_pricing();
+
+        for model in ["deepseek.v4.flash", "deepseek@v4@flash"] {
+            let resolved = pricing
+                .find_at(model, timestamp("2026-08-17T01:00:00Z"))
+                .unwrap();
+            assert!((resolved.input * 1e6 - 0.44).abs() < 1e-12, "{model}");
+        }
+    }
+
+    #[test]
+    fn time_dependent_pricing_excludes_provider_qualified_models() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+            "deepseek-latest",
+            "deepseek-v4-flash",
+        )]);
+
+        for model in [
+            "deepseek-v4-flash",
+            "deepseek.v4.flash",
+            "deepseek@v4@flash",
+            "deepseek-latest",
+        ] {
+            assert!(super::has_time_dependent_pricing(model));
+        }
+        for model in [
+            "openrouter/deepseek-v4-flash",
+            "openrouter/deepseek.v4.flash",
+            "gpt-5",
+        ] {
+            assert!(!super::has_time_dependent_pricing(model));
+        }
     }
 
     #[test]
