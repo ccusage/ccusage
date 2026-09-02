@@ -418,6 +418,8 @@ pub struct PricingMap {
     /// `kimi-k2-7-code` would be billed at the premium tier.
     exact_only: ExactOnlyKeys,
     context_limits: FxHashMap<String, u64>,
+    /// Final context-window defaults that must not mask refreshed metadata.
+    builtin_context_limits: FxHashMap<String, u64>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
     find_cache: OnceLock<Mutex<FxHashMap<String, Option<Pricing>>>>,
@@ -511,6 +513,7 @@ impl Default for PricingMap {
             user_overrides: FxHashMap::default(),
             exact_only: ExactOnlyKeys::default(),
             context_limits: FxHashMap::default(),
+            builtin_context_limits: FxHashMap::default(),
             enable_models_dev_fallback: false,
             enable_embedded_models_dev_fallback: false,
             find_cache: OnceLock::new(),
@@ -1477,6 +1480,26 @@ impl PricingMap {
     }
 
     pub fn context_limit(&self, model: &str) -> Option<u64> {
+        self.context_limit_with_fallbacks(
+            model,
+            || {
+                self.enable_models_dev_fallback
+                    .then(models_dev_pricing)
+                    .flatten()
+            },
+            || {
+                self.enable_embedded_models_dev_fallback
+                    .then(embedded_models_dev_pricing)
+            },
+        )
+    }
+
+    fn context_limit_with_fallbacks<'a>(
+        &self,
+        model: &str,
+        models_dev: impl FnOnce() -> Option<&'a PricingMap>,
+        embedded_models_dev: impl FnOnce() -> Option<&'a PricingMap>,
+    ) -> Option<u64> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
         let fuzzy = self.allows_fuzzy_lookup(model, resolved_alias);
@@ -1487,44 +1510,71 @@ impl PricingMap {
                     .flatten()
             })
             .or_else(|| {
-                self.enable_models_dev_fallback
-                    .then(|| {
-                        models_dev_pricing().and_then(|pricing| {
-                            pricing.context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed)
-                        })
-                    })
-                    .flatten()
+                models_dev().and_then(|pricing| {
+                    pricing.context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed)
+                })
             })
             .or_else(|| {
-                self.enable_embedded_models_dev_fallback
+                embedded_models_dev().and_then(|pricing| {
+                    pricing.context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed)
+                })
+            })
+            .or_else(|| {
+                self.context_limit_entry_or_alias_in(&self.builtin_context_limits, model, fuzzy)
+            })
+            .or_else(|| {
+                (resolved_alias != model)
                     .then(|| {
-                        embedded_models_dev_pricing()
-                            .context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed)
+                        self.context_limit_entry_or_alias_in(
+                            &self.builtin_context_limits,
+                            resolved_alias,
+                            Fuzzy::Allowed,
+                        )
                     })
                     .flatten()
             })
     }
 
     fn context_limit_entry_or_alias(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
-        self.context_limits
+        self.context_limit_entry_or_alias_in(&self.context_limits, model, fuzzy)
+    }
+
+    fn context_limit_entry_or_alias_in(
+        &self,
+        context_limits: &FxHashMap<String, u64>,
+        model: &str,
+        fuzzy: Fuzzy,
+    ) -> Option<u64> {
+        context_limits
             .get(model)
             .copied()
             .or_else(|| {
-                pricing_alias(model).and_then(|alias| self.context_limit_entry(alias, fuzzy))
+                pricing_alias(model)
+                    .and_then(|alias| self.context_limit_entry_in(context_limits, alias, fuzzy))
             })
-            .or_else(|| self.context_limit_entry(model, fuzzy))
+            .or_else(|| self.context_limit_entry_in(context_limits, model, fuzzy))
     }
 
+    #[cfg(test)]
     fn context_limit_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<u64> {
-        self.context_limits.get(model).copied().or_else(|| {
+        self.context_limit_entry_in(&self.context_limits, model, fuzzy)
+    }
+
+    fn context_limit_entry_in(
+        &self,
+        context_limits: &FxHashMap<String, u64>,
+        model: &str,
+        fuzzy: Fuzzy,
+    ) -> Option<u64> {
+        context_limits.get(model).copied().or_else(|| {
             if let Some(id) = self.exact_only.id_spelled_by(model) {
-                return self.context_limits.get(id).copied();
+                return context_limits.get(id).copied();
             }
             if fuzzy == Fuzzy::Denied || self.is_exact_only_lookup(model) {
                 return None;
             }
             let normalized_model = normalized_pricing_key(model);
-            self.context_limits
+            context_limits
                 .iter()
                 .filter(|(candidate, _)| !self.exact_only.contains(candidate.as_str()))
                 .filter(|(candidate, _)| {
@@ -2218,12 +2268,11 @@ impl PricingMap {
         self.context_limits
             .insert("grok-4.3".to_string(), 1_000_000);
         self.context_limits.insert("gpt-5.4".to_string(), 1_050_000);
-        // Generated snapshots own model metadata when available; these limits
-        // only cover GPT-5.6 variants that upstream does not yet publish.
+        // Keep these separate from loaded metadata so context lookup can try
+        // models.dev before reaching the final built-in fallback.
         for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
-            self.context_limits
-                .entry(model.to_string())
-                .or_insert(1_050_000);
+            self.builtin_context_limits
+                .insert(model.to_string(), 1_050_000);
         }
         for model in [
             "claude-opus-4-8",
@@ -4366,7 +4415,7 @@ mod tests {
     }
 
     #[test]
-    fn builtin_gpt_5_6_rates_do_not_replace_loaded_prices() {
+    fn builtin_gpt_5_6_fallbacks_preserve_source_precedence() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -4383,11 +4432,11 @@ mod tests {
         let loaded_context_limit = pricing.context_limit("gpt-5.6-sol");
 
         let overrides = FastMultiplierOverrides::load();
-        let mut fallback = PricingMap::default();
-        fallback.put_builtin_pricing(&overrides);
-        let fallback = fallback.find_exact("gpt-5.6-sol").unwrap();
-        assert_ne!(loaded.input, fallback.input);
-        assert_ne!(loaded.output, fallback.output);
+        let mut builtin = PricingMap::default();
+        builtin.put_builtin_pricing(&overrides);
+        let builtin_rates = builtin.find_exact("gpt-5.6-sol").unwrap();
+        assert_ne!(loaded.input, builtin_rates.input);
+        assert_ne!(loaded.output, builtin_rates.output);
 
         pricing.put_builtin_pricing(&overrides);
         let resolved = pricing.find_exact("gpt-5.6-sol").unwrap();
@@ -4397,6 +4446,28 @@ mod tests {
         assert_eq!(resolved.cache_read, loaded.cache_read);
         assert_eq!(resolved.fast_multiplier, loaded.fast_multiplier);
         assert_eq!(pricing.context_limit("gpt-5.6-sol"), loaded_context_limit);
+
+        let mut models_dev = PricingMap::default();
+        models_dev
+            .context_limits
+            .insert("gpt-5.6-sol".to_string(), 777_777);
+        let empty_models_dev = PricingMap::default();
+        assert_eq!(
+            pricing.context_limit_with_fallbacks("gpt-5.6-sol", || None, || Some(&models_dev),),
+            Some(654_321)
+        );
+        assert_eq!(
+            builtin.context_limit_with_fallbacks("gpt-5.6-sol", || None, || Some(&models_dev),),
+            Some(777_777)
+        );
+        assert_eq!(
+            builtin.context_limit_with_fallbacks(
+                "gpt-5.6-sol",
+                || None,
+                || Some(&empty_models_dev),
+            ),
+            Some(1_050_000)
+        );
     }
 
     #[test]
