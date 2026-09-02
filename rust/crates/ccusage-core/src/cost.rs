@@ -280,89 +280,78 @@ mod tests {
 
     #[test]
     fn prices_two_stage_model_as_whole_request_at_long_context_rates() {
-        let pricing = PricingMap::load_embedded();
-        let rates = pricing.find("gpt-5.6-sol").unwrap();
-        let threshold = rates.long_context_threshold.unwrap();
-        assert!(threshold > 1);
+        let mut pricing = PricingMap::default();
+        assert_eq!(
+            pricing.load_models_dev_json_for_tests(
+                r#"{
+                    "two-stage-test": {
+                        "cost": {
+                            "input": 1,
+                            "output": 10,
+                            "cache_read": 0.1,
+                            "tiers": [{
+                                "input": 2,
+                                "output": 20,
+                                "cache_read": 0.2,
+                                "tier": { "type": "context", "size": 100 }
+                            }]
+                        }
+                    }
+                }"#,
+            ),
+            Some(1)
+        );
 
         // Keep cache reads non-zero so tier selection covers the whole context
         // rather than only freshly processed input.
-        let cache_read_input_tokens = threshold / 2;
-        let short_input_tokens = threshold - cache_read_input_tokens - 1;
         let short = TokenUsageRaw {
-            input_tokens: short_input_tokens,
-            output_tokens: 1_000,
-            cache_read_input_tokens,
+            input_tokens: 59,
+            output_tokens: 3,
+            cache_read_input_tokens: 40,
             ..TokenUsageRaw::default()
         };
         let cost = calculate_cost_for_usage(
-            Some("gpt-5.6-sol"),
+            Some("two-stage-test"),
             short,
             None,
             CostMode::Calculate,
             Some(&pricing),
         );
-        let expected = short_input_tokens as f64 * rates.input
-            + 1_000.0 * rates.output
-            + cache_read_input_tokens as f64 * rates.cache_read;
         assert!(
-            (cost - expected).abs() < 1e-9,
+            (cost - 93e-6).abs() < 1e-12,
             "short-context cost was {cost}"
         );
 
-        let boundary_input_tokens = threshold - cache_read_input_tokens;
         let boundary = TokenUsageRaw {
-            input_tokens: boundary_input_tokens,
-            output_tokens: 1_000,
-            cache_read_input_tokens,
+            input_tokens: 60,
+            output_tokens: 3,
+            cache_read_input_tokens: 40,
             ..TokenUsageRaw::default()
         };
         let cost = calculate_cost_for_usage(
-            Some("gpt-5.6-sol"),
+            Some("two-stage-test"),
             boundary,
             None,
             CostMode::Calculate,
             Some(&pricing),
         );
-        let expected = boundary_input_tokens as f64 * rates.input
-            + 1_000.0 * rates.output
-            + cache_read_input_tokens as f64 * rates.cache_read;
-        assert!((cost - expected).abs() < 1e-9, "boundary cost was {cost}");
+        assert!((cost - 94e-6).abs() < 1e-12, "boundary cost was {cost}");
 
-        let long_input_tokens = boundary_input_tokens + 1;
         let long = TokenUsageRaw {
-            input_tokens: long_input_tokens,
-            output_tokens: 1_000,
-            cache_read_input_tokens,
+            input_tokens: 61,
+            output_tokens: 3,
+            cache_read_input_tokens: 40,
             ..TokenUsageRaw::default()
         };
         let cost = calculate_cost_for_usage(
-            Some("gpt-5.6-sol"),
+            Some("two-stage-test"),
             long,
             None,
             CostMode::Calculate,
             Some(&pricing),
         );
         assert!(
-            rates
-                .input_above_200k
-                .is_some_and(|rate| rate > rates.input)
-        );
-        assert!(
-            rates
-                .output_above_200k
-                .is_some_and(|rate| rate > rates.output)
-        );
-        assert!(
-            rates
-                .cache_read_above_200k
-                .is_some_and(|rate| rate > rates.cache_read)
-        );
-        let expected = long_input_tokens as f64 * rates.input_above_200k.unwrap()
-            + 1_000.0 * rates.output_above_200k.unwrap()
-            + cache_read_input_tokens as f64 * rates.cache_read_above_200k.unwrap();
-        assert!(
-            (cost - expected).abs() < 1e-9,
+            (cost - 190e-6).abs() < 1e-12,
             "long-context cost was {cost}"
         );
     }

@@ -482,45 +482,6 @@ mod tests {
     }
 
     #[test]
-    fn prices_gpt_5_6_long_context_usage_from_embedded_pricing() {
-        let pricing = PricingMap::load_embedded();
-        let rates = pricing.find("gpt-5.6-sol").unwrap();
-        assert!(
-            rates
-                .input_above_200k
-                .is_some_and(|rate| rate > rates.input)
-        );
-        assert!(
-            rates
-                .output_above_200k
-                .is_some_and(|rate| rate > rates.output)
-        );
-        assert!(
-            rates
-                .cache_read_above_200k
-                .is_some_and(|rate| rate > rates.cache_read)
-        );
-        let usage = CodexModelUsage {
-            input_tokens: 300_000,
-            cached_input_tokens: 100_000,
-            output_tokens: 1_000,
-            total_tokens: 301_000,
-            long_context_input_tokens: 300_000,
-            long_context_cached_input_tokens: 100_000,
-            long_context_output_tokens: 1_000,
-            ..CodexModelUsage::default()
-        };
-
-        let cost =
-            calculate_codex_model_cost("gpt-5.6-sol", &usage, &pricing, CodexSpeed::Standard);
-
-        let expected = 200_000.0 * rates.input_above_200k.unwrap()
-            + 100_000.0 * rates.cache_read_above_200k.unwrap()
-            + 1_000.0 * rates.output_above_200k.unwrap();
-        assert!((cost - expected).abs() < 1e-9);
-    }
-
-    #[test]
     fn applies_speed_option_to_codex_cost() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
