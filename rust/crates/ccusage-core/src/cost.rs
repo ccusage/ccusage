@@ -343,6 +343,21 @@ mod tests {
             CostMode::Calculate,
             Some(&pricing),
         );
+        assert!(
+            rates
+                .input_above_200k
+                .is_some_and(|rate| rate > rates.input)
+        );
+        assert!(
+            rates
+                .output_above_200k
+                .is_some_and(|rate| rate > rates.output)
+        );
+        assert!(
+            rates
+                .cache_read_above_200k
+                .is_some_and(|rate| rate > rates.cache_read)
+        );
         let expected = long_input_tokens as f64 * rates.input_above_200k.unwrap()
             + 1_000.0 * rates.output_above_200k.unwrap()
             + cache_read_input_tokens as f64 * rates.cache_read_above_200k.unwrap();
