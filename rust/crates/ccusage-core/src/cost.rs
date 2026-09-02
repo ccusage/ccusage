@@ -281,15 +281,16 @@ mod tests {
     #[test]
     fn prices_two_stage_model_as_whole_request_at_long_context_rates() {
         let pricing = PricingMap::load_embedded();
+        let rates = pricing.find("gpt-5.6-sol").unwrap();
+        let threshold = rates.long_context_threshold.unwrap();
 
-        // gpt-5.6-sol has a 272K threshold with long-context rates of
-        // $10/$45 per 1M input/output tokens and a $1 per 1M cache-read rate.
         let long = TokenUsageRaw {
             input_tokens: 300_000,
             output_tokens: 1_000,
             cache_read_input_tokens: 100,
             ..TokenUsageRaw::default()
         };
+        assert!(long.input_tokens + long.cache_read_input_tokens > threshold);
         let cost = calculate_cost_for_usage(
             Some("gpt-5.6-sol"),
             long,
@@ -297,19 +298,21 @@ mod tests {
             CostMode::Calculate,
             Some(&pricing),
         );
-        // The whole request switches to long rates once input exceeds 272K,
-        // including the output and cache-read buckets that are individually
-        // far below the threshold: 3.0 + 0.045 + 0.0001.
-        assert!((cost - 3.0451).abs() < 1e-9, "long-context cost was {cost}");
+        let expected = 300_000.0 * rates.input_above_200k.unwrap()
+            + 1_000.0 * rates.output_above_200k.unwrap()
+            + 100.0 * rates.cache_read_above_200k.unwrap();
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "long-context cost was {cost}"
+        );
 
-        // Below the threshold every bucket stays on the short-context rates:
-        // 0.5 + 0.03 + 0.00005.
         let short = TokenUsageRaw {
             input_tokens: 100_000,
             output_tokens: 1_000,
             cache_read_input_tokens: 100,
             ..TokenUsageRaw::default()
         };
+        assert!(short.input_tokens + short.cache_read_input_tokens <= threshold);
         let cost = calculate_cost_for_usage(
             Some("gpt-5.6-sol"),
             short,
@@ -317,8 +320,9 @@ mod tests {
             CostMode::Calculate,
             Some(&pricing),
         );
+        let expected = 100_000.0 * rates.input + 1_000.0 * rates.output + 100.0 * rates.cache_read;
         assert!(
-            (cost - 0.53005).abs() < 1e-9,
+            (cost - expected).abs() < 1e-9,
             "short-context cost was {cost}"
         );
     }

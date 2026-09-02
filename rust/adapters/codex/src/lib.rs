@@ -484,6 +484,7 @@ mod tests {
     #[test]
     fn prices_gpt_5_6_long_context_usage_from_embedded_pricing() {
         let pricing = PricingMap::load_embedded();
+        let rates = pricing.find("gpt-5.6-sol").unwrap();
         let usage = CodexModelUsage {
             input_tokens: 300_000,
             cached_input_tokens: 100_000,
@@ -498,9 +499,9 @@ mod tests {
         let cost =
             calculate_codex_model_cost("gpt-5.6-sol", &usage, &pricing, CodexSpeed::Standard);
 
-        // The whole request is billed at long-context rates: 200K non-cached
-        // input at $10/M, 100K cached at $1/M, 1K output at $45/M.
-        let expected = 200_000.0 * 10e-6 + 100_000.0 * 1e-6 + 1_000.0 * 45e-6;
+        let expected = 200_000.0 * rates.input_above_200k.unwrap()
+            + 100_000.0 * rates.cache_read_above_200k.unwrap()
+            + 1_000.0 * rates.output_above_200k.unwrap();
         assert!((cost - expected).abs() < 1e-9);
     }
 

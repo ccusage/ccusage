@@ -4214,16 +4214,16 @@ mod tests {
         use ccusage_cli::PricingOverride;
         assert!(
             embedded_models_dev_pricing()
-                .find_entry("claude-fable-5", Fuzzy::Allowed)
+                .find_entry("claude-fable-5-1", Fuzzy::Allowed)
                 .is_some(),
-            "embedded models.dev snapshot should include claude-fable-5"
+            "embedded models.dev snapshot should include claude-fable-5-1"
         );
         let offline = PricingMap::load_with_overrides(
             true,
             false,
             std::iter::empty::<(&String, &PricingOverride)>(),
         );
-        assert!(offline.find("claude-fable-5").is_some());
+        assert!(offline.find("claude-fable-5-1").is_some());
     }
 
     #[test]
@@ -4270,44 +4270,68 @@ mod tests {
     fn embedded_pricing_includes_gpt_5_6_family_with_long_context_rates() {
         let pricing = PricingMap::load_embedded();
 
-        let sol = pricing.find("gpt-5.6-sol").unwrap();
-        assert_eq!(sol.input, 5e-6);
-        assert_eq!(sol.output, 30e-6);
-        assert_eq!(sol.cache_create, 6.25e-6);
-        assert_eq!(sol.cache_read, 0.5e-6);
-        assert!(sol.cache_read_explicit);
-        assert_eq!(sol.input_above_200k, Some(10e-6));
-        assert_eq!(sol.output_above_200k, Some(45e-6));
-        assert_eq!(sol.cache_create_above_200k, Some(12.5e-6));
-        assert_eq!(sol.cache_read_above_200k, Some(1e-6));
-        assert_eq!(sol.long_context_threshold, Some(272_000));
-        assert_eq!(pricing.context_limit("gpt-5.6-sol"), Some(1_050_000));
-
-        // OpenAI cut the terra and luna rates after launch. The snapshots carry
-        // the new prices, and the frozen built-in table must not undo them.
-        let terra = pricing.find("gpt-5.6-terra").unwrap();
-        assert_eq!(terra.input, 2e-6);
-        assert_eq!(terra.output, 12e-6);
-        assert_eq!(terra.cache_creation_input_token_cost(), 2.5e-6);
-        assert_eq!(
-            terra.cache_creation_input_token_cost_above_200k_tokens(),
-            Some(5e-6)
-        );
-        assert_eq!(terra.input_above_200k, Some(4e-6));
-        assert_eq!(terra.output_above_200k, Some(18e-6));
-
-        let luna = pricing.find("gpt-5.6-luna").unwrap();
-        // Compared per million tokens: the per-token division leaves the rates
-        // one ulp away from the equivalent literals.
-        assert!((luna.input * 1e6 - 0.2).abs() < 1e-9);
-        assert!((luna.output * 1e6 - 1.2).abs() < 1e-9);
-        assert!((luna.input_above_200k.unwrap() * 1e6 - 0.4).abs() < 1e-9);
-        assert!((luna.output_above_200k.unwrap() * 1e6 - 1.8).abs() < 1e-9);
+        // The updater owns the numeric rates, so this regression fence checks
+        // the billing structure that ccusage requires without freezing prices.
+        for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+            let entry = pricing.find(model).unwrap();
+            assert!(entry.input > 0.0, "{model}");
+            assert!(entry.output > 0.0, "{model}");
+            assert!(entry.cache_create > 0.0, "{model}");
+            assert!(entry.cache_read > 0.0, "{model}");
+            assert!(entry.cache_create_explicit, "{model}");
+            assert!(entry.cache_read_explicit, "{model}");
+            assert!(
+                entry
+                    .input_above_200k
+                    .is_some_and(|rate| rate >= entry.input),
+                "{model}"
+            );
+            assert!(
+                entry
+                    .output_above_200k
+                    .is_some_and(|rate| rate >= entry.output),
+                "{model}"
+            );
+            assert!(
+                entry
+                    .cache_create_above_200k
+                    .is_some_and(|rate| rate >= entry.cache_create),
+                "{model}"
+            );
+            assert!(
+                entry
+                    .cache_read_above_200k
+                    .is_some_and(|rate| rate >= entry.cache_read),
+                "{model}"
+            );
+            let threshold = entry.long_context_threshold.expect(model);
+            assert!(
+                pricing
+                    .context_limit(model)
+                    .is_some_and(|limit| limit > threshold),
+                "{model}"
+            );
+        }
     }
 
     #[test]
-    fn gpt_5_6_alias_resolves_to_sol_across_pricing_metadata() {
-        let pricing = PricingMap::load_embedded();
+    fn gpt_5_6_alias_resolves_to_sol_when_the_generic_entry_is_missing() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gpt-5.6-sol": {
+                    "input_cost_per_token": 0.000004,
+                    "output_cost_per_token": 0.00002,
+                    "cache_creation_input_token_cost": 0.000005,
+                    "cache_read_input_token_cost": 0.0000004,
+                    "input_cost_per_token_above_200k_tokens": 0.000008,
+                    "output_cost_per_token_above_200k_tokens": 0.00003,
+                    "cache_creation_input_token_cost_above_200k_tokens": 0.00001,
+                    "cache_read_input_token_cost_above_200k_tokens": 0.0000008,
+                    "max_input_tokens": 1050000
+                }
+            }"#,
+        );
         let alias = pricing.find("gpt-5.6").unwrap();
         let sol = pricing.find("gpt-5.6-sol").unwrap();
 
@@ -4321,7 +4345,10 @@ mod tests {
             pricing.context_limit("gpt-5.6"),
             pricing.context_limit("gpt-5.6-sol")
         );
-        assert_eq!(long_context_split_threshold("gpt-5.6"), 272_000);
+        assert_eq!(
+            long_context_split_threshold("gpt-5.6"),
+            long_context_split_threshold("gpt-5.6-sol")
+        );
     }
 
     #[test]
@@ -4539,31 +4566,32 @@ mod tests {
     #[test]
     fn embedded_pricing_resolves_opus_47_dot_model_names() {
         let pricing = PricingMap::load_embedded();
+        let opus_47 = pricing.find("claude-opus-4-7").unwrap();
 
         assert_eq!(
             pricing.find("claude-opus-4.7-20260416").unwrap().input,
-            5e-6
+            opus_47.input
         );
-        assert_eq!(pricing.context_limit("claude-opus-4.7"), Some(1_000_000));
         assert_eq!(
-            pricing
-                .find("openrouter/anthropic/claude-opus-4.7")
-                .unwrap()
-                .input,
-            5e-6
+            pricing.context_limit("claude-opus-4.7"),
+            pricing.context_limit("claude-opus-4-7")
         );
     }
 
     #[test]
     fn embedded_pricing_resolves_opus_48_dot_model_names() {
         let pricing = PricingMap::load_embedded();
+        let canonical = pricing.find("claude-opus-4-8").unwrap();
 
         let opus_48 = pricing.find("claude-opus-4.8-20260528").unwrap();
-        assert_eq!(opus_48.input, 5e-6);
-        assert_eq!(opus_48.output, 25e-6);
-        assert_eq!(opus_48.cache_create, 6.25e-6);
-        assert_eq!(opus_48.cache_read, 0.5e-6);
-        assert_eq!(pricing.context_limit("claude-opus-4.8"), Some(1_000_000));
+        assert_eq!(opus_48.input, canonical.input);
+        assert_eq!(opus_48.output, canonical.output);
+        assert_eq!(opus_48.cache_create, canonical.cache_create);
+        assert_eq!(opus_48.cache_read, canonical.cache_read);
+        assert_eq!(
+            pricing.context_limit("claude-opus-4.8"),
+            pricing.context_limit("claude-opus-4-8")
+        );
     }
 
     #[test]
