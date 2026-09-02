@@ -485,6 +485,21 @@ mod tests {
     fn prices_gpt_5_6_long_context_usage_from_embedded_pricing() {
         let pricing = PricingMap::load_embedded();
         let rates = pricing.find("gpt-5.6-sol").unwrap();
+        assert!(
+            rates
+                .input_above_200k
+                .is_some_and(|rate| rate > rates.input)
+        );
+        assert!(
+            rates
+                .output_above_200k
+                .is_some_and(|rate| rate > rates.output)
+        );
+        assert!(
+            rates
+                .cache_read_above_200k
+                .is_some_and(|rate| rate > rates.cache_read)
+        );
         let usage = CodexModelUsage {
             input_tokens: 300_000,
             cached_input_tokens: 100_000,

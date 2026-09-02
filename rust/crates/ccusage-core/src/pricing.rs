@@ -2218,10 +2218,12 @@ impl PricingMap {
         self.context_limits
             .insert("grok-4.3".to_string(), 1_000_000);
         self.context_limits.insert("gpt-5.4".to_string(), 1_050_000);
-        // The gpt-5.6 family shares the 1,050,000-token window of the other
-        // long-context GPT-5 flagship models until upstream data lands.
+        // Generated snapshots own model metadata when available; these limits
+        // only cover GPT-5.6 variants that upstream does not yet publish.
         for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
-            self.context_limits.insert(model.to_string(), 1_050_000);
+            self.context_limits
+                .entry(model.to_string())
+                .or_insert(1_050_000);
         }
         for model in [
             "claude-opus-4-8",
@@ -4269,11 +4271,31 @@ mod tests {
     #[test]
     fn embedded_pricing_includes_gpt_5_6_family_with_long_context_rates() {
         let pricing = PricingMap::load_embedded();
+        let mut litellm_snapshot = PricingMap::default();
+        litellm_snapshot.load_json(build_time_pricing_json());
+        let models_dev_snapshot = embedded_models_dev_pricing();
 
         // The updater owns the numeric rates, so this regression fence checks
         // the billing structure that ccusage requires without freezing prices.
         for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
             let entry = pricing.find(model).unwrap();
+            let litellm_source = litellm_snapshot.find_exact(model);
+            let base_source = litellm_source
+                .or_else(|| models_dev_snapshot.find_exact(model))
+                .unwrap();
+            let tier_source = litellm_source
+                .filter(|source| {
+                    source.input_above_200k.is_some()
+                        || source.output_above_200k.is_some()
+                        || source.cache_create_above_200k.is_some()
+                        || source.cache_read_above_200k.is_some()
+                })
+                .or_else(|| models_dev_snapshot.find_exact(model))
+                .unwrap();
+            assert_eq!(entry.input, base_source.input, "{model}");
+            assert_eq!(entry.output, base_source.output, "{model}");
+            assert_eq!(entry.cache_create, base_source.cache_create, "{model}");
+            assert_eq!(entry.cache_read, base_source.cache_read, "{model}");
             assert!(entry.input > 0.0, "{model}");
             assert!(entry.output > 0.0, "{model}");
             assert!(entry.cache_create > 0.0, "{model}");
@@ -4304,6 +4326,35 @@ mod tests {
                     .is_some_and(|rate| rate >= entry.cache_read),
                 "{model}"
             );
+            assert_eq!(
+                entry.input_above_200k, tier_source.input_above_200k,
+                "{model}"
+            );
+            assert_eq!(
+                entry.output_above_200k, tier_source.output_above_200k,
+                "{model}"
+            );
+            assert_eq!(
+                entry.cache_create_above_200k, tier_source.cache_create_above_200k,
+                "{model}"
+            );
+            assert_eq!(
+                entry.cache_read_above_200k, tier_source.cache_read_above_200k,
+                "{model}"
+            );
+            assert_eq!(
+                entry.long_context_threshold, tier_source.long_context_threshold,
+                "{model}"
+            );
+            assert_eq!(
+                pricing.context_limit(model),
+                litellm_snapshot
+                    .context_limits
+                    .get(model)
+                    .copied()
+                    .or_else(|| models_dev_snapshot.context_limits.get(model).copied()),
+                "{model}"
+            );
             let threshold = entry.long_context_threshold.expect(model);
             assert!(
                 pricing
@@ -4323,11 +4374,13 @@ mod tests {
                     "input_cost_per_token": 0.000004123,
                     "output_cost_per_token": 0.000020123,
                     "cache_creation_input_token_cost": 0.000005123,
-                    "cache_read_input_token_cost": 0.0000004123
+                    "cache_read_input_token_cost": 0.0000004123,
+                    "max_input_tokens": 654321
                 }
             }"#,
         );
         let loaded = pricing.find_exact("gpt-5.6-sol").unwrap();
+        let loaded_context_limit = pricing.context_limit("gpt-5.6-sol");
 
         let overrides = FastMultiplierOverrides::load();
         let mut fallback = PricingMap::default();
@@ -4343,6 +4396,7 @@ mod tests {
         assert_eq!(resolved.cache_create, loaded.cache_create);
         assert_eq!(resolved.cache_read, loaded.cache_read);
         assert_eq!(resolved.fast_multiplier, loaded.fast_multiplier);
+        assert_eq!(pricing.context_limit("gpt-5.6-sol"), loaded_context_limit);
     }
 
     #[test]
@@ -4379,6 +4433,28 @@ mod tests {
         assert_eq!(
             long_context_split_threshold("gpt-5.6"),
             long_context_split_threshold("gpt-5.6-sol")
+        );
+    }
+
+    #[test]
+    fn embedded_gpt_5_6_exact_entry_wins_over_the_sol_alias() {
+        let pricing = PricingMap::load_embedded();
+        let exact = pricing.find_exact("gpt-5.6").unwrap();
+        let resolved = pricing.find("gpt-5.6").unwrap();
+
+        assert_eq!(resolved.input, exact.input);
+        assert_eq!(resolved.output, exact.output);
+        assert_eq!(resolved.cache_create, exact.cache_create);
+        assert_eq!(resolved.cache_read, exact.cache_read);
+        assert_eq!(resolved.input_above_200k, exact.input_above_200k);
+        assert_eq!(resolved.output_above_200k, exact.output_above_200k);
+        assert_eq!(
+            resolved.long_context_threshold,
+            exact.long_context_threshold
+        );
+        assert_eq!(
+            pricing.context_limit("gpt-5.6"),
+            pricing.context_limits.get("gpt-5.6").copied()
         );
     }
 
