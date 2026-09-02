@@ -283,36 +283,18 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let rates = pricing.find("gpt-5.6-sol").unwrap();
         let threshold = rates.long_context_threshold.unwrap();
+        assert!(threshold > 1);
 
-        let long = TokenUsageRaw {
-            input_tokens: 300_000,
-            output_tokens: 1_000,
-            cache_read_input_tokens: 100,
-            ..TokenUsageRaw::default()
-        };
-        assert!(long.input_tokens + long.cache_read_input_tokens > threshold);
-        let cost = calculate_cost_for_usage(
-            Some("gpt-5.6-sol"),
-            long,
-            None,
-            CostMode::Calculate,
-            Some(&pricing),
-        );
-        let expected = 300_000.0 * rates.input_above_200k.unwrap()
-            + 1_000.0 * rates.output_above_200k.unwrap()
-            + 100.0 * rates.cache_read_above_200k.unwrap();
-        assert!(
-            (cost - expected).abs() < 1e-9,
-            "long-context cost was {cost}"
-        );
-
+        // Keep cache reads non-zero so tier selection covers the whole context
+        // rather than only freshly processed input.
+        let cache_read_input_tokens = threshold / 2;
+        let short_input_tokens = threshold - cache_read_input_tokens - 1;
         let short = TokenUsageRaw {
-            input_tokens: 100_000,
+            input_tokens: short_input_tokens,
             output_tokens: 1_000,
-            cache_read_input_tokens: 100,
+            cache_read_input_tokens,
             ..TokenUsageRaw::default()
         };
-        assert!(short.input_tokens + short.cache_read_input_tokens <= threshold);
         let cost = calculate_cost_for_usage(
             Some("gpt-5.6-sol"),
             short,
@@ -320,10 +302,53 @@ mod tests {
             CostMode::Calculate,
             Some(&pricing),
         );
-        let expected = 100_000.0 * rates.input + 1_000.0 * rates.output + 100.0 * rates.cache_read;
+        let expected = short_input_tokens as f64 * rates.input
+            + 1_000.0 * rates.output
+            + cache_read_input_tokens as f64 * rates.cache_read;
         assert!(
             (cost - expected).abs() < 1e-9,
             "short-context cost was {cost}"
+        );
+
+        let boundary_input_tokens = threshold - cache_read_input_tokens;
+        let boundary = TokenUsageRaw {
+            input_tokens: boundary_input_tokens,
+            output_tokens: 1_000,
+            cache_read_input_tokens,
+            ..TokenUsageRaw::default()
+        };
+        let cost = calculate_cost_for_usage(
+            Some("gpt-5.6-sol"),
+            boundary,
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        let expected = boundary_input_tokens as f64 * rates.input
+            + 1_000.0 * rates.output
+            + cache_read_input_tokens as f64 * rates.cache_read;
+        assert!((cost - expected).abs() < 1e-9, "boundary cost was {cost}");
+
+        let long_input_tokens = boundary_input_tokens + 1;
+        let long = TokenUsageRaw {
+            input_tokens: long_input_tokens,
+            output_tokens: 1_000,
+            cache_read_input_tokens,
+            ..TokenUsageRaw::default()
+        };
+        let cost = calculate_cost_for_usage(
+            Some("gpt-5.6-sol"),
+            long,
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        let expected = long_input_tokens as f64 * rates.input_above_200k.unwrap()
+            + 1_000.0 * rates.output_above_200k.unwrap()
+            + cache_read_input_tokens as f64 * rates.cache_read_above_200k.unwrap();
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "long-context cost was {cost}"
         );
     }
 

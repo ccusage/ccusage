@@ -2549,9 +2549,9 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Fuzzy, Pricing, PricingEndpoint, PricingMap, build_time_models_dev_json,
-        build_time_pricing_json, embedded_models_dev_pricing, long_context_split_threshold,
-        model_without_date_suffix,
+        FastMultiplierOverrides, Fuzzy, Pricing, PricingEndpoint, PricingMap,
+        build_time_models_dev_json, build_time_pricing_json, embedded_models_dev_pricing,
+        long_context_split_threshold, model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -4312,6 +4312,37 @@ mod tests {
                 "{model}"
             );
         }
+    }
+
+    #[test]
+    fn builtin_gpt_5_6_rates_do_not_replace_loaded_prices() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gpt-5.6-sol": {
+                    "input_cost_per_token": 0.000004123,
+                    "output_cost_per_token": 0.000020123,
+                    "cache_creation_input_token_cost": 0.000005123,
+                    "cache_read_input_token_cost": 0.0000004123
+                }
+            }"#,
+        );
+        let loaded = pricing.find_exact("gpt-5.6-sol").unwrap();
+
+        let overrides = FastMultiplierOverrides::load();
+        let mut fallback = PricingMap::default();
+        fallback.put_builtin_pricing(&overrides);
+        let fallback = fallback.find_exact("gpt-5.6-sol").unwrap();
+        assert_ne!(loaded.input, fallback.input);
+        assert_ne!(loaded.output, fallback.output);
+
+        pricing.put_builtin_pricing(&overrides);
+        let resolved = pricing.find_exact("gpt-5.6-sol").unwrap();
+        assert_eq!(resolved.input, loaded.input);
+        assert_eq!(resolved.output, loaded.output);
+        assert_eq!(resolved.cache_create, loaded.cache_create);
+        assert_eq!(resolved.cache_read, loaded.cache_read);
+        assert_eq!(resolved.fast_multiplier, loaded.fast_multiplier);
     }
 
     #[test]
