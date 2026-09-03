@@ -1376,38 +1376,14 @@ mod tests {
 
     #[test]
     fn normalizes_newer_gemini_model_placeholders_and_ids() {
-        assert_eq!(
-            model_name_from_id(1318),
-            "gemini-3.8-flash".to_string()
-        );
-        assert_eq!(
-            model_name_from_id(1298),
-            "gemini-3.7-flash".to_string()
-        );
-        assert_eq!(
-            model_name_from_id(1299),
-            "gemini-3.7-flash".to_string()
-        );
-        assert_eq!(
-            model_name_from_id(1300),
-            "gemini-3.7-flash".to_string()
-        );
-        assert_eq!(
-            model_name_from_id(1071),
-            "gemini-3.6-flash".to_string()
-        );
-        assert_eq!(
-            model_name_from_id(1072),
-            "gemini-3.6-flash".to_string()
-        );
-        assert_eq!(
-            model_name_from_id(1073),
-            "gemini-3.6-flash".to_string()
-        );
-        assert_eq!(
-            model_name_from_id(1050),
-            "gemini-3.1-flash-lite".to_string()
-        );
+        assert_eq!(model_name_from_id(1318), "gemini-3.8-flash".to_string());
+        assert_eq!(model_name_from_id(1298), "gemini-3.7-flash".to_string());
+        assert_eq!(model_name_from_id(1299), "gemini-3.7-flash".to_string());
+        assert_eq!(model_name_from_id(1300), "gemini-3.7-flash".to_string());
+        assert_eq!(model_name_from_id(1071), "gemini-3.6-flash".to_string());
+        assert_eq!(model_name_from_id(1072), "gemini-3.6-flash".to_string());
+        assert_eq!(model_name_from_id(1073), "gemini-3.6-flash".to_string());
+        assert_eq!(model_name_from_id(1050), "gemini-3.1-flash-lite".to_string());
         assert_eq!(
             normalize_antigravity_model("model_placeholder_m318"),
             Some("gemini-3.8-flash".to_string())
