@@ -866,7 +866,6 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         "model_openai_gpt_oss_120b_medium" => "gpt-oss-120b-medium",
         "gemini-pro-default" | "gemini-pro-agent" => "gemini-3.1-pro",
         "gemini-3.7-flash-control" => "gemini-3.7-flash",
-        "gemini 3.6 flash (low)" => "gemini-3.6-flash",
         "gemini-3-flash-agent"
         | "gemini-3-flash-agent-a"
         | "gemini-3-flash-agent-b"
@@ -1253,7 +1252,7 @@ mod tests {
     use super::{
         API_PROVIDER_GOOGLE_GEMINI, ProtoField, ProtoValue, field_bytes, field_bytes_all,
         field_text, field_varint, missing_antigravity_pricing, model_candidates,
-        parse_step_metadata,
+        model_name_from_id, normalize_antigravity_model, parse_step_metadata,
     };
     use crate::{PricingMap, TokenUsageRaw, cli::CostMode};
 
