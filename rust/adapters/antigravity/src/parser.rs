@@ -816,6 +816,9 @@ fn model_name_from_id(model_id: u64) -> String {
         333 | 334 => "claude-4.5-sonnet".to_string(),
         340 | 341 => "claude-4.5-haiku".to_string(),
         342 => "model_openai_gpt_oss_120b_medium".to_string(),
+        1318 => "gemini-3.8-flash".to_string(),
+        1298 | 1300 => "gemini-3.7-flash".to_string(),
+        1071 | 1073 | 1050 => "gemini-3.6-flash".to_string(),
         1_000.. => format!("model_placeholder_m{}", model_id - 1_000),
         _ => format!("antigravity-model-{model_id}"),
     }
@@ -831,6 +834,8 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         .find('(')
         .map_or(lower.as_str(), |index| lower[..index].trim());
     let normalized = match base {
+        "gemini 3.8 flash" | "gemini 3.8 flash thinking" => "gemini-3.8-flash",
+        "gemini 3.8 pro" | "gemini 3.8 pro thinking" => "gemini-3.8-pro",
         "gemini 3.7 flash" | "gemini 3.7 flash thinking" => "gemini-3.7-flash",
         "gemini 3.7 pro" | "gemini 3.7 pro thinking" => "gemini-3.7-pro",
         "gemini 3.6 flash" | "gemini 3 flash" => "gemini-3.6-flash",
@@ -842,6 +847,11 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         "gemini 2.0 pro" => "gemini-2.0-pro",
         "gemini 1.5 flash" => "gemini-1.5-flash",
         "gemini 1.5 pro" => "gemini-1.5-pro",
+        "model_placeholder_m318" => "gemini-3.8-flash",
+        "model_placeholder_m298" | "model_placeholder_m300" => "gemini-3.7-flash",
+        "model_placeholder_m71" | "model_placeholder_m73" | "model_placeholder_m50" => {
+            "gemini-3.6-flash"
+        }
         "model_placeholder_m26" => "claude-opus-4-6",
         "model_placeholder_m35" => "claude-sonnet-4-6",
         "model_placeholder_m36" | "model_placeholder_m37" | "model_placeholder_m16" => {
@@ -855,6 +865,8 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         "model_placeholder_m20" => "gemini-3.5-flash-medium",
         "model_openai_gpt_oss_120b_medium" => "gpt-oss-120b-medium",
         "gemini-pro-default" | "gemini-pro-agent" => "gemini-3.1-pro",
+        "gemini-3.7-flash-control" => "gemini-3.7-flash",
+        "gemini 3.6 flash (low)" => "gemini-3.6-flash",
         "gemini-3-flash-agent"
         | "gemini-3-flash-agent-a"
         | "gemini-3-flash-agent-b"
@@ -1358,5 +1370,49 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_some());
+    }
+
+    #[test]
+    fn normalizes_newer_gemini_model_placeholders_and_ids() {
+        assert_eq!(
+            model_name_from_id(1318),
+            "gemini-3.8-flash".to_string()
+        );
+        assert_eq!(
+            model_name_from_id(1298),
+            "gemini-3.7-flash".to_string()
+        );
+        assert_eq!(
+            model_name_from_id(1300),
+            "gemini-3.7-flash".to_string()
+        );
+        assert_eq!(
+            model_name_from_id(1073),
+            "gemini-3.6-flash".to_string()
+        );
+        assert_eq!(
+            normalize_antigravity_model("model_placeholder_m318"),
+            Some("gemini-3.8-flash".to_string())
+        );
+        assert_eq!(
+            normalize_antigravity_model("model_placeholder_m298"),
+            Some("gemini-3.7-flash".to_string())
+        );
+        assert_eq!(
+            normalize_antigravity_model("model_placeholder_m300"),
+            Some("gemini-3.7-flash".to_string())
+        );
+        assert_eq!(
+            normalize_antigravity_model("model_placeholder_m73"),
+            Some("gemini-3.6-flash".to_string())
+        );
+        assert_eq!(
+            normalize_antigravity_model("gemini 3.8 flash"),
+            Some("gemini-3.8-flash".to_string())
+        );
+        assert_eq!(
+            normalize_antigravity_model("gemini-3.7-flash-control"),
+            Some("gemini-3.7-flash".to_string())
+        );
     }
 }
