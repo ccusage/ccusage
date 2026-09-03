@@ -817,8 +817,9 @@ fn model_name_from_id(model_id: u64) -> String {
         340 | 341 => "claude-4.5-haiku".to_string(),
         342 => "model_openai_gpt_oss_120b_medium".to_string(),
         1318 => "gemini-3.8-flash".to_string(),
-        1298 | 1300 => "gemini-3.7-flash".to_string(),
-        1071 | 1073 | 1050 => "gemini-3.6-flash".to_string(),
+        1298..=1300 => "gemini-3.7-flash".to_string(),
+        1071..=1073 => "gemini-3.6-flash".to_string(),
+        1050 => "gemini-3.1-flash-lite".to_string(),
         1_000.. => format!("model_placeholder_m{}", model_id - 1_000),
         _ => format!("antigravity-model-{model_id}"),
     }
@@ -835,7 +836,6 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         .map_or(lower.as_str(), |index| lower[..index].trim());
     let normalized = match base {
         "gemini 3.8 flash" | "gemini 3.8 flash thinking" => "gemini-3.8-flash",
-        "gemini 3.8 pro" | "gemini 3.8 pro thinking" => "gemini-3.8-pro",
         "gemini 3.7 flash" | "gemini 3.7 flash thinking" => "gemini-3.7-flash",
         "gemini 3.7 pro" | "gemini 3.7 pro thinking" => "gemini-3.7-pro",
         "gemini 3.6 flash" | "gemini 3 flash" => "gemini-3.6-flash",
@@ -848,10 +848,13 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         "gemini 1.5 flash" => "gemini-1.5-flash",
         "gemini 1.5 pro" => "gemini-1.5-pro",
         "model_placeholder_m318" => "gemini-3.8-flash",
-        "model_placeholder_m298" | "model_placeholder_m300" => "gemini-3.7-flash",
-        "model_placeholder_m71" | "model_placeholder_m73" | "model_placeholder_m50" => {
-            "gemini-3.6-flash"
-        }
+        "model_placeholder_m298"
+        | "model_placeholder_m299"
+        | "model_placeholder_m300" => "gemini-3.7-flash",
+        "model_placeholder_m71"
+        | "model_placeholder_m72"
+        | "model_placeholder_m73" => "gemini-3.6-flash",
+        "model_placeholder_m50" => "gemini-3.1-flash-lite",
         "model_placeholder_m26" => "claude-opus-4-6",
         "model_placeholder_m35" => "claude-sonnet-4-6",
         "model_placeholder_m36" | "model_placeholder_m37" | "model_placeholder_m16" => {
@@ -1382,12 +1385,24 @@ mod tests {
             "gemini-3.7-flash".to_string()
         );
         assert_eq!(
+            model_name_from_id(1299),
+            "gemini-3.7-flash".to_string()
+        );
+        assert_eq!(
             model_name_from_id(1300),
             "gemini-3.7-flash".to_string()
         );
         assert_eq!(
+            model_name_from_id(1072),
+            "gemini-3.6-flash".to_string()
+        );
+        assert_eq!(
             model_name_from_id(1073),
             "gemini-3.6-flash".to_string()
+        );
+        assert_eq!(
+            model_name_from_id(1050),
+            "gemini-3.1-flash-lite".to_string()
         );
         assert_eq!(
             normalize_antigravity_model("model_placeholder_m318"),
@@ -1398,12 +1413,24 @@ mod tests {
             Some("gemini-3.7-flash".to_string())
         );
         assert_eq!(
+            normalize_antigravity_model("model_placeholder_m299"),
+            Some("gemini-3.7-flash".to_string())
+        );
+        assert_eq!(
             normalize_antigravity_model("model_placeholder_m300"),
             Some("gemini-3.7-flash".to_string())
         );
         assert_eq!(
+            normalize_antigravity_model("model_placeholder_m72"),
+            Some("gemini-3.6-flash".to_string())
+        );
+        assert_eq!(
             normalize_antigravity_model("model_placeholder_m73"),
             Some("gemini-3.6-flash".to_string())
+        );
+        assert_eq!(
+            normalize_antigravity_model("model_placeholder_m50"),
+            Some("gemini-3.1-flash-lite".to_string())
         );
         assert_eq!(
             normalize_antigravity_model("gemini 3.8 flash"),
