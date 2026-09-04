@@ -789,6 +789,9 @@ fn summary_rows(
                 metadata_agents: Some(vec![agent]),
                 agent_breakdowns: None,
                 model_breakdowns: summary.model_breakdowns,
+                plugin_breakdowns: summary.plugin_breakdowns,
+                skill_breakdowns: summary.skill_breakdowns,
+                source_type_breakdowns: summary.source_type_breakdowns,
             })
         })
         .collect()
@@ -867,6 +870,9 @@ where
         metadata_agents: Some(vec!["codex"]),
         agent_breakdowns: None,
         model_breakdowns,
+        plugin_breakdowns: Vec::new(),
+        skill_breakdowns: Vec::new(),
+        source_type_breakdowns: Vec::new(),
     }
 }
 
