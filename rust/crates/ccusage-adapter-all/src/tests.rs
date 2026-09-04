@@ -96,8 +96,7 @@ fn aggregates_daily_agent_rows_by_period() {
                 metadata: None,
                 metadata_agents: Some(vec!["codex"]),
                 agent_breakdowns: None,
-                model_breakdowns: Vec::new(),
-            },
+                model_breakdowns: Vec::new(),            },
             AllRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
@@ -111,8 +110,7 @@ fn aggregates_daily_agent_rows_by_period() {
                 metadata: None,
                 metadata_agents: Some(vec!["claude"]),
                 agent_breakdowns: None,
-                model_breakdowns: Vec::new(),
-            },
+                model_breakdowns: Vec::new(),            },
         ],
         AgentReportKind::Daily,
     );
@@ -206,8 +204,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
                 metadata_agents: Some(vec!["claude"]),
                 agent_breakdowns: None,
                 model_breakdowns: vec![ModelBreakdown {
-                    model_name: "claude-sonnet-4-20250514".to_string(),
-                    input_tokens: 10,
+                    model_name: "claude-sonnet-4-20250514".to_string(),                    input_tokens: 10,
                     output_tokens: 5,
                     cache_creation_tokens: 1,
                     cache_read_tokens: 2,
@@ -229,8 +226,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
                 metadata_agents: Some(vec!["claude"]),
                 agent_breakdowns: None,
                 model_breakdowns: vec![ModelBreakdown {
-                    model_name: "claude-opus-4-20250514".to_string(),
-                    input_tokens: 20,
+                    model_name: "claude-opus-4-20250514".to_string(),                    input_tokens: 20,
                     output_tokens: 10,
                     cache_creation_tokens: 2,
                     cache_read_tokens: 4,
@@ -252,8 +248,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
                 metadata_agents: Some(vec!["codex"]),
                 agent_breakdowns: None,
                 model_breakdowns: vec![ModelBreakdown {
-                    model_name: "gpt-5".to_string(),
-                    input_tokens: 30,
+                    model_name: "gpt-5".to_string(),                    input_tokens: 30,
                     output_tokens: 15,
                     cache_creation_tokens: 0,
                     cache_read_tokens: 6,
@@ -325,8 +320,7 @@ fn renders_all_report_json_with_period_and_agent_metadata() {
         metadata: None,
         metadata_agents: Some(vec!["codex"]),
         agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    }];
+        model_breakdowns: Vec::new(),    }];
 
     let report = report_json(&rows, AgentReportKind::Daily);
 
@@ -365,8 +359,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
                 metadata_agents: Some(vec!["claude"]),
                 agent_breakdowns: None,
                 model_breakdowns: vec![ModelBreakdown {
-                    model_name: "claude-sonnet-4-20250514".to_string(),
-                    input_tokens: 50,
+                    model_name: "claude-sonnet-4-20250514".to_string(),                    input_tokens: 50,
                     output_tokens: 25,
                     cache_creation_tokens: 5,
                     cache_read_tokens: 3,
@@ -388,8 +381,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
                 metadata_agents: Some(vec!["codex"]),
                 agent_breakdowns: None,
                 model_breakdowns: vec![ModelBreakdown {
-                    model_name: "gpt-5".to_string(),
-                    input_tokens: 100,
+                    model_name: "gpt-5".to_string(),                    input_tokens: 100,
                     output_tokens: 20,
                     cache_creation_tokens: 0,
                     cache_read_tokens: 10,
@@ -398,8 +390,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
                 }],
             },
         ]),
-        model_breakdowns: Vec::new(),
-    }];
+        model_breakdowns: Vec::new(),    }];
 
     let report = report_json_with_agents(&rows, AgentReportKind::Daily, true);
 
@@ -475,8 +466,7 @@ fn renders_multi_section_json_with_command_totals() {
         metadata: None,
         metadata_agents: Some(vec!["codex"]),
         agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    }];
+        model_breakdowns: Vec::new(),    }];
     let monthly_rows = aggregate_rows(daily_rows.clone(), AgentReportKind::Monthly);
     let session_rows = vec![AllRow {
         period: "session-a".to_string(),
@@ -491,8 +481,7 @@ fn renders_multi_section_json_with_command_totals() {
         metadata: Some(json!({ "lastActivity": "2026-01-02T00:00:00.000Z" })),
         metadata_agents: None,
         agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    }];
+        model_breakdowns: Vec::new(),    }];
     let sections = vec![
         (AgentReportKind::Daily, daily_rows.clone()),
         (AgentReportKind::Monthly, monthly_rows.clone()),
@@ -779,8 +768,7 @@ fn table_snapshot(
         metadata: None,
         metadata_agents: None,
         agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    };
+        model_breakdowns: Vec::new(),    };
     let mut total_cells = all_table_row(&total_row, false, false, false);
     total_cells[1].clear();
     total_cells[2].clear();
@@ -1037,8 +1025,7 @@ fn aggregates_model_breakdowns_across_agents() {
                 metadata_agents: Some(vec!["codex"]),
                 agent_breakdowns: None,
                 model_breakdowns: vec![ModelBreakdown {
-                    model_name: "gpt-5".to_string(),
-                    input_tokens: 10,
+                    model_name: "gpt-5".to_string(),                    input_tokens: 10,
                     output_tokens: 5,
                     cache_creation_tokens: 0,
                     cache_read_tokens: 2,
@@ -1061,8 +1048,7 @@ fn aggregates_model_breakdowns_across_agents() {
                 agent_breakdowns: None,
                 model_breakdowns: vec![
                     ModelBreakdown {
-                        model_name: "gpt-5".to_string(),
-                        input_tokens: 8,
+                        model_name: "gpt-5".to_string(),                        input_tokens: 8,
                         output_tokens: 3,
                         cache_creation_tokens: 1,
                         cache_read_tokens: 2,
@@ -1116,8 +1102,7 @@ fn displays_total_tokens_with_cache_tokens_like_typescript_table() {
         metadata: None,
         metadata_agents: Some(vec!["codex"]),
         agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    };
+        model_breakdowns: Vec::new(),    };
 
     let cells = all_table_row(&row, false, false, false);
 
@@ -1139,8 +1124,7 @@ fn report_title_uses_detected_agents_even_when_filtered_rows_are_sparse() {
         metadata: None,
         metadata_agents: Some(vec!["codex"]),
         agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    }];
+        model_breakdowns: Vec::new(),    }];
 
     let title = all_report_title(
         AgentReportKind::Daily,
@@ -1181,10 +1165,8 @@ fn all_table_rows_match_main_agent_breakdown_display() {
             metadata: None,
             metadata_agents: Some(vec!["codex"]),
             agent_breakdowns: None,
-            model_breakdowns: Vec::new(),
-        }]),
-        model_breakdowns: Vec::new(),
-    };
+            model_breakdowns: Vec::new(),        }]),
+        model_breakdowns: Vec::new(),    };
 
     assert_eq!(
         all_table_row(&row, true, false, false),
@@ -1216,8 +1198,7 @@ fn all_report_title_lists_detected_agents() {
         metadata: None,
         metadata_agents: Some(vec!["claude", "codex"]),
         agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    };
+        model_breakdowns: Vec::new(),    };
 
     assert_eq!(
         all_report_title(AgentReportKind::Daily, &[row], &[]),

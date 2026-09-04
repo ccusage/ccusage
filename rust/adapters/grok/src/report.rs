@@ -110,6 +110,8 @@ mod tests {
                 request_id: Some(format!("evt-{millis}")),
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp,
             date: date.to_string(),

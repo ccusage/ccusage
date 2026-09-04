@@ -169,6 +169,9 @@ mod tests {
             ],
             model_breakdowns: vec![ModelBreakdown {
                 model_name: "gpt-5.2-codex".to_string(),
+                plugin_breakdowns: Vec::new(),
+                skill_breakdowns: Vec::new(),
+                source_type_breakdowns: Vec::new(),
                 input_tokens: 100,
                 output_tokens: 50,
                 cache_creation_tokens: 10,
@@ -205,6 +208,8 @@ mod tests {
                 request_id: None,
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp,
             date: "2026-01-02".to_string(),

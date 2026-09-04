@@ -573,6 +573,9 @@ impl DailyAccumulator {
             message_count: None,
             models_used: self.models,
             model_breakdowns: self.breakdowns,
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         }

@@ -116,6 +116,9 @@ impl UsageAccumulator {
             message_count: self.message_count,
             models_used: self.models,
             model_breakdowns: self.breakdowns,
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         }
@@ -224,6 +227,9 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
         message_count: None,
         models_used: Vec::new(),
         model_breakdowns: Vec::new(),
+plugin_breakdowns: Vec::new(),
+skill_breakdowns: Vec::new(),
+source_type_breakdowns: Vec::new(),
         project: None,
         versions: None,
     };
@@ -701,6 +707,8 @@ mod tests {
                 request_id: None,
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp,
             date: fixture.date.to_string(),
@@ -744,6 +752,9 @@ mod tests {
             models_used: vec![fixture.model.to_string()],
             model_breakdowns: vec![ModelBreakdown {
                 model_name: fixture.model.to_string(),
+plugin_breakdowns: Vec::new(),
+skill_breakdowns: Vec::new(),
+source_type_breakdowns: Vec::new(),
                 input_tokens: fixture.input_tokens,
                 output_tokens: 10,
                 cache_creation_tokens: 1,

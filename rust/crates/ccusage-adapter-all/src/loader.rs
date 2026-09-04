@@ -789,7 +789,7 @@ fn summary_rows(
                 metadata_agents: Some(vec![agent]),
                 agent_breakdowns: None,
                 model_breakdowns: summary.model_breakdowns,
-            })
+model_breakdowns: summary.model_breakdowns: summary.skill_breakdowns: Vec::new(),model_breakdowns: summary.source_type_breakdowns: Vec::new(),            })
         })
         .collect()
 }
@@ -827,7 +827,7 @@ where
     let mut model_breakdowns: Vec<ModelBreakdown> = group
         .models
         .iter()
-        .map(|(model, usage)| {
+        .map(|(model,source_type_breakdowns: Vec::new(), usage)| {
             let input = codex::non_cached_input_tokens(
                 usage.input_tokens,
                 usage.cached_input_tokens,
@@ -916,8 +916,7 @@ mod tests {
             credits: None,
             message_count: None,
             models_used: Vec::new(),
-            model_breakdowns: Vec::new(),
-            project: None,
+            model_breakdowns: Vec::new(),            project: None,
             versions: None,
         }
     }

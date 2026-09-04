@@ -354,6 +354,9 @@ fn all_rows_as_usage_summaries(rows: &[AllRow]) -> Vec<UsageSummary> {
             message_count: None,
             models_used: row.models_used.clone(),
             model_breakdowns: row.model_breakdowns.clone(),
+            plugin_breakdowns: row.plugin_breakdowns.clone(),
+            skill_breakdowns: row.skill_breakdowns.clone(),
+            source_type_breakdowns: row.source_type_breakdowns.clone(),
             project: None,
             versions: None,
         })

@@ -647,6 +647,9 @@ mod tests {
             message_count: None,
             models_used: vec!["gpt-5".to_string()],
             model_breakdowns: Vec::new(),
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         }]);
@@ -841,6 +844,9 @@ mod tests {
             model_breakdowns: vec![
                 ModelBreakdown {
                     model_name: "gpt-5.2-codex".to_string(),
+                    plugin_breakdowns: Vec::new(),
+                    skill_breakdowns: Vec::new(),
+                    source_type_breakdowns: Vec::new(),
                     input_tokens: 900,
                     output_tokens: 300,
                     cache_creation_tokens: 50,
@@ -860,6 +866,9 @@ mod tests {
                     missing_pricing: false,
                 },
             ],
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: project.map(str::to_string),
             versions: Some(vec!["1.0.0".to_string(), "1.1.0".to_string()]),
         }

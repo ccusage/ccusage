@@ -16,6 +16,8 @@ pub struct UsageEntry {
     pub request_id: Option<String>,
     pub is_api_error_message: Option<bool>,
     pub is_sidechain: Option<bool>,
+    pub attribution_plugin: Option<String>,
+    pub attribution_skill: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,6 +112,51 @@ pub struct ModelBreakdown {
     pub missing_pricing: bool,
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginBreakdown {
+    pub plugin_name: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    #[serde(skip_serializing)]
+    pub extra_total_tokens: u64,
+    pub cost: f64,
+    #[serde(skip_serializing)]
+    pub missing_pricing: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillBreakdown {
+    pub skill_name: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    #[serde(skip_serializing)]
+    pub extra_total_tokens: u64,
+    pub cost: f64,
+    #[serde(skip_serializing)]
+    pub missing_pricing: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTypeBreakdown {
+    pub source_type: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    #[serde(skip_serializing)]
+    pub extra_total_tokens: u64,
+    pub cost: f64,
+    #[serde(skip_serializing)]
+    pub missing_pricing: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct LoadedEntry {
     pub data: UsageEntry,
@@ -162,6 +209,9 @@ pub struct UsageSummary {
     pub message_count: Option<u64>,
     pub models_used: Vec<String>,
     pub model_breakdowns: Vec<ModelBreakdown>,
+    pub plugin_breakdowns: Vec<PluginBreakdown>,
+    pub skill_breakdowns: Vec<SkillBreakdown>,
+    pub source_type_breakdowns: Vec<SourceTypeBreakdown>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -204,5 +254,43 @@ mod tests {
         assert_eq!(counts.cache_creation_tokens, u64::MAX);
         assert_eq!(counts.cache_read_tokens, u64::MAX);
         assert_eq!(counts.total(), u64::MAX);
+    }
+
+    #[test]
+    fn deserializes_usage_entry_with_attribution_fields() {
+        let json = r#"{
+            "sessionId": "test-session",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "message": {
+                "usage": {
+                    "inputTokens": 100,
+                    "outputTokens": 50
+                }
+            },
+            "attributionPlugin": "test-plugin",
+            "attributionSkill": "test-skill"
+        }"#;
+
+        let entry: UsageEntry = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(entry.attribution_plugin, Some("test-plugin".to_string()));
+        assert_eq!(entry.attribution_skill, Some("test-skill".to_string()));
+    }
+
+    #[test]
+    fn deserializes_usage_entry_without_attribution_fields() {
+        let json = r#"{
+            "sessionId": "test-session",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "message": {
+                "usage": {
+                    "inputTokens": 100,
+                    "outputTokens": 50
+                }
+            }
+        }"#;
+
+        let entry: UsageEntry = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(entry.attribution_plugin, None);
+        assert_eq!(entry.attribution_skill, None);
     }
 }
