@@ -10,7 +10,8 @@ use serde::{
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, ModelBreakdown, Result, SimpleTable, UsageSummary,
+    Align, Color, ModelBreakdown, PluginBreakdown, Result, SimpleTable, SkillBreakdown,
+    SourceTypeBreakdown, UsageSummary,
     cli::{AgentReportKind, SharedArgs, SortOrder},
     cli_error, color, format_currency, format_models_multiline, format_number, json_float,
     output::strip_cost_json,
@@ -167,6 +168,9 @@ fn agent_json(row: &AllRow) -> Value {
         "totalTokens": row.total_tokens,
         "totalCost": json_float(row.total_cost),
         "modelBreakdowns": row.model_breakdowns,
+        "pluginBreakdowns": row.plugin_breakdowns,
+        "skillBreakdowns": row.skill_breakdowns,
+        "sourceTypeBreakdowns": row.source_type_breakdowns,
     })
 }
 
@@ -242,9 +246,49 @@ pub(super) fn print_table(
                         shared,
                     );
                 }
+                if shared.by_plugin && !breakdown.plugin_breakdowns.is_empty() {
+                    push_plugin_breakdown_rows(
+                        &mut table,
+                        &breakdown.plugin_breakdowns,
+                        compact,
+                        shared,
+                    );
+                }
+                if shared.by_skill && !breakdown.skill_breakdowns.is_empty() {
+                    push_skill_breakdown_rows(
+                        &mut table,
+                        &breakdown.skill_breakdowns,
+                        compact,
+                        shared,
+                    );
+                }
+                if shared.by_source_type && !breakdown.source_type_breakdowns.is_empty() {
+                    push_source_type_breakdown_rows(
+                        &mut table,
+                        &breakdown.source_type_breakdowns,
+                        compact,
+                        shared,
+                    );
+                }
             }
-        } else if shared.breakdown && !row.model_breakdowns.is_empty() {
-            push_model_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared);
+        } else {
+            if shared.breakdown && !row.model_breakdowns.is_empty() {
+                push_model_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared);
+            }
+            if shared.by_plugin && !row.plugin_breakdowns.is_empty() {
+                push_plugin_breakdown_rows(&mut table, &row.plugin_breakdowns, compact, shared);
+            }
+            if shared.by_skill && !row.skill_breakdowns.is_empty() {
+                push_skill_breakdown_rows(&mut table, &row.skill_breakdowns, compact, shared);
+            }
+            if shared.by_source_type && !row.source_type_breakdowns.is_empty() {
+                push_source_type_breakdown_rows(
+                    &mut table,
+                    &row.source_type_breakdowns,
+                    compact,
+                    shared,
+                );
+            }
         }
     }
     table.separator();
@@ -519,6 +563,144 @@ fn push_model_breakdown_rows(
     }
 }
 
+fn push_plugin_breakdown_rows(
+    table: &mut SimpleTable,
+    breakdowns: &[PluginBreakdown],
+    compact: bool,
+    shared: &SharedArgs,
+) {
+    for b in breakdowns {
+        let total = b
+            .input_tokens
+            .saturating_add(b.output_tokens)
+            .saturating_add(b.cache_creation_tokens)
+            .saturating_add(b.cache_read_tokens);
+        let name = color(shared, format!("- {}", b.plugin_name), Color::Grey);
+        if compact {
+            let mut row = vec![
+                String::new(),
+                String::new(),
+                name,
+                color(shared, format_number(b.input_tokens), Color::Grey),
+                color(shared, format_number(b.output_tokens), Color::Grey),
+                color(shared, format_currency(b.cost), Color::Grey),
+            ];
+            if shared.no_cost {
+                row.pop();
+            }
+            table.push(row);
+        } else {
+            let mut row = vec![
+                String::new(),
+                String::new(),
+                name,
+                color(shared, format_number(b.input_tokens), Color::Grey),
+                color(shared, format_number(b.output_tokens), Color::Grey),
+                color(shared, format_number(b.cache_creation_tokens), Color::Grey),
+                color(shared, format_number(b.cache_read_tokens), Color::Grey),
+                color(shared, format_number(total), Color::Grey),
+                color(shared, format_currency(b.cost), Color::Grey),
+            ];
+            if shared.no_cost {
+                row.pop();
+            }
+            table.push(row);
+        }
+    }
+}
+
+fn push_skill_breakdown_rows(
+    table: &mut SimpleTable,
+    breakdowns: &[SkillBreakdown],
+    compact: bool,
+    shared: &SharedArgs,
+) {
+    for b in breakdowns {
+        let total = b
+            .input_tokens
+            .saturating_add(b.output_tokens)
+            .saturating_add(b.cache_creation_tokens)
+            .saturating_add(b.cache_read_tokens);
+        let name = color(shared, format!("- {}", b.skill_name), Color::Grey);
+        if compact {
+            let mut row = vec![
+                String::new(),
+                String::new(),
+                name,
+                color(shared, format_number(b.input_tokens), Color::Grey),
+                color(shared, format_number(b.output_tokens), Color::Grey),
+                color(shared, format_currency(b.cost), Color::Grey),
+            ];
+            if shared.no_cost {
+                row.pop();
+            }
+            table.push(row);
+        } else {
+            let mut row = vec![
+                String::new(),
+                String::new(),
+                name,
+                color(shared, format_number(b.input_tokens), Color::Grey),
+                color(shared, format_number(b.output_tokens), Color::Grey),
+                color(shared, format_number(b.cache_creation_tokens), Color::Grey),
+                color(shared, format_number(b.cache_read_tokens), Color::Grey),
+                color(shared, format_number(total), Color::Grey),
+                color(shared, format_currency(b.cost), Color::Grey),
+            ];
+            if shared.no_cost {
+                row.pop();
+            }
+            table.push(row);
+        }
+    }
+}
+
+fn push_source_type_breakdown_rows(
+    table: &mut SimpleTable,
+    breakdowns: &[SourceTypeBreakdown],
+    compact: bool,
+    shared: &SharedArgs,
+) {
+    for b in breakdowns {
+        let total = b
+            .input_tokens
+            .saturating_add(b.output_tokens)
+            .saturating_add(b.cache_creation_tokens)
+            .saturating_add(b.cache_read_tokens);
+        let name = color(shared, format!("- {}", b.source_type), Color::Grey);
+        if compact {
+            let mut row = vec![
+                String::new(),
+                String::new(),
+                name,
+                color(shared, format_number(b.input_tokens), Color::Grey),
+                color(shared, format_number(b.output_tokens), Color::Grey),
+                color(shared, format_currency(b.cost), Color::Grey),
+            ];
+            if shared.no_cost {
+                row.pop();
+            }
+            table.push(row);
+        } else {
+            let mut row = vec![
+                String::new(),
+                String::new(),
+                name,
+                color(shared, format_number(b.input_tokens), Color::Grey),
+                color(shared, format_number(b.output_tokens), Color::Grey),
+                color(shared, format_number(b.cache_creation_tokens), Color::Grey),
+                color(shared, format_number(b.cache_read_tokens), Color::Grey),
+                color(shared, format_number(total), Color::Grey),
+                color(shared, format_currency(b.cost), Color::Grey),
+            ];
+            if shared.no_cost {
+                row.pop();
+            }
+            table.push(row);
+        }
+    }
+}
+
 pub(super) fn all_table_columns(
     kind: AgentReportKind,
     compact: bool,
@@ -617,5 +799,65 @@ fn agent_label(agent: &str) -> &str {
         "grok" => "Grok",
         "zcode" => "ZCode",
         _ => agent,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_claude_agent_rows_show_unattributed_and_active_defaults_in_json() {
+        let row = AllRow {
+            period: "2026-01-02".to_string(),
+            agent: "codex",
+            models_used: vec!["gpt-5.2-codex".to_string()],
+            input_tokens: 20,
+            output_tokens: 10,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            total_tokens: 30,
+            total_cost: 0.02,
+            metadata: None,
+            metadata_agents: None,
+            agent_breakdowns: None,
+            model_breakdowns: Vec::new(),
+            plugin_breakdowns: vec![PluginBreakdown {
+                plugin_name: "unattributed".to_string(),
+                input_tokens: 20,
+                output_tokens: 10,
+                cost: 0.02,
+                ..PluginBreakdown::default()
+            }],
+            skill_breakdowns: vec![SkillBreakdown {
+                skill_name: "unattributed".to_string(),
+                input_tokens: 20,
+                output_tokens: 10,
+                cost: 0.02,
+                ..SkillBreakdown::default()
+            }],
+            source_type_breakdowns: vec![SourceTypeBreakdown {
+                source_type: "active".to_string(),
+                input_tokens: 20,
+                output_tokens: 10,
+                cost: 0.02,
+                ..SourceTypeBreakdown::default()
+            }],
+        };
+
+        let value = agent_json(&row);
+
+        assert_eq!(
+            value["pluginBreakdowns"][0]["pluginName"],
+            serde_json::json!("unattributed")
+        );
+        assert_eq!(
+            value["skillBreakdowns"][0]["skillName"],
+            serde_json::json!("unattributed")
+        );
+        assert_eq!(
+            value["sourceTypeBreakdowns"][0]["sourceType"],
+            serde_json::json!("active")
+        );
     }
 }
