@@ -7591,11 +7591,21 @@
 	"consensusprotocol/deepseek-v4-flash": {
 		"cost": {
 			"cache_read": 0.02,
-			"input": 0.13,
-			"output": 0.27
+			"input": 0.08,
+			"output": 0.16
 		},
 		"limit": {
 			"context": 524288
+		}
+	},
+	"consensusprotocol/glm-5.3-flash": {
+		"cost": {
+			"cache_read": 0.02,
+			"input": 0.1,
+			"output": 0.25
+		},
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"consensusprotocol/gpt-oss-20b": {
@@ -14195,6 +14205,17 @@
 			"context": 400000
 		}
 	},
+	"gpt-6-astra": {
+		"cost": {
+			"cache_read": 1,
+			"cache_write": 12.5,
+			"input": 10,
+			"output": 50
+		},
+		"limit": {
+			"context": 1050000
+		}
+	},
 	"gpt-chat-latest": {
 		"cost": {
 			"cache_read": 0.5,
@@ -15266,8 +15287,8 @@
 	},
 	"ionos/meta-llama/Llama-3.3-70B-Instruct": {
 		"cost": {
-			"input": 0.754975,
-			"output": 0.754975
+			"input": 0.75543,
+			"output": 0.75543
 		},
 		"limit": {
 			"context": 128000
@@ -15275,8 +15296,8 @@
 	},
 	"ionos/openai/gpt-oss-120b": {
 		"cost": {
-			"input": 0.174225,
-			"output": 0.754975
+			"input": 0.17433,
+			"output": 0.75543
 		},
 		"limit": {
 			"context": 131072
@@ -21581,6 +21602,52 @@
 			"context": 1050000
 		}
 	},
+	"openai/gpt-6-astra": {
+		"cost": {
+			"cache_read": 1,
+			"cache_write": 12.5,
+			"input": 10,
+			"output": 50,
+			"tiers": [
+				{
+					"cache_read": 2,
+					"cache_write": 25,
+					"input": 20,
+					"output": 75,
+					"tier": {
+						"size": 272000,
+						"type": "context"
+					}
+				}
+			]
+		},
+		"limit": {
+			"context": 1050000
+		}
+	},
+	"openai/gpt-6-astra-pro": {
+		"cost": {
+			"cache_read": 1,
+			"cache_write": 12.5,
+			"input": 10,
+			"output": 50,
+			"tiers": [
+				{
+					"cache_read": 2,
+					"cache_write": 25,
+					"input": 20,
+					"output": 75,
+					"tier": {
+						"size": 272000,
+						"type": "context"
+					}
+				}
+			]
+		},
+		"limit": {
+			"context": 1050000
+		}
+	},
 	"openai/gpt-chat-latest": {
 		"cost": {
 			"cache_read": 0.2,
@@ -22664,8 +22731,8 @@
 	},
 	"qwen/deepseek-v4-flash-0731": {
 		"cost": {
-			"input": 0.352,
-			"output": 1.056
+			"input": 0.176,
+			"output": 0.528
 		},
 		"limit": {
 			"context": 1000000
@@ -22673,8 +22740,8 @@
 	},
 	"qwen/deepseek-v4-pro-0813": {
 		"cost": {
-			"input": 1.122,
-			"output": 3.366
+			"input": 0.5808,
+			"output": 1.7424
 		},
 		"limit": {
 			"context": 1000000
@@ -24810,8 +24877,8 @@
 	},
 	"scaleway/deepseek-v4-flash-0731": {
 		"cost": {
-			"input": 0.4646,
-			"output": 0.9292
+			"input": 0.46488,
+			"output": 0.92976
 		},
 		"limit": {
 			"context": 256000
@@ -24819,8 +24886,8 @@
 	},
 	"scaleway/gpt-oss-120b": {
 		"cost": {
-			"input": 0.174225,
-			"output": 0.6969
+			"input": 0.17433,
+			"output": 0.69732
 		},
 		"limit": {
 			"context": 128000
@@ -24828,8 +24895,8 @@
 	},
 	"scaleway/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 1.04535,
-			"output": 1.04535
+			"input": 1.04598,
+			"output": 1.04598
 		},
 		"limit": {
 			"context": 128000
@@ -29060,9 +29127,9 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.013,
-			"input": 0.05,
-			"output": 0.16
+			"cache_read": 0.009996,
+			"input": 0.04998,
+			"output": 0.09996
 		},
 		"limit": {
 			"context": 1048576
