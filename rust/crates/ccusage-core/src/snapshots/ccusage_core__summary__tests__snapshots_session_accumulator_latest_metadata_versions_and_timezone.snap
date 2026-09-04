@@ -36,9 +36,36 @@ expression: row
       "cost": 0.125
     }
   ],
-  "pluginBreakdowns": [],
-  "skillBreakdowns": [],
-  "sourceTypeBreakdowns": [],
+  "pluginBreakdowns": [
+    {
+      "pluginName": "unattributed",
+      "inputTokens": 120,
+      "outputTokens": 60,
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "cost": 0.375
+    }
+  ],
+  "skillBreakdowns": [
+    {
+      "skillName": "unattributed",
+      "inputTokens": 120,
+      "outputTokens": 60,
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "cost": 0.375
+    }
+  ],
+  "sourceTypeBreakdowns": [
+    {
+      "sourceType": "active",
+      "inputTokens": 120,
+      "outputTokens": 60,
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "cost": 0.375
+    }
+  ],
   "versions": [
     "1.0.0",
     "1.1.0"

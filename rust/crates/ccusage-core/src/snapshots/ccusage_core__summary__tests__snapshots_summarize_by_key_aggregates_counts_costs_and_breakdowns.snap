@@ -34,9 +34,36 @@ expression: rows
         "cost": 0.125
       }
     ],
-    "pluginBreakdowns": [],
-    "skillBreakdowns": [],
-    "sourceTypeBreakdowns": [],
+    "pluginBreakdowns": [
+      {
+        "pluginName": "unattributed",
+        "inputTokens": 300,
+        "outputTokens": 130,
+        "cacheCreationTokens": 30,
+        "cacheReadTokens": 13,
+        "cost": 0.375
+      }
+    ],
+    "skillBreakdowns": [
+      {
+        "skillName": "unattributed",
+        "inputTokens": 300,
+        "outputTokens": 130,
+        "cacheCreationTokens": 30,
+        "cacheReadTokens": 13,
+        "cost": 0.375
+      }
+    ],
+    "sourceTypeBreakdowns": [
+      {
+        "sourceType": "active",
+        "inputTokens": 300,
+        "outputTokens": 130,
+        "cacheCreationTokens": 30,
+        "cacheReadTokens": 13,
+        "cost": 0.375
+      }
+    ],
     "project": "/workspace/api"
   },
   {
@@ -49,9 +76,36 @@ expression: rows
     "credits": null,
     "modelsUsed": [],
     "modelBreakdowns": [],
-    "pluginBreakdowns": [],
-    "skillBreakdowns": [],
-    "sourceTypeBreakdowns": [],
+    "pluginBreakdowns": [
+      {
+        "pluginName": "unattributed",
+        "inputTokens": 10,
+        "outputTokens": 0,
+        "cacheCreationTokens": 0,
+        "cacheReadTokens": 0,
+        "cost": 0.0
+      }
+    ],
+    "skillBreakdowns": [
+      {
+        "skillName": "unattributed",
+        "inputTokens": 10,
+        "outputTokens": 0,
+        "cacheCreationTokens": 0,
+        "cacheReadTokens": 0,
+        "cost": 0.0
+      }
+    ],
+    "sourceTypeBreakdowns": [
+      {
+        "sourceType": "active",
+        "inputTokens": 10,
+        "outputTokens": 0,
+        "cacheCreationTokens": 0,
+        "cacheReadTokens": 0,
+        "cost": 0.0
+      }
+    ],
     "project": "/workspace/web"
   }
 ]
