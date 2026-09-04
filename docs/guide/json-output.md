@@ -553,15 +553,14 @@ groups usage into `"active"` (main thread) and `"background"` (sidechain/subagen
 
 ```json
 {
-	"type": "daily",
-	"data": [
+	"daily": [
 		{
 			"date": "2026-05-16",
-			"models": ["claude-opus-4-1-20250805"],
+			"modelsUsed": ["claude-opus-4-1-20250805"],
 			"inputTokens": 277,
 			"outputTokens": 31456,
 			"totalTokens": 33269,
-			"costUSD": 17.58,
+			"totalCost": 17.58,
 			"pluginBreakdowns": [
 				{
 					"pluginName": "unattributed",
@@ -593,7 +592,13 @@ groups usage into `"active"` (main thread) and `"background"` (sidechain/subagen
 				}
 			]
 		}
-	]
+	],
+	"totals": {
+		"inputTokens": 277,
+		"outputTokens": 31456,
+		"totalTokens": 33269,
+		"totalCost": 17.58
+	}
 }
 ```
 

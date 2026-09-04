@@ -1,5 +1,6 @@
 ---
-source: crates/ccusage-cli/src/tests.rs
+source: crates/ccusage-cli-parser/src/tests.rs
+assertion_line: 757
 expression: help_text()
 ---
 USAGE:
@@ -66,6 +67,9 @@ OPTIONS:
   --all                                Accepted for compatibility; all detected supported agents are included by default (default: false)
   --sections <sections>                Emit multiple unified report sections from one load (daily, weekly, monthly, session)
   --by-agent                           Include per-agent JSON breakdowns in unified report rows (default: false)
+  --by-plugin                          Show per-plugin cost breakdown (Claude Code only; other agents show as unattributed) (default: false)
+  --by-skill                           Show per-skill cost breakdown (Claude Code only; other agents show as unattributed) (default: false)
+  --by-source-type                     Show active vs. background (sidechain) cost breakdown (default: false)
   -O, --offline                        Use cached pricing data where supported (default: false)
   --no-offline                         Negatable of -O, --offline
   --compact                            Force compact table layout for narrow terminals (default: false)

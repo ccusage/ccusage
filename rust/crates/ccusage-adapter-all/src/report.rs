@@ -15,7 +15,7 @@ use crate::{
     cli::{AgentReportKind, SharedArgs, SortOrder},
     cli_error, color, format_currency, format_models_multiline, format_number, json_float,
     output::strip_cost_json,
-    print_box_title, short_model_name, should_use_compact_layout,
+    print_box_title, sanitize_terminal_text, short_model_name, should_use_compact_layout,
 };
 
 use super::types::AllRow;
@@ -574,8 +574,13 @@ fn push_plugin_breakdown_rows(
             .input_tokens
             .saturating_add(b.output_tokens)
             .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
-        let name = color(shared, format!("- {}", b.plugin_name), Color::Grey);
+            .saturating_add(b.cache_read_tokens)
+            .saturating_add(b.extra_total_tokens);
+        let name = color(
+            shared,
+            format!("- {}", sanitize_terminal_text(&b.plugin_name)),
+            Color::Grey,
+        );
         if compact {
             let mut row = vec![
                 String::new(),
@@ -620,8 +625,13 @@ fn push_skill_breakdown_rows(
             .input_tokens
             .saturating_add(b.output_tokens)
             .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
-        let name = color(shared, format!("- {}", b.skill_name), Color::Grey);
+            .saturating_add(b.cache_read_tokens)
+            .saturating_add(b.extra_total_tokens);
+        let name = color(
+            shared,
+            format!("- {}", sanitize_terminal_text(&b.skill_name)),
+            Color::Grey,
+        );
         if compact {
             let mut row = vec![
                 String::new(),
@@ -666,7 +676,8 @@ fn push_source_type_breakdown_rows(
             .input_tokens
             .saturating_add(b.output_tokens)
             .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
+            .saturating_add(b.cache_read_tokens)
+            .saturating_add(b.extra_total_tokens);
         let name = color(shared, format!("- {}", b.source_type), Color::Grey);
         if compact {
             let mut row = vec![

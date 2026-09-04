@@ -106,6 +106,7 @@ impl UsageAccumulator {
             .data
             .attribution_plugin
             .as_deref()
+            .filter(|value| !value.is_empty())
             .unwrap_or("unattributed");
         let plugin_index = if let Some(index) = self.plugin_breakdown_indexes.get(plugin_key) {
             *index
@@ -144,6 +145,7 @@ impl UsageAccumulator {
             .data
             .attribution_skill
             .as_deref()
+            .filter(|value| !value.is_empty())
             .unwrap_or("unattributed");
         let skill_index = if let Some(index) = self.skill_breakdown_indexes.get(skill_key) {
             *index
@@ -447,8 +449,7 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
             breakdown.missing_pricing |= item.missing_pricing;
         }
         for item in &row.skill_breakdowns {
-            let index = if let Some(index) = skill_breakdown_indexes.get(item.skill_name.as_str())
-            {
+            let index = if let Some(index) = skill_breakdown_indexes.get(item.skill_name.as_str()) {
                 *index
             } else {
                 let index = summary.skill_breakdowns.len();
@@ -475,19 +476,18 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
             breakdown.missing_pricing |= item.missing_pricing;
         }
         for item in &row.source_type_breakdowns {
-            let index = if let Some(index) =
-                source_type_breakdown_indexes.get(item.source_type.as_str())
-            {
-                *index
-            } else {
-                let index = summary.source_type_breakdowns.len();
-                source_type_breakdown_indexes.insert(item.source_type.clone(), index);
-                summary.source_type_breakdowns.push(SourceTypeBreakdown {
-                    source_type: item.source_type.clone(),
-                    ..SourceTypeBreakdown::default()
-                });
-                index
-            };
+            let index =
+                if let Some(index) = source_type_breakdown_indexes.get(item.source_type.as_str()) {
+                    *index
+                } else {
+                    let index = summary.source_type_breakdowns.len();
+                    source_type_breakdown_indexes.insert(item.source_type.clone(), index);
+                    summary.source_type_breakdowns.push(SourceTypeBreakdown {
+                        source_type: item.source_type.clone(),
+                        ..SourceTypeBreakdown::default()
+                    });
+                    index
+                };
             let breakdown = &mut summary.source_type_breakdowns[index];
             breakdown.input_tokens = breakdown.input_tokens.saturating_add(item.input_tokens);
             breakdown.output_tokens = breakdown.output_tokens.saturating_add(item.output_tokens);
@@ -891,8 +891,7 @@ mod tests {
     }
 
     #[test]
-    fn accumulates_plugin_skill_and_source_type_breakdowns_with_unattributed_and_active_defaults()
-     {
+    fn accumulates_plugin_skill_and_source_type_breakdowns_with_unattributed_and_active_defaults() {
         let mut accumulator = SessionAccumulator::default();
         let mut attributed = loaded_entry(LoadedEntryFixture {
             date: "2026-01-02",
@@ -998,11 +997,8 @@ mod tests {
             ..SourceTypeBreakdown::default()
         }];
 
-        let weekly = summarize_summaries_by_bucket(
-            &[first, second],
-            BucketKind::Weekly,
-            WeekDay::Monday,
-        );
+        let weekly =
+            summarize_summaries_by_bucket(&[first, second], BucketKind::Weekly, WeekDay::Monday);
 
         assert_eq!(weekly.len(), 1);
         assert_eq!(weekly[0].plugin_breakdowns.len(), 1);

@@ -570,7 +570,11 @@ impl DailyAccumulator {
             }
         }
 
-        let plugin_key = entry.plugin.as_deref().unwrap_or("unattributed");
+        let plugin_key = entry
+            .plugin
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unattributed");
         let plugin_index = if let Some(index) = self.plugin_breakdown_indexes.get(plugin_key) {
             *index
         } else {
@@ -584,16 +588,28 @@ impl DailyAccumulator {
             index
         };
         let plugin_breakdown = &mut self.plugin_breakdowns[plugin_index];
-        plugin_breakdown.input_tokens += entry.usage.input_tokens;
-        plugin_breakdown.output_tokens += entry.usage.output_tokens;
-        plugin_breakdown.cache_creation_tokens += entry.usage.cache_creation_token_count();
-        plugin_breakdown.cache_read_tokens += entry.usage.cache_read_input_tokens;
+        plugin_breakdown.input_tokens = plugin_breakdown
+            .input_tokens
+            .saturating_add(entry.usage.input_tokens);
+        plugin_breakdown.output_tokens = plugin_breakdown
+            .output_tokens
+            .saturating_add(entry.usage.output_tokens);
+        plugin_breakdown.cache_creation_tokens = plugin_breakdown
+            .cache_creation_tokens
+            .saturating_add(entry.usage.cache_creation_token_count());
+        plugin_breakdown.cache_read_tokens = plugin_breakdown
+            .cache_read_tokens
+            .saturating_add(entry.usage.cache_read_input_tokens);
         plugin_breakdown.cost += entry.cost;
         if entry.missing_pricing_model.is_some() {
             plugin_breakdown.missing_pricing = true;
         }
 
-        let skill_key = entry.skill.as_deref().unwrap_or("unattributed");
+        let skill_key = entry
+            .skill
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unattributed");
         let skill_index = if let Some(index) = self.skill_breakdown_indexes.get(skill_key) {
             *index
         } else {
@@ -607,10 +623,18 @@ impl DailyAccumulator {
             index
         };
         let skill_breakdown = &mut self.skill_breakdowns[skill_index];
-        skill_breakdown.input_tokens += entry.usage.input_tokens;
-        skill_breakdown.output_tokens += entry.usage.output_tokens;
-        skill_breakdown.cache_creation_tokens += entry.usage.cache_creation_token_count();
-        skill_breakdown.cache_read_tokens += entry.usage.cache_read_input_tokens;
+        skill_breakdown.input_tokens = skill_breakdown
+            .input_tokens
+            .saturating_add(entry.usage.input_tokens);
+        skill_breakdown.output_tokens = skill_breakdown
+            .output_tokens
+            .saturating_add(entry.usage.output_tokens);
+        skill_breakdown.cache_creation_tokens = skill_breakdown
+            .cache_creation_tokens
+            .saturating_add(entry.usage.cache_creation_token_count());
+        skill_breakdown.cache_read_tokens = skill_breakdown
+            .cache_read_tokens
+            .saturating_add(entry.usage.cache_read_input_tokens);
         skill_breakdown.cost += entry.cost;
         if entry.missing_pricing_model.is_some() {
             skill_breakdown.missing_pricing = true;
@@ -635,10 +659,18 @@ impl DailyAccumulator {
                 index
             };
         let source_type_breakdown = &mut self.source_type_breakdowns[source_type_index];
-        source_type_breakdown.input_tokens += entry.usage.input_tokens;
-        source_type_breakdown.output_tokens += entry.usage.output_tokens;
-        source_type_breakdown.cache_creation_tokens += entry.usage.cache_creation_token_count();
-        source_type_breakdown.cache_read_tokens += entry.usage.cache_read_input_tokens;
+        source_type_breakdown.input_tokens = source_type_breakdown
+            .input_tokens
+            .saturating_add(entry.usage.input_tokens);
+        source_type_breakdown.output_tokens = source_type_breakdown
+            .output_tokens
+            .saturating_add(entry.usage.output_tokens);
+        source_type_breakdown.cache_creation_tokens = source_type_breakdown
+            .cache_creation_tokens
+            .saturating_add(entry.usage.cache_creation_token_count());
+        source_type_breakdown.cache_read_tokens = source_type_breakdown
+            .cache_read_tokens
+            .saturating_add(entry.usage.cache_read_input_tokens);
         source_type_breakdown.cost += entry.cost;
         if entry.missing_pricing_model.is_some() {
             source_type_breakdown.missing_pricing = true;
@@ -684,7 +716,9 @@ impl DailyAccumulator {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DailyAccumulator, DailyLoadedEntry, push_deduped_daily_entry, read_daily_usage_file};
+    use super::{
+        DailyAccumulator, DailyLoadedEntry, push_deduped_daily_entry, read_daily_usage_file,
+    };
     use crate::{TimestampMs, TokenUsageRaw, cli::CostMode};
     use ccusage_test_support::fs_fixture;
 

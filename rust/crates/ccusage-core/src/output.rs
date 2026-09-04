@@ -549,11 +549,12 @@ fn push_plugin_breakdown_rows(
             .input_tokens
             .saturating_add(breakdown.output_tokens)
             .saturating_add(breakdown.cache_creation_tokens)
-            .saturating_add(breakdown.cache_read_tokens);
+            .saturating_add(breakdown.cache_read_tokens)
+            .saturating_add(breakdown.extra_total_tokens);
         let mut values = vec![
             color(
                 shared,
-                format!("  └─ {}", breakdown.plugin_name),
+                format!("  └─ {}", sanitize_terminal_text(&breakdown.plugin_name)),
                 Color::Grey,
             ),
             String::new(),
@@ -603,11 +604,12 @@ fn push_skill_breakdown_rows(
             .input_tokens
             .saturating_add(breakdown.output_tokens)
             .saturating_add(breakdown.cache_creation_tokens)
-            .saturating_add(breakdown.cache_read_tokens);
+            .saturating_add(breakdown.cache_read_tokens)
+            .saturating_add(breakdown.extra_total_tokens);
         let mut values = vec![
             color(
                 shared,
-                format!("  └─ {}", breakdown.skill_name),
+                format!("  └─ {}", sanitize_terminal_text(&breakdown.skill_name)),
                 Color::Grey,
             ),
             String::new(),
@@ -657,7 +659,8 @@ fn push_source_type_breakdown_rows(
             .input_tokens
             .saturating_add(breakdown.output_tokens)
             .saturating_add(breakdown.cache_creation_tokens)
-            .saturating_add(breakdown.cache_read_tokens);
+            .saturating_add(breakdown.cache_read_tokens)
+            .saturating_add(breakdown.extra_total_tokens);
         let mut values = vec![
             color(
                 shared,

@@ -915,7 +915,13 @@ fn snapshots_representative_cli_parse_shapes() {
 
 #[test]
 fn parses_by_plugin_by_skill_and_by_source_type_flags() {
-    let cli = parse(&["ccusage", "daily", "--by-plugin", "--by-skill", "--by-source-type"]);
+    let cli = parse(&[
+        "ccusage",
+        "daily",
+        "--by-plugin",
+        "--by-skill",
+        "--by-source-type",
+    ]);
 
     insta::assert_json_snapshot!(cli_snapshot(cli));
 }
