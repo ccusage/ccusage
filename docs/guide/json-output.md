@@ -542,6 +542,64 @@ When using `--breakdown`, the JSON includes per-model details:
 }
 ```
 
+### Attribution Breakdown JSON
+
+The `pluginBreakdowns`, `skillBreakdowns`, and `sourceTypeBreakdowns` fields are always present in
+JSON output (as empty arrays when there's nothing to report) — the corresponding `--by-plugin`,
+`--by-skill`, and `--by-source-type` flags only control whether they're also rendered as table
+rows. `pluginBreakdowns` and `skillBreakdowns` are Claude Code-specific; entries with no
+attribution, or from other agents, are grouped under `"unattributed"`. `sourceTypeBreakdowns`
+groups usage into `"active"` (main thread) and `"background"` (sidechain/subagent) buckets:
+
+```json
+{
+	"type": "daily",
+	"data": [
+		{
+			"date": "2026-05-16",
+			"models": ["claude-opus-4-1-20250805"],
+			"inputTokens": 277,
+			"outputTokens": 31456,
+			"totalTokens": 33269,
+			"costUSD": 17.58,
+			"pluginBreakdowns": [
+				{
+					"pluginName": "unattributed",
+					"inputTokens": 277,
+					"outputTokens": 31456,
+					"cacheCreationTokens": 256,
+					"cacheReadTokens": 512,
+					"totalTokens": 32501,
+					"costUSD": 17.58
+				}
+			],
+			"skillBreakdowns": [
+				{
+					"skillName": "unattributed",
+					"inputTokens": 277,
+					"outputTokens": 31456,
+					"cacheCreationTokens": 256,
+					"cacheReadTokens": 512,
+					"totalTokens": 32501,
+					"costUSD": 17.58
+				}
+			],
+			"sourceTypeBreakdowns": [
+				{
+					"sourceType": "active",
+					"inputTokens": 277,
+					"outputTokens": 31456,
+					"cacheCreationTokens": 256,
+					"cacheReadTokens": 512,
+					"totalTokens": 32501,
+					"costUSD": 17.58
+				}
+			]
+		}
+	]
+}
+```
+
 ## Integration Examples
 
 ### Using with jq
