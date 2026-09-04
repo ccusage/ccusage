@@ -304,6 +304,21 @@
 			"default": "false"
 		},
 		{
+			"flags": "--by-plugin",
+			"description": "Show per-plugin cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-skill",
+			"description": "Show per-skill cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-source-type",
+			"description": "Show active vs. background (sidechain) cost breakdown",
+			"default": "false"
+		},
+		{
 			"flags": "-O, --offline",
 			"description": "Use cached pricing data for Claude models instead of fetching from API",
 			"default": "false"

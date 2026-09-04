@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage-cli-parser/src/tests.rs
+assertion_line: 913
 expression: cases
 ---
 [
@@ -9,6 +10,9 @@ expression: cases
       "command": null,
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -40,6 +44,9 @@ expression: cases
         "sections": null,
         "shared": {
           "breakdown": true,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": true,
           "compact": true,
           "config": null,
@@ -61,6 +68,9 @@ expression: cases
       },
       "shared": {
         "breakdown": true,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": true,
         "compact": true,
         "config": null,
@@ -86,6 +96,9 @@ expression: cases
       "command": {
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -108,6 +121,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -136,6 +152,9 @@ expression: cases
         "projectAliases": "repo=Repository",
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -157,6 +176,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -188,6 +210,9 @@ expression: cases
         "sections": null,
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -209,6 +234,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -240,6 +268,9 @@ expression: cases
         "sections": null,
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -261,6 +292,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -292,6 +326,9 @@ expression: cases
         "sections": null,
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -313,6 +350,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -344,6 +384,9 @@ expression: cases
         "sections": null,
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -365,6 +408,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -396,6 +442,9 @@ expression: cases
         "sections": null,
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -417,6 +466,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -448,6 +500,9 @@ expression: cases
         "sections": null,
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -469,6 +524,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -500,6 +558,9 @@ expression: cases
         "sections": null,
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -521,6 +582,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -549,6 +613,9 @@ expression: cases
         "sessionLength": 6.5,
         "shared": {
           "breakdown": false,
+          "byPlugin": false,
+          "bySkill": false,
+          "bySourceType": false,
           "color": false,
           "compact": false,
           "config": null,
@@ -571,6 +638,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
@@ -609,6 +679,9 @@ expression: cases
       },
       "shared": {
         "breakdown": false,
+        "byPlugin": false,
+        "bySkill": false,
+        "bySourceType": false,
         "color": false,
         "compact": false,
         "config": null,
