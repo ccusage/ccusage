@@ -11,8 +11,8 @@ use memchr::memmem;
 use serde::Deserialize;
 
 use crate::{
-    ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
-    UsageSummary, calculate_cost_for_usage_at,
+    ModelBreakdown, PluginBreakdown, PricingMap, Result, SkillBreakdown, SourceTypeBreakdown,
+    Speed, TimestampMs, TokenCounts, TokenUsageRaw, UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, SmallIndexVec, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
@@ -124,6 +124,8 @@ struct DailyLoadedEntry {
     message_id: Option<String>,
     request_id: Option<String>,
     is_sidechain: Option<bool>,
+    plugin: Option<String>,
+    skill: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,6 +139,8 @@ struct DailyUsageEntry {
     cost_usd: Option<f64>,
     request_id: Option<String>,
     is_sidechain: Option<bool>,
+    attribution_plugin: Option<String>,
+    attribution_skill: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,6 +162,8 @@ impl DailyUsageLine {
                 cost_usd: entry.data.message.cost_usd,
                 request_id: entry.data.message.request_id,
                 is_sidechain: entry.data.message.is_sidechain,
+                attribution_plugin: entry.data.message.attribution_plugin,
+                attribution_skill: entry.data.message.attribution_skill,
             },
         }
     }
@@ -184,6 +190,8 @@ struct DailyAgentProgressMessage {
     cost_usd: Option<f64>,
     request_id: Option<String>,
     is_sidechain: Option<bool>,
+    attribution_plugin: Option<String>,
+    attribution_skill: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -327,6 +335,8 @@ fn read_daily_usage_file(
             message_id: data.message.id,
             request_id: data.request_id,
             is_sidechain: data.is_sidechain,
+            plugin: data.attribution_plugin.clone(),
+            skill: data.attribution_skill.clone(),
         });
         for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
             let missing_pricing_model = missing_pricing_model_for_usage(
@@ -357,6 +367,8 @@ fn read_daily_usage_file(
                     .map(|message_id| format!("{message_id}:advisor:{index}")),
                 request_id: request_id.clone(),
                 is_sidechain: data.is_sidechain,
+                plugin: data.attribution_plugin.clone(),
+                skill: data.attribution_skill.clone(),
             });
         }
     }
@@ -521,6 +533,12 @@ struct DailyAccumulator {
     models: Vec<String>,
     breakdowns: Vec<ModelBreakdown>,
     breakdown_indexes: FxHashMap<String, usize>,
+    plugin_breakdowns: Vec<PluginBreakdown>,
+    plugin_breakdown_indexes: FxHashMap<String, usize>,
+    skill_breakdowns: Vec<SkillBreakdown>,
+    skill_breakdown_indexes: FxHashMap<String, usize>,
+    source_type_breakdowns: Vec<SourceTypeBreakdown>,
+    source_type_breakdown_indexes: FxHashMap<String, usize>,
 }
 
 impl DailyAccumulator {
@@ -551,10 +569,90 @@ impl DailyAccumulator {
                 breakdown.missing_pricing = true;
             }
         }
+
+        let plugin_key = entry.plugin.as_deref().unwrap_or("unattributed");
+        let plugin_index = if let Some(index) = self.plugin_breakdown_indexes.get(plugin_key) {
+            *index
+        } else {
+            let index = self.plugin_breakdowns.len();
+            self.plugin_breakdown_indexes
+                .insert(plugin_key.to_string(), index);
+            self.plugin_breakdowns.push(PluginBreakdown {
+                plugin_name: plugin_key.to_string(),
+                ..PluginBreakdown::default()
+            });
+            index
+        };
+        let plugin_breakdown = &mut self.plugin_breakdowns[plugin_index];
+        plugin_breakdown.input_tokens += entry.usage.input_tokens;
+        plugin_breakdown.output_tokens += entry.usage.output_tokens;
+        plugin_breakdown.cache_creation_tokens += entry.usage.cache_creation_token_count();
+        plugin_breakdown.cache_read_tokens += entry.usage.cache_read_input_tokens;
+        plugin_breakdown.cost += entry.cost;
+        if entry.missing_pricing_model.is_some() {
+            plugin_breakdown.missing_pricing = true;
+        }
+
+        let skill_key = entry.skill.as_deref().unwrap_or("unattributed");
+        let skill_index = if let Some(index) = self.skill_breakdown_indexes.get(skill_key) {
+            *index
+        } else {
+            let index = self.skill_breakdowns.len();
+            self.skill_breakdown_indexes
+                .insert(skill_key.to_string(), index);
+            self.skill_breakdowns.push(SkillBreakdown {
+                skill_name: skill_key.to_string(),
+                ..SkillBreakdown::default()
+            });
+            index
+        };
+        let skill_breakdown = &mut self.skill_breakdowns[skill_index];
+        skill_breakdown.input_tokens += entry.usage.input_tokens;
+        skill_breakdown.output_tokens += entry.usage.output_tokens;
+        skill_breakdown.cache_creation_tokens += entry.usage.cache_creation_token_count();
+        skill_breakdown.cache_read_tokens += entry.usage.cache_read_input_tokens;
+        skill_breakdown.cost += entry.cost;
+        if entry.missing_pricing_model.is_some() {
+            skill_breakdown.missing_pricing = true;
+        }
+
+        let source_type_key = if entry.is_sidechain == Some(true) {
+            "background"
+        } else {
+            "active"
+        };
+        let source_type_index =
+            if let Some(index) = self.source_type_breakdown_indexes.get(source_type_key) {
+                *index
+            } else {
+                let index = self.source_type_breakdowns.len();
+                self.source_type_breakdown_indexes
+                    .insert(source_type_key.to_string(), index);
+                self.source_type_breakdowns.push(SourceTypeBreakdown {
+                    source_type: source_type_key.to_string(),
+                    ..SourceTypeBreakdown::default()
+                });
+                index
+            };
+        let source_type_breakdown = &mut self.source_type_breakdowns[source_type_index];
+        source_type_breakdown.input_tokens += entry.usage.input_tokens;
+        source_type_breakdown.output_tokens += entry.usage.output_tokens;
+        source_type_breakdown.cache_creation_tokens += entry.usage.cache_creation_token_count();
+        source_type_breakdown.cache_read_tokens += entry.usage.cache_read_input_tokens;
+        source_type_breakdown.cost += entry.cost;
+        if entry.missing_pricing_model.is_some() {
+            source_type_breakdown.missing_pricing = true;
+        }
     }
 
     fn into_summary(mut self) -> UsageSummary {
         self.breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        self.plugin_breakdowns
+            .sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        self.skill_breakdowns
+            .sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        self.source_type_breakdowns
+            .sort_by(|a, b| b.cost.total_cmp(&a.cost));
         UsageSummary {
             date: None,
             month: None,
@@ -573,9 +671,9 @@ impl DailyAccumulator {
             message_count: None,
             models_used: self.models,
             model_breakdowns: self.breakdowns,
-            plugin_breakdowns: Vec::new(),
-            skill_breakdowns: Vec::new(),
-            source_type_breakdowns: Vec::new(),
+            plugin_breakdowns: self.plugin_breakdowns,
+            skill_breakdowns: self.skill_breakdowns,
+            source_type_breakdowns: self.source_type_breakdowns,
             project: None,
             versions: None,
         }
@@ -586,7 +684,7 @@ impl DailyAccumulator {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DailyLoadedEntry, push_deduped_daily_entry, read_daily_usage_file};
+    use super::{DailyAccumulator, DailyLoadedEntry, push_deduped_daily_entry, read_daily_usage_file};
     use crate::{TimestampMs, TokenUsageRaw, cli::CostMode};
     use ccusage_test_support::fs_fixture;
 
@@ -602,6 +700,8 @@ mod tests {
                 is_sidechain: false,
                 cache_read_tokens: 20,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -613,6 +713,8 @@ mod tests {
                 is_sidechain: true,
                 cache_read_tokens: 50_000,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -624,6 +726,8 @@ mod tests {
                 is_sidechain: true,
                 cache_read_tokens: 700,
                 output_tokens: 30,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -653,6 +757,8 @@ mod tests {
                     is_sidechain: false,
                     cache_read_tokens: 20,
                     output_tokens: 10,
+                    plugin: None,
+                    skill: None,
                 },
                 "session-a",
                 TimestampMs::from_millis(1_774_000_000_000),
@@ -668,6 +774,8 @@ mod tests {
                     is_sidechain: true,
                     cache_read_tokens: 50_000,
                     output_tokens: 10,
+                    plugin: None,
+                    skill: None,
                 },
                 "session-a",
                 TimestampMs::from_millis(1_774_000_001_000),
@@ -693,6 +801,8 @@ mod tests {
                 is_sidechain: true,
                 cache_read_tokens: 50_000,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -704,6 +814,8 @@ mod tests {
                 is_sidechain: false,
                 cache_read_tokens: 20,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -715,6 +827,8 @@ mod tests {
                 is_sidechain: false,
                 cache_read_tokens: 5,
                 output_tokens: 5,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -735,6 +849,59 @@ mod tests {
 
         assert_eq!(data.session_id.as_deref(), Some("session-a"));
         assert_eq!(data.is_sidechain, Some(true));
+    }
+
+    #[test]
+    fn accumulates_plugin_skill_and_source_type_breakdowns() {
+        let mut accumulator = DailyAccumulator::default();
+        accumulator.add_entry(&daily_loaded_entry(DailyEntryFixture {
+            message_id: "msg-1",
+            request_id: "req-1",
+            is_sidechain: false,
+            cache_read_tokens: 0,
+            output_tokens: 10,
+            plugin: Some("aws"),
+            skill: Some("superpowers:brainstorming"),
+        }));
+        accumulator.add_entry(&daily_loaded_entry(DailyEntryFixture {
+            message_id: "msg-2",
+            request_id: "req-2",
+            is_sidechain: true,
+            cache_read_tokens: 0,
+            output_tokens: 5,
+            plugin: None,
+            skill: None,
+        }));
+
+        let summary = accumulator.into_summary();
+
+        assert_eq!(summary.plugin_breakdowns.len(), 2);
+        assert!(
+            summary
+                .plugin_breakdowns
+                .iter()
+                .any(|b| b.plugin_name == "aws")
+        );
+        assert!(
+            summary
+                .plugin_breakdowns
+                .iter()
+                .any(|b| b.plugin_name == "unattributed")
+        );
+        assert_eq!(summary.skill_breakdowns.len(), 2);
+        assert_eq!(summary.source_type_breakdowns.len(), 2);
+        assert!(
+            summary
+                .source_type_breakdowns
+                .iter()
+                .any(|b| b.source_type == "active")
+        );
+        assert!(
+            summary
+                .source_type_breakdowns
+                .iter()
+                .any(|b| b.source_type == "background")
+        );
     }
 
     #[test]
@@ -778,6 +945,8 @@ mod tests {
                 is_sidechain: false,
                 cache_read_tokens: 0,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             },
             "session-a",
             TimestampMs::from_millis(1_774_000_000_000),
@@ -792,6 +961,8 @@ mod tests {
                 is_sidechain: false,
                 cache_read_tokens: 0,
                 output_tokens: 20,
+                plugin: None,
+                skill: None,
             },
             "session-a",
             TimestampMs::from_millis(1_774_000_001_000),
@@ -822,6 +993,8 @@ mod tests {
                     is_sidechain: false,
                     cache_read_tokens: 20,
                     output_tokens: 10,
+                    plugin: None,
+                    skill: None,
                 },
                 "session-a",
                 TimestampMs::from_millis(1_774_000_000_000),
@@ -837,6 +1010,8 @@ mod tests {
                     is_sidechain: true,
                     cache_read_tokens: 50_000,
                     output_tokens: 10,
+                    plugin: None,
+                    skill: None,
                 },
                 "session-b",
                 TimestampMs::from_millis(1_774_000_001_000),
@@ -884,6 +1059,8 @@ mod tests {
         is_sidechain: bool,
         cache_read_tokens: u64,
         output_tokens: u64,
+        plugin: Option<&'static str>,
+        skill: Option<&'static str>,
     }
 
     fn daily_loaded_entry(fixture: DailyEntryFixture) -> DailyLoadedEntry {
@@ -906,6 +1083,8 @@ mod tests {
             message_id: Some(fixture.message_id.to_string()),
             request_id: Some(fixture.request_id.to_string()),
             is_sidechain: Some(fixture.is_sidechain),
+            plugin: fixture.plugin.map(str::to_string),
+            skill: fixture.skill.map(str::to_string),
         }
     }
 
