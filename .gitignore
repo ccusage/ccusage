@@ -48,3 +48,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # generated local agent skills
 .claude/skills
+.worktrees/
