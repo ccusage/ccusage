@@ -947,6 +947,8 @@ mod tests {
                 request_id: Some(fixture.request_id.to_string()),
                 is_api_error_message: None,
                 is_sidechain: Some(fixture.is_sidechain),
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp: TimestampMs::from_millis(1_775_000_000_000),
             date: "2026-03-29".to_string(),

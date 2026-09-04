@@ -263,10 +263,13 @@ mod tests {
             "timestamp": "2024-01-01T00:00:00Z",
             "message": {
                 "usage": {
-                    "inputTokens": 100,
-                    "outputTokens": 50
-                }
+                    "input_tokens": 100,
+                    "output_tokens": 50
+                },
+                "model": "test-model",
+                "id": "msg-123"
             },
+            "costUSD": 0.01,
             "attributionPlugin": "test-plugin",
             "attributionSkill": "test-skill"
         }"#;
@@ -283,10 +286,13 @@ mod tests {
             "timestamp": "2024-01-01T00:00:00Z",
             "message": {
                 "usage": {
-                    "inputTokens": 100,
-                    "outputTokens": 50
-                }
-            }
+                    "input_tokens": 100,
+                    "output_tokens": 50
+                },
+                "model": "test-model",
+                "id": "msg-456"
+            },
+            "costUSD": 0.02
         }"#;
 
         let entry: UsageEntry = serde_json::from_str(json).expect("Failed to deserialize");

@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/summary.rs
+source: crates/ccusage-core/src/summary.rs
 expression: rows
 ---
 [
@@ -24,7 +24,10 @@ expression: rows
         "cacheReadTokens": 2,
         "cost": 0.5
       }
-    ]
+    ],
+    "pluginBreakdowns": [],
+    "skillBreakdowns": [],
+    "sourceTypeBreakdowns": []
   },
   {
     "date": "2026-01-02",
@@ -47,6 +50,9 @@ expression: rows
         "cacheReadTokens": 2,
         "cost": 0.25
       }
-    ]
+    ],
+    "pluginBreakdowns": [],
+    "skillBreakdowns": [],
+    "sourceTypeBreakdowns": []
   }
 ]

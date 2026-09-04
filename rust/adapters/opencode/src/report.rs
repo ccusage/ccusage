@@ -169,9 +169,6 @@ mod tests {
             ],
             model_breakdowns: vec![ModelBreakdown {
                 model_name: "gpt-5.2-codex".to_string(),
-                plugin_breakdowns: Vec::new(),
-                skill_breakdowns: Vec::new(),
-                source_type_breakdowns: Vec::new(),
                 input_tokens: 100,
                 output_tokens: 50,
                 cache_creation_tokens: 10,
@@ -180,6 +177,9 @@ mod tests {
                 cost: 0.25,
                 missing_pricing: false,
             }],
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: Some(vec!["1.0.0".to_string()]),
         }

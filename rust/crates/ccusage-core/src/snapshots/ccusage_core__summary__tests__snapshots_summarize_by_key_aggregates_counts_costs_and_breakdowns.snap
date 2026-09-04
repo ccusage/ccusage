@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/summary.rs
+source: crates/ccusage-core/src/summary.rs
 expression: rows
 ---
 [
@@ -34,6 +34,9 @@ expression: rows
         "cost": 0.125
       }
     ],
+    "pluginBreakdowns": [],
+    "skillBreakdowns": [],
+    "sourceTypeBreakdowns": [],
     "project": "/workspace/api"
   },
   {
@@ -46,6 +49,9 @@ expression: rows
     "credits": null,
     "modelsUsed": [],
     "modelBreakdowns": [],
+    "pluginBreakdowns": [],
+    "skillBreakdowns": [],
+    "sourceTypeBreakdowns": [],
     "project": "/workspace/web"
   }
 ]

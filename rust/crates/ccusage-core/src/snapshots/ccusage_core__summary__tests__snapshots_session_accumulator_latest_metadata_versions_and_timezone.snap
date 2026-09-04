@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/summary.rs
+source: crates/ccusage-core/src/summary.rs
 expression: row
 ---
 {
@@ -36,6 +36,9 @@ expression: row
       "cost": 0.125
     }
   ],
+  "pluginBreakdowns": [],
+  "skillBreakdowns": [],
+  "sourceTypeBreakdowns": [],
   "versions": [
     "1.0.0",
     "1.1.0"

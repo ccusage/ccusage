@@ -475,6 +475,8 @@ pub(super) fn event_to_loaded(
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
+        attribution_plugin: None,
+        attribution_skill: None,
     };
     LoadedEntry {
         date: format_date_tz(event.timestamp, tz),
