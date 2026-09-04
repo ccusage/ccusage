@@ -32,6 +32,36 @@ expression: "report_from_rows(&monthly, AgentReportKind::Monthly)"
       ],
       "month": "2099-01",
       "outputTokens": 30,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 45,
+          "cacheReadTokens": 65,
+          "cost": 0.00047789999999999996,
+          "inputTokens": 190,
+          "outputTokens": 30,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 45,
+          "cacheReadTokens": 65,
+          "cost": 0.00047789999999999996,
+          "inputTokens": 190,
+          "outputTokens": 30,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 45,
+          "cacheReadTokens": 65,
+          "cost": 0.00047789999999999996,
+          "inputTokens": 190,
+          "outputTokens": 30,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.00047789999999999996,
       "totalTokens": 330
     },
@@ -54,6 +84,36 @@ expression: "report_from_rows(&monthly, AgentReportKind::Monthly)"
       ],
       "month": "2099-02",
       "outputTokens": 5,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0000806,
       "totalTokens": 55
     }

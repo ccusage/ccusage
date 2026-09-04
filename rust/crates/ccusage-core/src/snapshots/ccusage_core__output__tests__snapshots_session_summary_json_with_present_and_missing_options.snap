@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/output.rs
+source: crates/ccusage-core/src/output.rs
 expression: session_summary_json(&row)
 ---
 {
@@ -31,8 +31,38 @@ expression: session_summary_json(&row)
     "claude-sonnet-4-20250514"
   ],
   "outputTokens": 567,
+  "pluginBreakdowns": [
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 10,
+      "cost": 0.3,
+      "inputTokens": 900,
+      "outputTokens": 300,
+      "pluginName": "aws"
+    }
+  ],
   "projectPath": "/Users/example/workspace/api",
   "sessionId": "session-a",
+  "skillBreakdowns": [
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 10,
+      "cost": 0.3,
+      "inputTokens": 900,
+      "outputTokens": 300,
+      "skillName": "superpowers:brainstorming"
+    }
+  ],
+  "sourceTypeBreakdowns": [
+    {
+      "cacheCreationTokens": 89,
+      "cacheReadTokens": 10,
+      "cost": 0.42,
+      "inputTokens": 1234,
+      "outputTokens": 567,
+      "sourceType": "active"
+    }
+  ],
   "totalCost": 0.42,
   "totalTokens": 1900
 }

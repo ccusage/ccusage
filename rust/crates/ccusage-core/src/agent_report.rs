@@ -17,6 +17,9 @@ pub fn agent_summary_json(
         "totalCost": row.total_cost,
         "modelsUsed": row.models_used,
         "modelBreakdowns": row.model_breakdowns,
+        "pluginBreakdowns": row.plugin_breakdowns,
+        "skillBreakdowns": row.skill_breakdowns,
+        "sourceTypeBreakdowns": row.source_type_breakdowns,
     });
     if let (Some(obj), Some(credits)) = (value.as_object_mut(), row.credits) {
         obj.insert("credits".to_string(), json!(credits));
