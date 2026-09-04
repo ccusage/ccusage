@@ -569,8 +569,7 @@ groups usage into `"active"` (main thread) and `"background"` (sidechain/subagen
 					"outputTokens": 31456,
 					"cacheCreationTokens": 256,
 					"cacheReadTokens": 512,
-					"totalTokens": 32501,
-					"costUSD": 17.58
+					"cost": 17.58
 				}
 			],
 			"skillBreakdowns": [
@@ -580,8 +579,7 @@ groups usage into `"active"` (main thread) and `"background"` (sidechain/subagen
 					"outputTokens": 31456,
 					"cacheCreationTokens": 256,
 					"cacheReadTokens": 512,
-					"totalTokens": 32501,
-					"costUSD": 17.58
+					"cost": 17.58
 				}
 			],
 			"sourceTypeBreakdowns": [
@@ -591,8 +589,7 @@ groups usage into `"active"` (main thread) and `"background"` (sidechain/subagen
 					"outputTokens": 31456,
 					"cacheCreationTokens": 256,
 					"cacheReadTokens": 512,
-					"totalTokens": 32501,
-					"costUSD": 17.58
+					"cost": 17.58
 				}
 			]
 		}
