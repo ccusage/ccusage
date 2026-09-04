@@ -746,6 +746,26 @@ mod tests {
     }
 
     #[test]
+    fn round_trips_attribution_plugin_and_skill_through_real_file_read() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}},"attributionPlugin":"aws","attributionSkill":"superpowers:brainstorming"}"#,
+        });
+        let path = fixture.path("projects/project-a/session-a/chat.jsonl");
+
+        let loaded = read_usage_file(&path, None, CostMode::Display, None);
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(
+            loaded.entries[0].data.attribution_plugin.as_deref(),
+            Some("aws")
+        );
+        assert_eq!(
+            loaded.entries[0].data.attribution_skill.as_deref(),
+            Some("superpowers:brainstorming")
+        );
+    }
+
+    #[test]
     fn keeps_gateway_usage_from_distinct_sessions_with_reused_message_id() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
@@ -835,6 +855,8 @@ mod tests {
                 is_sidechain: false,
                 cache_read_tokens: 20,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -846,6 +868,8 @@ mod tests {
                 is_sidechain: true,
                 cache_read_tokens: 50_000,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -857,6 +881,8 @@ mod tests {
                 is_sidechain: true,
                 cache_read_tokens: 700,
                 output_tokens: 30,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -885,6 +911,8 @@ mod tests {
                 is_sidechain: true,
                 cache_read_tokens: 50_000,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -896,6 +924,8 @@ mod tests {
                 is_sidechain: false,
                 cache_read_tokens: 20,
                 output_tokens: 10,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -907,6 +937,8 @@ mod tests {
                 is_sidechain: false,
                 cache_read_tokens: 5,
                 output_tokens: 5,
+                plugin: None,
+                skill: None,
             }),
             &mut deduped_indexes,
             &mut deduped,
@@ -917,12 +949,55 @@ mod tests {
         assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 20);
     }
 
+    #[test]
+    fn sidechain_replay_dedup_keeps_attribution_fields_of_winning_entry() {
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        push_deduped_entry(
+            loaded_usage_entry(UsageEntryFixture {
+                message_id: "msg-parent",
+                request_id: "req-sidechain",
+                is_sidechain: true,
+                cache_read_tokens: 5,
+                output_tokens: 5,
+                plugin: Some("aws"),
+                skill: Some("superpowers:brainstorming"),
+            }),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+        push_deduped_entry(
+            loaded_usage_entry(UsageEntryFixture {
+                message_id: "msg-parent",
+                request_id: "req-parent",
+                is_sidechain: false,
+                cache_read_tokens: 20,
+                output_tokens: 5,
+                plugin: Some("atlassian"),
+                skill: None,
+            }),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(
+            deduped[0].data.attribution_plugin.as_deref(),
+            Some("atlassian")
+        );
+        assert_eq!(deduped[0].data.attribution_skill, None);
+        assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 20);
+    }
+
     struct UsageEntryFixture {
         message_id: &'static str,
         request_id: &'static str,
         is_sidechain: bool,
         cache_read_tokens: u64,
         output_tokens: u64,
+        plugin: Option<&'static str>,
+        skill: Option<&'static str>,
     }
 
     fn loaded_usage_entry(fixture: UsageEntryFixture) -> LoadedEntry {
@@ -947,8 +1022,8 @@ mod tests {
                 request_id: Some(fixture.request_id.to_string()),
                 is_api_error_message: None,
                 is_sidechain: Some(fixture.is_sidechain),
-                attribution_plugin: None,
-                attribution_skill: None,
+                attribution_plugin: fixture.plugin.map(str::to_string),
+                attribution_skill: fixture.skill.map(str::to_string),
             },
             timestamp: TimestampMs::from_millis(1_775_000_000_000),
             date: "2026-03-29".to_string(),
