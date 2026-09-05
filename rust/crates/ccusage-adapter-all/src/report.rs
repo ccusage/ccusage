@@ -561,7 +561,11 @@ fn push_breakdown_rows<T: NamedBreakdown>(
                 name,
                 color(shared, format_number(b.input_tokens()), Color::Grey),
                 color(shared, format_number(b.output_tokens()), Color::Grey),
-                color(shared, format_number(b.cache_creation_tokens()), Color::Grey),
+                color(
+                    shared,
+                    format_number(b.cache_creation_tokens()),
+                    Color::Grey,
+                ),
                 color(shared, format_number(b.cache_read_tokens()), Color::Grey),
                 color(shared, format_number(total), Color::Grey),
                 color(shared, format_currency(b.cost()), Color::Grey),

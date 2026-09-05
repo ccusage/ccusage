@@ -117,11 +117,14 @@ impl AllAccumulator {
             breakdown.period = period.clone();
         }
         agent_breakdowns.sort_by(|a, b| a.agent.cmp(b.agent));
-        let mut model_breakdowns = aggregate_breakdowns(&agent_breakdowns, |row| &row.model_breakdowns);
+        let mut model_breakdowns =
+            aggregate_breakdowns(&agent_breakdowns, |row| &row.model_breakdowns);
         model_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-        let mut plugin_breakdowns = aggregate_breakdowns(&agent_breakdowns, |row| &row.plugin_breakdowns);
+        let mut plugin_breakdowns =
+            aggregate_breakdowns(&agent_breakdowns, |row| &row.plugin_breakdowns);
         plugin_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-        let mut skill_breakdowns = aggregate_breakdowns(&agent_breakdowns, |row| &row.skill_breakdowns);
+        let mut skill_breakdowns =
+            aggregate_breakdowns(&agent_breakdowns, |row| &row.skill_breakdowns);
         skill_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
         let mut source_type_breakdowns =
             aggregate_breakdowns(&agent_breakdowns, |row| &row.source_type_breakdowns);
@@ -195,7 +198,10 @@ fn merge_breakdowns<T: NamedBreakdown>(
 
 /// Aggregates one breakdown vector per row into a single collection keyed by
 /// [`NamedBreakdown::key`]. Shared by model/plugin/skill/source-type breakdowns.
-fn aggregate_breakdowns<T: NamedBreakdown>(rows: &[AllRow], select: impl Fn(&AllRow) -> &[T]) -> Vec<T> {
+fn aggregate_breakdowns<T: NamedBreakdown>(
+    rows: &[AllRow],
+    select: impl Fn(&AllRow) -> &[T],
+) -> Vec<T> {
     let mut indexes = FxHashMap::<String, usize>::default();
     let mut breakdowns: Vec<T> = Vec::new();
     for row in rows {

@@ -508,7 +508,11 @@ fn push_breakdown_rows<T: NamedBreakdown>(
             color(shared, format!("  └─ {}", label(breakdown)), Color::Grey),
             String::new(),
             color(shared, format_number(breakdown.input_tokens()), Color::Grey),
-            color(shared, format_number(breakdown.output_tokens()), Color::Grey),
+            color(
+                shared,
+                format_number(breakdown.output_tokens()),
+                Color::Grey,
+            ),
         ];
         if !compact && show_cache_creation {
             values.push(color(
@@ -518,7 +522,11 @@ fn push_breakdown_rows<T: NamedBreakdown>(
             ));
         }
         if compact {
-            values.push(color(shared, format_currency(breakdown.cost()), Color::Grey));
+            values.push(color(
+                shared,
+                format_currency(breakdown.cost()),
+                Color::Grey,
+            ));
         } else {
             values.extend([
                 color(
