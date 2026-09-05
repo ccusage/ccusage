@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use crate::{
-    ModelBreakdown, PluginBreakdown, SkillBreakdown, SourceTypeBreakdown, cli::AgentReportKind,
-    fast::FxHashMap,
+    ModelBreakdown, NamedBreakdown, PluginBreakdown, SkillBreakdown, SourceTypeBreakdown,
+    cli::AgentReportKind, fast::FxHashMap,
 };
 
 #[derive(Debug, Clone)]
@@ -117,13 +117,14 @@ impl AllAccumulator {
             breakdown.period = period.clone();
         }
         agent_breakdowns.sort_by(|a, b| a.agent.cmp(b.agent));
-        let mut model_breakdowns = aggregate_model_breakdowns(&agent_breakdowns);
+        let mut model_breakdowns = aggregate_breakdowns(&agent_breakdowns, |row| &row.model_breakdowns);
         model_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-        let mut plugin_breakdowns = aggregate_plugin_breakdowns(&agent_breakdowns);
+        let mut plugin_breakdowns = aggregate_breakdowns(&agent_breakdowns, |row| &row.plugin_breakdowns);
         plugin_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-        let mut skill_breakdowns = aggregate_skill_breakdowns(&agent_breakdowns);
+        let mut skill_breakdowns = aggregate_breakdowns(&agent_breakdowns, |row| &row.skill_breakdowns);
         skill_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-        let mut source_type_breakdowns = aggregate_source_type_breakdowns(&agent_breakdowns);
+        let mut source_type_breakdowns =
+            aggregate_breakdowns(&agent_breakdowns, |row| &row.source_type_breakdowns);
         source_type_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
         AllRow {
             period,
@@ -161,244 +162,50 @@ fn merge_agent_breakdown(target: &mut AllRow, source: AllRow) {
     models.extend(source.models_used);
     target.models_used = models.into_iter().collect();
     target.model_breakdowns =
-        merge_model_breakdowns(target.model_breakdowns.drain(..), source.model_breakdowns);
+        merge_breakdowns(target.model_breakdowns.drain(..), source.model_breakdowns);
     target.plugin_breakdowns =
-        merge_plugin_breakdowns(target.plugin_breakdowns.drain(..), source.plugin_breakdowns);
+        merge_breakdowns(target.plugin_breakdowns.drain(..), source.plugin_breakdowns);
     target.skill_breakdowns =
-        merge_skill_breakdowns(target.skill_breakdowns.drain(..), source.skill_breakdowns);
-    target.source_type_breakdowns = merge_source_type_breakdowns(
+        merge_breakdowns(target.skill_breakdowns.drain(..), source.skill_breakdowns);
+    target.source_type_breakdowns = merge_breakdowns(
         target.source_type_breakdowns.drain(..),
         source.source_type_breakdowns,
     );
 }
 
-fn merge_model_breakdowns(
-    existing: impl IntoIterator<Item = ModelBreakdown>,
-    additional: impl IntoIterator<Item = ModelBreakdown>,
-) -> Vec<ModelBreakdown> {
+/// Merges two breakdown collections keyed by [`NamedBreakdown::key`], summing counters for
+/// entries that share a key. Shared by model/plugin/skill/source-type breakdowns.
+fn merge_breakdowns<T: NamedBreakdown>(
+    existing: impl IntoIterator<Item = T>,
+    additional: impl IntoIterator<Item = T>,
+) -> Vec<T> {
     let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<ModelBreakdown> = Vec::new();
+    let mut breakdowns: Vec<T> = Vec::new();
     for item in existing.into_iter().chain(additional) {
-        let index = *indexes.entry(item.model_name.clone()).or_insert_with(|| {
+        let index = *indexes.entry(item.key().to_string()).or_insert_with(|| {
             let i = breakdowns.len();
-            breakdowns.push(ModelBreakdown {
-                model_name: item.model_name.clone(),
-                ..ModelBreakdown::default()
-            });
+            breakdowns.push(T::with_key(item.key().to_string()));
             i
         });
-        let b = &mut breakdowns[index];
-        b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-        b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-        b.cache_creation_tokens = b
-            .cache_creation_tokens
-            .saturating_add(item.cache_creation_tokens);
-        b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-        b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-        b.cost += item.cost;
-        b.missing_pricing |= item.missing_pricing;
+        breakdowns[index].accumulate_from(&item);
     }
-    breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    breakdowns.sort_by(|a, b| b.cost().total_cmp(&a.cost()));
     breakdowns
 }
 
-fn merge_plugin_breakdowns(
-    existing: impl IntoIterator<Item = PluginBreakdown>,
-    additional: impl IntoIterator<Item = PluginBreakdown>,
-) -> Vec<PluginBreakdown> {
+/// Aggregates one breakdown vector per row into a single collection keyed by
+/// [`NamedBreakdown::key`]. Shared by model/plugin/skill/source-type breakdowns.
+fn aggregate_breakdowns<T: NamedBreakdown>(rows: &[AllRow], select: impl Fn(&AllRow) -> &[T]) -> Vec<T> {
     let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<PluginBreakdown> = Vec::new();
-    for item in existing.into_iter().chain(additional) {
-        let index = *indexes.entry(item.plugin_name.clone()).or_insert_with(|| {
-            let i = breakdowns.len();
-            breakdowns.push(PluginBreakdown {
-                plugin_name: item.plugin_name.clone(),
-                ..PluginBreakdown::default()
-            });
-            i
-        });
-        let b = &mut breakdowns[index];
-        b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-        b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-        b.cache_creation_tokens = b
-            .cache_creation_tokens
-            .saturating_add(item.cache_creation_tokens);
-        b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-        b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-        b.cost += item.cost;
-        b.missing_pricing |= item.missing_pricing;
-    }
-    breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-    breakdowns
-}
-
-fn merge_skill_breakdowns(
-    existing: impl IntoIterator<Item = SkillBreakdown>,
-    additional: impl IntoIterator<Item = SkillBreakdown>,
-) -> Vec<SkillBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<SkillBreakdown> = Vec::new();
-    for item in existing.into_iter().chain(additional) {
-        let index = *indexes.entry(item.skill_name.clone()).or_insert_with(|| {
-            let i = breakdowns.len();
-            breakdowns.push(SkillBreakdown {
-                skill_name: item.skill_name.clone(),
-                ..SkillBreakdown::default()
-            });
-            i
-        });
-        let b = &mut breakdowns[index];
-        b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-        b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-        b.cache_creation_tokens = b
-            .cache_creation_tokens
-            .saturating_add(item.cache_creation_tokens);
-        b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-        b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-        b.cost += item.cost;
-        b.missing_pricing |= item.missing_pricing;
-    }
-    breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-    breakdowns
-}
-
-fn merge_source_type_breakdowns(
-    existing: impl IntoIterator<Item = SourceTypeBreakdown>,
-    additional: impl IntoIterator<Item = SourceTypeBreakdown>,
-) -> Vec<SourceTypeBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<SourceTypeBreakdown> = Vec::new();
-    for item in existing.into_iter().chain(additional) {
-        let index = *indexes.entry(item.source_type.clone()).or_insert_with(|| {
-            let i = breakdowns.len();
-            breakdowns.push(SourceTypeBreakdown {
-                source_type: item.source_type.clone(),
-                ..SourceTypeBreakdown::default()
-            });
-            i
-        });
-        let b = &mut breakdowns[index];
-        b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-        b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-        b.cache_creation_tokens = b
-            .cache_creation_tokens
-            .saturating_add(item.cache_creation_tokens);
-        b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-        b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-        b.cost += item.cost;
-        b.missing_pricing |= item.missing_pricing;
-    }
-    breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-    breakdowns
-}
-
-fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<ModelBreakdown> = Vec::new();
+    let mut breakdowns: Vec<T> = Vec::new();
     for row in rows {
-        for item in &row.model_breakdowns {
-            let index = *indexes.entry(item.model_name.clone()).or_insert_with(|| {
+        for item in select(row) {
+            let index = *indexes.entry(item.key().to_string()).or_insert_with(|| {
                 let i = breakdowns.len();
-                breakdowns.push(ModelBreakdown {
-                    model_name: item.model_name.clone(),
-                    ..ModelBreakdown::default()
-                });
+                breakdowns.push(T::with_key(item.key().to_string()));
                 i
             });
-            let b = &mut breakdowns[index];
-            b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-            b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-            b.cache_creation_tokens = b
-                .cache_creation_tokens
-                .saturating_add(item.cache_creation_tokens);
-            b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-            b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-            b.cost += item.cost;
-            b.missing_pricing |= item.missing_pricing;
-        }
-    }
-    breakdowns
-}
-
-fn aggregate_plugin_breakdowns(rows: &[AllRow]) -> Vec<PluginBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<PluginBreakdown> = Vec::new();
-    for row in rows {
-        for item in &row.plugin_breakdowns {
-            let index = *indexes.entry(item.plugin_name.clone()).or_insert_with(|| {
-                let i = breakdowns.len();
-                breakdowns.push(PluginBreakdown {
-                    plugin_name: item.plugin_name.clone(),
-                    ..PluginBreakdown::default()
-                });
-                i
-            });
-            let b = &mut breakdowns[index];
-            b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-            b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-            b.cache_creation_tokens = b
-                .cache_creation_tokens
-                .saturating_add(item.cache_creation_tokens);
-            b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-            b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-            b.cost += item.cost;
-            b.missing_pricing |= item.missing_pricing;
-        }
-    }
-    breakdowns
-}
-
-fn aggregate_skill_breakdowns(rows: &[AllRow]) -> Vec<SkillBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<SkillBreakdown> = Vec::new();
-    for row in rows {
-        for item in &row.skill_breakdowns {
-            let index = *indexes.entry(item.skill_name.clone()).or_insert_with(|| {
-                let i = breakdowns.len();
-                breakdowns.push(SkillBreakdown {
-                    skill_name: item.skill_name.clone(),
-                    ..SkillBreakdown::default()
-                });
-                i
-            });
-            let b = &mut breakdowns[index];
-            b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-            b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-            b.cache_creation_tokens = b
-                .cache_creation_tokens
-                .saturating_add(item.cache_creation_tokens);
-            b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-            b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-            b.cost += item.cost;
-            b.missing_pricing |= item.missing_pricing;
-        }
-    }
-    breakdowns
-}
-
-fn aggregate_source_type_breakdowns(rows: &[AllRow]) -> Vec<SourceTypeBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<SourceTypeBreakdown> = Vec::new();
-    for row in rows {
-        for item in &row.source_type_breakdowns {
-            let index = *indexes.entry(item.source_type.clone()).or_insert_with(|| {
-                let i = breakdowns.len();
-                breakdowns.push(SourceTypeBreakdown {
-                    source_type: item.source_type.clone(),
-                    ..SourceTypeBreakdown::default()
-                });
-                i
-            });
-            let b = &mut breakdowns[index];
-            b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-            b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-            b.cache_creation_tokens = b
-                .cache_creation_tokens
-                .saturating_add(item.cache_creation_tokens);
-            b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-            b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-            b.cost += item.cost;
-            b.missing_pricing |= item.missing_pricing;
+            breakdowns[index].accumulate_from(item);
         }
     }
     breakdowns

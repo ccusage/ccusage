@@ -12,7 +12,8 @@ use serde::Deserialize;
 
 use crate::{
     ModelBreakdown, PluginBreakdown, PricingMap, Result, SkillBreakdown, SourceTypeBreakdown,
-    Speed, TimestampMs, TokenCounts, TokenUsageRaw, UsageSummary, calculate_cost_for_usage_at,
+    Speed, TimestampMs, TokenCounts, TokenUsageRaw, UsageSummary,
+    accumulate_attribution_breakdowns, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, SmallIndexVec, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
@@ -570,111 +571,21 @@ impl DailyAccumulator {
             }
         }
 
-        let plugin_key = entry
-            .plugin
-            .as_deref()
-            .filter(|value| !value.is_empty())
-            .unwrap_or("unattributed");
-        let plugin_index = if let Some(index) = self.plugin_breakdown_indexes.get(plugin_key) {
-            *index
-        } else {
-            let index = self.plugin_breakdowns.len();
-            self.plugin_breakdown_indexes
-                .insert(plugin_key.to_string(), index);
-            self.plugin_breakdowns.push(PluginBreakdown {
-                plugin_name: plugin_key.to_string(),
-                ..PluginBreakdown::default()
-            });
-            index
-        };
-        let plugin_breakdown = &mut self.plugin_breakdowns[plugin_index];
-        plugin_breakdown.input_tokens = plugin_breakdown
-            .input_tokens
-            .saturating_add(entry.usage.input_tokens);
-        plugin_breakdown.output_tokens = plugin_breakdown
-            .output_tokens
-            .saturating_add(entry.usage.output_tokens);
-        plugin_breakdown.cache_creation_tokens = plugin_breakdown
-            .cache_creation_tokens
-            .saturating_add(entry.usage.cache_creation_token_count());
-        plugin_breakdown.cache_read_tokens = plugin_breakdown
-            .cache_read_tokens
-            .saturating_add(entry.usage.cache_read_input_tokens);
-        plugin_breakdown.cost += entry.cost;
-        if entry.missing_pricing_model.is_some() {
-            plugin_breakdown.missing_pricing = true;
-        }
-
-        let skill_key = entry
-            .skill
-            .as_deref()
-            .filter(|value| !value.is_empty())
-            .unwrap_or("unattributed");
-        let skill_index = if let Some(index) = self.skill_breakdown_indexes.get(skill_key) {
-            *index
-        } else {
-            let index = self.skill_breakdowns.len();
-            self.skill_breakdown_indexes
-                .insert(skill_key.to_string(), index);
-            self.skill_breakdowns.push(SkillBreakdown {
-                skill_name: skill_key.to_string(),
-                ..SkillBreakdown::default()
-            });
-            index
-        };
-        let skill_breakdown = &mut self.skill_breakdowns[skill_index];
-        skill_breakdown.input_tokens = skill_breakdown
-            .input_tokens
-            .saturating_add(entry.usage.input_tokens);
-        skill_breakdown.output_tokens = skill_breakdown
-            .output_tokens
-            .saturating_add(entry.usage.output_tokens);
-        skill_breakdown.cache_creation_tokens = skill_breakdown
-            .cache_creation_tokens
-            .saturating_add(entry.usage.cache_creation_token_count());
-        skill_breakdown.cache_read_tokens = skill_breakdown
-            .cache_read_tokens
-            .saturating_add(entry.usage.cache_read_input_tokens);
-        skill_breakdown.cost += entry.cost;
-        if entry.missing_pricing_model.is_some() {
-            skill_breakdown.missing_pricing = true;
-        }
-
-        let source_type_key = if entry.is_sidechain == Some(true) {
-            "background"
-        } else {
-            "active"
-        };
-        let source_type_index =
-            if let Some(index) = self.source_type_breakdown_indexes.get(source_type_key) {
-                *index
-            } else {
-                let index = self.source_type_breakdowns.len();
-                self.source_type_breakdown_indexes
-                    .insert(source_type_key.to_string(), index);
-                self.source_type_breakdowns.push(SourceTypeBreakdown {
-                    source_type: source_type_key.to_string(),
-                    ..SourceTypeBreakdown::default()
-                });
-                index
-            };
-        let source_type_breakdown = &mut self.source_type_breakdowns[source_type_index];
-        source_type_breakdown.input_tokens = source_type_breakdown
-            .input_tokens
-            .saturating_add(entry.usage.input_tokens);
-        source_type_breakdown.output_tokens = source_type_breakdown
-            .output_tokens
-            .saturating_add(entry.usage.output_tokens);
-        source_type_breakdown.cache_creation_tokens = source_type_breakdown
-            .cache_creation_tokens
-            .saturating_add(entry.usage.cache_creation_token_count());
-        source_type_breakdown.cache_read_tokens = source_type_breakdown
-            .cache_read_tokens
-            .saturating_add(entry.usage.cache_read_input_tokens);
-        source_type_breakdown.cost += entry.cost;
-        if entry.missing_pricing_model.is_some() {
-            source_type_breakdown.missing_pricing = true;
-        }
+        accumulate_attribution_breakdowns(
+            &mut self.plugin_breakdowns,
+            &mut self.plugin_breakdown_indexes,
+            &mut self.skill_breakdowns,
+            &mut self.skill_breakdown_indexes,
+            &mut self.source_type_breakdowns,
+            &mut self.source_type_breakdown_indexes,
+            entry.plugin.as_deref(),
+            entry.skill.as_deref(),
+            entry.is_sidechain,
+            entry.usage,
+            0,
+            entry.cost,
+            entry.missing_pricing_model.is_some(),
+        );
     }
 
     fn into_summary(mut self) -> UsageSummary {

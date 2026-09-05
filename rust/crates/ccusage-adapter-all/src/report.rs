@@ -10,13 +10,14 @@ use serde::{
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, ModelBreakdown, PluginBreakdown, Result, SimpleTable, SkillBreakdown,
-    SourceTypeBreakdown, UsageSummary,
+    Align, Color, NamedBreakdown, Result, SimpleTable, UsageSummary,
     cli::{AgentReportKind, SharedArgs, SortOrder},
     cli_error, color, format_currency, format_models_multiline, format_number, json_float,
     output::strip_cost_json,
     print_box_title, sanitize_terminal_text, short_model_name, should_use_compact_layout,
 };
+#[cfg(test)]
+use crate::{PluginBreakdown, SkillBreakdown, SourceTypeBreakdown};
 
 use super::types::AllRow;
 
@@ -239,54 +240,65 @@ pub(super) fn print_table(
             for breakdown in agent_breakdowns {
                 table.push(all_table_row(breakdown, compact, true, shared.no_cost));
                 if shared.breakdown && !breakdown.model_breakdowns.is_empty() {
-                    push_model_breakdown_rows(
+                    push_breakdown_rows(
                         &mut table,
                         &breakdown.model_breakdowns,
                         compact,
                         shared,
+                        |b| short_model_name(&b.model_name),
                     );
                 }
                 if shared.by_plugin && !breakdown.plugin_breakdowns.is_empty() {
-                    push_plugin_breakdown_rows(
+                    push_breakdown_rows(
                         &mut table,
                         &breakdown.plugin_breakdowns,
                         compact,
                         shared,
+                        |b| sanitize_terminal_text(&b.plugin_name),
                     );
                 }
                 if shared.by_skill && !breakdown.skill_breakdowns.is_empty() {
-                    push_skill_breakdown_rows(
+                    push_breakdown_rows(
                         &mut table,
                         &breakdown.skill_breakdowns,
                         compact,
                         shared,
+                        |b| sanitize_terminal_text(&b.skill_name),
                     );
                 }
                 if shared.by_source_type && !breakdown.source_type_breakdowns.is_empty() {
-                    push_source_type_breakdown_rows(
+                    push_breakdown_rows(
                         &mut table,
                         &breakdown.source_type_breakdowns,
                         compact,
                         shared,
+                        |b| b.source_type.clone(),
                     );
                 }
             }
         } else {
             if shared.breakdown && !row.model_breakdowns.is_empty() {
-                push_model_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared);
+                push_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared, |b| {
+                    short_model_name(&b.model_name)
+                });
             }
             if shared.by_plugin && !row.plugin_breakdowns.is_empty() {
-                push_plugin_breakdown_rows(&mut table, &row.plugin_breakdowns, compact, shared);
+                push_breakdown_rows(&mut table, &row.plugin_breakdowns, compact, shared, |b| {
+                    sanitize_terminal_text(&b.plugin_name)
+                });
             }
             if shared.by_skill && !row.skill_breakdowns.is_empty() {
-                push_skill_breakdown_rows(&mut table, &row.skill_breakdowns, compact, shared);
+                push_breakdown_rows(&mut table, &row.skill_breakdowns, compact, shared, |b| {
+                    sanitize_terminal_text(&b.skill_name)
+                });
             }
             if shared.by_source_type && !row.source_type_breakdowns.is_empty() {
-                push_source_type_breakdown_rows(
+                push_breakdown_rows(
                     &mut table,
                     &row.source_type_breakdowns,
                     compact,
                     shared,
+                    |b| b.source_type.clone(),
                 );
             }
         }
@@ -513,81 +525,30 @@ fn table_total_tokens(row: &AllRow) -> u64 {
         .saturating_add(row.cache_read_tokens)
 }
 
-fn push_model_breakdown_rows(
+/// Pushes one table row per breakdown bucket, formatting its label via `label`. Shared by the
+/// model/plugin/skill/source-type breakdown tables.
+fn push_breakdown_rows<T: NamedBreakdown>(
     table: &mut SimpleTable,
-    breakdowns: &[ModelBreakdown],
+    breakdowns: &[T],
     compact: bool,
     shared: &SharedArgs,
+    label: impl Fn(&T) -> String,
 ) {
     for b in breakdowns {
         let total = b
-            .input_tokens
-            .saturating_add(b.output_tokens)
-            .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
-        let model = color(
-            shared,
-            format!("- {}", short_model_name(&b.model_name)),
-            Color::Grey,
-        );
-        if compact {
-            let mut row = vec![
-                String::new(),
-                String::new(),
-                model,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
-            ];
-            if shared.no_cost {
-                row.pop();
-            }
-            table.push(row);
-        } else {
-            let mut row = vec![
-                String::new(),
-                String::new(),
-                model,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_number(b.cache_creation_tokens), Color::Grey),
-                color(shared, format_number(b.cache_read_tokens), Color::Grey),
-                color(shared, format_number(total), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
-            ];
-            if shared.no_cost {
-                row.pop();
-            }
-            table.push(row);
-        }
-    }
-}
-
-fn push_plugin_breakdown_rows(
-    table: &mut SimpleTable,
-    breakdowns: &[PluginBreakdown],
-    compact: bool,
-    shared: &SharedArgs,
-) {
-    for b in breakdowns {
-        let total = b
-            .input_tokens
-            .saturating_add(b.output_tokens)
-            .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
-        let name = color(
-            shared,
-            format!("- {}", sanitize_terminal_text(&b.plugin_name)),
-            Color::Grey,
-        );
+            .input_tokens()
+            .saturating_add(b.output_tokens())
+            .saturating_add(b.cache_creation_tokens())
+            .saturating_add(b.cache_read_tokens());
+        let name = color(shared, format!("- {}", label(b)), Color::Grey);
         if compact {
             let mut row = vec![
                 String::new(),
                 String::new(),
                 name,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
+                color(shared, format_number(b.input_tokens()), Color::Grey),
+                color(shared, format_number(b.output_tokens()), Color::Grey),
+                color(shared, format_currency(b.cost()), Color::Grey),
             ];
             if shared.no_cost {
                 row.pop();
@@ -598,108 +559,12 @@ fn push_plugin_breakdown_rows(
                 String::new(),
                 String::new(),
                 name,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_number(b.cache_creation_tokens), Color::Grey),
-                color(shared, format_number(b.cache_read_tokens), Color::Grey),
+                color(shared, format_number(b.input_tokens()), Color::Grey),
+                color(shared, format_number(b.output_tokens()), Color::Grey),
+                color(shared, format_number(b.cache_creation_tokens()), Color::Grey),
+                color(shared, format_number(b.cache_read_tokens()), Color::Grey),
                 color(shared, format_number(total), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
-            ];
-            if shared.no_cost {
-                row.pop();
-            }
-            table.push(row);
-        }
-    }
-}
-
-fn push_skill_breakdown_rows(
-    table: &mut SimpleTable,
-    breakdowns: &[SkillBreakdown],
-    compact: bool,
-    shared: &SharedArgs,
-) {
-    for b in breakdowns {
-        let total = b
-            .input_tokens
-            .saturating_add(b.output_tokens)
-            .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
-        let name = color(
-            shared,
-            format!("- {}", sanitize_terminal_text(&b.skill_name)),
-            Color::Grey,
-        );
-        if compact {
-            let mut row = vec![
-                String::new(),
-                String::new(),
-                name,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
-            ];
-            if shared.no_cost {
-                row.pop();
-            }
-            table.push(row);
-        } else {
-            let mut row = vec![
-                String::new(),
-                String::new(),
-                name,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_number(b.cache_creation_tokens), Color::Grey),
-                color(shared, format_number(b.cache_read_tokens), Color::Grey),
-                color(shared, format_number(total), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
-            ];
-            if shared.no_cost {
-                row.pop();
-            }
-            table.push(row);
-        }
-    }
-}
-
-fn push_source_type_breakdown_rows(
-    table: &mut SimpleTable,
-    breakdowns: &[SourceTypeBreakdown],
-    compact: bool,
-    shared: &SharedArgs,
-) {
-    for b in breakdowns {
-        let total = b
-            .input_tokens
-            .saturating_add(b.output_tokens)
-            .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
-        let name = color(shared, format!("- {}", b.source_type), Color::Grey);
-        if compact {
-            let mut row = vec![
-                String::new(),
-                String::new(),
-                name,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
-            ];
-            if shared.no_cost {
-                row.pop();
-            }
-            table.push(row);
-        } else {
-            let mut row = vec![
-                String::new(),
-                String::new(),
-                name,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_number(b.cache_creation_tokens), Color::Grey),
-                color(shared, format_number(b.cache_read_tokens), Color::Grey),
-                color(shared, format_number(total), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
+                color(shared, format_currency(b.cost()), Color::Grey),
             ];
             if shared.no_cost {
                 row.pop();

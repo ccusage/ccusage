@@ -157,6 +157,84 @@ pub struct SourceTypeBreakdown {
     pub missing_pricing: bool,
 }
 
+/// Shared shape of [`ModelBreakdown`], [`PluginBreakdown`], [`SkillBreakdown`], and
+/// [`SourceTypeBreakdown`], letting callers merge and aggregate any of them generically.
+pub trait NamedBreakdown {
+    fn key(&self) -> &str;
+    fn with_key(key: String) -> Self;
+    fn accumulate_from(&mut self, other: &Self);
+    fn cost(&self) -> f64;
+    fn input_tokens(&self) -> u64;
+    fn output_tokens(&self) -> u64;
+    fn cache_creation_tokens(&self) -> u64;
+    fn cache_read_tokens(&self) -> u64;
+    fn extra_total_tokens(&self) -> u64;
+}
+
+macro_rules! impl_named_breakdown {
+    ($ty:ty, $name_field:ident) => {
+        impl NamedBreakdown for $ty {
+            fn key(&self) -> &str {
+                &self.$name_field
+            }
+
+            fn with_key(key: String) -> Self {
+                Self {
+                    $name_field: key,
+                    ..Self::default()
+                }
+            }
+
+            fn accumulate_from(&mut self, other: &Self) {
+                self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+                self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+                self.cache_creation_tokens = self
+                    .cache_creation_tokens
+                    .saturating_add(other.cache_creation_tokens);
+                self.cache_read_tokens = self
+                    .cache_read_tokens
+                    .saturating_add(other.cache_read_tokens);
+                self.extra_total_tokens = self
+                    .extra_total_tokens
+                    .saturating_add(other.extra_total_tokens);
+                self.cost += other.cost;
+                if other.missing_pricing {
+                    self.missing_pricing = true;
+                }
+            }
+
+            fn cost(&self) -> f64 {
+                self.cost
+            }
+
+            fn input_tokens(&self) -> u64 {
+                self.input_tokens
+            }
+
+            fn output_tokens(&self) -> u64 {
+                self.output_tokens
+            }
+
+            fn cache_creation_tokens(&self) -> u64 {
+                self.cache_creation_tokens
+            }
+
+            fn cache_read_tokens(&self) -> u64 {
+                self.cache_read_tokens
+            }
+
+            fn extra_total_tokens(&self) -> u64 {
+                self.extra_total_tokens
+            }
+        }
+    };
+}
+
+impl_named_breakdown!(ModelBreakdown, model_name);
+impl_named_breakdown!(PluginBreakdown, plugin_name);
+impl_named_breakdown!(SkillBreakdown, skill_name);
+impl_named_breakdown!(SourceTypeBreakdown, source_type);
+
 #[derive(Debug, Clone)]
 pub struct LoadedEntry {
     pub data: UsageEntry,
