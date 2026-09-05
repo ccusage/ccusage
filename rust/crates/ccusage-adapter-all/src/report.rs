@@ -524,8 +524,7 @@ fn push_model_breakdown_rows(
             .input_tokens
             .saturating_add(b.output_tokens)
             .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens)
-            .saturating_add(b.extra_total_tokens);
+            .saturating_add(b.cache_read_tokens);
         let model = color(
             shared,
             format!("- {}", short_model_name(&b.model_name)),
@@ -575,8 +574,7 @@ fn push_plugin_breakdown_rows(
             .input_tokens
             .saturating_add(b.output_tokens)
             .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens)
-            .saturating_add(b.extra_total_tokens);
+            .saturating_add(b.cache_read_tokens);
         let name = color(
             shared,
             format!("- {}", sanitize_terminal_text(&b.plugin_name)),
@@ -626,8 +624,7 @@ fn push_skill_breakdown_rows(
             .input_tokens
             .saturating_add(b.output_tokens)
             .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens)
-            .saturating_add(b.extra_total_tokens);
+            .saturating_add(b.cache_read_tokens);
         let name = color(
             shared,
             format!("- {}", sanitize_terminal_text(&b.skill_name)),
@@ -677,8 +674,7 @@ fn push_source_type_breakdown_rows(
             .input_tokens
             .saturating_add(b.output_tokens)
             .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens)
-            .saturating_add(b.extra_total_tokens);
+            .saturating_add(b.cache_read_tokens);
         let name = color(shared, format!("- {}", b.source_type), Color::Grey);
         if compact {
             let mut row = vec![
