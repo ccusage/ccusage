@@ -4,6 +4,7 @@ on:
   issues:
     types:
       - opened
+      - labeled
   workflow_dispatch:
     inputs:
       issue_number:
@@ -26,7 +27,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  restore-protected:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled'
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout the base repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
+
+      - name: Restore an issue protected during automatic closure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: nu .github/scripts/contribution-gate.nu restore-protected-issue
+
   triage:
+    if: github.event_name == 'workflow_dispatch' || github.event.action == 'opened'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -97,7 +127,7 @@ jobs:
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["decision", "priority", "implementation", "reason"],
+              "required": ["decision", "priority", "implementation", "issue_kind", "reason"],
               "properties": {
                 "decision": {
                   "type": "string",
@@ -110,6 +140,10 @@ jobs:
                 "implementation": {
                   "type": "string",
                   "enum": ["create_pr", "none"]
+                },
+                "issue_kind": {
+                  "type": "string",
+                  "enum": ["supported_behavior_bug", "security", "maintenance", "documentation", "feature_request", "other"]
                 },
                 "reason": {
                   "type": "string",
@@ -173,6 +207,7 @@ jobs:
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
           ISSUE_AUTHOR: ${{ needs.triage.outputs.issue_author }}
           ISSUE_AUTHOR_ID: ${{ needs.triage.outputs.issue_author_id }}
+          FORCE_IMPLEMENTATION: ${{ inputs.force_implementation == true }}
         run: nu .github/scripts/contribution-gate.nu issue-implementation-request
 
   implement:
@@ -222,6 +257,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+          FORCE_IMPLEMENTATION: ${{ inputs.force_implementation == true }}
         run: nu .github/scripts/contribution-gate.nu issue-implementation-guard
 
       - name: Ask Pullfrog to implement the issue
@@ -426,6 +462,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+          FORCE_IMPLEMENTATION: ${{ inputs.force_implementation == true }}
           IMPLEMENTATION_BASE_SHA: ${{ needs.implement.outputs.base_sha }}
           IMPLEMENTATION_BRANCH: ${{ needs.apply.outputs.implementation_branch }}
           IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}

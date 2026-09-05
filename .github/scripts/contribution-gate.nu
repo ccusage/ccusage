@@ -4,7 +4,7 @@
 use ./contribution-gate/access.nu [issue-access pr-access]
 use ./contribution-gate/coauthor.nu [verify-coauthor]
 use ./contribution-gate/context.nu [issue-context]
-use ./contribution-gate/mutations.nu [issue-verdict pr-verdict]
+use ./contribution-gate/mutations.nu [issue-verdict pr-verdict restore-protected-issue]
 use ./contribution-gate/requests.nu [
     issue-implementation-guard
     issue-implementation-request
@@ -21,6 +21,7 @@ def main [operation: string]: nothing -> nothing {
         'issue-request' => issue-request
         'pr-request' => pr-request
         'issue-verdict' => issue-verdict
+        'restore-protected-issue' => restore-protected-issue
         'pr-verdict' => pr-verdict
         'issue-implementation-guard' => issue-implementation-guard
         'issue-implementation-request' => issue-implementation-request

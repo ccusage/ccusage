@@ -1,6 +1,7 @@
 use ./core.nu [
     COMMENT_MARKER
     PRIORITY_LABELS
+    TRIAGE_LABELS
     comment-body
     format-gh-error
     gh-api-body
@@ -13,10 +14,10 @@ use ./core.nu [
     required-env
     write-output
 ]
-use ./context.nu [require-open-issue]
+use ./context.nu [issue-protection-record require-open-issue]
 use ./verdict.nu [issue-verdict-record pr-verdict-record]
 
-def ensure-priority-label [repo: string, label: string, color: string]: nothing -> nothing {
+def ensure-label [repo: string, label: string, color: string]: nothing -> nothing {
     let endpoint = $"repos/($repo)/labels/($label)"
     let result = (gh-api-complete [$endpoint])
     if $result.exit_code == 0 {
@@ -31,14 +32,60 @@ def ensure-priority-label [repo: string, label: string, color: string]: nothing 
     gh-api-body POST $"repos/($repo)/labels" {name: $label, color: $color} | ignore
 }
 
-def ensure-priority-labels [repo: string]: nothing -> nothing {
+def ensure-gate-labels [repo: string]: nothing -> nothing {
     [
-        {name: 'priority:critical', color: b60205}
-        {name: 'priority:high', color: d93f0b}
-        {name: 'priority:medium', color: fbca04}
-        {name: 'priority:low', color: 0e8a16}
+        {name: 'priority:critical', color: 'b60205'}
+        {name: 'priority:high', color: 'd93f0b'}
+        {name: 'priority:medium', color: 'fbca04'}
+        {name: 'priority:low', color: '0e8a16'}
+        {name: 'triage:resolved', color: '0e8a16'}
+        {name: 'triage:maintainable', color: '1d76db'}
+        {name: 'triage:excluded', color: 'cfd3d7'}
+        {name: 'triage:needs-review', color: 'd4c5f9'}
     ]
-    | each {|label| ensure-priority-label $repo $label.name $label.color }
+    | each {|label| ensure-label $repo $label.name $label.color }
+    | ignore
+}
+
+def apply-triage-label [
+    repo: string
+    number: int
+    triage_label
+    --preserve-protected
+]: nothing -> nothing {
+    let labels = (
+        gh-api-json [
+            '--paginate'
+            '--slurp'
+            $"repos/($repo)/issues/($number)/labels?per_page=100"
+        ]
+        | flatten
+    )
+
+    if $triage_label != null {
+        require-open-issue | ignore
+        (gh-api-body
+            POST
+            $"repos/($repo)/issues/($number)/labels"
+            {
+                labels: [$triage_label]
+            }
+        ) | ignore
+    }
+
+    $labels
+    | where {|label|
+        let name = $label | get --optional name
+        let protected = (
+            $preserve_protected
+            and ($name in ['triage:maintainable' 'triage:needs-review'])
+        )
+        ($name in $TRIAGE_LABELS) and $name != $triage_label and not $protected
+    }
+    | each {|label|
+        require-open-issue | ignore
+        gh-api-delete $"repos/($repo)/issues/($number)/labels/($label.name)"
+    }
     | ignore
 }
 
@@ -164,29 +211,83 @@ export def upsert-comment [
     }
 }
 
-def close-issue [repo: string, number: int]: nothing -> nothing {
-    require-open-issue | ignore
-    gh-api-body PATCH $"repos/($repo)/issues/($number)" {state: closed} | ignore
+def close-issue [repo: string, number: int]: nothing -> bool {
+    let issue = require-open-issue
+    if $issue.protected_from_close {
+        return false
+    }
+    gh-api-body PATCH $"repos/($repo)/issues/($number)" {
+        state: closed
+        state_reason: not_planned
+    } | ignore
+    sleep 2sec
+    let closed_issue = gh-api-json [$"repos/($repo)/issues/($number)"]
+    let protection = issue-protection-record $closed_issue
+    if $protection.protected_from_close {
+        restore-protected-issue
+        false
+    } else {
+        true
+    }
+}
+
+export def restore-protected-issue []: nothing -> nothing {
+    let repo = repository
+    let number = issue-number
+    let issue = gh-api-json [$"repos/($repo)/issues/($number)"]
+    let protection = issue-protection-record $issue
+    let closed_by = $issue | get --optional closed_by.login
+    let should_restore = (
+        $protection.protected_from_close
+        and (($issue | get --optional state) == 'closed')
+        and (($issue | get --optional state_reason) == 'not_planned')
+        and $closed_by == 'github-actions[bot]'
+    )
+    if not $should_restore {
+        return
+    }
+
+    # GitHub cannot condition a close PATCH on labels, so this serialized label event repairs the final API race.
+    gh-api-body PATCH $"repos/($repo)/issues/($number)" {state: open} | ignore
+    ensure-gate-labels $repo
+    apply-triage-label $repo $number 'triage:needs-review'
+    let body = comment-body $COMMENT_MARKER 'A trusted bug, security, or maintainer-review label was added during automatic closure. The issue was reopened for maintainer review.'
+    upsert-comment $repo $number $body --require-open-issue
 }
 
 def close-pr [repo: string, number: int]: nothing -> nothing {
     gh-api-body PATCH $"repos/($repo)/pulls/($number)" {state: closed} | ignore
 }
 
-def issue-comment [verdict: record]: nothing -> string {
+export def issue-comment [verdict: record]: nothing -> string {
     let outcome = match $verdict.decision {
         close => 'closed by the contribution gate'
         needs_human => 'left open for maintainer review'
         _ if $verdict.implementation == 'create_pr' => 'kept open; Pullfrog will attempt a focused implementation PR'
         _ => 'kept open'
     }
-    comment-body $COMMENT_MARKER ([
-        $"Pullfrog triage: **($verdict.priority)**"
-        ''
-        $verdict.reason
-        ''
-        $"Decision: **($outcome)**."
-    ] | str join "\n")
+    let details = if $verdict.triage_label == 'triage:excluded' {
+        [
+            $"Pullfrog triage: **($verdict.priority)**"
+            ''
+            'Thanks for the proposal.'
+            ''
+            $verdict.reason
+            ''
+            'To keep the core CLI maintainable, new capabilities require explicit maintainer acceptance. Please do not open a core implementation PR unless a maintainer explicitly accepts this request. A fork or external wrapper remains welcome.'
+        ]
+    } else {
+        [
+            $"Pullfrog triage: **($verdict.priority)**"
+            ''
+            $verdict.reason
+        ]
+    }
+    comment-body $COMMENT_MARKER ((
+        $details
+        | append ''
+        | append $"Decision: **($outcome)**."
+    ) | str join "\n")
 }
 
 def pr-comment [verdict: record]: nothing -> string {
@@ -217,8 +318,10 @@ def report-failure [
 export def issue-verdict []: nothing -> nothing {
     let repo = repository
     let number = issue-number
-    require-open-issue | ignore
+    let issue = require-open-issue
     let close_allowed = (required-env CLOSE_ALLOWED) == 'true'
+    let protected_from_close = $issue.protected_from_close
+    let implementation_blocked = $issue.implementation_blocked
     let force_implementation = (optional-env FORCE_IMPLEMENTATION 'false') == 'true'
     let outcome = optional-env JUDGE_OUTCOME failure
     let result = optional-env RESULT ''
@@ -231,9 +334,9 @@ export def issue-verdict []: nothing -> nothing {
 
     let verdict = (try {
         if $force_implementation {
-            issue-verdict-record $result $close_allowed --force-implementation
+            issue-verdict-record $result $close_allowed $protected_from_close $implementation_blocked --force-implementation
         } else {
-            issue-verdict-record $result $close_allowed
+            issue-verdict-record $result $close_allowed $protected_from_close $implementation_blocked
         }
     } catch { null })
     if $verdict == null {
@@ -242,16 +345,39 @@ export def issue-verdict []: nothing -> nothing {
         exit 1
     }
 
-    ensure-priority-labels $repo
+    ensure-gate-labels $repo
     apply-priority-label $repo $number $verdict.priority
-    upsert-comment $repo $number (issue-comment $verdict) --require-open-issue
-    if $verdict.decision == 'close' and $close_allowed {
-        close-issue $repo $number
+    if $verdict.decision == 'close' or $verdict.implementation == 'create_pr' {
+        apply-triage-label $repo $number $verdict.triage_label --preserve-protected
+    } else {
+        apply-triage-label $repo $number $verdict.triage_label
     }
-    write-output decision $verdict.decision
-    write-output priority $verdict.priority
-    write-output reason $verdict.reason
-    write-output implementation $verdict.implementation
+    upsert-comment $repo $number (issue-comment $verdict) --require-open-issue
+
+    let final_verdict = if $verdict.decision == 'close' and $close_allowed {
+        if (close-issue $repo $number) {
+            $verdict
+        } else {
+            let current_issue = require-open-issue
+            let protected_verdict = (
+                issue-verdict-record
+                    $result
+                    $close_allowed
+                    $current_issue.protected_from_close
+                    $current_issue.implementation_blocked
+            )
+            apply-priority-label $repo $number $protected_verdict.priority
+            apply-triage-label $repo $number $protected_verdict.triage_label
+            upsert-comment $repo $number (issue-comment $protected_verdict) --require-open-issue
+            $protected_verdict
+        }
+    } else {
+        $verdict
+    }
+    write-output decision $final_verdict.decision
+    write-output priority $final_verdict.priority
+    write-output reason $final_verdict.reason
+    write-output implementation $final_verdict.implementation
 }
 
 export def pr-verdict []: nothing -> nothing {
