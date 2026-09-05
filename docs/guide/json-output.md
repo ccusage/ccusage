@@ -559,7 +559,9 @@ groups usage into `"active"` (main thread) and `"background"` (sidechain/subagen
 			"modelsUsed": ["claude-opus-4-1-20250805"],
 			"inputTokens": 277,
 			"outputTokens": 31456,
-			"totalTokens": 33269,
+			"cacheCreationTokens": 256,
+			"cacheReadTokens": 512,
+			"totalTokens": 32501,
 			"totalCost": 17.58,
 			"pluginBreakdowns": [
 				{
@@ -596,7 +598,9 @@ groups usage into `"active"` (main thread) and `"background"` (sidechain/subagen
 	"totals": {
 		"inputTokens": 277,
 		"outputTokens": 31456,
-		"totalTokens": 33269,
+		"cacheCreationTokens": 256,
+		"cacheReadTokens": 512,
+		"totalTokens": 32501,
 		"totalCost": 17.58
 	}
 }

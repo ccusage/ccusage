@@ -524,7 +524,8 @@ fn push_model_breakdown_rows(
             .input_tokens
             .saturating_add(b.output_tokens)
             .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
+            .saturating_add(b.cache_read_tokens)
+            .saturating_add(b.extra_total_tokens);
         let model = color(
             shared,
             format!("- {}", short_model_name(&b.model_name)),

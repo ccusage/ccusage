@@ -495,7 +495,8 @@ fn push_breakdown_rows(
             .input_tokens
             .saturating_add(breakdown.output_tokens)
             .saturating_add(breakdown.cache_creation_tokens)
-            .saturating_add(breakdown.cache_read_tokens);
+            .saturating_add(breakdown.cache_read_tokens)
+            .saturating_add(breakdown.extra_total_tokens);
         let mut values = vec![
             color(
                 shared,
