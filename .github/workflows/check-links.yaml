@@ -39,14 +39,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build documentation
         run: just docs::build
-      - name: Check generated documentation links
+      - name: Check local documentation links
         id: internal_links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: >-
             --no-progress --offline --include-fragments
             --root-dir docs/.vitepress/dist --fallback-extensions html --index-files index.html
-            'docs/.vitepress/dist/**/*.html'
+            README.md 'docs/.vitepress/dist/**/*.html'
           # Collect the existing failures before making internal links a gate.
           fail: false
           output: reports/internal-links.md
