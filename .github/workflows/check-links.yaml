@@ -26,6 +26,7 @@ jobs:
         with:
           args: >-
             --no-progress --scheme http --scheme https --root-dir .
+            --exclude-path "(^|/)(node_modules|\.vitepress)/"
             --exclude-all-private --max-concurrency 4 --max-retries 2 --timeout 20
             README.md 'docs/**/*.md'
           # External hosts can reject automated requests even when a link works.
