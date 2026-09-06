@@ -1,0 +1,57 @@
+name: Check documentation links
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: check-links-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check external documentation links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --no-progress --scheme http --scheme https --root-dir .
+            --exclude-all-private --max-concurrency 4 --max-retries 2 --timeout 20
+            README.md 'docs/**/*.md'
+          # External hosts can reject automated requests even when a link works.
+          fail: false
+          output: reports/external-links.md
+      - uses: ./.github/actions/setup-nix-cache
+      - name: Install documentation build tools
+        run: nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs nixpkgs#just
+      - run: pnpm install --frozen-lockfile
+      - name: Build documentation
+        run: just docs::build
+      - name: Check generated documentation links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --no-progress --offline --include-fragments
+            --root-dir docs/.vitepress/dist --fallback-extensions html --index-files index.html
+            'docs/.vitepress/dist/**/*.html'
+          # Collect the existing failures before making internal links a gate.
+          fail: false
+          output: reports/internal-links.md
+      - name: Upload link reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: link-check-reports
+          path: reports/*.md
+          if-no-files-found: error
+          retention-days: 14
