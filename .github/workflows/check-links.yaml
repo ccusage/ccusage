@@ -22,6 +22,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Check external documentation links
+        id: external_links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: >-
@@ -39,6 +40,7 @@ jobs:
       - name: Build documentation
         run: just docs::build
       - name: Check generated documentation links
+        id: internal_links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: >-
@@ -56,3 +58,19 @@ jobs:
           path: reports/*.md
           if-no-files-found: error
           retention-days: 14
+      - name: Fail on checker execution errors
+        if: always()
+        env:
+          EXTERNAL_EXIT_CODE: ${{ steps.external_links.outputs.exit_code }}
+          INTERNAL_EXIT_CODE: ${{ steps.internal_links.outputs.exit_code }}
+        run: |
+          # Exit 2 reports link findings, which remain advisory.
+          for code in "$EXTERNAL_EXIT_CODE" "$INTERNAL_EXIT_CODE"; do
+            case "$code" in
+              0 | 2) ;;
+              *)
+                echo "::error::lychee did not complete normally (exit code: ${code:-missing})"
+                exit 1
+                ;;
+            esac
+          done
