@@ -4,12 +4,150 @@ use std::{
 };
 
 use crate::{
-    LoadedEntry, ModelBreakdown, Result, TimestampMs, TokenCounts, UsageSummary,
+    LoadedEntry, ModelBreakdown, PluginBreakdown, Result, SkillBreakdown, SourceTypeBreakdown,
+    TimestampMs, TokenCounts, TokenUsageRaw, UsageSummary,
     cli::{SharedArgs, SortOrder, WeekDay},
     cli_error,
     fast::{FxHashMap, FxHashSet},
     format_naive_date, format_rfc3339_millis, parse_iso_date,
 };
+
+/// Finds or inserts the breakdown bucket for `key`, returning a mutable reference to it.
+fn upsert_breakdown<'a, T>(
+    breakdowns: &'a mut Vec<T>,
+    indexes: &mut FxHashMap<String, usize>,
+    key: &str,
+    make: impl FnOnce(String) -> T,
+) -> &'a mut T {
+    let index = if let Some(&index) = indexes.get(key) {
+        index
+    } else {
+        let index = breakdowns.len();
+        indexes.insert(key.to_string(), index);
+        breakdowns.push(make(key.to_string()));
+        index
+    };
+    &mut breakdowns[index]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn accumulate_counters(
+    input_tokens: &mut u64,
+    output_tokens: &mut u64,
+    cache_creation_tokens: &mut u64,
+    cache_read_tokens: &mut u64,
+    extra_total_tokens: &mut u64,
+    cost: &mut f64,
+    missing_pricing: &mut bool,
+    usage: TokenUsageRaw,
+    entry_extra_total_tokens: u64,
+    entry_cost: f64,
+    entry_missing_pricing: bool,
+) {
+    *input_tokens = input_tokens.saturating_add(usage.input_tokens);
+    *output_tokens = output_tokens.saturating_add(usage.output_tokens);
+    *cache_creation_tokens =
+        cache_creation_tokens.saturating_add(usage.cache_creation_token_count());
+    *cache_read_tokens = cache_read_tokens.saturating_add(usage.cache_read_input_tokens);
+    *extra_total_tokens = extra_total_tokens.saturating_add(entry_extra_total_tokens);
+    *cost += entry_cost;
+    if entry_missing_pricing {
+        *missing_pricing = true;
+    }
+}
+
+/// Buckets one entry's usage into the plugin/skill/source-type breakdown vectors shared by
+/// [`UsageAccumulator`] and the Claude adapter's streaming `DailyAccumulator`.
+#[allow(clippy::too_many_arguments)]
+pub fn accumulate_attribution_breakdowns(
+    plugin_breakdowns: &mut Vec<PluginBreakdown>,
+    plugin_indexes: &mut FxHashMap<String, usize>,
+    skill_breakdowns: &mut Vec<SkillBreakdown>,
+    skill_indexes: &mut FxHashMap<String, usize>,
+    source_type_breakdowns: &mut Vec<SourceTypeBreakdown>,
+    source_type_indexes: &mut FxHashMap<String, usize>,
+    plugin: Option<&str>,
+    skill: Option<&str>,
+    is_sidechain: Option<bool>,
+    usage: TokenUsageRaw,
+    extra_total_tokens: u64,
+    cost: f64,
+    missing_pricing: bool,
+) {
+    let plugin_key = plugin
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unattributed");
+    let plugin_breakdown = upsert_breakdown(plugin_breakdowns, plugin_indexes, plugin_key, |key| {
+        PluginBreakdown {
+            plugin_name: key,
+            ..PluginBreakdown::default()
+        }
+    });
+    accumulate_counters(
+        &mut plugin_breakdown.input_tokens,
+        &mut plugin_breakdown.output_tokens,
+        &mut plugin_breakdown.cache_creation_tokens,
+        &mut plugin_breakdown.cache_read_tokens,
+        &mut plugin_breakdown.extra_total_tokens,
+        &mut plugin_breakdown.cost,
+        &mut plugin_breakdown.missing_pricing,
+        usage,
+        extra_total_tokens,
+        cost,
+        missing_pricing,
+    );
+
+    let skill_key = skill
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unattributed");
+    let skill_breakdown = upsert_breakdown(skill_breakdowns, skill_indexes, skill_key, |key| {
+        SkillBreakdown {
+            skill_name: key,
+            ..SkillBreakdown::default()
+        }
+    });
+    accumulate_counters(
+        &mut skill_breakdown.input_tokens,
+        &mut skill_breakdown.output_tokens,
+        &mut skill_breakdown.cache_creation_tokens,
+        &mut skill_breakdown.cache_read_tokens,
+        &mut skill_breakdown.extra_total_tokens,
+        &mut skill_breakdown.cost,
+        &mut skill_breakdown.missing_pricing,
+        usage,
+        extra_total_tokens,
+        cost,
+        missing_pricing,
+    );
+
+    let source_type_key = if is_sidechain == Some(true) {
+        "background"
+    } else {
+        "active"
+    };
+    let source_type_breakdown = upsert_breakdown(
+        source_type_breakdowns,
+        source_type_indexes,
+        source_type_key,
+        |key| SourceTypeBreakdown {
+            source_type: key,
+            ..SourceTypeBreakdown::default()
+        },
+    );
+    accumulate_counters(
+        &mut source_type_breakdown.input_tokens,
+        &mut source_type_breakdown.output_tokens,
+        &mut source_type_breakdown.cache_creation_tokens,
+        &mut source_type_breakdown.cache_read_tokens,
+        &mut source_type_breakdown.extra_total_tokens,
+        &mut source_type_breakdown.cost,
+        &mut source_type_breakdown.missing_pricing,
+        usage,
+        extra_total_tokens,
+        cost,
+        missing_pricing,
+    );
+}
 
 pub fn summarize_by_key<F, M>(
     entries: &[LoadedEntry],
@@ -45,6 +183,12 @@ struct UsageAccumulator {
     models: Vec<String>,
     breakdowns: Vec<ModelBreakdown>,
     breakdown_indexes: FxHashMap<String, usize>,
+    plugin_breakdowns: Vec<PluginBreakdown>,
+    plugin_breakdown_indexes: FxHashMap<String, usize>,
+    skill_breakdowns: Vec<SkillBreakdown>,
+    skill_breakdown_indexes: FxHashMap<String, usize>,
+    source_type_breakdowns: Vec<SourceTypeBreakdown>,
+    source_type_breakdown_indexes: FxHashMap<String, usize>,
 }
 
 impl UsageAccumulator {
@@ -94,10 +238,32 @@ impl UsageAccumulator {
                 breakdown.missing_pricing = true;
             }
         }
+
+        accumulate_attribution_breakdowns(
+            &mut self.plugin_breakdowns,
+            &mut self.plugin_breakdown_indexes,
+            &mut self.skill_breakdowns,
+            &mut self.skill_breakdown_indexes,
+            &mut self.source_type_breakdowns,
+            &mut self.source_type_breakdown_indexes,
+            entry.data.attribution_plugin.as_deref(),
+            entry.data.attribution_skill.as_deref(),
+            entry.data.is_sidechain,
+            usage,
+            entry.extra_total_tokens,
+            entry.cost,
+            entry.missing_pricing_model.is_some(),
+        );
     }
 
     fn into_summary(mut self) -> UsageSummary {
         self.breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        self.plugin_breakdowns
+            .sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        self.skill_breakdowns
+            .sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        self.source_type_breakdowns
+            .sort_by(|a, b| b.cost.total_cmp(&a.cost));
         UsageSummary {
             date: None,
             month: None,
@@ -116,6 +282,9 @@ impl UsageAccumulator {
             message_count: self.message_count,
             models_used: self.models,
             model_breakdowns: self.breakdowns,
+            plugin_breakdowns: self.plugin_breakdowns,
+            skill_breakdowns: self.skill_breakdowns,
+            source_type_breakdowns: self.source_type_breakdowns,
             project: None,
             versions: None,
         }
@@ -224,11 +393,17 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
         message_count: None,
         models_used: Vec::new(),
         model_breakdowns: Vec::new(),
+        plugin_breakdowns: Vec::new(),
+        skill_breakdowns: Vec::new(),
+        source_type_breakdowns: Vec::new(),
         project: None,
         versions: None,
     };
     let mut seen_models = FxHashSet::default();
     let mut breakdown_indexes = FxHashMap::<String, usize>::default();
+    let mut plugin_breakdown_indexes = FxHashMap::<String, usize>::default();
+    let mut skill_breakdown_indexes = FxHashMap::<String, usize>::default();
+    let mut source_type_breakdown_indexes = FxHashMap::<String, usize>::default();
 
     for row in rows {
         summary.input_tokens = summary.input_tokens.saturating_add(row.input_tokens);
@@ -281,9 +456,101 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
             breakdown.cost += item.cost;
             breakdown.missing_pricing |= item.missing_pricing;
         }
+        for item in &row.plugin_breakdowns {
+            let index = if let Some(index) = plugin_breakdown_indexes.get(item.plugin_name.as_str())
+            {
+                *index
+            } else {
+                let index = summary.plugin_breakdowns.len();
+                plugin_breakdown_indexes.insert(item.plugin_name.clone(), index);
+                summary.plugin_breakdowns.push(PluginBreakdown {
+                    plugin_name: item.plugin_name.clone(),
+                    ..PluginBreakdown::default()
+                });
+                index
+            };
+            let breakdown = &mut summary.plugin_breakdowns[index];
+            breakdown.input_tokens = breakdown.input_tokens.saturating_add(item.input_tokens);
+            breakdown.output_tokens = breakdown.output_tokens.saturating_add(item.output_tokens);
+            breakdown.cache_creation_tokens = breakdown
+                .cache_creation_tokens
+                .saturating_add(item.cache_creation_tokens);
+            breakdown.cache_read_tokens = breakdown
+                .cache_read_tokens
+                .saturating_add(item.cache_read_tokens);
+            breakdown.extra_total_tokens = breakdown
+                .extra_total_tokens
+                .saturating_add(item.extra_total_tokens);
+            breakdown.cost += item.cost;
+            breakdown.missing_pricing |= item.missing_pricing;
+        }
+        for item in &row.skill_breakdowns {
+            let index = if let Some(index) = skill_breakdown_indexes.get(item.skill_name.as_str()) {
+                *index
+            } else {
+                let index = summary.skill_breakdowns.len();
+                skill_breakdown_indexes.insert(item.skill_name.clone(), index);
+                summary.skill_breakdowns.push(SkillBreakdown {
+                    skill_name: item.skill_name.clone(),
+                    ..SkillBreakdown::default()
+                });
+                index
+            };
+            let breakdown = &mut summary.skill_breakdowns[index];
+            breakdown.input_tokens = breakdown.input_tokens.saturating_add(item.input_tokens);
+            breakdown.output_tokens = breakdown.output_tokens.saturating_add(item.output_tokens);
+            breakdown.cache_creation_tokens = breakdown
+                .cache_creation_tokens
+                .saturating_add(item.cache_creation_tokens);
+            breakdown.cache_read_tokens = breakdown
+                .cache_read_tokens
+                .saturating_add(item.cache_read_tokens);
+            breakdown.extra_total_tokens = breakdown
+                .extra_total_tokens
+                .saturating_add(item.extra_total_tokens);
+            breakdown.cost += item.cost;
+            breakdown.missing_pricing |= item.missing_pricing;
+        }
+        for item in &row.source_type_breakdowns {
+            let index =
+                if let Some(index) = source_type_breakdown_indexes.get(item.source_type.as_str()) {
+                    *index
+                } else {
+                    let index = summary.source_type_breakdowns.len();
+                    source_type_breakdown_indexes.insert(item.source_type.clone(), index);
+                    summary.source_type_breakdowns.push(SourceTypeBreakdown {
+                        source_type: item.source_type.clone(),
+                        ..SourceTypeBreakdown::default()
+                    });
+                    index
+                };
+            let breakdown = &mut summary.source_type_breakdowns[index];
+            breakdown.input_tokens = breakdown.input_tokens.saturating_add(item.input_tokens);
+            breakdown.output_tokens = breakdown.output_tokens.saturating_add(item.output_tokens);
+            breakdown.cache_creation_tokens = breakdown
+                .cache_creation_tokens
+                .saturating_add(item.cache_creation_tokens);
+            breakdown.cache_read_tokens = breakdown
+                .cache_read_tokens
+                .saturating_add(item.cache_read_tokens);
+            breakdown.extra_total_tokens = breakdown
+                .extra_total_tokens
+                .saturating_add(item.extra_total_tokens);
+            breakdown.cost += item.cost;
+            breakdown.missing_pricing |= item.missing_pricing;
+        }
     }
     summary
         .model_breakdowns
+        .sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    summary
+        .plugin_breakdowns
+        .sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    summary
+        .skill_breakdowns
+        .sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    summary
+        .source_type_breakdowns
         .sort_by(|a, b| b.cost.total_cmp(&a.cost));
     summary
 }
@@ -659,6 +926,122 @@ mod tests {
         assert_eq!(row.model_breakdowns[0].cost, 0.05);
     }
 
+    #[test]
+    fn accumulates_plugin_skill_and_source_type_breakdowns_with_unattributed_and_active_defaults() {
+        let mut accumulator = SessionAccumulator::default();
+        let mut attributed = loaded_entry(LoadedEntryFixture {
+            date: "2026-01-02",
+            timestamp: 1_767_316_800_000,
+            session_id: "session-a",
+            project_path: "/workspace/project",
+            model: Some("claude-sonnet-4-20250514"),
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            extra_total_tokens: 0,
+            cost: 0.1,
+            credits: None,
+            message_count: Some(1),
+            version: Some("1.0.0"),
+            missing_pricing_model: None,
+        });
+        attributed.data.attribution_plugin = Some("aws".to_string());
+        attributed.data.attribution_skill = Some("superpowers:brainstorming".to_string());
+        attributed.data.is_sidechain = Some(true);
+        accumulator.add_entry(&attributed);
+
+        let mut plain = loaded_entry(LoadedEntryFixture {
+            date: "2026-01-02",
+            timestamp: 1_767_316_801_000,
+            session_id: "session-a",
+            project_path: "/workspace/project",
+            model: Some("claude-sonnet-4-20250514"),
+            input_tokens: 20,
+            output_tokens: 10,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            extra_total_tokens: 0,
+            cost: 0.02,
+            credits: None,
+            message_count: Some(1),
+            version: Some("1.0.0"),
+            missing_pricing_model: None,
+        });
+        plain.data.is_sidechain = Some(false);
+        accumulator.add_entry(&plain);
+
+        let row = accumulator.into_summary().unwrap();
+
+        assert_eq!(row.plugin_breakdowns.len(), 2);
+        assert!(row.plugin_breakdowns.iter().any(|b| b.plugin_name == "aws"));
+        assert!(
+            row.plugin_breakdowns
+                .iter()
+                .any(|b| b.plugin_name == "unattributed")
+        );
+        assert_eq!(row.skill_breakdowns.len(), 2);
+        assert_eq!(row.source_type_breakdowns.len(), 2);
+        assert!(
+            row.source_type_breakdowns
+                .iter()
+                .any(|b| b.source_type == "background" && b.input_tokens == 100)
+        );
+        assert!(
+            row.source_type_breakdowns
+                .iter()
+                .any(|b| b.source_type == "active" && b.input_tokens == 20)
+        );
+    }
+
+    #[test]
+    fn bucket_aggregation_merges_plugin_skill_and_source_type_breakdowns_across_rows() {
+        let mut first = summary_row(SummaryFixture {
+            date: Some("2026-01-01"),
+            model: "claude-sonnet-4-20250514",
+            cost: 0.1,
+            input_tokens: 100,
+        });
+        first.plugin_breakdowns = vec![PluginBreakdown {
+            plugin_name: "aws".to_string(),
+            input_tokens: 100,
+            cost: 0.1,
+            ..PluginBreakdown::default()
+        }];
+        first.source_type_breakdowns = vec![SourceTypeBreakdown {
+            source_type: "active".to_string(),
+            input_tokens: 100,
+            cost: 0.1,
+            ..SourceTypeBreakdown::default()
+        }];
+        let mut second = summary_row(SummaryFixture {
+            date: Some("2026-01-02"),
+            model: "claude-sonnet-4-20250514",
+            cost: 0.2,
+            input_tokens: 50,
+        });
+        second.plugin_breakdowns = vec![PluginBreakdown {
+            plugin_name: "aws".to_string(),
+            input_tokens: 50,
+            cost: 0.2,
+            ..PluginBreakdown::default()
+        }];
+        second.source_type_breakdowns = vec![SourceTypeBreakdown {
+            source_type: "background".to_string(),
+            input_tokens: 50,
+            cost: 0.2,
+            ..SourceTypeBreakdown::default()
+        }];
+
+        let weekly =
+            summarize_summaries_by_bucket(&[first, second], BucketKind::Weekly, WeekDay::Monday);
+
+        assert_eq!(weekly.len(), 1);
+        assert_eq!(weekly[0].plugin_breakdowns.len(), 1);
+        assert_eq!(weekly[0].plugin_breakdowns[0].input_tokens, 150);
+        assert_eq!(weekly[0].source_type_breakdowns.len(), 2);
+    }
+
     struct LoadedEntryFixture {
         date: &'static str,
         timestamp: i64,
@@ -701,6 +1084,8 @@ mod tests {
                 request_id: None,
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp,
             date: fixture.date.to_string(),
@@ -752,6 +1137,9 @@ mod tests {
                 cost: fixture.cost,
                 missing_pricing: false,
             }],
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         }

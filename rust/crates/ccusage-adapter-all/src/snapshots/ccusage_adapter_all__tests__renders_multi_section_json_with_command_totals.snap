@@ -1,6 +1,6 @@
 ---
-source: crates/ccusage/src/adapter/all/tests.rs
-assertion_line: 466
+source: crates/ccusage-adapter-all/src/tests.rs
+assertion_line: 562
 expression: "serde_json::to_string_pretty(&report).unwrap()"
 ---
 {
@@ -21,6 +21,9 @@ expression: "serde_json::to_string_pretty(&report).unwrap()"
       ],
       "outputTokens": 20,
       "period": "2026-01-02",
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.01,
       "totalTokens": 120
     }
@@ -42,6 +45,9 @@ expression: "serde_json::to_string_pretty(&report).unwrap()"
       ],
       "outputTokens": 20,
       "period": "2026-01",
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.01,
       "totalTokens": 120
     }
@@ -61,6 +67,9 @@ expression: "serde_json::to_string_pretty(&report).unwrap()"
       ],
       "outputTokens": 20,
       "period": "session-a",
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.01,
       "totalTokens": 120
     }

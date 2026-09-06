@@ -10,12 +10,14 @@ use serde::{
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, ModelBreakdown, Result, SimpleTable, UsageSummary,
+    Align, Color, NamedBreakdown, Result, SimpleTable, UsageSummary,
     cli::{AgentReportKind, SharedArgs, SortOrder},
     cli_error, color, format_currency, format_models_multiline, format_number, json_float,
     output::strip_cost_json,
-    print_box_title, short_model_name, should_use_compact_layout,
+    print_box_title, sanitize_terminal_text, short_model_name, should_use_compact_layout,
 };
+#[cfg(test)]
+use crate::{PluginBreakdown, SkillBreakdown, SourceTypeBreakdown};
 
 use super::types::AllRow;
 
@@ -167,6 +169,9 @@ fn agent_json(row: &AllRow) -> Value {
         "totalTokens": row.total_tokens,
         "totalCost": json_float(row.total_cost),
         "modelBreakdowns": row.model_breakdowns,
+        "pluginBreakdowns": row.plugin_breakdowns,
+        "skillBreakdowns": row.skill_breakdowns,
+        "sourceTypeBreakdowns": row.source_type_breakdowns,
     })
 }
 
@@ -235,16 +240,67 @@ pub(super) fn print_table(
             for breakdown in agent_breakdowns {
                 table.push(all_table_row(breakdown, compact, true, shared.no_cost));
                 if shared.breakdown && !breakdown.model_breakdowns.is_empty() {
-                    push_model_breakdown_rows(
+                    push_breakdown_rows(
                         &mut table,
                         &breakdown.model_breakdowns,
                         compact,
                         shared,
+                        |b| short_model_name(&b.model_name),
+                    );
+                }
+                if shared.by_plugin && !breakdown.plugin_breakdowns.is_empty() {
+                    push_breakdown_rows(
+                        &mut table,
+                        &breakdown.plugin_breakdowns,
+                        compact,
+                        shared,
+                        |b| sanitize_terminal_text(&b.plugin_name),
+                    );
+                }
+                if shared.by_skill && !breakdown.skill_breakdowns.is_empty() {
+                    push_breakdown_rows(
+                        &mut table,
+                        &breakdown.skill_breakdowns,
+                        compact,
+                        shared,
+                        |b| sanitize_terminal_text(&b.skill_name),
+                    );
+                }
+                if shared.by_source_type && !breakdown.source_type_breakdowns.is_empty() {
+                    push_breakdown_rows(
+                        &mut table,
+                        &breakdown.source_type_breakdowns,
+                        compact,
+                        shared,
+                        |b| b.source_type.clone(),
                     );
                 }
             }
-        } else if shared.breakdown && !row.model_breakdowns.is_empty() {
-            push_model_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared);
+        } else {
+            if shared.breakdown && !row.model_breakdowns.is_empty() {
+                push_breakdown_rows(&mut table, &row.model_breakdowns, compact, shared, |b| {
+                    short_model_name(&b.model_name)
+                });
+            }
+            if shared.by_plugin && !row.plugin_breakdowns.is_empty() {
+                push_breakdown_rows(&mut table, &row.plugin_breakdowns, compact, shared, |b| {
+                    sanitize_terminal_text(&b.plugin_name)
+                });
+            }
+            if shared.by_skill && !row.skill_breakdowns.is_empty() {
+                push_breakdown_rows(&mut table, &row.skill_breakdowns, compact, shared, |b| {
+                    sanitize_terminal_text(&b.skill_name)
+                });
+            }
+            if shared.by_source_type && !row.source_type_breakdowns.is_empty() {
+                push_breakdown_rows(
+                    &mut table,
+                    &row.source_type_breakdowns,
+                    compact,
+                    shared,
+                    |b| b.source_type.clone(),
+                );
+            }
         }
     }
     table.separator();
@@ -354,6 +410,9 @@ fn all_rows_as_usage_summaries(rows: &[AllRow]) -> Vec<UsageSummary> {
             message_count: None,
             models_used: row.models_used.clone(),
             model_breakdowns: row.model_breakdowns.clone(),
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         })
@@ -466,31 +525,30 @@ fn table_total_tokens(row: &AllRow) -> u64 {
         .saturating_add(row.cache_read_tokens)
 }
 
-fn push_model_breakdown_rows(
+/// Pushes one table row per breakdown bucket, formatting its label via `label`. Shared by the
+/// model/plugin/skill/source-type breakdown tables.
+fn push_breakdown_rows<T: NamedBreakdown>(
     table: &mut SimpleTable,
-    breakdowns: &[ModelBreakdown],
+    breakdowns: &[T],
     compact: bool,
     shared: &SharedArgs,
+    label: impl Fn(&T) -> String,
 ) {
     for b in breakdowns {
         let total = b
-            .input_tokens
-            .saturating_add(b.output_tokens)
-            .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
-        let model = color(
-            shared,
-            format!("- {}", short_model_name(&b.model_name)),
-            Color::Grey,
-        );
+            .input_tokens()
+            .saturating_add(b.output_tokens())
+            .saturating_add(b.cache_creation_tokens())
+            .saturating_add(b.cache_read_tokens());
+        let name = color(shared, format!("- {}", label(b)), Color::Grey);
         if compact {
             let mut row = vec![
                 String::new(),
                 String::new(),
-                model,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
+                name,
+                color(shared, format_number(b.input_tokens()), Color::Grey),
+                color(shared, format_number(b.output_tokens()), Color::Grey),
+                color(shared, format_currency(b.cost()), Color::Grey),
             ];
             if shared.no_cost {
                 row.pop();
@@ -500,13 +558,17 @@ fn push_model_breakdown_rows(
             let mut row = vec![
                 String::new(),
                 String::new(),
-                model,
-                color(shared, format_number(b.input_tokens), Color::Grey),
-                color(shared, format_number(b.output_tokens), Color::Grey),
-                color(shared, format_number(b.cache_creation_tokens), Color::Grey),
-                color(shared, format_number(b.cache_read_tokens), Color::Grey),
+                name,
+                color(shared, format_number(b.input_tokens()), Color::Grey),
+                color(shared, format_number(b.output_tokens()), Color::Grey),
+                color(
+                    shared,
+                    format_number(b.cache_creation_tokens()),
+                    Color::Grey,
+                ),
+                color(shared, format_number(b.cache_read_tokens()), Color::Grey),
                 color(shared, format_number(total), Color::Grey),
-                color(shared, format_currency(b.cost), Color::Grey),
+                color(shared, format_currency(b.cost()), Color::Grey),
             ];
             if shared.no_cost {
                 row.pop();
@@ -614,5 +676,65 @@ fn agent_label(agent: &str) -> &str {
         "grok" => "Grok",
         "zcode" => "ZCode",
         _ => agent,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_claude_agent_rows_show_unattributed_and_active_defaults_in_json() {
+        let row = AllRow {
+            period: "2026-01-02".to_string(),
+            agent: "codex",
+            models_used: vec!["gpt-5.2-codex".to_string()],
+            input_tokens: 20,
+            output_tokens: 10,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            total_tokens: 30,
+            total_cost: 0.02,
+            metadata: None,
+            metadata_agents: None,
+            agent_breakdowns: None,
+            model_breakdowns: Vec::new(),
+            plugin_breakdowns: vec![PluginBreakdown {
+                plugin_name: "unattributed".to_string(),
+                input_tokens: 20,
+                output_tokens: 10,
+                cost: 0.02,
+                ..PluginBreakdown::default()
+            }],
+            skill_breakdowns: vec![SkillBreakdown {
+                skill_name: "unattributed".to_string(),
+                input_tokens: 20,
+                output_tokens: 10,
+                cost: 0.02,
+                ..SkillBreakdown::default()
+            }],
+            source_type_breakdowns: vec![SourceTypeBreakdown {
+                source_type: "active".to_string(),
+                input_tokens: 20,
+                output_tokens: 10,
+                cost: 0.02,
+                ..SourceTypeBreakdown::default()
+            }],
+        };
+
+        let value = agent_json(&row);
+
+        assert_eq!(
+            value["pluginBreakdowns"][0]["pluginName"],
+            serde_json::json!("unattributed")
+        );
+        assert_eq!(
+            value["skillBreakdowns"][0]["skillName"],
+            serde_json::json!("unattributed")
+        );
+        assert_eq!(
+            value["sourceTypeBreakdowns"][0]["sourceType"],
+            serde_json::json!("active")
+        );
     }
 }

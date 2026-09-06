@@ -263,6 +263,8 @@ fn usage_entry_to_loaded(
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
+        attribution_plugin: None,
+        attribution_skill: None,
     };
     let cost = calculate_cost_for_usage_at(
         Some(&entry.model),

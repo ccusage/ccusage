@@ -219,6 +219,8 @@ fn message_value_to_entry_inner(
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
+        attribution_plugin: None,
+        attribution_skill: None,
     };
     let cost_usage = TokenUsageRaw {
         output_tokens: usage.output_tokens.saturating_add(extra_total_tokens),

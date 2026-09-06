@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/output.rs
+source: crates/ccusage-core/src/output.rs
 expression: "group_project_output(&[named, unknown, other])"
 ---
 {
@@ -32,6 +32,36 @@ expression: "group_project_output(&[named, unknown, other])"
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 567,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 10,
+          "cost": 0.3,
+          "inputTokens": 900,
+          "outputTokens": 300,
+          "pluginName": "aws"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 10,
+          "cost": 0.3,
+          "inputTokens": 900,
+          "outputTokens": 300,
+          "skillName": "superpowers:brainstorming"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 89,
+          "cacheReadTokens": 10,
+          "cost": 0.42,
+          "inputTokens": 1234,
+          "outputTokens": 567,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.42,
       "totalTokens": 1900
     }
@@ -66,7 +96,37 @@ expression: "group_project_output(&[named, unknown, other])"
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 567,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 10,
+          "cost": 0.3,
+          "inputTokens": 900,
+          "outputTokens": 300,
+          "pluginName": "aws"
+        }
+      ],
       "project": "workspace/api",
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 10,
+          "cost": 0.3,
+          "inputTokens": 900,
+          "outputTokens": 300,
+          "skillName": "superpowers:brainstorming"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 89,
+          "cacheReadTokens": 10,
+          "cost": 0.42,
+          "inputTokens": 1234,
+          "outputTokens": 567,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.42,
       "totalTokens": 1900
     }
@@ -100,7 +160,37 @@ expression: "group_project_output(&[named, unknown, other])"
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 567,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 10,
+          "cost": 0.3,
+          "inputTokens": 900,
+          "outputTokens": 300,
+          "pluginName": "aws"
+        }
+      ],
       "project": "workspace/web",
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 10,
+          "cost": 0.3,
+          "inputTokens": 900,
+          "outputTokens": 300,
+          "skillName": "superpowers:brainstorming"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 89,
+          "cacheReadTokens": 10,
+          "cost": 0.42,
+          "inputTokens": 1234,
+          "outputTokens": 567,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.42,
       "totalTokens": 1900
     }

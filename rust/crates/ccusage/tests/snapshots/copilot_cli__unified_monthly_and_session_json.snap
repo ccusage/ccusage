@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage/tests/copilot_cli.rs
+assertion_line: 51
 expression: "format!(\"Monthly JSON\\n{}\\nSession JSON\\n{}\",\nrun_cli(&fixture, [\"monthly\", \"--json\"]),\nrun_cli(&fixture, [\"session\", \"--json\"]),)"
 ---
 Monthly JSON
@@ -30,6 +31,36 @@ Monthly JSON
       ],
       "outputTokens": 94,
       "period": "2026-01",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0033625,
       "totalTokens": 307
     },
@@ -58,6 +89,36 @@ Monthly JSON
       ],
       "outputTokens": 38,
       "period": "2026-02",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.0007993750000000001,
+          "inputTokens": 72,
+          "outputTokens": 38,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.0007993750000000001,
+          "inputTokens": 72,
+          "outputTokens": 38,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.0007993750000000001,
+          "inputTokens": 72,
+          "outputTokens": 38,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0007993750000000001,
       "totalTokens": 135
     }
@@ -98,6 +159,36 @@ Session JSON
       ],
       "outputTokens": 94,
       "period": "session-a",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0033625,
       "totalTokens": 307
     },
@@ -124,6 +215,36 @@ Session JSON
       ],
       "outputTokens": 30,
       "period": "session-b",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.000661875,
+          "inputTokens": 65,
+          "outputTokens": 30,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.000661875,
+          "inputTokens": 65,
+          "outputTokens": 30,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.000661875,
+          "inputTokens": 65,
+          "outputTokens": 30,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.000661875,
       "totalTokens": 120
     },
@@ -150,6 +271,36 @@ Session JSON
       ],
       "outputTokens": 8,
       "period": "session-c",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001375,
+          "inputTokens": 7,
+          "outputTokens": 8,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001375,
+          "inputTokens": 7,
+          "outputTokens": 8,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001375,
+          "inputTokens": 7,
+          "outputTokens": 8,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0001375,
       "totalTokens": 15
     }

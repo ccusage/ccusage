@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage-adapter-all/src/tests.rs
+assertion_line: 680
 expression: "report_json(&daily.rows, AgentReportKind::Daily)"
 ---
 {
@@ -29,6 +30,36 @@ expression: "report_json(&daily.rows, AgentReportKind::Daily)"
       ],
       "outputTokens": 10,
       "period": "2099-01-02",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "outputTokens": 10,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "outputTokens": 10,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "outputTokens": 10,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.00015549999999999999,
       "totalTokens": 110
     },
@@ -57,6 +88,36 @@ expression: "report_json(&daily.rows, AgentReportKind::Daily)"
       ],
       "outputTokens": 20,
       "period": "2099-01-15",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "outputTokens": 20,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "outputTokens": 20,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "outputTokens": 20,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0003224,
       "totalTokens": 220
     },
@@ -85,6 +146,36 @@ expression: "report_json(&daily.rows, AgentReportKind::Daily)"
       ],
       "outputTokens": 5,
       "period": "2099-02-01",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0000806,
       "totalTokens": 55
     }

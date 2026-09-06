@@ -59,6 +59,11 @@ ccusage daily -j
 ccusage daily --breakdown
 ccusage daily -b
 
+# Show per-plugin, per-skill, and active/background breakdowns
+ccusage daily --by-plugin
+ccusage daily --by-skill
+ccusage daily --by-source-type
+
 # Hide cost columns and JSON cost fields
 ccusage daily --no-cost
 ccusage daily --json --no-cost
@@ -346,8 +351,15 @@ Many options have short aliases for convenience:
 | `--active`    | `-a`  | Active block only   |
 | `--recent`    | `-r`  | Recent blocks       |
 
+`--by-plugin`, `--by-skill`, and `--by-source-type` have no short alias. `--by-plugin` and
+`--by-skill` group usage by the plugin or skill that was active for each assistant turn (Claude
+Code only); entries without attribution, or from other agents, appear under `unattributed`.
+`--by-source-type` groups usage into `active` (main thread) and `background` (sidechain/subagent)
+buckets. See [JSON Output](/guide/json-output) for the corresponding JSON fields.
+
 ## Related Documentation
 
 - [Environment Variables](/guide/environment-variables) - Configure via environment
 - [Configuration Files](/guide/config-files) - Persistent configuration
 - [Cost Calculation Modes](/guide/cost-modes) - Understanding cost modes
+- [JSON Output](/guide/json-output) - Structured JSON output reference

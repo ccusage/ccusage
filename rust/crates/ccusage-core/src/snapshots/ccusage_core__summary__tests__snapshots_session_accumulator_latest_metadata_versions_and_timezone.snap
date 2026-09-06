@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/summary.rs
+source: crates/ccusage-core/src/summary.rs
 expression: row
 ---
 {
@@ -34,6 +34,36 @@ expression: row
       "cacheCreationTokens": 10,
       "cacheReadTokens": 5,
       "cost": 0.125
+    }
+  ],
+  "pluginBreakdowns": [
+    {
+      "pluginName": "unattributed",
+      "inputTokens": 120,
+      "outputTokens": 60,
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "cost": 0.375
+    }
+  ],
+  "skillBreakdowns": [
+    {
+      "skillName": "unattributed",
+      "inputTokens": 120,
+      "outputTokens": 60,
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "cost": 0.375
+    }
+  ],
+  "sourceTypeBreakdowns": [
+    {
+      "sourceType": "active",
+      "inputTokens": 120,
+      "outputTokens": 60,
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "cost": 0.375
     }
   ],
   "versions": [

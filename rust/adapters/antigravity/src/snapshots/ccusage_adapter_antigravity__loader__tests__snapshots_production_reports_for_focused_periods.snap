@@ -25,6 +25,36 @@ expression: reports
             "gemini-3-pro"
           ],
           "outputTokens": 30,
+          "pluginBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "pluginName": "unattributed"
+            }
+          ],
+          "skillBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "skillName": "unattributed"
+            }
+          ],
+          "sourceTypeBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "sourceType": "active"
+            }
+          ],
           "totalCost": 0.000187,
           "totalTokens": 165
         },
@@ -47,6 +77,36 @@ expression: reports
             "gemini-3.6-flash"
           ],
           "outputTokens": 50,
+          "pluginBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "pluginName": "unattributed"
+            }
+          ],
+          "skillBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "skillName": "unattributed"
+            }
+          ],
+          "sourceTypeBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "sourceType": "active"
+            }
+          ],
           "totalCost": 0.0008,
           "totalTokens": 250
         }
@@ -111,6 +171,36 @@ expression: reports
           ],
           "month": "2026-05",
           "outputTokens": 30,
+          "pluginBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "pluginName": "unattributed"
+            }
+          ],
+          "skillBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "skillName": "unattributed"
+            }
+          ],
+          "sourceTypeBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "sourceType": "active"
+            }
+          ],
           "totalCost": 0.000187,
           "totalTokens": 165
         },
@@ -133,6 +223,36 @@ expression: reports
           ],
           "month": "2026-06",
           "outputTokens": 50,
+          "pluginBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "pluginName": "unattributed"
+            }
+          ],
+          "skillBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "skillName": "unattributed"
+            }
+          ],
+          "sourceTypeBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "sourceType": "active"
+            }
+          ],
           "totalCost": 0.0008,
           "totalTokens": 250
         }
@@ -198,8 +318,38 @@ expression: reports
             "gemini-3-pro"
           ],
           "outputTokens": 30,
+          "pluginBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "pluginName": "unattributed"
+            }
+          ],
           "projectPath": "Antigravity",
           "sessionId": "first",
+          "skillBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "skillName": "unattributed"
+            }
+          ],
+          "sourceTypeBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "sourceType": "active"
+            }
+          ],
           "totalCost": 0.000187,
           "totalTokens": 165
         },
@@ -223,8 +373,38 @@ expression: reports
             "gemini-3.6-flash"
           ],
           "outputTokens": 50,
+          "pluginBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "pluginName": "unattributed"
+            }
+          ],
           "projectPath": "Antigravity",
           "sessionId": "second",
+          "skillBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "skillName": "unattributed"
+            }
+          ],
+          "sourceTypeBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "sourceType": "active"
+            }
+          ],
           "totalCost": 0.0008,
           "totalTokens": 250
         }
@@ -296,6 +476,36 @@ expression: reports
             "gemini-3-pro"
           ],
           "outputTokens": 30,
+          "pluginBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "pluginName": "unattributed"
+            }
+          ],
+          "skillBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "skillName": "unattributed"
+            }
+          ],
+          "sourceTypeBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "outputTokens": 30,
+              "sourceType": "active"
+            }
+          ],
           "totalCost": 0.000187,
           "totalTokens": 165,
           "week": "2026-05-04"
@@ -318,6 +528,36 @@ expression: reports
             "gemini-3.6-flash"
           ],
           "outputTokens": 50,
+          "pluginBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "pluginName": "unattributed"
+            }
+          ],
+          "skillBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "skillName": "unattributed"
+            }
+          ],
+          "sourceTypeBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "outputTokens": 50,
+              "sourceType": "active"
+            }
+          ],
           "totalCost": 0.0008,
           "totalTokens": 250,
           "week": "2026-06-08"

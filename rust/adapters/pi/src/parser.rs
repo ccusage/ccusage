@@ -396,6 +396,8 @@ fn read_session_file_data_with_context(
             request_id: None,
             is_api_error_message: None,
             is_sidechain: None,
+            attribution_plugin: None,
+            attribution_skill: None,
         };
         entries.push(LoadedEntry {
             date: format_date_tz(timestamp, tz),
