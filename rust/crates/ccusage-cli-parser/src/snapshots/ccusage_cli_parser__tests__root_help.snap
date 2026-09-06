@@ -31,6 +31,7 @@ COMMANDS:
   openclaw                   Show OpenClaw usage commands
   grok                       Show Grok Build CLI usage commands
   zcode                      Show ZCode usage commands
+  gjc                        Show GJC token usage commands
 
 For more info, run any command with the `--help` flag:
   ccusage daily --help
@@ -57,6 +58,7 @@ For more info, run any command with the `--help` flag:
   ccusage openclaw --help
   ccusage grok --help
   ccusage zcode --help
+  ccusage gjc --help
 
 OPTIONS:
   -j, --json                           Output in JSON format (default: false)

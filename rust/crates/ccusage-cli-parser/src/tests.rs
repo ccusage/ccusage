@@ -207,6 +207,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
         Some(Command::ZCode(args)) => agent_command_snapshot("zcode", args),
+        Some(Command::Gjc(args)) => agent_command_snapshot("gjc", args),
     }
 }
 
@@ -649,7 +650,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode",
+        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode", "gjc",
     ];
 
     for agent in agents {
@@ -1278,6 +1279,16 @@ fn parses_zcode_daily_options() {
     let cli = parse(&["ccusage", "zcode", "daily", "--json"]);
     let Some(Command::ZCode(args)) = cli.command else {
         panic!("expected zcode command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Daily);
+    assert!(args.shared.json);
+}
+
+#[test]
+fn parses_gjc_daily_options() {
+    let cli = parse(&["ccusage", "gjc", "daily", "--json"]);
+    let Some(Command::Gjc(args)) = cli.command else {
+        panic!("expected gjc command");
     };
     assert_eq!(args.kind, AgentReportKind::Daily);
     assert!(args.shared.json);

@@ -56,6 +56,8 @@ pub struct CcusageConfig {
     pub grok: Option<GrokConfig>,
     /// ZCode configuration.
     pub zcode: Option<ZCodeConfig>,
+    /// GJC configuration.
+    pub gjc: Option<GjcConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -350,6 +352,21 @@ pub struct ZCodeConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ZCodeCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GjcConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<GjcCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GjcCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
@@ -1133,6 +1150,7 @@ mod tests {
         assert_schema_properties(&schema, &["grok", "defaults"], &shared);
         assert_schema_properties(&schema, &["antigravity", "defaults"], &shared);
         assert_schema_properties(&schema, &["zcode", "defaults"], &shared);
+        assert_schema_properties(&schema, &["gjc", "defaults"], &shared);
     }
 
     #[test]
@@ -1197,6 +1215,7 @@ mod tests {
                 "defaults",
                 "droid",
                 "gemini",
+                "gjc",
                 "antigravity",
                 "goose",
                 "grok",

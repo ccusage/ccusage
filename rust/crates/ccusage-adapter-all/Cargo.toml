@@ -14,6 +14,7 @@ ccusage-adapter-common.workspace = true
 ccusage-adapter-copilot.workspace = true
 ccusage-adapter-droid.workspace = true
 ccusage-adapter-gemini.workspace = true
+ccusage-adapter-gjc.workspace = true
 ccusage-adapter-goose.workspace = true
 ccusage-adapter-grok.workspace = true
 ccusage-adapter-hermes.workspace = true
