@@ -4,7 +4,7 @@
 	"private": true,
 	"description": "Runtime dependencies for the sibling gen.ts, which runs models.dev's own generateCatalog under Bun. Keep these versions matching the `remeda` and `zod` entries in the pinned models-dev input's bun.lock.",
 	"dependencies": {
-		"remeda": "2.33.7",
+		"remeda": "2.45.0",
 		"zod": "3.24.2"
 	},
 	"devDependencies": {
