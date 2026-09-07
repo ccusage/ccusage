@@ -12,5 +12,5 @@
 		"preinstall": "npx only-allow pnpm"
 	},
 	"dependencies": {},
-	"packageManager": "pnpm@11.22.0"
+	"packageManager": "pnpm@11.25.0"
 }
