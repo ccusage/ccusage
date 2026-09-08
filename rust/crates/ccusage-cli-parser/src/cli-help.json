@@ -398,6 +398,15 @@
 			"default": "80"
 		},
 		{
+			"flags": "--git-branch",
+			"description": "Show the current git branch of the workspace",
+			"default": "false"
+		},
+		{
+			"flags": "--no-git-branch",
+			"description": "Negatable of --git-branch"
+		},
+		{
 			"flags": "-z, --timezone <timezone>",
 			"description": "Timezone for date grouping (IANA)"
 		},

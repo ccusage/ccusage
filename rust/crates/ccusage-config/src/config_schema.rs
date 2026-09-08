@@ -499,6 +499,8 @@ pub struct StatuslineSpecificOptions {
     pub context_low_threshold: Option<u64>,
     /// Percentage threshold for medium context warning.
     pub context_medium_threshold: Option<u64>,
+    /// Show the current git branch of the workspace.
+    pub git_branch: Option<bool>,
     /// Timezone for date grouping (IANA).
     pub timezone: Option<String>,
     /// Show statusline debug information.
@@ -671,6 +673,7 @@ impl StatuslineSpecificOptions {
             refresh_interval: u64_option(map, "refreshInterval"),
             context_low_threshold: u64_option(map, "contextLowThreshold"),
             context_medium_threshold: u64_option(map, "contextMediumThreshold"),
+            git_branch: bool_option(map, "gitBranch"),
             timezone: string_option(map, "timezone"),
             debug: bool_option(map, "debug"),
             model_label_aliases: hashmap_option(map, "modelLabelAliases"),
@@ -911,6 +914,7 @@ fn add_schema_defaults(schema: &mut Value) {
             ("refreshInterval", json!(1)),
             ("contextLowThreshold", json!(50)),
             ("contextMediumThreshold", json!(80)),
+            ("gitBranch", json!(false)),
             ("debug", json!(false)),
         ],
     );
@@ -1104,6 +1108,7 @@ mod tests {
                 "contextMediumThreshold",
                 "costSource",
                 "debug",
+                "gitBranch",
                 "modelLabelAliases",
                 "noCache",
                 "noOffline",

@@ -528,16 +528,84 @@ fn render_statusline(
 
     let model_label = resolve_model_label(&args.model_label_aliases, &hook.model.display_name);
     let model_segment = format_model_segment(model_label, hook.effort.as_ref());
+    let git_segment = if args.git_branch {
+        statusline_workspace_dir(hook)
+            .and_then(|dir| git_branch_for_dir(&dir))
+            .map(|branch| format!(" | 🌿 {branch}"))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     Ok(format!(
-        "🤖 {} | 💰 {} session / {} today / {}{} | 🧠 {}",
+        "🤖 {}{} | 💰 {} session / {} today / {}{} | 🧠 {}",
         model_segment,
+        git_segment,
         session_display,
         format_currency(today_cost),
         block_info,
         burn_rate_info,
         context_info.unwrap_or_else(|| "N/A".to_string())
     ))
+}
+
+/// Resolve the directory whose git repository the statusline reports.
+///
+/// Prefers the workspace directory Claude Code reports for the session, then
+/// the hook's `cwd`, and finally the process working directory so older Claude
+/// Code versions that omit both fields still resolve a branch.
+fn statusline_workspace_dir(hook: &StatuslineHook) -> Option<PathBuf> {
+    hook.workspace
+        .as_ref()
+        .and_then(|workspace| workspace.current_dir.as_deref())
+        .or(hook.cwd.as_deref())
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| env::current_dir().ok())
+}
+
+/// Format the git branch segment of the statusline.
+///
+/// Walks up from `dir` to the nearest `.git` entry and reads `HEAD` directly
+/// instead of spawning `git`, so the statusline stays fast and works without
+/// a git binary on `PATH`. Worktrees and submodules, whose `.git` is a file
+/// pointing at the real git directory, are followed. A symbolic `HEAD` yields
+/// the branch name; a detached `HEAD` yields the abbreviated commit hash in
+/// parentheses. Returns `None` outside a git repository.
+fn git_branch_for_dir(dir: &Path) -> Option<String> {
+    let git_dir = find_git_dir(dir)?;
+    let head = fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    let head = head.trim();
+    if let Some(reference) = head.strip_prefix("ref:") {
+        let reference = reference.trim();
+        let branch = reference.strip_prefix("refs/heads/").unwrap_or(reference);
+        return (!branch.is_empty()).then(|| branch.to_string());
+    }
+    if head.is_empty() {
+        return None;
+    }
+    let short: String = head.chars().take(7).collect();
+    Some(format!("({short})"))
+}
+
+/// Locate the git directory that owns `dir`, following `.git` files written
+/// by `git worktree` and submodules (`gitdir: <path>`).
+fn find_git_dir(dir: &Path) -> Option<PathBuf> {
+    dir.ancestors().find_map(|ancestor| {
+        let dot_git = ancestor.join(".git");
+        let metadata = fs::metadata(&dot_git).ok()?;
+        if metadata.is_dir() {
+            return Some(dot_git);
+        }
+        let content = fs::read_to_string(&dot_git).ok()?;
+        let target = content.trim().strip_prefix("gitdir:")?.trim();
+        let target = Path::new(target);
+        Some(if target.is_absolute() {
+            target.to_path_buf()
+        } else {
+            ancestor.join(target)
+        })
+    })
 }
 
 fn statusline_today_shared(
@@ -812,6 +880,16 @@ struct StatuslineHook {
     cost: Option<HookCost>,
     context_window: Option<HookContext>,
     effort: Option<HookEffort>,
+    /// Working directory of the Claude Code process.
+    cwd: Option<String>,
+    /// Workspace directories reported by Claude Code.
+    workspace: Option<HookWorkspace>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HookWorkspace {
+    /// Directory the session is currently operating in.
+    current_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1005,9 +1083,144 @@ mod tests {
                 context_window_size: 200_000,
             }),
             effort: None,
+            cwd: None,
+            workspace: None,
         };
         let output = render_statusline(&hook, &args, &shared).unwrap();
         assert!(output.contains("💰 $0.40 session"), "{output}");
+    }
+
+    #[test]
+    fn git_branch_reads_symbolic_head_from_git_directory() {
+        let fixture = fs_fixture!({
+            ".git/HEAD": "ref: refs/heads/feature/git-branch\n",
+        });
+
+        assert_eq!(
+            git_branch_for_dir(fixture.root()).as_deref(),
+            Some("feature/git-branch")
+        );
+    }
+
+    #[test]
+    fn git_branch_walks_up_to_the_enclosing_repository() {
+        let fixture = fs_fixture!({
+            ".git/HEAD": "ref: refs/heads/main\n",
+            "src/nested/.keep": "",
+        });
+
+        assert_eq!(
+            git_branch_for_dir(&fixture.path("src/nested")).as_deref(),
+            Some("main")
+        );
+    }
+
+    #[test]
+    fn git_branch_follows_worktree_gitdir_file() {
+        let fixture = fs_fixture!({
+            "main/.git/HEAD": "ref: refs/heads/main\n",
+            "main/.git/worktrees/wt/HEAD": "ref: refs/heads/worktree-branch\n",
+            "wt/.git": "gitdir: ../main/.git/worktrees/wt\n",
+        });
+
+        assert_eq!(
+            git_branch_for_dir(&fixture.path("wt")).as_deref(),
+            Some("worktree-branch")
+        );
+    }
+
+    #[test]
+    fn git_branch_shows_abbreviated_hash_when_head_is_detached() {
+        let fixture = fs_fixture!({
+            ".git/HEAD": "0123456789abcdef0123456789abcdef01234567\n",
+        });
+
+        assert_eq!(
+            git_branch_for_dir(fixture.root()).as_deref(),
+            Some("(0123456)")
+        );
+    }
+
+    #[test]
+    fn git_branch_is_absent_outside_a_repository() {
+        let fixture = fs_fixture!({
+            "src/.keep": "",
+        });
+
+        // A temp dir under a git checkout would still resolve, so only assert
+        // that nothing is found when no ancestor carries `.git`.
+        let has_git_ancestor = fixture
+            .root()
+            .ancestors()
+            .any(|dir| dir.join(".git").exists());
+        if !has_git_ancestor {
+            assert_eq!(git_branch_for_dir(&fixture.path("src")), None);
+        }
+    }
+
+    #[test]
+    fn statusline_workspace_dir_prefers_workspace_current_dir_over_cwd() {
+        let mut hook = statusline_hook_fixture("transcript.jsonl");
+        hook.cwd = Some("/from/cwd".to_string());
+        hook.workspace = Some(HookWorkspace {
+            current_dir: Some("/from/workspace".to_string()),
+        });
+        assert_eq!(
+            statusline_workspace_dir(&hook),
+            Some(PathBuf::from("/from/workspace"))
+        );
+
+        hook.workspace = None;
+        assert_eq!(
+            statusline_workspace_dir(&hook),
+            Some(PathBuf::from("/from/cwd"))
+        );
+    }
+
+    #[test]
+    fn statusline_shows_git_branch_segment_only_when_enabled() {
+        let fixture = fs_fixture!({
+            "repo/.git/HEAD": "ref: refs/heads/feature/statusline\n",
+            "transcript.jsonl": r#"{"type":"assistant","message":{"usage":{"input_tokens":1000}}}"#,
+        });
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let mut hook =
+            statusline_hook_fixture(fixture.path("transcript.jsonl").to_string_lossy().as_ref());
+        hook.cwd = Some(fixture.path("repo").to_string_lossy().into_owned());
+        let shared = SharedArgs {
+            offline: true,
+            ..SharedArgs::default()
+        };
+
+        let enabled = StatuslineArgs {
+            git_branch: true,
+            ..StatuslineArgs::default()
+        };
+        let output = render_statusline(&hook, &enabled, &shared).unwrap();
+        assert!(
+            output.starts_with("🤖 Test model | 🌿 feature/statusline | 💰 "),
+            "{output}"
+        );
+
+        let disabled = StatuslineArgs::default();
+        let output = render_statusline(&hook, &disabled, &shared).unwrap();
+        assert!(!output.contains("🌿"), "{output}");
+    }
+
+    fn statusline_hook_fixture(transcript_path: &str) -> StatuslineHook {
+        StatuslineHook {
+            session_id: "session".to_string(),
+            transcript_path: transcript_path.to_string(),
+            model: HookModel {
+                id: None,
+                display_name: "Test model".to_string(),
+            },
+            cost: None,
+            context_window: None,
+            effort: None,
+            cwd: None,
+            workspace: None,
+        }
     }
 
     #[test]

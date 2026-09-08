@@ -187,6 +187,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
             "refreshInterval": args.refresh_interval,
             "contextLowThreshold": args.context_low_threshold,
             "contextMediumThreshold": args.context_medium_threshold,
+            "gitBranch": args.git_branch,
             "config": args.config.as_ref().map(|path| path.to_string_lossy().to_string()),
             "debug": args.debug,
         }),
@@ -902,6 +903,7 @@ fn snapshots_representative_cli_parse_shapes() {
                 "45",
                 "--context-medium-threshold",
                 "75",
+                "--git-branch",
                 "--debug",
             ])),
         }),
@@ -1027,6 +1029,7 @@ fn parses_statusline_options() {
         "emoji-text",
         "--cost-source",
         "both",
+        "--git-branch",
     ]);
     let Some(Command::Statusline(args)) = cli.command else {
         panic!("expected statusline command");
@@ -1036,6 +1039,22 @@ fn parses_statusline_options() {
     assert_eq!(args.timezone.as_deref(), Some("Asia/Tokyo"));
     assert_eq!(args.visual_burn_rate, VisualBurnRate::EmojiText);
     assert_eq!(args.cost_source, CostSource::Both);
+    assert!(args.git_branch);
+}
+
+#[test]
+fn statusline_git_branch_is_off_by_default_and_negatable() {
+    let cli = parse(&["ccusage", "statusline"]);
+    let Some(Command::Statusline(args)) = cli.command else {
+        panic!("expected statusline command");
+    };
+    assert!(!args.git_branch);
+
+    let cli = parse(&["ccusage", "statusline", "--git-branch", "--no-git-branch"]);
+    let Some(Command::Statusline(args)) = cli.command else {
+        panic!("expected statusline command");
+    };
+    assert!(!args.git_branch);
 }
 
 #[test]

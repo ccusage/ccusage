@@ -248,6 +248,8 @@ fn parse_command(
                                 "Invalid value for --context-medium-threshold".to_string()
                             })?
                     }
+                    "--git-branch" => args.git_branch = true,
+                    "--no-git-branch" => args.git_branch = false,
                     "-z" | "--timezone" => args.timezone = Some(parser.value_for("--timezone")?),
                     "--config" => args.config = Some(PathBuf::from(parser.value_for("--config")?)),
                     "--debug" => args.debug = true,
