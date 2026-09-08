@@ -327,6 +327,7 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
     let cache_path = statusline_cache_path(&hook.session_id);
     let transcript_path = Path::new(&hook.transcript_path);
     let current_mtime = transcript_mtime_ms(transcript_path).unwrap_or_default();
+    let git_branch = resolve_statusline_git_branch(&hook, &args);
     let initial_cache = if cache_enabled {
         read_statusline_cache(&cache_path)
     } else {
@@ -334,25 +335,42 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
     };
 
     if let Some(cache) = initial_cache.as_ref()
-        && let Some(output) =
-            cached_statusline_output(cache, current_mtime, now_millis(), args.refresh_interval)
+        && let Some(output) = cached_statusline_output(
+            cache,
+            current_mtime,
+            git_branch.as_deref(),
+            now_millis(),
+            args.refresh_interval,
+        )
     {
         println!("{output}");
         return Ok(());
     }
 
     if cache_enabled {
-        mark_statusline_cache_updating(&cache_path, &hook, current_mtime, initial_cache.as_ref());
+        mark_statusline_cache_updating(
+            &cache_path,
+            &hook,
+            current_mtime,
+            git_branch.as_deref(),
+            initial_cache.as_ref(),
+        );
     }
 
-    let statusline_result = render_statusline(&hook, &args, &shared);
+    let statusline_result = render_statusline(&hook, &args, &shared, git_branch.as_deref());
     match statusline_result {
         Ok(statusline) => {
             println!("{statusline}");
             if cache_enabled {
                 write_statusline_cache(
                     &cache_path,
-                    StatuslineCache::completed(&hook, statusline, current_mtime, now_millis()),
+                    StatuslineCache::completed(
+                        &hook,
+                        statusline,
+                        current_mtime,
+                        git_branch,
+                        now_millis(),
+                    ),
                 );
             }
         }
@@ -415,6 +433,7 @@ fn render_statusline(
     hook: &StatuslineHook,
     args: &StatuslineArgs,
     shared: &SharedArgs,
+    git_branch: Option<&str>,
 ) -> Result<String> {
     let session_cost = match args.cost_source {
         CostSource::Cc => hook.cost.as_ref().map(|cost| cost.total_cost_usd),
@@ -528,14 +547,9 @@ fn render_statusline(
 
     let model_label = resolve_model_label(&args.model_label_aliases, &hook.model.display_name);
     let model_segment = format_model_segment(model_label, hook.effort.as_ref());
-    let git_segment = if args.git_branch {
-        statusline_workspace_dir(hook)
-            .and_then(|dir| git_branch_for_dir(&dir))
-            .map(|branch| format!(" | 🌿 {branch}"))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
+    let git_segment = git_branch
+        .map(|branch| format!(" | 🌿 {branch}"))
+        .unwrap_or_default();
 
     Ok(format!(
         "🤖 {}{} | 💰 {} session / {} today / {}{} | 🧠 {}",
@@ -547,6 +561,20 @@ fn render_statusline(
         burn_rate_info,
         context_info.unwrap_or_else(|| "N/A".to_string())
     ))
+}
+
+/// Resolve the git branch label for the statusline, or `None` when the
+/// segment is disabled or the workspace is not inside a repository.
+///
+/// Resolved before the cache check rather than during rendering: it costs a
+/// few file reads, and it has to take part in cache validity so a cached line
+/// neither hides a newly enabled segment nor keeps showing the previous
+/// branch after a checkout.
+fn resolve_statusline_git_branch(hook: &StatuslineHook, args: &StatuslineArgs) -> Option<String> {
+    if !args.git_branch {
+        return None;
+    }
+    statusline_workspace_dir(hook).and_then(|dir| git_branch_for_dir(&dir))
 }
 
 /// Resolve the directory whose git repository the statusline reports.
@@ -739,6 +767,11 @@ struct StatuslineCache {
     #[serde(rename = "isUpdating", default)]
     is_updating: bool,
     pid: Option<u32>,
+    /// Branch label rendered into `last_output`, `None` when the segment was
+    /// off or the workspace was outside a repository. Missing in caches written
+    /// by older versions, which deserializes as `None`.
+    #[serde(rename = "gitBranch", default)]
+    git_branch: Option<String>,
 }
 
 impl StatuslineCache {
@@ -746,6 +779,7 @@ impl StatuslineCache {
         hook: &StatuslineHook,
         last_output: String,
         transcript_mtime: u64,
+        git_branch: Option<String>,
         last_update_time: u64,
     ) -> Self {
         Self {
@@ -756,10 +790,16 @@ impl StatuslineCache {
             transcript_mtime,
             is_updating: false,
             pid: None,
+            git_branch,
         }
     }
 
-    fn updating(hook: &StatuslineHook, transcript_mtime: u64, previous: Option<&Self>) -> Self {
+    fn updating(
+        hook: &StatuslineHook,
+        transcript_mtime: u64,
+        git_branch: Option<&str>,
+        previous: Option<&Self>,
+    ) -> Self {
         let now = now_millis();
         Self {
             date: format_cache_date(now),
@@ -773,23 +813,26 @@ impl StatuslineCache {
             transcript_mtime,
             is_updating: true,
             pid: Some(std::process::id()),
+            git_branch: git_branch.map(str::to_string),
         }
     }
 }
 
-fn cached_statusline_output(
-    cache: &StatuslineCache,
+fn cached_statusline_output<'a>(
+    cache: &'a StatuslineCache,
     current_mtime: u64,
+    git_branch: Option<&str>,
     now: u64,
     refresh_interval: u64,
-) -> Option<&str> {
+) -> Option<&'a str> {
     if cache.last_output.is_empty() {
         return None;
     }
     let expired =
         now.saturating_sub(cache.last_update_time) >= refresh_interval.saturating_mul(1000);
     let file_modified = cache.transcript_mtime != current_mtime;
-    if expired || file_modified {
+    let branch_changed = cache.git_branch.as_deref() != git_branch;
+    if expired || file_modified || branch_changed {
         if cache.is_updating && cache.pid.is_some_and(process_is_alive) {
             return Some(cache.last_output.as_str());
         }
@@ -834,11 +877,12 @@ fn mark_statusline_cache_updating(
     path: &Path,
     hook: &StatuslineHook,
     transcript_mtime: u64,
+    git_branch: Option<&str>,
     previous: Option<&StatuslineCache>,
 ) {
     write_statusline_cache(
         path,
-        StatuslineCache::updating(hook, transcript_mtime, previous),
+        StatuslineCache::updating(hook, transcript_mtime, git_branch, previous),
     );
 }
 
@@ -1086,7 +1130,7 @@ mod tests {
             cwd: None,
             workspace: None,
         };
-        let output = render_statusline(&hook, &args, &shared).unwrap();
+        let output = render_statusline(&hook, &args, &shared, None).unwrap();
         assert!(output.contains("💰 $0.40 session"), "{output}");
     }
 
@@ -1196,14 +1240,17 @@ mod tests {
             git_branch: true,
             ..StatuslineArgs::default()
         };
-        let output = render_statusline(&hook, &enabled, &shared).unwrap();
+        let branch = resolve_statusline_git_branch(&hook, &enabled);
+        assert_eq!(branch.as_deref(), Some("feature/statusline"));
+        let output = render_statusline(&hook, &enabled, &shared, branch.as_deref()).unwrap();
         assert!(
             output.starts_with("🤖 Test model | 🌿 feature/statusline | 💰 "),
             "{output}"
         );
 
         let disabled = StatuslineArgs::default();
-        let output = render_statusline(&hook, &disabled, &shared).unwrap();
+        assert_eq!(resolve_statusline_git_branch(&hook, &disabled), None);
+        let output = render_statusline(&hook, &disabled, &shared, None).unwrap();
         assert!(!output.contains("🌿"), "{output}");
     }
 
@@ -1326,10 +1373,11 @@ mod tests {
             transcript_mtime: 123,
             is_updating: false,
             pid: None,
+            git_branch: None,
         };
 
         assert_eq!(
-            cached_statusline_output(&cache, 123, 10_500, 1),
+            cached_statusline_output(&cache, 123, None, 10_500, 1),
             Some("cached status")
         );
     }
@@ -1344,9 +1392,66 @@ mod tests {
             transcript_mtime: 123,
             is_updating: false,
             pid: None,
+            git_branch: None,
         };
 
-        assert_eq!(cached_statusline_output(&cache, 456, 10_500, 1), None);
+        assert_eq!(cached_statusline_output(&cache, 456, None, 10_500, 1), None);
+    }
+
+    #[test]
+    fn invalidates_statusline_cache_when_git_branch_changes() {
+        let mut cache = StatuslineCache {
+            date: "2026-01-01T00:00:00.000Z".to_string(),
+            last_output: "🤖 M | 🌿 main | 💰 ...".to_string(),
+            last_update_time: 10_000,
+            transcript_path: "/tmp/transcript.jsonl".to_string(),
+            transcript_mtime: 123,
+            is_updating: false,
+            pid: None,
+            git_branch: Some("main".to_string()),
+        };
+
+        // Same branch, fresh cache, unchanged transcript: still served.
+        assert_eq!(
+            cached_statusline_output(&cache, 123, Some("main"), 10_500, 1),
+            Some("🤖 M | 🌿 main | 💰 ...")
+        );
+        // Checked out another branch since the cache was written.
+        assert_eq!(
+            cached_statusline_output(&cache, 123, Some("feature"), 10_500, 1),
+            None
+        );
+        // Segment turned off since the cache was written.
+        assert_eq!(cached_statusline_output(&cache, 123, None, 10_500, 1), None);
+
+        // Cache from a run without the segment (or an older version) must not
+        // hide a newly enabled branch.
+        cache.git_branch = None;
+        assert_eq!(
+            cached_statusline_output(&cache, 123, Some("main"), 10_500, 1),
+            None
+        );
+    }
+
+    #[test]
+    fn statusline_cache_round_trips_git_branch_and_tolerates_older_caches() {
+        let hook = statusline_hook_fixture("/tmp/transcript.jsonl");
+        let cache = StatuslineCache::completed(
+            &hook,
+            "🤖 M | 🌿 main | 💰 ...".to_string(),
+            123,
+            Some("main".to_string()),
+            10_000,
+        );
+        let json = serde_json::to_string(&cache).unwrap();
+        let parsed: StatuslineCache = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.git_branch.as_deref(), Some("main"));
+
+        let older: StatuslineCache = serde_json::from_str(
+            r#"{"date":"2026-01-01T00:00:00.000Z","lastOutput":"cached","lastUpdateTime":10000,"transcriptPath":"/tmp/transcript.jsonl","transcriptMtime":123}"#,
+        )
+        .unwrap();
+        assert_eq!(older.git_branch, None);
     }
 
     #[test]
@@ -1359,10 +1464,11 @@ mod tests {
             transcript_mtime: 123,
             is_updating: true,
             pid: Some(std::process::id()),
+            git_branch: None,
         };
 
         assert_eq!(
-            cached_statusline_output(&cache, 456, 20_000, 1),
+            cached_statusline_output(&cache, 456, None, 20_000, 1),
             Some("stale status")
         );
     }
