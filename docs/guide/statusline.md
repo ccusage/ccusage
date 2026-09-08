@@ -11,6 +11,7 @@ The `statusline` command provides a compact, real-time view of your Claude Code 
 - 🚀 **Current session block** - Cost and time remaining in your active 5-hour billing block
 - 🔥 **Burn rate** - Token consumption rate with visual indicators
 - 🤖 **Active model** - The Claude model you're currently using, with its reasoning effort level when available
+- 🌿 **Git branch** - The branch checked out in your workspace (opt-in via `--git-branch`)
 
 ## Setup
 
@@ -104,6 +105,22 @@ You can control how session costs are calculated and displayed:
 
 See [Cost Source Options](#cost-source-options) section for all available modes.
 
+### With Git Branch (Optional)
+
+You can show the git branch of the workspace Claude Code is running in:
+
+```json
+{
+	"statusLine": {
+		"type": "command",
+		"command": "bun x ccusage statusline --git-branch", // Add the current git branch
+		"padding": 0
+	}
+}
+```
+
+See [Git Branch](#git-branch) section for details.
+
 ## Output Format
 
 The statusline displays a compact, single-line summary:
@@ -124,9 +141,16 @@ The reasoning effort level next to the model name comes from Claude Code (2.1.11
 🤖 Opus 4.1 | 💰 $0.23 session / $1.23 today / $0.45 block (2h 45m left) | 🔥 $0.12/hr | 🧠 25,000 (12%)
 ```
 
+With `--git-branch`, the branch of the workspace repository follows the model:
+
+```text
+🤖 Fable 5 (high) | 🌿 main | 💰 $0.23 session / $1.23 today / $0.45 block (2h 45m left) | 🔥 $0.12/hr | 🧠 25,000 (12%)
+```
+
 ### Components Explained
 
 - **Model** (`🤖 Fable 5 (high)`): Currently active Claude model, followed by the reasoning effort level in parentheses (`low`, `medium`, `high`, `xhigh`, or `max`) when Claude Code provides it
+- **Git Branch** (`🌿 main`): Branch checked out in the workspace, shown only with `--git-branch` and only inside a git repository (see [Git Branch](#git-branch))
 - **Session Cost** (`💰 $0.23 session`): Cost for the current conversation session (see [Cost Source Options](#cost-source-options) for different calculation modes)
 - **Today's Cost** (`$1.23 today`): Total cost for the current day across all sessions
 - **Session Block** (`$0.45 block (2h 45m left)`): Current 5-hour block cost with remaining time
@@ -294,6 +318,45 @@ bun x ccusage statusline --visual-burn-rate emoji
 - 🟢 Normal (Green)
 - ⚠️ Moderate (Yellow)
 - 🚨 High (Red)
+
+### Git Branch
+
+Enable the `--git-branch` flag to show the branch checked out in the workspace
+Claude Code is running in. The segment appears right after the model:
+
+```bash
+bun x ccusage statusline --git-branch
+```
+
+```text
+🤖 Fable 5 (high) | 🌿 feature/login | 💰 ...
+```
+
+The workspace directory comes from the `workspace.current_dir` (or `cwd`)
+field Claude Code passes to the status line, so the branch follows the
+directory of the session rather than the shell you launched `claude` from.
+ccusage reads `.git/HEAD` directly instead of running `git`, which keeps the
+status line fast and works without a git binary on `PATH`. Worktrees and
+submodules are supported.
+
+- A checked-out branch shows its name: `🌿 main`
+- A detached `HEAD` shows the abbreviated commit hash in parentheses: `🌿 (a1b2c3d)`
+- Outside a git repository, the segment is omitted entirely
+
+The flag is off by default. Use `--no-git-branch` to override a configuration
+file that enables it. The equivalent configuration key is `gitBranch`:
+
+```json
+{
+	"commands": {
+		"statusline": {
+			"gitBranch": true
+		}
+	}
+}
+```
+
+See the [Configuration Guide](/guide/configuration) for more details.
 
 ### Model Label Aliases
 
