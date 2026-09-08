@@ -583,11 +583,16 @@ fn resolve_statusline_git_branch(hook: &StatuslineHook, args: &StatuslineArgs) -
 /// the hook's `cwd`, and finally the process working directory so older Claude
 /// Code versions that omit both fields still resolve a branch.
 fn statusline_workspace_dir(hook: &StatuslineHook) -> Option<PathBuf> {
-    hook.workspace
-        .as_ref()
-        .and_then(|workspace| workspace.current_dir.as_deref())
-        .or(hook.cwd.as_deref())
-        .filter(|dir| !dir.is_empty())
+    fn non_empty(dir: Option<&str>) -> Option<&str> {
+        dir.filter(|dir| !dir.is_empty())
+    }
+    let workspace_dir = non_empty(
+        hook.workspace
+            .as_ref()
+            .and_then(|workspace| workspace.current_dir.as_deref()),
+    );
+    workspace_dir
+        .or_else(|| non_empty(hook.cwd.as_deref()))
         .map(PathBuf::from)
         .or_else(|| env::current_dir().ok())
 }
@@ -1215,6 +1220,15 @@ mod tests {
         );
 
         hook.workspace = None;
+        assert_eq!(
+            statusline_workspace_dir(&hook),
+            Some(PathBuf::from("/from/cwd"))
+        );
+
+        // An empty workspace directory must not shadow a usable cwd.
+        hook.workspace = Some(HookWorkspace {
+            current_dir: Some(String::new()),
+        });
         assert_eq!(
             statusline_workspace_dir(&hook),
             Some(PathBuf::from("/from/cwd"))
