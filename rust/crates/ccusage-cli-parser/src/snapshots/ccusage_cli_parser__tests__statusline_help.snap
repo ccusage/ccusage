@@ -17,7 +17,7 @@ OPTIONS:
   --refresh-interval [refresh-interval]                 Refresh interval in seconds for cache expiry (default: 1)
   --context-low-threshold [context-low-threshold]       Context usage percentage below which status is shown in green (0-100) (default: 50)
   --context-medium-threshold [context-medium-threshold] Context usage percentage below which status is shown in yellow (0-100) (default: 80)
-  --git-branch                                          Show the current git branch of the workspace (default: false)
+  --git-branch                                          Show the current git branch of the workspace (abbreviated commit when HEAD is detached) (default: false)
   --no-git-branch                                       Negatable of --git-branch
   -z, --timezone <timezone>                             Timezone for date grouping (IANA)
   --config <config>                                     Path to configuration file (default: auto-discovery)

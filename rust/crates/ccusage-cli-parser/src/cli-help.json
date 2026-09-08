@@ -399,7 +399,7 @@
 		},
 		{
 			"flags": "--git-branch",
-			"description": "Show the current git branch of the workspace",
+			"description": "Show the current git branch of the workspace (abbreviated commit when HEAD is detached)",
 			"default": "false"
 		},
 		{
