@@ -348,13 +348,7 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
     }
 
     if cache_enabled {
-        mark_statusline_cache_updating(
-            &cache_path,
-            &hook,
-            current_mtime,
-            git_branch.as_deref(),
-            initial_cache.as_ref(),
-        );
+        mark_statusline_cache_updating(&cache_path, &hook, current_mtime, initial_cache.as_ref());
     }
 
     let statusline_result = render_statusline(&hook, &args, &shared, git_branch.as_deref());
@@ -799,12 +793,14 @@ impl StatuslineCache {
         }
     }
 
-    fn updating(
-        hook: &StatuslineHook,
-        transcript_mtime: u64,
-        git_branch: Option<&str>,
-        previous: Option<&Self>,
-    ) -> Self {
+    /// Mark the entry as being refreshed by this process while keeping the
+    /// previous output available to concurrent invocations.
+    ///
+    /// `git_branch` stays the one `last_output` was rendered with, not the
+    /// branch being rendered now: the metadata must describe the retained
+    /// line, so a refresh that fails (which leaves `last_output` in place)
+    /// cannot relabel the previous branch's output as the current branch.
+    fn updating(hook: &StatuslineHook, transcript_mtime: u64, previous: Option<&Self>) -> Self {
         let now = now_millis();
         Self {
             date: format_cache_date(now),
@@ -818,7 +814,7 @@ impl StatuslineCache {
             transcript_mtime,
             is_updating: true,
             pid: Some(std::process::id()),
-            git_branch: git_branch.map(str::to_string),
+            git_branch: previous.and_then(|cache| cache.git_branch.clone()),
         }
     }
 }
@@ -882,12 +878,11 @@ fn mark_statusline_cache_updating(
     path: &Path,
     hook: &StatuslineHook,
     transcript_mtime: u64,
-    git_branch: Option<&str>,
     previous: Option<&StatuslineCache>,
 ) {
     write_statusline_cache(
         path,
-        StatuslineCache::updating(hook, transcript_mtime, git_branch, previous),
+        StatuslineCache::updating(hook, transcript_mtime, previous),
     );
 }
 
@@ -1233,6 +1228,40 @@ mod tests {
             statusline_workspace_dir(&hook),
             Some(PathBuf::from("/from/cwd"))
         );
+    }
+
+    #[test]
+    fn updating_statusline_cache_keeps_the_branch_of_the_retained_output() {
+        let hook = statusline_hook_fixture("/tmp/transcript.jsonl");
+        let previous = StatuslineCache::completed(
+            &hook,
+            "🤖 M | 🌿 main | 💰 ...".to_string(),
+            123,
+            Some("main".to_string()),
+            10_000,
+        );
+
+        // The refresh is rendering `feature`, but the retained line is main's.
+        let updating = StatuslineCache::updating(&hook, 456, Some(&previous));
+        assert_eq!(updating.last_output, previous.last_output);
+        assert_eq!(updating.git_branch.as_deref(), Some("main"));
+        assert!(updating.is_updating);
+
+        // Once the refresh is released without a new line (render failed), the
+        // entry still misses for `feature` and only serves `main` output as main.
+        let mut released = updating;
+        released.is_updating = false;
+        released.pid = None;
+        assert_eq!(
+            cached_statusline_output(&released, 456, Some("feature"), 10_500, 1),
+            None
+        );
+        assert_eq!(
+            cached_statusline_output(&released, 456, Some("main"), 10_500, 1),
+            Some("🤖 M | 🌿 main | 💰 ...")
+        );
+
+        assert_eq!(StatuslineCache::updating(&hook, 456, None).git_branch, None);
     }
 
     #[test]
