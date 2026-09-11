@@ -4673,6 +4673,7 @@ mod tests {
     fn embedded_pricing_includes_codex_priority_multiplier() {
         let pricing = PricingMap::load_embedded();
 
+        assert_eq!(pricing.find("gpt-6-astra").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.6-sol").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.6-terra").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.6-luna").unwrap().fast_multiplier, 2.0);
@@ -4868,6 +4869,11 @@ mod tests {
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
+                "gpt-6-astra": {
+                    "input_cost_per_token": 0.000010,
+                    "output_cost_per_token": 0.000050,
+                    "cache_read_input_token_cost": 0.000001
+                },
                 "gpt-5.5": {
                     "input_cost_per_token": 0.000005,
                     "output_cost_per_token": 0.000030,
@@ -4891,6 +4897,7 @@ mod tests {
             }"#,
         );
 
+        assert_eq!(pricing.find("gpt-6-astra").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.5").unwrap().fast_multiplier, 2.5);
         assert_eq!(pricing.find("gpt-5.4").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.3-codex").unwrap().fast_multiplier, 2.0);
