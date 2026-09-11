@@ -21,7 +21,7 @@ Local transcript text alone is not enough. A transcript can be useful for debugg
 
 ::: details Devin CLI
 Devin CLI is now supported. Newer CLI versions write ATIF transcript files under
-`~/.local/share/devin/cli/transcripts`, and each agent step records prompt,
+`~/.local/share/devin/cli/transcripts`, and each agent step can record prompt,
 completion, cached, and cache-creation token counts with a model name and
 timestamp — enough to produce the standard reports. Transcripts do not record
 ACU/credit usage or direct costs, so costs come from LiteLLM pricing data when

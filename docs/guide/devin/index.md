@@ -50,11 +50,11 @@ These views support `--json` for structured output (see [JSON Output](/guide/jso
 ## What Gets Calculated
 
 - **Token usage** - Each agent step in a transcript reports prompt, completion, cached, and cache-creation tokens. The prompt count includes the cached portions, so ccusage reports the uncached remainder as input tokens, matching how other sources normalize their records.
-- **Sessions** - One transcript file is one Devin session, identified by its `session_id`. A session that spans midnight attributes each step to the day it ran.
+- **Sessions** - Steps are grouped by `session_id`, with the transcript file name as a fallback when the field is missing. A session that spans midnight attributes each step to the day it ran.
 - **Pricing** - Costs are calculated from LiteLLM pricing data for the recorded model, including `cognition/` provider entries when present. Models with no pricing entry, such as `swe-2-*` ids that are not yet in the pricing snapshot, report a cost of zero.
 - **Credit usage** - Devin bills in ACUs/credits, which are only exposed through the Devin CLI's own `/usage` command and are not stored in transcripts. ccusage does not estimate credit consumption.
 
-Transcripts written by older CLI versions (ATIF schema versions before `ATIF-v1.7`) contain no token metrics and contribute no usage rows.
+Any transcript version works: agent steps with token metrics, a timestamp, and nonzero usage produce rows — `ATIF-v1.7` stores metrics on the step, `ATIF-v1.4` under `metadata.metrics`. Transcripts from older CLI versions that record no metrics contribute no usage rows.
 
 ## Environment Variables
 
@@ -67,7 +67,7 @@ Transcripts written by older CLI versions (ATIF schema versions before `ATIF-v1.
 ## Troubleshooting
 
 ::: details No Devin usage data found
-Ensure the transcripts directory exists at `~/.local/share/devin/cli/transcripts/` (`%APPDATA%\devin\cli\transcripts` on Windows) and contains `*.json` files. Set `DEVIN_TRANSCRIPTS_DIR` if you keep transcripts or `--export`ed files elsewhere. Transcripts written by older CLI versions (before `ATIF-v1.7`) have no token metrics and produce no rows.
+Ensure the transcripts directory exists at `~/.local/share/devin/cli/transcripts/` (`%APPDATA%\devin\cli\transcripts` on Windows) and contains `*.json` files. Set `DEVIN_TRANSCRIPTS_DIR` if you keep transcripts or `--export`ed files elsewhere. Transcripts from older CLI versions that record no token metrics produce no rows.
 :::
 
 ::: details Costs showing as $0.00
