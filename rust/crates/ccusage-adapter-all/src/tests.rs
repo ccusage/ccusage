@@ -18,7 +18,10 @@ use crate::{
     cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs},
     model_aliases::set_model_aliases_for_tests,
 };
-use ccusage_test_support::{EnvVarsGuard, fs_fixture, zcode::create_fixture};
+use ccusage_test_support::{
+    EnvVarsGuard, claude_science::create_fixture as claude_science_create_fixture, fs_fixture,
+    zcode::create_fixture,
+};
 
 fn test_agent_rows(agent: &'static str) -> AgentRows {
     AgentRows {
@@ -677,6 +680,88 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
 }
 
 #[test]
+fn claude_science_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
+    let fixture = fs_fixture!({});
+    let _ = fixture.create_dir_all("claude-science");
+    claude_science_create_fixture(fixture.path("claude-science/metadata.db"));
+    let _env = isolated_agent_env(
+        &fixture,
+        "CLAUDE_SCIENCE_DB",
+        fixture.path("claude-science/metadata.db").into_os_string(),
+    );
+    let mut shared = fixture_shared("20990101", "20990301");
+    shared.mode = CostMode::Calculate;
+
+    let daily = load_rows(AgentReportKind::Daily, &shared).unwrap();
+    let monthly = load_rows(AgentReportKind::Monthly, &shared).unwrap();
+    let session = load_rows(AgentReportKind::Session, &shared).unwrap();
+
+    assert_eq!(daily.detected_agents, vec!["claude-science"]);
+    assert_eq!(monthly.detected_agents, vec!["claude-science"]);
+    assert_eq!(session.detected_agents, vec!["claude-science"]);
+    assert_eq!(daily.rows.len(), 3);
+    assert_eq!(daily.rows[0].period, "2099-01-02");
+    assert_eq!(daily.rows[0].input_tokens, 100);
+    assert_eq!(daily.rows[0].output_tokens, 10);
+    assert_eq!(daily.rows[0].cache_read_tokens, 25);
+    assert_eq!(daily.rows[0].cache_creation_tokens, 15);
+    assert_eq!(daily.rows[1].period, "2099-01-15");
+    assert_eq!(daily.rows[1].input_tokens, 200);
+    assert_eq!(daily.rows[1].output_tokens, 20);
+    assert_eq!(daily.rows[2].period, "2099-02-01");
+    assert_eq!(daily.rows[2].input_tokens, 50);
+    assert_eq!(daily.rows[2].output_tokens, 5);
+    assert_eq!(monthly.rows[0].period, "2099-01");
+    assert_eq!(monthly.rows[0].total_tokens, 440);
+    assert_eq!(monthly.rows[1].period, "2099-02");
+    assert_eq!(monthly.rows[1].total_tokens, 65);
+    assert_eq!(session.rows[0].period, "frame-1");
+    assert_eq!(session.rows[0].total_tokens, 440);
+    assert_eq!(session.rows[1].period, "frame-3");
+    assert_eq!(session.rows[1].total_tokens, 65);
+
+    insta::assert_json_snapshot!(
+        "claude_science_fixture_daily_json",
+        report_json(&daily.rows, AgentReportKind::Daily)
+    );
+    insta::assert_json_snapshot!(
+        "claude_science_fixture_monthly_json",
+        report_json(&monthly.rows, AgentReportKind::Monthly)
+    );
+    insta::assert_json_snapshot!(
+        "claude_science_fixture_session_json",
+        report_json(&session.rows, AgentReportKind::Session)
+    );
+    insta::assert_snapshot!(
+        "claude_science_fixture_daily_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &daily.rows,
+            AgentReportKind::Daily,
+            &daily.detected_agents,
+        ))
+        .unwrap()
+    );
+    insta::assert_snapshot!(
+        "claude_science_fixture_monthly_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &monthly.rows,
+            AgentReportKind::Monthly,
+            &monthly.detected_agents,
+        ))
+        .unwrap()
+    );
+    insta::assert_snapshot!(
+        "claude_science_fixture_session_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &session.rows,
+            AgentReportKind::Session,
+            &session.detected_agents,
+        ))
+        .unwrap()
+    );
+}
+
+#[test]
 fn unified_report_omits_zcode_without_usage_database() {
     let fixture = fs_fixture!({});
     let _env = isolated_agent_env(
@@ -821,6 +906,7 @@ fn isolated_agent_env(
         "QWEN_DATA_DIR",
         "GROK_HOME",
         "ZCODE_HOME",
+        "CLAUDE_SCIENCE_DB",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))

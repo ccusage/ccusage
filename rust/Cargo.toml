@@ -20,6 +20,7 @@ ccusage-adapter-all = { path = "crates/ccusage-adapter-all" }
 ccusage-adapter-amp = { path = "adapters/amp" }
 ccusage-adapter-antigravity = { path = "adapters/antigravity" }
 ccusage-adapter-claude = { path = "adapters/claude" }
+ccusage-adapter-claude-science = { path = "adapters/claude-science" }
 ccusage-adapter-codebuff = { path = "adapters/codebuff" }
 ccusage-adapter-codex = { path = "adapters/codex" }
 ccusage-adapter-common = { path = "adapters/common" }
