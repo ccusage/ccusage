@@ -35,6 +35,7 @@ let
     "amp"
     "antigravity"
     "claude"
+    "claude-science"
     "codebuff"
     "codex"
     "copilot"

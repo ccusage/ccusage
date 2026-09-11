@@ -59,14 +59,42 @@ expression: "report_json(&monthly.rows, AgentReportKind::Monthly)"
       "period": "2099-02",
       "totalCost": 0.00038,
       "totalTokens": 65
+    },
+    {
+      "agent": "all",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 5,
+      "inputTokens": 40,
+      "metadata": {
+        "agents": [
+          "claude-science"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5,
+          "cost": 0.00018150000000000002,
+          "inputTokens": 40,
+          "modelName": "claude-sonnet-4-5",
+          "outputTokens": 4
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-5"
+      ],
+      "outputTokens": 4,
+      "period": "2099-03",
+      "totalCost": 0.00018150000000000002,
+      "totalTokens": 49
     }
   ],
   "totals": {
     "cacheCreationTokens": 45,
-    "cacheReadTokens": 75,
-    "inputTokens": 350,
-    "outputTokens": 35,
-    "totalCost": 0.0019182500000000003,
-    "totalTokens": 505
+    "cacheReadTokens": 80,
+    "inputTokens": 390,
+    "outputTokens": 39,
+    "totalCost": 0.00209975,
+    "totalTokens": 554
   }
 }

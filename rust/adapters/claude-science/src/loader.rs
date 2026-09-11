@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use ccusage_core::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage_at, cli_error, format_date_tz, format_rfc3339_millis, parse_tz,
+    calculate_cost_for_usage_at, cli_error, debug_log, format_date_tz, format_rfc3339_millis,
+    parse_tz,
 };
 use sqlite::{Connection, State};
 
@@ -40,13 +41,22 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     let timezone = parse_tz(shared.timezone.as_deref());
     let mut entries = Vec::new();
     for path in paths::database_paths()? {
-        for frame in read_frames(&path)? {
-            entries.push(frame_to_loaded(
-                frame,
-                timezone.as_ref(),
-                shared.mode,
-                pricing,
-            ));
+        match read_frames(&path) {
+            Ok(frames) => {
+                for frame in frames {
+                    entries.push(frame_to_loaded(
+                        frame,
+                        timezone.as_ref(),
+                        shared.mode,
+                        pricing,
+                    ));
+                }
+            }
+            Err(error) => {
+                // One unreadable or incompatible database must not hide the
+                // usage recorded in the others.
+                debug_log(shared, format!("skipping database {path:?}: {error}"));
+            }
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);
@@ -150,6 +160,13 @@ fn frame_to_loaded(
         cache_creation: None,
     };
     let model = normalize_model(&frame.model).to_string();
+    let missing_pricing_model = ccusage_core::missing_pricing_model_for_usage(
+        Some(&model),
+        usage,
+        frame.recorded_cost_usd,
+        mode,
+        Some(pricing),
+    );
     let cost = calculate_cost_for_usage_at(
         Some(&model),
         usage,
@@ -184,7 +201,7 @@ fn frame_to_loaded(
         message_count: None,
         model: Some(model),
         usage_limit_reset_time: None,
-        missing_pricing_model: None,
+        missing_pricing_model,
         data,
     }
 }
