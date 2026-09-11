@@ -1,0 +1,72 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "report_json(&daily.rows, AgentReportKind::Daily)"
+---
+{
+  "daily": [
+    {
+      "agent": "all",
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 400,
+      "inputTokens": 400,
+      "metadata": {
+        "agents": [
+          "devin"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 400,
+          "cost": 0.0,
+          "inputTokens": 400,
+          "modelName": "swe-1.7",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "swe-1.7"
+      ],
+      "outputTokens": 100,
+      "period": "2099-01-02",
+      "totalCost": 0,
+      "totalTokens": 1100
+    },
+    {
+      "agent": "all",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 300,
+      "inputTokens": 200,
+      "metadata": {
+        "agents": [
+          "devin"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 300,
+          "cost": 0.0,
+          "inputTokens": 200,
+          "modelName": "swe-1.7",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "swe-1.7"
+      ],
+      "outputTokens": 50,
+      "period": "2099-01-03",
+      "totalCost": 0,
+      "totalTokens": 550
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 700,
+    "inputTokens": 600,
+    "outputTokens": 150,
+    "totalCost": 0,
+    "totalTokens": 1650
+  }
+}

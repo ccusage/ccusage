@@ -56,6 +56,8 @@ pub struct CcusageConfig {
     pub grok: Option<GrokConfig>,
     /// ZCode configuration.
     pub zcode: Option<ZCodeConfig>,
+    /// Devin configuration.
+    pub devin: Option<DevinConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -143,6 +145,21 @@ pub struct DroidConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DroidCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DevinConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<DevinCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DevinCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
@@ -1195,6 +1212,7 @@ mod tests {
                 "commands",
                 "copilot",
                 "defaults",
+                "devin",
                 "droid",
                 "gemini",
                 "antigravity",
@@ -1274,6 +1292,13 @@ mod tests {
                 }
             },
             "droid": {
+                "commands": {
+                    "daily": {
+                        "json": true
+                    }
+                }
+            },
+            "devin": {
                 "commands": {
                     "daily": {
                         "json": true

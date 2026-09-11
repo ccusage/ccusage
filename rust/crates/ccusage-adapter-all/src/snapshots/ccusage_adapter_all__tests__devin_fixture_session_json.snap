@@ -1,0 +1,42 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "report_json(&session.rows, AgentReportKind::Session)"
+---
+{
+  "session": [
+    {
+      "agent": "devin",
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 700,
+      "inputTokens": 600,
+      "metadata": {
+        "lastActivity": "2099-01-03T08:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 700,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "swe-1.7",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "swe-1.7"
+      ],
+      "outputTokens": 150,
+      "period": "veil-vibraphone",
+      "totalCost": 0,
+      "totalTokens": 1650
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 700,
+    "inputTokens": 600,
+    "outputTokens": 150,
+    "totalCost": 0,
+    "totalTokens": 1650
+  }
+}
