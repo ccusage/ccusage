@@ -245,11 +245,13 @@ fn matches_named_pi_store_name_pattern(name: &str) -> bool {
 fn agent_config_key(agent: &str) -> String {
     let mut key = String::with_capacity(agent.len());
     for (index, part) in agent.split('-').enumerate() {
-        if index == 0 {
-            key.push_str(part);
-        } else {
-            key.extend(part.chars().next().map(|c| c.to_ascii_uppercase()));
-            key.push_str(&part[1..]);
+        let mut characters = part.chars();
+        match (index, characters.next()) {
+            (0, _) | (_, None) => key.push_str(part),
+            (_, Some(first)) => {
+                key.extend(first.to_uppercase());
+                key.push_str(characters.as_str());
+            }
         }
     }
     key
