@@ -213,6 +213,12 @@ mod tests {
                         "generation_model": "claude-opus-4-7-medium",
                         "metrics": {"input_tokens": 6, "output_tokens": 164,
                                     "cache_read_tokens": 14473, "cache_creation_tokens": 25474}
+                     }},
+                    {"step_id": 9, "source": "assistant",
+                     "metadata": {
+                        "created_at": "2026-06-10T13:05:00.000000Z",
+                        "metrics": {"input_tokens": 3, "output_tokens": 10,
+                                    "cache_read_tokens": 100, "cache_creation_tokens": 0}
                      }}
                 ]
             }"#,
@@ -224,7 +230,7 @@ mod tests {
 
         let entries = load_entries(&SharedArgs::default(), &PricingMap::default()).unwrap();
 
-        assert_eq!(entries.len(), 1);
+        assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].data.message.usage.input_tokens, 6);
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 14473);
         assert_eq!(

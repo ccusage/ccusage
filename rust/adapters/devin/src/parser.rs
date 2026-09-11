@@ -58,7 +58,11 @@ pub(super) fn load_transcript_file(path: &Path) -> Result<Vec<DevinStep>> {
         .flatten()
         .filter_map(Value::as_object)
     {
-        if step.get("source").and_then(Value::as_str) != Some("agent") {
+        // Older exports name the model-call step "assistant"; "agent" is current.
+        if !matches!(
+            step.get("source").and_then(Value::as_str),
+            Some("agent") | Some("assistant")
+        ) {
             continue;
         }
         let metadata = step.get("metadata").and_then(Value::as_object);
@@ -96,6 +100,7 @@ pub(super) fn load_transcript_file(path: &Path) -> Result<Vec<DevinStep>> {
             .and_then(Value::as_object)
             .and_then(|extra| string_field(extra, "generation_model"))
             .or_else(|| metadata.and_then(|metadata| string_field(metadata, "generation_model")))
+            .map(|model| normalize_devin_model_name(&model))
             .or_else(|| {
                 step.get("model_name")
                     .and_then(Value::as_str)

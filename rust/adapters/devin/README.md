@@ -36,7 +36,6 @@ size-balanced chunking, and ordered parallel reads.
 ## Public surface
 
 - `loader::load_entries`
-- `report::report_from_rows`
 - `report::summarize_entries`
 - `has_data`
 - `run`
