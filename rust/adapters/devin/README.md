@@ -21,10 +21,13 @@ Anything that is not specific to this source belongs in `ccusage-core` or
   installs keep a compatibility symlink here, so it usually resolves to the same
   directory; discovered paths are canonicalized and deduplicated)
 
-Transcripts are ATIF JSON documents, one per session. Only `source: "agent"`
-steps carry `metrics` (`prompt_tokens`, `completion_tokens`, `cached_tokens`,
-`extra.cache_creation_input_tokens`); other steps and transcripts without
-metrics (schema versions before ATIF-v1.7) contribute no usage.
+Transcripts are ATIF JSON documents, one per session. `source: "agent"` steps
+(`"assistant"` in older exports) carry the token metrics: ATIF-v1.7 keeps them
+on the step (`prompt_tokens`, `completion_tokens`, `cached_tokens`,
+`extra.cache_creation_input_tokens`), while ATIF-v1.4 stores already-split
+`input_tokens`/`output_tokens`/`cache_*` fields under `metadata.metrics` with
+the timestamp in `metadata.created_at`. Steps without metrics contribute no
+usage.
 
 `prompt_tokens` counts the whole request context including the cached and
 cache-creation portions, so `input_tokens` is the remainder after both are
