@@ -20,11 +20,13 @@ source in its own `ccusage-adapter-*` crate.
 
 - `ccusage-adapter-all`
 - `ccusage-adapter-amp`
+- `ccusage-adapter-antigravity`
 - `ccusage-adapter-claude`
 - `ccusage-adapter-codebuff`
 - `ccusage-adapter-codex`
 - `ccusage-adapter-common`
 - `ccusage-adapter-copilot`
+- `ccusage-adapter-devin`
 - `ccusage-adapter-droid`
 - `ccusage-adapter-gemini`
 - `ccusage-adapter-goose`

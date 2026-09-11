@@ -23,6 +23,7 @@ ccusage-adapter-codebuff.workspace = true
 ccusage-adapter-codex.workspace = true
 ccusage-adapter-common.workspace = true
 ccusage-adapter-copilot.workspace = true
+ccusage-adapter-devin.workspace = true
 ccusage-adapter-droid.workspace = true
 ccusage-adapter-gemini.workspace = true
 ccusage-adapter-goose.workspace = true

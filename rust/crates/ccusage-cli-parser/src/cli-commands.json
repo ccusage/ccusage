@@ -112,6 +112,10 @@
 			{
 				"name": "zcode",
 				"description": "Show ZCode usage commands"
+			},
+			{
+				"name": "devin",
+				"description": "Show Devin token usage commands"
 			}
 		]
 	},
@@ -856,6 +860,43 @@
 			"path": ["zcode", "session"],
 			"description": "Show ZCode usage grouped by session",
 			"usage": "ccusage zcode session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["devin"],
+			"description": "Usage reports for devin.",
+			"usage": "ccusage devin <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Devin token usage grouped by day"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Devin token usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Devin token usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["devin", "daily"],
+			"description": "Show Devin token usage grouped by day",
+			"usage": "ccusage devin daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["devin", "monthly"],
+			"description": "Show Devin token usage grouped by month",
+			"usage": "ccusage devin monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["devin", "session"],
+			"description": "Show Devin token usage grouped by session",
+			"usage": "ccusage devin session <OPTIONS>",
 			"options": "agent_options"
 		}
 	]
