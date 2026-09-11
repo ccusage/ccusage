@@ -1,0 +1,62 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "serde_json::to_string_pretty(&table_snapshot(&session.rows,\nAgentReportKind::Session, &session.detected_agents,)).unwrap()"
+---
+{
+  "headers": [
+    "Session",
+    "Agent",
+    "Models",
+    "Input",
+    "Output",
+    "Cache Create",
+    "Cache Read",
+    "Total Tokens",
+    "Cost (USD)"
+  ],
+  "rows": [
+    {
+      "cells": [
+        "frame-1",
+        "Claude Science",
+        "- sonnet-4-5",
+        "300",
+        "30",
+        "45",
+        "65",
+        "440",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "frame-3",
+        "Claude Science",
+        "- opus-4-6",
+        "50",
+        "5",
+        "0",
+        "10",
+        "65",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "Total",
+        "",
+        "",
+        "350",
+        "35",
+        "45",
+        "75",
+        "505",
+        "$0.00"
+      ],
+      "kind": "total"
+    }
+  ],
+  "title": "Coding (Agent) CLI Usage Report - Session\nDetected: Claude Science"
+}

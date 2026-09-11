@@ -56,6 +56,8 @@ pub struct CcusageConfig {
     pub grok: Option<GrokConfig>,
     /// ZCode configuration.
     pub zcode: Option<ZCodeConfig>,
+    /// Claude Science configuration.
+    pub claude_science: Option<ClaudeScienceConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -343,6 +345,13 @@ pub struct GrokCommandsConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ZCodeConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<ZCodeCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeScienceConfig {
     pub defaults: Option<SharedOptions>,
     pub commands: Option<ZCodeCommandsConfig>,
 }
@@ -1190,6 +1199,7 @@ mod tests {
                 "$schema",
                 "amp",
                 "claude",
+                "claudeScience",
                 "codebuff",
                 "codex",
                 "commands",

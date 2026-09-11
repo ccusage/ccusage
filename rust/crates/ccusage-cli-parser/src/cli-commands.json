@@ -112,6 +112,10 @@
 			{
 				"name": "zcode",
 				"description": "Show ZCode usage commands"
+			},
+			{
+				"name": "claude-science",
+				"description": "Show Claude Science usage commands"
 			}
 		]
 	},
@@ -858,5 +862,44 @@
 			"usage": "ccusage zcode session <OPTIONS>",
 			"options": "agent_options"
 		}
+,
+		{
+			"path": ["claude-science"],
+			"description": "Usage reports for Claude Science.",
+			"usage": "ccusage claude-science <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show Claude Science usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show Claude Science usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show Claude Science usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["claude-science", "daily"],
+			"description": "Show Claude Science usage grouped by date",
+			"usage": "ccusage claude-science daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["claude-science", "monthly"],
+			"description": "Show Claude Science usage grouped by month",
+			"usage": "ccusage claude-science monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["claude-science", "session"],
+			"description": "Show Claude Science usage grouped by session",
+			"usage": "ccusage claude-science session <OPTIONS>",
+			"options": "agent_options"
+		}
+
 	]
 }

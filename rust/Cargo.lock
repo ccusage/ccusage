@@ -123,6 +123,7 @@ dependencies = [
  "ccusage-adapter-amp",
  "ccusage-adapter-antigravity",
  "ccusage-adapter-claude",
+ "ccusage-adapter-claude-science",
  "ccusage-adapter-codebuff",
  "ccusage-adapter-codex",
  "ccusage-adapter-common",
@@ -159,6 +160,7 @@ dependencies = [
  "ccusage-adapter-amp",
  "ccusage-adapter-antigravity",
  "ccusage-adapter-claude",
+ "ccusage-adapter-claude-science",
  "ccusage-adapter-codebuff",
  "ccusage-adapter-codex",
  "ccusage-adapter-common",
@@ -221,6 +223,19 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-claude-science"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
+ "jiff",
+ "serde_json",
+ "sqlite",
 ]
 
 [[package]]

@@ -2,6 +2,7 @@ pub(crate) use ccusage_adapter_all as all;
 pub(crate) use ccusage_adapter_amp as amp;
 pub(crate) use ccusage_adapter_antigravity as antigravity;
 pub(crate) use ccusage_adapter_claude as claude;
+pub(crate) use ccusage_adapter_claude_science as claude_science;
 pub(crate) use ccusage_adapter_codebuff as codebuff;
 pub(crate) use ccusage_adapter_codex as codex;
 pub(crate) use ccusage_adapter_copilot as copilot;

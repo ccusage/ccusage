@@ -207,6 +207,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
         Some(Command::ZCode(args)) => agent_command_snapshot("zcode", args),
+        Some(Command::ClaudeScience(args)) => agent_command_snapshot("claude-science", args),
     }
 }
 
@@ -648,8 +649,24 @@ fn applies_schema_documented_config_file_options() {
 fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
-        "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode",
+        "claude",
+        "codex",
+        "opencode",
+        "amp",
+        "droid",
+        "codebuff",
+        "hermes",
+        "pi",
+        "goose",
+        "kilo",
+        "copilot",
+        "gemini",
+        "kimi",
+        "qwen",
+        "openclaw",
+        "grok",
+        "zcode",
+        "claude-science",
     ];
 
     for agent in agents {
