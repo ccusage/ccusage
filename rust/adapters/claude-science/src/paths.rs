@@ -293,6 +293,29 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn env_override_preserves_non_utf8_paths() {
+        use std::os::unix::ffi::OsStringExt;
+
+        // The sqlite crate cannot open non-UTF-8 paths, so this exercises
+        // the override parsing only: a non-Unicode value must be carried
+        // through byte-for-byte as a single path.
+        let fixture = fs_fixture!({});
+        let mut raw = OsString::from(fixture.root());
+        raw.push("/");
+        raw.push(OsString::from_vec(b"metada\x80ta.db".to_vec()));
+        let _guard = EnvVarsGuard::set_many([
+            (CLAUDE_SCIENCE_DB_ENV, Some(raw.clone())),
+            ("HOME", Some(OsString::from(fixture.root()))),
+            ("USERPROFILE", Some(OsString::from(fixture.root()))),
+        ]);
+
+        let roots = candidate_roots();
+
+        assert_eq!(roots, vec![PathBuf::from(raw)]);
+    }
+
+    #[test]
     fn env_override_skips_incompatible_database() {
         let fixture = fs_fixture!({
             ".claude-science/custom/metadata.db": "",
