@@ -49,13 +49,17 @@ fn org_database_paths() -> Vec<PathBuf> {
 
 fn candidate_roots() -> Vec<PathBuf> {
     if let Some(value) = env::var_os(CLAUDE_SCIENCE_DB_ENV) {
-        let value = value.to_string_lossy();
-        return value
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect();
+        // Keep non-Unicode overrides byte-for-byte: only a UTF-8 value can
+        // carry the comma-separated list form.
+        return match value.to_str() {
+            Some(list) => list
+                .split(',')
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+                .collect(),
+            None => vec![PathBuf::from(value)],
+        };
     }
 
     crate::home::home_dir()
