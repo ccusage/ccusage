@@ -69,14 +69,15 @@ fn candidate_roots() -> Vec<PathBuf> {
 
 /// Returns database paths that hold Claude Science conversation metadata.
 ///
-/// Paths from an explicit `CLAUDE_SCIENCE_DB` override are accepted after an
-/// existence check; discovered candidates must expose the `frames` table.
+/// An explicit `CLAUDE_SCIENCE_DB` override is exclusive: only the listed
+/// files are considered, and discovery does not fall back to well-known
+/// locations. Every candidate — explicit or discovered — must pass the
+/// schema probe before it is read.
 pub(crate) fn database_paths() -> Result<Vec<PathBuf>> {
-    let explicit = env::var(CLAUDE_SCIENCE_DB_ENV).is_ok();
     let mut paths = Vec::new();
     for root in candidate_roots() {
         if root.is_file() {
-            if explicit || is_claude_science_database(&root) {
+            if is_claude_science_database(&root) {
                 push_unique(&mut paths, root);
             }
             continue;
@@ -90,9 +91,11 @@ pub(crate) fn database_paths() -> Result<Vec<PathBuf>> {
             }
         }
     }
-    for path in org_database_paths() {
-        if is_claude_science_database(&path) {
-            push_unique(&mut paths, path);
+    if env::var(CLAUDE_SCIENCE_DB_ENV).is_err() {
+        for path in org_database_paths() {
+            if is_claude_science_database(&path) {
+                push_unique(&mut paths, path);
+            }
         }
     }
     Ok(paths)
@@ -141,7 +144,9 @@ fn push_unique(paths: &mut Vec<PathBuf>, path: PathBuf) {
 }
 
 /// A Claude Science metadata database is any SQLite file exposing the
-/// `frames` table with an `input_tokens` column.
+/// `frames` table with every column the loader reads. Preparing the loader's
+/// projection validates all of them at once, without relying on
+/// pragma-function support.
 pub(super) fn is_claude_science_database(path: &std::path::Path) -> bool {
     let Ok(connection) = sqlite::Connection::open_with_flags(
         path,
@@ -157,10 +162,11 @@ pub(super) fn is_claude_science_database(path: &std::path::Path) -> bool {
     if statement.next().ok() != Some(sqlite::State::Row) {
         return false;
     }
-    // Preparing a projection over `input_tokens` succeeds only when the
-    // column exists, avoiding pragma-function support differences.
     connection
-        .prepare("SELECT input_tokens FROM frames LIMIT 1")
+        .prepare(
+            "SELECT id, COALESCE(root_frame_id, id), model, input_tokens, output_tokens, \
+             cache_read_tokens, cache_write_tokens, total_cost, updated_at FROM frames LIMIT 1",
+        )
         .is_ok()
 }
 
@@ -172,8 +178,18 @@ mod tests {
 
     use super::*;
 
-    const SCHEMA: &str =
-        "CREATE TABLE frames (id TEXT, input_tokens INTEGER); CREATE TABLE projects (id TEXT);";
+    const SCHEMA: &str = "CREATE TABLE frames (
+        id TEXT PRIMARY KEY,
+        parent_frame_id TEXT,
+        root_frame_id TEXT,
+        model TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        cache_read_tokens INTEGER,
+        cache_write_tokens INTEGER,
+        total_cost REAL,
+        updated_at INTEGER
+    ); CREATE TABLE projects (id TEXT);";
 
     #[test]
     fn discovers_databases_with_frames_table() {
@@ -219,6 +235,64 @@ mod tests {
         let paths = database_paths().unwrap();
 
         assert_eq!(paths, vec![db_path]);
+    }
+
+    #[test]
+    fn env_override_is_exclusive() {
+        let fixture = fs_fixture!({
+            ".claude-science/override.db": "",
+        });
+        sqlite::Connection::open(fixture.path(".claude-science/override.db"))
+            .unwrap()
+            .execute(SCHEMA)
+            .unwrap();
+        let org = fixture
+            .root()
+            .join(".claude-science/cs-switch-proxy/orgs/test-org");
+        let _ = std::fs::create_dir_all(&org);
+        let org_db = org.join("operon-cli.db");
+        sqlite::Connection::open(&org_db)
+            .unwrap()
+            .execute(SCHEMA)
+            .unwrap();
+        let _guard = EnvVarsGuard::set_many([
+            (
+                CLAUDE_SCIENCE_DB_ENV,
+                Some(fixture.path(".claude-science/override.db").into_os_string()),
+            ),
+            ("HOME", Some(OsString::from(fixture.root()))),
+            ("USERPROFILE", Some(OsString::from(fixture.root()))),
+        ]);
+
+        let paths = database_paths().unwrap();
+
+        assert_eq!(paths, vec![fixture.path(".claude-science/override.db")]);
+    }
+
+    #[test]
+    fn env_override_skips_incompatible_database() {
+        let fixture = fs_fixture!({
+            ".claude-science/custom/metadata.db": "",
+        });
+        let connection =
+            sqlite::Connection::open(fixture.path(".claude-science/custom/metadata.db")).unwrap();
+        connection.execute("CREATE TABLE frames (id TEXT)").unwrap();
+        let _guard = EnvVarsGuard::set_many([
+            (
+                CLAUDE_SCIENCE_DB_ENV,
+                Some(
+                    fixture
+                        .path(".claude-science/custom/metadata.db")
+                        .into_os_string(),
+                ),
+            ),
+            ("HOME", Some(OsString::from(fixture.root()))),
+            ("USERPROFILE", Some(OsString::from(fixture.root()))),
+        ]);
+
+        let paths = database_paths().unwrap();
+
+        assert!(paths.is_empty());
     }
 
     #[test]

@@ -43,7 +43,7 @@ pub fn create_fixture(path: impl AsRef<Path>) {
             output_tokens: 10,
             cache_read_tokens: 25,
             cache_write_tokens: 15,
-            total_cost: 0.5,
+            total_cost: Some(0.5),
             timestamp: "2099-01-02T00:00:00.000Z",
         },
     );
@@ -59,7 +59,7 @@ pub fn create_fixture(path: impl AsRef<Path>) {
             output_tokens: 20,
             cache_read_tokens: 40,
             cache_write_tokens: 30,
-            total_cost: 1.0,
+            total_cost: Some(1.0),
             timestamp: "2099-01-15T12:00:00.000Z",
         },
     );
@@ -75,8 +75,25 @@ pub fn create_fixture(path: impl AsRef<Path>) {
             output_tokens: 5,
             cache_read_tokens: 10,
             cache_write_tokens: 0,
-            total_cost: 0.25,
+            total_cost: Some(0.25),
             timestamp: "2099-02-01T00:00:00.000Z",
+        },
+    );
+    // A frame without a recorded cost exercises the pricing-catalog fallback.
+    insert_frame(
+        &db,
+        FixtureFrame {
+            id: "frame-4",
+            parent_frame_id: None,
+            root_frame_id: "frame-4",
+            model: "claude-sonnet-4-5",
+            project_id: "proj_alpha",
+            input_tokens: 40,
+            output_tokens: 4,
+            cache_read_tokens: 5,
+            cache_write_tokens: 0,
+            total_cost: None,
+            timestamp: "2099-03-01T00:00:00.000Z",
         },
     );
 }
@@ -92,7 +109,7 @@ struct FixtureFrame<'a> {
     output_tokens: i64,
     cache_read_tokens: i64,
     cache_write_tokens: i64,
-    total_cost: f64,
+    total_cost: Option<f64>,
     timestamp: &'a str,
 }
 
@@ -130,7 +147,15 @@ fn insert_frame(db: &Connection, frame: FixtureFrame<'_>) {
     statement.bind((7, frame.output_tokens)).unwrap();
     statement.bind((8, frame.cache_read_tokens)).unwrap();
     statement.bind((9, frame.cache_write_tokens)).unwrap();
-    statement.bind((10, frame.total_cost)).unwrap();
+    statement
+        .bind((
+            10,
+            frame
+                .total_cost
+                .map(sqlite::Value::from)
+                .unwrap_or(sqlite::Value::Null),
+        ))
+        .unwrap();
     statement.bind((11, millis)).unwrap();
     statement.next().unwrap();
 }

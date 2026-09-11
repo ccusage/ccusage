@@ -117,7 +117,7 @@ impl ConfigContext {
             .command
             .agent
             .as_deref()
-            .and_then(|agent| object_at(root, agent))
+            .and_then(|agent| object_at(root, &agent_config_key(agent)))
         {
             if let Some(defaults) = object_at(agent, "defaults") {
                 maps.push(defaults);
@@ -237,6 +237,22 @@ fn matches_named_pi_store_name_pattern(name: &str) -> bool {
         })
         .unwrap_or(usize::MAX);
     rest_len <= 31
+}
+
+/// Maps a CLI agent name to its config-file section key. Most names match
+/// directly; hyphenated names map to the schema's camelCase key
+/// (for example `claude-science` -> `claudeScience`).
+fn agent_config_key(agent: &str) -> String {
+    let mut key = String::with_capacity(agent.len());
+    for (index, part) in agent.split('-').enumerate() {
+        if index == 0 {
+            key.push_str(part);
+        } else {
+            key.extend(part.chars().next().map(|c| c.to_ascii_uppercase()));
+            key.push_str(&part[1..]);
+        }
+    }
+    key
 }
 
 fn object_at<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a Map<String, Value>> {

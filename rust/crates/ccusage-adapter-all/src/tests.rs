@@ -699,7 +699,7 @@ fn claude_science_fixture_reports_daily_monthly_session_json_and_table_snapshots
     assert_eq!(daily.detected_agents, vec!["claude-science"]);
     assert_eq!(monthly.detected_agents, vec!["claude-science"]);
     assert_eq!(session.detected_agents, vec!["claude-science"]);
-    assert_eq!(daily.rows.len(), 3);
+    assert_eq!(daily.rows.len(), 4);
     assert_eq!(daily.rows[0].period, "2099-01-02");
     assert_eq!(daily.rows[0].input_tokens, 100);
     assert_eq!(daily.rows[0].output_tokens, 10);
@@ -758,6 +758,33 @@ fn claude_science_fixture_reports_daily_monthly_session_json_and_table_snapshots
             &session.detected_agents,
         ))
         .unwrap()
+    );
+
+    // Recorded-cost behavior: display mode always reports the recorded cost
+    // (NULL-cost frames contribute nothing), while auto mode falls back to
+    // the pricing catalog for frames without a recorded cost.
+    let mut display = fixture_shared("20990101", "20990401");
+    display.mode = CostMode::Display;
+    let mut auto = fixture_shared("20990101", "20990401");
+    auto.mode = CostMode::Auto;
+    let display_rows = load_rows(AgentReportKind::Daily, &display).unwrap();
+    let auto_rows = load_rows(AgentReportKind::Daily, &auto).unwrap();
+
+    let display_march = display_rows
+        .rows
+        .iter()
+        .find(|row| row.period == "2099-03-01")
+        .expect("march daily row");
+    let auto_march = auto_rows
+        .rows
+        .iter()
+        .find(|row| row.period == "2099-03-01")
+        .expect("march daily row");
+    assert_eq!(display_march.input_tokens, 40);
+    assert_eq!(display_march.total_cost, 0.0);
+    assert!(
+        auto_march.total_cost > 0.0,
+        "auto mode should price the NULL-cost frame from the catalog"
     );
 }
 

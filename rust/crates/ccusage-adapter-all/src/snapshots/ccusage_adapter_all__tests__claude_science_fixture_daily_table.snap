@@ -101,14 +101,42 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&daily.rows,\nAgentRep
     },
     {
       "cells": [
+        "2099-03-01",
+        "All",
+        "",
+        "40",
+        "4",
+        "0",
+        "5",
+        "49",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- Claude Science",
+        "- sonnet-4-5",
+        "40",
+        "4",
+        "0",
+        "5",
+        "49",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
         "Total",
         "",
         "",
-        "350",
-        "35",
+        "390",
+        "39",
         "45",
-        "75",
-        "505",
+        "80",
+        "554",
         "$0.00"
       ],
       "kind": "total"
