@@ -180,7 +180,7 @@ If ccusage shows no data, check:
    - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
    - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
-   - Claude Science: `${CLAUDE_SCIENCE_DB:-~/.claude-science}` (also scans the org layout)
+   - Claude Science: `${CLAUDE_SCIENCE_DB:-~/.claude-science}` and `~/.claude-science/cs-switch-proxy/orgs/<org>/operon-cli.db` when `CLAUDE_SCIENCE_DB` is unset
 
 ### Custom Data Directory
 

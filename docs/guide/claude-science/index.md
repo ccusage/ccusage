@@ -18,8 +18,9 @@ be included with every other detected source.
 ## Data Source
 
 Claude Science stores conversation metadata — including aggregate token usage per
-conversation frame — in a local SQLite database. The adapter looks for it in the
-well-known roots below and in the daemon's org layout:
+conversation frame — in a local SQLite database. The adapter scans well-known
+roots such as `~/.claude-science/`, `~/.config/claude-science/`, and
+`~/.local/share/claude-science/`, plus the daemon's org layout:
 
 ```text
 ~/.claude-science/cs-switch-proxy/orgs/<org>/operon-cli.db

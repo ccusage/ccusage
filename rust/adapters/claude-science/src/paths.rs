@@ -48,7 +48,8 @@ fn org_database_paths() -> Vec<PathBuf> {
 }
 
 fn candidate_roots() -> Vec<PathBuf> {
-    if let Ok(value) = env::var(CLAUDE_SCIENCE_DB_ENV) {
+    if let Some(value) = env::var_os(CLAUDE_SCIENCE_DB_ENV) {
+        let value = value.to_string_lossy();
         return value
             .split(',')
             .map(str::trim)
@@ -91,7 +92,7 @@ pub(crate) fn database_paths() -> Result<Vec<PathBuf>> {
             }
         }
     }
-    if env::var(CLAUDE_SCIENCE_DB_ENV).is_err() {
+    if env::var_os(CLAUDE_SCIENCE_DB_ENV).is_none() {
         for path in org_database_paths() {
             if is_claude_science_database(&path) {
                 push_unique(&mut paths, path);
@@ -168,6 +169,24 @@ pub(super) fn is_claude_science_database(path: &std::path::Path) -> bool {
              cache_read_tokens, cache_write_tokens, total_cost, updated_at FROM frames LIMIT 1",
         )
         .is_ok()
+        && (projects_table_is_usable(&connection) || !projects_table_exists(&connection))
+}
+
+/// Returns whether the `projects` table carries the columns the loader joins on.
+fn projects_table_is_usable(connection: &sqlite::Connection) -> bool {
+    connection
+        .prepare("SELECT id, name FROM projects LIMIT 1")
+        .is_ok()
+}
+
+/// Returns whether the database has a `projects` table at all.
+fn projects_table_exists(connection: &sqlite::Connection) -> bool {
+    let Ok(mut statement) = connection
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'projects'")
+    else {
+        return false;
+    };
+    statement.next().ok() == Some(sqlite::State::Row)
 }
 
 #[cfg(test)]
@@ -189,7 +208,7 @@ mod tests {
         cache_write_tokens INTEGER,
         total_cost REAL,
         updated_at INTEGER
-    ); CREATE TABLE projects (id TEXT);";
+    ); CREATE TABLE projects (id TEXT, name TEXT);";
 
     #[test]
     fn discovers_databases_with_frames_table() {
