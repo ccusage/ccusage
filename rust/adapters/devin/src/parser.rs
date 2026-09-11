@@ -61,17 +61,33 @@ pub(super) fn load_transcript_file(path: &Path) -> Result<Vec<DevinStep>> {
         if step.get("source").and_then(Value::as_str) != Some("agent") {
             continue;
         }
-        let Some(metrics) = step.get("metrics").and_then(Value::as_object) else {
+        let metadata = step.get("metadata").and_then(Value::as_object);
+        // v1.7 puts metrics on the step; v1.4 nests them under metadata.
+        let Some(usage) = step
+            .get("metrics")
+            .and_then(Value::as_object)
+            .map(step_usage)
+            .or_else(|| {
+                metadata
+                    .and_then(|metadata| metadata.get("metrics"))
+                    .and_then(Value::as_object)
+                    .map(legacy_step_usage)
+            })
+        else {
             continue;
         };
         let Some(timestamp) = step
             .get("timestamp")
             .and_then(Value::as_str)
+            .or_else(|| {
+                metadata
+                    .and_then(|metadata| metadata.get("created_at"))
+                    .and_then(Value::as_str)
+            })
             .and_then(parse_devin_timestamp)
         else {
             continue;
         };
-        let usage = step_usage(metrics);
         if crate::total_usage_tokens(usage) == 0 {
             continue;
         }
@@ -79,6 +95,7 @@ pub(super) fn load_transcript_file(path: &Path) -> Result<Vec<DevinStep>> {
             .get("extra")
             .and_then(Value::as_object)
             .and_then(|extra| string_field(extra, "generation_model"))
+            .or_else(|| metadata.and_then(|metadata| string_field(metadata, "generation_model")))
             .or_else(|| {
                 step.get("model_name")
                     .and_then(Value::as_str)
@@ -128,6 +145,19 @@ fn step_usage(metrics: &serde_json::Map<String, Value>) -> TokenUsageRaw {
         output_tokens: json_value_u64(metrics.get("completion_tokens")),
         cache_creation_input_tokens: cache_creation,
         cache_read_input_tokens: cache_read,
+        speed: None,
+        cache_creation: None,
+    }
+}
+
+/// v1.4 steps carry `metadata.metrics` where `input_tokens` already excludes
+/// the cache buckets, so the fields map directly onto the shared shape.
+fn legacy_step_usage(metrics: &serde_json::Map<String, Value>) -> TokenUsageRaw {
+    TokenUsageRaw {
+        input_tokens: json_value_u64(metrics.get("input_tokens")),
+        output_tokens: json_value_u64(metrics.get("output_tokens")),
+        cache_creation_input_tokens: json_value_u64(metrics.get("cache_creation_tokens")),
+        cache_read_input_tokens: json_value_u64(metrics.get("cache_read_tokens")),
         speed: None,
         cache_creation: None,
     }

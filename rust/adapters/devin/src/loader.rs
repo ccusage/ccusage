@@ -200,6 +200,41 @@ mod tests {
     }
 
     #[test]
+    fn loads_legacy_metadata_metrics() {
+        let fixture = fs_fixture!({
+            "transcripts/tasty-centaur.json": r#"{
+                "schema_version": "ATIF-v1.4",
+                "session_id": "tasty-centaur",
+                "agent": {"name": "devin", "version": "2026.5.26-8", "model_name": "Adaptive"},
+                "steps": [
+                    {"step_id": 8, "source": "agent", "model_name": "Claude Opus 4.7",
+                     "metadata": {
+                        "created_at": "2026-06-10T13:01:55.298013Z",
+                        "generation_model": "claude-opus-4-7-medium",
+                        "metrics": {"input_tokens": 6, "output_tokens": 164,
+                                    "cache_read_tokens": 14473, "cache_creation_tokens": 25474}
+                     }}
+                ]
+            }"#,
+        });
+        let _env = EnvVarGuard::set(
+            DEVIN_TRANSCRIPTS_DIR_ENV,
+            fixture.path("transcripts").into_os_string(),
+        );
+
+        let entries = load_entries(&SharedArgs::default(), &PricingMap::default()).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 6);
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 14473);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            25474
+        );
+        assert_eq!(entries[0].model.as_deref(), Some("claude-opus-4-7-medium"));
+    }
+
+    #[test]
     fn skips_transcripts_without_metrics() {
         let fixture = fs_fixture!({
             "transcripts/legacy.json": r#"{
