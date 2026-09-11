@@ -27,6 +27,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity` |
 | `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                            |
 | `ZCODE_HOME`                      | ZCode          | `~/.zcode`                                           |
+| `DEVIN_TRANSCRIPTS_DIR`           | Devin          | `~/.local/share/devin/cli/transcripts`               |
 
 Example:
 
@@ -49,6 +50,7 @@ export GEMINI_DATA_DIR="/path/to/gemini/tmp,/archive/gemini/tmp"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export GROK_HOME="/path/to/grok-home"
 export ZCODE_HOME="/path/to/zcode-home,/archive/zcode-home"
+export DEVIN_TRANSCRIPTS_DIR="/path/to/devin/transcripts,/archive/devin/transcripts"
 ccusage daily
 ```
 
@@ -218,7 +220,7 @@ To see which environment variables are being used:
 
 ```bash
 # Show all environment variables
-env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|GROK|ZCODE|CCUSAGE|LOG_LEVEL"
+env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|GROK|ZCODE|DEVIN|CCUSAGE|LOG_LEVEL"
 
 # Debug mode shows environment variable usage
 LOG_LEVEL=4 ccusage daily --debug
