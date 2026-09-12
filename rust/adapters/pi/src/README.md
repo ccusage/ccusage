@@ -28,3 +28,9 @@ fallback, and the effective billed cost in Display or Auto mode. The first
 mismatch and all later records remain in the child session. Missing, malformed,
 self-referential, or cyclic lineage is left unchanged so usage is not discarded
 speculatively.
+
+pi-subagents writes derived debug transcripts under `subagent-artifacts/`
+directories inside the sessions tree. Those transcripts duplicate calls already
+recorded in the primary session files, so the loader skips any `.jsonl` file
+with a `subagent-artifacts/` path segment. `run-*/` fresh-context child
+sessions are the primary record for those children and keep counting.
