@@ -10,6 +10,7 @@ use assert_fs::{
     fixture::{ChildPath, FileWriteStr, PathChild, PathCreateDir},
 };
 
+pub mod claude_science;
 pub mod zcode;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());

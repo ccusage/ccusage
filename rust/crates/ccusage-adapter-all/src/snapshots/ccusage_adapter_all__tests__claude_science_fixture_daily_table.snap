@@ -1,0 +1,146 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "serde_json::to_string_pretty(&table_snapshot(&daily.rows,\nAgentReportKind::Daily, &daily.detected_agents,)).unwrap()"
+---
+{
+  "headers": [
+    "Date",
+    "Agent",
+    "Models",
+    "Input",
+    "Output",
+    "Cache Create",
+    "Cache Read",
+    "Total Tokens",
+    "Cost (USD)"
+  ],
+  "rows": [
+    {
+      "cells": [
+        "2099-01-02",
+        "All",
+        "",
+        "100",
+        "10",
+        "15",
+        "25",
+        "150",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- Claude Science",
+        "- sonnet-4-5",
+        "100",
+        "10",
+        "15",
+        "25",
+        "150",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "2099-01-15",
+        "All",
+        "",
+        "200",
+        "20",
+        "30",
+        "40",
+        "290",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- Claude Science",
+        "- sonnet-4-5",
+        "200",
+        "20",
+        "30",
+        "40",
+        "290",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "2099-02-01",
+        "All",
+        "",
+        "50",
+        "5",
+        "0",
+        "10",
+        "65",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- Claude Science",
+        "- opus-4-6",
+        "50",
+        "5",
+        "0",
+        "10",
+        "65",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "2099-03-01",
+        "All",
+        "",
+        "40",
+        "4",
+        "0",
+        "5",
+        "49",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- Claude Science",
+        "- sonnet-4-5",
+        "40",
+        "4",
+        "0",
+        "5",
+        "49",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "Total",
+        "",
+        "",
+        "390",
+        "39",
+        "45",
+        "80",
+        "554",
+        "$0.00"
+      ],
+      "kind": "total"
+    }
+  ],
+  "title": "Coding (Agent) CLI Usage Report - Daily\nDetected: Claude Science"
+}

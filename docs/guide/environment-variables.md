@@ -27,6 +27,7 @@ ccusage detects supported data source files from conventional locations by defau
 | `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity` |
 | `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                            |
 | `ZCODE_HOME`                      | ZCode          | `~/.zcode`                                           |
+| `CLAUDE_SCIENCE_DB`               | Claude Science | `~/.claude-science` and org layout                   |
 
 Example:
 
