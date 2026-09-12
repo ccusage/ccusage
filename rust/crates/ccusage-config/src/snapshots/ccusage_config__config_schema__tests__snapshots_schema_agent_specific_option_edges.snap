@@ -46,6 +46,12 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "markdownDescription": "Show statusline debug information.",
         "type": "boolean"
       },
+      "gitBranch": {
+        "default": false,
+        "description": "Show the current git branch of the workspace.",
+        "markdownDescription": "Show the current git branch of the workspace.",
+        "type": "boolean"
+      },
       "modelLabelAliases": {
         "additionalProperties": {
           "type": "string"

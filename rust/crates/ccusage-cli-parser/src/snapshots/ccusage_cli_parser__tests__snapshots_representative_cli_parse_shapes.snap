@@ -600,6 +600,7 @@ expression: cases
         "contextMediumThreshold": 75,
         "costSource": "Both",
         "debug": true,
+        "gitBranch": true,
         "noCache": true,
         "noOffline": true,
         "offline": true,

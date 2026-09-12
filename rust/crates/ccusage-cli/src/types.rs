@@ -161,6 +161,8 @@ pub struct StatuslineArgs {
     pub refresh_interval: u64,
     pub context_low_threshold: u8,
     pub context_medium_threshold: u8,
+    /// Show the current git branch of the workspace in the statusline.
+    pub git_branch: bool,
     pub timezone: Option<String>,
     pub config: Option<PathBuf>,
     pub debug: bool,
@@ -226,6 +228,7 @@ impl Default for StatuslineArgs {
             refresh_interval: 1,
             context_low_threshold: 50,
             context_medium_threshold: 80,
+            git_branch: false,
             timezone: None,
             config: None,
             debug: false,

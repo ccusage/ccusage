@@ -327,6 +327,7 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
     let cache_path = statusline_cache_path(&hook.session_id);
     let transcript_path = Path::new(&hook.transcript_path);
     let current_mtime = transcript_mtime_ms(transcript_path).unwrap_or_default();
+    let git_branch = resolve_statusline_git_branch(&hook, &args);
     let initial_cache = if cache_enabled {
         read_statusline_cache(&cache_path)
     } else {
@@ -334,8 +335,13 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
     };
 
     if let Some(cache) = initial_cache.as_ref()
-        && let Some(output) =
-            cached_statusline_output(cache, current_mtime, now_millis(), args.refresh_interval)
+        && let Some(output) = cached_statusline_output(
+            cache,
+            current_mtime,
+            git_branch.as_deref(),
+            now_millis(),
+            args.refresh_interval,
+        )
     {
         println!("{output}");
         return Ok(());
@@ -345,14 +351,20 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
         mark_statusline_cache_updating(&cache_path, &hook, current_mtime, initial_cache.as_ref());
     }
 
-    let statusline_result = render_statusline(&hook, &args, &shared);
+    let statusline_result = render_statusline(&hook, &args, &shared, git_branch.as_deref());
     match statusline_result {
         Ok(statusline) => {
             println!("{statusline}");
             if cache_enabled {
                 write_statusline_cache(
                     &cache_path,
-                    StatuslineCache::completed(&hook, statusline, current_mtime, now_millis()),
+                    StatuslineCache::completed(
+                        &hook,
+                        statusline,
+                        current_mtime,
+                        git_branch,
+                        now_millis(),
+                    ),
                 );
             }
         }
@@ -415,6 +427,7 @@ fn render_statusline(
     hook: &StatuslineHook,
     args: &StatuslineArgs,
     shared: &SharedArgs,
+    git_branch: Option<&str>,
 ) -> Result<String> {
     let session_cost = match args.cost_source {
         CostSource::Cc => hook.cost.as_ref().map(|cost| cost.total_cost_usd),
@@ -528,16 +541,98 @@ fn render_statusline(
 
     let model_label = resolve_model_label(&args.model_label_aliases, &hook.model.display_name);
     let model_segment = format_model_segment(model_label, hook.effort.as_ref());
+    let git_segment = git_branch
+        .map(|branch| format!(" | 🌿 {branch}"))
+        .unwrap_or_default();
 
     Ok(format!(
-        "🤖 {} | 💰 {} session / {} today / {}{} | 🧠 {}",
+        "🤖 {}{} | 💰 {} session / {} today / {}{} | 🧠 {}",
         model_segment,
+        git_segment,
         session_display,
         format_currency(today_cost),
         block_info,
         burn_rate_info,
         context_info.unwrap_or_else(|| "N/A".to_string())
     ))
+}
+
+/// Resolve the git branch label for the statusline, or `None` when the
+/// segment is disabled or the workspace is not inside a repository.
+///
+/// Resolved before the cache check rather than during rendering: it costs a
+/// few file reads, and it has to take part in cache validity so a cached line
+/// neither hides a newly enabled segment nor keeps showing the previous
+/// branch after a checkout.
+fn resolve_statusline_git_branch(hook: &StatuslineHook, args: &StatuslineArgs) -> Option<String> {
+    if !args.git_branch {
+        return None;
+    }
+    statusline_workspace_dir(hook).and_then(|dir| git_branch_for_dir(&dir))
+}
+
+/// Resolve the directory whose git repository the statusline reports.
+///
+/// Prefers the workspace directory Claude Code reports for the session, then
+/// the hook's `cwd`, and finally the process working directory so older Claude
+/// Code versions that omit both fields still resolve a branch.
+fn statusline_workspace_dir(hook: &StatuslineHook) -> Option<PathBuf> {
+    fn non_empty(dir: Option<&str>) -> Option<&str> {
+        dir.filter(|dir| !dir.is_empty())
+    }
+    let workspace_dir = non_empty(
+        hook.workspace
+            .as_ref()
+            .and_then(|workspace| workspace.current_dir.as_deref()),
+    );
+    workspace_dir
+        .or_else(|| non_empty(hook.cwd.as_deref()))
+        .map(PathBuf::from)
+        .or_else(|| env::current_dir().ok())
+}
+
+/// Format the git branch segment of the statusline.
+///
+/// Walks up from `dir` to the nearest `.git` entry and reads `HEAD` directly
+/// instead of spawning `git`, so the statusline stays fast and works without
+/// a git binary on `PATH`. Worktrees and submodules, whose `.git` is a file
+/// pointing at the real git directory, are followed. A symbolic `HEAD` yields
+/// the branch name; a detached `HEAD` yields the abbreviated commit hash in
+/// parentheses. Returns `None` outside a git repository.
+fn git_branch_for_dir(dir: &Path) -> Option<String> {
+    let git_dir = find_git_dir(dir)?;
+    let head = fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    let head = head.trim();
+    if let Some(reference) = head.strip_prefix("ref:") {
+        let reference = reference.trim();
+        let branch = reference.strip_prefix("refs/heads/").unwrap_or(reference);
+        return (!branch.is_empty()).then(|| branch.to_string());
+    }
+    if head.is_empty() {
+        return None;
+    }
+    let short: String = head.chars().take(7).collect();
+    Some(format!("({short})"))
+}
+
+/// Locate the git directory that owns `dir`, following `.git` files written
+/// by `git worktree` and submodules (`gitdir: <path>`).
+fn find_git_dir(dir: &Path) -> Option<PathBuf> {
+    dir.ancestors().find_map(|ancestor| {
+        let dot_git = ancestor.join(".git");
+        let metadata = fs::metadata(&dot_git).ok()?;
+        if metadata.is_dir() {
+            return Some(dot_git);
+        }
+        let content = fs::read_to_string(&dot_git).ok()?;
+        let target = content.trim().strip_prefix("gitdir:")?.trim();
+        let target = Path::new(target);
+        Some(if target.is_absolute() {
+            target.to_path_buf()
+        } else {
+            ancestor.join(target)
+        })
+    })
 }
 
 fn statusline_today_shared(
@@ -671,6 +766,11 @@ struct StatuslineCache {
     #[serde(rename = "isUpdating", default)]
     is_updating: bool,
     pid: Option<u32>,
+    /// Branch label rendered into `last_output`, `None` when the segment was
+    /// off or the workspace was outside a repository. Missing in caches written
+    /// by older versions, which deserializes as `None`.
+    #[serde(rename = "gitBranch", default)]
+    git_branch: Option<String>,
 }
 
 impl StatuslineCache {
@@ -678,6 +778,7 @@ impl StatuslineCache {
         hook: &StatuslineHook,
         last_output: String,
         transcript_mtime: u64,
+        git_branch: Option<String>,
         last_update_time: u64,
     ) -> Self {
         Self {
@@ -688,9 +789,17 @@ impl StatuslineCache {
             transcript_mtime,
             is_updating: false,
             pid: None,
+            git_branch,
         }
     }
 
+    /// Mark the entry as being refreshed by this process while keeping the
+    /// previous output available to concurrent invocations.
+    ///
+    /// `git_branch` stays the one `last_output` was rendered with, not the
+    /// branch being rendered now: the metadata must describe the retained
+    /// line, so a refresh that fails (which leaves `last_output` in place)
+    /// cannot relabel the previous branch's output as the current branch.
     fn updating(hook: &StatuslineHook, transcript_mtime: u64, previous: Option<&Self>) -> Self {
         let now = now_millis();
         Self {
@@ -705,23 +814,26 @@ impl StatuslineCache {
             transcript_mtime,
             is_updating: true,
             pid: Some(std::process::id()),
+            git_branch: previous.and_then(|cache| cache.git_branch.clone()),
         }
     }
 }
 
-fn cached_statusline_output(
-    cache: &StatuslineCache,
+fn cached_statusline_output<'a>(
+    cache: &'a StatuslineCache,
     current_mtime: u64,
+    git_branch: Option<&str>,
     now: u64,
     refresh_interval: u64,
-) -> Option<&str> {
+) -> Option<&'a str> {
     if cache.last_output.is_empty() {
         return None;
     }
     let expired =
         now.saturating_sub(cache.last_update_time) >= refresh_interval.saturating_mul(1000);
     let file_modified = cache.transcript_mtime != current_mtime;
-    if expired || file_modified {
+    let branch_changed = cache.git_branch.as_deref() != git_branch;
+    if expired || file_modified || branch_changed {
         if cache.is_updating && cache.pid.is_some_and(process_is_alive) {
             return Some(cache.last_output.as_str());
         }
@@ -812,6 +924,16 @@ struct StatuslineHook {
     cost: Option<HookCost>,
     context_window: Option<HookContext>,
     effort: Option<HookEffort>,
+    /// Working directory of the Claude Code process.
+    cwd: Option<String>,
+    /// Workspace directories reported by Claude Code.
+    workspace: Option<HookWorkspace>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HookWorkspace {
+    /// Directory the session is currently operating in.
+    current_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1005,9 +1127,190 @@ mod tests {
                 context_window_size: 200_000,
             }),
             effort: None,
+            cwd: None,
+            workspace: None,
         };
-        let output = render_statusline(&hook, &args, &shared).unwrap();
+        let output = render_statusline(&hook, &args, &shared, None).unwrap();
         assert!(output.contains("💰 $0.40 session"), "{output}");
+    }
+
+    #[test]
+    fn git_branch_reads_symbolic_head_from_git_directory() {
+        let fixture = fs_fixture!({
+            ".git/HEAD": "ref: refs/heads/feature/git-branch\n",
+        });
+
+        assert_eq!(
+            git_branch_for_dir(fixture.root()).as_deref(),
+            Some("feature/git-branch")
+        );
+    }
+
+    #[test]
+    fn git_branch_walks_up_to_the_enclosing_repository() {
+        let fixture = fs_fixture!({
+            ".git/HEAD": "ref: refs/heads/main\n",
+            "src/nested/.keep": "",
+        });
+
+        assert_eq!(
+            git_branch_for_dir(&fixture.path("src/nested")).as_deref(),
+            Some("main")
+        );
+    }
+
+    #[test]
+    fn git_branch_follows_worktree_gitdir_file() {
+        let fixture = fs_fixture!({
+            "main/.git/HEAD": "ref: refs/heads/main\n",
+            "main/.git/worktrees/wt/HEAD": "ref: refs/heads/worktree-branch\n",
+            "wt/.git": "gitdir: ../main/.git/worktrees/wt\n",
+        });
+
+        assert_eq!(
+            git_branch_for_dir(&fixture.path("wt")).as_deref(),
+            Some("worktree-branch")
+        );
+    }
+
+    #[test]
+    fn git_branch_shows_abbreviated_hash_when_head_is_detached() {
+        let fixture = fs_fixture!({
+            ".git/HEAD": "0123456789abcdef0123456789abcdef01234567\n",
+        });
+
+        assert_eq!(
+            git_branch_for_dir(fixture.root()).as_deref(),
+            Some("(0123456)")
+        );
+    }
+
+    #[test]
+    fn git_branch_is_absent_outside_a_repository() {
+        let fixture = fs_fixture!({
+            "src/.keep": "",
+        });
+
+        // A temp dir under a git checkout would still resolve, so only assert
+        // that nothing is found when no ancestor carries `.git`.
+        let has_git_ancestor = fixture
+            .root()
+            .ancestors()
+            .any(|dir| dir.join(".git").exists());
+        if !has_git_ancestor {
+            assert_eq!(git_branch_for_dir(&fixture.path("src")), None);
+        }
+    }
+
+    #[test]
+    fn statusline_workspace_dir_prefers_workspace_current_dir_over_cwd() {
+        let mut hook = statusline_hook_fixture("transcript.jsonl");
+        hook.cwd = Some("/from/cwd".to_string());
+        hook.workspace = Some(HookWorkspace {
+            current_dir: Some("/from/workspace".to_string()),
+        });
+        assert_eq!(
+            statusline_workspace_dir(&hook),
+            Some(PathBuf::from("/from/workspace"))
+        );
+
+        hook.workspace = None;
+        assert_eq!(
+            statusline_workspace_dir(&hook),
+            Some(PathBuf::from("/from/cwd"))
+        );
+
+        // An empty workspace directory must not shadow a usable cwd.
+        hook.workspace = Some(HookWorkspace {
+            current_dir: Some(String::new()),
+        });
+        assert_eq!(
+            statusline_workspace_dir(&hook),
+            Some(PathBuf::from("/from/cwd"))
+        );
+    }
+
+    #[test]
+    fn updating_statusline_cache_keeps_the_branch_of_the_retained_output() {
+        let hook = statusline_hook_fixture("/tmp/transcript.jsonl");
+        let previous = StatuslineCache::completed(
+            &hook,
+            "🤖 M | 🌿 main | 💰 ...".to_string(),
+            123,
+            Some("main".to_string()),
+            10_000,
+        );
+
+        // The refresh is rendering `feature`, but the retained line is main's.
+        let updating = StatuslineCache::updating(&hook, 456, Some(&previous));
+        assert_eq!(updating.last_output, previous.last_output);
+        assert_eq!(updating.git_branch.as_deref(), Some("main"));
+        assert!(updating.is_updating);
+
+        // Once the refresh is released without a new line (render failed), the
+        // entry still misses for `feature` and only serves `main` output as main.
+        let mut released = updating;
+        released.is_updating = false;
+        released.pid = None;
+        assert_eq!(
+            cached_statusline_output(&released, 456, Some("feature"), 10_500, 1),
+            None
+        );
+        assert_eq!(
+            cached_statusline_output(&released, 456, Some("main"), 10_500, 1),
+            Some("🤖 M | 🌿 main | 💰 ...")
+        );
+
+        assert_eq!(StatuslineCache::updating(&hook, 456, None).git_branch, None);
+    }
+
+    #[test]
+    fn statusline_shows_git_branch_segment_only_when_enabled() {
+        let fixture = fs_fixture!({
+            "repo/.git/HEAD": "ref: refs/heads/feature/statusline\n",
+            "transcript.jsonl": r#"{"type":"assistant","message":{"usage":{"input_tokens":1000}}}"#,
+        });
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let mut hook =
+            statusline_hook_fixture(fixture.path("transcript.jsonl").to_string_lossy().as_ref());
+        hook.cwd = Some(fixture.path("repo").to_string_lossy().into_owned());
+        let shared = SharedArgs {
+            offline: true,
+            ..SharedArgs::default()
+        };
+
+        let enabled = StatuslineArgs {
+            git_branch: true,
+            ..StatuslineArgs::default()
+        };
+        let branch = resolve_statusline_git_branch(&hook, &enabled);
+        assert_eq!(branch.as_deref(), Some("feature/statusline"));
+        let output = render_statusline(&hook, &enabled, &shared, branch.as_deref()).unwrap();
+        assert!(
+            output.starts_with("🤖 Test model | 🌿 feature/statusline | 💰 "),
+            "{output}"
+        );
+
+        let disabled = StatuslineArgs::default();
+        assert_eq!(resolve_statusline_git_branch(&hook, &disabled), None);
+        let output = render_statusline(&hook, &disabled, &shared, None).unwrap();
+        assert!(!output.contains("🌿"), "{output}");
+    }
+
+    fn statusline_hook_fixture(transcript_path: &str) -> StatuslineHook {
+        StatuslineHook {
+            session_id: "session".to_string(),
+            transcript_path: transcript_path.to_string(),
+            model: HookModel {
+                id: None,
+                display_name: "Test model".to_string(),
+            },
+            cost: None,
+            context_window: None,
+            effort: None,
+            cwd: None,
+            workspace: None,
+        }
     }
 
     #[test]
@@ -1113,10 +1416,11 @@ mod tests {
             transcript_mtime: 123,
             is_updating: false,
             pid: None,
+            git_branch: None,
         };
 
         assert_eq!(
-            cached_statusline_output(&cache, 123, 10_500, 1),
+            cached_statusline_output(&cache, 123, None, 10_500, 1),
             Some("cached status")
         );
     }
@@ -1131,9 +1435,66 @@ mod tests {
             transcript_mtime: 123,
             is_updating: false,
             pid: None,
+            git_branch: None,
         };
 
-        assert_eq!(cached_statusline_output(&cache, 456, 10_500, 1), None);
+        assert_eq!(cached_statusline_output(&cache, 456, None, 10_500, 1), None);
+    }
+
+    #[test]
+    fn invalidates_statusline_cache_when_git_branch_changes() {
+        let mut cache = StatuslineCache {
+            date: "2026-01-01T00:00:00.000Z".to_string(),
+            last_output: "🤖 M | 🌿 main | 💰 ...".to_string(),
+            last_update_time: 10_000,
+            transcript_path: "/tmp/transcript.jsonl".to_string(),
+            transcript_mtime: 123,
+            is_updating: false,
+            pid: None,
+            git_branch: Some("main".to_string()),
+        };
+
+        // Same branch, fresh cache, unchanged transcript: still served.
+        assert_eq!(
+            cached_statusline_output(&cache, 123, Some("main"), 10_500, 1),
+            Some("🤖 M | 🌿 main | 💰 ...")
+        );
+        // Checked out another branch since the cache was written.
+        assert_eq!(
+            cached_statusline_output(&cache, 123, Some("feature"), 10_500, 1),
+            None
+        );
+        // Segment turned off since the cache was written.
+        assert_eq!(cached_statusline_output(&cache, 123, None, 10_500, 1), None);
+
+        // Cache from a run without the segment (or an older version) must not
+        // hide a newly enabled branch.
+        cache.git_branch = None;
+        assert_eq!(
+            cached_statusline_output(&cache, 123, Some("main"), 10_500, 1),
+            None
+        );
+    }
+
+    #[test]
+    fn statusline_cache_round_trips_git_branch_and_tolerates_older_caches() {
+        let hook = statusline_hook_fixture("/tmp/transcript.jsonl");
+        let cache = StatuslineCache::completed(
+            &hook,
+            "🤖 M | 🌿 main | 💰 ...".to_string(),
+            123,
+            Some("main".to_string()),
+            10_000,
+        );
+        let json = serde_json::to_string(&cache).unwrap();
+        let parsed: StatuslineCache = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.git_branch.as_deref(), Some("main"));
+
+        let older: StatuslineCache = serde_json::from_str(
+            r#"{"date":"2026-01-01T00:00:00.000Z","lastOutput":"cached","lastUpdateTime":10000,"transcriptPath":"/tmp/transcript.jsonl","transcriptMtime":123}"#,
+        )
+        .unwrap();
+        assert_eq!(older.git_branch, None);
     }
 
     #[test]
@@ -1146,10 +1507,11 @@ mod tests {
             transcript_mtime: 123,
             is_updating: true,
             pid: Some(std::process::id()),
+            git_branch: None,
         };
 
         assert_eq!(
-            cached_statusline_output(&cache, 456, 20_000, 1),
+            cached_statusline_output(&cache, 456, None, 20_000, 1),
             Some("stale status")
         );
     }

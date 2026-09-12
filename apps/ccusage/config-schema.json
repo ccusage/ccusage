@@ -2087,6 +2087,12 @@
 											"markdownDescription": "Show statusline debug information.",
 											"type": "boolean"
 										},
+										"gitBranch": {
+											"default": false,
+											"description": "Show the current git branch of the workspace.",
+											"markdownDescription": "Show the current git branch of the workspace.",
+											"type": "boolean"
+										},
 										"modelLabelAliases": {
 											"additionalProperties": {
 												"type": "string"
@@ -2443,6 +2449,11 @@
 									"enum": ["auto", "calculate", "display"],
 									"markdownDescription": "Cost calculation mode.",
 									"type": "string"
+								},
+								"gitBranch": {
+									"description": "Show the current git branch of the workspace.",
+									"markdownDescription": "Show the current git branch of the workspace.",
+									"type": "boolean"
 								},
 								"modelLabelAliases": {
 									"additionalProperties": {
@@ -4656,6 +4667,12 @@
 									"default": false,
 									"description": "Show statusline debug information.",
 									"markdownDescription": "Show statusline debug information.",
+									"type": "boolean"
+								},
+								"gitBranch": {
+									"default": false,
+									"description": "Show the current git branch of the workspace.",
+									"markdownDescription": "Show the current git branch of the workspace.",
 									"type": "boolean"
 								},
 								"modelLabelAliases": {
