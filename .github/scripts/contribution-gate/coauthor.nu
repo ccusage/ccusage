@@ -141,5 +141,5 @@ export def verify-coauthor []: nothing -> nothing {
         | str join "\n"
         error make {msg: $"Issue-author co-author verification failed for PR #($pull_request.number):\n($summary)"}
     }
-    print $"Verified issue-author attribution on PR #($pull_request.number) across ($commits | length) commit(s)."
+    print $"Verified issue-author attribution on PR #($pull_request.number) across ($commits | length) commits."
 }
