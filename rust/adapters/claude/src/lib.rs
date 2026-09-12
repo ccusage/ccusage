@@ -511,29 +511,126 @@ fn is_valid_usage_entry(data: &UsageEntry) -> bool {
 }
 
 pub(crate) fn has_unsupported_null_field(line: &[u8]) -> bool {
+    let excluded = iterations_array_ranges(line);
     let mut offset = 0;
     while let Some(relative_index) = memmem::find(&line[offset..], b":null") {
         let null_index = offset + relative_index;
-        let mut field_end = null_index.saturating_sub(1);
-        if line.get(field_end) != Some(&b'"') {
-            while field_end > 0 && line[field_end] != b'"' {
-                field_end -= 1;
+        if !is_in_excluded_ranges(null_index, &excluded) {
+            let mut field_end = null_index.saturating_sub(1);
+            if line.get(field_end) != Some(&b'"') {
+                while field_end > 0 && line[field_end] != b'"' {
+                    field_end -= 1;
+                }
             }
-        }
-        if line.get(field_end) == Some(&b'"') {
-            let mut field_start = field_end.saturating_sub(1);
-            while field_start > 0 && line[field_start] != b'"' {
-                field_start -= 1;
-            }
-            if line.get(field_start) == Some(&b'"')
-                && is_unsupported_nullable_field(&line[field_start + 1..field_end])
-            {
-                return true;
+            if line.get(field_end) == Some(&b'"') {
+                let mut field_start = field_end.saturating_sub(1);
+                while field_start > 0 && line[field_start] != b'"' {
+                    field_start -= 1;
+                }
+                if line.get(field_start) == Some(&b'"')
+                    && is_unsupported_nullable_field(&line[field_start + 1..field_end])
+                {
+                    return true;
+                }
             }
         }
         offset = null_index + b":null".len();
     }
     false
+}
+
+/// Byte ranges of every `"iterations": [...]` array in the line.
+///
+/// `message.usage.iterations[].model` is `Option<String>` in the typed structs
+/// (Fable 5.1 writes it as explicit `null`), so nulls in there must not trip
+/// the top-level `has_unsupported_null_field` pre-check. The fields that check
+/// exists to mirror all live outside the array.
+fn iterations_array_ranges(line: &[u8]) -> Vec<(usize, usize)> {
+    // Fast path: most lines carry no iterations array at all.
+    if memmem::find(line, br#""iterations""#).is_none() {
+        return Vec::new();
+    }
+    let mut ranges = Vec::new();
+    let mut cursor = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    while cursor < line.len() {
+        let byte = line[cursor];
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            cursor += 1;
+            continue;
+        }
+        if byte == b'"' {
+            if line[cursor..].starts_with(br#""iterations""#) {
+                let key_start = cursor;
+                let mut after = cursor + br#""iterations""#.len();
+                while after < line.len() && line[after].is_ascii_whitespace() {
+                    after += 1;
+                }
+                if line.get(after) == Some(&b':') {
+                    after += 1;
+                    while after < line.len() && line[after].is_ascii_whitespace() {
+                        after += 1;
+                    }
+                    if line.get(after) == Some(&b'[') {
+                        let array_start = after;
+                        let mut depth = 1usize;
+                        let mut inner_string = false;
+                        let mut inner_escaped = false;
+                        after += 1;
+                        while after < line.len() {
+                            let inner = line[after];
+                            if inner_string {
+                                if inner_escaped {
+                                    inner_escaped = false;
+                                } else if inner == b'\\' {
+                                    inner_escaped = true;
+                                } else if inner == b'"' {
+                                    inner_string = false;
+                                }
+                            } else if inner == b'"' {
+                                inner_string = true;
+                            } else if inner == b'[' {
+                                depth += 1;
+                            } else if inner == b']' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    ranges.push((array_start, after + 1));
+                                    break;
+                                }
+                            }
+                            after += 1;
+                        }
+                        if after >= line.len() {
+                            break;
+                        }
+                        cursor = after;
+                        continue;
+                    }
+                }
+                cursor = key_start + 1;
+                continue;
+            }
+            in_string = true;
+            cursor += 1;
+            continue;
+        }
+        cursor += 1;
+    }
+    ranges
+}
+
+fn is_in_excluded_ranges(index: usize, ranges: &[(usize, usize)]) -> bool {
+    ranges
+        .iter()
+        .any(|&(start, end)| index >= start && index < end)
 }
 
 fn is_unsupported_nullable_field(field: &[u8]) -> bool {
@@ -711,6 +808,60 @@ mod tests {
         assert!(!has_unsupported_null_field(
             br#"{"message":{"content":null,"usage":{"input_tokens":0}}}"#
         ));
+    }
+
+    #[test]
+    fn allows_null_model_inside_iterations() {
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"input_tokens":0,"iterations":[{"type":"message","model":null,"input_tokens":0,"output_tokens":0}]}}}"#
+        ));
+    }
+
+    #[test]
+    fn still_rejects_top_level_null_model_next_to_iterations() {
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":null,"usage":{"input_tokens":0,"iterations":[{"type":"message","model":null,"input_tokens":0,"output_tokens":0}]}}}"#
+        ));
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"input_tokens":0,"speed":null,"iterations":[{"type":"message","model":null,"input_tokens":0,"output_tokens":0}]}}}"#
+        ));
+    }
+
+    #[test]
+    fn ignores_iterations_key_inside_strings() {
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":null,"content":"\"iterations\":[0]","usage":{"input_tokens":0}}}"#
+        ));
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","content":"\"iterations\":[0]","usage":{"input_tokens":0,"iterations":[{"type":"message","model":null,"input_tokens":0,"output_tokens":0}]}}}"#
+        ));
+    }
+
+    #[test]
+    fn keeps_entry_with_null_model_inside_iterations() {
+        let fixture = fs_fixture!({
+            "projects/p/s/chat.jsonl": r#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","version":"2.1.268","sessionId":"s","requestId":"req_1","message":{"id":"msg_1","model":"claude-fable-5-1","role":"assistant","usage":{"input_tokens":2,"cache_creation_input_tokens":55866,"cache_read_input_tokens":0,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289,"cache_creation_input_tokens":55866,"cache_read_input_tokens":0}]}}}"#,
+        });
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/p/s/chat.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.entries[0].model.as_deref(), Some("claude-fable-5-1"));
+        assert_eq!(loaded.entries[0].data.message.usage.input_tokens, 2);
+        assert_eq!(loaded.entries[0].data.message.usage.output_tokens, 289);
+        assert_eq!(
+            loaded.entries[0]
+                .data
+                .message
+                .usage
+                .cache_creation_input_tokens,
+            55866
+        );
     }
 
     #[test]
