@@ -8,6 +8,7 @@ Use Pullfrog issue tools to fetch the complete issue body, comments, events, and
 Return a verdict only; do not call close_current, reopen_current, create_issue_comment, add_labels, remove_labels, create_pull_request, git, or shell tools. Do not modify files, run untrusted code, or push anything.
 
 Classify the issue with exactly one kind:
+
 - bug: existing supported behavior is incorrect, regressed, incompatible, unsafe, or materially misreports usage or cost
 - documentation: documentation for existing supported behavior is missing or wrong
 - feature_request: a new flag, output format, integration, provider, agent, report mode, configuration surface, or optional presentation preference
@@ -15,6 +16,7 @@ Classify the issue with exactly one kind:
 - duplicate, invalid, spam, out_of_scope, security, question, or unclear
 
 Judge maintenance fit separately:
+
 - maintainable: directly protects the core usage and cost reporting promise, has bounded ongoing support cost, and fits existing supported behavior
 - excluded: optional presentation or convenience behavior, a niche workflow, wrapper-friendly behavior, speculative capability, or a new compatibility surface the maintainer would have to support indefinitely
 - needs_review: product scope, evidence, safety, or long-term support cost is uncertain
@@ -24,6 +26,7 @@ Ease of implementation, a detailed proposal, an offer to implement, or possible 
 Choose confidence high only when the issue evidence and repository context clearly support the classification. Otherwise choose medium or low.
 
 Choose exactly one priority:
+
 - priority:critical: security, data loss or corruption, or a broad release blocker
 - priority:high: a confirmed core regression, crash, or material usage or cost error with clear evidence
 - priority:medium: a bounded, maintainable bug or documentation problem without broad urgent impact
