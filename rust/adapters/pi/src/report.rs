@@ -14,7 +14,7 @@ pub fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> 
         .collect::<Vec<_>>();
     json!({
         rows_key(kind): rows_json,
-        "totals": if rows.is_empty() { Value::Null } else { totals_json(rows) },
+        "totals": totals_json(rows),
     })
 }
 
@@ -70,5 +70,24 @@ fn rows_key(kind: AgentReportKind) -> &'static str {
         AgentReportKind::Weekly => "weekly",
         AgentReportKind::Monthly => "monthly",
         AgentReportKind::Session => "sessions",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_report_has_zero_totals_object() {
+        let report = report_from_rows(&[], AgentReportKind::Daily);
+
+        assert_eq!(report["daily"], json!([]));
+        assert!(report["totals"].is_object());
+        assert_eq!(report["totals"]["inputTokens"], json!(0));
+        assert_eq!(report["totals"]["outputTokens"], json!(0));
+        assert_eq!(report["totals"]["cacheCreationTokens"], json!(0));
+        assert_eq!(report["totals"]["cacheReadTokens"], json!(0));
+        assert_eq!(report["totals"]["totalTokens"], json!(0));
+        assert_eq!(report["totals"]["totalCost"].as_f64(), Some(0.0));
     }
 }
