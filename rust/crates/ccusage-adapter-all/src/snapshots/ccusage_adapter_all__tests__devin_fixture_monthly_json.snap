@@ -1,0 +1,44 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "report_json(&monthly.rows, AgentReportKind::Monthly)"
+---
+{
+  "monthly": [
+    {
+      "agent": "all",
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 700,
+      "inputTokens": 600,
+      "metadata": {
+        "agents": [
+          "devin"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 700,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "swe-1.7",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "swe-1.7"
+      ],
+      "outputTokens": 150,
+      "period": "2099-01",
+      "totalCost": 0,
+      "totalTokens": 1650
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 700,
+    "inputTokens": 600,
+    "outputTokens": 150,
+    "totalCost": 0,
+    "totalTokens": 1650
+  }
+}

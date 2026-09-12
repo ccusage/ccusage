@@ -207,6 +207,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
         Some(Command::ZCode(args)) => agent_command_snapshot("zcode", args),
+        Some(Command::Devin(args)) => agent_command_snapshot("devin", args),
     }
 }
 
@@ -649,7 +650,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode",
+        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode", "devin",
     ];
 
     for agent in agents {
@@ -872,6 +873,10 @@ fn snapshots_representative_cli_parse_shapes() {
         json!({
             "case": "zcode daily",
             "cli": cli_snapshot(parse(&["ccusage", "zcode", "daily", "--json"])),
+        }),
+        json!({
+            "case": "devin session",
+            "cli": cli_snapshot(parse(&["ccusage", "devin", "session", "--json"])),
         }),
         json!({
             "case": "blocks active recent",

@@ -180,6 +180,7 @@ If ccusage shows no data, check:
    - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
    - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
+   - Devin: `${DEVIN_TRANSCRIPTS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/devin/cli/transcripts}`
 
 ### Custom Data Directory
 
@@ -204,6 +205,7 @@ export ANTIGRAVITY_DATA_DIR="/path/to/antigravity"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
 export ZCODE_HOME="/path/to/zcode-home"
+export DEVIN_TRANSCRIPTS_DIR="/path/to/devin/transcripts"
 ```
 
 Directory variables can contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` supports multiple roots and deduplicates them:
@@ -223,6 +225,7 @@ export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export ZCODE_HOME="/path/to/zcode,/archive/zcode"
+export DEVIN_TRANSCRIPTS_DIR="/path/to/devin/transcripts,/archive/devin/transcripts"
 ```
 
 ## Getting Help

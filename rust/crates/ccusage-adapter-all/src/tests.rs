@@ -677,6 +677,106 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
 }
 
 #[test]
+fn devin_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
+    let fixture = fs_fixture!({
+        "devin-transcripts/veil-vibraphone.json": r#"{
+            "schema_version": "ATIF-v1.7",
+            "session_id": "veil-vibraphone",
+            "agent": {"name": "devin", "version": "3000.6.12", "model_name": "SWE-1.7"},
+            "steps": [
+                {"step_id": 1, "timestamp": "2099-01-02T00:00:00.000000+00:00", "source": "system"},
+                {"step_id": 2, "timestamp": "2099-01-02T08:00:00.000000+00:00", "source": "agent",
+                 "model_name": "SWE-1.7",
+                 "metrics": {"prompt_tokens": 1000, "completion_tokens": 100, "cached_tokens": 400,
+                             "extra": {"cache_creation_input_tokens": 200}},
+                 "extra": {"generation_model": "swe-1.7"}},
+                {"step_id": 3, "timestamp": "2099-01-03T08:00:00.000000+00:00", "source": "agent",
+                 "model_name": "SWE-1.7",
+                 "metrics": {"prompt_tokens": 500, "completion_tokens": 50, "cached_tokens": 300},
+                 "extra": {"generation_model": "swe-1.7"}}
+            ]
+        }"#,
+        "devin-transcripts/legacy.json": r#"{
+            "schema_version": "ATIF-v1.4",
+            "session_id": "legacy",
+            "steps": [{"step_id": 1, "source": "agent", "message": "no metrics"}]
+        }"#,
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "DEVIN_TRANSCRIPTS_DIR",
+        fixture.path("devin-transcripts").into_os_string(),
+    );
+    let mut shared = fixture_shared("20990101", "20990201");
+    shared.mode = CostMode::Calculate;
+
+    let daily = load_rows(AgentReportKind::Daily, &shared).unwrap();
+    let monthly = load_rows(AgentReportKind::Monthly, &shared).unwrap();
+    let session = load_rows(AgentReportKind::Session, &shared).unwrap();
+
+    assert_eq!(daily.detected_agents, vec!["devin"]);
+    assert_eq!(monthly.detected_agents, vec!["devin"]);
+    assert_eq!(session.detected_agents, vec!["devin"]);
+    assert_eq!(daily.rows.len(), 2);
+    assert_eq!(daily.rows[0].period, "2099-01-02");
+    assert_eq!(daily.rows[0].input_tokens, 400);
+    assert_eq!(daily.rows[0].output_tokens, 100);
+    assert_eq!(daily.rows[0].cache_creation_tokens, 200);
+    assert_eq!(daily.rows[0].cache_read_tokens, 400);
+    assert_eq!(daily.rows[0].total_tokens, 1100);
+    assert_eq!(daily.rows[1].period, "2099-01-03");
+    assert_eq!(daily.rows[1].input_tokens, 200);
+    assert_eq!(daily.rows[1].cache_read_tokens, 300);
+    assert_eq!(daily.rows[1].total_tokens, 550);
+    assert_eq!(monthly.rows.len(), 1);
+    assert_eq!(monthly.rows[0].period, "2099-01");
+    assert_eq!(monthly.rows[0].total_tokens, 1650);
+    assert_eq!(session.rows.len(), 1);
+    assert_eq!(session.rows[0].period, "veil-vibraphone");
+    assert_eq!(session.rows[0].total_tokens, 1650);
+
+    insta::assert_json_snapshot!(
+        "devin_fixture_daily_json",
+        report_json(&daily.rows, AgentReportKind::Daily)
+    );
+    insta::assert_json_snapshot!(
+        "devin_fixture_monthly_json",
+        report_json(&monthly.rows, AgentReportKind::Monthly)
+    );
+    insta::assert_json_snapshot!(
+        "devin_fixture_session_json",
+        report_json(&session.rows, AgentReportKind::Session)
+    );
+    insta::assert_snapshot!(
+        "devin_fixture_daily_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &daily.rows,
+            AgentReportKind::Daily,
+            &daily.detected_agents,
+        ))
+        .unwrap()
+    );
+    insta::assert_snapshot!(
+        "devin_fixture_monthly_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &monthly.rows,
+            AgentReportKind::Monthly,
+            &monthly.detected_agents,
+        ))
+        .unwrap()
+    );
+    insta::assert_snapshot!(
+        "devin_fixture_session_table",
+        serde_json::to_string_pretty(&table_snapshot(
+            &session.rows,
+            AgentReportKind::Session,
+            &session.detected_agents,
+        ))
+        .unwrap()
+    );
+}
+
+#[test]
 fn unified_report_omits_zcode_without_usage_database() {
     let fixture = fs_fixture!({});
     let _env = isolated_agent_env(
@@ -821,6 +921,9 @@ fn isolated_agent_env(
         "QWEN_DATA_DIR",
         "GROK_HOME",
         "ZCODE_HOME",
+        "DEVIN_TRANSCRIPTS_DIR",
+        "XDG_DATA_HOME",
+        "APPDATA",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))

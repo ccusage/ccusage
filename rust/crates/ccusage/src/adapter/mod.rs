@@ -5,6 +5,7 @@ pub(crate) use ccusage_adapter_claude as claude;
 pub(crate) use ccusage_adapter_codebuff as codebuff;
 pub(crate) use ccusage_adapter_codex as codex;
 pub(crate) use ccusage_adapter_copilot as copilot;
+pub(crate) use ccusage_adapter_devin as devin;
 pub(crate) use ccusage_adapter_droid as droid;
 pub(crate) use ccusage_adapter_gemini as gemini;
 pub(crate) use ccusage_adapter_goose as goose;
