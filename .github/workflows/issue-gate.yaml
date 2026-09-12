@@ -308,11 +308,15 @@ jobs:
           }
 
           let head = git-complete [rev-parse HEAD]
-          if $head.exit_code != 0 or ($head.stdout | str trim) != $env.BASE_SHA {
-              error make {msg: 'Pullfrog must leave the checked-out base commit unchanged'}
+          if $head.exit_code != 0 {
+              error make {msg: $"Could not resolve Pullfrog HEAD: ($head.stderr | str trim)"}
           }
+          let head_sha = $head.stdout | str trim
 
           if $result.implementation == 'none' {
+              if $head_sha != $env.BASE_SHA {
+                  error make {msg: 'Pullfrog declined implementation after creating local commits'}
+              }
               let status = git-complete [status --porcelain]
               if $status.exit_code != 0 or ($status.stdout | str trim | is-not-empty) {
                   error make {msg: 'Pullfrog declined implementation after changing the working tree'}
@@ -327,6 +331,11 @@ jobs:
                   error make {msg: 'Pullfrog returned invalid implementation PR metadata'}
               }
 
+              let ancestry = git-complete [merge-base --is-ancestor $env.BASE_SHA $head_sha]
+              if $ancestry.exit_code != 0 {
+                  error make {msg: 'Pullfrog HEAD must descend from the checked-out base commit'}
+              }
+
               let untracked_result = git-complete [ls-files --others --exclude-standard '-z']
               if $untracked_result.exit_code != 0 {
                   error make {msg: $"Could not inspect untracked files: ($untracked_result.stderr | str trim)"}
@@ -339,7 +348,7 @@ jobs:
                   git-run [add --intent-to-add -- ...$untracked]
               }
 
-              let changed_paths_result = git-complete [diff --name-only '-z' HEAD --]
+              let changed_paths_result = git-complete [diff --name-only '-z' $env.BASE_SHA --]
               if $changed_paths_result.exit_code != 0 {
                   error make {msg: $"Could not inspect changed paths: ($changed_paths_result.stderr | str trim)"}
               }
@@ -348,16 +357,16 @@ jobs:
                   error make {msg: 'Pullfrog implementation must change between 1 and 100 files'}
               }
 
-              let changed = git-complete [diff --quiet HEAD --]
+              let changed = git-complete [diff --quiet $env.BASE_SHA --]
               if $changed.exit_code == 0 {
                   error make {msg: 'Pullfrog reported a prepared implementation without any changes'}
               }
               if $changed.exit_code != 1 {
                   error make {msg: $"Could not inspect implementation changes: ($changed.stderr | str trim)"}
               }
-              git-run [diff --check HEAD --]
+              git-run [diff --check $env.BASE_SHA --]
 
-              let patch = git-complete [diff --binary --full-index HEAD --]
+              let patch = git-complete [diff --binary --full-index $env.BASE_SHA --]
               if $patch.exit_code != 0 {
                   error make {msg: $"Could not create the implementation patch: ($patch.stderr | str trim)"}
               }
