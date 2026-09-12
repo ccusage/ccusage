@@ -611,6 +611,13 @@ def test-issue-triage-policy []: nothing -> nothing {
         'priority:high'
     )
 
+    let uncertain_security = issue-verdict-record '{"kind":"security","maintenance_fit":"needs_review","confidence":"medium","decision":"needs_human","priority":"priority:low","implementation":"none","reason":"The security impact is not yet confirmed."}' true
+    (expect
+        'floors uncertain security reports to high priority'
+        $uncertain_security.priority
+        'priority:high'
+    )
+
     let documentation = issue-verdict-record '{"kind":"documentation","maintenance_fit":"maintainable","confidence":"high","decision":"keep_open","priority":"priority:medium","implementation":"create_pr","reason":"The documented option no longer matches supported behavior."}' true
     (expect
         'keeps a valid documentation issue open'
@@ -691,7 +698,17 @@ def test-forced-issue-implementation []: nothing -> nothing {
         $automatic_verdict.decision
         needs_human
     )
+    (expect
+        'marks a permission-blocked closure for review'
+        $automatic_verdict.maintenance_fit
+        needs_review
+    )
     expect 'keeps a manually forced issue open' $verdict.decision keep_open
+    (expect
+        'keeps a manually forced excluded issue under review'
+        $verdict.maintenance_fit
+        needs_review
+    )
     (expect
         'preserves the triage priority for a manually forced issue'
         $verdict.priority
