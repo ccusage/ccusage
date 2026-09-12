@@ -7,8 +7,11 @@ body:
       value: |
         **Before you start:** Read [CONTRIBUTING.md](https://github.com/ccusage/ccusage/blob/main/CONTRIBUTING.md).
 
-        New contributions are assessed by an automated gate. Clear, actionable proposals remain open;
-        spam, duplicates, invalid reports, and clearly out-of-scope work may be closed.
+        New optional capabilities are closed by default unless a maintainer explicitly accepts the change
+        through the Issue Gate workflow. Being clear or easy to implement does not by itself make a
+        proposal accepted scope.
+
+        Use the bug report form when currently supported behavior is broken.
 
         Keep this short, concrete, and written in your own voice.
 

@@ -1,5 +1,41 @@
 use ./core.nu [gh-api-json issue-number repository write-output]
 
+const PROTECTED_FROM_CLOSE_LABELS = [
+    bug
+    security
+    'triage:maintainable'
+    'triage:needs-review'
+]
+
+const IMPLEMENTATION_BLOCKING_LABELS = [
+    security
+    'triage:needs-review'
+]
+
+def issue-label-names [issue: record]: nothing -> list<string> {
+    $issue
+    | get --optional labels
+    | default []
+    | each {|label|
+        match ($label | describe) {
+            string => ($label | str trim)
+            $type if ($type | str starts-with 'record') => (
+                $label | get --optional name | default '' | into string | str trim
+            )
+            _ => ''
+        }
+    }
+    | where {|label| $label | is-not-empty }
+}
+
+export def issue-protection-record [issue: record]: nothing -> record {
+    let labels = issue-label-names $issue
+    {
+        protected_from_close: ($labels | any {|label| $label in $PROTECTED_FROM_CLOSE_LABELS })
+        implementation_blocked: ($labels | any {|label| $label in $IMPLEMENTATION_BLOCKING_LABELS })
+    }
+}
+
 export def issue-context-record [requested_number: int, issue: record]: nothing -> record {
     if $requested_number <= 0 {
         error make {msg: 'Issue number must be positive'}
@@ -25,7 +61,15 @@ export def issue-context-record [requested_number: int, issue: record]: nothing 
         error make {msg: $"Issue #($requested_number) has an invalid author ID"}
     }
 
-    {number: $actual_number, author: $author, author_id: $author_id}
+    let protection = issue-protection-record $issue
+
+    {
+        number: $actual_number
+        author: $author
+        author_id: $author_id
+        protected_from_close: $protection.protected_from_close
+        implementation_blocked: $protection.implementation_blocked
+    }
 }
 
 export def require-open-issue []: nothing -> record {

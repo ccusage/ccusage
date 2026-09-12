@@ -6,6 +6,14 @@ export const PRIORITY_LABELS = [
 ]
 
 export const IMPLEMENTATION_PRIORITIES = ['priority:critical' 'priority:high']
+
+export const TRIAGE_LABELS = [
+    'triage:resolved'
+    'triage:maintainable'
+    'triage:excluded'
+    'triage:needs-review'
+]
+
 export const COLLABORATOR_PERMISSIONS = [admin maintain write]
 export const COMMENT_MARKER = '<!-- pullfrog-contribution-gate -->'
 
