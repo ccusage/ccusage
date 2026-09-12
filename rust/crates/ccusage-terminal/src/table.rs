@@ -67,6 +67,11 @@ impl SimpleTable {
         self.headers.len()
     }
 
+    /// Number of data rows pushed so far (excludes separators).
+    pub fn row_count(&self) -> usize {
+        self.rows.iter().filter(|row| row.is_some()).count()
+    }
+
     pub fn print(&self) -> io::Result<()> {
         let stdout = io::stdout();
         let mut stdout = stdout.lock();

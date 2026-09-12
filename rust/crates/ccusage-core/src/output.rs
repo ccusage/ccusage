@@ -6,7 +6,7 @@ use std::{
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, Result, SimpleTable, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
+    Align, Color, NamedBreakdown, Result, SimpleTable, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
     cli::SharedArgs, cli_error, color, format_project_name, parse_project_aliases, print_box_title,
     short_model_name, terminal_width,
 };
@@ -34,6 +34,9 @@ pub fn summary_json(row: &UsageSummary) -> Value {
         "totalCost": row.total_cost,
         "modelsUsed": row.models_used,
         "modelBreakdowns": row.model_breakdowns,
+        "pluginBreakdowns": row.plugin_breakdowns,
+        "skillBreakdowns": row.skill_breakdowns,
+        "sourceTypeBreakdowns": row.source_type_breakdowns,
     });
     if let Some(obj) = value.as_object_mut() {
         if let Some(date) = &row.date {
@@ -68,6 +71,9 @@ pub fn session_summary_json(row: &UsageSummary) -> Value {
         "firstActivity": row.first_activity,
         "modelsUsed": row.models_used,
         "modelBreakdowns": row.model_breakdowns,
+        "pluginBreakdowns": row.plugin_breakdowns,
+        "skillBreakdowns": row.skill_breakdowns,
+        "sourceTypeBreakdowns": row.source_type_breakdowns,
         "projectPath": row.project_path,
     });
     if let (Some(obj), Some(credits)) = (value.as_object_mut(), row.credits) {
@@ -285,11 +291,45 @@ pub fn print_usage_table_with_options(
         if shared.breakdown {
             push_breakdown_rows(
                 &mut table,
-                row,
+                &row.model_breakdowns,
                 compact,
                 options.show_cache_creation,
                 include_last_activity,
                 shared,
+                |b| short_model_name(&b.model_name),
+            );
+        }
+        if shared.by_plugin {
+            push_breakdown_rows(
+                &mut table,
+                &row.plugin_breakdowns,
+                compact,
+                options.show_cache_creation,
+                include_last_activity,
+                shared,
+                |b| sanitize_terminal_text(&b.plugin_name),
+            );
+        }
+        if shared.by_skill {
+            push_breakdown_rows(
+                &mut table,
+                &row.skill_breakdowns,
+                compact,
+                options.show_cache_creation,
+                include_last_activity,
+                shared,
+                |b| sanitize_terminal_text(&b.skill_name),
+            );
+        }
+        if shared.by_source_type {
+            push_breakdown_rows(
+                &mut table,
+                &row.source_type_breakdowns,
+                compact,
+                options.show_cache_creation,
+                include_last_activity,
+                shared,
+                |b| b.source_type.clone(),
             );
         }
     }
@@ -446,48 +486,56 @@ fn project_header_row(column_count: usize, project: &str, shared: &SharedArgs) -
     row
 }
 
-fn push_breakdown_rows(
+/// Pushes one indented table row per breakdown bucket, formatting its label via `label`. Shared
+/// by the model/plugin/skill/source-type breakdown tables.
+fn push_breakdown_rows<T: NamedBreakdown>(
     table: &mut SimpleTable,
-    row: &UsageSummary,
+    breakdowns: &[T],
     compact: bool,
     show_cache_creation: bool,
     include_last_activity: bool,
     shared: &SharedArgs,
+    label: impl Fn(&T) -> String,
 ) {
-    for breakdown in &row.model_breakdowns {
+    for breakdown in breakdowns {
         let total = breakdown
-            .input_tokens
-            .saturating_add(breakdown.output_tokens)
-            .saturating_add(breakdown.cache_creation_tokens)
-            .saturating_add(breakdown.cache_read_tokens);
+            .input_tokens()
+            .saturating_add(breakdown.output_tokens())
+            .saturating_add(breakdown.cache_creation_tokens())
+            .saturating_add(breakdown.cache_read_tokens())
+            .saturating_add(breakdown.extra_total_tokens());
         let mut values = vec![
+            color(shared, format!("  └─ {}", label(breakdown)), Color::Grey),
+            String::new(),
+            color(shared, format_number(breakdown.input_tokens()), Color::Grey),
             color(
                 shared,
-                format!("  └─ {}", short_model_name(&breakdown.model_name)),
+                format_number(breakdown.output_tokens()),
                 Color::Grey,
             ),
-            String::new(),
-            color(shared, format_number(breakdown.input_tokens), Color::Grey),
-            color(shared, format_number(breakdown.output_tokens), Color::Grey),
         ];
         if !compact && show_cache_creation {
             values.push(color(
                 shared,
-                format_number(breakdown.cache_creation_tokens),
+                format_number(breakdown.cache_creation_tokens()),
                 Color::Grey,
             ));
         }
         if compact {
-            values.push(color(shared, format_currency(breakdown.cost), Color::Grey));
+            values.push(color(
+                shared,
+                format_currency(breakdown.cost()),
+                Color::Grey,
+            ));
         } else {
             values.extend([
                 color(
                     shared,
-                    format_number(breakdown.cache_read_tokens),
+                    format_number(breakdown.cache_read_tokens()),
                     Color::Grey,
                 ),
                 color(shared, format_number(total), Color::Grey),
-                color(shared, format_currency(breakdown.cost), Color::Grey),
+                color(shared, format_currency(breakdown.cost()), Color::Grey),
             ]);
         }
         if shared.no_cost {
@@ -568,7 +616,7 @@ fn truncate_rfc3339_to_date(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ModelBreakdown;
+    use crate::{ModelBreakdown, PluginBreakdown, SkillBreakdown, SourceTypeBreakdown};
 
     #[test]
     fn narrow_non_tty_output_does_not_auto_compact() {
@@ -628,6 +676,48 @@ mod tests {
     }
 
     #[test]
+    fn push_plugin_breakdown_rows_emits_one_row_per_plugin_bucket() {
+        let mut row = snapshot_summary("2026-01-02", None, None);
+        row.plugin_breakdowns = vec![
+            PluginBreakdown {
+                plugin_name: "aws".to_string(),
+                input_tokens: 900,
+                output_tokens: 300,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                extra_total_tokens: 0,
+                cost: 0.3,
+                missing_pricing: false,
+            },
+            PluginBreakdown {
+                plugin_name: "unattributed".to_string(),
+                input_tokens: 334,
+                output_tokens: 267,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                extra_total_tokens: 0,
+                cost: 0.12,
+                missing_pricing: false,
+            },
+        ];
+        let shared = SharedArgs::default();
+        let (headers, aligns) = usage_table_columns("Date", false, true);
+        let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(&shared));
+
+        push_breakdown_rows(
+            &mut table,
+            &row.plugin_breakdowns,
+            false,
+            true,
+            false,
+            &shared,
+            |b| sanitize_terminal_text(&b.plugin_name),
+        );
+
+        assert_eq!(table.row_count(), 2);
+    }
+
+    #[test]
     fn totals_json_includes_extra_tokens_in_total() {
         let totals = totals_json(&[UsageSummary {
             date: Some("2026-01-02".to_string()),
@@ -647,6 +737,9 @@ mod tests {
             message_count: None,
             models_used: vec!["gpt-5".to_string()],
             model_breakdowns: Vec::new(),
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         }]);
@@ -860,6 +953,36 @@ mod tests {
                     missing_pricing: false,
                 },
             ],
+            plugin_breakdowns: vec![PluginBreakdown {
+                plugin_name: "aws".to_string(),
+                input_tokens: 900,
+                output_tokens: 300,
+                cache_creation_tokens: 50,
+                cache_read_tokens: 10,
+                extra_total_tokens: 0,
+                cost: 0.3,
+                missing_pricing: false,
+            }],
+            skill_breakdowns: vec![SkillBreakdown {
+                skill_name: "superpowers:brainstorming".to_string(),
+                input_tokens: 900,
+                output_tokens: 300,
+                cache_creation_tokens: 50,
+                cache_read_tokens: 10,
+                extra_total_tokens: 0,
+                cost: 0.3,
+                missing_pricing: false,
+            }],
+            source_type_breakdowns: vec![SourceTypeBreakdown {
+                source_type: "active".to_string(),
+                input_tokens: 1234,
+                output_tokens: 567,
+                cache_creation_tokens: 89,
+                cache_read_tokens: 10,
+                extra_total_tokens: 0,
+                cost: 0.42,
+                missing_pricing: false,
+            }],
             project: project.map(str::to_string),
             versions: Some(vec!["1.0.0".to_string(), "1.1.0".to_string()]),
         }

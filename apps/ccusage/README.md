@@ -175,6 +175,9 @@ bunx ccusage monthly --compact  # Compact monthly report
 - 🚀 **Statusline Integration**: Compact usage display for Claude Code status bar hooks (Beta)
 - 🤖 **Model Tracking**: See which models are used across supported sources
 - 📊 **Model Breakdown**: View per-model cost breakdown with `--breakdown` flag
+- 🔌 **Attribution Breakdown**: View per-plugin, per-skill, and active/background cost breakdown
+  with `--by-plugin`, `--by-skill`, and `--by-source-type` flags (plugin/skill attribution is
+  Claude Code-specific; other agents report as `unattributed`)
 - 📅 **Date Filtering**: Filter reports by date range using `--since` and `--until`
 - ⏱️ **Recent Periods**: Jump to today, this week, or this month with `--last 1` on any daily, weekly, or monthly report
 - 📁 **Custom Paths**: Support for custom local data directory locations

@@ -107,6 +107,9 @@ mod tests {
             message_count: None,
             models_used: vec!["grok-4.5-build".to_string()],
             model_breakdowns: Vec::new(),
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         }

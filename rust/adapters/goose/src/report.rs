@@ -104,6 +104,8 @@ mod tests {
                 request_id: None,
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp: crate::parse_ts_timestamp("2026-05-01T01:02:03.000Z").unwrap(),
             date: "2026-05-01".to_string(),

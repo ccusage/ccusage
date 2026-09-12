@@ -1,0 +1,60 @@
+---
+source: crates/ccusage-cli-parser/src/tests.rs
+assertion_line: 920
+expression: cli_snapshot(cli)
+---
+{
+  "command": {
+    "byAgent": false,
+    "codexSpeed": "Auto",
+    "kind": "Daily",
+    "openClawPath": null,
+    "piPath": null,
+    "sections": null,
+    "shared": {
+      "breakdown": false,
+      "byPlugin": true,
+      "bySkill": true,
+      "bySourceType": true,
+      "color": false,
+      "compact": false,
+      "config": null,
+      "debug": false,
+      "debugSamples": 5,
+      "jq": null,
+      "json": false,
+      "mode": "Auto",
+      "noColor": false,
+      "noOffline": false,
+      "offline": false,
+      "order": "Asc",
+      "since": null,
+      "singleThread": false,
+      "timezone": null,
+      "until": null
+    },
+    "type": "all"
+  },
+  "shared": {
+    "breakdown": false,
+    "byPlugin": false,
+    "bySkill": false,
+    "bySourceType": false,
+    "color": false,
+    "compact": false,
+    "config": null,
+    "debug": false,
+    "debugSamples": 5,
+    "jq": null,
+    "json": false,
+    "mode": "Auto",
+    "noColor": false,
+    "noOffline": false,
+    "offline": false,
+    "order": "Asc",
+    "since": null,
+    "singleThread": false,
+    "timezone": null,
+    "until": null
+  }
+}

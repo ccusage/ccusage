@@ -99,6 +99,8 @@ mod tests {
                 request_id: None,
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp: TimestampMs::from_millis(millis),
             date: date.to_string(),

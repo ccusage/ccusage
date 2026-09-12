@@ -304,6 +304,8 @@ pub(super) fn parse_session_files(
                 request_id: event_id.clone(),
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             };
             entries.push(LoadedEntry {
                 data,

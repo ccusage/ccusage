@@ -8,8 +8,8 @@ use std::{
 use serde_json::{Value, json};
 
 use crate::{
-    BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result,
-    SessionAccumulator, UsageSummary,
+    BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PluginBreakdown, PricingMap,
+    Result, SessionAccumulator, SkillBreakdown, SourceTypeBreakdown, UsageSummary,
     adapter::{
         amp, antigravity, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
         kilo, kimi, openclaw, opencode, pi, qwen, zcode,
@@ -789,6 +789,9 @@ fn summary_rows(
                 metadata_agents: Some(vec![agent]),
                 agent_breakdowns: None,
                 model_breakdowns: summary.model_breakdowns,
+                plugin_breakdowns: summary.plugin_breakdowns,
+                skill_breakdowns: summary.skill_breakdowns,
+                source_type_breakdowns: summary.source_type_breakdowns,
             })
         })
         .collect()
@@ -846,20 +849,22 @@ where
         })
         .collect();
     model_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    let input_tokens = codex::non_cached_input_tokens(
+        group.input_tokens,
+        group.cached_input_tokens,
+        group.cache_creation_tokens,
+    );
+    let total_cost = codex::calculate_group_cost(group, pricing, speed);
     AllRow {
         period: period.to_string(),
         agent: "codex",
         models_used: group.models.keys().cloned().collect(),
-        input_tokens: codex::non_cached_input_tokens(
-            group.input_tokens,
-            group.cached_input_tokens,
-            group.cache_creation_tokens,
-        ),
+        input_tokens,
         output_tokens: group.output_tokens,
         cache_creation_tokens: group.cache_creation_tokens,
         cache_read_tokens: group.cached_input_tokens,
         total_tokens: group.total_tokens,
-        total_cost: codex::calculate_group_cost(group, pricing, speed),
+        total_cost,
         metadata: Some(json!({
             "lastActivity": group.last_activity,
             "reasoningOutputTokens": group.reasoning_output_tokens,
@@ -867,6 +872,33 @@ where
         metadata_agents: Some(vec!["codex"]),
         agent_breakdowns: None,
         model_breakdowns,
+        plugin_breakdowns: vec![PluginBreakdown {
+            plugin_name: "unattributed".to_string(),
+            input_tokens,
+            output_tokens: group.output_tokens,
+            cache_creation_tokens: group.cache_creation_tokens,
+            cache_read_tokens: group.cached_input_tokens,
+            cost: total_cost,
+            ..PluginBreakdown::default()
+        }],
+        skill_breakdowns: vec![SkillBreakdown {
+            skill_name: "unattributed".to_string(),
+            input_tokens,
+            output_tokens: group.output_tokens,
+            cache_creation_tokens: group.cache_creation_tokens,
+            cache_read_tokens: group.cached_input_tokens,
+            cost: total_cost,
+            ..SkillBreakdown::default()
+        }],
+        source_type_breakdowns: vec![SourceTypeBreakdown {
+            source_type: "active".to_string(),
+            input_tokens,
+            output_tokens: group.output_tokens,
+            cache_creation_tokens: group.cache_creation_tokens,
+            cache_read_tokens: group.cached_input_tokens,
+            cost: total_cost,
+            ..SourceTypeBreakdown::default()
+        }],
     }
 }
 
@@ -917,6 +949,9 @@ mod tests {
             message_count: None,
             models_used: Vec::new(),
             model_breakdowns: Vec::new(),
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         }
@@ -981,6 +1016,15 @@ mod tests {
         assert!((focused_cost - 40e-6).abs() < f64::EPSILON);
         assert!((unified.total_cost - focused_cost).abs() < f64::EPSILON);
         assert!((unified.model_breakdowns[0].cost - focused_cost).abs() < f64::EPSILON);
+        assert_eq!(unified.plugin_breakdowns.len(), 1);
+        assert_eq!(unified.plugin_breakdowns[0].plugin_name, "unattributed");
+        assert!((unified.plugin_breakdowns[0].cost - focused_cost).abs() < f64::EPSILON);
+        assert_eq!(unified.skill_breakdowns.len(), 1);
+        assert_eq!(unified.skill_breakdowns[0].skill_name, "unattributed");
+        assert!((unified.skill_breakdowns[0].cost - focused_cost).abs() < f64::EPSILON);
+        assert_eq!(unified.source_type_breakdowns.len(), 1);
+        assert_eq!(unified.source_type_breakdowns[0].source_type, "active");
+        assert!((unified.source_type_breakdowns[0].cost - focused_cost).abs() < f64::EPSILON);
     }
 
     #[test]

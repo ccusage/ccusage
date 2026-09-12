@@ -191,6 +191,8 @@ fn parse_line(
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
+        attribution_plugin: None,
+        attribution_skill: None,
     };
     Some(LoadedEntry {
         data,
@@ -390,6 +392,8 @@ mod tests {
                 request_id: None,
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp: TimestampMs::UNIX_EPOCH,
             date: "2026-01-02".to_string(),

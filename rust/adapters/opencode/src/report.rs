@@ -177,6 +177,9 @@ mod tests {
                 cost: 0.25,
                 missing_pricing: false,
             }],
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: Some(vec!["1.0.0".to_string()]),
         }
@@ -205,6 +208,8 @@ mod tests {
                 request_id: None,
                 is_api_error_message: None,
                 is_sidechain: None,
+                attribution_plugin: None,
+                attribution_skill: None,
             },
             timestamp,
             date: "2026-01-02".to_string(),

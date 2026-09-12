@@ -124,6 +124,9 @@ fn shared_snapshot(shared: &SharedArgs) -> Value {
         "debugSamples": shared.debug_samples,
         "order": format!("{:?}", shared.order),
         "breakdown": shared.breakdown,
+        "byPlugin": shared.by_plugin,
+        "bySkill": shared.by_skill,
+        "bySourceType": shared.by_source_type,
         "offline": shared.offline,
         "noOffline": shared.no_offline,
         "color": shared.color,
@@ -908,6 +911,19 @@ fn snapshots_representative_cli_parse_shapes() {
     ];
 
     insta::assert_json_snapshot!(cases);
+}
+
+#[test]
+fn parses_by_plugin_by_skill_and_by_source_type_flags() {
+    let cli = parse(&[
+        "ccusage",
+        "daily",
+        "--by-plugin",
+        "--by-skill",
+        "--by-source-type",
+    ]);
+
+    insta::assert_json_snapshot!(cli_snapshot(cli));
 }
 
 #[test]

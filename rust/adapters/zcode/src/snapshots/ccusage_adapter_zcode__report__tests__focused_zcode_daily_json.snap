@@ -23,6 +23,36 @@ expression: "report_from_rows(&daily, AgentReportKind::Daily)"
         "GLM-5.2"
       ],
       "outputTokens": 10,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "outputTokens": 10,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "outputTokens": 10,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "outputTokens": 10,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.00015549999999999999,
       "totalTokens": 110
     },
@@ -45,6 +75,36 @@ expression: "report_from_rows(&daily, AgentReportKind::Daily)"
         "GLM-5.3"
       ],
       "outputTokens": 20,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "outputTokens": 20,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "outputTokens": 20,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "outputTokens": 20,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0003224,
       "totalTokens": 220
     },
@@ -67,6 +127,36 @@ expression: "report_from_rows(&daily, AgentReportKind::Daily)"
         "GLM-5.3"
       ],
       "outputTokens": 5,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0000806,
       "totalTokens": 55
     }

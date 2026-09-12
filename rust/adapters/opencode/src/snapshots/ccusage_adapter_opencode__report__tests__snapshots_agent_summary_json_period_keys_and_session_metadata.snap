@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/adapter/opencode/report.rs
+source: adapters/opencode/src/report.rs
 expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, AgentReportKind::Daily, false),\n    \"weekly\": agent_summary_json(&weekly, AgentReportKind::Weekly, false),\n    \"monthly\": agent_summary_json(&monthly, AgentReportKind::Monthly, false),\n    \"session\": agent_summary_json(&session, AgentReportKind::Session, true),\n    \"dailyReport\":\n    report_from_rows(std::slice::from_ref(&daily), AgentReportKind::Daily),\n    \"sessionReport\": report_from_rows(&[session], AgentReportKind::Session),\n})"
 ---
 {
@@ -25,6 +25,9 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
       "claude-sonnet-4-20250514"
     ],
     "outputTokens": 50,
+    "pluginBreakdowns": [],
+    "skillBreakdowns": [],
+    "sourceTypeBreakdowns": [],
     "totalCost": 0.25,
     "totalTokens": 172
   },
@@ -52,6 +55,9 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
           "claude-sonnet-4-20250514"
         ],
         "outputTokens": 50,
+        "pluginBreakdowns": [],
+        "skillBreakdowns": [],
+        "sourceTypeBreakdowns": [],
         "totalCost": 0.25,
         "totalTokens": 172
       }
@@ -88,6 +94,9 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
     ],
     "month": "2026-01",
     "outputTokens": 50,
+    "pluginBreakdowns": [],
+    "skillBreakdowns": [],
+    "sourceTypeBreakdowns": [],
     "totalCost": 0.25,
     "totalTokens": 172
   },
@@ -114,8 +123,11 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
       "claude-sonnet-4-20250514"
     ],
     "outputTokens": 50,
+    "pluginBreakdowns": [],
     "projectPath": "/workspace/api",
     "sessionId": "session-a",
+    "skillBreakdowns": [],
+    "sourceTypeBreakdowns": [],
     "totalCost": 0.25,
     "totalTokens": 172
   },
@@ -142,7 +154,10 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
           "claude-sonnet-4-20250514"
         ],
         "outputTokens": 50,
+        "pluginBreakdowns": [],
         "sessionId": "session-a",
+        "skillBreakdowns": [],
+        "sourceTypeBreakdowns": [],
         "totalCost": 0.25,
         "totalTokens": 172
       }
@@ -178,6 +193,9 @@ expression: "serde_json::json!({\n    \"daily\": agent_summary_json(&daily, Agen
       "claude-sonnet-4-20250514"
     ],
     "outputTokens": 50,
+    "pluginBreakdowns": [],
+    "skillBreakdowns": [],
+    "sourceTypeBreakdowns": [],
     "totalCost": 0.25,
     "totalTokens": 172,
     "week": "2025-12-29"

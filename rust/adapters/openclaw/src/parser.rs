@@ -309,6 +309,8 @@ fn openclaw_entry_to_loaded(
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
+        attribution_plugin: None,
+        attribution_skill: None,
     };
     let pricing_model = if pricing.is_some_and(|pricing| pricing.find_exact(&entry.model).is_some())
     {

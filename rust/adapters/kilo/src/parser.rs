@@ -134,6 +134,8 @@ pub(super) fn message_value_to_entry(
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
+        attribution_plugin: None,
+        attribution_skill: None,
     };
     let provider = value.provider_id.clone();
     let cost_data = UsageEntry {
@@ -351,6 +353,8 @@ mod tests {
             request_id: None,
             is_api_error_message: None,
             is_sidechain: None,
+            attribution_plugin: None,
+            attribution_skill: None,
         }
     }
 

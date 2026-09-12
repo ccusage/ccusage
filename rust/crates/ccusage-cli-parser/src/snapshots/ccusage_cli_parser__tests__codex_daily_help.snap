@@ -1,5 +1,6 @@
 ---
-source: crates/ccusage-cli/src/tests.rs
+source: crates/ccusage-cli-parser/src/tests.rs
+assertion_line: 762
 expression: "help_text_for_args(&[\"ccusage\".to_string(), \"codex\".to_string(),\n\"daily\".to_string(),])"
 ---
 Show Codex token usage grouped by day
@@ -12,6 +13,9 @@ OPTIONS:
   -s, --since <since>                  Filter from date (YYYY-MM-DD or YYYYMMDD)
   -u, --until <until>                  Filter until date (inclusive)
   -z, --timezone <timezone>            Timezone for date grouping (IANA)
+  --by-plugin                          Show per-plugin cost breakdown (Claude Code only; other agents show as unattributed) (default: false)
+  --by-skill                           Show per-skill cost breakdown (Claude Code only; other agents show as unattributed) (default: false)
+  --by-source-type                     Show active vs. background (sidechain) cost breakdown (default: false)
   -O, --offline                        Use cached pricing data instead of fetching from LiteLLM (default: false)
   --no-offline                         Negatable of -O, --offline
   --speed [speed]                      Cost speed tier: auto uses recorded settings, then Codex config.toml; use standard or fast to override (default: auto, choices: auto | standard | fast)

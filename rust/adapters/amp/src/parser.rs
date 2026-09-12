@@ -177,6 +177,8 @@ fn parse_ledger_events(
             request_id: None,
             is_api_error_message: None,
             is_sidechain: None,
+            attribution_plugin: None,
+            attribution_skill: None,
         };
         let cost_data = UsageEntry {
             message: UsageMessage {
@@ -285,6 +287,8 @@ fn parse_message_usage(
             request_id: None,
             is_api_error_message: None,
             is_sidechain: None,
+            attribution_plugin: None,
+            attribution_skill: None,
         };
         let cost_data = UsageEntry {
             message: UsageMessage {

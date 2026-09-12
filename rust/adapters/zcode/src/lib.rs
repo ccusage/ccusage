@@ -74,6 +74,9 @@ mod tests {
             message_count: None,
             models_used: vec!["GLM-5.3".to_string()],
             model_breakdowns: Vec::new(),
+            plugin_breakdowns: Vec::new(),
+            skill_breakdowns: Vec::new(),
+            source_type_breakdowns: Vec::new(),
             project: None,
             versions: None,
         }];

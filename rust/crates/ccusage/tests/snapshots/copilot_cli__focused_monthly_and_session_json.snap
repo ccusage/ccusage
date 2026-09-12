@@ -25,6 +25,36 @@ Monthly JSON
       ],
       "month": "2026-01",
       "outputTokens": 94,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0033625,
       "totalTokens": 307
     },
@@ -48,6 +78,36 @@ Monthly JSON
       ],
       "month": "2026-02",
       "outputTokens": 38,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.0007993750000000001,
+          "inputTokens": 72,
+          "outputTokens": 38,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.0007993750000000001,
+          "inputTokens": 72,
+          "outputTokens": 38,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.0007993750000000001,
+          "inputTokens": 72,
+          "outputTokens": 38,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0007993750000000001,
       "totalTokens": 135
     }
@@ -86,8 +146,38 @@ Session JSON
         "claude-opus-4.6"
       ],
       "outputTokens": 94,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "pluginName": "unattributed"
+        }
+      ],
       "projectPath": "GitHub Copilot CLI",
       "sessionId": "session-a",
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "outputTokens": 94,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0033625,
       "totalTokens": 307
     },
@@ -111,8 +201,38 @@ Session JSON
         "gpt-5.4"
       ],
       "outputTokens": 30,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.000661875,
+          "inputTokens": 65,
+          "outputTokens": 30,
+          "pluginName": "unattributed"
+        }
+      ],
       "projectPath": "GitHub Copilot CLI",
       "sessionId": "session-b",
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.000661875,
+          "inputTokens": 65,
+          "outputTokens": 30,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.000661875,
+          "inputTokens": 65,
+          "outputTokens": 30,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.000661875,
       "totalTokens": 120
     },
@@ -137,8 +257,38 @@ Session JSON
         "gpt-5.4"
       ],
       "outputTokens": 8,
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001375,
+          "inputTokens": 7,
+          "outputTokens": 8,
+          "pluginName": "unattributed"
+        }
+      ],
       "projectPath": "GitHub Copilot CLI",
       "sessionId": "session-c",
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001375,
+          "inputTokens": 7,
+          "outputTokens": 8,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001375,
+          "inputTokens": 7,
+          "outputTokens": 8,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0001375,
       "totalTokens": 15
     }

@@ -745,6 +745,9 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
         }
         "-o" | "--order" => shared.order = parse_sort_order(&parser.value_for("--order")?)?,
         "-b" | "--breakdown" => shared.breakdown = true,
+        "--by-plugin" => shared.by_plugin = true,
+        "--by-skill" => shared.by_skill = true,
+        "--by-source-type" => shared.by_source_type = true,
         "-O" | "--offline" => shared.offline = true,
         "--no-offline" => shared.no_offline = true,
         "--color" => shared.color = true,
@@ -1010,6 +1013,9 @@ fn is_shared_flag(arg: &str) -> bool {
             | "--order"
             | "-b"
             | "--breakdown"
+            | "--by-plugin"
+            | "--by-skill"
+            | "--by-source-type"
             | "-O"
             | "--offline"
             | "--no-offline"

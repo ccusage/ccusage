@@ -124,6 +124,8 @@ pub(super) fn row_to_entry(
             request_id: None,
             is_api_error_message: None,
             is_sidechain: None,
+            attribution_plugin: None,
+            attribution_skill: None,
         },
         date: format_date_tz(timestamp, tz),
         timestamp,

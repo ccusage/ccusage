@@ -18,6 +18,21 @@
 			"description": "Timezone for date grouping (IANA)"
 		},
 		{
+			"flags": "--by-plugin",
+			"description": "Show per-plugin cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-skill",
+			"description": "Show per-skill cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-source-type",
+			"description": "Show active vs. background (sidechain) cost breakdown",
+			"default": "false"
+		},
+		{
 			"flags": "-O, --offline",
 			"description": "Use cached pricing data instead of fetching from LiteLLM",
 			"default": "false"
@@ -90,6 +105,21 @@
 		{
 			"flags": "--by-agent",
 			"description": "Include per-agent JSON breakdowns in unified report rows",
+			"default": "false"
+		},
+		{
+			"flags": "--by-plugin",
+			"description": "Show per-plugin cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-skill",
+			"description": "Show per-skill cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-source-type",
+			"description": "Show active vs. background (sidechain) cost breakdown",
 			"default": "false"
 		},
 		{
@@ -179,6 +209,21 @@
 		{
 			"flags": "-z, --timezone <timezone>",
 			"description": "Timezone for date grouping (IANA)"
+		},
+		{
+			"flags": "--by-plugin",
+			"description": "Show per-plugin cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-skill",
+			"description": "Show per-skill cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-source-type",
+			"description": "Show active vs. background (sidechain) cost breakdown",
+			"default": "false"
 		},
 		{
 			"flags": "-O, --offline",
@@ -301,6 +346,21 @@
 		{
 			"flags": "-b, --breakdown",
 			"description": "Show per-model cost breakdown",
+			"default": "false"
+		},
+		{
+			"flags": "--by-plugin",
+			"description": "Show per-plugin cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-skill",
+			"description": "Show per-skill cost breakdown (Claude Code only; other agents show as unattributed)",
+			"default": "false"
+		},
+		{
+			"flags": "--by-source-type",
+			"description": "Show active vs. background (sidechain) cost breakdown",
 			"default": "false"
 		},
 		{

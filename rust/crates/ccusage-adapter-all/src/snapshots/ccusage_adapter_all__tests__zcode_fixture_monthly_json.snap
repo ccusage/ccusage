@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage-adapter-all/src/tests.rs
+assertion_line: 684
 expression: "report_json(&monthly.rows, AgentReportKind::Monthly)"
 ---
 {
@@ -38,6 +39,36 @@ expression: "report_json(&monthly.rows, AgentReportKind::Monthly)"
       ],
       "outputTokens": 30,
       "period": "2099-01",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 45,
+          "cacheReadTokens": 65,
+          "cost": 0.00047789999999999996,
+          "inputTokens": 190,
+          "outputTokens": 30,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 45,
+          "cacheReadTokens": 65,
+          "cost": 0.00047789999999999996,
+          "inputTokens": 190,
+          "outputTokens": 30,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 45,
+          "cacheReadTokens": 65,
+          "cost": 0.00047789999999999996,
+          "inputTokens": 190,
+          "outputTokens": 30,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.00047789999999999996,
       "totalTokens": 330
     },
@@ -66,6 +97,36 @@ expression: "report_json(&monthly.rows, AgentReportKind::Monthly)"
       ],
       "outputTokens": 5,
       "period": "2099-02",
+      "pluginBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "pluginName": "unattributed"
+        }
+      ],
+      "skillBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "skillName": "unattributed"
+        }
+      ],
+      "sourceTypeBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "outputTokens": 5,
+          "sourceType": "active"
+        }
+      ],
       "totalCost": 0.0000806,
       "totalTokens": 55
     }

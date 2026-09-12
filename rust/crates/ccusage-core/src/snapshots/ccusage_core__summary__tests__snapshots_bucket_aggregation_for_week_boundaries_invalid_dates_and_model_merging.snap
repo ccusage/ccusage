@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/summary.rs
+source: crates/ccusage-core/src/summary.rs
 expression: "serde_json::json!({ \"weekly\": weekly, \"monthly\": monthly, })"
 ---
 {
@@ -25,6 +25,9 @@ expression: "serde_json::json!({ \"weekly\": weekly, \"monthly\": monthly, })"
       ],
       "month": "2025-12",
       "outputTokens": 10,
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.125
     },
     {
@@ -57,6 +60,9 @@ expression: "serde_json::json!({ \"weekly\": weekly, \"monthly\": monthly, })"
       ],
       "month": "2026-01",
       "outputTokens": 20,
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.75
     },
     {
@@ -80,6 +86,9 @@ expression: "serde_json::json!({ \"weekly\": weekly, \"monthly\": monthly, })"
       ],
       "month": "not-a-d",
       "outputTokens": 10,
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.0
     }
   ],
@@ -113,6 +122,9 @@ expression: "serde_json::json!({ \"weekly\": weekly, \"monthly\": monthly, })"
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 20,
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.375,
       "week": "2025-12-29"
     },
@@ -136,6 +148,9 @@ expression: "serde_json::json!({ \"weekly\": weekly, \"monthly\": monthly, })"
         "gpt-5.2-codex"
       ],
       "outputTokens": 10,
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.5,
       "week": "2026-01-05"
     },
@@ -159,6 +174,9 @@ expression: "serde_json::json!({ \"weekly\": weekly, \"monthly\": monthly, })"
         "unknown-model"
       ],
       "outputTokens": 10,
+      "pluginBreakdowns": [],
+      "skillBreakdowns": [],
+      "sourceTypeBreakdowns": [],
       "totalCost": 0.0,
       "week": "not-a-date"
     }

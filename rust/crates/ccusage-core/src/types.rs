@@ -16,6 +16,8 @@ pub struct UsageEntry {
     pub request_id: Option<String>,
     pub is_api_error_message: Option<bool>,
     pub is_sidechain: Option<bool>,
+    pub attribution_plugin: Option<String>,
+    pub attribution_skill: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,6 +112,129 @@ pub struct ModelBreakdown {
     pub missing_pricing: bool,
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginBreakdown {
+    pub plugin_name: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    #[serde(skip_serializing)]
+    pub extra_total_tokens: u64,
+    pub cost: f64,
+    #[serde(skip_serializing)]
+    pub missing_pricing: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillBreakdown {
+    pub skill_name: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    #[serde(skip_serializing)]
+    pub extra_total_tokens: u64,
+    pub cost: f64,
+    #[serde(skip_serializing)]
+    pub missing_pricing: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceTypeBreakdown {
+    pub source_type: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    #[serde(skip_serializing)]
+    pub extra_total_tokens: u64,
+    pub cost: f64,
+    #[serde(skip_serializing)]
+    pub missing_pricing: bool,
+}
+
+/// Shared shape of [`ModelBreakdown`], [`PluginBreakdown`], [`SkillBreakdown`], and
+/// [`SourceTypeBreakdown`], letting callers merge and aggregate any of them generically.
+pub trait NamedBreakdown {
+    fn key(&self) -> &str;
+    fn with_key(key: String) -> Self;
+    fn accumulate_from(&mut self, other: &Self);
+    fn cost(&self) -> f64;
+    fn input_tokens(&self) -> u64;
+    fn output_tokens(&self) -> u64;
+    fn cache_creation_tokens(&self) -> u64;
+    fn cache_read_tokens(&self) -> u64;
+    fn extra_total_tokens(&self) -> u64;
+}
+
+macro_rules! impl_named_breakdown {
+    ($ty:ty, $name_field:ident) => {
+        impl NamedBreakdown for $ty {
+            fn key(&self) -> &str {
+                &self.$name_field
+            }
+
+            fn with_key(key: String) -> Self {
+                Self {
+                    $name_field: key,
+                    ..Self::default()
+                }
+            }
+
+            fn accumulate_from(&mut self, other: &Self) {
+                self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+                self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+                self.cache_creation_tokens = self
+                    .cache_creation_tokens
+                    .saturating_add(other.cache_creation_tokens);
+                self.cache_read_tokens = self
+                    .cache_read_tokens
+                    .saturating_add(other.cache_read_tokens);
+                self.extra_total_tokens = self
+                    .extra_total_tokens
+                    .saturating_add(other.extra_total_tokens);
+                self.cost += other.cost;
+                if other.missing_pricing {
+                    self.missing_pricing = true;
+                }
+            }
+
+            fn cost(&self) -> f64 {
+                self.cost
+            }
+
+            fn input_tokens(&self) -> u64 {
+                self.input_tokens
+            }
+
+            fn output_tokens(&self) -> u64 {
+                self.output_tokens
+            }
+
+            fn cache_creation_tokens(&self) -> u64 {
+                self.cache_creation_tokens
+            }
+
+            fn cache_read_tokens(&self) -> u64 {
+                self.cache_read_tokens
+            }
+
+            fn extra_total_tokens(&self) -> u64 {
+                self.extra_total_tokens
+            }
+        }
+    };
+}
+
+impl_named_breakdown!(ModelBreakdown, model_name);
+impl_named_breakdown!(PluginBreakdown, plugin_name);
+impl_named_breakdown!(SkillBreakdown, skill_name);
+impl_named_breakdown!(SourceTypeBreakdown, source_type);
+
 #[derive(Debug, Clone)]
 pub struct LoadedEntry {
     pub data: UsageEntry,
@@ -162,6 +287,9 @@ pub struct UsageSummary {
     pub message_count: Option<u64>,
     pub models_used: Vec<String>,
     pub model_breakdowns: Vec<ModelBreakdown>,
+    pub plugin_breakdowns: Vec<PluginBreakdown>,
+    pub skill_breakdowns: Vec<SkillBreakdown>,
+    pub source_type_breakdowns: Vec<SourceTypeBreakdown>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -204,5 +332,49 @@ mod tests {
         assert_eq!(counts.cache_creation_tokens, u64::MAX);
         assert_eq!(counts.cache_read_tokens, u64::MAX);
         assert_eq!(counts.total(), u64::MAX);
+    }
+
+    #[test]
+    fn deserializes_usage_entry_with_attribution_fields() {
+        let json = r#"{
+            "sessionId": "test-session",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "message": {
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50
+                },
+                "model": "test-model",
+                "id": "msg-123"
+            },
+            "costUSD": 0.01,
+            "attributionPlugin": "test-plugin",
+            "attributionSkill": "test-skill"
+        }"#;
+
+        let entry: UsageEntry = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(entry.attribution_plugin, Some("test-plugin".to_string()));
+        assert_eq!(entry.attribution_skill, Some("test-skill".to_string()));
+    }
+
+    #[test]
+    fn deserializes_usage_entry_without_attribution_fields() {
+        let json = r#"{
+            "sessionId": "test-session",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "message": {
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50
+                },
+                "model": "test-model",
+                "id": "msg-456"
+            },
+            "costUSD": 0.02
+        }"#;
+
+        let entry: UsageEntry = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(entry.attribution_plugin, None);
+        assert_eq!(entry.attribution_skill, None);
     }
 }
