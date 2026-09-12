@@ -100,6 +100,14 @@ fn load_entries_from_paths(
     for path in paths {
         let mut files = Vec::new();
         collect_files_with_extension(&path, "jsonl", &mut files);
+        // pi-subagents writes derived debug transcripts under a
+        // `subagent-artifacts/` directory inside the sessions tree. They are
+        // pure copies of calls already recorded in the primary session files
+        // (no session header, no entry ids), so neither the replay suppression
+        // below nor entry-id dedup can collapse them. Skip them here instead.
+        // `run-*/` fresh-context child sessions are the primary record for
+        // those children and must keep counting.
+        files.retain(|file| !is_subagent_artifact_transcript(file));
         // Read session files in parallel; the first-wins dedup runs sequentially
         // over the original file order so the surviving record per id matches the
         // single-threaded read.
@@ -288,6 +296,11 @@ fn resolve_parent_index(
             .copied();
     }
     None
+}
+
+fn is_subagent_artifact_transcript(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str().to_string_lossy() == "subagent-artifacts")
 }
 
 fn normalize_path(path: &Path) -> PathBuf {
@@ -1235,5 +1248,109 @@ mod tests {
             1
         );
         assert_eq!(entries[1].model.as_deref(), Some("[omp] gpt-5"));
+    }
+
+    #[test]
+    fn skips_subagent_artifact_transcripts_but_keeps_fresh_context_child_sessions() {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file(
+            "sessions/project-a/root.jsonl",
+            [
+                session_line("root", "2026-01-01T00:00:00.000Z", None),
+                usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
+            ]
+            .join("\n"),
+        );
+        // Nested placement: `<session>/subagent-artifacts/*_transcript.jsonl`.
+        let _ = fixture.write_file(
+            "sessions/project-a/root/subagent-artifacts/run1_agent_0_transcript.jsonl",
+            usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
+        );
+        // Sibling placement: a stray `subagent-artifacts/` segment elsewhere.
+        let _ = fixture.write_file(
+            "sessions/project-a/subagent-artifacts/other_transcript.jsonl",
+            usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
+        );
+        // Fresh-context children are the primary record and must keep counting.
+        let _ = fixture.write_file(
+            "sessions/project-a/root/run-abc/run-0/session.jsonl",
+            usage_line("2026-01-03T01:00:00.000Z", 50, 5, 6, 1),
+        );
+
+        for single_thread in [true, false] {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread,
+                ..SharedArgs::default()
+            };
+            let entries = load_entries_from_paths(
+                &shared,
+                vec![fixture.path("sessions")],
+                None,
+                PiLoadScope::Default,
+            )
+            .unwrap();
+
+            assert_eq!(entries.len(), 2, "single_thread={single_thread}");
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.data.message.usage.input_tokens == 100),
+                "single_thread={single_thread}"
+            );
+            assert!(
+                entries
+                    .iter()
+                    .any(|entry| entry.data.message.usage.input_tokens == 50),
+                "single_thread={single_thread}"
+            );
+            assert!(
+                !entries
+                    .iter()
+                    .any(|entry| entry.session_id.as_ref().contains("transcript")),
+                "single_thread={single_thread}"
+            );
+        }
+    }
+
+    #[test]
+    fn skips_subagent_artifact_transcripts_for_named_stores() {
+        let fixture = Fixture::new();
+        let store = fixture.create_dir_all("store");
+        let _ = fixture.write_file(
+            "store/project-a/root.jsonl",
+            [
+                session_line("root", "2026-01-01T00:00:00.000Z", None),
+                usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
+            ]
+            .join("\n"),
+        );
+        let _ = fixture.write_file(
+            "store/project-a/root/subagent-artifacts/run1_agent_0_transcript.jsonl",
+            usage_line("2026-01-02T10:00:00.000Z", 100, 10, 20, 3),
+        );
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            single_thread: false,
+            ..SharedArgs::default()
+        };
+        let entries = load_entries_for_store_paths(&shared, vec![store], "omp", None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+    }
+
+    #[test]
+    fn detects_subagent_artifact_path_segments() {
+        assert!(is_subagent_artifact_transcript(Path::new(
+            "sessions/project-a/root/subagent-artifacts/run1_agent_0_transcript.jsonl"
+        )));
+        assert!(!is_subagent_artifact_transcript(Path::new(
+            "sessions/project-a/root/run-abc/run-0/session.jsonl"
+        )));
+        assert!(!is_subagent_artifact_transcript(Path::new(
+            "sessions/project-a/root.jsonl"
+        )));
     }
 }
