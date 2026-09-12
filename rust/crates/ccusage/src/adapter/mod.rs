@@ -7,6 +7,7 @@ pub(crate) use ccusage_adapter_codex as codex;
 pub(crate) use ccusage_adapter_copilot as copilot;
 pub(crate) use ccusage_adapter_droid as droid;
 pub(crate) use ccusage_adapter_gemini as gemini;
+pub(crate) use ccusage_adapter_gjc as gjc;
 pub(crate) use ccusage_adapter_goose as goose;
 pub(crate) use ccusage_adapter_grok as grok;
 pub(crate) use ccusage_adapter_hermes as hermes;

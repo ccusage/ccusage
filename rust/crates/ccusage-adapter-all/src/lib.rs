@@ -17,6 +17,7 @@ mod adapter {
     pub use ccusage_adapter_copilot as copilot;
     pub use ccusage_adapter_droid as droid;
     pub use ccusage_adapter_gemini as gemini;
+    pub use ccusage_adapter_gjc as gjc;
     pub use ccusage_adapter_goose as goose;
     pub use ccusage_adapter_grok as grok;
     pub use ccusage_adapter_hermes as hermes;

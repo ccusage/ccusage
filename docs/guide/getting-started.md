@@ -116,6 +116,7 @@ ccusage daily --since 2026-05-01 --until 2026-05-16
 ccusage codex daily
 ccusage claude monthly
 ccusage zcode daily
+ccusage gjc daily
 ```
 
 ### Use Source-Specific Options
@@ -180,6 +181,7 @@ If ccusage shows no data, check:
    - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
    - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
+   - GJC: `$XDG_DATA_HOME/gjc/sessions/**/*.jsonl` when `$XDG_DATA_HOME/gjc` exists, otherwise `~/${GJC_CONFIG_DIR:-.gjc}/agent/sessions/**/*.jsonl`
 
 ### Custom Data Directory
 
@@ -204,9 +206,10 @@ export ANTIGRAVITY_DATA_DIR="/path/to/antigravity"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
 export ZCODE_HOME="/path/to/zcode-home"
+export GJC_CODING_AGENT_DIR="/path/to/.gjc/agent"
 ```
 
-Directory variables can contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` supports multiple roots and deduplicates them:
+Directory variables can contain comma-separated directories, except `COPILOT_HOME`, `GROK_HOME`, `GJC_CONFIG_DIR`, and `GJC_CODING_AGENT_DIR`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` supports multiple roots and deduplicates them:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"
