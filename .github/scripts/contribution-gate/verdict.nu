@@ -38,6 +38,13 @@ def parse-result [result: string]: nothing -> record {
     }
 }
 
+def mark-for-review [verdict: record]: nothing -> record {
+    $verdict
+    | update maintenance_fit needs_review
+    | update decision needs_human
+    | update implementation none
+}
+
 export def issue-verdict-record [result: string, close_allowed: bool, --force-implementation]: nothing -> record {
     let raw = parse-result $result
     let expected_fields = [
@@ -80,37 +87,25 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
     # The workflow owns product-scope decisions so prompt drift cannot turn an
     # optional feature or uncertain classification into an automatic PR.
     let verdict = if $verdict.confidence != high {
-        $verdict
-        | update maintenance_fit needs_review
-        | update decision needs_human
-        | update implementation none
+        mark-for-review $verdict
         | update reason $"Pullfrog was not highly confident; maintainer review is required. ($verdict.reason)"
     } else if $verdict.kind == security {
-        $verdict
-        | update maintenance_fit needs_review
-        | update decision needs_human
-        | update implementation none
+        mark-for-review $verdict
     } else if $verdict.kind in [question unclear] {
-        $verdict
-        | update maintenance_fit needs_review
-        | update decision needs_human
-        | update implementation none
+        mark-for-review $verdict
     } else if $verdict.kind == bug and ($verdict.decision == close or $verdict.maintenance_fit != maintainable) {
-        $verdict
-        | update maintenance_fit needs_review
-        | update decision needs_human
-        | update implementation none
+        mark-for-review $verdict
     } else if $verdict.kind in [duplicate invalid spam out_of_scope] {
-        if $verdict.decision == close {
+        if (
+            $verdict.decision == close
+            and $verdict.priority in ['priority:medium' 'priority:low']
+        ) {
             $verdict
             | update maintenance_fit excluded
             | update priority 'priority:low'
             | update implementation none
         } else {
-            $verdict
-            | update maintenance_fit needs_review
-            | update decision needs_human
-            | update implementation none
+            mark-for-review $verdict
         }
     } else if $verdict.kind in [feature_request maintenance] {
         if (
@@ -122,24 +117,14 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
             | update priority 'priority:low'
             | update implementation none
         } else {
-            $verdict
-            | update maintenance_fit needs_review
-            | update decision needs_human
-            | update implementation none
+            mark-for-review $verdict
         }
     } else if $verdict.maintenance_fit == excluded {
-        $verdict
-        | update maintenance_fit needs_review
-        | update decision needs_human
-        | update implementation none
+        mark-for-review $verdict
     } else if $verdict.maintenance_fit == needs_review {
-        $verdict
-        | update decision needs_human
-        | update implementation none
+        mark-for-review $verdict
     } else if $verdict.decision == close {
-        $verdict
-        | update decision needs_human
-        | update implementation none
+        mark-for-review $verdict
     } else {
         $verdict
     }
@@ -148,9 +133,7 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
     # constraints for automatic closure and implementation.
     let verdict = if not $close_allowed {
         let verdict = if $verdict.decision == 'close' {
-            $verdict
-            | update maintenance_fit needs_review
-            | update decision needs_human
+            mark-for-review $verdict
             | update reason $"Automatic closure is disabled because author permissions could not be verified; maintainer review is required. ($verdict.reason)"
         } else {
             $verdict

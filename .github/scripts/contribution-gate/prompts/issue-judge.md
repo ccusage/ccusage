@@ -28,11 +28,11 @@ Choose confidence high only when the issue evidence and repository context clear
 Choose exactly one priority:
 
 - priority:critical: security, data loss or corruption, or a broad release blocker
-- priority:high: a confirmed core regression, crash, or material usage or cost error with clear evidence
-- priority:medium: a bounded, maintainable bug or documentation problem without broad urgent impact
-- priority:low: a feature request, maintenance request, optional polish, support question, duplicate, invalid report, or out-of-scope behavior
+- priority:high: a confirmed core regression, crash, or material usage or cost error with clear evidence; exceptionally, a request with broad existing-user impact that is necessary to preserve an existing documented core promise
+- priority:medium: a bounded, maintainable bug or documentation problem without broad urgent impact, or an excluded request with demonstrated moderate impact on existing users
+- priority:low: a typical feature request, maintenance request, optional polish, support question, duplicate, invalid report, or out-of-scope behavior
 
-Choose decision keep_open, close, or needs_human. Choose close for a high-confidence duplicate, invalid report, spam, or out-of-scope issue. For a high-confidence excluded feature or maintenance request with low or medium priority, choose close. Keep a valid documentation issue open; if documentation should be closed, choose needs_human. For a clear, high-confidence maintainable bug, choose keep_open. For an uncertain bug or one that otherwise appears closable, choose needs_human rather than close. Security reports, unclear issues, questions, uncertain classifications, and critical or high-priority feature requests also need human review. Never choose close when close is not allowed.
+Choose decision keep_open, close, or needs_human. Choose close for a high-confidence duplicate, invalid report, spam, or out-of-scope issue only when its priority is low or medium. For a high-confidence excluded feature or maintenance request with low or medium priority, choose close. Keep a valid documentation issue open; if documentation should be closed, choose needs_human. For a clear, high-confidence maintainable bug, choose keep_open. For an uncertain bug or one that otherwise appears closable, choose needs_human rather than close. Security reports, unclear issues, questions, uncertain classifications, and any critical or high-priority issue that is not a clear maintainable bug also need human review. Never choose close when close is not allowed.
 
 Choose implementation create_pr only for a high-confidence, maintainable bug with decision keep_open and priority critical or high. Feature, maintenance, documentation, security, question, and unclear issues require maintainer approval before implementation.
 When uncertain, choose needs_human and leave the issue open.

@@ -636,6 +636,11 @@ def test-issue-triage-policy []: nothing -> nothing {
         $documentation_close.decision
         needs_human
     )
+    (expect
+        'marks a documentation close recommendation for review'
+        $documentation_close.maintenance_fit
+        needs_review
+    )
 
     let duplicate = issue-verdict-record '{"kind":"duplicate","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"A linked open issue tracks the same root cause."}' true
     (expect
@@ -650,6 +655,35 @@ def test-issue-triage-policy []: nothing -> nothing {
         $disputed_duplicate.decision
         needs_human
     )
+
+    [duplicate invalid spam out_of_scope] | each {|kind|
+        ['priority:critical' 'priority:high'] | each {|priority|
+            let important_report = issue-verdict-record ({
+                kind: $kind
+                maintenance_fit: excluded
+                confidence: high
+                decision: close
+                priority: $priority
+                implementation: none
+                reason: 'The classification is confident, but the reported impact is important.'
+            } | to json -r) true
+            (expect
+                $"keeps an important ($kind) report open at ($priority)"
+                $important_report.decision
+                needs_human
+            )
+            (expect
+                $"preserves important ($kind) priority at ($priority)"
+                $important_report.priority
+                $priority
+            )
+            (expect
+                $"marks an important ($kind) report for review at ($priority)"
+                $important_report.maintenance_fit
+                needs_review
+            )
+        } | ignore
+    } | ignore
 
     let bug_close = issue-verdict-record '{"kind":"bug","maintenance_fit":"maintainable","confidence":"high","decision":"close","priority":"priority:high","implementation":"none","reason":"The report appears unsupported."}' true
     (expect
