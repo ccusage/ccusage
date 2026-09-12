@@ -1,5 +1,6 @@
 {
 	"exact": {
+		"gpt-6-astra": 2.0,
 		"gpt-5.6-sol": 2.0,
 		"gpt-5.6-terra": 2.0,
 		"gpt-5.6-luna": 2.0,
