@@ -543,6 +543,11 @@ def test-issue-triage-policy []: nothing -> nothing {
         $important_excluded_feature.decision
         needs_human
     )
+    (expect
+        'marks an escalated excluded feature request for review'
+        $important_excluded_feature.maintenance_fit
+        needs_review
+    )
 
     let uncertain = issue-verdict-record '{"kind":"bug","maintenance_fit":"excluded","confidence":"medium","decision":"close","priority":"priority:low","implementation":"none","reason":"The report may describe unsupported behavior."}' true
     (expect
@@ -593,12 +598,36 @@ def test-issue-triage-policy []: nothing -> nothing {
         none
     )
 
-    let security = issue-verdict-record '{"kind":"security","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:critical","implementation":"none","reason":"The report may affect credential handling."}' true
+    let security = issue-verdict-record '{"kind":"security","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"The report may affect credential handling."}' true
     expect 'never auto-closes a security report' $security.decision needs_human
     (expect
         'marks a security report for review'
         $security.maintenance_fit
         needs_review
+    )
+    (expect
+        'floors security reports to high priority'
+        $security.priority
+        'priority:high'
+    )
+
+    let documentation = issue-verdict-record '{"kind":"documentation","maintenance_fit":"maintainable","confidence":"high","decision":"keep_open","priority":"priority:medium","implementation":"create_pr","reason":"The documented option no longer matches supported behavior."}' true
+    (expect
+        'keeps a valid documentation issue open'
+        $documentation.decision
+        keep_open
+    )
+    (expect
+        'never implements documentation automatically'
+        $documentation.implementation
+        none
+    )
+
+    let documentation_close = issue-verdict-record '{"kind":"documentation","maintenance_fit":"maintainable","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"The documentation request may be obsolete."}' true
+    (expect
+        'sends a documentation close recommendation to a maintainer'
+        $documentation_close.decision
+        needs_human
     )
 
     let duplicate = issue-verdict-record '{"kind":"duplicate","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"A linked open issue tracks the same root cause."}' true

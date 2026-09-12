@@ -77,7 +77,18 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
         | update decision needs_human
         | update implementation none
         | update reason $"Pullfrog was not highly confident; maintainer review is required. ($verdict.reason)"
-    } else if $verdict.kind in [security question unclear] {
+    } else if $verdict.kind == security {
+        let priority = if $verdict.priority == 'priority:critical' {
+            'priority:critical'
+        } else {
+            'priority:high'
+        }
+        $verdict
+        | update maintenance_fit needs_review
+        | update decision needs_human
+        | update priority $priority
+        | update implementation none
+    } else if $verdict.kind in [question unclear] {
         $verdict
         | update maintenance_fit needs_review
         | update decision needs_human
@@ -110,6 +121,7 @@ export def issue-verdict-record [result: string, close_allowed: bool, --force-im
             | update implementation none
         } else {
             $verdict
+            | update maintenance_fit needs_review
             | update decision needs_human
             | update implementation none
         }
