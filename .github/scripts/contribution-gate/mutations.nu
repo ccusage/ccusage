@@ -1,6 +1,7 @@
 use ./core.nu [
     COMMENT_MARKER
     PRIORITY_LABELS
+    TRIAGE_LABELS
     comment-body
     format-gh-error
     gh-api-body
@@ -16,7 +17,7 @@ use ./core.nu [
 use ./context.nu [require-open-issue]
 use ./verdict.nu [issue-verdict-record pr-verdict-record]
 
-def ensure-priority-label [repo: string, label: string, color: string]: nothing -> nothing {
+def ensure-label [repo: string, label: string, color: string]: nothing -> nothing {
     let endpoint = $"repos/($repo)/labels/($label)"
     let result = (gh-api-complete [$endpoint])
     if $result.exit_code == 0 {
@@ -33,16 +34,31 @@ def ensure-priority-label [repo: string, label: string, color: string]: nothing 
 
 def ensure-priority-labels [repo: string]: nothing -> nothing {
     [
-        {name: 'priority:critical', color: b60205}
-        {name: 'priority:high', color: d93f0b}
-        {name: 'priority:medium', color: fbca04}
-        {name: 'priority:low', color: 0e8a16}
+        {name: 'priority:critical', color: 'b60205'}
+        {name: 'priority:high', color: 'd93f0b'}
+        {name: 'priority:medium', color: 'fbca04'}
+        {name: 'priority:low', color: '0e8a16'}
     ]
-    | each {|label| ensure-priority-label $repo $label.name $label.color }
+    | each {|label| ensure-label $repo $label.name $label.color }
     | ignore
 }
 
-def apply-priority-label [repo: string, number: int, priority: string]: nothing -> nothing {
+def ensure-triage-labels [repo: string]: nothing -> nothing {
+    [
+        {name: 'triage:maintainable', color: '1d76db'}
+        {name: 'triage:excluded', color: '5319e7'}
+        {name: 'triage:needs-review', color: 'fbca04'}
+    ]
+    | each {|label| ensure-label $repo $label.name $label.color }
+    | ignore
+}
+
+def apply-exclusive-label [
+    repo: string
+    number: int
+    selected: string
+    family: list<string>
+]: nothing -> nothing {
     let labels = (
         gh-api-json [
             '--paginate'
@@ -57,20 +73,33 @@ def apply-priority-label [repo: string, number: int, priority: string]: nothing 
         POST
         $"repos/($repo)/issues/($number)/labels"
         {
-            labels: [$priority]
+            labels: [$selected]
         }
     ) | ignore
 
     $labels
     | where {|label|
         let name = $label | get --optional name
-        ($name in $PRIORITY_LABELS) and $name != $priority
+        ($name in $family) and $name != $selected
     }
     | each {|label|
         require-open-issue | ignore
         gh-api-delete $"repos/($repo)/issues/($number)/labels/($label.name)"
     }
     | ignore
+}
+
+def apply-priority-label [repo: string, number: int, priority: string]: nothing -> nothing {
+    apply-exclusive-label $repo $number $priority $PRIORITY_LABELS
+}
+
+def apply-triage-label [repo: string, number: int, maintenance_fit: string]: nothing -> nothing {
+    let label = match $maintenance_fit {
+        maintainable => 'triage:maintainable'
+        excluded => 'triage:excluded'
+        needs_review => 'triage:needs-review'
+    }
+    apply-exclusive-label $repo $number $label $TRIAGE_LABELS
 }
 
 def create-comment [
@@ -180,8 +209,13 @@ def issue-comment [verdict: record]: nothing -> string {
         _ if $verdict.implementation == 'create_pr' => 'kept open; Pullfrog will attempt a focused implementation PR'
         _ => 'kept open'
     }
+    let kind = $verdict.kind | str replace --all '_' ' '
+    let maintenance_fit = $verdict.maintenance_fit | str replace --all '_' ' '
     comment-body $COMMENT_MARKER ([
         $"Pullfrog triage: **($verdict.priority)**"
+        $"Kind: **($kind)**"
+        $"Maintenance fit: **($maintenance_fit)**"
+        $"Confidence: **($verdict.confidence)**"
         ''
         $verdict.reason
         ''
@@ -243,13 +277,18 @@ export def issue-verdict []: nothing -> nothing {
     }
 
     ensure-priority-labels $repo
+    ensure-triage-labels $repo
     apply-priority-label $repo $number $verdict.priority
+    apply-triage-label $repo $number $verdict.maintenance_fit
     upsert-comment $repo $number (issue-comment $verdict) --require-open-issue
     if $verdict.decision == 'close' and $close_allowed {
         close-issue $repo $number
     }
     write-output decision $verdict.decision
     write-output priority $verdict.priority
+    write-output kind $verdict.kind
+    write-output maintenance_fit $verdict.maintenance_fit
+    write-output confidence $verdict.confidence
     write-output reason $verdict.reason
     write-output implementation $verdict.implementation
 }
