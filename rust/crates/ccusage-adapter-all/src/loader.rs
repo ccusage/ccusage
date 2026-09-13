@@ -400,7 +400,12 @@ fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs
         for row in &mut rows {
             row.metadata_agents = None;
         }
-        sort_rows(&mut rows, &shared.order);
+        rows.sort_by(|a, b| {
+            b.total_cost
+                .total_cmp(&a.total_cost)
+                .then_with(|| a.period.cmp(&b.period))
+                .then_with(|| a.agent.cmp(b.agent))
+        });
         return rows;
     }
 
@@ -919,6 +924,84 @@ mod tests {
             model_breakdowns: Vec::new(),
             project: None,
             versions: None,
+        }
+    }
+
+    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> AllRow {
+        let mut summary = usage_summary(period, 10);
+        summary.total_cost = cost;
+        summary_rows(agent, vec![summary], false).pop().unwrap()
+    }
+
+    #[test]
+    fn session_cost_order_uses_id_then_agent_for_ties() {
+        for order in [crate::cli::SortOrder::Asc, crate::cli::SortOrder::Desc] {
+            let rows = vec![
+                sorting_row("b-tie", "codex", 20.0),
+                sorting_row("a-zero", "claude", 0.0),
+                sorting_row("z-tie", "claude", 20.0),
+                sorting_row("b-tie", "claude", 20.0),
+                sorting_row("c-cheap", "codex", 1.0),
+            ];
+            let shared = SharedArgs {
+                order,
+                ..SharedArgs::default()
+            };
+            let sorted = finish_rows(AgentReportKind::Session, rows, &shared);
+            let keys: Vec<_> = sorted
+                .iter()
+                .map(|row| (row.period.as_str(), row.agent))
+                .collect();
+            assert_eq!(
+                keys,
+                [
+                    ("b-tie", "claude"),
+                    ("b-tie", "codex"),
+                    ("z-tie", "claude"),
+                    ("c-cheap", "codex"),
+                    ("a-zero", "claude"),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn session_cost_order_handles_empty_and_single_row_reports() {
+        let shared = SharedArgs::default();
+        assert!(finish_rows(AgentReportKind::Session, Vec::new(), &shared).is_empty());
+        let rows = finish_rows(
+            AgentReportKind::Session,
+            vec![sorting_row("only-session", "claude", 0.0)],
+            &shared,
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].period, "only-session");
+    }
+
+    #[test]
+    fn period_reports_keep_chronological_order_regardless_of_cost() {
+        for kind in [
+            AgentReportKind::Daily,
+            AgentReportKind::Weekly,
+            AgentReportKind::Monthly,
+        ] {
+            for (order, expected_costs) in [
+                (crate::cli::SortOrder::Asc, [1.0, 20.0, 3.0]),
+                (crate::cli::SortOrder::Desc, [3.0, 20.0, 1.0]),
+            ] {
+                let rows = vec![
+                    sorting_row("2026-03-02", "claude", 3.0),
+                    sorting_row("2026-01-05", "claude", 1.0),
+                    sorting_row("2026-02-02", "claude", 20.0),
+                ];
+                let shared = SharedArgs {
+                    order,
+                    ..SharedArgs::default()
+                };
+                let sorted = finish_rows(kind, rows, &shared);
+                let costs: Vec<_> = sorted.iter().map(|row| row.total_cost).collect();
+                assert_eq!(costs, expected_costs, "{kind:?} {order:?}");
+            }
         }
     }
 

@@ -539,6 +539,62 @@ fn renders_multi_section_json_keys_in_invoked_section_order_with_totals_last() {
 }
 
 #[test]
+fn unified_sessions_rank_highest_cost_first_in_json_and_table() {
+    let fixture = fs_fixture!({});
+    for (id, cost) in [("a-cheap", 1.0), ("m-medium", 3.0), ("z-expensive", 20.0)] {
+        let _ = fixture.write_file(
+            format!("projects/project-a/{id}.jsonl"),
+            json!({
+                "timestamp": "2099-01-02T00:00:00.000Z",
+                "sessionId": id,
+                "requestId": id,
+                "costUSD": cost,
+                "message": {
+                    "id": id,
+                    "model": "claude-sonnet-4-20250514",
+                    "usage": {"input_tokens": 100, "output_tokens": 50}
+                }
+            })
+            .to_string(),
+        );
+    }
+    let _env = isolated_agent_env(
+        &fixture,
+        "CLAUDE_CONFIG_DIR",
+        fixture.root().as_os_str().into(),
+    );
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        ..fixture_shared("20990101", "20990103")
+    };
+
+    let result = load_rows(AgentReportKind::Session, &shared).unwrap();
+    let report = report_json(&result.rows, AgentReportKind::Session);
+    let ids: Vec<_> = report["session"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["period"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["z-expensive", "m-medium", "a-cheap"]);
+    assert_eq!(report["totals"]["totalCost"], 24.0);
+
+    let table = table_snapshot(
+        &result.rows,
+        AgentReportKind::Session,
+        &result.detected_agents,
+    );
+    let table_ids: Vec<_> = table["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["cells"][0].as_str().unwrap())
+        .collect();
+    assert_eq!(table_ids, ["z-expensive", "m-medium", "a-cheap", "Total"]);
+    assert_daily_family_and_session_sections_match_standalone(&shared);
+}
+
+#[test]
 fn multi_section_claude_fixture_matches_standalone_sections_for_daily_and_session_invocations() {
     let fixture = fs_fixture!({
         "projects/project-a/session-a.jsonl": [
