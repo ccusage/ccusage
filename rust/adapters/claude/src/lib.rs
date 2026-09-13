@@ -510,7 +510,11 @@ fn is_valid_usage_entry(data: &UsageEntry) -> bool {
     true
 }
 
+/// Mirrors the TypeScript loader's schema: a line whose known non-nullable field is `null`
+/// is skipped before deserialisation. `message.usage.iterations[].model` is the one exception,
+/// because `UsageIteration.model` is optional and Claude Code writes it as `null`.
 pub(crate) fn has_unsupported_null_field(line: &[u8]) -> bool {
+    let iterations = iterations_span(line);
     let mut offset = 0;
     while let Some(relative_index) = memmem::find(&line[offset..], b":null") {
         let null_index = offset + relative_index;
@@ -525,15 +529,138 @@ pub(crate) fn has_unsupported_null_field(line: &[u8]) -> bool {
             while field_start > 0 && line[field_start] != b'"' {
                 field_start -= 1;
             }
-            if line.get(field_start) == Some(&b'"')
-                && is_unsupported_nullable_field(&line[field_start + 1..field_end])
-            {
-                return true;
+            if line.get(field_start) == Some(&b'"') {
+                let field = &line[field_start + 1..field_end];
+                // `message.usage.iterations[].model` is `Option<String>` in `UsageIteration`,
+                // so a null there is fine; only `message.model` (outside the array) is not.
+                let nested_iteration_model = field == b"model"
+                    && iterations
+                        .as_ref()
+                        .is_some_and(|span| span.contains(&null_index));
+                if !nested_iteration_model && is_unsupported_nullable_field(field) {
+                    return true;
+                }
             }
         }
         offset = null_index + b":null".len();
     }
     false
+}
+
+/// Byte range of the `iterations` array body that sits directly in a `usage` object, found
+/// without deserialising the line. Every `"usage"` key whose value is an object is walked key
+/// by key at that object's own level (string contents and escapes are skipped, JSON whitespace
+/// is tolerated), so an `iterations` array nested elsewhere in the line — in another object,
+/// deeper inside `usage`, or as text inside a string — never matches. Key names are compared as
+/// raw bytes, like the `"usage":{` marker the loader already relies on.
+fn iterations_span(line: &[u8]) -> Option<std::ops::Range<usize>> {
+    const USAGE_KEY: &[u8] = br#""usage""#;
+    let mut offset = 0;
+    while let Some(found) = memmem::find(&line[offset..], USAGE_KEY) {
+        let key_end = offset + found + USAGE_KEY.len();
+        offset = key_end;
+        let Some(body) = expect_after_whitespace(line, key_end, b':')
+            .and_then(|index| expect_after_whitespace(line, index, b'{'))
+        else {
+            continue;
+        };
+        if let Some(span) = iterations_in_object(line, body) {
+            return Some(span);
+        }
+    }
+    None
+}
+
+/// Walks the members of the object whose body starts at `start` and returns the body range of
+/// the first `iterations` member whose value is an array. Values of other members are skipped
+/// whole, so nothing inside them can match.
+fn iterations_in_object(line: &[u8], start: usize) -> Option<std::ops::Range<usize>> {
+    let mut index = skip_whitespace(line, start);
+    loop {
+        match line.get(index)? {
+            b'}' => return None,
+            b'"' => {}
+            _ => return None,
+        }
+        let key_end = string_end(line, index + 1)?;
+        let key = &line[index + 1..key_end];
+        let value = expect_after_whitespace(line, key_end + 1, b':')?;
+        let value = skip_whitespace(line, value);
+        let value_end = match line.get(value)? {
+            b'[' if key == b"iterations" => {
+                return Some(value + 1..container_end(line, value + 1)?);
+            }
+            b'[' | b'{' => container_end(line, value + 1)?,
+            b'"' => string_end(line, value + 1)?,
+            _ => {
+                let mut end = value;
+                while line
+                    .get(end)
+                    .is_some_and(|byte| !matches!(byte, b',' | b'}'))
+                {
+                    end += 1;
+                }
+                end - 1
+            }
+        };
+        index = skip_whitespace(line, value_end + 1);
+        match line.get(index)? {
+            b',' => index = skip_whitespace(line, index + 1),
+            b'}' => return None,
+            _ => return None,
+        }
+    }
+}
+
+/// Index of the bracket that closes the array or object whose body starts at `start`.
+fn container_end(line: &[u8], start: usize) -> Option<usize> {
+    let mut depth = 1usize;
+    let mut index = start;
+    while let Some(&byte) = line.get(index) {
+        match byte {
+            b'"' => index = string_end(line, index + 1)?,
+            b'[' | b'{' => depth += 1,
+            b']' | b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Index of the quote that closes the string whose contents start at `start`.
+fn string_end(line: &[u8], start: usize) -> Option<usize> {
+    let mut index = start;
+    while let Some(&byte) = line.get(index) {
+        match byte {
+            b'\\' => index += 1,
+            b'"' => return Some(index),
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+fn skip_whitespace(line: &[u8], mut index: usize) -> usize {
+    while line
+        .get(index)
+        .is_some_and(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
+    {
+        index += 1;
+    }
+    index
+}
+
+/// Index just past `expected` when it is the next non-whitespace byte at or after `start`.
+fn expect_after_whitespace(line: &[u8], start: usize, expected: u8) -> Option<usize> {
+    let index = skip_whitespace(line, start);
+    (line.get(index) == Some(&expected)).then_some(index + 1)
 }
 
 fn is_unsupported_nullable_field(field: &[u8]) -> bool {
@@ -711,6 +838,91 @@ mod tests {
         assert!(!has_unsupported_null_field(
             br#"{"message":{"content":null,"usage":{"input_tokens":0}}}"#
         ));
+    }
+
+    /// Claude Code 2.1.266+ writes `"model":null` for the main-model iteration of Fable 5.1
+    /// entries; `UsageIteration.model` is optional, so those lines must be kept while every
+    /// other unsupported null keeps being rejected.
+    #[test]
+    fn allows_null_iteration_model_but_still_rejects_other_nulls() {
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"claude-fable-5-1","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
+        ));
+        // A missing iteration model and an empty iterations array are unchanged.
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"input_tokens":2,"iterations":[{"type":"message","input_tokens":2}]}}}"#
+        ));
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"input_tokens":2,"iterations":[]}}}"#
+        ));
+        // Strings inside the array may contain brackets or escaped quotes without ending the span.
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"iterations":[{"type":"ad]vi\"sor}","model":null,"input_tokens":1}]}}}"#
+        ));
+        // `message.model` null is still rejected, before or after the iterations array.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":null,"usage":{"iterations":[{"type":"message","model":"m"}]}}}"#
+        ));
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"usage":{"iterations":[{"type":"message","model":"m"}]},"model":null}}"#
+        ));
+        // Other unsupported nulls inside the array are still rejected.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null,"cache_read_input_tokens":null}]}}}"#
+        ));
+    }
+
+    /// The exemption is scoped to the `iterations` member of a `usage` object: whitespace
+    /// around the member is fine, but a same-named array elsewhere in the line, an `iterations`
+    /// member nested deeper inside `usage`, or the key as text inside a string never qualifies.
+    #[test]
+    fn scopes_the_iteration_model_exemption_to_the_usage_object() {
+        // JSON whitespace between the key, the colon and the array is tolerated.
+        assert!(!has_unsupported_null_field(
+            br#"{"message": {"model": "m", "usage" : { "input_tokens": 2, "iterations" : [ {"type": "message", "model": null} ] }}}"#
+        ));
+        // An earlier `iterations` array in another object does not stand in for the real one.
+        assert!(!has_unsupported_null_field(
+            br#"{"toolUseResult":{"iterations":[{"model":"x"}]},"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}"#
+        ));
+        assert!(has_unsupported_null_field(
+            br#"{"toolUseResult":{"iterations":[{"model":null}]},"message":{"model":"m","usage":{"input_tokens":1}}}"#
+        ));
+        // A `usage` member that is not an object is skipped in favour of the real one.
+        assert!(!has_unsupported_null_field(
+            br#"{"usage":"n/a","message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}"#
+        ));
+        // Only a direct member of `usage` counts, not one nested deeper inside it.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"server_tool_use":{"iterations":[{"model":null}]},"input_tokens":1}}}"#
+        ));
+        // The key as text inside a string value is not a member.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"content":"\"usage\":{\"iterations\":[","model":null,"usage":{"input_tokens":1}}}"#
+        ));
+        // Members before `iterations` may hold nested containers and strings with brackets.
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"cache_creation":{"ephemeral_5m_input_tokens":0},"server_tool_use":{"web_search_requests":0},"inference_geo":"[not]{available}","iterations":[{"type":"message","model":null}]}}}"#
+        ));
+    }
+
+    /// The repro line from #1710 loads as one Fable 5.1 entry with its own token counts.
+    #[test]
+    fn counts_entries_whose_iteration_model_is_null() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","version":"2.1.268","sessionId":"session-a","requestId":"req_1","message":{"id":"msg_1","model":"claude-fable-5-1","role":"assistant","usage":{"input_tokens":2,"cache_creation_input_tokens":55866,"cache_read_input_tokens":0,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289,"cache_creation_input_tokens":55866,"cache_read_input_tokens":0}]}}}"#,
+        });
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Calculate,
+            Some(&PricingMap::default()),
+        );
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.entries[0].model.as_deref(), Some("claude-fable-5-1"));
+        assert_eq!(loaded.entries[0].data.message.usage.output_tokens, 289);
     }
 
     #[test]
