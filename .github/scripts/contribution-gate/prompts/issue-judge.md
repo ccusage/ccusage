@@ -30,7 +30,7 @@ Choose exactly one priority:
 - priority:critical: security, data loss or corruption, or a broad release blocker
 - priority:high: a confirmed core regression, crash, or material usage or cost error with clear evidence; exceptionally, a request with broad existing-user impact that is necessary to preserve an existing documented core promise
 - priority:medium: a bounded, maintainable bug or documentation problem without broad urgent impact, or an excluded request with demonstrated moderate impact on existing users
-- priority:low: a typical feature request, maintenance request, optional polish, support question, duplicate, invalid report, or out-of-scope behavior
+- priority:low: a typical feature request, maintenance request, optional polish, support question, duplicate, invalid report, spam, or out-of-scope behavior
 
 Choose decision keep_open, close, or needs_human. Choose close for a high-confidence duplicate, invalid report, spam, or out-of-scope issue only when its priority is low or medium. For a high-confidence excluded feature or maintenance request with low or medium priority, choose close. Keep a valid documentation issue open; if documentation should be closed, choose needs_human. For a clear, high-confidence maintainable bug, choose keep_open. For any other bug, including one with medium or low confidence or excluded or needs_review maintenance fit, choose needs_human rather than close. Security reports, unclear issues, questions, uncertain classifications, and any critical or high-priority issue that is not a clear maintainable bug also need human review. Never choose close when close is not allowed.
 
