@@ -743,7 +743,10 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
                 .parse()
                 .map_err(|_| "Invalid value for --debug-samples".to_string())?
         }
-        "-o" | "--order" => shared.order = parse_sort_order(&parser.value_for("--order")?)?,
+        "-o" | "--order" => {
+            shared.order = parse_sort_order(&parser.value_for("--order")?)?;
+            shared.order_explicit = true;
+        }
         "-b" | "--breakdown" => shared.breakdown = true,
         "-O" | "--offline" => shared.offline = true,
         "--no-offline" => shared.no_offline = true,

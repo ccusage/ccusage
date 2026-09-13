@@ -539,7 +539,7 @@ fn renders_multi_section_json_keys_in_invoked_section_order_with_totals_last() {
 }
 
 #[test]
-fn unified_sessions_rank_highest_cost_first_in_json_and_table() {
+fn unified_sessions_sort_by_cost_in_json_and_table() {
     let fixture = fs_fixture!({});
     for (id, cost) in [("a-cheap", 1.0), ("m-medium", 3.0), ("z-expensive", 20.0)] {
         let _ = fixture.write_file(
@@ -568,30 +568,53 @@ fn unified_sessions_rank_highest_cost_first_in_json_and_table() {
         ..fixture_shared("20990101", "20990103")
     };
 
-    let result = load_rows(AgentReportKind::Session, &shared).unwrap();
-    let report = report_json(&result.rows, AgentReportKind::Session);
-    let ids: Vec<_> = report["session"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| row["period"].as_str().unwrap())
-        .collect();
-    assert_eq!(ids, ["z-expensive", "m-medium", "a-cheap"]);
-    assert_eq!(report["totals"]["totalCost"], 24.0);
+    for (order, order_explicit, expected) in [
+        (
+            crate::cli::SortOrder::Asc,
+            false,
+            ["z-expensive", "m-medium", "a-cheap"],
+        ),
+        (
+            crate::cli::SortOrder::Asc,
+            true,
+            ["a-cheap", "m-medium", "z-expensive"],
+        ),
+        (
+            crate::cli::SortOrder::Desc,
+            true,
+            ["z-expensive", "m-medium", "a-cheap"],
+        ),
+    ] {
+        let shared = SharedArgs {
+            order,
+            order_explicit,
+            ..shared.clone()
+        };
+        let result = load_rows(AgentReportKind::Session, &shared).unwrap();
+        let report = report_json(&result.rows, AgentReportKind::Session);
+        let ids: Vec<_> = report["session"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["period"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, expected);
+        assert_eq!(report["totals"]["totalCost"], 24.0);
 
-    let table = table_snapshot(
-        &result.rows,
-        AgentReportKind::Session,
-        &result.detected_agents,
-    );
-    let table_ids: Vec<_> = table["rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| row["cells"][0].as_str().unwrap())
-        .collect();
-    assert_eq!(table_ids, ["z-expensive", "m-medium", "a-cheap", "Total"]);
-    assert_daily_family_and_session_sections_match_standalone(&shared);
+        let table = table_snapshot(
+            &result.rows,
+            AgentReportKind::Session,
+            &result.detected_agents,
+        );
+        let table_ids: Vec<_> = table["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["cells"][0].as_str().unwrap())
+            .collect();
+        assert_eq!(table_ids, [expected[0], expected[1], expected[2], "Total"]);
+        assert_daily_family_and_session_sections_match_standalone(&shared);
+    }
 }
 
 #[test]

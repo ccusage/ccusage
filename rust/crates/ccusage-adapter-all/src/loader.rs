@@ -401,8 +401,13 @@ fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs
             row.metadata_agents = None;
         }
         rows.sort_by(|a, b| {
-            b.total_cost
-                .total_cmp(&a.total_cost)
+            let cost_order = if shared.order_explicit && shared.order == crate::cli::SortOrder::Asc
+            {
+                a.total_cost.total_cmp(&b.total_cost)
+            } else {
+                b.total_cost.total_cmp(&a.total_cost)
+            };
+            cost_order
                 .then_with(|| a.period.cmp(&b.period))
                 .then_with(|| a.agent.cmp(b.agent))
         });
@@ -934,8 +939,40 @@ mod tests {
     }
 
     #[test]
+    fn session_cost_order_honors_explicit_ascending_order() {
+        let shared = SharedArgs {
+            order: crate::cli::SortOrder::Asc,
+            order_explicit: true,
+            ..SharedArgs::default()
+        };
+        let rows = vec![
+            sorting_row("a-expensive", "claude", 20.0),
+            sorting_row("z-cheap", "codex", 1.0),
+            sorting_row("z-cheap", "claude", 1.0),
+            sorting_row("b-zero", "claude", 0.0),
+        ];
+        let sorted = finish_rows(AgentReportKind::Session, rows, &shared);
+        let keys: Vec<_> = sorted
+            .iter()
+            .map(|row| (row.period.as_str(), row.agent))
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                ("b-zero", "claude"),
+                ("z-cheap", "claude"),
+                ("z-cheap", "codex"),
+                ("a-expensive", "claude")
+            ]
+        );
+    }
+
+    #[test]
     fn session_cost_order_uses_id_then_agent_for_ties() {
-        for order in [crate::cli::SortOrder::Asc, crate::cli::SortOrder::Desc] {
+        for (order, order_explicit) in [
+            (crate::cli::SortOrder::Asc, false),
+            (crate::cli::SortOrder::Desc, true),
+        ] {
             let rows = vec![
                 sorting_row("b-tie", "codex", 20.0),
                 sorting_row("a-zero", "claude", 0.0),
@@ -945,6 +982,7 @@ mod tests {
             ];
             let shared = SharedArgs {
                 order,
+                order_explicit,
                 ..SharedArgs::default()
             };
             let sorted = finish_rows(AgentReportKind::Session, rows, &shared);

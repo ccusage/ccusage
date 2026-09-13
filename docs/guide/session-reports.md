@@ -92,7 +92,9 @@ Sessions are displayed using the last two segments of their full identifier:
 
 ### Sorting
 
-Sessions are sorted by cost (highest first) by default, making it easy to identify your most expensive conversations.
+Unified session reports are sorted by cost (highest first) by default. Use `ccusage session --order asc` for lowest cost first or `--order desc` for highest cost first. Equal costs sort by session ID, then agent, in ascending order.
+
+The `order` configuration option also controls this direction; an explicit CLI flag takes precedence. With mixed `--sections` reports, the selected order applies to session costs and chronological periods. Without an order option, sessions use descending cost while daily, weekly, and monthly sections stay chronological (ascending).
 
 ## Command Options
 
