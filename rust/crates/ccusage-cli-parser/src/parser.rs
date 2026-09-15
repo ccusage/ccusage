@@ -125,6 +125,9 @@ impl Cli {
         if let Some(message) = last_option_error(command.as_ref(), &shared) {
             return Err(message);
         }
+        if let Some(message) = date_window_error(command.as_ref(), &shared) {
+            return Err(message);
+        }
         Ok(Self { command, shared })
     }
 }
@@ -1044,10 +1047,14 @@ fn parse_last_periods(value: &str) -> Result<u32, String> {
     }
 }
 
-/// `--last` counts the report's own calendar periods, so it only makes sense on
-/// the reports that group rows by day, week, or month.
-fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Option<String> {
-    let (shared, supported) = match command {
+/// The shared options that apply to a command (statusline falls back to the root
+/// options), plus whether that command groups rows by a calendar period (day,
+/// week, or month).
+fn report_shared<'a>(
+    command: Option<&'a Command>,
+    root_shared: &'a SharedArgs,
+) -> (&'a SharedArgs, bool) {
+    match command {
         None => (root_shared, true),
         Some(Command::All(args)) => (&args.shared, args.kind != AgentReportKind::Session),
         Some(Command::Daily(args)) => (&args.shared, true),
@@ -1075,7 +1082,13 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
             | Command::Grok(args)
             | Command::ZCode(args),
         ) => (&args.shared, args.kind != AgentReportKind::Session),
-    };
+    }
+}
+
+/// `--last` counts the report's own calendar periods, so it only makes sense on
+/// the reports that group rows by day, week, or month.
+fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Option<String> {
+    let (shared, supported) = report_shared(command, root_shared);
     shared.last?;
     if !supported {
         return Some(
@@ -1090,6 +1103,17 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
         return Some("The --last option cannot be used with --sections.".to_string());
     }
     None
+}
+
+/// Both bounds are already normalized to `YYYYMMDD`, so a plain string comparison
+/// orders them. A reversed window would otherwise load everything and print an
+/// empty report that looks like missing data.
+fn date_window_error(command: Option<&Command>, root_shared: &SharedArgs) -> Option<String> {
+    let (shared, _) = report_shared(command, root_shared);
+    let since = shared.since.as_deref()?;
+    let until = shared.until.as_deref()?;
+    (since > until)
+        .then(|| format!("The --since date '{since}' is later than the --until date '{until}'."))
 }
 
 fn parse_cost_mode(value: &str) -> Result<CostMode, String> {
