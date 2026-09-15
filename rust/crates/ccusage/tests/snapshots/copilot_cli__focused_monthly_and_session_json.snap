@@ -68,7 +68,7 @@ Session JSON
     {
       "cacheCreationTokens": 30,
       "cacheReadTokens": 20,
-      "firstActivity": "2026-01-03T01:20:00.000Z",
+      "firstActivity": "2026-01-02T01:20:00.000Z",
       "inputTokens": 163,
       "lastActivity": "2026-01-03T02:20:00.000Z",
       "messageCount": 4,
