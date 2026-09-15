@@ -95,6 +95,10 @@ fn read_agent_database(
         return Vec::new();
     };
     if !table_exists(&connection) {
+        debug(format!(
+            "OpenClaw agent database has no transcript_events table: {}",
+            database.path.display()
+        ));
         return Vec::new();
     }
     let Ok(mut statement) = connection.prepare(
@@ -295,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_databases_without_transcript_events() {
+    fn logs_and_ignores_databases_without_transcript_events() {
         let fixture = fs_fixture!({});
         let db_path = sqlite_root(&fixture);
         std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
@@ -303,16 +307,26 @@ mod tests {
             .unwrap()
             .execute("CREATE TABLE other (id TEXT)")
             .unwrap();
+        let debug = std::cell::RefCell::new(Vec::new());
 
         let entries = read_agent_database(
-            &AgentDatabase { path: db_path },
+            &AgentDatabase {
+                path: db_path.clone(),
+            },
             None,
             CostMode::Auto,
             None,
-            &no_debug,
+            &|message| debug.borrow_mut().push(message),
         );
 
         assert!(entries.is_empty());
+        assert_eq!(
+            debug.into_inner(),
+            vec![format!(
+                "OpenClaw agent database has no transcript_events table: {}",
+                db_path.display()
+            )]
+        );
     }
 
     #[test]

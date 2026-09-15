@@ -467,6 +467,14 @@ fn file_modified_timestamp(path: &Path) -> TimestampMs {
 }
 
 pub(super) fn entry_id(entry: &LoadedEntry) -> String {
+    format!("{}:{}", migration_id(entry), entry.cost)
+}
+
+/// Identity shared by a legacy JSONL event and its migrated SQLite copy.
+///
+/// SQLite can carry a corrected provider-billed cost, so cost must not prevent
+/// the migrated copy from replacing the legacy event.
+pub(super) fn migration_id(entry: &LoadedEntry) -> String {
     let usage = entry.data.message.usage;
     [
         "openclaw".to_string(),
@@ -478,7 +486,6 @@ pub(super) fn entry_id(entry: &LoadedEntry) -> String {
         usage.cache_creation_input_tokens.to_string(),
         usage.cache_read_input_tokens.to_string(),
         entry.extra_total_tokens.to_string(),
-        entry.cost.to_string(),
     ]
     .join(":")
 }

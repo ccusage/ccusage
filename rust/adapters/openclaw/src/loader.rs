@@ -5,7 +5,7 @@ use crate::{
 };
 
 use super::{
-    parser::{entry_id, parse_session_file},
+    parser::{entry_id, migration_id, parse_session_file},
     paths::{collect_session_files, paths},
     sqlite::collect_sqlite_entries,
 };
@@ -73,10 +73,11 @@ fn load_entries_inner(
             let sqlite_id = format!("openclaw:{}:{message_id}", entry.session_id);
             if sqlite_ids.insert(sqlite_id) {
                 // A migrated JSONL duplicate carries no stable id, but it
-                // still shares the session, timestamp, model, usage, and cost;
-                // evict that content id so the provider-billed SQLite row is
-                // the one counted.
+                // still shares the session, timestamp, model, and usage. Its
+                // cost can differ, so compare the migration identity without
+                // cost and keep the provider-billed SQLite row.
                 let content_id = entry_id(&entry);
+                let migration_key = migration_id(&entry);
                 if let Some(position) = entries.iter().position(|existing| {
                     existing.session_id == entry.session_id
                         && existing.data.message.id.as_deref() == Some(message_id.as_str())
@@ -84,7 +85,7 @@ fn load_entries_inner(
                     entries[position] = entry;
                 } else if let Some(position) = entries
                     .iter()
-                    .position(|existing| entry_id(existing) == content_id)
+                    .position(|existing| migration_id(existing) == migration_key)
                 {
                     entries[position] = entry;
                 } else {
@@ -249,7 +250,7 @@ mod tests {
         statement
             .bind((
                 1,
-                r#"{"id":"evt-sqlite","type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20,"cost":{"total":0.50}},"timestamp":1769753935279}}"#,
+                r#"{"id":"evt-sqlite","type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20,"cost":{"total":0.51}},"timestamp":1769753935279}}"#,
             ))
             .unwrap();
         statement.next().unwrap();
@@ -258,6 +259,6 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-sqlite"));
-        assert!((entries[0].cost - 0.50).abs() < f64::EPSILON);
+        assert!((entries[0].cost - 0.51).abs() < f64::EPSILON);
     }
 }
