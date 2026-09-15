@@ -516,6 +516,8 @@ mod tests {
             input_tokens: 1_000_000,
             cached_input_tokens: 1_000_000,
             total_tokens: 1_000_000,
+            long_context_input_tokens: 1_000_000,
+            long_context_cached_input_tokens: 1_000_000,
             ..CodexModelUsage::default()
         };
 
@@ -523,8 +525,8 @@ mod tests {
             calculate_codex_model_cost("gpt-6-astra", &usage, &pricing, CodexSpeed::Standard);
         let fast = calculate_codex_model_cost("gpt-6-astra", &usage, &pricing, CodexSpeed::Fast);
 
-        assert!((standard - 1.0).abs() < f64::EPSILON);
-        assert!((fast - 2.0).abs() < f64::EPSILON);
+        assert!((standard - 2.0).abs() < f64::EPSILON);
+        assert!((fast - 4.0).abs() < f64::EPSILON);
     }
 
     #[test]
