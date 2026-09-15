@@ -1059,6 +1059,7 @@ impl PricingMap {
 
     fn load_models_dev_json_missing(&mut self, json: &str) -> Option<usize> {
         let raw = parse_models_dev_json(json)?;
+        let fast_multiplier_overrides = FastMultiplierOverrides::load();
         Some(match raw {
             ModelsDevJson::Providers(providers) => {
                 let rules = models_dev_catalog_rules();
@@ -1097,6 +1098,7 @@ impl PricingMap {
                             &provider_id,
                             trust,
                             true,
+                            &fast_multiplier_overrides,
                             &mut claims,
                         )
                     })
@@ -1108,7 +1110,14 @@ impl PricingMap {
                 // verdicts as fields rather than leaving them to be rederived.
                 // The flat snapshot has one implicit source, so any constant id
                 // works: ties inside it are settled by the source keys.
-                self.load_models_dev_models(models, "", MODELS_DEV_TRUST_OWNER, false, &mut claims)
+                self.load_models_dev_models(
+                    models,
+                    "",
+                    MODELS_DEV_TRUST_OWNER,
+                    false,
+                    &fast_multiplier_overrides,
+                    &mut claims,
+                )
             }
         })
     }
@@ -1134,6 +1143,7 @@ impl PricingMap {
         provider_id: &str,
         trust: u8,
         derive_exact_only: bool,
+        fast_multiplier_overrides: &FastMultiplierOverrides,
         claims: &mut FxHashMap<String, ModelsDevClaimSlot>,
     ) -> usize {
         let rules = models_dev_catalog_rules();
@@ -1242,7 +1252,9 @@ impl PricingMap {
                     cache_create_above_200k: long_context.and_then(|rates| rates.cache_create),
                     cache_read_above_200k: long_context.and_then(|rates| rates.cache_read),
                     long_context_threshold: long_context.map(|rates| rates.threshold),
-                    fast_multiplier: 1.0,
+                    fast_multiplier: fast_multiplier_overrides
+                        .multiplier_for(&model_id)
+                        .unwrap_or(1.0),
                 },
             );
             if exact_only {
@@ -3562,6 +3574,34 @@ mod tests {
         assert_eq!(pricing.context_limit("gpt-fallback"), Some(456));
         assert!((alias.input - 4e-6).abs() < f64::EPSILON);
         assert_eq!(pricing.context_limits.get("gpt-alias"), Some(&654));
+    }
+
+    #[test]
+    fn applies_fast_multiplier_override_to_models_dev_fallback() {
+        let mut pricing = PricingMap::default();
+        let models_dev_json = r#"{
+            "openai": {
+                "id": "openai",
+                "models": {
+                    "gpt-6-astra": {
+                        "id": "gpt-6-astra",
+                        "cost": {
+                            "input": 10.0,
+                            "output": 50.0
+                        }
+                    }
+                }
+            }
+        }"#;
+
+        assert_eq!(
+            pricing.load_models_dev_json_missing(models_dev_json),
+            Some(1)
+        );
+        assert_eq!(
+            pricing.find_exact("gpt-6-astra").unwrap().fast_multiplier,
+            2.0
+        );
     }
 
     #[test]
