@@ -1,4 +1,5 @@
 mod last_window;
+mod timezone;
 
 use std::{env, ffi::OsString, process};
 
@@ -22,6 +23,9 @@ pub(crate) fn parse() -> Cli {
         env!("CCUSAGE_VERSION"),
     )
     .unwrap_or_else(|message| exit_with_usage(&message));
+    if let Err(message) = timezone::validate(&cli) {
+        exit_with_usage(&message);
+    }
     if let Err(message) = last_window::resolve(&mut cli) {
         exit_with_usage(&message);
     }

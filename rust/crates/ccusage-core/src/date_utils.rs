@@ -290,6 +290,14 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
     (year as i32, month as u32, day as u32)
 }
 
+/// `--timezone` and a config `timezone` are checked with this before use, so an
+/// unknown name is rejected up front instead of silently falling back to the
+/// local zone, which can group usage under the wrong date. `local` is the
+/// documented way to ask for the system timezone and keeps that fallback.
+pub fn is_valid_timezone(value: &str) -> bool {
+    value == "local" || JiffTimeZone::get(value).is_ok()
+}
+
 pub fn parse_tz(timezone: Option<&str>) -> Option<JiffTimeZone> {
     timezone.and_then(|value| JiffTimeZone::get(value).ok())
 }

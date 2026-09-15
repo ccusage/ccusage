@@ -122,6 +122,8 @@ ccusage daily -z Asia/Tokyo
 ccusage monthly -z Europe/London
 ```
 
+The value must be an IANA timezone name, or `local` for the system timezone. An unknown name such as `Not/AZone` is rejected with a non-zero exit code instead of silently falling back to the system timezone, which can group usage under the wrong date. The same check applies to `timezone` in a [configuration file](/guide/config-files).
+
 #### Timezone Effect
 
 The timezone affects how usage is grouped by date. For example, usage at 11 PM UTC on January 1st would appear on:
