@@ -474,7 +474,11 @@ fn push_model_breakdown_rows(
     shared: &SharedArgs,
 ) {
     for b in breakdowns {
-        let total = b.total_tokens();
+        let total = b
+            .input_tokens
+            .saturating_add(b.output_tokens)
+            .saturating_add(b.cache_creation_tokens)
+            .saturating_add(b.cache_read_tokens);
         let model = color(
             shared,
             format_breakdown_model_label(&b.model_name),
