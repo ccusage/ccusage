@@ -23,7 +23,7 @@ pub(super) struct OpenClawLine {
     // path generates it when the caller omits it); JSONL-era records predate
     // it, so it stays optional.
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
-    pub(super) id: Option<String>,
+    id: Option<String>,
     #[serde(rename = "customType", default)]
     custom_type: Option<String>,
     #[serde(default, deserialize_with = "deserialize_model_source")]
@@ -158,7 +158,7 @@ struct OpenClawCost {
 
 #[derive(Debug, Clone)]
 pub(super) struct OpenClawEntry {
-    pub(super) timestamp: TimestampMs,
+    timestamp: TimestampMs,
     timestamp_text: String,
     session_id: String,
     pricing_model: String,
