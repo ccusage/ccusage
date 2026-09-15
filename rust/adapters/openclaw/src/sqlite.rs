@@ -21,7 +21,11 @@ struct AgentDatabase {
 /// Reads open read-only.
 fn collect_agent_databases(root: &Path) -> Vec<AgentDatabase> {
     let mut databases = Vec::new();
-    let Ok(agents) = std::fs::read_dir(root.join("agents")) else {
+    let agents_path = root.join("agents");
+    if !is_directory_without_symlink(&agents_path) {
+        return databases;
+    }
+    let Ok(agents) = std::fs::read_dir(agents_path) else {
         return databases;
     };
     for agent in agents.filter_map(std::result::Result::ok) {
@@ -31,13 +35,25 @@ fn collect_agent_databases(root: &Path) -> Vec<AgentDatabase> {
         if !file_type.is_dir() {
             continue;
         }
-        let path = agent.path().join("agent").join("openclaw-agent.sqlite");
-        if path.is_file() {
+        let agent_path = agent.path().join("agent");
+        if !is_directory_without_symlink(&agent_path) {
+            continue;
+        }
+        let path = agent_path.join("openclaw-agent.sqlite");
+        if is_file_without_symlink(&path) {
             databases.push(AgentDatabase { path });
         }
     }
     databases.sort_by(|left, right| left.path.cmp(&right.path));
     databases
+}
+
+fn is_directory_without_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_dir())
+}
+
+fn is_file_without_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
 }
 
 pub(super) fn collect_sqlite_entries(
@@ -319,5 +335,33 @@ mod tests {
             databases[1].path,
             fixture.path("agents/worker/agent/openclaw-agent.sqlite")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ignores_symlinked_database_paths() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = fs_fixture!({
+            "outside/openclaw-agent.sqlite": "",
+            "agents/file-link/agent": "",
+            "agents/directory-link": "",
+        });
+        std::fs::remove_file(fixture.path("agents/file-link/agent")).unwrap();
+        std::fs::create_dir_all(fixture.path("agents/file-link/agent")).unwrap();
+        symlink(
+            fixture.path("outside/openclaw-agent.sqlite"),
+            fixture.path("agents/file-link/agent/openclaw-agent.sqlite"),
+        )
+        .unwrap();
+        std::fs::remove_file(fixture.path("agents/directory-link")).unwrap();
+        std::fs::create_dir_all(fixture.path("agents/directory-link")).unwrap();
+        symlink(
+            fixture.path("outside"),
+            fixture.path("agents/directory-link/agent"),
+        )
+        .unwrap();
+
+        assert!(collect_agent_databases(fixture.root()).is_empty());
     }
 }
