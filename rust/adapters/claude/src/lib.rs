@@ -7,6 +7,7 @@ mod paths;
 use std::{
     fs,
     hash::{Hash, Hasher},
+    ops::Range,
     path::Path,
     sync::Arc,
 };
@@ -511,29 +512,78 @@ fn is_valid_usage_entry(data: &UsageEntry) -> bool {
 }
 
 pub(crate) fn has_unsupported_null_field(line: &[u8]) -> bool {
+    // Resolved lazily: most lines have no `null` at all, and the scan only
+    // needs the range once a candidate field is found.
+    let mut iterations_range: Option<Option<Range<usize>>> = None;
     let mut offset = 0;
     while let Some(relative_index) = memmem::find(&line[offset..], b":null") {
         let null_index = offset + relative_index;
+        offset = null_index + b":null".len();
         let mut field_end = null_index.saturating_sub(1);
         if line.get(field_end) != Some(&b'"') {
             while field_end > 0 && line[field_end] != b'"' {
                 field_end -= 1;
             }
         }
-        if line.get(field_end) == Some(&b'"') {
-            let mut field_start = field_end.saturating_sub(1);
-            while field_start > 0 && line[field_start] != b'"' {
-                field_start -= 1;
-            }
-            if line.get(field_start) == Some(&b'"')
-                && is_unsupported_nullable_field(&line[field_start + 1..field_end])
-            {
-                return true;
-            }
+        if line.get(field_end) != Some(&b'"') {
+            continue;
         }
-        offset = null_index + b":null".len();
+        let mut field_start = field_end.saturating_sub(1);
+        while field_start > 0 && line[field_start] != b'"' {
+            field_start -= 1;
+        }
+        if line.get(field_start) != Some(&b'"')
+            || !is_unsupported_nullable_field(&line[field_start + 1..field_end])
+        {
+            continue;
+        }
+        // Records inside `message.usage.iterations` are parsed separately by
+        // `advisor_usages_from_line`, where every field is optional. Claude
+        // Code writes `"model": null` on plain `message` iterations, so a
+        // null there must not reject the whole line.
+        let inside_iterations = iterations_range
+            .get_or_insert_with(|| usage_iterations_range(line))
+            .as_ref()
+            .is_some_and(|range| range.contains(&null_index));
+        if !inside_iterations {
+            return true;
+        }
     }
     false
+}
+
+/// Byte range of the `"iterations":[...]` array on `line`, or `None` when the
+/// line has no such array or it is not closed.
+fn usage_iterations_range(line: &[u8]) -> Option<Range<usize>> {
+    const MARKER: &[u8] = br#""iterations":["#;
+    let start = memmem::find(line, MARKER)? + MARKER.len() - 1;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, &byte) in line.iter().enumerate().skip(start) {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'[' | b'{' => depth += 1,
+            b']' | b'}' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(start..index + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn is_unsupported_nullable_field(field: &[u8]) -> bool {
@@ -711,6 +761,41 @@ mod tests {
         assert!(!has_unsupported_null_field(
             br#"{"message":{"content":null,"usage":{"input_tokens":0}}}"#
         ));
+    }
+
+    #[test]
+    fn allows_null_model_inside_usage_iterations() {
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"claude-fable-5-1","usage":{"input_tokens":2,"output_tokens":4,"iterations":[{"input_tokens":2,"output_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":0},"type":"message","model":null}]}}}"#
+        ));
+    }
+
+    #[test]
+    fn rejects_null_message_model_next_to_usage_iterations() {
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":null,"usage":{"input_tokens":2,"iterations":[{"type":"message","model":null,"input_tokens":2}]}}}"#
+        ));
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"usage":{"input_tokens":2,"iterations":[{"type":"message","model":null,"input_tokens":2}]},"model":null}}"#
+        ));
+    }
+
+    #[test]
+    fn keeps_usage_entry_whose_iterations_carry_a_null_model() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-09-15T00:53:49.470Z","version":"2.1.273","sessionId":"session-a","message":{"id":"msg-fable","model":"claude-fable-5-1","usage":{"input_tokens":2,"output_tokens":4435,"cache_creation_input_tokens":24683,"cache_read_input_tokens":29250,"iterations":[{"input_tokens":2,"output_tokens":4435,"cache_read_input_tokens":29250,"cache_creation_input_tokens":24683,"type":"message","model":null}]}},"requestId":"req-fable"}"#,
+        });
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.entries[0].model.as_deref(), Some("claude-fable-5-1"));
+        assert_eq!(loaded.entries[0].data.message.usage.output_tokens, 4435);
     }
 
     #[test]

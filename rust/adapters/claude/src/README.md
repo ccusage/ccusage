@@ -55,3 +55,6 @@ Advisor entries:
 - Advisor iterations do not include a precomputed `costUSD`, so `auto` and
   `calculate` modes price their tokens separately while `display` mode reports
   zero cost for them.
+- Iteration records may carry `"model": null` (Claude Code writes it on plain
+  `message` iterations). A null inside `iterations` never rejects the line; the
+  null-field guard applies only outside that array.
