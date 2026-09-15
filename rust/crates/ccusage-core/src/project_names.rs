@@ -134,6 +134,12 @@ pub fn short_model_name(model: &str) -> String {
     model.to_string()
 }
 
+/// Shared per-model breakdown label so every `--breakdown` table renders the
+/// same `└─ model` sub-row shape.
+pub fn format_breakdown_model_label(model: &str) -> String {
+    format!("  └─ {}", short_model_name(model))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

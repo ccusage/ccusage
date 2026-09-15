@@ -110,6 +110,16 @@ pub struct ModelBreakdown {
     pub missing_pricing: bool,
 }
 
+impl ModelBreakdown {
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens
+            .saturating_add(self.output_tokens)
+            .saturating_add(self.cache_creation_tokens)
+            .saturating_add(self.cache_read_tokens)
+            .saturating_add(self.extra_total_tokens)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LoadedEntry {
     pub data: UsageEntry,

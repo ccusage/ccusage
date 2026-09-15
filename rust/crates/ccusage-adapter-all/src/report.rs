@@ -12,9 +12,10 @@ use serde_json::{Value, json};
 use crate::{
     Align, Color, ModelBreakdown, Result, SimpleTable, UsageSummary,
     cli::{AgentReportKind, SharedArgs, SortOrder},
-    cli_error, color, format_currency, format_models_multiline, format_number, json_float,
+    cli_error, color, format_breakdown_model_label, format_currency, format_models_multiline,
+    format_number, json_float,
     output::strip_cost_json,
-    print_box_title, short_model_name, should_use_compact_layout,
+    print_box_title, should_use_compact_layout,
 };
 
 use super::types::AllRow;
@@ -473,14 +474,10 @@ fn push_model_breakdown_rows(
     shared: &SharedArgs,
 ) {
     for b in breakdowns {
-        let total = b
-            .input_tokens
-            .saturating_add(b.output_tokens)
-            .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
+        let total = b.total_tokens();
         let model = color(
             shared,
-            format!("- {}", short_model_name(&b.model_name)),
+            format_breakdown_model_label(&b.model_name),
             Color::Grey,
         );
         if compact {
