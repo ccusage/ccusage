@@ -933,12 +933,18 @@ impl FastMultiplierOverrides {
         if let Some(multiplier) = pricing_alias(model).and_then(|alias| self.exact.get(alias)) {
             return Some(*multiplier);
         }
-        let normalized = model.replace(['.', '@'], "-");
-        normalized.split(['/', ':']).find_map(|part| {
-            self.normalized_prefix
-                .iter()
-                .find_map(|(base, multiplier)| {
-                    matches_model_suffix(part, base).then_some(*multiplier)
+        model.split(['/', ':']).find_map(|part| {
+            self.exact
+                .get(part)
+                .copied()
+                .or_else(|| pricing_alias(part).and_then(|alias| self.exact.get(alias).copied()))
+                .or_else(|| {
+                    let normalized = part.replace(['.', '@'], "-");
+                    self.normalized_prefix
+                        .iter()
+                        .find_map(|(base, multiplier)| {
+                            matches_model_suffix(&normalized, base).then_some(*multiplier)
+                        })
                 })
         })
     }
@@ -4271,6 +4277,27 @@ mod tests {
         assert!((fallback.cache_create - 3.75e-6).abs() < f64::EPSILON);
         assert!((fallback.cache_read - 0.3e-6).abs() < f64::EPSILON);
         assert_eq!(pricing.context_limit("claude-fallback"), Some(200000));
+    }
+
+    #[test]
+    fn applies_fast_multiplier_to_qualified_flat_models_dev_model() {
+        let mut pricing = PricingMap::default();
+        let models_dev_json = r#"{
+                "openai/gpt-6-astra": {
+                    "cost": {
+                        "input": 10.0,
+                        "output": 50.0
+                    }
+                }
+            }"#;
+
+        assert_eq!(
+            pricing.load_models_dev_json_missing(models_dev_json),
+            Some(1)
+        );
+
+        let model = pricing.find_exact("openai/gpt-6-astra").unwrap();
+        assert_eq!(model.fast_multiplier, 2.0);
     }
 
     #[test]
