@@ -368,6 +368,7 @@ dependencies = [
  "jiff",
  "serde",
  "serde_json",
+ "sqlite",
 ]
 
 [[package]]
