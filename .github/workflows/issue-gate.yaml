@@ -82,7 +82,7 @@ jobs:
           CLOSE_ALLOWED: ${{ steps.access.outputs.close_allowed }}
         run: nu .github/scripts/contribution-gate.nu issue-request
 
-      - name: Ask Luna for an issue verdict
+      - name: Ask Pullfrog to judge the issue
         id: judge
         if: steps.access.outcome == 'success' && (steps.access.outputs.skip != 'true' || inputs.force_implementation == true)
         continue-on-error: true
@@ -97,8 +97,20 @@ jobs:
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["decision", "priority", "implementation", "reason"],
+              "required": ["kind", "maintenance_fit", "confidence", "decision", "priority", "implementation", "reason"],
               "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["bug", "documentation", "feature_request", "maintenance", "duplicate", "invalid", "spam", "out_of_scope", "security", "question", "unclear"]
+                },
+                "maintenance_fit": {
+                  "type": "string",
+                  "enum": ["maintainable", "excluded", "needs_review"]
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": ["high", "medium", "low"]
+                },
                 "decision": {
                   "type": "string",
                   "enum": ["keep_open", "close", "needs_human"]

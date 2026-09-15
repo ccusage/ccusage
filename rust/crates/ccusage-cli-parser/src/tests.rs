@@ -54,6 +54,7 @@ impl CliConfig for TestConfig {
         }
         if let Some(order) = self.shared_order {
             shared.order = order;
+            shared.order_explicit = true;
         }
         if let Some(since) = self.shared_since {
             shared.since = Some(since.to_string());
@@ -1370,4 +1371,98 @@ fn reports_named_pi_store_validation_through_cli_config_error_path() {
         error,
         "Invalid ccusage config: pi.stores name 'codex' collides with a built-in agent"
     );
+}
+
+#[test]
+fn preserves_whether_report_order_was_supplied() {
+    for (args, order, explicit) in [
+        (vec!["ccusage", "session"], SortOrder::Asc, false),
+        (vec!["ccusage", "daily"], SortOrder::Asc, false),
+        (
+            vec!["ccusage", "session", "--order", "asc"],
+            SortOrder::Asc,
+            true,
+        ),
+        (
+            vec!["ccusage", "--order", "desc", "session"],
+            SortOrder::Desc,
+            true,
+        ),
+        (
+            vec![
+                "ccusage",
+                "session",
+                "-o",
+                "asc",
+                "--sections",
+                "daily,weekly,monthly",
+            ],
+            SortOrder::Asc,
+            true,
+        ),
+    ] {
+        let Some(Command::All(report)) = parse(&args).command else {
+            panic!("expected unified report");
+        };
+        assert_eq!(report.shared.order, order);
+        assert_eq!(report.shared.order_explicit, explicit);
+    }
+}
+
+#[test]
+fn preserves_configured_order_and_cli_precedence() {
+    for (config_json, extra, expected, explicit) in [
+        (r#"{}"#, vec![], SortOrder::Asc, false),
+        (
+            r#"{"defaults":{"order":"asc"}}"#,
+            vec![],
+            SortOrder::Asc,
+            true,
+        ),
+        (
+            r#"{"defaults":{"order":"desc"}}"#,
+            vec![],
+            SortOrder::Desc,
+            true,
+        ),
+        (
+            r#"{"defaults":{"order":"desc"},"commands":{"session":{"order":"asc"}}}"#,
+            vec![],
+            SortOrder::Asc,
+            true,
+        ),
+        (
+            r#"{"commands":{"session":{"order":"asc"}}}"#,
+            vec!["--order", "desc"],
+            SortOrder::Desc,
+            true,
+        ),
+        (
+            r#"{"defaults":{"order":"desc"}}"#,
+            vec!["--order", "asc"],
+            SortOrder::Asc,
+            true,
+        ),
+    ] {
+        let fixture = fs_fixture!({});
+        let _ = fixture.write_file("ccusage.json", config_json);
+        let config_path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+        let mut args = vec![
+            "session",
+            "--config",
+            &config_path,
+            "--sections",
+            "daily,weekly,monthly",
+        ];
+        args.extend(extra);
+        let config = ccusage_config::ConfigContext::from_args(
+            &args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
+        );
+        args.insert(0, "ccusage");
+        let Some(Command::All(report)) = parse_with_config(&args, &config).command else {
+            panic!("expected unified report");
+        };
+        assert_eq!(report.shared.order, expected, "{config_json}");
+        assert_eq!(report.shared.order_explicit, explicit, "{config_json}");
+    }
 }

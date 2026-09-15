@@ -507,8 +507,218 @@ def test-issue-number []: nothing -> nothing {
     } | ignore
 }
 
+def test-issue-triage-policy []: nothing -> nothing {
+    let excluded_feature = issue-verdict-record '{"kind":"feature_request","maintenance_fit":"excluded","confidence":"high","decision":"keep_open","priority":"priority:medium","implementation":"create_pr","reason":"Optional output formatting expands the public CLI surface."}' true
+    (expect
+        'closes a high-confidence excluded feature request'
+        $excluded_feature.decision
+        close
+    )
+    (expect
+        'assigns excluded feature requests low priority'
+        $excluded_feature.priority
+        'priority:low'
+    )
+    (expect
+        'never implements an excluded feature request automatically'
+        $excluded_feature.implementation
+        none
+    )
+
+    let exceptional_feature = issue-verdict-record '{"kind":"feature_request","maintenance_fit":"maintainable","confidence":"high","decision":"keep_open","priority":"priority:high","implementation":"create_pr","reason":"The request may fit the core product."}' true
+    (expect
+        'sends even maintainable feature requests to a maintainer'
+        $exceptional_feature.decision
+        needs_human
+    )
+    (expect
+        'does not implement a feature request without maintainer approval'
+        $exceptional_feature.implementation
+        none
+    )
+
+    let important_excluded_feature = issue-verdict-record '{"kind":"feature_request","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:high","implementation":"none","reason":"The feature has high impact but unclear long-term support cost."}' true
+    (expect
+        'sends a high-priority excluded feature request to a maintainer'
+        $important_excluded_feature.decision
+        needs_human
+    )
+    (expect
+        'marks an escalated excluded feature request for review'
+        $important_excluded_feature.maintenance_fit
+        needs_review
+    )
+
+    let uncertain = issue-verdict-record '{"kind":"bug","maintenance_fit":"excluded","confidence":"medium","decision":"close","priority":"priority:low","implementation":"none","reason":"The report may describe unsupported behavior."}' true
+    (expect
+        'sends a non-high-confidence verdict to a maintainer'
+        $uncertain.decision
+        needs_human
+    )
+    (expect
+        'marks a non-high-confidence maintenance verdict for review'
+        $uncertain.maintenance_fit
+        needs_review
+    )
+
+    let core_bug = issue-verdict-record '{"kind":"bug","maintenance_fit":"maintainable","confidence":"high","decision":"keep_open","priority":"priority:high","implementation":"create_pr","reason":"Confirmed cost calculation regression with a focused fix."}' true
+    expect 'keeps a high-confidence core bug open' $core_bug.decision keep_open
+    (expect
+        'allows an important maintainable bug implementation'
+        $core_bug.implementation
+        create_pr
+    )
+
+    let excluded_bug = issue-verdict-record '{"kind":"bug","maintenance_fit":"excluded","confidence":"high","decision":"keep_open","priority":"priority:high","implementation":"create_pr","reason":"The behavior belongs in an external wrapper."}' true
+    (expect
+        'never auto-closes a report classified as a bug'
+        $excluded_bug.decision
+        needs_human
+    )
+    (expect
+        'marks an excluded bug report for review'
+        $excluded_bug.maintenance_fit
+        needs_review
+    )
+    (expect
+        'does not implement a disputed bug report'
+        $excluded_bug.implementation
+        none
+    )
+
+    let rejected_maintenance = issue-verdict-record '{"kind":"maintenance","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:medium","implementation":"none","reason":"The cleanup adds maintenance surface without user-facing value."}' true
+    (expect
+        'closes a high-confidence excluded maintenance request'
+        $rejected_maintenance.decision
+        close
+    )
+    (expect
+        'never implements a maintenance request automatically'
+        $rejected_maintenance.implementation
+        none
+    )
+
+    let security = issue-verdict-record '{"kind":"security","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"The report may affect credential handling."}' true
+    expect 'never auto-closes a security report' $security.decision needs_human
+    (expect
+        'marks a security report for review'
+        $security.maintenance_fit
+        needs_review
+    )
+    (expect
+        'floors security reports to high priority'
+        $security.priority
+        'priority:high'
+    )
+
+    let uncertain_security = issue-verdict-record '{"kind":"security","maintenance_fit":"needs_review","confidence":"medium","decision":"needs_human","priority":"priority:low","implementation":"none","reason":"The security impact is not yet confirmed."}' true
+    (expect
+        'floors uncertain security reports to high priority'
+        $uncertain_security.priority
+        'priority:high'
+    )
+
+    let documentation = issue-verdict-record '{"kind":"documentation","maintenance_fit":"maintainable","confidence":"high","decision":"keep_open","priority":"priority:medium","implementation":"create_pr","reason":"The documented option no longer matches supported behavior."}' true
+    (expect
+        'keeps a valid documentation issue open'
+        $documentation.decision
+        keep_open
+    )
+    (expect
+        'never implements documentation automatically'
+        $documentation.implementation
+        none
+    )
+
+    let documentation_close = issue-verdict-record '{"kind":"documentation","maintenance_fit":"maintainable","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"The documentation request may be obsolete."}' true
+    (expect
+        'sends a documentation close recommendation to a maintainer'
+        $documentation_close.decision
+        needs_human
+    )
+    (expect
+        'marks a documentation close recommendation for review'
+        $documentation_close.maintenance_fit
+        needs_review
+    )
+
+    let duplicate = issue-verdict-record '{"kind":"duplicate","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"A linked open issue tracks the same root cause."}' true
+    (expect
+        'closes a high-confidence duplicate when the model also chose close'
+        $duplicate.decision
+        close
+    )
+
+    let disputed_duplicate = issue-verdict-record '{"kind":"duplicate","maintenance_fit":"excluded","confidence":"high","decision":"keep_open","priority":"priority:low","implementation":"none","reason":"The relationship to the linked issue is not conclusive."}' true
+    (expect
+        'sends a disputed duplicate to a maintainer'
+        $disputed_duplicate.decision
+        needs_human
+    )
+
+    [duplicate invalid spam out_of_scope] | each {|kind|
+        ['priority:critical' 'priority:high'] | each {|priority|
+            let important_report = issue-verdict-record ({
+                kind: $kind
+                maintenance_fit: excluded
+                confidence: high
+                decision: close
+                priority: $priority
+                implementation: none
+                reason: 'The classification is confident, but the reported impact is important.'
+            } | to json -r) true
+            (expect
+                $"keeps an important ($kind) report open at ($priority)"
+                $important_report.decision
+                needs_human
+            )
+            (expect
+                $"preserves important ($kind) priority at ($priority)"
+                $important_report.priority
+                $priority
+            )
+            (expect
+                $"marks an important ($kind) report for review at ($priority)"
+                $important_report.maintenance_fit
+                needs_review
+            )
+        } | ignore
+    } | ignore
+
+    let bug_close = issue-verdict-record '{"kind":"bug","maintenance_fit":"maintainable","confidence":"high","decision":"close","priority":"priority:high","implementation":"none","reason":"The report appears unsupported."}' true
+    (expect
+        'requires human review when a bug verdict asks to close'
+        $bug_close.decision
+        needs_human
+    )
+
+    let missing_classification = (try {
+        issue-verdict-record '{"decision":"keep_open","priority":"priority:high","implementation":"create_pr","reason":"Missing classification fields."}' true
+        'accepted'
+    } catch {
+        'rejected'
+    })
+    (expect
+        'rejects a verdict without classification fields'
+        $missing_classification
+        'rejected'
+    )
+
+    let extra_classification = (try {
+        issue-verdict-record '{"kind":"bug","maintenance_fit":"maintainable","confidence":"high","decision":"keep_open","priority":"priority:high","implementation":"create_pr","reason":"Valid bug.","unexpected":true}' true
+        'accepted'
+    } catch {
+        'rejected'
+    })
+    (expect
+        'rejects a verdict with extra fields'
+        $extra_classification
+        'rejected'
+    )
+}
+
 def test-forced-issue-implementation []: nothing -> nothing {
-    let result = '{"decision":"close","priority":"priority:low","implementation":"none","reason":"The request is low impact."}'
+    let result = '{"kind":"feature_request","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"The request is low impact."}'
     let automatic_verdict = issue-verdict-record $result false
     let verdict = issue-verdict-record $result false --force-implementation
 
@@ -522,7 +732,17 @@ def test-forced-issue-implementation []: nothing -> nothing {
         $automatic_verdict.decision
         needs_human
     )
+    (expect
+        'marks a permission-blocked closure for review'
+        $automatic_verdict.maintenance_fit
+        needs_review
+    )
     expect 'keeps a manually forced issue open' $verdict.decision keep_open
+    (expect
+        'keeps a manually forced excluded issue under review'
+        $verdict.maintenance_fit
+        needs_review
+    )
     (expect
         'preserves the triage priority for a manually forced issue'
         $verdict.priority
@@ -566,6 +786,7 @@ def main [] {
     test-implementation-publication
     test-issue-context
     test-issue-number
+    test-issue-triage-policy
     test-forced-issue-implementation
     test-contribution-gate-comment
     print 'contribution-gate Nushell tests passed.'
