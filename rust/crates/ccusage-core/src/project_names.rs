@@ -122,7 +122,7 @@ fn is_windows_users_path(project: &str) -> bool {
         || project.starts_with("\\Users\\")
 }
 
-pub fn short_model_name(model: &str) -> String {
+pub(crate) fn short_model_name(model: &str) -> String {
     let model = model
         .strip_prefix("anthropic/claude-")
         .or_else(|| model.strip_prefix("claude-"))
