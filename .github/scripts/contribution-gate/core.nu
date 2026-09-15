@@ -6,6 +6,30 @@ export const PRIORITY_LABELS = [
 ]
 
 export const IMPLEMENTATION_PRIORITIES = ['priority:critical' 'priority:high']
+
+export const ISSUE_KINDS = [
+    bug
+    documentation
+    feature_request
+    maintenance
+    duplicate
+    invalid
+    spam
+    out_of_scope
+    security
+    question
+    unclear
+]
+
+export const MAINTENANCE_FITS = [maintainable excluded needs_review]
+export const CONFIDENCE_LEVELS = [high medium low]
+
+export const TRIAGE_LABELS = [
+    'triage:maintainable'
+    'triage:excluded'
+    'triage:needs-review'
+]
+
 export const COLLABORATOR_PERMISSIONS = [admin maintain write]
 export const COMMENT_MARKER = '<!-- pullfrog-contribution-gate -->'
 

@@ -14,7 +14,6 @@ use crate::{
     CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, Result, TimestampMs, parse_ts_timestamp,
 };
 
-use super::source::normalize_codex_originator;
 use super::types::{
     CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
     CodexSessionLogEntry, CodexTimestamp,
@@ -28,10 +27,6 @@ static TOKEN_COUNT_TYPE_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""type":"token_count""#));
 static THREAD_SETTINGS_APPLIED_TYPE_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""type":"thread_settings_applied""#));
-static SESSION_META_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"session_meta""#));
-static SESSION_META_VALUE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"session_meta"));
 static THREAD_SETTINGS_APPLIED_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(b"thread_settings_applied"));
 static COMPACT_TYPE_FIELD_FINDER: LazyLock<Finder<'static>> =
@@ -68,15 +63,6 @@ enum CodexLineKind {
 struct CodexExecTimestamps {
     event: String,
     model: String,
-}
-
-#[derive(Default)]
-struct CodexParserState {
-    previous_totals: Option<CodexRawUsage>,
-    current_model: Option<String>,
-    current_model_is_fallback: bool,
-    current_service_tier: Option<CodexServiceTier>,
-    current_source: Option<String>,
 }
 
 /// Tracks how far a forked session's leading events still match the history it
@@ -179,7 +165,10 @@ pub(super) fn visit_codex_session_file(
     let mut reader = BufReader::with_capacity(128 * 1024, file);
     let mut line = Vec::new();
     let session_id = codex_session_id(sessions_dir, path);
-    let mut state = CodexParserState::default();
+    let mut previous_totals: Option<CodexRawUsage> = None;
+    let mut current_model: Option<String> = None;
+    let mut current_model_is_fallback = false;
+    let mut current_service_tier = None;
     let fallback_timestamp = file_modified_timestamp(path);
     let mut replay = match replayed_prefix {
         Some(prefix) => CodexReplayState::MatchingParent { prefix, index: 0 },
@@ -248,7 +237,15 @@ pub(super) fn visit_codex_session_file(
                 let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
                     continue;
                 };
-                visit_codex_session_entry(&session_id, value, &mut state, &mut visit_filtered)?;
+                visit_codex_session_entry(
+                    &session_id,
+                    value,
+                    &mut previous_totals,
+                    &mut current_model,
+                    &mut current_model_is_fallback,
+                    &mut current_service_tier,
+                    &mut visit_filtered,
+                )?;
             }
             CodexLineKind::Headless => {
                 if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
@@ -256,8 +253,8 @@ pub(super) fn visit_codex_session_file(
                         &session_id,
                         &value,
                         &fallback_timestamp,
-                        &mut state,
-                        Some("Exec"),
+                        &mut current_model,
+                        &mut current_model_is_fallback,
                         &mut visit_filtered,
                     )?;
                 } else {
@@ -265,8 +262,8 @@ pub(super) fn visit_codex_session_file(
                         &session_id,
                         &line,
                         &fallback_timestamp,
-                        &mut state,
-                        Some("Exec"),
+                        &mut current_model,
+                        &mut current_model_is_fallback,
                         &mut visit_filtered,
                     )?;
                 };
@@ -280,25 +277,17 @@ pub(super) fn visit_codex_session_file(
 fn visit_codex_session_entry(
     session_id: &str,
     value: CodexSessionLogEntry<'_>,
-    state: &mut CodexParserState,
+    previous_totals: &mut Option<CodexRawUsage>,
+    current_model: &mut Option<String>,
+    current_model_is_fallback: &mut bool,
+    current_service_tier: &mut Option<CodexServiceTier>,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let entry_type = value.entry_type.as_deref();
-    if entry_type == Some("session_meta") {
-        if state.current_source.is_none() {
-            state.current_source = Some(normalize_codex_originator(
-                value
-                    .payload
-                    .as_ref()
-                    .and_then(|payload| payload.originator.as_deref()),
-            ));
-        }
-        return Ok(());
-    }
     if entry_type == Some("turn_context") {
         if let Some(model) = value.payload.as_ref().and_then(codex_model_from_payload) {
-            state.current_model = Some(model);
-            state.current_model_is_fallback = false;
+            *current_model = Some(model);
+            *current_model_is_fallback = false;
         }
         return Ok(());
     }
@@ -322,7 +311,7 @@ fn visit_codex_session_entry(
             .as_ref()
             .and_then(|settings| settings.service_tier.as_deref())
         {
-            state.current_service_tier = codex_service_tier(recorded);
+            *current_service_tier = codex_service_tier(recorded);
         }
         return Ok(());
     }
@@ -333,17 +322,17 @@ fn visit_codex_session_entry(
     let total_usage = info.and_then(|info| info.total_token_usage.as_ref().copied());
     let cumulative_advanced = total_usage
         .as_ref()
-        .is_none_or(|total_usage| state.previous_totals.as_ref() != Some(total_usage));
+        .is_none_or(|total_usage| previous_totals.as_ref() != Some(total_usage));
     let raw_usage = info
         .and_then(|info| info.last_token_usage.as_ref().copied())
         .filter(|_| cumulative_advanced)
         .or_else(|| {
             total_usage
                 .as_ref()
-                .map(|usage| subtract_codex_raw_usage(usage, state.previous_totals.as_ref()))
+                .map(|usage| subtract_codex_raw_usage(usage, previous_totals.as_ref()))
         });
     if let Some(total_usage) = total_usage {
-        state.previous_totals = Some(total_usage);
+        *previous_totals = Some(total_usage);
     }
     let Some(raw_usage) = raw_usage.map(normalize_codex_raw_usage) else {
         return Ok(());
@@ -362,8 +351,8 @@ fn visit_codex_session_entry(
     let (model, is_fallback_model) = resolve_codex_usage_model(
         parsed_model,
         &timestamp,
-        &mut state.current_model,
-        &mut state.current_model_is_fallback,
+        current_model,
+        current_model_is_fallback,
     );
 
     visit(CodexTokenUsageEvent {
@@ -377,8 +366,7 @@ fn visit_codex_session_entry(
         reasoning_output_tokens: raw_usage.reasoning_output_tokens,
         total_tokens: raw_usage.total_tokens,
         is_fallback_model,
-        service_tier: state.current_service_tier,
-        source: state.current_source.clone(),
+        service_tier: *current_service_tier,
     })
 }
 
@@ -386,8 +374,8 @@ fn add_codex_exec_event(
     session_id: &str,
     value: &CodexLogEntry<'_>,
     fallback_timestamp: &str,
-    state: &mut CodexParserState,
-    source: Option<&str>,
+    current_model: &mut Option<String>,
+    current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let Some(raw_usage) = normalize_headless_codex_usage(value) else {
@@ -404,8 +392,8 @@ fn add_codex_exec_event(
         raw_usage,
         parsed_model,
         timestamps,
-        state,
-        source,
+        current_model,
+        current_model_is_fallback,
         visit,
     )
 }
@@ -414,8 +402,8 @@ fn add_codex_exec_event_from_value(
     session_id: &str,
     line: &[u8],
     fallback_timestamp: &str,
-    state: &mut CodexParserState,
-    source: Option<&str>,
+    current_model: &mut Option<String>,
+    current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let Ok(value) = serde_json::from_slice::<Value>(line) else {
@@ -436,8 +424,8 @@ fn add_codex_exec_event_from_value(
         raw_usage,
         parsed_model,
         timestamps,
-        state,
-        source,
+        current_model,
+        current_model_is_fallback,
         visit,
     )
 }
@@ -447,16 +435,16 @@ fn visit_codex_exec_usage_event(
     raw_usage: CodexRawUsage,
     parsed_model: Option<String>,
     timestamps: CodexExecTimestamps,
-    state: &mut CodexParserState,
-    source: Option<&str>,
+    current_model: &mut Option<String>,
+    current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let raw_usage = normalize_codex_raw_usage(raw_usage);
     let (model, is_fallback_model) = resolve_codex_usage_model(
         parsed_model,
         &timestamps.model,
-        &mut state.current_model,
-        &mut state.current_model_is_fallback,
+        current_model,
+        current_model_is_fallback,
     );
     visit(CodexTokenUsageEvent {
         session_id: session_id.to_string(),
@@ -470,7 +458,6 @@ fn visit_codex_exec_usage_event(
         total_tokens: raw_usage.total_tokens,
         is_fallback_model,
         service_tier: None,
-        source: source.map(str::to_string),
     })
 }
 
@@ -490,15 +477,9 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     let has_token_count = has_event_msg && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
     let has_thread_settings_applied =
         has_event_msg && THREAD_SETTINGS_APPLIED_TYPE_FINDER.find(line).is_some();
-    let has_compact_session_meta = SESSION_META_TYPE_FINDER.find(line).is_some();
-    let has_session_meta_value = SESSION_META_VALUE_FINDER.find(line).is_some();
-    if has_session_meta_value && top_level_type_is(line, "session_meta") {
-        return Some(CodexLineKind::Session);
-    }
     if TURN_CONTEXT_TYPE_FINDER.find(line).is_some()
         || has_token_count
         || has_thread_settings_applied
-        || (has_compact_session_meta && top_level_type_is(line, "session_meta"))
     {
         return Some(CodexLineKind::Session);
     }
@@ -516,17 +497,9 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
         || has_nested_thread_settings_applied
         || !has_compact_type
     {
-        let (
-            has_turn_context,
-            has_event_msg,
-            has_token_count,
-            has_thread_settings_applied,
-            has_session_meta,
-        ) = codex_line_type_flags(line);
-        if has_turn_context
-            || (has_session_meta && top_level_type_is(line, "session_meta"))
-            || (has_event_msg && (has_token_count || has_thread_settings_applied))
-        {
+        let (has_turn_context, has_event_msg, has_token_count, has_thread_settings_applied) =
+            codex_line_type_flags(line);
+        if has_turn_context || (has_event_msg && (has_token_count || has_thread_settings_applied)) {
             return Some(CodexLineKind::Session);
         }
     }
@@ -539,13 +512,12 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     None
 }
 
-fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool, bool) {
+fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool) {
     let mut start = 0;
     let mut has_turn_context = false;
     let mut has_event_msg = false;
     let mut has_token_count = false;
     let mut has_thread_settings_applied = false;
-    let mut has_session_meta = false;
     while let Some(index) = TYPE_KEY_FINDER.find(&line[start..]) {
         let key_start = start + index;
         let mut cursor = skip_json_whitespace(line, key_start + br#""type""#.len());
@@ -564,17 +536,12 @@ fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool, bool) {
         has_token_count |= json_string_value_matches(line, cursor, b"token_count");
         has_thread_settings_applied |=
             json_string_value_matches(line, cursor, b"thread_settings_applied");
-        has_session_meta |= json_string_value_matches(line, cursor, b"session_meta");
-        if has_turn_context
-            || has_session_meta
-            || (has_event_msg && (has_token_count || has_thread_settings_applied))
-        {
+        if has_turn_context || (has_event_msg && (has_token_count || has_thread_settings_applied)) {
             return (
                 has_turn_context,
                 has_event_msg,
                 has_token_count,
                 has_thread_settings_applied,
-                has_session_meta,
             );
         }
         start = cursor.saturating_add(1);
@@ -584,20 +551,7 @@ fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool, bool) {
         has_event_msg,
         has_token_count,
         has_thread_settings_applied,
-        has_session_meta,
     )
-}
-
-fn top_level_type_is(line: &[u8], expected: &str) -> bool {
-    serde_json::from_slice::<Value>(line)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("type")
-                .and_then(Value::as_str)
-                .map(|value| value == expected)
-        })
-        .unwrap_or(false)
 }
 
 fn json_string_value_matches(line: &[u8], start: usize, value: &[u8]) -> bool {

@@ -912,6 +912,26 @@ mod tests {
     }
 
     #[test]
+    fn claude_session_calculate_uses_each_deepseek_v4_event_timestamp() {
+        let rows = claude_session_rows(
+            &[
+                r#"{"timestamp":"2026-08-15T23:59:59.000Z","sessionId":"session-a","requestId":"request-old","message":{"id":"message-old","model":"deepseek-v4-flash","usage":{"input_tokens":1000000,"output_tokens":0}}}"#,
+                r#"{"timestamp":"2026-08-17T01:00:00.000Z","sessionId":"session-a","requestId":"request-peak","message":{"id":"message-peak","model":"deepseek-v4-pro","usage":{"input_tokens":1000000,"output_tokens":0}}}"#,
+            ]
+            .join("\n"),
+            SharedArgs {
+                mode: CostMode::Calculate,
+                offline: true,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert!((rows[0].total_cost - 1.46).abs() < 1e-9);
+    }
+
+    #[test]
     fn statusline_invocation_passes_config_pricing_overrides_to_cost_loading() {
         let fixture = fs_fixture!({
             "ccusage.json": r#"{

@@ -17,6 +17,7 @@ fetch-litellm-pricing = ["ccusage-core/fetch-litellm-pricing"]
 [dependencies]
 ccusage-adapter-all.workspace = true
 ccusage-adapter-amp.workspace = true
+ccusage-adapter-antigravity.workspace = true
 ccusage-adapter-claude.workspace = true
 ccusage-adapter-codebuff.workspace = true
 ccusage-adapter-codex.workspace = true
@@ -33,6 +34,7 @@ ccusage-adapter-openclaw.workspace = true
 ccusage-adapter-opencode.workspace = true
 ccusage-adapter-pi.workspace = true
 ccusage-adapter-qwen.workspace = true
+ccusage-adapter-zcode.workspace = true
 ccusage-cli-parser.workspace = true
 ccusage-cli.workspace = true
 ccusage-config.workspace = true
@@ -46,6 +48,8 @@ serde_json.workspace = true
 
 [dev-dependencies]
 ccusage-test-support.workspace = true
+insta.workspace = true
+sqlite.workspace = true
 
 # mimalloc measurably beats the musl allocator on the static Linux build's
 # allocation-heavy JSONL parsing.

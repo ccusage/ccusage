@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::{
     LoadedEntry, Pricing, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, calculate_cost_from_pricing,
+    apply_total_token_fallback, calculate_cost_for_usage_at, calculate_cost_from_pricing,
     cli::CostMode, fast::LinePrefilter, format_date_tz, missing_pricing_model_for_usage,
 };
 use ccusage_adapter_common::jsonl;
@@ -213,6 +213,15 @@ enum PiStoreContext<'a> {
     Named { root: &'a Path, name: &'a str },
 }
 
+#[derive(Clone, Copy)]
+struct PiCostInput<'a> {
+    raw_model: Option<&'a str>,
+    display_model: Option<&'a str>,
+    usage: TokenUsageRaw,
+    display_cost: Option<f64>,
+    timestamp: crate::TimestampMs,
+}
+
 impl<'a> PiStoreContext<'a> {
     fn store_name(self) -> &'a str {
         match self {
@@ -228,23 +237,35 @@ impl<'a> PiStoreContext<'a> {
         }
     }
 
-    fn cost(
-        self,
-        raw_model: Option<&str>,
-        display_model: Option<&str>,
-        usage: TokenUsageRaw,
-        display_cost: Option<f64>,
-        mode: CostMode,
-        pricing: Option<&PricingMap>,
-    ) -> f64 {
-        let source_cost = source_cost_for_mode(display_cost, mode);
+    fn cost(self, input: PiCostInput<'_>, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
+        let source_cost = source_cost_for_mode(input.display_cost, mode);
         match self {
             Self::Default => {
-                calculate_cost_for_usage(display_model, usage, source_cost, mode, pricing)
+                let model = input
+                    .display_model
+                    .filter(|model| {
+                        pricing.is_some_and(|pricing| pricing.find_exact(model).is_some())
+                    })
+                    .or(input.raw_model)
+                    .or(input.display_model);
+                calculate_cost_for_usage_at(
+                    model,
+                    input.usage,
+                    source_cost,
+                    Some(input.timestamp),
+                    mode,
+                    pricing,
+                )
             }
-            Self::Named { .. } => {
-                calculate_store_cost(raw_model, display_model, usage, source_cost, mode, pricing)
-            }
+            Self::Named { .. } => calculate_store_cost(
+                input.raw_model,
+                input.display_model,
+                input.usage,
+                source_cost,
+                input.timestamp,
+                mode,
+                pricing,
+            ),
         }
     }
 
@@ -330,10 +351,13 @@ fn read_session_file_data_with_context(
             .as_ref()
             .map(|model| format!("[{}] {model}", context.store_name()));
         let cost = context.cost(
-            raw_model.as_deref(),
-            model.as_deref(),
-            usage,
-            display_cost,
+            PiCostInput {
+                raw_model: raw_model.as_deref(),
+                display_model: model.as_deref(),
+                usage,
+                display_cost,
+                timestamp,
+            },
             mode,
             pricing,
         );
@@ -583,16 +607,17 @@ fn calculate_store_cost(
     display_model: Option<&str>,
     usage: TokenUsageRaw,
     display_cost: Option<f64>,
+    timestamp: crate::TimestampMs,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> f64 {
     match mode {
         CostMode::Display => display_cost.unwrap_or(0.0),
         CostMode::Auto => display_cost.unwrap_or_else(|| {
-            calculate_store_cost_from_tokens(raw_model, display_model, usage, pricing)
+            calculate_store_cost_from_tokens(raw_model, display_model, usage, timestamp, pricing)
         }),
         CostMode::Calculate => {
-            calculate_store_cost_from_tokens(raw_model, display_model, usage, pricing)
+            calculate_store_cost_from_tokens(raw_model, display_model, usage, timestamp, pricing)
         }
     }
 }
@@ -609,9 +634,10 @@ fn calculate_store_cost_from_tokens(
     raw_model: Option<&str>,
     display_model: Option<&str>,
     usage: TokenUsageRaw,
+    timestamp: crate::TimestampMs,
     pricing: Option<&PricingMap>,
 ) -> f64 {
-    let Some(pricing) = store_pricing(raw_model, display_model, pricing) else {
+    let Some(pricing) = store_pricing_at(raw_model, display_model, timestamp, pricing) else {
         return 0.0;
     };
     calculate_cost_from_pricing(usage, pricing)
@@ -646,6 +672,18 @@ fn store_pricing(
     display_model
         .and_then(|model| pricing.find_exact(model))
         .or_else(|| raw_model.and_then(|model| pricing.find(model)))
+}
+
+fn store_pricing_at(
+    raw_model: Option<&str>,
+    display_model: Option<&str>,
+    timestamp: crate::TimestampMs,
+    pricing: Option<&PricingMap>,
+) -> Option<Pricing> {
+    let pricing = pricing?;
+    display_model
+        .and_then(|model| pricing.find_exact(model))
+        .or_else(|| raw_model.and_then(|model| pricing.find_at(model, timestamp)))
 }
 
 pub(crate) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> String {
@@ -985,39 +1023,48 @@ mod tests {
 
         for context in contexts {
             let display_cost = context.cost(
-                Some("test-model"),
-                Some(match context {
-                    PiStoreContext::Default => "[pi] test-model",
-                    PiStoreContext::Named { .. } => "[omp] test-model",
-                }),
-                usage,
-                Some(f64::NAN),
+                PiCostInput {
+                    raw_model: Some("test-model"),
+                    display_model: Some(match context {
+                        PiStoreContext::Default => "[pi] test-model",
+                        PiStoreContext::Named { .. } => "[omp] test-model",
+                    }),
+                    usage,
+                    display_cost: Some(f64::NAN),
+                    timestamp: crate::TimestampMs::UNIX_EPOCH,
+                },
                 CostMode::Display,
                 Some(&pricing),
             );
             assert!(display_cost.is_nan());
 
             let auto_cost = context.cost(
-                Some("test-model"),
-                Some(match context {
-                    PiStoreContext::Default => "[pi] test-model",
-                    PiStoreContext::Named { .. } => "[omp] test-model",
-                }),
-                usage,
-                Some(f64::INFINITY),
+                PiCostInput {
+                    raw_model: Some("test-model"),
+                    display_model: Some(match context {
+                        PiStoreContext::Default => "[pi] test-model",
+                        PiStoreContext::Named { .. } => "[omp] test-model",
+                    }),
+                    usage,
+                    display_cost: Some(f64::INFINITY),
+                    timestamp: crate::TimestampMs::UNIX_EPOCH,
+                },
                 CostMode::Auto,
                 Some(&pricing),
             );
             assert_eq!(auto_cost, expected_cost);
 
             let calculated_cost = context.cost(
-                Some("test-model"),
-                Some(match context {
-                    PiStoreContext::Default => "[pi] test-model",
-                    PiStoreContext::Named { .. } => "[omp] test-model",
-                }),
-                usage,
-                Some(f64::NEG_INFINITY),
+                PiCostInput {
+                    raw_model: Some("test-model"),
+                    display_model: Some(match context {
+                        PiStoreContext::Default => "[pi] test-model",
+                        PiStoreContext::Named { .. } => "[omp] test-model",
+                    }),
+                    usage,
+                    display_cost: Some(f64::NEG_INFINITY),
+                    timestamp: crate::TimestampMs::UNIX_EPOCH,
+                },
                 CostMode::Calculate,
                 Some(&pricing),
             );

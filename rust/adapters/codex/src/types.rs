@@ -49,7 +49,6 @@ pub struct CodexTokenUsageEvent {
     pub total_tokens: u64,
     pub is_fallback_model: bool,
     pub service_tier: Option<CodexServiceTier>,
-    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -62,6 +61,13 @@ pub struct CodexUsageBucket {
     pub long_context_cached_input_tokens: u64,
     pub long_context_cache_creation_tokens: u64,
     pub long_context_output_tokens: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CodexTimestampedUsage {
+    pub(crate) usage: CodexUsageBucket,
+    pub(crate) recorded_standard_usage: CodexUsageBucket,
+    pub(crate) recorded_fast_usage: CodexUsageBucket,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -83,18 +89,9 @@ pub struct CodexModelUsage {
     pub long_context_output_tokens: u64,
     pub recorded_standard_usage: CodexUsageBucket,
     pub recorded_fast_usage: CodexUsageBucket,
+    /// Exact event timestamps keep time-dependent pricing available after aggregation.
+    pub timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub is_fallback: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CodexSourceUsage {
-    pub input_tokens: u64,
-    pub cached_input_tokens: u64,
-    pub cache_creation_tokens: u64,
-    pub output_tokens: u64,
-    pub reasoning_output_tokens: u64,
-    pub total_tokens: u64,
-    pub models: BTreeMap<String, CodexModelUsage>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -106,7 +103,6 @@ pub struct CodexGroup {
     pub reasoning_output_tokens: u64,
     pub total_tokens: u64,
     pub models: BTreeMap<String, CodexModelUsage>,
-    pub sources: BTreeMap<String, CodexSourceUsage>,
     pub last_activity: Option<String>,
 }
 
@@ -185,8 +181,6 @@ pub(super) struct CodexPayload<'a> {
     pub(super) model: Option<Cow<'a, str>>,
     #[serde(rename = "model_name", borrow, default)]
     pub(super) model_name: Option<Cow<'a, str>>,
-    #[serde(borrow, default)]
-    pub(super) originator: Option<Cow<'a, str>>,
     #[serde(
         borrow,
         default,

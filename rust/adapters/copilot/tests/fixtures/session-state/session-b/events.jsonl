@@ -1,0 +1,1 @@
+{"type":"session.shutdown","id":"shutdown-b","timestamp":"2026-02-01T01:20:00.000Z","data":{"modelMetrics":{"gpt-5.4":{"usage":{"inputTokens":90,"outputTokens":30,"cacheReadTokens":10,"cacheWriteTokens":15,"reasoningTokens":4}}}}}

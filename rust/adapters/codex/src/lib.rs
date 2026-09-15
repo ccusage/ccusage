@@ -7,7 +7,6 @@ mod parser;
 mod paths;
 mod replay;
 mod report;
-mod source;
 mod speed;
 mod types;
 
@@ -18,17 +17,17 @@ pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
 pub use loader::load_codex_events_from_directory;
 pub use loader::load_codex_events_with_detection;
 pub use report::{
-    calculate_codex_model_cost, calculate_codex_source_cost, calculate_group_cost,
-    codex_model_missing_pricing, non_cached_input_tokens,
+    calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
+    non_cached_input_tokens,
 };
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
 pub use types::{
-    CodexGroup, CodexModelUsage, CodexServiceTier, CodexSourceUsage, CodexTokenUsageEvent,
+    CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexTokenUsageEvent,
     CodexUsageBucket,
 };
 pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
-use report::{print_table_from_groups_with_source, report_from_groups_with_source};
+use report::{print_table_from_groups, report_from_groups};
 
 use crate::cli::{AgentReportKind, CodexSpeed};
 
@@ -44,18 +43,10 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let groups = load_groups(&shared, args.kind)?;
     let speed = resolve_codex_speed(args.codex_speed);
     if wants_json(&shared) {
-        let output = if args.by_source {
-            report_from_groups_with_source(&groups, args.kind, &pricing, speed, true)
-        } else {
-            report::report_from_groups(&groups, args.kind, &pricing, speed)
-        };
+        let output = report_from_groups(&groups, args.kind, &pricing, speed);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
-    if args.by_source {
-        print_table_from_groups_with_source(&groups, args.kind, &pricing, speed, &shared, true)
-    } else {
-        report::print_table_from_groups(&groups, args.kind, &pricing, speed, &shared)
-    }
+    print_table_from_groups(&groups, args.kind, &pricing, speed, &shared)
 }
 
 #[doc(hidden)]
@@ -66,26 +57,8 @@ pub fn report_json(
     pricing: &PricingMap,
     speed: CodexSpeed,
 ) -> Result<Value> {
-    report_json_with_source(events, kind, timezone, pricing, speed, false)
-}
-
-#[doc(hidden)]
-fn report_json_with_source(
-    events: &[CodexTokenUsageEvent],
-    kind: AgentReportKind,
-    timezone: Option<&str>,
-    pricing: &PricingMap,
-    speed: CodexSpeed,
-    by_source: bool,
-) -> Result<Value> {
     let groups = aggregate_events(events, kind, timezone)?;
-    Ok(report_from_groups_with_source(
-        &groups,
-        kind,
-        pricing,
-        speed.into(),
-        by_source,
-    ))
+    Ok(report_from_groups(&groups, kind, pricing, speed.into()))
 }
 
 #[cfg(test)]
@@ -168,7 +141,6 @@ mod tests {
                 total_tokens: 105,
                 is_fallback_model: false,
                 service_tier: None,
-                source: None,
             }],
             AgentReportKind::Daily,
             Some("UTC"),
@@ -194,136 +166,49 @@ mod tests {
     }
 
     #[test]
-    fn reports_opt_in_source_breakdowns_that_conserve_totals() {
-        let event = |source: Option<&str>,
-                     timestamp: &str,
-                     input: u64,
-                     cached: u64,
-                     creation: u64,
-                     output: u64,
-                     reasoning: u64,
-                     total: u64| CodexTokenUsageEvent {
+    fn prices_mixed_deepseek_timestamps_in_model_totals() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek-v4-flash": {
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028,
+                    "cache_creation_input_token_cost": 0.000000123,
+                    "cache_read_input_token_cost": 0.0000000028
+                }
+            }"#,
+        );
+        let event = |timestamp: &str| CodexTokenUsageEvent {
             session_id: "session-1".to_string(),
             timestamp: timestamp.to_string(),
-            model: Some("gpt-5".to_string()),
-            input_tokens: input,
-            cached_input_tokens: cached,
-            cache_creation_tokens: creation,
-            output_tokens: output,
-            reasoning_output_tokens: reasoning,
-            total_tokens: total,
+            model: Some("deepseek-v4-flash".to_string()),
+            input_tokens: 1_000_000,
+            cached_input_tokens: 0,
+            cache_creation_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+            total_tokens: 1_000_000,
             is_fallback_model: false,
             service_tier: None,
-            source: source.map(str::to_string),
         };
         let events = vec![
-            event(
-                Some("CLI"),
-                "2026-01-02T00:00:00.000Z",
-                100,
-                20,
-                0,
-                10,
-                1,
-                110,
-            ),
-            event(Some("Exec"), "2026-01-02T00:01:00.000Z", 50, 0, 0, 5, 0, 55),
-            event(
-                Some("Desktop App"),
-                "2026-01-02T00:02:00.000Z",
-                25,
-                0,
-                5,
-                2,
-                0,
-                32,
-            ),
-            event(None, "2026-01-02T00:03:00.000Z", 10, 0, 0, 1, 0, 11),
-            event(
-                Some("future-client"),
-                "2026-01-02T00:04:00.000Z",
-                15,
-                0,
-                0,
-                3,
-                2,
-                18,
-            ),
+            event("2026-08-16T15:59:59.000Z"),
+            event("2026-08-16T16:00:00.000Z"),
+            event("2026-08-17T01:00:00.000Z"),
         ];
-        let pricing = PricingMap::default();
-        let default = report_json(
-            &events,
-            AgentReportKind::Daily,
-            Some("UTC"),
-            &pricing,
-            CodexSpeed::Standard,
-        )
-        .unwrap();
-        let opt_in_default = report_json_with_source(
-            &events,
-            AgentReportKind::Daily,
-            Some("UTC"),
-            &pricing,
-            CodexSpeed::Standard,
-            false,
-        )
-        .unwrap();
-        assert_eq!(
-            serde_json::to_string(&default).unwrap(),
-            serde_json::to_string(&opt_in_default).unwrap()
-        );
-        assert!(default["daily"][0].get("sourceBreakdowns").is_none());
 
-        let report = report_json_with_source(
+        let report = report_json(
             &events,
             AgentReportKind::Daily,
             Some("UTC"),
             &pricing,
             CodexSpeed::Standard,
-            true,
         )
         .unwrap();
-        let row = &report["daily"][0];
-        let sources = row["sourceBreakdowns"].as_array().unwrap();
-        assert_eq!(
-            sources
-                .iter()
-                .map(|source| source["source"].as_str().unwrap())
-                .collect::<Vec<_>>(),
-            vec![
-                "CLI",
-                "Desktop App",
-                "Exec",
-                "Uncategorized",
-                "future-client"
-            ]
-        );
-        for key in [
-            "inputTokens",
-            "cacheCreationTokens",
-            "cacheReadTokens",
-            "outputTokens",
-            "reasoningOutputTokens",
-            "totalTokens",
-        ] {
-            assert_eq!(
-                sources
-                    .iter()
-                    .map(|source| source[key].as_u64().unwrap())
-                    .sum::<u64>(),
-                row[key].as_u64().unwrap(),
-                "source totals must conserve {key}"
-            );
-            assert_eq!(
-                sources
-                    .iter()
-                    .map(|source| source[key].as_u64().unwrap())
-                    .sum::<u64>(),
-                report["totals"][key].as_u64().unwrap(),
-                "row and report totals must agree for {key}"
-            );
-        }
-        insta::assert_json_snapshot!(report);
+
+        assert!((report["totals"]["costUSD"].as_f64().unwrap() - 0.80).abs() < 1e-12);
+        assert!((report["daily"][0]["costUSD"].as_f64().unwrap() - 0.36).abs() < 1e-12);
+        assert!((report["daily"][1]["costUSD"].as_f64().unwrap() - 0.44).abs() < 1e-12);
     }
 
     #[test]
@@ -418,7 +303,6 @@ mod tests {
                     total_tokens: 105,
                     is_fallback_model: false,
                     service_tier: None,
-                    source: None,
                 },
                 CodexTokenUsageEvent {
                     session_id: "session-1".to_string(),
@@ -432,7 +316,6 @@ mod tests {
                     total_tokens: 53,
                     is_fallback_model: false,
                     service_tier: None,
-                    source: None,
                 },
             ],
             AgentReportKind::Daily,
@@ -596,29 +479,6 @@ mod tests {
             calculate_codex_model_cost("gpt-test", &split, &pricing, CodexSpeed::Standard);
 
         assert!((flat_cost - split_cost).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn prices_gpt_5_6_long_context_usage_from_embedded_pricing() {
-        let pricing = PricingMap::load_embedded();
-        let usage = CodexModelUsage {
-            input_tokens: 300_000,
-            cached_input_tokens: 100_000,
-            output_tokens: 1_000,
-            total_tokens: 301_000,
-            long_context_input_tokens: 300_000,
-            long_context_cached_input_tokens: 100_000,
-            long_context_output_tokens: 1_000,
-            ..CodexModelUsage::default()
-        };
-
-        let cost =
-            calculate_codex_model_cost("gpt-5.6-sol", &usage, &pricing, CodexSpeed::Standard);
-
-        // The whole request is billed at long-context rates: 200K non-cached
-        // input at $10/M, 100K cached at $1/M, 1K output at $45/M.
-        let expected = 200_000.0 * 10e-6 + 100_000.0 * 1e-6 + 1_000.0 * 45e-6;
-        assert!((cost - expected).abs() < 1e-9);
     }
 
     #[test]
@@ -844,7 +704,6 @@ mod tests {
                 total_tokens: 147,
                 is_fallback_model: false,
                 service_tier: None,
-                source: None,
             },
             CodexTokenUsageEvent {
                 session_id: "/workspace/api/session-a.jsonl".to_string(),
@@ -858,7 +717,6 @@ mod tests {
                 total_tokens: 80,
                 is_fallback_model: true,
                 service_tier: None,
-                source: None,
             },
             CodexTokenUsageEvent {
                 session_id: "/workspace/web/session-b.jsonl".to_string(),
@@ -872,7 +730,6 @@ mod tests {
                 total_tokens: 12,
                 is_fallback_model: false,
                 service_tier: None,
-                source: None,
             },
             CodexTokenUsageEvent {
                 session_id: "ignored-missing-model".to_string(),
@@ -886,7 +743,6 @@ mod tests {
                 total_tokens: 1_998,
                 is_fallback_model: false,
                 service_tier: None,
-                source: None,
             },
         ];
 

@@ -1,0 +1,16 @@
+[package]
+name = "ccusage-adapter-zcode"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+ccusage-adapter-common.workspace = true
+ccusage-core.workspace = true
+jiff.workspace = true
+serde_json.workspace = true
+sqlite.workspace = true
+
+[dev-dependencies]
+ccusage-test-support.workspace = true
+insta.workspace = true

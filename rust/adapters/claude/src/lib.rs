@@ -18,7 +18,7 @@ use serde::Deserialize;
 
 use crate::{
     LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
-    UsageSummary, calculate_cost, calculate_cost_for_usage,
+    UsageSummary, calculate_cost, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     debug_log,
     fast::{FxHashMap, SmallIndexVec, byte_lines, suffix_string},
@@ -384,10 +384,11 @@ fn read_usage_file(
                 project: Arc::clone(&project),
                 session_id: Arc::clone(&session_id),
                 project_path: Arc::clone(&project_path),
-                cost: calculate_cost_for_usage(
+                cost: calculate_cost_for_usage_at(
                     Some(&advisor.model),
                     advisor.usage,
                     None,
+                    Some(timestamp),
                     mode,
                     pricing,
                 ),

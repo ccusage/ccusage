@@ -37,16 +37,7 @@ CODEX_HOME="$HOME/.codex,$HOME/.codex-work,$HOME/codex-exec-logs" ccusage codex 
 | `ccusage codex monthly` | Aggregate usage by month     | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage codex session` | Group usage by Codex session | [Session Usage](/guide/session-reports) |
 
-These views support `--json`, `--compact`, `--offline`, `--speed auto|standard|fast`, and the opt-in `--by-source` breakdown.
-
-`--by-source` groups Codex usage by the `session_meta.payload.originator` value. The built-in
-labels are `CLI` (`codex-tui` and `codex_cli_rs`), `Exec` (`codex_exec`), and `Desktop App`
-(`Codex Desktop` and `codex_work_desktop`), `VS Code` (`codex_vscode`), and `SDK`
-(`codex_python_sdk`); other non-empty values are kept unchanged, while missing or empty values
-are reported as `Uncategorized`. Same-source copies of a usage event are deduplicated, while
-different normalized originators remain distinct so their totals are preserved. Tables add source
-rows below each period, and JSON adds `sourceBreakdowns` to the period and totals objects without
-changing the default output.
+These views support `--json`, `--compact`, `--offline`, and `--speed auto|standard|fast`.
 
 ## Monthly Example
 
@@ -57,6 +48,7 @@ changing the default output.
 - **Token deltas** – Each `event_msg` with `payload.type === "token_count"` reports cumulative totals and, when available, the latest request delta. Current MultiAgent V2 subagent rollouts can persist a replayed parent-history prefix; the CLI uses the final inherited snapshot as the child baseline, then counts only advancing usage from the child turn. Older Codex replay formats retain timestamp-based compatibility handling.
 - **Per-model grouping** – The active `turn_context` specifies the model for newly counted usage. Replayed parent contexts in current MultiAgent V2 subagent prefixes remain inherited history and do not add model usage to the child. We aggregate tokens per day/month and per model. Sessions lacking model metadata (seen in early September 2025 builds) are skipped.
 - **Pricing** – Rates come from LiteLLM's pricing dataset via the shared `LiteLLMPricingFetcher`. Codex's internal review label is resolved to the newest known model for the log date before pricing is calculated.
+- **Scheduled pricing** – DeepSeek V4 Flash and Pro use each event's timestamp: legacy rates apply before `2026-08-16T16:00:00Z`, and the later rates use UTC weekday peak windows of `01:00–04:00` and `06:00–10:00` (endpoints excluded). Cache creation follows the scheduled input rate.
 - **Speed pricing** – `--speed auto` is the default. For rollouts written by Codex CLI 0.144.0 and later, ccusage applies recorded `thread_settings_applied` tier changes chronologically: `priority` and legacy `fast` use Fast pricing, while `default` uses Standard pricing. Unmarked usage falls back to `config.toml` detection. Pass `--speed fast` or `--speed standard` to override every recorded tier. Fast pricing uses a model-specific multiplier only when one is available; otherwise, ccusage keeps standard pricing rather than inventing a rate.
 - **Legacy fallback** – Early September 2025 logs that never recorded `turn_context` metadata are still included; the CLI assumes `gpt-5` for pricing so you can review the tokens even though the model tag is missing (the JSON output also marks these rows with `"isFallback": true`).
 - **Cost formula** – Non-cached input uses the standard input price; cached input uses the cache-read price (falling back to the input price when missing); and output tokens are billed at the output price. All prices are per million tokens. Reasoning tokens may be shown for reference, but they are part of the output charge and are not billed separately.
@@ -88,9 +80,6 @@ ccusage codex daily --speed fast
 
 # Force standard pricing
 ccusage codex daily --speed standard
-
-# Show usage by Codex client/originator
-ccusage codex daily --by-source
 ```
 
 ## JSON Output
@@ -101,10 +90,9 @@ Codex focused views use the same JSON mode as the shared reports:
 ccusage codex daily --json
 ccusage codex monthly --json
 ccusage codex session --json
-ccusage codex daily --by-source --json
 ```
 
-Session JSON includes per-model breakdowns, cached token counts, `lastActivity`, and `isFallback` flags for any events that required the legacy `gpt-5` pricing fallback. With `--by-source`, each source breakdown has the same token and model totals, and source totals conserve the report totals exactly.
+Session JSON includes per-model breakdowns, cached token counts, `lastActivity`, and `isFallback` flags for any events that required the legacy `gpt-5` pricing fallback.
 
 Have feedback or ideas? [Open an issue](https://github.com/ccusage/ccusage/issues/new) so we can improve Codex support.
 

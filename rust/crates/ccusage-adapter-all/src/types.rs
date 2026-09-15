@@ -1,10 +1,8 @@
 use std::collections::BTreeSet;
 
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 
-use crate::{ModelBreakdown, cli::AgentReportKind, fast::FxHashMap, json_float};
-
-pub(super) const SOURCE_BREAKDOWNS_METADATA_KEY: &str = "sourceBreakdowns";
+use crate::{ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
 
 #[derive(Debug, Clone)]
 pub(super) struct AllRow {
@@ -79,11 +77,13 @@ pub(super) struct AllAccumulator {
 
 impl AllAccumulator {
     pub(super) fn add(&mut self, row: AllRow) {
-        self.input_tokens += row.input_tokens;
-        self.output_tokens += row.output_tokens;
-        self.cache_creation_tokens += row.cache_creation_tokens;
-        self.cache_read_tokens += row.cache_read_tokens;
-        self.total_tokens += row.total_tokens;
+        self.input_tokens = self.input_tokens.saturating_add(row.input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(row.output_tokens);
+        self.cache_creation_tokens = self
+            .cache_creation_tokens
+            .saturating_add(row.cache_creation_tokens);
+        self.cache_read_tokens = self.cache_read_tokens.saturating_add(row.cache_read_tokens);
+        self.total_tokens = self.total_tokens.saturating_add(row.total_tokens);
         self.total_cost += row.total_cost;
         self.models.extend(row.models_used.iter().cloned());
         if let Some(agents) = row.metadata_agents.as_ref() {
@@ -132,157 +132,21 @@ impl AllAccumulator {
 }
 
 fn merge_agent_breakdown(target: &mut AllRow, source: AllRow) {
-    target.input_tokens += source.input_tokens;
-    target.output_tokens += source.output_tokens;
-    target.cache_creation_tokens += source.cache_creation_tokens;
-    target.cache_read_tokens += source.cache_read_tokens;
-    target.total_tokens += source.total_tokens;
+    target.input_tokens = target.input_tokens.saturating_add(source.input_tokens);
+    target.output_tokens = target.output_tokens.saturating_add(source.output_tokens);
+    target.cache_creation_tokens = target
+        .cache_creation_tokens
+        .saturating_add(source.cache_creation_tokens);
+    target.cache_read_tokens = target
+        .cache_read_tokens
+        .saturating_add(source.cache_read_tokens);
+    target.total_tokens = target.total_tokens.saturating_add(source.total_tokens);
     target.total_cost += source.total_cost;
     let mut models: BTreeSet<String> = target.models_used.drain(..).collect();
     models.extend(source.models_used);
     target.models_used = models.into_iter().collect();
     target.model_breakdowns =
         merge_model_breakdowns(target.model_breakdowns.drain(..), source.model_breakdowns);
-    merge_source_breakdowns(&mut target.metadata, source.metadata);
-}
-
-pub(super) fn merge_source_breakdowns(target: &mut Option<Value>, source: Option<Value>) {
-    let Some(Value::Object(source_metadata)) = source else {
-        return;
-    };
-    let Some(Value::Array(source_breakdowns)) = source_metadata.get(SOURCE_BREAKDOWNS_METADATA_KEY)
-    else {
-        return;
-    };
-    let source_breakdowns = source_breakdowns.clone();
-    if !matches!(target, Some(Value::Object(_))) {
-        *target = Some(Value::Object(Map::new()));
-    }
-    let Some(target_metadata) = target.as_mut().and_then(Value::as_object_mut) else {
-        return;
-    };
-    let target_breakdowns = target_metadata
-        .entry(SOURCE_BREAKDOWNS_METADATA_KEY.to_string())
-        .or_insert_with(|| Value::Array(Vec::new()));
-    let Some(target_breakdowns) = target_breakdowns.as_array_mut() else {
-        return;
-    };
-    for source_breakdown in source_breakdowns {
-        let Some(source_name) = source_breakdown.get("source").and_then(Value::as_str) else {
-            continue;
-        };
-        let Some(index) = target_breakdowns.iter().position(|target_breakdown| {
-            target_breakdown.get("source").and_then(Value::as_str) == Some(source_name)
-        }) else {
-            target_breakdowns.push(source_breakdown);
-            continue;
-        };
-        merge_source_breakdown(&mut target_breakdowns[index], source_breakdown);
-    }
-}
-
-fn merge_source_breakdown(target: &mut Value, source: Value) {
-    let (Some(target), Some(source)) = (target.as_object_mut(), source.as_object()) else {
-        return;
-    };
-    for key in [
-        "inputTokens",
-        "outputTokens",
-        "cacheCreationTokens",
-        "cacheReadTokens",
-        "reasoningOutputTokens",
-        "totalTokens",
-        "totalCost",
-    ] {
-        add_json_number(target, source, key);
-    }
-    merge_string_array(target, source, "modelsUsed");
-    merge_model_breakdown_values(target, source);
-}
-
-fn add_json_number(target: &mut Map<String, Value>, source: &Map<String, Value>, key: &str) {
-    let Some(source_value) = source.get(key) else {
-        return;
-    };
-    let Some(target_value) = target.get(key) else {
-        target.insert(key.to_string(), source_value.clone());
-        return;
-    };
-    let value = match (target_value.as_u64(), source_value.as_u64()) {
-        (Some(target), Some(source)) => json!(target + source),
-        _ => {
-            json_float(target_value.as_f64().unwrap_or(0.0) + source_value.as_f64().unwrap_or(0.0))
-        }
-    };
-    target.insert(key.to_string(), value);
-}
-
-fn merge_string_array(target: &mut Map<String, Value>, source: &Map<String, Value>, key: &str) {
-    let Some(Value::Array(source_values)) = source.get(key) else {
-        return;
-    };
-    let target_values = target
-        .entry(key.to_string())
-        .or_insert_with(|| Value::Array(Vec::new()));
-    let Some(target_values) = target_values.as_array_mut() else {
-        return;
-    };
-    for source_value in source_values {
-        if !target_values.contains(source_value) {
-            target_values.push(source_value.clone());
-        }
-    }
-    target_values.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
-}
-
-fn merge_model_breakdown_values(target: &mut Map<String, Value>, source: &Map<String, Value>) {
-    let Some(Value::Array(source_models)) = source.get("modelBreakdowns") else {
-        return;
-    };
-    let target_models = target
-        .entry("modelBreakdowns".to_string())
-        .or_insert_with(|| Value::Array(Vec::new()));
-    let Some(target_models) = target_models.as_array_mut() else {
-        return;
-    };
-    for source_model in source_models {
-        let Some(model_name) = source_model.get("modelName").and_then(Value::as_str) else {
-            continue;
-        };
-        let Some(index) = target_models.iter().position(|target_model| {
-            target_model.get("modelName").and_then(Value::as_str) == Some(model_name)
-        }) else {
-            target_models.push(source_model.clone());
-            continue;
-        };
-        let (Some(target_model), Some(source_model)) = (
-            target_models[index].as_object_mut(),
-            source_model.as_object(),
-        ) else {
-            continue;
-        };
-        for key in [
-            "inputTokens",
-            "outputTokens",
-            "cacheCreationTokens",
-            "cacheReadTokens",
-            "cost",
-        ] {
-            add_json_number(target_model, source_model, key);
-        }
-    }
-    target_models.sort_by(|a, b| {
-        let cost_order = b
-            .get("cost")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0)
-            .total_cmp(&a.get("cost").and_then(Value::as_f64).unwrap_or(0.0));
-        cost_order.then_with(|| {
-            a.get("modelName")
-                .and_then(Value::as_str)
-                .cmp(&b.get("modelName").and_then(Value::as_str))
-        })
-    });
 }
 
 fn merge_model_breakdowns(
@@ -301,11 +165,13 @@ fn merge_model_breakdowns(
             i
         });
         let b = &mut breakdowns[index];
-        b.input_tokens += item.input_tokens;
-        b.output_tokens += item.output_tokens;
-        b.cache_creation_tokens += item.cache_creation_tokens;
-        b.cache_read_tokens += item.cache_read_tokens;
-        b.extra_total_tokens += item.extra_total_tokens;
+        b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
+        b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
+        b.cache_creation_tokens = b
+            .cache_creation_tokens
+            .saturating_add(item.cache_creation_tokens);
+        b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
+        b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
         b.cost += item.cost;
         b.missing_pricing |= item.missing_pricing;
     }
@@ -327,11 +193,13 @@ fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
                 i
             });
             let b = &mut breakdowns[index];
-            b.input_tokens += item.input_tokens;
-            b.output_tokens += item.output_tokens;
-            b.cache_creation_tokens += item.cache_creation_tokens;
-            b.cache_read_tokens += item.cache_read_tokens;
-            b.extra_total_tokens += item.extra_total_tokens;
+            b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
+            b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
+            b.cache_creation_tokens = b
+                .cache_creation_tokens
+                .saturating_add(item.cache_creation_tokens);
+            b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
+            b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
             b.cost += item.cost;
             b.missing_pricing |= item.missing_pricing;
         }

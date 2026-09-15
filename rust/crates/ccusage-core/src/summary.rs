@@ -51,7 +51,10 @@ impl UsageAccumulator {
     fn add_entry(&mut self, entry: &LoadedEntry) {
         let usage = entry.data.message.usage;
         self.counts.add_usage(usage);
-        self.counts.extra_total_tokens += entry.extra_total_tokens;
+        self.counts.extra_total_tokens = self
+            .counts
+            .extra_total_tokens
+            .saturating_add(entry.extra_total_tokens);
         self.cost += entry.cost;
         if let Some(credits) = entry.credits {
             *self.credits.get_or_insert(0.0) += credits;
@@ -75,11 +78,17 @@ impl UsageAccumulator {
                 index
             };
             let breakdown = &mut self.breakdowns[index];
-            breakdown.input_tokens += usage.input_tokens;
-            breakdown.output_tokens += usage.output_tokens;
-            breakdown.cache_creation_tokens += usage.cache_creation_token_count();
-            breakdown.cache_read_tokens += usage.cache_read_input_tokens;
-            breakdown.extra_total_tokens += entry.extra_total_tokens;
+            breakdown.input_tokens = breakdown.input_tokens.saturating_add(usage.input_tokens);
+            breakdown.output_tokens = breakdown.output_tokens.saturating_add(usage.output_tokens);
+            breakdown.cache_creation_tokens = breakdown
+                .cache_creation_tokens
+                .saturating_add(usage.cache_creation_token_count());
+            breakdown.cache_read_tokens = breakdown
+                .cache_read_tokens
+                .saturating_add(usage.cache_read_input_tokens);
+            breakdown.extra_total_tokens = breakdown
+                .extra_total_tokens
+                .saturating_add(entry.extra_total_tokens);
             breakdown.cost += entry.cost;
             if entry.missing_pricing_model.is_some() {
                 breakdown.missing_pricing = true;
@@ -222,11 +231,17 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
     let mut breakdown_indexes = FxHashMap::<String, usize>::default();
 
     for row in rows {
-        summary.input_tokens += row.input_tokens;
-        summary.output_tokens += row.output_tokens;
-        summary.cache_creation_tokens += row.cache_creation_tokens;
-        summary.cache_read_tokens += row.cache_read_tokens;
-        summary.extra_total_tokens += row.extra_total_tokens;
+        summary.input_tokens = summary.input_tokens.saturating_add(row.input_tokens);
+        summary.output_tokens = summary.output_tokens.saturating_add(row.output_tokens);
+        summary.cache_creation_tokens = summary
+            .cache_creation_tokens
+            .saturating_add(row.cache_creation_tokens);
+        summary.cache_read_tokens = summary
+            .cache_read_tokens
+            .saturating_add(row.cache_read_tokens);
+        summary.extra_total_tokens = summary
+            .extra_total_tokens
+            .saturating_add(row.extra_total_tokens);
         summary.total_cost += row.total_cost;
         if let Some(credits) = row.credits {
             *summary.credits.get_or_insert(0.0) += credits;
@@ -252,11 +267,17 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
                 index
             };
             let breakdown = &mut summary.model_breakdowns[index];
-            breakdown.input_tokens += item.input_tokens;
-            breakdown.output_tokens += item.output_tokens;
-            breakdown.cache_creation_tokens += item.cache_creation_tokens;
-            breakdown.cache_read_tokens += item.cache_read_tokens;
-            breakdown.extra_total_tokens += item.extra_total_tokens;
+            breakdown.input_tokens = breakdown.input_tokens.saturating_add(item.input_tokens);
+            breakdown.output_tokens = breakdown.output_tokens.saturating_add(item.output_tokens);
+            breakdown.cache_creation_tokens = breakdown
+                .cache_creation_tokens
+                .saturating_add(item.cache_creation_tokens);
+            breakdown.cache_read_tokens = breakdown
+                .cache_read_tokens
+                .saturating_add(item.cache_read_tokens);
+            breakdown.extra_total_tokens = breakdown
+                .extra_total_tokens
+                .saturating_add(item.extra_total_tokens);
             breakdown.cost += item.cost;
             breakdown.missing_pricing |= item.missing_pricing;
         }

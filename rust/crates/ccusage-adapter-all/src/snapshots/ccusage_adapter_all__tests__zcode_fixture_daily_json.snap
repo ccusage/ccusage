@@ -1,0 +1,100 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "report_json(&daily.rows, AgentReportKind::Daily)"
+---
+{
+  "daily": [
+    {
+      "agent": "all",
+      "cacheCreationTokens": 15,
+      "cacheReadTokens": 25,
+      "inputTokens": 60,
+      "metadata": {
+        "agents": [
+          "zcode"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 25,
+          "cost": 0.00015549999999999999,
+          "inputTokens": 60,
+          "modelName": "GLM-5.2",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.2"
+      ],
+      "outputTokens": 10,
+      "period": "2099-01-02",
+      "totalCost": 0.00015549999999999999,
+      "totalTokens": 110
+    },
+    {
+      "agent": "all",
+      "cacheCreationTokens": 30,
+      "cacheReadTokens": 40,
+      "inputTokens": 130,
+      "metadata": {
+        "agents": [
+          "zcode"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 40,
+          "cost": 0.0003224,
+          "inputTokens": 130,
+          "modelName": "GLM-5.3",
+          "outputTokens": 20
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.3"
+      ],
+      "outputTokens": 20,
+      "period": "2099-01-15",
+      "totalCost": 0.0003224,
+      "totalTokens": 220
+    },
+    {
+      "agent": "all",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 10,
+      "inputTokens": 40,
+      "metadata": {
+        "agents": [
+          "zcode"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "cost": 0.0000806,
+          "inputTokens": 40,
+          "modelName": "GLM-5.3",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.3"
+      ],
+      "outputTokens": 5,
+      "period": "2099-02-01",
+      "totalCost": 0.0000806,
+      "totalTokens": 55
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 45,
+    "cacheReadTokens": 75,
+    "inputTokens": 230,
+    "outputTokens": 35,
+    "totalCost": 0.0005585,
+    "totalTokens": 385
+  }
+}

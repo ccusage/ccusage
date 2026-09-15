@@ -23,7 +23,7 @@ pub mod cli {
 
 pub use agent_report::{agent_summary_json, first_column, summary_period};
 pub use cost::{
-    calculate_cost, calculate_cost_for_usage, calculate_cost_from_pricing,
+    calculate_cost, calculate_cost_for_usage_at, calculate_cost_from_pricing,
     missing_pricing_model_for_candidates, missing_pricing_model_for_token_total,
     missing_pricing_model_for_usage,
 };
@@ -37,7 +37,7 @@ pub use output::{
     sanitize_terminal_text, session_summary_json, should_use_compact_layout, summary_json,
     totals_json, wants_json,
 };
-pub use pricing::{Pricing, PricingMap};
+pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
 pub(crate) use project_names::parse_project_aliases;
 pub use project_names::{format_project_name, short_model_name};
 pub use summary::{
@@ -56,8 +56,24 @@ pub const DEFAULT_RECENT_DAYS: i64 = 3;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;
 
 pub const BUILT_IN_AGENT_NAMES: &[&str] = &[
-    "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "openclaw",
-    "kilo", "copilot", "gemini", "kimi", "qwen", "grok",
+    "claude",
+    "codex",
+    "opencode",
+    "amp",
+    "droid",
+    "codebuff",
+    "hermes",
+    "pi",
+    "goose",
+    "openclaw",
+    "kilo",
+    "copilot",
+    "gemini",
+    "antigravity",
+    "kimi",
+    "qwen",
+    "grok",
+    "zcode",
 ];
 
 pub type Result<T> = std::result::Result<T, CliError>;

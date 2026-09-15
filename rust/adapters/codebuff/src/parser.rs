@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use serde_json::Value;
 
 use crate::{
-    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage,
+    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage_at,
     cli::CostMode, format_rfc3339_millis, missing_pricing_model_for_candidates, parse_ts_timestamp,
 };
 
@@ -398,10 +398,11 @@ pub(super) fn calculate_codebuff_cost(entry: &CodebuffEntry, pricing: &PricingMa
         cache_creation: None,
         ..entry.usage
     };
-    let raw = calculate_cost_for_usage(
+    let raw = calculate_cost_for_usage_at(
         Some(&entry.model),
         usage,
         None,
+        Some(entry.timestamp),
         CostMode::Calculate,
         Some(pricing),
     );
@@ -411,10 +412,11 @@ pub(super) fn calculate_codebuff_cost(entry: &CodebuffEntry, pricing: &PricingMa
     {
         return raw;
     }
-    calculate_cost_for_usage(
+    calculate_cost_for_usage_at(
         Some(&format!("{}/{}", entry.provider, entry.model)),
         usage,
         None,
+        Some(entry.timestamp),
         CostMode::Calculate,
         Some(pricing),
     )

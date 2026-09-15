@@ -46,6 +46,39 @@ pub(crate) fn visible_width_max_line(value: &str) -> usize {
     value.lines().map(visible_width).max().unwrap_or_default()
 }
 
+pub(crate) fn ansi_continuation(value: &str) -> String {
+    let mut continuation = String::new();
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != 0x1b {
+            let Some(ch) = value[index..].chars().next() else {
+                break;
+            };
+            index += ch.len_utf8();
+            continue;
+        }
+        let end = skip_ansi_escape(bytes, index);
+        let escape = &value[index..end];
+        if escape.ends_with('m') {
+            if escape == "\x1b[0m" {
+                continuation.clear();
+            } else {
+                continuation.push_str(escape);
+            }
+        }
+        index = end;
+    }
+    continuation
+}
+
+pub(crate) fn ensure_ansi_reset(value: &str) -> String {
+    if !contains_ansi(value) || value.ends_with("\x1b[0m") {
+        return value.to_string();
+    }
+    format!("{value}\x1b[0m")
+}
+
 /// Shorten `value` to at most `width` display columns, marking the cut with `…`.
 ///
 /// The result never exceeds `width`, so a `width` of zero yields an empty

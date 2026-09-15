@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage, cli::CostMode, fast::LinePrefilter,
+    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
     format_date_tz, missing_pricing_model_for_usage,
 };
 use ccusage_adapter_common::jsonl;
@@ -150,6 +150,7 @@ struct OpenClawEntry {
     timestamp: TimestampMs,
     timestamp_text: String,
     session_id: String,
+    pricing_model: String,
     model: String,
     provider: Option<String>,
     input_tokens: u64,
@@ -269,6 +270,7 @@ fn parse_message_entry(
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
         session_id: session_id.to_string(),
+        pricing_model: model.clone(),
         model: format!("[openclaw] {model}"),
         provider,
         input_tokens: raw_usage.input_tokens,
@@ -308,9 +310,22 @@ fn openclaw_entry_to_loaded(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let cost = calculate_cost_for_usage(Some(&entry.model), usage, entry.cost, mode, pricing);
+    let pricing_model = if pricing.is_some_and(|pricing| pricing.find_exact(&entry.model).is_some())
+    {
+        &entry.model
+    } else {
+        &entry.pricing_model
+    };
+    let cost = calculate_cost_for_usage_at(
+        Some(pricing_model),
+        usage,
+        entry.cost,
+        Some(entry.timestamp),
+        mode,
+        pricing,
+    );
     let missing_pricing_model =
-        missing_pricing_model_for_usage(Some(&entry.model), usage, entry.cost, mode, pricing);
+        missing_pricing_model_for_usage(Some(pricing_model), usage, entry.cost, mode, pricing);
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -431,5 +446,32 @@ mod tests {
 
         assert_eq!(entry.output_tokens, 222);
         assert_eq!(entry.total_tokens, 222);
+    }
+
+    #[test]
+    fn calculates_decorated_deepseek_models_with_the_raw_pricing_identity() {
+        let fixture = fs_fixture!({
+            "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","usage":{"input":1000000,"output":0,"totalTokens":1000000},"timestamp":"2026-08-17T01:00:00Z"}}"#,
+        });
+        let pricing = PricingMap::load_embedded();
+
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].model.as_deref(),
+            Some("[openclaw] deepseek-v4-flash")
+        );
+        assert_eq!(
+            entries[0].data.message.model.as_deref(),
+            Some("[openclaw] deepseek-v4-flash")
+        );
+        assert!((entries[0].cost - 0.44).abs() < 1e-12);
     }
 }

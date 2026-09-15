@@ -46,10 +46,12 @@ fn window_target(cli: &mut Cli) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)
             | Command::Kilo(args)
             | Command::Copilot(args)
             | Command::Gemini(args)
+            | Command::Antigravity(args)
             | Command::Kimi(args)
             | Command::Qwen(args)
             | Command::OpenClaw(args)
-            | Command::Grok(args),
+            | Command::Grok(args)
+            | Command::ZCode(args),
         ) => agent_window_target(args),
         Some(Command::Session(_) | Command::Blocks(_) | Command::Statusline(_)) => None,
     }
@@ -91,7 +93,6 @@ mod tests {
             kind,
             sections: None,
             by_agent: false,
-            by_source: false,
             pi_path: None,
             open_claw_path: None,
             codex_speed: CodexSpeed::Auto,

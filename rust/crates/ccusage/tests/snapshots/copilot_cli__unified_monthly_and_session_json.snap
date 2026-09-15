@@ -1,0 +1,165 @@
+---
+source: crates/ccusage/tests/copilot_cli.rs
+expression: "format!(\"Monthly JSON\\n{}\\nSession JSON\\n{}\",\nrun_cli(&fixture, [\"monthly\", \"--json\"]),\nrun_cli(&fixture, [\"session\", \"--json\"]),)"
+---
+Monthly JSON
+{
+  "monthly": [
+    {
+      "agent": "all",
+      "cacheCreationTokens": 30,
+      "cacheReadTokens": 20,
+      "inputTokens": 163,
+      "metadata": {
+        "agents": [
+          "copilot"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "modelName": "claude-opus-4.6",
+          "outputTokens": 94
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4.6"
+      ],
+      "outputTokens": 94,
+      "period": "2026-01",
+      "totalCost": 0.0033625,
+      "totalTokens": 307
+    },
+    {
+      "agent": "all",
+      "cacheCreationTokens": 15,
+      "cacheReadTokens": 10,
+      "inputTokens": 72,
+      "metadata": {
+        "agents": [
+          "copilot"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.0007993750000000001,
+          "inputTokens": 72,
+          "modelName": "gpt-5.4",
+          "outputTokens": 38
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4"
+      ],
+      "outputTokens": 38,
+      "period": "2026-02",
+      "totalCost": 0.0007993750000000001,
+      "totalTokens": 135
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 45,
+    "cacheReadTokens": 30,
+    "inputTokens": 235,
+    "outputTokens": 132,
+    "totalCost": 0.004161875,
+    "totalTokens": 442
+  }
+}
+
+Session JSON
+{
+  "session": [
+    {
+      "agent": "copilot",
+      "cacheCreationTokens": 30,
+      "cacheReadTokens": 20,
+      "inputTokens": 163,
+      "metadata": {
+        "lastActivity": "2026-01-03T02:20:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.0033625,
+          "inputTokens": 163,
+          "modelName": "claude-opus-4.6",
+          "outputTokens": 94
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4.6"
+      ],
+      "outputTokens": 94,
+      "period": "session-a",
+      "totalCost": 0.0033625,
+      "totalTokens": 307
+    },
+    {
+      "agent": "copilot",
+      "cacheCreationTokens": 15,
+      "cacheReadTokens": 10,
+      "inputTokens": 65,
+      "metadata": {
+        "lastActivity": "2026-02-01T01:20:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.000661875,
+          "inputTokens": 65,
+          "modelName": "gpt-5.4",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4"
+      ],
+      "outputTokens": 30,
+      "period": "session-b",
+      "totalCost": 0.000661875,
+      "totalTokens": 120
+    },
+    {
+      "agent": "copilot",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 7,
+      "metadata": {
+        "lastActivity": "2026-02-02T01:20:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001375,
+          "inputTokens": 7,
+          "modelName": "gpt-5.4",
+          "outputTokens": 8
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4"
+      ],
+      "outputTokens": 8,
+      "period": "session-c",
+      "totalCost": 0.0001375,
+      "totalTokens": 15
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 45,
+    "cacheReadTokens": 30,
+    "inputTokens": 235,
+    "outputTokens": 132,
+    "totalCost": 0.004161875,
+    "totalTokens": 442
+  }
+}

@@ -61,24 +61,26 @@ npx ccusage@latest
 
 ccusage reads local usage data from coding agent CLIs and turns it into daily, weekly, monthly, and session reports.
 
-| Source             | Focused command example  |
-| ------------------ | ------------------------ |
-| Claude Code        | `ccusage claude daily`   |
-| Codex              | `ccusage codex daily`    |
-| OpenCode           | `ccusage opencode daily` |
-| Amp                | `ccusage amp daily`      |
-| Droid              | `ccusage droid daily`    |
-| Codebuff           | `ccusage codebuff daily` |
-| Hermes Agent       | `ccusage hermes daily`   |
-| pi-agent           | `ccusage pi daily`       |
-| Goose              | `ccusage goose daily`    |
-| OpenClaw           | `ccusage openclaw daily` |
-| Kilo               | `ccusage kilo daily`     |
-| Kimi               | `ccusage kimi daily`     |
-| Qwen               | `ccusage qwen daily`     |
-| GitHub Copilot CLI | `ccusage copilot daily`  |
-| Gemini CLI         | `ccusage gemini daily`   |
-| Grok Build CLI     | `ccusage grok daily`     |
+| Source             | Focused command example     |
+| ------------------ | --------------------------- |
+| Claude Code        | `ccusage claude daily`      |
+| Codex              | `ccusage codex daily`       |
+| OpenCode           | `ccusage opencode daily`    |
+| Amp                | `ccusage amp daily`         |
+| Droid              | `ccusage droid daily`       |
+| Codebuff           | `ccusage codebuff daily`    |
+| Hermes Agent       | `ccusage hermes daily`      |
+| pi-agent           | `ccusage pi daily`          |
+| Goose              | `ccusage goose daily`       |
+| OpenClaw           | `ccusage openclaw daily`    |
+| Kilo               | `ccusage kilo daily`        |
+| Kimi               | `ccusage kimi daily`        |
+| Qwen               | `ccusage qwen daily`        |
+| GitHub Copilot CLI | `ccusage copilot daily`     |
+| Gemini CLI         | `ccusage gemini daily`      |
+| Antigravity        | `ccusage antigravity daily` |
+| Grok Build CLI     | `ccusage grok daily`        |
+| ZCode              | `ccusage zcode daily`       |
 
 Use `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session` to include every detected source in one report.
 
@@ -121,7 +123,6 @@ bunx ccusage statusline  # Claude Code status line for hooks (Beta)
 # Source-focused reports and options
 bunx ccusage claude daily --mode display
 bunx ccusage codex daily --speed fast
-bunx ccusage codex daily --by-source
 bunx ccusage opencode weekly
 bunx ccusage amp session
 bunx ccusage droid daily
@@ -134,7 +135,9 @@ bunx ccusage kimi daily
 bunx ccusage qwen daily
 bunx ccusage copilot daily
 bunx ccusage gemini daily
+bunx ccusage antigravity daily
 bunx ccusage grok daily
+bunx ccusage zcode daily
 bunx ccusage pi daily --pi-path /path/to/sessions
 bunx ccusage pi daily --pi-path /path/to/sessions,/archive/pi/sessions
 
@@ -142,7 +145,6 @@ bunx ccusage pi daily --pi-path /path/to/sessions,/archive/pi/sessions
 bunx ccusage daily --all
 bunx ccusage daily --sections daily,monthly,session --json
 bunx ccusage daily --by-agent --json
-bunx ccusage daily --by-source --json
 
 # Filters and options
 bunx ccusage daily --since 2026-04-25 --until 2026-05-16
@@ -168,7 +170,7 @@ bunx ccusage monthly --compact  # Compact monthly report
 - 📊 **Daily Report**: View token usage and costs aggregated by date
 - 📅 **Monthly Report**: View token usage and costs aggregated by month
 - 💬 **Session Report**: View usage grouped by conversation sessions
-- 🤖 **Unified CLI Reports**: View Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, and Grok Build CLI usage from one CLI
+- 🤖 **Unified CLI Reports**: View Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode usage from one CLI
 - ⏰ **5-Hour Blocks Report**: Track usage within Claude's billing windows with active block monitoring
 - 🚀 **Statusline Integration**: Compact usage display for Claude Code status bar hooks (Beta)
 - 🤖 **Model Tracking**: See which models are used across supported sources

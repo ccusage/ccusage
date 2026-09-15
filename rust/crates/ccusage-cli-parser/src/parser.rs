@@ -21,7 +21,6 @@ enum ControlArg {
 struct RootAllOptions {
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
-    by_source: bool,
     first_flag: Option<&'static str>,
 }
 
@@ -44,7 +43,6 @@ impl RootAllOptions {
             kind,
             sections: self.sections,
             by_agent: self.by_agent,
-            by_source: self.by_source,
             pi_path: None,
             open_claw_path: None,
             codex_speed: CodexSpeed::Auto,
@@ -320,6 +318,13 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::Gemini,
         ),
+        "antigravity" => parse_basic_agent_command(
+            parser,
+            shared,
+            "antigravity",
+            STANDARD_AGENT_REPORTS,
+            Command::Antigravity,
+        ),
         "kimi" => parse_basic_agent_command(
             parser,
             shared,
@@ -342,6 +347,13 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::Grok,
         ),
+        "zcode" => parse_basic_agent_command(
+            parser,
+            shared,
+            "zcode",
+            STANDARD_AGENT_REPORTS,
+            Command::ZCode,
+        ),
         _ => Err(format!("Unknown command '{command}'")),
     }
 }
@@ -354,12 +366,9 @@ fn parse_root_all_arg(
     parser: &mut ArgParser,
     options: &mut RootAllOptions,
 ) -> Result<bool, String> {
-    if let Some(flag) = parse_unified_report_arg(
-        parser,
-        &mut options.sections,
-        &mut options.by_agent,
-        &mut options.by_source,
-    )? {
+    if let Some(flag) =
+        parse_unified_report_arg(parser, &mut options.sections, &mut options.by_agent)?
+    {
         options.mark_used(flag);
         return Ok(true);
     }
@@ -370,7 +379,6 @@ fn parse_unified_report_arg(
     parser: &mut ArgParser,
     sections: &mut Option<Vec<AgentReportKind>>,
     by_agent: &mut bool,
-    by_source: &mut bool,
 ) -> Result<Option<&'static str>, String> {
     if matches!(parser.peek(), Some("--all")) {
         parser.next();
@@ -386,11 +394,6 @@ fn parse_unified_report_arg(
         *by_agent = true;
         return Ok(Some("--by-agent"));
     }
-    if matches!(parser.peek(), Some("--by-source")) {
-        parser.next();
-        *by_source = true;
-        return Ok(Some("--by-source"));
-    }
     Ok(None)
 }
 
@@ -403,10 +406,8 @@ fn parse_all_command(
 ) -> Result<Command, String> {
     let mut sections = initial_options.sections;
     let mut by_agent = initial_options.by_agent;
-    let mut by_source = initial_options.by_source;
     while parser.peek().is_some() {
-        if parse_unified_report_arg(parser, &mut sections, &mut by_agent, &mut by_source)?.is_some()
-        {
+        if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
             continue;
         }
         parse_shared_arg(parser, &mut shared)?;
@@ -416,7 +417,6 @@ fn parse_all_command(
         kind,
         sections,
         by_agent,
-        by_source,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -432,10 +432,8 @@ fn parse_top_level_session_command(
     let mut args = SessionArgs { shared, id: None };
     let mut sections = initial_options.sections;
     let mut by_agent = initial_options.by_agent;
-    let mut by_source = initial_options.by_source;
     while parser.peek().is_some() {
-        if parse_unified_report_arg(parser, &mut sections, &mut by_agent, &mut by_source)?.is_some()
-        {
+        if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
             continue;
         }
         if parse_shared_arg_for_command(parser, &mut args.shared)? {
@@ -454,9 +452,6 @@ fn parse_top_level_session_command(
                     .to_string(),
             );
         }
-        if by_source {
-            return Err("The --by-source option cannot be used with session --id.".to_string());
-        }
         return Ok(Command::Session(args));
     }
 
@@ -465,7 +460,6 @@ fn parse_top_level_session_command(
         kind: AgentReportKind::Session,
         sections,
         by_agent,
-        by_source,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -608,15 +602,13 @@ fn parse_codex_command(
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, "codex", STANDARD_AGENT_REPORTS)?;
     let mut codex_speed = CodexSpeed::Auto;
-    let mut by_source = false;
-    config.apply_agent_args(&mut codex_speed, Some(&mut by_source), None, None);
+    config.apply_agent_args(&mut codex_speed, None, None);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
             "--speed" => codex_speed = parse_codex_speed(&parser.value_for("--speed")?)?,
-            "--by-source" => by_source = true,
             flag => return Err(format!("Unknown codex option '{flag}'")),
         }
     }
@@ -625,7 +617,6 @@ fn parse_codex_command(
         kind,
         sections: None,
         by_agent: false,
-        by_source,
         pi_path: None,
         open_claw_path: None,
         codex_speed,
@@ -640,7 +631,7 @@ fn parse_pi_command(
     let kind = parse_agent_report_kind(parser, "pi", STANDARD_AGENT_REPORTS)?;
     let mut pi_path = None;
     let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, None, Some(&mut pi_path), None);
+    config.apply_agent_args(&mut codex_speed, Some(&mut pi_path), None);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -655,7 +646,6 @@ fn parse_pi_command(
         kind,
         sections: None,
         by_agent: false,
-        by_source: false,
         pi_path,
         open_claw_path: None,
         codex_speed,
@@ -670,7 +660,7 @@ fn parse_openclaw_command(
     let kind = parse_agent_report_kind(parser, "openclaw", STANDARD_AGENT_REPORTS)?;
     let mut open_claw_path = None;
     let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, None, None, Some(&mut open_claw_path));
+    config.apply_agent_args(&mut codex_speed, None, Some(&mut open_claw_path));
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
             continue;
@@ -685,7 +675,6 @@ fn parse_openclaw_command(
         kind,
         sections: None,
         by_agent: false,
-        by_source: false,
         pi_path: None,
         open_claw_path,
         codex_speed,
@@ -716,7 +705,6 @@ fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommand
         kind,
         sections: None,
         by_agent: false,
-        by_source: false,
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
@@ -755,7 +743,10 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
                 .parse()
                 .map_err(|_| "Invalid value for --debug-samples".to_string())?
         }
-        "-o" | "--order" => shared.order = parse_sort_order(&parser.value_for("--order")?)?,
+        "-o" | "--order" => {
+            shared.order = parse_sort_order(&parser.value_for("--order")?)?;
+            shared.order_explicit = true;
+        }
         "-b" | "--breakdown" => shared.breakdown = true,
         "-O" | "--offline" => shared.offline = true,
         "--no-offline" => shared.no_offline = true,
@@ -794,9 +785,11 @@ fn is_command(arg: &str) -> bool {
             | "kilo"
             | "copilot"
             | "gemini"
+            | "antigravity"
             | "kimi"
             | "qwen"
             | "grok"
+            | "zcode"
     )
 }
 
@@ -953,10 +946,12 @@ fn is_agent_command(command: &str) -> bool {
             | "kilo"
             | "copilot"
             | "gemini"
+            | "antigravity"
             | "kimi"
             | "qwen"
             | "openclaw"
             | "grok"
+            | "zcode"
     )
 }
 
@@ -969,7 +964,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "kimi" | "qwen" | "openclaw" | "grok" => {
+        | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
             matches!(report, "daily" | "monthly" | "session")
         }
         _ => false,
@@ -990,10 +985,12 @@ fn agent_display_name(agent: &str) -> &'static str {
         "kilo" => "Kilo",
         "copilot" => "GitHub Copilot CLI",
         "gemini" => "Gemini CLI",
+        "antigravity" => "Antigravity",
         "kimi" => "Kimi",
         "qwen" => "Qwen",
         "openclaw" => "OpenClaw",
         "grok" => "Grok",
+        "zcode" => "ZCode",
         _ => unreachable!("agent is prevalidated"),
     }
 }
@@ -1071,10 +1068,12 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
             | Command::Kilo(args)
             | Command::Copilot(args)
             | Command::Gemini(args)
+            | Command::Antigravity(args)
             | Command::Kimi(args)
             | Command::Qwen(args)
             | Command::OpenClaw(args)
-            | Command::Grok(args),
+            | Command::Grok(args)
+            | Command::ZCode(args),
         ) => (&args.shared, args.kind != AgentReportKind::Session),
     };
     shared.last?;

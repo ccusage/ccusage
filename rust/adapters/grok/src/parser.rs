@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage, cli::CostMode, format_date_tz, format_rfc3339_millis,
+    calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
     missing_pricing_model_for_candidates, total_usage_tokens,
 };
 use ccusage_adapter_common::jsonl;
@@ -280,7 +280,14 @@ pub(super) fn parse_session_files(
             let display_model = raw_model.clone();
             let cost_usd = cost_usd_from_ticks(model_usage.cost_usd_ticks);
             // Cost bills full output_tokens only; reasoning is never added to billable output.
-            let cost = calculate_grok_cost(&raw_model, usage_raw, cost_usd, mode, pricing);
+            let cost = calculate_grok_cost_at(
+                &raw_model,
+                usage_raw,
+                cost_usd,
+                Some(timestamp_ms),
+                mode,
+                pricing,
+            );
             let missing_pricing_model =
                 missing_grok_pricing(&raw_model, usage_raw, cost_usd, mode, pricing);
             let timestamp_text = format_rfc3339_millis(timestamp_ms);
@@ -447,10 +454,22 @@ fn dedupe_key(
     )
 }
 
+#[cfg(test)]
 fn calculate_grok_cost(
     raw_model: &str,
     usage: TokenUsageRaw,
     cost_usd: Option<f64>,
+    mode: CostMode,
+    pricing: &PricingMap,
+) -> f64 {
+    calculate_grok_cost_at(raw_model, usage, cost_usd, None, mode, pricing)
+}
+
+fn calculate_grok_cost_at(
+    raw_model: &str,
+    usage: TokenUsageRaw,
+    cost_usd: Option<f64>,
+    timestamp: Option<TimestampMs>,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> f64 {
@@ -467,10 +486,11 @@ fn calculate_grok_cost(
             let candidates = pricing_candidates(raw_model);
             for candidate in &candidates {
                 if pricing.find_exact(candidate).is_some() {
-                    return calculate_cost_for_usage(
+                    return calculate_cost_for_usage_at(
                         Some(candidate),
                         usage,
                         None,
+                        timestamp,
                         CostMode::Calculate,
                         Some(pricing),
                     );
@@ -478,10 +498,11 @@ fn calculate_grok_cost(
             }
             for candidate in &candidates {
                 if pricing.find(candidate).is_some() {
-                    return calculate_cost_for_usage(
+                    return calculate_cost_for_usage_at(
                         Some(candidate),
                         usage,
                         None,
+                        timestamp,
                         CostMode::Calculate,
                         Some(pricing),
                     );
