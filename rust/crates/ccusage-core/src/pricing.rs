@@ -4679,6 +4679,7 @@ mod tests {
         assert_eq!(pricing.find("gpt-5.5").unwrap().fast_multiplier, 2.5);
         assert_eq!(pricing.find("gpt-5.4").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.3-codex").unwrap().fast_multiplier, 2.0);
+        assert_eq!(pricing.find("gpt-6-astra").unwrap().fast_multiplier, 2.0);
     }
 
     #[test]
@@ -4887,6 +4888,11 @@ mod tests {
                     "input_cost_per_token": 0.00000175,
                     "output_cost_per_token": 0.000014,
                     "cache_read_input_token_cost": 0.000000175
+                },
+                "gpt-6-astra": {
+                    "input_cost_per_token": 0.000010,
+                    "output_cost_per_token": 0.000050,
+                    "cache_read_input_token_cost": 0.000001
                 }
             }"#,
         );
@@ -4895,6 +4901,7 @@ mod tests {
         assert_eq!(pricing.find("gpt-5.4").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.3-codex").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.2-codex").unwrap().fast_multiplier, 1.0);
+        assert_eq!(pricing.find("gpt-6-astra").unwrap().fast_multiplier, 2.0);
     }
 
     #[test]
