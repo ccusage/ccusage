@@ -10,7 +10,7 @@ use super::Cli;
 pub(crate) fn validate(cli: &Cli) -> Result<(), String> {
     match effective_timezone(cli) {
         Some(timezone) if !is_valid_timezone(timezone) => Err(format!(
-            "Invalid value for --timezone '{timezone}'. Expected an IANA timezone name such as UTC or America/New_York."
+            "Invalid value for --timezone '{timezone}'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
         )),
         _ => Ok(()),
     }
@@ -80,7 +80,7 @@ mod tests {
 
     fn rejection(timezone: &str) -> Result<(), String> {
         Err(format!(
-            "Invalid value for --timezone '{timezone}'. Expected an IANA timezone name such as UTC or America/New_York."
+            "Invalid value for --timezone '{timezone}'. Expected an IANA timezone name such as UTC or America/New_York, or 'local' for the system timezone."
         ))
     }
 
