@@ -53,10 +53,12 @@ reported instead of becoming empty or partial reports.
 - **Output and reasoning** - Total output is split into visible output and
   thinking/reasoning tokens.
 - **Model names** - Antigravity display names and known internal aliases are
-  normalized to pricing model IDs. For example, `Gemini 3 Pro` is reported as
-  `gemini-3-pro`.
+  normalized to stable model IDs. Effort variants remain visible; for example,
+  Gemini 3.8 Flash High is reported as `gemini-3.8-flash-high`.
 - **Costs** - `calculate` and `auto` use the embedded pricing catalog when a
-  matching model is available. Use `--offline` to avoid a pricing refresh.
+  matching model is available. Effort variants use their base model's pricing
+  when the catalog does not list a separate variant. Use `--offline` to avoid a
+  pricing refresh.
 
 Continuation rows inherit the most recently observed model in their database.
 Usage in generation metadata and step metadata is combined, including retry

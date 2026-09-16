@@ -816,10 +816,15 @@ fn model_name_from_id(model_id: u64) -> String {
         333 | 334 => "claude-4.5-sonnet".to_string(),
         340 | 341 => "claude-4.5-haiku".to_string(),
         342 => "model_openai_gpt_oss_120b_medium".to_string(),
-        1318 => "gemini-3.8-flash".to_string(),
-        1298..=1300 => "gemini-3.7-flash".to_string(),
-        1071..=1073 => "gemini-3.6-flash".to_string(),
-        1050 => "gemini-3.1-flash-lite".to_string(),
+        1318 => "gemini-3.8-flash-high".to_string(),
+        1319 => "gemini-3.8-flash-medium".to_string(),
+        1320 => "gemini-3.8-flash-low".to_string(),
+        1298 => "gemini-3.7-flash-high".to_string(),
+        1299 => "gemini-3.7-flash-medium".to_string(),
+        1300 => "gemini-3.7-flash-low".to_string(),
+        1071 => "gemini-3.6-flash-high".to_string(),
+        1072 => "gemini-3.6-flash-medium".to_string(),
+        1073 => "gemini-3.6-flash-low".to_string(),
         1_000.. => format!("model_placeholder_m{}", model_id - 1_000),
         _ => format!("antigravity-model-{model_id}"),
     }
@@ -831,6 +836,21 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         return None;
     }
     let lower = trimmed.to_ascii_lowercase();
+    let effort_variant = match lower.as_str() {
+        "gemini 3.8 flash (high)" => Some("gemini-3.8-flash-high"),
+        "gemini 3.8 flash (medium)" => Some("gemini-3.8-flash-medium"),
+        "gemini 3.8 flash (low)" => Some("gemini-3.8-flash-low"),
+        "gemini 3.7 flash (high)" => Some("gemini-3.7-flash-high"),
+        "gemini 3.7 flash (medium)" => Some("gemini-3.7-flash-medium"),
+        "gemini 3.7 flash (low)" => Some("gemini-3.7-flash-low"),
+        "gemini 3.6 flash (high)" => Some("gemini-3.6-flash-high"),
+        "gemini 3.6 flash (medium)" => Some("gemini-3.6-flash-medium"),
+        "gemini 3.6 flash (low)" => Some("gemini-3.6-flash-low"),
+        _ => None,
+    };
+    if let Some(model) = effort_variant {
+        return Some(model.to_string());
+    }
     let base = lower
         .find('(')
         .map_or(lower.as_str(), |index| lower[..index].trim());
@@ -847,14 +867,15 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         "gemini 2.0 pro" => "gemini-2.0-pro",
         "gemini 1.5 flash" => "gemini-1.5-flash",
         "gemini 1.5 pro" => "gemini-1.5-pro",
-        "model_placeholder_m318" => "gemini-3.8-flash",
-        "model_placeholder_m298" | "model_placeholder_m299" | "model_placeholder_m300" => {
-            "gemini-3.7-flash"
-        }
-        "model_placeholder_m71" | "model_placeholder_m72" | "model_placeholder_m73" => {
-            "gemini-3.6-flash"
-        }
-        "model_placeholder_m50" => "gemini-3.1-flash-lite",
+        "model_placeholder_m318" => "gemini-3.8-flash-high",
+        "model_placeholder_m319" => "gemini-3.8-flash-medium",
+        "model_placeholder_m320" => "gemini-3.8-flash-low",
+        "model_placeholder_m298" => "gemini-3.7-flash-high",
+        "model_placeholder_m299" => "gemini-3.7-flash-medium",
+        "model_placeholder_m300" => "gemini-3.7-flash-low",
+        "model_placeholder_m71" => "gemini-3.6-flash-high",
+        "model_placeholder_m72" => "gemini-3.6-flash-medium",
+        "model_placeholder_m73" => "gemini-3.6-flash-low",
         "model_placeholder_m26" => "claude-opus-4-6",
         "model_placeholder_m35" => "claude-sonnet-4-6",
         "model_placeholder_m36" | "model_placeholder_m37" | "model_placeholder_m16" => {
@@ -868,7 +889,6 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         "model_placeholder_m20" => "gemini-3.5-flash-medium",
         "model_openai_gpt_oss_120b_medium" => "gpt-oss-120b-medium",
         "gemini-pro-default" | "gemini-pro-agent" => "gemini-3.1-pro",
-        "gemini-3.7-flash-control" => "gemini-3.7-flash",
         "gemini-3-flash-agent"
         | "gemini-3-flash-agent-a"
         | "gemini-3-flash-agent-b"
@@ -1011,19 +1031,39 @@ fn missing_antigravity_pricing(
 }
 
 fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
-    let mut candidates = vec![model.to_string()];
-    if matches!(
+    let mut models = vec![model];
+    let pricing_alias = match model {
+        "gemini-3.8-flash-high" | "gemini-3.8-flash-medium" | "gemini-3.8-flash-low" => {
+            Some("gemini-3.8-flash")
+        }
+        "gemini-3.7-flash-high" | "gemini-3.7-flash-medium" | "gemini-3.7-flash-low" => {
+            Some("gemini-3.7-flash")
+        }
+        "gemini-3.6-flash-high" | "gemini-3.6-flash-medium" | "gemini-3.6-flash-low" => {
+            Some("gemini-3.6-flash")
+        }
+        _ => None,
+    };
+    models.extend(pricing_alias);
+
+    let use_google_prefixes = matches!(
         provider,
         Some(
             API_PROVIDER_GOOGLE_VERTEX | API_PROVIDER_GOOGLE_GEMINI | API_PROVIDER_GOOGLE_EVERGREEN
         )
-    ) {
-        candidates.extend(
-            PROVIDER_PREFIXES
-                .into_iter()
-                .map(|prefix| format!("{prefix}/{model}")),
-        );
-    }
+    );
+    let mut candidates = models
+        .into_iter()
+        .flat_map(|model| {
+            std::iter::once(model.to_string()).chain(
+                use_google_prefixes
+                    .then_some(PROVIDER_PREFIXES)
+                    .into_iter()
+                    .flatten()
+                    .map(move |prefix| format!("{prefix}/{model}")),
+            )
+        })
+        .collect::<Vec<_>>();
     let mut seen = std::collections::HashSet::new();
     candidates.retain(|candidate| seen.insert(candidate.clone()));
     candidates
@@ -1253,11 +1293,11 @@ pub(super) mod test_support {
 mod tests {
     use super::test_support::{UsageFixture, step_metadata_blob};
     use super::{
-        API_PROVIDER_GOOGLE_GEMINI, ProtoField, ProtoValue, field_bytes, field_bytes_all,
-        field_text, field_varint, missing_antigravity_pricing, model_candidates,
-        model_name_from_id, normalize_antigravity_model, parse_step_metadata,
+        API_PROVIDER_GOOGLE_GEMINI, ProtoField, ProtoValue, calculate_antigravity_cost,
+        field_bytes, field_bytes_all, field_text, field_varint, missing_antigravity_pricing,
+        model_candidates, model_name_from_id, normalize_antigravity_model, parse_step_metadata,
     };
-    use crate::{PricingMap, TokenUsageRaw, cli::CostMode};
+    use crate::{PricingMap, TimestampMs, TokenUsageRaw, cli::CostMode};
 
     #[test]
     fn protobuf_scalars_use_last_duplicate_and_messages_keep_merge_order() {
@@ -1376,56 +1416,137 @@ mod tests {
 
     #[test]
     fn normalizes_newer_gemini_model_placeholders_and_ids() {
-        assert_eq!(model_name_from_id(1318), "gemini-3.8-flash".to_string());
-        assert_eq!(model_name_from_id(1298), "gemini-3.7-flash".to_string());
-        assert_eq!(model_name_from_id(1299), "gemini-3.7-flash".to_string());
-        assert_eq!(model_name_from_id(1300), "gemini-3.7-flash".to_string());
-        assert_eq!(model_name_from_id(1071), "gemini-3.6-flash".to_string());
-        assert_eq!(model_name_from_id(1072), "gemini-3.6-flash".to_string());
-        assert_eq!(model_name_from_id(1073), "gemini-3.6-flash".to_string());
+        let cases = [
+            (
+                1318,
+                "model_placeholder_m318",
+                "Gemini 3.8 Flash (High)",
+                "gemini-3.8-flash-high",
+            ),
+            (
+                1319,
+                "model_placeholder_m319",
+                "Gemini 3.8 Flash (Medium)",
+                "gemini-3.8-flash-medium",
+            ),
+            (
+                1320,
+                "model_placeholder_m320",
+                "Gemini 3.8 Flash (Low)",
+                "gemini-3.8-flash-low",
+            ),
+            (
+                1298,
+                "model_placeholder_m298",
+                "Gemini 3.7 Flash (High)",
+                "gemini-3.7-flash-high",
+            ),
+            (
+                1299,
+                "model_placeholder_m299",
+                "Gemini 3.7 Flash (Medium)",
+                "gemini-3.7-flash-medium",
+            ),
+            (
+                1300,
+                "model_placeholder_m300",
+                "Gemini 3.7 Flash (Low)",
+                "gemini-3.7-flash-low",
+            ),
+            (
+                1071,
+                "model_placeholder_m71",
+                "Gemini 3.6 Flash (High)",
+                "gemini-3.6-flash-high",
+            ),
+            (
+                1072,
+                "model_placeholder_m72",
+                "Gemini 3.6 Flash (Medium)",
+                "gemini-3.6-flash-medium",
+            ),
+            (
+                1073,
+                "model_placeholder_m73",
+                "Gemini 3.6 Flash (Low)",
+                "gemini-3.6-flash-low",
+            ),
+        ];
+
+        for (model_id, placeholder, display_name, expected) in cases {
+            assert_eq!(model_name_from_id(model_id), expected);
+            assert_eq!(
+                normalize_antigravity_model(placeholder).as_deref(),
+                Some(expected)
+            );
+            assert_eq!(
+                normalize_antigravity_model(display_name).as_deref(),
+                Some(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn newer_gemini_effort_variants_fall_back_to_base_pricing() {
         assert_eq!(
-            model_name_from_id(1050),
-            "gemini-3.1-flash-lite".to_string()
+            model_candidates("gemini-3.8-flash-high", None),
+            vec![
+                "gemini-3.8-flash-high".to_string(),
+                "gemini-3.8-flash".to_string(),
+            ]
         );
         assert_eq!(
-            normalize_antigravity_model("model_placeholder_m318"),
-            Some("gemini-3.8-flash".to_string())
+            model_candidates("gemini-3.7-flash-medium", Some(API_PROVIDER_GOOGLE_GEMINI)),
+            vec![
+                "gemini-3.7-flash-medium".to_string(),
+                "google/gemini-3.7-flash-medium".to_string(),
+                "gemini/gemini-3.7-flash-medium".to_string(),
+                "vertex_ai/gemini-3.7-flash-medium".to_string(),
+                "openrouter/google/gemini-3.7-flash-medium".to_string(),
+                "gemini-3.7-flash".to_string(),
+                "google/gemini-3.7-flash".to_string(),
+                "gemini/gemini-3.7-flash".to_string(),
+                "vertex_ai/gemini-3.7-flash".to_string(),
+                "openrouter/google/gemini-3.7-flash".to_string(),
+            ]
         );
+    }
+
+    #[test]
+    fn provider_specific_variant_pricing_precedes_base_fallback() {
+        let mut pricing = PricingMap::default();
         assert_eq!(
-            normalize_antigravity_model("model_placeholder_m298"),
-            Some("gemini-3.7-flash".to_string())
+            pricing.load_json(
+                r#"{
+                    "google/gemini-3.7-flash-medium": {
+                        "input_cost_per_token": 2,
+                        "output_cost_per_token": 2
+                    },
+                    "gemini-3.7-flash": {
+                        "input_cost_per_token": 1,
+                        "output_cost_per_token": 1
+                    }
+                }"#
+            ),
+            2
         );
-        assert_eq!(
-            normalize_antigravity_model("model_placeholder_m299"),
-            Some("gemini-3.7-flash".to_string())
+
+        let cost = calculate_antigravity_cost(
+            "gemini-3.7-flash-medium",
+            Some(API_PROVIDER_GOOGLE_GEMINI),
+            TokenUsageRaw {
+                input_tokens: 1,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                speed: None,
+                cache_creation: None,
+            },
+            TimestampMs::UNIX_EPOCH,
+            CostMode::Calculate,
+            &pricing,
         );
-        assert_eq!(
-            normalize_antigravity_model("model_placeholder_m300"),
-            Some("gemini-3.7-flash".to_string())
-        );
-        assert_eq!(
-            normalize_antigravity_model("model_placeholder_m71"),
-            Some("gemini-3.6-flash".to_string())
-        );
-        assert_eq!(
-            normalize_antigravity_model("model_placeholder_m72"),
-            Some("gemini-3.6-flash".to_string())
-        );
-        assert_eq!(
-            normalize_antigravity_model("model_placeholder_m73"),
-            Some("gemini-3.6-flash".to_string())
-        );
-        assert_eq!(
-            normalize_antigravity_model("model_placeholder_m50"),
-            Some("gemini-3.1-flash-lite".to_string())
-        );
-        assert_eq!(
-            normalize_antigravity_model("gemini 3.8 flash"),
-            Some("gemini-3.8-flash".to_string())
-        );
-        assert_eq!(
-            normalize_antigravity_model("gemini-3.7-flash-control"),
-            Some("gemini-3.7-flash".to_string())
-        );
+
+        assert_eq!(cost, 2.0);
     }
 }
