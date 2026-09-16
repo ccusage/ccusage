@@ -1046,7 +1046,7 @@ fn missing_antigravity_pricing(
                 pricing.find(&candidate).is_none()
             }
         })
-        .then(|| model.to_string())
+        .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
 }
 
 fn find_exact_pricing_with_alias(pricing: &PricingMap, model: &str) -> Option<Pricing> {
@@ -1634,10 +1634,10 @@ mod tests {
 
     #[test]
     fn effort_variant_honors_explicit_model_alias() {
-        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
-            "gemini-3.8-flash-medium",
-            "custom-flash-medium",
-        )]);
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+            ("gemini-3.6-flash-medium", "custom-flash-medium"),
+            ("gemini-3.8-flash-low", "custom-unpriced-flash-low"),
+        ]);
         let mut pricing = PricingMap::default();
         assert_eq!(
             pricing.load_json(
@@ -1646,7 +1646,7 @@ mod tests {
                         "input_cost_per_token": 3,
                         "output_cost_per_token": 3
                     },
-                    "gemini-3.8-flash": {
+                    "gemini-3.6-flash": {
                         "input_cost_per_token": 1,
                         "output_cost_per_token": 1
                     }
@@ -1661,7 +1661,7 @@ mod tests {
 
         assert_eq!(
             calculate_antigravity_cost(
-                "gemini-3.8-flash-medium",
+                "gemini-3.6-flash-medium",
                 None,
                 usage,
                 TimestampMs::UNIX_EPOCH,
@@ -1672,13 +1672,24 @@ mod tests {
         );
         assert!(
             missing_antigravity_pricing(
-                "gemini-3.8-flash-medium",
+                "gemini-3.6-flash-medium",
                 None,
                 usage,
                 CostMode::Calculate,
                 &pricing,
             )
             .is_none()
+        );
+        assert_eq!(
+            missing_antigravity_pricing(
+                "gemini-3.8-flash-low",
+                None,
+                usage,
+                CostMode::Calculate,
+                &pricing,
+            )
+            .as_deref(),
+            Some("custom-unpriced-flash-low")
         );
     }
 
