@@ -187,7 +187,6 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         timestamp_text: current.timestamp_text.clone(),
         session_id: current.session_id.clone(),
         model: current.model.clone(),
-        kind: current.kind,
         input_tokens: current.input_tokens.saturating_sub(baseline.input_tokens),
         output_tokens: current.output_tokens.saturating_sub(baseline.output_tokens),
         cache_creation_tokens: current
