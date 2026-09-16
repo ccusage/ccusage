@@ -55,7 +55,7 @@ reported instead of becoming empty or partial reports.
 - **Model names** - Antigravity display names and known internal aliases are
   normalized to stable model IDs. Effort variants remain visible; for example,
   Gemini 3.8 Flash High is reported as `gemini-3.8-flash-high`.
-- **Costs** - `calculate` and `auto` use the embedded pricing catalog when a
+- **Costs** - `calculate` and `auto` use the pricing catalog when a
   matching model is available. Effort variants use their base model's pricing
   when the catalog does not list a separate variant. Use `--offline` to avoid a
   pricing refresh.
