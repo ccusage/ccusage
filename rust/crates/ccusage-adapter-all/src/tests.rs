@@ -419,6 +419,25 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
         "sections totals follow the invoked section only"
     );
 
+    let unpriced_session = AllRow {
+        period: "session-b".to_string(),
+        ..row.clone()
+    };
+    let sections = sections_report_json(
+        &[
+            (AgentReportKind::Daily, Vec::new()),
+            (AgentReportKind::Session, vec![unpriced_session]),
+        ],
+        AgentReportKind::Session,
+        false,
+    );
+    let sections = serde_json::to_value(&sections).unwrap();
+    assert_eq!(
+        sections["totals"]["unpricedModels"],
+        json!(["new-model"]),
+        "the invoked section's unpriced models reach totals"
+    );
+
     row.model_breakdowns.remove(0);
     let report = report_json(std::slice::from_ref(&row), AgentReportKind::Daily);
     assert!(report["totals"].get("unpricedModels").is_none());

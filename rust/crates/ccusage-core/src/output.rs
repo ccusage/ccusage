@@ -120,7 +120,8 @@ pub fn totals_json(rows: &[UsageSummary]) -> Value {
     value
 }
 
-/// Model names whose usage had no price and so contributed zero cost. Sorted
+/// Model names with at least one usage entry that had no price. A model can
+/// still show positive cost when other entries carried stored costs. Sorted
 /// and deduplicated so JSON consumers can compare runs.
 pub fn unpriced_models<'a>(
     breakdowns: impl IntoIterator<Item = &'a ModelBreakdown>,
