@@ -12,7 +12,7 @@ catalogs:
     vitepress-plugin-group-icons: ^1.7.6
     vitepress-plugin-llms: ^1.13.5
   types:
-    '@types/node': ^24.13.3
+    '@types/node': ^24.13.4
     '@types/react': ^19.2.18
 
 enablePrePostScripts: true
