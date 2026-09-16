@@ -129,9 +129,7 @@ pub fn print_table_for_agent(
             }
             table.push(row_values);
         }
-        if shared.breakdown {
-            push_breakdown_rows(&mut table, row, compact, shared);
-        }
+        push_breakdown_rows(&mut table, row, compact, shared);
     }
 
     let totals = totals_json(rows);
@@ -214,8 +212,20 @@ fn push_breakdown_rows(
     compact: bool,
     shared: &SharedArgs,
 ) {
-    for row in breakdown_rows(row, compact, shared) {
+    for row in enabled_breakdown_rows(row, compact, shared) {
         table.push(row);
+    }
+}
+
+fn enabled_breakdown_rows(
+    row: &UsageSummary,
+    compact: bool,
+    shared: &SharedArgs,
+) -> Vec<Vec<String>> {
+    if shared.breakdown {
+        breakdown_rows(row, compact, shared)
+    } else {
+        Vec::new()
     }
 }
 
@@ -338,11 +348,17 @@ mod tests {
             no_color: true,
             ..SharedArgs::default()
         };
-        let rows = breakdown_rows(&row, false, &shared);
+        let shared = SharedArgs {
+            breakdown: true,
+            ..shared
+        };
+        let rows = enabled_breakdown_rows(&row, false, &shared);
 
         assert_eq!(rows.len(), 2);
         assert!(rows[0][0].contains("└─ model-a"));
         assert!(rows[1][0].contains("└─ model-b"));
+        assert_eq!(rows[0][6], "103");
+        assert_eq!(rows[1][6], "69");
 
         let subtotal: u64 = row
             .model_breakdowns
@@ -362,6 +378,7 @@ mod tests {
         };
 
         assert!(!shared.breakdown);
+        assert!(enabled_breakdown_rows(&row, false, &shared).is_empty());
         assert_eq!(row.model_breakdowns.len(), 2);
     }
 }

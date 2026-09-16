@@ -462,8 +462,21 @@ fn push_codex_breakdown_rows(
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) {
-    for row in codex_breakdown_rows(group, pricing, speed, shared) {
+    for row in enabled_codex_breakdown_rows(group, pricing, speed, shared) {
         table.push(row);
+    }
+}
+
+fn enabled_codex_breakdown_rows(
+    group: &CodexGroup,
+    pricing: &PricingMap,
+    speed: CodexSpeedPolicy,
+    shared: &SharedArgs,
+) -> Vec<Vec<String>> {
+    if shared.breakdown {
+        codex_breakdown_rows(group, pricing, speed, shared)
+    } else {
+        Vec::new()
     }
 }
 
@@ -604,9 +617,7 @@ pub(super) fn print_table_from_groups(
         );
         totals.add(group, input_tokens, cost);
         table.push(row);
-        if shared.breakdown {
-            push_codex_breakdown_rows(&mut table, group, pricing, speed, shared);
-        }
+        push_codex_breakdown_rows(&mut table, group, pricing, speed, shared);
     }
     table.separator();
     table.push(codex_table_total_row(&totals, shared, shared.no_cost));
@@ -801,7 +812,7 @@ mod tests {
             no_color: true,
             ..SharedArgs::default()
         };
-        let rows = codex_breakdown_rows(
+        let rows = enabled_codex_breakdown_rows(
             &group,
             &PricingMap::default(),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
@@ -812,6 +823,10 @@ mod tests {
         assert!(rows.iter().all(|row| row[0].contains("└─")));
         assert!(rows[0][0].contains("gpt-5.3-codex") || rows[1][0].contains("gpt-5.3-codex"));
         assert!(rows[0][0].contains("gpt-5-mini") || rows[1][0].contains("gpt-5-mini"));
+        for (model, usage) in &group.models {
+            let rendered = rows.iter().find(|row| row[0].contains(model)).unwrap();
+            assert_eq!(rendered[7], format_number(usage.total_tokens));
+        }
 
         let input: u64 = group
             .models
@@ -841,8 +856,7 @@ mod tests {
 
     #[test]
     fn table_pushes_no_extra_rows_without_breakdown_flag() {
-        let mut group = breakdown_group();
-        group.models.clear();
+        let group = breakdown_group();
         let shared = SharedArgs {
             no_color: true,
             ..SharedArgs::default()
@@ -859,6 +873,15 @@ mod tests {
         );
 
         assert!(!shared.breakdown);
+        assert!(
+            enabled_codex_breakdown_rows(
+                &group,
+                &PricingMap::default(),
+                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+                &shared,
+            )
+            .is_empty()
+        );
         assert_eq!(row.len(), headers.len());
         assert_eq!(headers.len(), aligns.len());
     }
