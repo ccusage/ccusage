@@ -24,9 +24,9 @@ Session-state shutdown records are cumulative per canonical `(session, model)` p
 resumed sessions emit one shutdown per resume. The adapter reports each snapshot as interval
 usage: the first snapshot is kept as-is and each later snapshot subtracts its predecessor, so
 daily attribution follows the resume cadence while totals stay unchanged. The latest raw
-shutdown is still used for OpenTelemetry reconciliation. They are preferred for a matching pair when both sources contain it.
+shutdown visible through `--until` is still used for OpenTelemetry reconciliation. They are preferred for a matching pair when both sources contain it.
 Matching OpenTelemetry rows are suppressed only when their timestamps are at or before the latest
-canonical shutdown timestamp for that pair; rows emitted after that timestamp by a resumed session
+visible raw shutdown timestamp for that pair; rows emitted after that timestamp by a resumed session
 are retained. Other OpenTelemetry records remain available. Session-state `inputTokens` includes cache reads
 and writes, so the adapter reports the uncached remainder as input and keeps the cache buckets
 separate. Session-state reasoning tokens are already included in output tokens; OpenTelemetry
