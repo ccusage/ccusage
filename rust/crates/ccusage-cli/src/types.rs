@@ -42,6 +42,8 @@ pub struct SharedArgs {
     pub debug: bool,
     pub debug_samples: usize,
     pub order: SortOrder,
+    /// Whether the CLI or configuration supplied an order, rather than the default.
+    pub order_explicit: bool,
     pub breakdown: bool,
     pub offline: bool,
     pub no_offline: bool,

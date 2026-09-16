@@ -2,17 +2,16 @@
   "nodes": {
     "agent-skills": {
       "inputs": {
-        "home-manager": "home-manager",
         "nixpkgs": [
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1783839654,
-        "narHash": "sha256-rn5DkeQ9PBaJTZl9juBtPnVawyN4B83tyz1VpiinQFo=",
+        "lastModified": 1789145426,
+        "narHash": "sha256-Wf+7Qzt8+nz4TXPCbWnMjOAdzbVM6blW9J6JP+YhSy8=",
         "owner": "Kyure-A",
         "repo": "agent-skills-nix",
-        "rev": "8326df98cf494dc515db99affa9ea9d2bd6666b6",
+        "rev": "5133c874553c6c295654d8de4e3f62c95736b9c6",
         "type": "github"
       },
       "original": {
@@ -135,35 +134,14 @@
         "type": "github"
       }
     },
-    "home-manager": {
-      "inputs": {
-        "nixpkgs": [
-          "agent-skills",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1783222121,
-        "narHash": "sha256-E/ElL373TO8lQ2aMvYyzN+k4xkVaUGoRqoa8AtM71tI=",
-        "owner": "nix-community",
-        "repo": "home-manager",
-        "rev": "a1645f40777620c4bd2b6d854b290c2fc354a266",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-community",
-        "repo": "home-manager",
-        "type": "github"
-      }
-    },
     "litellm": {
       "flake": false,
       "locked": {
-        "lastModified": 1788390827,
-        "narHash": "sha256-FMZoo5TwAOXwZzNt7Uy9EFLfIDfu8qOTTr5KvMunf3g=",
+        "lastModified": 1789518982,
+        "narHash": "sha256-fa1+s5HNTN94AIBYVGQJRJVFAVHptSHA+B2/qlbjBeg=",
         "owner": "BerriAI",
         "repo": "litellm",
-        "rev": "3c6b0705b237460dfd052d9b8799e84b3ebd01b2",
+        "rev": "878716f80669299a25c8ac06ee41c6b46aa2f73e",
         "type": "github"
       },
       "original": {
@@ -175,11 +153,11 @@
     "models-dev": {
       "flake": false,
       "locked": {
-        "lastModified": 1788427802,
-        "narHash": "sha256-WaAOEuuVBWPhAyGAuQ1q++q1osiHaWSizCxGcgMVzkw=",
+        "lastModified": 1788770287,
+        "narHash": "sha256-bwdSwNOqtju0NLHWMrbsD0uZtBOvzkMbXcgjE2FvE1c=",
         "owner": "anomalyco",
         "repo": "models.dev",
-        "rev": "30c484cc0715ef6eb90c56497f9e5b8b49ff2a3a",
+        "rev": "872d94d546231e442ecb5b353acda85ce88aeabd",
         "type": "github"
       },
       "original": {

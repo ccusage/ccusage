@@ -16,9 +16,14 @@ use ccusage_adapter_common::jsonl;
 /// records and assistant `message` records share this struct so the stateful
 /// model/provider tracking can read either shape in order.
 #[derive(Debug, Default, Deserialize)]
-struct OpenClawLine {
+pub(super) struct OpenClawLine {
     #[serde(default)]
     r#type: Option<String>,
+    // Stable transcript event id. SQLite-era rows always carry one (the insert
+    // path generates it when the caller omits it); JSONL-era records predate
+    // it, so it stays optional.
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    id: Option<String>,
     #[serde(rename = "customType", default)]
     custom_type: Option<String>,
     #[serde(default, deserialize_with = "deserialize_model_source")]
@@ -78,6 +83,12 @@ struct OpenClawModelSource {
 }
 
 /// Assistant message payload carrying token usage and per-message metadata.
+///
+/// This is also the shape OpenClaw persists inside SQLite `transcript_events`
+/// rows: each row's `event_json` is a transcript record whose nested `message`
+/// carries `role`, `usage`, and the model/provider labels. The SQLite reader in
+/// `sqlite.rs` reuses this struct by parsing `event_json` into an
+/// [`OpenClawLine`], so changes here apply to both the JSONL and SQLite paths.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawMessage {
     #[serde(default)]
@@ -146,7 +157,7 @@ struct OpenClawCost {
 }
 
 #[derive(Debug, Clone)]
-struct OpenClawEntry {
+pub(super) struct OpenClawEntry {
     timestamp: TimestampMs,
     timestamp_text: String,
     session_id: String,
@@ -180,22 +191,11 @@ pub(super) fn parse_session_file(
     let mut entries = Vec::new();
     for record in jsonl::records::<OpenClawLine>(&content, Some(&prefilter)) {
         if is_model_change(&record) {
-            let (source_model_id, source_model, source_provider) = match record.data.as_ref() {
-                Some(source) => (
-                    source.model_id.clone(),
-                    source.model.clone(),
-                    source.provider.clone(),
-                ),
-                None => (
-                    record.model_id.clone(),
-                    record.model.clone(),
-                    record.provider.clone(),
-                ),
-            };
-            if let Some(model) = source_model_id.or(source_model) {
+            let (model, provider) = model_change_source(&record);
+            if let Some(model) = model {
                 current_model = Some(model);
             }
-            if let Some(provider) = source_provider {
+            if let Some(provider) = provider {
                 current_provider = Some(provider);
             }
             continue;
@@ -213,12 +213,31 @@ pub(super) fn parse_session_file(
     Ok(entries)
 }
 
-fn is_model_change(record: &OpenClawLine) -> bool {
+pub(super) fn is_model_change(record: &OpenClawLine) -> bool {
     if record.r#type.as_deref() == Some("model_change") {
         return true;
     }
     record.r#type.as_deref() == Some("custom")
         && record.custom_type.as_deref() == Some("model-snapshot")
+}
+
+/// Model/provider carried by a `model_change`/`model-snapshot` record, either
+/// at the root or nested under its `data` key. Shared by the JSONL file reader
+/// and the SQLite transcript reader so both track the active model identically.
+pub(super) fn model_change_source(record: &OpenClawLine) -> (Option<String>, Option<String>) {
+    let (source_model_id, source_model, source_provider) = match record.data.as_ref() {
+        Some(source) => (
+            source.model_id.clone(),
+            source.model.clone(),
+            source.provider.clone(),
+        ),
+        None => (
+            record.model_id.clone(),
+            record.model.clone(),
+            record.provider.clone(),
+        ),
+    };
+    (source_model_id.or(source_model), source_provider)
 }
 
 fn parse_message_entry(
@@ -228,6 +247,30 @@ fn parse_message_entry(
     current_provider: Option<&str>,
     fallback_timestamp: TimestampMs,
 ) -> Option<OpenClawEntry> {
+    parse_transcript_message(
+        record,
+        session_id,
+        current_model,
+        current_provider,
+        fallback_timestamp,
+    )
+    .map(|(entry, _)| entry)
+}
+
+/// Parse one transcript record into usage plus its stable identity.
+///
+/// The identity is the event `id` when present; JSONL-era records predate
+/// stable ids, so those return `None` and the loader falls back to its
+/// content-based entry id. SQLite-era rows always carry an `id` (the insert
+/// path generates one when the caller omits it), which the loader uses to
+/// prefer SQLite rows over migrated JSONL duplicates of the same event.
+pub(super) fn parse_transcript_message(
+    record: &OpenClawLine,
+    session_id: &str,
+    current_model: Option<&str>,
+    current_provider: Option<&str>,
+    fallback_timestamp: TimestampMs,
+) -> Option<(OpenClawEntry, Option<String>)> {
     if record.r#type.as_deref() != Some("message") {
         return None;
     }
@@ -266,7 +309,7 @@ fn parse_message_entry(
         .provider
         .clone()
         .or_else(|| current_provider.map(str::to_string));
-    Some(OpenClawEntry {
+    let entry = OpenClawEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
         session_id: session_id.to_string(),
@@ -279,7 +322,13 @@ fn parse_message_entry(
         cache_read_tokens: raw_usage.cache_read_input_tokens,
         total_tokens,
         cost: usage.cost.as_ref().and_then(|cost| cost.total),
-    })
+    };
+    let message_id = transcript_event_id(record);
+    Some((entry, message_id))
+}
+
+fn transcript_event_id(record: &OpenClawLine) -> Option<String> {
+    record.id.clone().filter(|id| !id.trim().is_empty())
 }
 
 fn openclaw_entry_to_loaded(
@@ -287,6 +336,26 @@ fn openclaw_entry_to_loaded(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
+) -> LoadedEntry {
+    openclaw_entry_to_loaded_inner(entry, tz, mode, pricing, None)
+}
+
+pub(super) fn sqlite_entry_to_loaded(
+    entry: OpenClawEntry,
+    message_id: Option<String>,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> LoadedEntry {
+    openclaw_entry_to_loaded_inner(entry, tz, mode, pricing, message_id)
+}
+
+fn openclaw_entry_to_loaded_inner(
+    entry: OpenClawEntry,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    message_id: Option<String>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: entry.input_tokens,
@@ -303,7 +372,7 @@ fn openclaw_entry_to_loaded(
         message: UsageMessage {
             usage,
             model: Some(entry.model.clone()),
-            id: None,
+            id: message_id,
         },
         cost_usd: entry.cost,
         request_id: None,
@@ -351,9 +420,24 @@ fn openclaw_entry_to_loaded(
 fn timestamp_from_value(value: Option<&Value>) -> Option<TimestampMs> {
     let value = value?;
     if let Some(raw) = value.as_i64() {
-        return Some(TimestampMs::from_millis(raw));
+        return timestamp_from_millis(raw);
+    }
+    if let Some(raw) = value.as_u64() {
+        return timestamp_from_millis(i64::try_from(raw).ok()?);
+    }
+    if let Some(raw) = value.as_f64() {
+        return timestamp_from_millis(raw.trunc() as i64);
     }
     crate::parse_ts_timestamp(value.as_str()?)
+}
+
+/// OpenClaw writes `created_at` and message timestamps as Unix milliseconds
+/// (`readEventTimestamp` falls back to `Date.now()`), so accept any finite
+/// non-negative value here. Non-finite, negative, or overflowing inputs return
+/// `None` and let the caller fall back to the file mtime, matching the JSONL
+/// path.
+fn timestamp_from_millis(raw: i64) -> Option<TimestampMs> {
+    (raw >= 0).then(|| TimestampMs::from_millis(raw))
 }
 
 fn extract_session_id(path: &Path) -> String {
@@ -383,6 +467,14 @@ fn file_modified_timestamp(path: &Path) -> TimestampMs {
 }
 
 pub(super) fn entry_id(entry: &LoadedEntry) -> String {
+    format!("{}:{}", migration_id(entry), entry.cost)
+}
+
+/// Identity shared by a legacy JSONL event and its migrated SQLite copy.
+///
+/// SQLite can carry a corrected provider-billed cost, so cost must not prevent
+/// the migrated copy from replacing the legacy event.
+pub(super) fn migration_id(entry: &LoadedEntry) -> String {
     let usage = entry.data.message.usage;
     [
         "openclaw".to_string(),
@@ -394,7 +486,6 @@ pub(super) fn entry_id(entry: &LoadedEntry) -> String {
         usage.cache_creation_input_tokens.to_string(),
         usage.cache_read_input_tokens.to_string(),
         entry.extra_total_tokens.to_string(),
-        entry.cost.to_string(),
     ]
     .join(":")
 }

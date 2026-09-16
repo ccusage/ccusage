@@ -122,7 +122,7 @@ fn is_windows_users_path(project: &str) -> bool {
         || project.starts_with("\\Users\\")
 }
 
-pub fn short_model_name(model: &str) -> String {
+pub(crate) fn short_model_name(model: &str) -> String {
     let model = model
         .strip_prefix("anthropic/claude-")
         .or_else(|| model.strip_prefix("claude-"))
@@ -132,6 +132,12 @@ pub fn short_model_name(model: &str) -> String {
         return parts[..parts.len() - 1].join("-");
     }
     model.to_string()
+}
+
+/// Shared per-model breakdown label so every `--breakdown` table renders the
+/// same `└─ model` sub-row shape.
+pub fn format_breakdown_model_label(model: &str) -> String {
+    format!("  └─ {}", short_model_name(model))
 }
 
 #[cfg(test)]

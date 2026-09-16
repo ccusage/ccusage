@@ -12,9 +12,10 @@ use serde_json::{Value, json};
 use crate::{
     Align, Color, ModelBreakdown, Result, SimpleTable, UsageSummary,
     cli::{AgentReportKind, SharedArgs, SortOrder},
-    cli_error, color, format_currency, format_models_multiline, format_number, json_float,
+    cli_error, color, format_breakdown_model_label, format_currency, format_models_multiline,
+    format_number, json_float,
     output::strip_cost_json,
-    print_box_title, short_model_name, should_use_compact_layout,
+    print_box_title, should_use_compact_layout,
 };
 
 use super::types::AllRow;
@@ -249,9 +250,9 @@ pub(super) fn print_table(
     }
     table.separator();
     let totals = totals_json(rows);
-    let table_total_tokens = rows
+    let total_tokens = rows
         .iter()
-        .map(table_total_tokens)
+        .map(|row| row.total_tokens)
         .fold(0, u64::saturating_add);
     if compact {
         let mut total_row = vec![
@@ -308,7 +309,7 @@ pub(super) fn print_table(
                 format_number(crate::json_value_u64(totals.get("cacheReadTokens"))),
                 Color::Yellow,
             ),
-            color(shared, format_number(table_total_tokens), Color::Yellow),
+            color(shared, format_number(total_tokens), Color::Yellow),
             color(
                 shared,
                 format_currency(
@@ -348,7 +349,7 @@ fn all_rows_as_usage_summaries(rows: &[AllRow]) -> Vec<UsageSummary> {
             output_tokens: row.output_tokens,
             cache_creation_tokens: row.cache_creation_tokens,
             cache_read_tokens: row.cache_read_tokens,
-            extra_total_tokens: row.total_tokens.saturating_sub(table_total_tokens(row)),
+            extra_total_tokens: row.total_tokens.saturating_sub(component_total_tokens(row)),
             total_cost: row.total_cost,
             credits: None,
             message_count: None,
@@ -450,7 +451,7 @@ pub(super) fn all_table_row(
         format_number(row.output_tokens),
         format_number(row.cache_creation_tokens),
         format_number(row.cache_read_tokens),
-        format_number(table_total_tokens(row)),
+        format_number(row.total_tokens),
         format_currency(row.total_cost),
     ];
     if no_cost {
@@ -459,7 +460,7 @@ pub(super) fn all_table_row(
     values
 }
 
-fn table_total_tokens(row: &AllRow) -> u64 {
+fn component_total_tokens(row: &AllRow) -> u64 {
     row.input_tokens
         .saturating_add(row.output_tokens)
         .saturating_add(row.cache_creation_tokens)
@@ -473,14 +474,10 @@ fn push_model_breakdown_rows(
     shared: &SharedArgs,
 ) {
     for b in breakdowns {
-        let total = b
-            .input_tokens
-            .saturating_add(b.output_tokens)
-            .saturating_add(b.cache_creation_tokens)
-            .saturating_add(b.cache_read_tokens);
+        let total = b.total_tokens();
         let model = color(
             shared,
-            format!("- {}", short_model_name(&b.model_name)),
+            format_breakdown_model_label(&b.model_name),
             Color::Grey,
         );
         if compact {

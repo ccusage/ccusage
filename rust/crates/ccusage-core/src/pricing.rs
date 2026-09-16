@@ -933,12 +933,18 @@ impl FastMultiplierOverrides {
         if let Some(multiplier) = pricing_alias(model).and_then(|alias| self.exact.get(alias)) {
             return Some(*multiplier);
         }
-        let normalized = model.replace(['.', '@'], "-");
-        normalized.split(['/', ':']).find_map(|part| {
-            self.normalized_prefix
-                .iter()
-                .find_map(|(base, multiplier)| {
-                    matches_model_suffix(part, base).then_some(*multiplier)
+        model.split(['/', ':']).find_map(|part| {
+            self.exact
+                .get(part)
+                .copied()
+                .or_else(|| pricing_alias(part).and_then(|alias| self.exact.get(alias).copied()))
+                .or_else(|| {
+                    let normalized = part.replace(['.', '@'], "-");
+                    self.normalized_prefix
+                        .iter()
+                        .find_map(|(base, multiplier)| {
+                            matches_model_suffix(&normalized, base).then_some(*multiplier)
+                        })
                 })
         })
     }
@@ -1059,6 +1065,7 @@ impl PricingMap {
 
     fn load_models_dev_json_missing(&mut self, json: &str) -> Option<usize> {
         let raw = parse_models_dev_json(json)?;
+        let fast_multiplier_overrides = FastMultiplierOverrides::load();
         Some(match raw {
             ModelsDevJson::Providers(providers) => {
                 let rules = models_dev_catalog_rules();
@@ -1097,6 +1104,7 @@ impl PricingMap {
                             &provider_id,
                             trust,
                             true,
+                            &fast_multiplier_overrides,
                             &mut claims,
                         )
                     })
@@ -1108,7 +1116,14 @@ impl PricingMap {
                 // verdicts as fields rather than leaving them to be rederived.
                 // The flat snapshot has one implicit source, so any constant id
                 // works: ties inside it are settled by the source keys.
-                self.load_models_dev_models(models, "", MODELS_DEV_TRUST_OWNER, false, &mut claims)
+                self.load_models_dev_models(
+                    models,
+                    "",
+                    MODELS_DEV_TRUST_OWNER,
+                    false,
+                    &fast_multiplier_overrides,
+                    &mut claims,
+                )
             }
         })
     }
@@ -1134,6 +1149,7 @@ impl PricingMap {
         provider_id: &str,
         trust: u8,
         derive_exact_only: bool,
+        fast_multiplier_overrides: &FastMultiplierOverrides,
         claims: &mut FxHashMap<String, ModelsDevClaimSlot>,
     ) -> usize {
         let rules = models_dev_catalog_rules();
@@ -1242,7 +1258,9 @@ impl PricingMap {
                     cache_create_above_200k: long_context.and_then(|rates| rates.cache_create),
                     cache_read_above_200k: long_context.and_then(|rates| rates.cache_read),
                     long_context_threshold: long_context.map(|rates| rates.threshold),
-                    fast_multiplier: 1.0,
+                    fast_multiplier: fast_multiplier_overrides
+                        .multiplier_for(&model_id)
+                        .unwrap_or(1.0),
                 },
             );
             if exact_only {
@@ -3565,6 +3583,34 @@ mod tests {
     }
 
     #[test]
+    fn applies_fast_multiplier_override_to_models_dev_fallback() {
+        let mut pricing = PricingMap::default();
+        let models_dev_json = r#"{
+            "openai": {
+                "id": "openai",
+                "models": {
+                    "gpt-6-astra": {
+                        "id": "gpt-6-astra",
+                        "cost": {
+                            "input": 10.0,
+                            "output": 50.0
+                        }
+                    }
+                }
+            }
+        }"#;
+
+        assert_eq!(
+            pricing.load_models_dev_json_missing(models_dev_json),
+            Some(1)
+        );
+        assert_eq!(
+            pricing.find_exact("gpt-6-astra").unwrap().fast_multiplier,
+            2.0
+        );
+    }
+
+    #[test]
     fn live_models_dev_pricing_prefers_the_authoring_catalog_over_resellers() {
         // The same model id appears in every catalog that serves it, and the
         // first one loaded keeps it. Reseller rates are their own, so loading a
@@ -4234,6 +4280,27 @@ mod tests {
     }
 
     #[test]
+    fn applies_fast_multiplier_to_qualified_flat_models_dev_model() {
+        let mut pricing = PricingMap::default();
+        let models_dev_json = r#"{
+                "openai/gpt-6-astra": {
+                    "cost": {
+                        "input": 10.0,
+                        "output": 50.0
+                    }
+                }
+            }"#;
+
+        assert_eq!(
+            pricing.load_models_dev_json_missing(models_dev_json),
+            Some(1)
+        );
+
+        let model = pricing.find_exact("openai/gpt-6-astra").unwrap();
+        assert_eq!(model.fast_multiplier, 2.0);
+    }
+
+    #[test]
     fn embedded_models_dev_snapshot_is_parseable() {
         let mut map = PricingMap::default();
         assert!(
@@ -4679,6 +4746,7 @@ mod tests {
         assert_eq!(pricing.find("gpt-5.5").unwrap().fast_multiplier, 2.5);
         assert_eq!(pricing.find("gpt-5.4").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.3-codex").unwrap().fast_multiplier, 2.0);
+        assert_eq!(pricing.find("gpt-6-astra").unwrap().fast_multiplier, 2.0);
     }
 
     #[test]
@@ -4887,6 +4955,11 @@ mod tests {
                     "input_cost_per_token": 0.00000175,
                     "output_cost_per_token": 0.000014,
                     "cache_read_input_token_cost": 0.000000175
+                },
+                "gpt-6-astra": {
+                    "input_cost_per_token": 0.000010,
+                    "output_cost_per_token": 0.000050,
+                    "cache_read_input_token_cost": 0.000001
                 }
             }"#,
         );
@@ -4895,6 +4968,7 @@ mod tests {
         assert_eq!(pricing.find("gpt-5.4").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.3-codex").unwrap().fast_multiplier, 2.0);
         assert_eq!(pricing.find("gpt-5.2-codex").unwrap().fast_multiplier, 1.0);
+        assert_eq!(pricing.find("gpt-6-astra").unwrap().fast_multiplier, 2.0);
     }
 
     #[test]

@@ -290,8 +290,20 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
     (year as i32, month as u32, day as u32)
 }
 
+/// `--timezone` and a config `timezone` are checked with this before use, so an
+/// unknown name is rejected up front instead of silently falling back to the
+/// local zone, which can group usage under the wrong date. `local` is the
+/// documented way to ask for the system timezone and keeps that fallback.
+pub fn is_valid_timezone(value: &str) -> bool {
+    matches!(value, "local" | "UTC") || JiffTimeZone::get(value).is_ok()
+}
+
 pub fn parse_tz(timezone: Option<&str>) -> Option<JiffTimeZone> {
-    timezone.and_then(|value| JiffTimeZone::get(value).ok())
+    match timezone? {
+        "local" => None,
+        "UTC" => Some(JiffTimeZone::UTC),
+        value => JiffTimeZone::get(value).ok(),
+    }
 }
 
 pub fn format_date(timestamp: TimestampMs, timezone: Option<&str>) -> String {
@@ -383,11 +395,21 @@ pub fn am_pm(hour: u32) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date, parse_tz,
+        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, is_valid_timezone,
+        parse_compact_date, parse_tz,
     };
 
     // 2026-01-02 00:00:00 UTC
     const JAN_2_UTC: i64 = 1_767_312_000_000;
+
+    #[test]
+    fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {
+        assert!(is_valid_timezone("UTC"));
+        assert!(is_valid_timezone("local"));
+        assert!(!is_valid_timezone("Not/AZone"));
+        assert!(parse_tz(Some("UTC")).is_some());
+        assert!(parse_tz(Some("local")).is_none());
+    }
 
     #[test]
     fn parses_full_compact_dates_only() {

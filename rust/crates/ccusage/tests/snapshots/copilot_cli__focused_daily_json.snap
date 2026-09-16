@@ -6,27 +6,50 @@ Daily JSON
 {
   "daily": [
     {
-      "cacheCreationTokens": 30,
-      "cacheReadTokens": 20,
-      "date": "2026-01-03",
-      "inputTokens": 163,
-      "messageCount": 4,
+      "cacheCreationTokens": 20,
+      "cacheReadTokens": 10,
+      "date": "2026-01-02",
+      "inputTokens": 70,
+      "messageCount": 1,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 30,
-          "cacheReadTokens": 20,
-          "cost": 0.0033625,
-          "inputTokens": 163,
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 10,
+          "cost": 0.00173,
+          "inputTokens": 70,
           "modelName": "claude-opus-4.6",
-          "outputTokens": 94
+          "outputTokens": 50
         }
       ],
       "modelsUsed": [
         "claude-opus-4.6"
       ],
-      "outputTokens": 94,
-      "totalCost": 0.0033625,
-      "totalTokens": 307
+      "outputTokens": 50,
+      "totalCost": 0.00173,
+      "totalTokens": 150
+    },
+    {
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 10,
+      "date": "2026-01-03",
+      "inputTokens": 93,
+      "messageCount": 3,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 10,
+          "cacheReadTokens": 10,
+          "cost": 0.0016325,
+          "inputTokens": 93,
+          "modelName": "claude-opus-4.6",
+          "outputTokens": 44
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4.6"
+      ],
+      "outputTokens": 44,
+      "totalCost": 0.0016325,
+      "totalTokens": 157
     },
     {
       "cacheCreationTokens": 15,

@@ -39,7 +39,8 @@ pub use output::{
 };
 pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
 pub(crate) use project_names::parse_project_aliases;
-pub use project_names::{format_project_name, short_model_name};
+pub(crate) use project_names::short_model_name;
+pub use project_names::{format_breakdown_model_label, format_project_name};
 pub use summary::{
     BucketKind, SessionAccumulator, filter_and_sort_summaries, sort_summaries, summarize_by_key,
     summarize_summaries_by_bucket, week_start,

@@ -5,6 +5,7 @@ mod loader;
 mod parser;
 mod paths;
 mod report;
+mod sqlite;
 
 use crate::{
     Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries, wants_json,

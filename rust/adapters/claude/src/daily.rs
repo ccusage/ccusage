@@ -20,7 +20,7 @@ use crate::{
 
 use super::{
     advisor_usages_from_line, chunk_file_indexes_by_size, daily_usage_dedupe_hash,
-    has_unsupported_null_field, is_semver_prefix,
+    deserialize_usage_line, is_semver_prefix,
     paths::{claude_paths, extract_project, usage_files},
     sidechain_replay_dedupe_hash,
 };
@@ -264,10 +264,7 @@ fn read_daily_usage_file(
         if usage_marker.find(line).is_none() {
             continue;
         }
-        if has_unsupported_null_field(line) {
-            continue;
-        }
-        let Ok(data) = serde_json::from_slice::<DailyUsageLine>(line) else {
+        let Some(data) = deserialize_usage_line::<DailyUsageLine>(line) else {
             continue;
         };
         let data = data.into_entry();

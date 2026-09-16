@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{CopilotUsageEntry, CopilotUsageKind, parse_otel_file, parse_session_state_file},
+    parser::{CopilotUsageEntry, parse_otel_file, parse_session_state_file},
     paths::{CopilotSourceKind, paths},
 };
 use crate::{
@@ -105,54 +105,60 @@ struct SessionStateReconciliation {
     shutdown_entries: Vec<CopilotUsageEntry>,
 }
 
-// Session-state usage is cumulative, so a range needs the latest visible
-// snapshot and the latest snapshot before its lower bound as a subtraction baseline.
+// Session-state usage is cumulative per `(session, model)`, so resumed sessions
+// emit one shutdown per resume. Each snapshot is turned into interval usage:
+// the first snapshot is kept as-is and every later snapshot subtracts its
+// predecessor, keeping daily attribution while preserving the total.
 fn reconcile_session_state_entries(
     entries: Vec<CopilotUsageEntry>,
     since_millis: Option<i64>,
     until_millis: Option<i64>,
 ) -> SessionStateReconciliation {
     let entries = deduplicate_session_entries(entries);
-    let mut latest_by_key = HashMap::<(String, String), usize>::new();
-    let mut baseline_by_key = HashMap::<(String, String), usize>::new();
+    let mut grouped = HashMap::<(String, String), Vec<usize>>::new();
     for (index, entry) in entries.iter().enumerate() {
-        let key = (entry.session_id.clone(), entry.model.clone());
-        if until_millis.is_none_or(|end| entry.timestamp.as_millis() < end)
-            && latest_by_key
-                .get(&key)
-                .is_none_or(|previous| entries[*previous].timestamp <= entry.timestamp)
-        {
-            latest_by_key.insert(key, index);
-        }
-        let key = (entry.session_id.clone(), entry.model.clone());
-        if since_millis.is_some_and(|start| entry.timestamp.as_millis() < start)
-            && baseline_by_key
-                .get(&key)
-                .is_none_or(|previous| entries[*previous].timestamp <= entry.timestamp)
-        {
-            baseline_by_key.insert(key, index);
+        grouped
+            .entry((entry.session_id.clone(), entry.model.clone()))
+            .or_default()
+            .push(index);
+    }
+    let mut interval_indices = Vec::new();
+    let mut shutdown_entries = Vec::new();
+    // Sort keys for deterministic output across HashMap iteration.
+    let mut keys = grouped.keys().cloned().collect::<Vec<_>>();
+    keys.sort();
+    for key in keys {
+        let mut sorted = grouped.remove(&key).unwrap_or_default();
+        sorted.sort_by_key(|index| (entries[*index].timestamp, *index));
+        let latest_visible = sorted.iter().rposition(|index| {
+            until_millis.is_none_or(|end| entries[*index].timestamp.as_millis() < end)
+        });
+        let Some(latest_pos) = latest_visible else {
+            continue;
+        };
+        shutdown_entries.push(entries[sorted[latest_pos]].clone());
+        let mut previous: Option<&CopilotUsageEntry> = None;
+        for position in 0..=latest_pos {
+            let current = &entries[sorted[position]];
+            if since_millis.is_some_and(|start| current.timestamp.as_millis() < start) {
+                previous = Some(current);
+                continue;
+            }
+            let reconciled = previous.map_or_else(
+                || current.clone(),
+                |baseline| subtract_usage(current, baseline),
+            );
+            previous = Some(current);
+            if has_usage(&reconciled) {
+                interval_indices.push(reconciled);
+            }
         }
     }
-    let mut latest_indices = latest_by_key.into_values().collect::<Vec<_>>();
-    latest_indices.sort_unstable();
-    let shutdown_entries = latest_indices
-        .iter()
-        .map(|index| entries[*index].clone())
-        .collect();
-    let entries = latest_indices
-        .into_iter()
-        .filter_map(|index| {
-            let entry = &entries[index];
-            let key = (entry.session_id.clone(), entry.model.clone());
-            let reconciled = baseline_by_key.get(&key).map_or_else(
-                || entry.clone(),
-                |baseline| subtract_usage(entry, &entries[*baseline]),
-            );
-            has_usage(&reconciled).then_some(reconciled)
-        })
-        .collect();
+    // Keep chronological order for downstream sorting stability.
+    interval_indices.sort_by_key(|entry| (entry.timestamp, entry.dedup_key.clone()));
+    shutdown_entries.sort_by_key(|entry| (entry.timestamp, entry.dedup_key.clone()));
     SessionStateReconciliation {
-        entries,
+        entries: interval_indices,
         shutdown_entries,
     }
 }
@@ -181,7 +187,6 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         timestamp_text: current.timestamp_text.clone(),
         session_id: current.session_id.clone(),
         model: current.model.clone(),
-        kind: current.kind,
         input_tokens: current.input_tokens.saturating_sub(baseline.input_tokens),
         output_tokens: current.output_tokens.saturating_sub(baseline.output_tokens),
         cache_creation_tokens: current
@@ -283,12 +288,7 @@ fn usage_entry_to_loaded(
         cost,
         extra_total_tokens: entry.extra_total_tokens,
         credits: None,
-        message_count: match entry.kind {
-            CopilotUsageKind::Otel => (entry.request_count > 0).then_some(entry.request_count),
-            CopilotUsageKind::SessionState => {
-                (entry.request_count > 1).then_some(entry.request_count)
-            }
-        },
+        message_count: (entry.request_count > 0).then_some(entry.request_count),
         model: Some(entry.model),
         data,
         usage_limit_reset_time: None,
@@ -838,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_only_latest_cumulative_shutdown_and_unmatched_otel_rows() {
+    fn splits_cumulative_shutdowns_into_intervals_and_keeps_unmatched_otel_rows() {
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": [
                 json!({
@@ -970,9 +970,121 @@ mod tests {
             vec![
                 ("session-1".to_string(), "other-model".to_string(), 3),
                 ("session-2".to_string(), "test-model".to_string(), 5),
-                ("session-1".to_string(), "test-model".to_string(), 30),
+                ("session-1".to_string(), "test-model".to_string(), 10),
+                ("session-1".to_string(), "test-model".to_string(), 20),
                 ("session-1".to_string(), "test-model".to_string(), 7),
             ]
         );
+    }
+
+    #[test]
+    fn splits_resumed_shutdowns_across_dates_without_double_counting() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-old",
+                    "timestamp": "2026-01-02T01:20:00.000Z",
+                    "data": {"modelMetrics": {"test-model": {"usage": {
+                        "inputTokens": 100,
+                        "outputTokens": 50,
+                        "cacheReadTokens": 10,
+                        "cacheWriteTokens": 20
+                    },
+                    "requests": {"count": 1}}}}
+                })
+                .to_string(),
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-latest",
+                    "timestamp": "2026-01-03T01:20:00.000Z",
+                    "data": {"modelMetrics": {"test-model": {"usage": {
+                        "inputTokens": 200,
+                        "outputTokens": 80,
+                        "cacheReadTokens": 20,
+                        "cacheWriteTokens": 30
+                    },
+                    "requests": {"count": 3}}}}
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let shared = crate::cli::SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].date, "2026-01-02");
+        assert_eq!(entries[0].data.message.usage.input_tokens, 70);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].message_count, Some(1));
+        assert_eq!(entries[1].date, "2026-01-03");
+        assert_eq!(entries[1].data.message.usage.input_tokens, 80);
+        assert_eq!(entries[1].data.message.usage.output_tokens, 30);
+        assert_eq!(entries[1].message_count, Some(2));
+        let total_input: u64 = entries
+            .iter()
+            .map(|entry| entry.data.message.usage.input_tokens)
+            .sum();
+        assert_eq!(total_input, 150);
+    }
+
+    #[test]
+    fn keeps_one_entry_for_a_single_shutdown_snapshot() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": format!(
+                "{}\n",
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-1",
+                    "timestamp": "2026-01-02T01:20:00.000Z",
+                    "data": {"modelMetrics": {"test-model": {"usage": {
+                        "inputTokens": 100,
+                        "outputTokens": 50
+                    },
+                    "requests": {"count": 1}}}}
+                })
+            ),
+        });
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let shared = crate::cli::SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let entries = load_entries_inner(&shared, &crate::PricingMap::default()).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].date, "2026-01-02");
+        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].message_count, Some(1));
     }
 }

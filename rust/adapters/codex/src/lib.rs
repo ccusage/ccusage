@@ -510,6 +510,26 @@ mod tests {
     }
 
     #[test]
+    fn applies_gpt_6_astra_fast_multiplier_without_changing_standard_cost() {
+        let pricing = PricingMap::load_embedded();
+        let usage = CodexModelUsage {
+            input_tokens: 1_000_000,
+            cached_input_tokens: 1_000_000,
+            total_tokens: 1_000_000,
+            long_context_input_tokens: 1_000_000,
+            long_context_cached_input_tokens: 1_000_000,
+            ..CodexModelUsage::default()
+        };
+
+        let standard =
+            calculate_codex_model_cost("gpt-6-astra", &usage, &pricing, CodexSpeed::Standard);
+        let fast = calculate_codex_model_cost("gpt-6-astra", &usage, &pricing, CodexSpeed::Fast);
+
+        assert!((standard - 2.0).abs() < f64::EPSILON);
+        assert!((fast - 4.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn uses_recorded_service_tiers_in_auto_mode() {
         let mut pricing = PricingMap::default();
         pricing.load_json(

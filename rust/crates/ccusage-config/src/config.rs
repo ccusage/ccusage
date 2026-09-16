@@ -587,6 +587,7 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
     }
     if let Some(order) = options.order {
         shared.order = order.into();
+        shared.order_explicit = true;
     }
     if let Some(breakdown) = options.breakdown {
         shared.breakdown = breakdown;

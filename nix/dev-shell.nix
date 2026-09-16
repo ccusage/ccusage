@@ -104,7 +104,7 @@ in
             just install
           fi
 
-          ${lib.getExe config.packages.syncAgentSkills} >/dev/null
+          ${lib.getExe config.packages.syncAgentSkills}
           ${config.pre-commit.shellHook}
         ''
         + gitWtHook;

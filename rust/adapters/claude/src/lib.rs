@@ -14,7 +14,10 @@ use std::{
 use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 use rustc_hash::FxHasher;
-use serde::Deserialize;
+use serde::{
+    Deserialize,
+    de::{DeserializeOwned, Error as _, MapAccess, SeqAccess, Visitor},
+};
 
 use crate::{
     LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
@@ -312,10 +315,7 @@ fn read_usage_file(
         if usage_marker.find(line).is_none() {
             continue;
         }
-        if has_unsupported_null_field(line) {
-            continue;
-        }
-        let Ok(data) = serde_json::from_slice::<UsageEntry>(line) else {
+        let Some(data) = deserialize_usage_line::<UsageEntry>(line) else {
             continue;
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
@@ -510,30 +510,162 @@ fn is_valid_usage_entry(data: &UsageEntry) -> bool {
     true
 }
 
-pub(crate) fn has_unsupported_null_field(line: &[u8]) -> bool {
-    let mut offset = 0;
-    while let Some(relative_index) = memmem::find(&line[offset..], b":null") {
-        let null_index = offset + relative_index;
-        let mut field_end = null_index.saturating_sub(1);
-        if line.get(field_end) != Some(&b'"') {
-            while field_end > 0 && line[field_end] != b'"' {
-                field_end -= 1;
-            }
-        }
-        if line.get(field_end) == Some(&b'"') {
-            let mut field_start = field_end.saturating_sub(1);
-            while field_start > 0 && line[field_start] != b'"' {
-                field_start -= 1;
-            }
-            if line.get(field_start) == Some(&b'"')
-                && is_unsupported_nullable_field(&line[field_start + 1..field_end])
-            {
-                return true;
-            }
-        }
-        offset = null_index + b":null".len();
+/// Mirrors the TypeScript loader's schema: a line whose known non-nullable field is `null`
+/// is skipped before deserialisation. The direct `model` member of an element in either
+/// assistant or AgentProgress `usage.iterations` is the one exception, because
+/// `UsageIteration.model` is optional and Claude Code writes it as `null`.
+#[cfg(test)]
+fn has_unsupported_null_field(line: &[u8]) -> bool {
+    if memmem::find(line, b"null").is_none() {
+        return false;
     }
-    false
+    let Ok(root) = serde_json::from_slice::<serde_json::Value>(line) else {
+        return false;
+    };
+    has_unsupported_null_field_in_value(&root)
+}
+
+/// Deserializes a transcript line while enforcing Claude's nullable-field contract.
+/// Lines containing `null` are parsed into a value once so structural validation and
+/// typed deserialization can share the same parse.
+pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(line: &[u8]) -> Option<T> {
+    if memmem::find(line, b"null").is_none() {
+        return serde_json::from_slice(line).ok();
+    }
+    let root = serde_json::from_slice::<UniqueJsonValue>(line).ok()?.0;
+    if has_unsupported_null_field_in_value(&root) {
+        return None;
+    }
+    serde_json::from_value(root).ok()
+}
+
+/// A JSON value parser that preserves typed Serde's rejection of duplicate members.
+/// Parsing through `serde_json::Value` normally keeps only the final duplicate, which could
+/// make a malformed transcript valid before the in-memory typed deserialization runs.
+struct UniqueJsonValue(serde_json::Value);
+
+impl<'de> Deserialize<'de> for UniqueJsonValue {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(UniqueJsonValueVisitor)
+    }
+}
+
+struct UniqueJsonValueVisitor;
+
+impl<'de> Visitor<'de> for UniqueJsonValueVisitor {
+    type Value = UniqueJsonValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a JSON value without duplicate object members")
+    }
+
+    fn visit_bool<E>(self, value: bool) -> std::result::Result<Self::Value, E> {
+        Ok(UniqueJsonValue(serde_json::Value::Bool(value)))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> std::result::Result<Self::Value, E> {
+        Ok(UniqueJsonValue(serde_json::Value::Number(value.into())))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E> {
+        Ok(UniqueJsonValue(serde_json::Value::Number(value.into())))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> std::result::Result<Self::Value, E> {
+        serde_json::Number::from_f64(value)
+            .map(serde_json::Value::Number)
+            .map(UniqueJsonValue)
+            .ok_or_else(|| E::custom("non-finite JSON number"))
+    }
+
+    fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E> {
+        Ok(UniqueJsonValue(serde_json::Value::String(value.to_owned())))
+    }
+
+    fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E> {
+        Ok(UniqueJsonValue(serde_json::Value::String(value)))
+    }
+
+    fn visit_none<E>(self) -> std::result::Result<Self::Value, E> {
+        Ok(UniqueJsonValue(serde_json::Value::Null))
+    }
+
+    fn visit_unit<E>(self) -> std::result::Result<Self::Value, E> {
+        Ok(UniqueJsonValue(serde_json::Value::Null))
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        UniqueJsonValue::deserialize(deserializer)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut values = Vec::new();
+        while let Some(value) = sequence.next_element::<UniqueJsonValue>()? {
+            values.push(value.0);
+        }
+        Ok(UniqueJsonValue(serde_json::Value::Array(values)))
+    }
+
+    fn visit_map<A>(self, mut object: A) -> std::result::Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut fields = serde_json::Map::new();
+        while let Some(field) = object.next_key::<String>()? {
+            if fields.contains_key(&field) {
+                return Err(A::Error::custom(format!(
+                    "duplicate object member `{field}`"
+                )));
+            }
+            let value = object.next_value::<UniqueJsonValue>()?;
+            fields.insert(field, value.0);
+        }
+        Ok(UniqueJsonValue(serde_json::Value::Object(fields)))
+    }
+}
+
+fn has_unsupported_null_field_in_value(root: &serde_json::Value) -> bool {
+    let iteration_arrays = [
+        root.pointer("/message/usage/iterations"),
+        root.pointer("/data/message/message/usage/iterations"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    has_unsupported_null_value(root, false, &iteration_arrays)
+}
+
+fn has_unsupported_null_value(
+    value: &serde_json::Value,
+    allow_iteration_model: bool,
+    iteration_arrays: &[&serde_json::Value],
+) -> bool {
+    match value {
+        serde_json::Value::Object(fields) => fields.iter().any(|(field, value)| {
+            if value.is_null() && is_unsupported_nullable_field(field.as_bytes()) {
+                return !(allow_iteration_model && field == "model");
+            }
+            has_unsupported_null_value(value, false, iteration_arrays)
+        }),
+        serde_json::Value::Array(values) => {
+            let is_iteration_array = iteration_arrays
+                .iter()
+                .any(|array| std::ptr::eq(*array, value));
+            values.iter().any(|value| {
+                has_unsupported_null_value(value, is_iteration_array, iteration_arrays)
+            })
+        }
+        _ => false,
+    }
 }
 
 fn is_unsupported_nullable_field(field: &[u8]) -> bool {
@@ -619,8 +751,8 @@ mod tests {
     use std::{path::Path, sync::Arc};
 
     use super::{
-        extract_session_parts, has_unsupported_null_field, paths::is_project_path_segment,
-        push_deduped_entry, read_usage_file, usage_files,
+        deserialize_usage_line, extract_session_parts, has_unsupported_null_field,
+        paths::is_project_path_segment, push_deduped_entry, read_usage_file, usage_files,
     };
     use crate::{
         LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
@@ -702,6 +834,9 @@ mod tests {
             br#"{"message":{"model":null,"usage":{"input_tokens":0}}}"#
         ));
         assert!(has_unsupported_null_field(
+            br#"{"message":{"model": null,"usage":{"input_tokens":0}}}"#
+        ));
+        assert!(has_unsupported_null_field(
             br#"{"sessionId":null,"message":{"usage":{"input_tokens":0}}}"#
         ));
     }
@@ -711,6 +846,122 @@ mod tests {
         assert!(!has_unsupported_null_field(
             br#"{"message":{"content":null,"usage":{"input_tokens":0}}}"#
         ));
+    }
+
+    /// Claude Code 2.1.266+ writes `"model":null` for the main-model iteration of Fable 5.1
+    /// entries; `UsageIteration.model` is optional, so those lines must be kept while every
+    /// other unsupported null keeps being rejected.
+    #[test]
+    fn allows_null_iteration_model_but_still_rejects_other_nulls() {
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"claude-fable-5-1","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
+        ));
+        // A missing iteration model and an empty iterations array are unchanged.
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"input_tokens":2,"iterations":[{"type":"message","input_tokens":2}]}}}"#
+        ));
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"input_tokens":2,"iterations":[]}}}"#
+        ));
+        // Strings inside the array may contain brackets or escaped quotes without ending the span.
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"iterations":[{"type":"ad]vi\"sor}","model":null,"input_tokens":1}]}}}"#
+        ));
+        // `message.model` null is still rejected, before or after the iterations array.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":null,"usage":{"iterations":[{"type":"message","model":"m"}]}}}"#
+        ));
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"usage":{"iterations":[{"type":"message","model":"m"}]},"model":null}}"#
+        ));
+        // Other unsupported nulls inside the array are still rejected.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null,"cache_read_input_tokens":null}]}}}"#
+        ));
+    }
+
+    /// The exemption is scoped to the `iterations` member of a `usage` object: whitespace
+    /// around the member is fine, but a same-named array elsewhere in the line, an `iterations`
+    /// member nested deeper inside `usage`, or the key as text inside a string never qualifies.
+    #[test]
+    fn scopes_the_iteration_model_exemption_to_the_usage_object() {
+        // JSON whitespace between the key, the colon and the array is tolerated.
+        assert!(!has_unsupported_null_field(
+            br#"{"message": {"model": "m", "usage" : { "input_tokens": 2, "iterations" : [ {"type": "message", "model": null} ] }}}"#
+        ));
+        // Escaped property names are decoded before the structural path check.
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"iter\u0061tions" : [{"type":"message","model" : null}]}}}"#
+        ));
+        // An earlier `iterations` array in another object does not stand in for the real one.
+        assert!(!has_unsupported_null_field(
+            br#"{"toolUseResult":{"iterations":[{"model":"x"}]},"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}"#
+        ));
+        assert!(has_unsupported_null_field(
+            br#"{"toolUseResult":{"iterations":[{"model":null}]},"message":{"model":"m","usage":{"input_tokens":1}}}"#
+        ));
+        // A `usage` member that is not an object is skipped in favor of the real one.
+        assert!(!has_unsupported_null_field(
+            br#"{"usage":"n/a","message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}"#
+        ));
+        // Only a direct member of `usage` counts, not one nested deeper inside it.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"server_tool_use":{"iterations":[{"model":null}]},"input_tokens":1}}}"#
+        ));
+        // A nested object's model is not the optional model of the iteration itself.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"iterations":[{"type":"message","metadata":{"model":null}}]}}}"#
+        ));
+        // The key as text inside a string value is not a member.
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"content":"\"usage\":{\"iterations\":[","model":null,"usage":{"input_tokens":1}}}"#
+        ));
+        // Members before `iterations` may hold nested containers and strings with brackets.
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"cache_creation":{"ephemeral_5m_input_tokens":0},"server_tool_use":{"web_search_requests":0},"inference_geo":"[not]{available}","iterations":[{"type":"message","model":null}]}}}"#
+        ));
+        // Only the direct `message.usage` object may provide the exempted array.
+        assert!(!has_unsupported_null_field(
+            br#"{"usage":{"iterations":[{"model":"decoy"}]},"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}"#
+        ));
+        // AgentProgress records wrap the assistant message under `data.message.message`.
+        assert!(!has_unsupported_null_field(
+            br#"{"type":"progress","data":{"message":{"message":{"model":"m","usage":{"iterations":[{"type":"message","model":null}]}}}}}"#
+        ));
+    }
+
+    #[test]
+    fn malformed_usage_members_do_not_panic_the_null_precheck() {
+        assert!(!has_unsupported_null_field(
+            br#"{"message":{"model":"m","usage":{"input_tokens":,"iterations":[{"type":"message","model":null}]}}}"#
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_members_before_typed_deserialization() {
+        assert!(deserialize_usage_line::<UsageEntry>(
+            br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
+        )
+        .is_none());
+    }
+
+    /// The repro line from #1710 loads as one Fable 5.1 entry with its own token counts.
+    #[test]
+    fn counts_entries_whose_iteration_model_is_null() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","version":"2.1.268","sessionId":"session-a","requestId":"req_1","message":{"id":"msg_1","model":"claude-fable-5-1","role":"assistant","usage":{"input_tokens":2,"cache_creation_input_tokens":55866,"cache_read_input_tokens":0,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289,"cache_creation_input_tokens":55866,"cache_read_input_tokens":0}]}}}"#,
+        });
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Calculate,
+            Some(&PricingMap::default()),
+        );
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.entries[0].model.as_deref(), Some("claude-fable-5-1"));
+        assert_eq!(loaded.entries[0].data.message.usage.output_tokens, 289);
     }
 
     #[test]

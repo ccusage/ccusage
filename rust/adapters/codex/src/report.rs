@@ -6,8 +6,8 @@ use crate::{
     Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket,
     Color, PricingMap, Result, SimpleTable,
     cli::{AgentReportKind, SharedArgs},
-    color, format_currency, format_models_multiline, format_number, json_float,
-    missing_pricing_model_for_token_total, print_box_title,
+    color, format_breakdown_model_label, format_currency, format_models_multiline, format_number,
+    json_float, missing_pricing_model_for_token_total, print_box_title,
     print_missing_pricing_warnings_for_models, sanitize_terminal_text,
 };
 
@@ -455,6 +455,87 @@ impl CodexTableTotals {
     }
 }
 
+fn push_codex_breakdown_rows(
+    table: &mut SimpleTable,
+    group: &CodexGroup,
+    pricing: &PricingMap,
+    speed: CodexSpeedPolicy,
+    shared: &SharedArgs,
+) {
+    for row in enabled_codex_breakdown_rows(group, pricing, speed, shared) {
+        table.push(row);
+    }
+}
+
+fn enabled_codex_breakdown_rows(
+    group: &CodexGroup,
+    pricing: &PricingMap,
+    speed: CodexSpeedPolicy,
+    shared: &SharedArgs,
+) -> Vec<Vec<String>> {
+    if shared.breakdown {
+        codex_breakdown_rows(group, pricing, speed, shared)
+    } else {
+        Vec::new()
+    }
+}
+
+fn codex_breakdown_rows(
+    group: &CodexGroup,
+    pricing: &PricingMap,
+    speed: CodexSpeedPolicy,
+    shared: &SharedArgs,
+) -> Vec<Vec<String>> {
+    let mut models = group
+        .models
+        .iter()
+        .map(|(model, usage)| {
+            (
+                model,
+                usage,
+                calculate_codex_model_cost(model, usage, pricing, speed),
+            )
+        })
+        .collect::<Vec<_>>();
+    models.sort_by(|(_, _, cost_a), (_, _, cost_b)| cost_b.total_cmp(cost_a));
+    let mut rows = Vec::with_capacity(models.len());
+    for (model, usage, cost) in models {
+        let input_tokens = non_cached_input_tokens(
+            usage.input_tokens,
+            usage.cached_input_tokens,
+            usage.cache_creation_tokens,
+        );
+        let mut row = vec![
+            color(shared, format_breakdown_model_label(model), Color::Grey),
+            String::new(),
+            color(shared, format_number(input_tokens), Color::Grey),
+            color(shared, format_number(usage.output_tokens), Color::Grey),
+            color(
+                shared,
+                format_number(usage.reasoning_output_tokens),
+                Color::Grey,
+            ),
+            color(
+                shared,
+                format_number(usage.cache_creation_tokens),
+                Color::Grey,
+            ),
+            color(
+                shared,
+                format_number(usage.cached_input_tokens),
+                Color::Grey,
+            ),
+            color(shared, format_number(usage.total_tokens), Color::Grey),
+            color(shared, format_currency(cost), Color::Grey),
+        ];
+        if shared.no_cost {
+            row.pop();
+        }
+        rows.push(row);
+    }
+    rows
+}
+
 fn codex_table_total_row(
     totals: &CodexTableTotals,
     shared: &SharedArgs,
@@ -536,6 +617,7 @@ pub(super) fn print_table_from_groups(
         );
         totals.add(group, input_tokens, cost);
         table.push(row);
+        push_codex_breakdown_rows(&mut table, group, pricing, speed, shared);
     }
     table.separator();
     table.push(codex_table_total_row(&totals, shared, shared.no_cost));
@@ -683,5 +765,124 @@ mod tests {
         assert_ne!(first_row[0], second_row[0]);
         assert_eq!(first_row[5], "30");
         assert_eq!(total_row[5], "60");
+    }
+
+    fn breakdown_group() -> CodexGroup {
+        let mut group = CodexGroup {
+            input_tokens: 100,
+            cached_input_tokens: 60,
+            cache_creation_tokens: 30,
+            output_tokens: 5,
+            reasoning_output_tokens: 1,
+            total_tokens: 105,
+            ..CodexGroup::default()
+        };
+        group.models.insert(
+            "gpt-5.3-codex".to_string(),
+            CodexModelUsage {
+                input_tokens: 70,
+                cached_input_tokens: 40,
+                cache_creation_tokens: 20,
+                output_tokens: 3,
+                reasoning_output_tokens: 1,
+                total_tokens: 73,
+                ..CodexModelUsage::default()
+            },
+        );
+        group.models.insert(
+            "gpt-5-mini".to_string(),
+            CodexModelUsage {
+                input_tokens: 30,
+                cached_input_tokens: 20,
+                cache_creation_tokens: 10,
+                output_tokens: 2,
+                reasoning_output_tokens: 0,
+                total_tokens: 32,
+                ..CodexModelUsage::default()
+            },
+        );
+        group
+    }
+
+    #[test]
+    fn breakdown_rows_render_one_sub_row_per_model_with_matching_totals() {
+        let group = breakdown_group();
+        let shared = SharedArgs {
+            breakdown: true,
+            no_color: true,
+            ..SharedArgs::default()
+        };
+        let rows = enabled_codex_breakdown_rows(
+            &group,
+            &PricingMap::default(),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            &shared,
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|row| row[0].contains("└─")));
+        assert!(rows[0][0].contains("gpt-5.3-codex") || rows[1][0].contains("gpt-5.3-codex"));
+        assert!(rows[0][0].contains("gpt-5-mini") || rows[1][0].contains("gpt-5-mini"));
+        for (model, usage) in &group.models {
+            let rendered = rows.iter().find(|row| row[0].contains(model)).unwrap();
+            assert_eq!(rendered[7], format_number(usage.total_tokens));
+        }
+
+        let input: u64 = group
+            .models
+            .values()
+            .map(|usage| {
+                non_cached_input_tokens(
+                    usage.input_tokens,
+                    usage.cached_input_tokens,
+                    usage.cache_creation_tokens,
+                )
+            })
+            .sum();
+        let (row, group_input, _) = codex_table_row(
+            "2026-08-20",
+            AgentReportKind::Daily,
+            &group,
+            &PricingMap::default(),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            false,
+            160,
+        );
+        assert_eq!(input, group_input);
+        assert_eq!(row[2], format_number(group_input));
+        let total: u64 = group.models.values().map(|usage| usage.total_tokens).sum();
+        assert_eq!(total, group.total_tokens);
+    }
+
+    #[test]
+    fn table_pushes_no_extra_rows_without_breakdown_flag() {
+        let group = breakdown_group();
+        let shared = SharedArgs {
+            no_color: true,
+            ..SharedArgs::default()
+        };
+        let (headers, aligns) = codex_table_columns("Date", false);
+        let (row, _, _) = codex_table_row(
+            "2026-08-20",
+            AgentReportKind::Daily,
+            &group,
+            &PricingMap::default(),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            false,
+            160,
+        );
+
+        assert!(!shared.breakdown);
+        assert!(
+            enabled_codex_breakdown_rows(
+                &group,
+                &PricingMap::default(),
+                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+                &shared,
+            )
+            .is_empty()
+        );
+        assert_eq!(row.len(), headers.len());
+        assert_eq!(headers.len(), aligns.len());
     }
 }

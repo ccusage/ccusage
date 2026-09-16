@@ -7,8 +7,8 @@ use serde_json::{Value, json};
 
 use crate::{
     Align, Color, Result, SimpleTable, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
-    cli::SharedArgs, cli_error, color, format_project_name, parse_project_aliases, print_box_title,
-    short_model_name, terminal_width,
+    cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_project_name,
+    parse_project_aliases, print_box_title, short_model_name, terminal_width,
 };
 
 pub fn wants_json(shared: &SharedArgs) -> bool {
@@ -455,15 +455,11 @@ fn push_breakdown_rows(
     shared: &SharedArgs,
 ) {
     for breakdown in &row.model_breakdowns {
-        let total = breakdown
-            .input_tokens
-            .saturating_add(breakdown.output_tokens)
-            .saturating_add(breakdown.cache_creation_tokens)
-            .saturating_add(breakdown.cache_read_tokens);
+        let total = breakdown.total_tokens();
         let mut values = vec![
             color(
                 shared,
-                format!("  └─ {}", short_model_name(&breakdown.model_name)),
+                format_breakdown_model_label(&breakdown.model_name),
                 Color::Grey,
             ),
             String::new(),
@@ -815,6 +811,22 @@ mod tests {
             sanitize_terminal_text("future\nclient\t\u{1b}[31m"),
             r#"future\nclient\t\u{1b}[31m"#
         );
+    }
+
+    #[test]
+    fn model_breakdown_total_includes_extra_tokens() {
+        let breakdown = ModelBreakdown {
+            model_name: "model-a".to_string(),
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_tokens: 10,
+            cache_read_tokens: 5,
+            extra_total_tokens: 7,
+            cost: 0.25,
+            missing_pricing: false,
+        };
+
+        assert_eq!(breakdown.total_tokens(), 172);
     }
 
     fn snapshot_summary(period: &str, project: Option<&str>, credits: Option<f64>) -> UsageSummary {
