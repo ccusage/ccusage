@@ -1,6 +1,0 @@
-# Auto-appended per agent session (Claude hook + codex via daily-session-report.sh)
-sessions:
-- date: "2026-09-15"
-  agent: "codex"
-  session: "rollout-2026-09-15T19-42-31-01a0a773-5f29-7101-a607-245b8dc4a780.jsonl"
-  request: "time and help you stay consistent. Use it whenever it is likely to help. "
