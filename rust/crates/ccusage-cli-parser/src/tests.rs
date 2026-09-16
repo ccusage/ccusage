@@ -469,6 +469,30 @@ fn checks_the_date_window_after_config_and_flags_are_merged() {
 }
 
 #[test]
+fn statusline_ignores_reversed_default_date_window() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{ "defaults": { "since": "2026-09-14", "until": "2026-09-01" } }"#,
+    });
+    let config_path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    let args = ["statusline", "--config", config_path.as_str()]
+        .map(str::to_string)
+        .to_vec();
+    let config = ccusage_config::ConfigContext::from_args(&args);
+
+    let result = Cli::parse_from_with_config(
+        std::iter::once(OsString::from("ccusage")).chain(args.iter().map(OsString::from)),
+        &config,
+        ccusage_core::DEFAULT_SESSION_DURATION_HOURS,
+        env!("CARGO_PKG_VERSION"),
+    );
+
+    let Ok(cli) = result else {
+        panic!("expected statusline to ignore the report date window");
+    };
+    assert!(matches!(cli.command, Some(Command::Statusline(_))));
+}
+
+#[test]
 fn rejects_last_periods_alongside_an_explicit_date_window() {
     assert_eq!(
         parse_error(&["ccusage", "daily", "--last", "1", "--since", "20260101"]),

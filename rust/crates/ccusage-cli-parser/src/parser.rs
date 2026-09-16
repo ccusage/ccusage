@@ -1109,6 +1109,9 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
 /// orders them. A reversed window would otherwise load everything and print an
 /// empty report that looks like missing data.
 fn date_window_error(command: Option<&Command>, root_shared: &SharedArgs) -> Option<String> {
+    if matches!(command, Some(Command::Statusline(_))) {
+        return None;
+    }
     let (shared, _) = report_shared(command, root_shared);
     let since = shared.since.as_deref()?;
     let until = shared.until.as_deref()?;
