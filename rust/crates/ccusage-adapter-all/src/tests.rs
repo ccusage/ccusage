@@ -1181,7 +1181,7 @@ fn aggregates_model_breakdowns_across_agents() {
 }
 
 #[test]
-fn displays_total_tokens_with_cache_tokens_like_typescript_table() {
+fn displays_total_tokens_including_extra_tokens() {
     let row = AllRow {
         period: "2026-01-02".to_string(),
         agent: "codex",
@@ -1190,7 +1190,7 @@ fn displays_total_tokens_with_cache_tokens_like_typescript_table() {
         output_tokens: 20,
         cache_creation_tokens: 0,
         cache_read_tokens: 10,
-        total_tokens: 120,
+        total_tokens: 135,
         total_cost: 0.01,
         metadata: None,
         metadata_agents: Some(vec!["codex"]),
@@ -1200,7 +1200,7 @@ fn displays_total_tokens_with_cache_tokens_like_typescript_table() {
 
     let cells = all_table_row(&row, false, false, false);
 
-    assert_eq!(cells[7], "130");
+    assert_eq!(cells[7], "135");
 }
 
 #[test]
