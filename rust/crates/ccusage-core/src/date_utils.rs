@@ -295,7 +295,15 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
 /// local zone, which can group usage under the wrong date. `local` is the
 /// documented way to ask for the system timezone and keeps that fallback.
 pub fn is_valid_timezone(value: &str) -> bool {
-    value == "local" || JiffTimeZone::get(value).is_ok()
+    is_valid_timezone_in(jiff::tz::db(), value)
+}
+
+/// A host with no zoneinfo database at all (a minimal container, or a test
+/// sandbox) cannot resolve any name, not even `UTC`. Rejecting every value
+/// there would turn the old silent fallback into a hard failure, so the check
+/// only runs when there is a database to check against.
+fn is_valid_timezone_in(db: &jiff::tz::TimeZoneDatabase, value: &str) -> bool {
+    value == "local" || db.is_definitively_empty() || db.get(value).is_ok()
 }
 
 pub fn parse_tz(timezone: Option<&str>) -> Option<JiffTimeZone> {
@@ -391,7 +399,8 @@ pub fn am_pm(hour: u32) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date, parse_tz,
+        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, is_valid_timezone,
+        is_valid_timezone_in, parse_compact_date, parse_tz,
     };
 
     // 2026-01-02 00:00:00 UTC
@@ -477,5 +486,21 @@ mod tests {
             Some("202602")
         ));
         assert!(!date_within_range("2025-12-31", Some("2026"), None));
+    }
+
+    #[test]
+    fn timezone_validation_skips_hosts_without_a_zoneinfo_database() {
+        let empty = jiff::tz::TimeZoneDatabase::none();
+        assert!(is_valid_timezone_in(&empty, "Not/AZone"));
+        assert!(is_valid_timezone_in(&empty, "UTC"));
+    }
+
+    #[test]
+    fn timezone_validation_accepts_local_and_rejects_unknown_names() {
+        assert!(is_valid_timezone("local"));
+        if !jiff::tz::db().is_definitively_empty() {
+            assert!(is_valid_timezone("UTC"));
+            assert!(!is_valid_timezone("Not/AZone"));
+        }
     }
 }

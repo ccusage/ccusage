@@ -122,7 +122,7 @@ ccusage daily -z Asia/Tokyo
 ccusage monthly -z Europe/London
 ```
 
-The value must be an IANA timezone name, or `local` for the system timezone. An unknown name such as `Not/AZone` is rejected with a non-zero exit code instead of silently falling back to the system timezone, which can group usage under the wrong date. The same check applies to `timezone` in a [configuration file](/guide/config-files).
+The value must be an IANA timezone name, or `local` for the system timezone. An unknown name such as `Not/AZone` is rejected with a non-zero exit code instead of silently falling back to the system timezone, which can group usage under the wrong date. The same check applies to `timezone` in a [configuration file](/guide/config-files). On a host with no zoneinfo database, such as a minimal container, names cannot be checked and the report falls back to the system timezone as before.
 
 #### Timezone Effect
 
