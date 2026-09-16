@@ -106,7 +106,8 @@ pub struct ModelBreakdown {
     #[serde(skip_serializing)]
     pub extra_total_tokens: u64,
     pub cost: f64,
-    #[serde(skip_serializing)]
+    /// Present in JSON only when true, so priced breakdowns keep their shape.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_pricing: bool,
 }
 
