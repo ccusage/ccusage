@@ -21,7 +21,7 @@ ccusage monthly --since 20260101
 ccusage session --until 20260531
 ```
 
-Both bounds accept `YYYY-MM-DD` or `YYYYMMDD` and are inclusive. Any other spelling, or a value that is not a real calendar date such as `2026-02-30`, is rejected with a non-zero exit code instead of silently changing which rows the report keeps. The same check applies to `since` and `until` in a [configuration file](/guide/config-files). A window whose `--since` date is later than its `--until` date is rejected the same way, whether the bounds come from flags, a configuration file, or a mix of both.
+Both bounds accept `YYYY-MM-DD` or `YYYYMMDD` and are inclusive. Any other spelling, or a value that is not a real calendar date such as `2026-02-30`, is rejected with a non-zero exit code instead of silently changing which rows the report keeps. The same check applies to `since` and `until` in a [configuration file](/guide/config-files). A window whose `--since` date is later than its `--until` date is rejected the same way, whether the bounds come from flags, a configuration file, or a mix of both. `statusline` is exempt because it ignores report date filters, including configured defaults.
 
 ### Recent Periods
 
