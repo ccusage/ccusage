@@ -3,10 +3,14 @@ use ccusage_test_support::Fixture;
 #[test]
 fn session_id_deduplicates_repeated_message_usage() {
     let fixture = Fixture::new();
-    let repeated = r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","costUSD":1.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#;
+    let messages = [
+        r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","costUSD":1.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+        r#"{"timestamp":"2026-09-15T12:00:01.000Z","sessionId":"session-a","requestId":"request-a","costUSD":1.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+        r#"{"timestamp":"2026-09-15T12:00:02.000Z","sessionId":"session-a","requestId":"request-a","costUSD":1.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+    ];
     let _ = fixture.write_file(
         "projects/project-a/session-a/chat.jsonl",
-        [repeated, repeated, repeated].join("\n"),
+        messages.join("\n"),
     );
 
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
