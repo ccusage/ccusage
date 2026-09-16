@@ -215,6 +215,7 @@ fn parse_command(
         "statusline" => {
             let mut args = StatuslineArgs::default();
             config.apply_statusline_args(&mut args);
+            args.timezone = shared.timezone.clone();
             while parser.peek().is_some() {
                 match parser.next_flag()?.as_str() {
                     "-O" | "--offline" => args.offline = true,

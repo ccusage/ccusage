@@ -93,6 +93,7 @@ mod tests {
             &["claude", "session", "--timezone", "Not/AZone"],
             &["codex", "monthly", "--timezone", "Not/AZone"],
             &["blocks", "--timezone", "Not/AZone"],
+            &["--timezone", "Not/AZone", "statusline"],
             &["statusline", "--timezone", "Not/AZone"],
         ] {
             assert_eq!(validated(args), rejection("Not/AZone"), "{args:?}");
@@ -106,6 +107,7 @@ mod tests {
             &["--timezone", "UTC"],
             &["daily", "-z", "Asia/Tokyo"],
             &["daily", "-z", "local"],
+            &["--timezone", "UTC", "statusline"],
             &["statusline", "--timezone", "America/New_York"],
         ] {
             assert_eq!(validated(args), Ok(()), "{args:?}");
