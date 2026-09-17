@@ -337,6 +337,113 @@ fn renders_all_report_json_with_period_and_agent_metadata() {
 }
 
 #[test]
+fn all_report_totals_list_unpriced_models_only_when_present() {
+    let mut row = AllRow {
+        period: "2026-01-02".to_string(),
+        agent: "all",
+        models_used: vec!["new-model".to_string(), "gpt-5".to_string()],
+        input_tokens: 100,
+        output_tokens: 20,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 10,
+        total_tokens: 130,
+        total_cost: 0.01,
+        metadata: None,
+        metadata_agents: None,
+        agent_breakdowns: None,
+        model_breakdowns: vec![
+            ModelBreakdown {
+                model_name: "new-model".to_string(),
+                input_tokens: 50,
+                output_tokens: 10,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                extra_total_tokens: 0,
+                cost: 0.0,
+                missing_pricing: true,
+            },
+            ModelBreakdown {
+                model_name: "gpt-5".to_string(),
+                input_tokens: 50,
+                output_tokens: 10,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 10,
+                extra_total_tokens: 0,
+                cost: 0.01,
+                missing_pricing: false,
+            },
+        ],
+    };
+
+    let report = report_json(std::slice::from_ref(&row), AgentReportKind::Daily);
+    assert_eq!(report["totals"]["unpricedModels"], json!(["new-model"]));
+    assert_eq!(
+        report["daily"][0]["modelBreakdowns"][0]["missingPricing"],
+        true
+    );
+    assert!(
+        report["daily"][0]["modelBreakdowns"][1]
+            .get("missingPricing")
+            .is_none()
+    );
+
+    let nested = report_json_with_agents(
+        &[AllRow {
+            agent_breakdowns: Some(vec![row.clone()]),
+            ..row.clone()
+        }],
+        AgentReportKind::Daily,
+        true,
+    );
+    assert_eq!(
+        nested["daily"][0]["agents"][0]["modelBreakdowns"][0]["missingPricing"],
+        true
+    );
+
+    let priced_session = AllRow {
+        period: "session-a".to_string(),
+        model_breakdowns: vec![row.model_breakdowns[1].clone()],
+        ..row.clone()
+    };
+    let sections = sections_report_json(
+        &[
+            (AgentReportKind::Daily, vec![row.clone()]),
+            (AgentReportKind::Session, vec![priced_session]),
+        ],
+        AgentReportKind::Session,
+        false,
+    );
+    let sections = serde_json::to_value(&sections).unwrap();
+    assert!(
+        sections["totals"].get("unpricedModels").is_none(),
+        "sections totals follow the invoked section only"
+    );
+
+    let unpriced_session = AllRow {
+        period: "session-b".to_string(),
+        ..row.clone()
+    };
+    let sections = sections_report_json(
+        &[
+            (AgentReportKind::Daily, Vec::new()),
+            (AgentReportKind::Session, vec![unpriced_session]),
+        ],
+        AgentReportKind::Session,
+        false,
+    );
+    let sections = serde_json::to_value(&sections).unwrap();
+    assert_eq!(
+        sections["totals"]["unpricedModels"],
+        json!(["new-model"]),
+        "the invoked section's unpriced models reach totals"
+    );
+
+    row.model_breakdowns.remove(0);
+    let report = report_json(std::slice::from_ref(&row), AgentReportKind::Daily);
+    assert!(report["totals"].get("unpricedModels").is_none());
+}
+
+#[test]
 fn renders_by_agent_json_breakdowns_when_requested() {
     let rows = vec![AllRow {
         period: "2026-01-02".to_string(),

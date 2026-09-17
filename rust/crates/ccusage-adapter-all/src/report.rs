@@ -10,12 +10,12 @@ use serde::{
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, ModelBreakdown, Result, SimpleTable, UsageSummary,
+    Align, Color, ModelBreakdown, Result, SimpleTable, UsageSummary, attach_unpriced_models,
     cli::{AgentReportKind, SharedArgs, SortOrder},
     cli_error, color, format_breakdown_model_label, format_currency, format_models_multiline,
     format_number, json_float,
     output::strip_cost_json,
-    print_box_title, should_use_compact_layout,
+    print_box_title, should_use_compact_layout, unpriced_models,
 };
 
 use super::types::AllRow;
@@ -172,7 +172,7 @@ fn agent_json(row: &AllRow) -> Value {
 }
 
 fn totals_json(rows: &[AllRow]) -> Value {
-    json!({
+    let mut totals = json!({
         "inputTokens": rows
             .iter()
             .map(|row| row.input_tokens)
@@ -194,7 +194,12 @@ fn totals_json(rows: &[AllRow]) -> Value {
             .map(|row| row.total_tokens)
             .fold(0, u64::saturating_add),
         "totalCost": json_float(rows.iter().map(|row| row.total_cost).sum::<f64>()),
-    })
+    });
+    attach_unpriced_models(
+        &mut totals,
+        unpriced_models(rows.iter().flat_map(|row| &row.model_breakdowns)),
+    );
+    totals
 }
 
 fn rows_key(kind: AgentReportKind) -> &'static str {
