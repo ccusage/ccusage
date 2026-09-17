@@ -29,7 +29,7 @@
 		}
 	],
 	"postUpgradeTasks": {
-		"commands": ["nix --extra-experimental-features 'nix-command flakes' run .#generate-bun-nix"],
+		"commands": ["nix run --extra-experimental-features 'nix-command flakes' .#generate-bun-nix"],
 		"executionMode": "branch",
 		"installTools": {
 			"nix": {}
