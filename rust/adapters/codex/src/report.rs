@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 
 use crate::{
     Align, CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket,
-    Color, PricingMap, Result, SimpleTable,
-    cli::{AgentReportKind, SharedArgs},
+    Color, PricingMap, Result, SimpleTable, attach_unpriced_models,
+    cli::{AgentReportKind, CostMode, SharedArgs},
     color, format_breakdown_model_label, format_currency, format_models_multiline, format_number,
     json_float, missing_pricing_model_for_token_total, print_box_title,
     print_missing_pricing_warnings_for_models, sanitize_terminal_text,
@@ -18,12 +18,16 @@ pub(super) fn report_from_groups(
     kind: AgentReportKind,
     pricing: &PricingMap,
     speed: CodexSpeedPolicy,
+    mode: CostMode,
 ) -> Value {
     let rows = groups
         .iter()
-        .map(|(period, group)| group_json(period, group, kind, pricing, speed))
+        .map(|(period, group)| group_json(period, group, kind, pricing, speed, mode))
         .collect::<Vec<_>>();
-    let totals = totals_json(groups.values(), pricing, speed);
+    let mut totals = totals_json(groups.values(), pricing, speed);
+    if mode != CostMode::Display {
+        attach_unpriced_models(&mut totals, codex_missing_pricing_models(groups, pricing));
+    }
     json!({
         rows_key(kind): rows,
         "totals": totals,
@@ -54,6 +58,7 @@ fn group_json(
     kind: AgentReportKind,
     pricing: &PricingMap,
     speed: CodexSpeedPolicy,
+    mode: CostMode,
 ) -> Value {
     let cost = calculate_group_cost(group, pricing, speed);
     let input_tokens = non_cached_input_tokens(
@@ -64,7 +69,13 @@ fn group_json(
     let models = group
         .models
         .iter()
-        .map(|(model, usage)| (model.clone(), model_usage_json(usage)))
+        .map(|(model, usage)| {
+            let mut value = model_usage_json(usage);
+            if mode != CostMode::Display && codex_model_missing_pricing(model, usage, pricing) {
+                value["missingPricing"] = json!(true);
+            }
+            (model.clone(), value)
+        })
         .collect::<BTreeMap<_, _>>();
     let mut row = json!({
         period_key(kind): period,
@@ -622,17 +633,152 @@ pub(super) fn print_table_from_groups(
     table.separator();
     table.push(codex_table_total_row(&totals, shared, shared.no_cost));
     table.print()?;
-    let missing_models = codex_missing_pricing_models(groups, pricing);
-    print_missing_pricing_warnings_for_models(
-        missing_models.iter().map(String::as_str),
-        shared.offline,
-    );
+    if shared.mode != CostMode::Display {
+        let missing_models = codex_missing_pricing_models(groups, pricing);
+        print_missing_pricing_warnings_for_models(
+            missing_models.iter().map(String::as_str),
+            shared.offline,
+        );
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn report_totals_list_unpriced_codex_models_only_when_present() {
+        let mut group = CodexGroup {
+            input_tokens: 100,
+            output_tokens: 5,
+            total_tokens: 105,
+            ..CodexGroup::default()
+        };
+        group.models.insert(
+            "gpt-unknown-preview".to_string(),
+            CodexModelUsage {
+                input_tokens: 100,
+                output_tokens: 5,
+                total_tokens: 105,
+                ..CodexModelUsage::default()
+            },
+        );
+        let groups = BTreeMap::from([("2026-08-20".to_string(), group)]);
+
+        let report = report_from_groups(
+            &groups,
+            AgentReportKind::Daily,
+            &PricingMap::default(),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            CostMode::Calculate,
+        );
+        assert_eq!(
+            report["totals"]["unpricedModels"],
+            json!(["gpt-unknown-preview"])
+        );
+        assert_eq!(
+            report["daily"][0]["models"]["gpt-unknown-preview"]["missingPricing"],
+            true
+        );
+
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{ "gpt-free": { "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
+        );
+        let mut free_group = CodexGroup {
+            input_tokens: 100,
+            output_tokens: 5,
+            total_tokens: 105,
+            ..CodexGroup::default()
+        };
+        free_group.models.insert(
+            "gpt-free".to_string(),
+            CodexModelUsage {
+                input_tokens: 100,
+                output_tokens: 5,
+                total_tokens: 105,
+                ..CodexModelUsage::default()
+            },
+        );
+        let free = BTreeMap::from([("2026-08-20".to_string(), free_group)]);
+        let report = report_from_groups(
+            &free,
+            AgentReportKind::Daily,
+            &pricing,
+            CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
+            CostMode::Calculate,
+        );
+        assert_eq!(report["totals"]["costUSD"], 0.0);
+        assert!(
+            report["totals"].get("unpricedModels").is_none(),
+            "a zero-rate price is a price"
+        );
+        assert!(
+            report["daily"][0]["models"]["gpt-free"]
+                .get("missingPricing")
+                .is_none()
+        );
+
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{ "gpt-priced": { "input_cost_per_token": 0.000002, "output_cost_per_token": 0.000008 } }"#,
+        );
+        let mut priced_group = CodexGroup {
+            input_tokens: 100,
+            output_tokens: 5,
+            total_tokens: 105,
+            ..CodexGroup::default()
+        };
+        priced_group.models.insert(
+            "gpt-priced".to_string(),
+            CodexModelUsage {
+                input_tokens: 100,
+                output_tokens: 5,
+                total_tokens: 105,
+                ..CodexModelUsage::default()
+            },
+        );
+        let priced = BTreeMap::from([("2026-08-20".to_string(), priced_group)]);
+        let report = report_from_groups(
+            &priced,
+            AgentReportKind::Daily,
+            &pricing,
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            CostMode::Calculate,
+        );
+        assert!(report["totals"]["costUSD"].as_f64().unwrap() > 0.0);
+        assert!(report["totals"].get("unpricedModels").is_none());
+    }
+
+    #[test]
+    fn display_mode_omits_missing_pricing_metadata() {
+        let mut group = CodexGroup::default();
+        group.models.insert(
+            "gpt-unknown-preview".to_string(),
+            CodexModelUsage {
+                input_tokens: 100,
+                total_tokens: 100,
+                ..CodexModelUsage::default()
+            },
+        );
+        let groups = BTreeMap::from([("2026-08-20".to_string(), group)]);
+
+        let report = report_from_groups(
+            &groups,
+            AgentReportKind::Daily,
+            &PricingMap::default(),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            CostMode::Display,
+        );
+
+        assert!(report["totals"].get("unpricedModels").is_none());
+        assert!(
+            report["daily"][0]["models"]["gpt-unknown-preview"]
+                .get("missingPricing")
+                .is_none()
+        );
+    }
 
     #[test]
     fn non_cached_input_tokens_excludes_cache_reads_and_creation() {

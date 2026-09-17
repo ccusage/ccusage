@@ -9,10 +9,10 @@
  * `compact.ts`). The embedded output is a flat map keyed by runtime model id.
  * The output is committed to the repository and embedded at build time, so
  * every platform ships the identical, pinned data without any build-time
- * network access. The same pinned catalog also generates the Codex auto-review
- * fallback metadata used by the Rust parser and the selection rules the Rust
- * runtime loader applies to live models.dev responses. Run via
- * `just gen-models-dev-pricing` (see the sibling `default.nix`).
+ * network access. The same pinned catalog also validates the models referenced
+ * by the Codex auto-review fallback metadata used by the Rust parser and the
+ * selection rules the Rust runtime loader applies to live models.dev responses.
+ * Run via `just gen-models-dev-pricing` (see the sibling `default.nix`).
  */
 import { generateCatalog } from './packages/core/src/generate.ts';
 import {
@@ -48,7 +48,6 @@ type Model = {
 };
 type ModelMetadata = {
 	id?: string;
-	release_date?: string;
 	modalities?: { input?: readonly string[]; output?: readonly string[] };
 };
 type Provider = { id?: string; models?: Record<string, Model> };
@@ -62,6 +61,19 @@ type CodexAutoReviewFallback = {
 	releasedOn: string;
 	model: string;
 };
+
+// Auto-review routing changes independently of public model releases. Pin this
+// timeline so catalog updates cannot invent transitions; new entries require
+// routing evidence, while older entries retain the existing best-effort history.
+const CODEX_AUTO_REVIEW_FALLBACKS = [
+	{ releasedOn: '2026-07-30', model: 'gpt-5.6-luna' },
+	{ releasedOn: '2026-03-05', model: 'gpt-5.4' },
+	{ releasedOn: '2026-02-05', model: 'gpt-5.3-codex' },
+	{ releasedOn: '2025-12-11', model: 'gpt-5.2-codex' },
+	{ releasedOn: '2025-11-13', model: 'gpt-5.1-codex' },
+	{ releasedOn: '2025-09-15', model: 'gpt-5-codex' },
+	{ releasedOn: '2025-08-07', model: 'gpt-5' },
+] as const satisfies readonly CodexAutoReviewFallback[];
 
 const { models, providers } = (await generateCatalog('.')) as {
 	models: Record<string, ModelMetadata>;
@@ -210,57 +222,17 @@ if (codexFallbacksOutfile != null && codexFallbacksOutfile.length > 0) {
 function generateCodexAutoReviewFallbacks(
 	models: Record<string, ModelMetadata>,
 ): CodexAutoReviewFallback[] {
-	const entries = Object.entries(models).filter(([modelId, model]) =>
-		isCodexAutoReviewFallbackCandidate(modelId, model),
+	const knownModels = new Set(
+		Object.entries(models).map(([modelId, model]) =>
+			openAiModelName(selectModelsDevPricingKey(modelId, model.id)),
+		),
 	);
-	const codexDecimalVersions = new Set(
-		entries
-			.map(([modelId]) => codexDecimalVersion(openAiModelName(modelId)))
-			.filter((version): version is string => version != null),
-	);
-
-	return entries
-		.filter(([modelId, model]) => {
-			const version = baseDecimalVersion(openAiModelName(modelId));
-			if (version == null || !codexDecimalVersions.has(version)) {
-				return true;
-			}
-			// Drop the base entry only when a `-codex` variant shipped on the same
-			// date. If the codex variant ships later, keep the base so events in
-			// the gap still resolve to the most recent model available then.
-			return !entries.some(
-				([candidateId, candidateModel]) =>
-					codexDecimalVersion(openAiModelName(candidateId)) === version &&
-					candidateModel.release_date === model.release_date,
-			);
-		})
-		.map(([modelId, model]) => ({
-			releasedOn: model.release_date!,
-			model: openAiModelName(model.id ?? modelId),
-		}))
-		.sort((left, right) => right.releasedOn.localeCompare(left.releasedOn));
-}
-
-function isCodexAutoReviewFallbackCandidate(modelId: string, model: ModelMetadata): boolean {
-	if (model.release_date == null || !/^\d{4}-\d{2}-\d{2}$/.test(model.release_date)) {
-		return false;
+	for (const fallback of CODEX_AUTO_REVIEW_FALLBACKS) {
+		if (!knownModels.has(fallback.model)) {
+			throw new Error(`Codex auto-review fallback model is missing: ${fallback.model}`);
+		}
 	}
-	const modelName = openAiModelName(modelId);
-	return (
-		modelName === 'gpt-5' ||
-		modelName === 'gpt-5-codex' ||
-		/^gpt-5\.\d+$/.test(modelName) ||
-		/^gpt-5\.\d+-codex$/.test(modelName)
-	);
-}
-
-function baseDecimalVersion(modelId: string): string | undefined {
-	return /^gpt-5\.\d+$/.test(modelId) ? modelId : undefined;
-}
-
-function codexDecimalVersion(modelId: string): string | undefined {
-	const match = /^(gpt-5\.\d+)-codex$/.exec(modelId);
-	return match?.[1];
+	return CODEX_AUTO_REVIEW_FALLBACKS.map((fallback) => ({ ...fallback }));
 }
 
 function openAiModelName(modelId: string): string {

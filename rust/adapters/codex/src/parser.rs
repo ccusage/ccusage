@@ -1141,8 +1141,9 @@ mod tests {
         let fallbacks = codex_auto_review_fallback_models();
 
         assert_eq!(fallbacks.len(), 7);
-        assert_eq!(fallbacks[0].released_on, "2026-04-23");
-        assert_eq!(fallbacks[0].model, "gpt-5.5");
+        assert_eq!(fallbacks[0].released_on, "2026-07-30");
+        assert_eq!(fallbacks[0].model, "gpt-5.6-luna");
+        assert!(!fallbacks.iter().any(|fallback| fallback.model == "gpt-5.5"));
         assert_eq!(fallbacks[6].released_on, "2025-08-07");
         assert_eq!(fallbacks[6].model, "gpt-5");
         assert!(
