@@ -61,7 +61,7 @@ These views support `--json`, `--compact`, `--offline`, and `--speed auto|standa
 | `CODEX_HOME` | Override the root directory, or comma-separated directories, containing Codex homes or saved `codex exec --json` JSONL files |
 | `LOG_LEVEL`  | Adjust log verbosity (0 silent … 5 trace)                                                                                    |
 
-When Codex emits a model alias, the CLI automatically resolves it through the LiteLLM pricing data when possible. The built-in `gpt-reserve` alias is priced as `gpt-5.6-luna`. For `codex-auto-review`, the Codex parser maps the label to the newest known Codex/OpenAI model available on the log date using a pinned models.dev snapshot before pricing uses the resolved model name. No manual override is needed.
+When Codex emits a model alias, the CLI automatically resolves it through the LiteLLM pricing data when possible. The built-in `gpt-reserve` alias is priced as `gpt-5.6-luna`. Codex logs retain `codex-auto-review` as a routing alias rather than recording its effective model, so ccusage applies a manually curated, best-effort timeline and marks the result with `"isFallback": true`. Based on OpenAI's [July 30, 2026 Auto-review migration announcement](https://community.openai.com/t/announcing-a-major-price-drop-for-5-6-terra-and-luna-and-fast-mode-for-5-6-sol/1388484), records from that date onward resolve to `gpt-5.6-luna`, while records from March 5 through July 29 resolve to `gpt-5.4`. Server-side routing or catalog overrides can still differ from this estimate.
 
 ## Speed Pricing
 
