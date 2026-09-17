@@ -14,7 +14,7 @@ use crate::{
         amp, antigravity, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
         kilo, kimi, openclaw, opencode, pi, qwen, zcode,
     },
-    cli::{AgentReportKind, CodexSpeed, NamedPiStore, SharedArgs, WeekDay},
+    cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
 };
 
@@ -674,7 +674,7 @@ fn load_codex_rows(
         return Ok(AgentRows {
             rows: groups
                 .iter()
-                .map(|(period, group)| codex_group_row(period, group, pricing, speed))
+                .map(|(period, group)| codex_group_row(period, group, pricing, speed, shared.mode))
                 .collect(),
             detected,
         });
@@ -687,7 +687,7 @@ fn load_codex_rows(
     Ok(AgentRows {
         rows: groups
             .iter()
-            .map(|(period, group)| codex_group_row(period, group, pricing, speed))
+            .map(|(period, group)| codex_group_row(period, group, pricing, speed, shared.mode))
             .collect(),
         detected,
     })
@@ -829,6 +829,7 @@ pub(super) fn codex_group_row<S>(
     group: &CodexGroup,
     pricing: &PricingMap,
     speed: S,
+    mode: CostMode,
 ) -> AllRow
 where
     S: Into<codex::CodexSpeedPolicy> + Copy,
@@ -851,7 +852,8 @@ where
                 cache_read_tokens: usage.cached_input_tokens,
                 extra_total_tokens: 0,
                 cost: codex::calculate_codex_model_cost(model, usage, pricing, speed),
-                missing_pricing: codex::codex_model_missing_pricing(model, usage, pricing),
+                missing_pricing: mode != CostMode::Display
+                    && codex::codex_model_missing_pricing(model, usage, pricing),
             }
         })
         .collect();
@@ -1097,7 +1099,7 @@ mod tests {
         let speed = codex::CodexSpeedPolicy::Auto(codex::CodexServiceTier::Standard);
 
         let focused_cost = codex::calculate_group_cost(&group, &pricing, speed);
-        let unified = codex_group_row("2026-07-22", &group, &pricing, speed);
+        let unified = codex_group_row("2026-07-22", &group, &pricing, speed, CostMode::Calculate);
 
         assert!((focused_cost - 40e-6).abs() < f64::EPSILON);
         assert!((unified.total_cost - focused_cost).abs() < f64::EPSILON);
@@ -1134,6 +1136,7 @@ mod tests {
             &group,
             &pricing,
             codex::CodexSpeedPolicy::Forced(codex::CodexServiceTier::Standard),
+            CostMode::Calculate,
         );
         let expected_cost =
             2_124.0 * 4e-6 + 875_306.0 * 0.4e-6 + 57_610.0 * 5e-6 + 11_150.0 * 18e-6;

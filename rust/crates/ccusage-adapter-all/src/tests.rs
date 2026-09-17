@@ -1142,6 +1142,7 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
         &group,
         &PricingMap::default(),
         CodexSpeed::Standard,
+        CostMode::Calculate,
     );
 
     assert_eq!(row.input_tokens, 10);
@@ -1195,7 +1196,13 @@ fn includes_codex_model_breakdowns_in_all_rows() {
         },
     );
 
-    let row = codex_group_row("2026-01-02", &group, &pricing, CodexSpeed::Standard);
+    let row = codex_group_row(
+        "2026-01-02",
+        &group,
+        &pricing,
+        CodexSpeed::Standard,
+        CostMode::Calculate,
+    );
 
     assert_eq!(row.model_breakdowns.len(), 2);
     assert_eq!(row.model_breakdowns[0].model_name, "gpt-5");
@@ -1203,6 +1210,35 @@ fn includes_codex_model_breakdowns_in_all_rows() {
     assert_eq!(row.model_breakdowns[0].cache_read_tokens, 80);
     assert_eq!(row.model_breakdowns[0].output_tokens, 40);
     assert_eq!(row.model_breakdowns[1].model_name, "gpt-5-mini");
+}
+
+#[test]
+fn display_mode_omits_codex_missing_pricing_from_unified_json() {
+    let mut group = CodexGroup::default();
+    group.models.insert(
+        "gpt-unknown-preview".to_string(),
+        CodexModelUsage {
+            input_tokens: 100,
+            total_tokens: 100,
+            ..CodexModelUsage::default()
+        },
+    );
+    let row = codex_group_row(
+        "2026-01-02",
+        &group,
+        &PricingMap::default(),
+        CodexSpeed::Standard,
+        CostMode::Display,
+    );
+
+    let report = report_json(&[row], AgentReportKind::Daily);
+
+    assert!(report["totals"].get("unpricedModels").is_none());
+    assert!(
+        report["daily"][0]["modelBreakdowns"][0]
+            .get("missingPricing")
+            .is_none()
+    );
 }
 
 #[test]

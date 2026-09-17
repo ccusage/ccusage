@@ -633,11 +633,13 @@ pub(super) fn print_table_from_groups(
     table.separator();
     table.push(codex_table_total_row(&totals, shared, shared.no_cost));
     table.print()?;
-    let missing_models = codex_missing_pricing_models(groups, pricing);
-    print_missing_pricing_warnings_for_models(
-        missing_models.iter().map(String::as_str),
-        shared.offline,
-    );
+    if shared.mode != CostMode::Display {
+        let missing_models = codex_missing_pricing_models(groups, pricing);
+        print_missing_pricing_warnings_for_models(
+            missing_models.iter().map(String::as_str),
+            shared.offline,
+        );
+    }
     Ok(())
 }
 
