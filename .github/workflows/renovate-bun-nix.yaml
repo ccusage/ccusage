@@ -115,7 +115,7 @@ jobs:
         env:
           BUN_NIX_PATCH: ${{ runner.temp }}/bun-nix.patch
         run: |
-          let generation = (^nix run 'path:../trusted#generate-bun-nix' | complete)
+          let generation = (^nix --extra-experimental-features 'nix-command flakes' run 'path:../trusted#generate-bun-nix' | complete)
           if $generation.exit_code != 0 {
             error make {msg: $"Bun derivation generation failed: ($generation.stderr | str trim)"}
           }
