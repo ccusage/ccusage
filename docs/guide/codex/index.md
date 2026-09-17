@@ -92,7 +92,7 @@ ccusage codex monthly --json
 ccusage codex session --json
 ```
 
-Session JSON includes per-model breakdowns, cached token counts, `lastActivity`, and `isFallback` flags for any events that required the legacy `gpt-5` pricing fallback.
+Session JSON includes per-model breakdowns, cached token counts, `lastActivity`, and `isFallback` flags for events that required either the legacy `gpt-5` pricing fallback or the manually curated `codex-auto-review` timeline.
 
 Have feedback or ideas? [Open an issue](https://github.com/ccusage/ccusage/issues/new) so we can improve Codex support.
 

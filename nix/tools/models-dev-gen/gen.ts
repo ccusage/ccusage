@@ -223,7 +223,9 @@ function generateCodexAutoReviewFallbacks(
 	models: Record<string, ModelMetadata>,
 ): CodexAutoReviewFallback[] {
 	const knownModels = new Set(
-		Object.entries(models).map(([modelId, model]) => openAiModelName(model.id ?? modelId)),
+		Object.entries(models).map(([modelId, model]) =>
+			openAiModelName(selectModelsDevPricingKey(modelId, model.id)),
+		),
 	);
 	for (const fallback of CODEX_AUTO_REVIEW_FALLBACKS) {
 		if (!knownModels.has(fallback.model)) {
