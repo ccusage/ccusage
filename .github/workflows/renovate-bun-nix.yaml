@@ -1,0 +1,213 @@
+name: Regenerate Renovate Bun derivations
+run-name: Regenerate Bun derivations for PR #${{ inputs.pr_number }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Renovate pull request number to update
+        required: true
+        type: string
+
+permissions: read-all
+
+concurrency:
+  group: renovate-bun-nix-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: none
+    outputs:
+      head_ref: ${{ steps.inspect.outputs.head_ref }}
+      head_sha: ${{ steps.inspect.outputs.head_sha }}
+      trusted_sha: ${{ github.sha }}
+    steps:
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
+
+      - name: Inspect the Renovate pull request
+        id: inspect
+        shell: nu {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          if $env.PR_NUMBER !~ '^[0-9]+$' {
+            error make {msg: 'The pull request number must contain only digits'}
+          }
+
+          let response = (^gh api $"repos/($env.GITHUB_REPOSITORY)/pulls/($env.PR_NUMBER)" | complete)
+          if $response.exit_code != 0 {
+            error make {msg: $"Could not read the pull request: ($response.stderr | str trim)"}
+          }
+          let pr = ($response.stdout | from json)
+          if $pr.user.login != 'renovate[bot]' {
+            error make {msg: 'Only pull requests opened by renovate[bot] are allowed'}
+          }
+          if $pr.head.repo.full_name != $env.GITHUB_REPOSITORY or $pr.head.ref !~ '^renovate/' {
+            error make {msg: 'The pull request must use a renovate/ branch in this repository'}
+          }
+          if $pr.base.ref != $env.GITHUB_DEFAULT_BRANCH {
+            error make {msg: $"The pull request must target ($env.GITHUB_DEFAULT_BRANCH)"}
+          }
+
+          let files_response = (^gh api --paginate --slurp $"repos/($env.GITHUB_REPOSITORY)/pulls/($env.PR_NUMBER)/files?per_page=100" | complete)
+          if $files_response.exit_code != 0 {
+            error make {msg: $"Could not read the pull request files: ($files_response.stderr | str trim)"}
+          }
+          let files = ($files_response.stdout | from json | flatten | get filename)
+          let bun_inputs = ($files | where {|path| $path =~ '^nix/tools/[^/]+/(bun[.]lock|package[.]json)$'})
+          if ($bun_inputs | is-empty) {
+            error make {msg: 'The pull request does not update a Bun tool manifest or lockfile'}
+          }
+
+          $"head_ref=($pr.head.ref)\nhead_sha=($pr.head.sha)\n" | save --append $env.GITHUB_OUTPUT
+
+  generate:
+    needs: inspect
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: none
+    outputs:
+      changed: ${{ steps.generate.outputs.changed }}
+    steps:
+      # Both the generator and its flake come from the trusted workflow commit.
+      # The Renovate branch is only parsed as input under a read-only token.
+      - name: Checkout the trusted generator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.inspect.outputs.trusted_sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout the Renovate candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.inspect.outputs.head_sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Set up Nix
+        uses: ./trusted/.github/actions/setup-nix-cache
+
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
+
+      - name: Generate the Bun derivation patch
+        id: generate
+        shell: nu {0}
+        working-directory: candidate
+        env:
+          BUN_NIX_PATCH: ${{ runner.temp }}/bun-nix.patch
+        run: |
+          let generation = (^nix run 'path:../trusted#generate-bun-nix' | complete)
+          if $generation.exit_code != 0 {
+            error make {msg: $"Bun derivation generation failed: ($generation.stderr | str trim)"}
+          }
+          print --stderr ($generation.stdout | str trim)
+
+          let changed = (^git diff --name-only | lines | where {|path| not ($path | is-empty)})
+          let unexpected = ($changed | where {|path| $path !~ '^nix/tools/[^/]+/bun[.]nix$'})
+          if not ($unexpected | is-empty) {
+            error make {msg: $"The trusted generator changed unexpected files: ($unexpected | str join ', ')"}
+          }
+
+          let patch = (^git diff --binary --full-index -- 'nix/tools/*/bun.nix' | complete)
+          if $patch.exit_code != 0 {
+            error make {msg: $"Could not create the Bun derivation patch: ($patch.stderr | str trim)"}
+          }
+          $patch.stdout | save --raw --force $env.BUN_NIX_PATCH
+          $"changed=(($changed | length) > 0)\n" | save --append $env.GITHUB_OUTPUT
+
+      - name: Upload the Bun derivation patch
+        if: steps.generate.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: renovate-bun-nix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bun-nix.patch
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs:
+      - inspect
+      - generate
+    if: needs.generate.outputs.changed == 'true'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: none
+    steps:
+      # This job never executes candidate code. It only applies a path-checked
+      # patch produced by the read-only job, then pushes without force.
+      - name: Checkout the exact Renovate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.inspect.outputs.head_sha }}
+          fetch-depth: 1
+
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
+        with:
+          version: 0.114.1
+
+      - name: Download the Bun derivation patch
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: renovate-bun-nix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/renovate-bun-nix
+
+      - name: Validate, commit, and push the generated files
+        shell: nu {0}
+        env:
+          BUN_NIX_PATCH: ${{ runner.temp }}/renovate-bun-nix/bun-nix.patch
+          EXPECTED_HEAD_SHA: ${{ needs.inspect.outputs.head_sha }}
+          HEAD_REF: ${{ needs.inspect.outputs.head_ref }}
+        run: |
+          let actual_head = (^git rev-parse HEAD | str trim)
+          if $actual_head != $env.EXPECTED_HEAD_SHA {
+            error make {msg: $"Expected head ($env.EXPECTED_HEAD_SHA), got ($actual_head)"}
+          }
+
+          let numstat = (^git apply --numstat $env.BUN_NIX_PATCH | complete)
+          if $numstat.exit_code != 0 {
+            error make {msg: $"Could not inspect the generated patch: ($numstat.stderr | str trim)"}
+          }
+          let files = ($numstat.stdout | lines | each {|line| $line | split row "\t" | last})
+          let unexpected = ($files | where {|path| $path !~ '^nix/tools/[^/]+/bun[.]nix$'})
+          if ($files | is-empty) or not ($unexpected | is-empty) {
+            error make {msg: $"Generated patch has invalid paths: ($files | str join ', ')"}
+          }
+
+          let check = (^git apply --check $env.BUN_NIX_PATCH | complete)
+          if $check.exit_code != 0 {
+            error make {msg: $"Generated patch does not apply cleanly: ($check.stderr | str trim)"}
+          }
+          ^git apply --index $env.BUN_NIX_PATCH
+          ^git config user.name 'github-actions[bot]'
+          ^git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          let commit = (^git commit --no-verify -m 'chore(nix): regenerate Bun derivations' | complete)
+          if $commit.exit_code != 0 {
+            error make {msg: $"Could not commit generated Bun derivations: ($commit.stderr | str trim)"}
+          }
+          let push = (^git push origin $"HEAD:refs/heads/($env.HEAD_REF)" | complete)
+          if $push.exit_code != 0 {
+            error make {msg: $"Could not push generated Bun derivations: ($push.stderr | str trim)"}
+          }
