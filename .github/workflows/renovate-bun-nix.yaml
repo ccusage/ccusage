@@ -1,5 +1,5 @@
 name: Regenerate Renovate Bun derivations
-run-name: Regenerate Bun derivations for PR #${{ inputs.pr_number }}
+run-name: 'Regenerate Bun derivations for PR #${{ inputs.pr_number }}'
 
 on:
   workflow_dispatch:
@@ -163,7 +163,7 @@ jobs:
       id-token: none
     steps:
       # This job never executes candidate code. It only applies a path-checked
-      # patch produced by the read-only job, then pushes without force.
+      # patch produced by the read-only job, then pushes against an exact lease.
       - name: Checkout the exact Renovate head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
