@@ -212,6 +212,83 @@ pub fn tiered_cost(tokens: u64, base: f64, above: Option<f64>, threshold: u64) -
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_rate_pricing_is_not_missing_pricing() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{ "free-model": { "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
+        );
+
+        assert_eq!(
+            missing_pricing_model_for_token_total(Some("free-model"), 100, Some(&pricing)),
+            None
+        );
+        assert_eq!(
+            missing_pricing_model_for_token_total(Some("unknown-model"), 100, Some(&pricing)),
+            Some("unknown-model".to_string())
+        );
+        assert_eq!(
+            missing_pricing_model_for_token_total(Some("unknown-model"), 0, Some(&pricing)),
+            None,
+            "usage without tokens is not reported"
+        );
+    }
+
+    #[test]
+    fn stored_costs_suppress_missing_pricing_detection() {
+        let pricing = PricingMap::default();
+        let usage = crate::TokenUsageRaw {
+            input_tokens: 100,
+            output_tokens: 10,
+            ..crate::TokenUsageRaw::default()
+        };
+
+        assert_eq!(
+            missing_pricing_model_for_usage(
+                Some("unknown-model"),
+                usage,
+                None,
+                CostMode::Auto,
+                Some(&pricing)
+            ),
+            Some("unknown-model".to_string())
+        );
+        assert_eq!(
+            missing_pricing_model_for_usage(
+                Some("unknown-model"),
+                usage,
+                Some(1.5),
+                CostMode::Auto,
+                Some(&pricing)
+            ),
+            None,
+            "auto mode trusts a stored cost"
+        );
+        assert_eq!(
+            missing_pricing_model_for_usage(
+                Some("unknown-model"),
+                usage,
+                None,
+                CostMode::Display,
+                Some(&pricing)
+            ),
+            None,
+            "display mode never looks prices up"
+        );
+        assert_eq!(
+            missing_pricing_model_for_usage(
+                Some("unknown-model"),
+                usage,
+                None,
+                CostMode::Calculate,
+                Some(&pricing)
+            ),
+            Some("unknown-model".to_string())
+        );
+    }
+
     use crate::{
         cli::CostMode,
         pricing::PricingMap,

@@ -47,7 +47,7 @@ These views support `--json`, `--compact`, `--offline`, and `--speed auto|standa
 
 - **Token deltas** – Each `event_msg` with `payload.type === "token_count"` reports cumulative totals and, when available, the latest request delta. Current MultiAgent V2 subagent rollouts can persist a replayed parent-history prefix; the CLI uses the final inherited snapshot as the child baseline, then counts only advancing usage from the child turn. Older Codex replay formats retain timestamp-based compatibility handling.
 - **Per-model grouping** – The active `turn_context` specifies the model for newly counted usage. Replayed parent contexts in current MultiAgent V2 subagent prefixes remain inherited history and do not add model usage to the child. We aggregate tokens per day/month and per model. Sessions lacking model metadata (seen in early September 2025 builds) are skipped.
-- **Pricing** – Rates come from LiteLLM's pricing dataset via the shared `LiteLLMPricingFetcher`. Codex's internal review label is resolved to the newest known model for the log date before pricing is calculated.
+- **Pricing** – Rates come from LiteLLM's pricing dataset via the shared `LiteLLMPricingFetcher`. Codex's internal review label uses the manually curated, date-based fallback timeline below and remains marked as approximate.
 - **Scheduled pricing** – DeepSeek V4 Flash and Pro use each event's timestamp: legacy rates apply before `2026-08-16T16:00:00Z`, and the later rates use UTC weekday peak windows of `01:00–04:00` and `06:00–10:00` (endpoints excluded). Cache creation follows the scheduled input rate.
 - **Speed pricing** – `--speed auto` is the default. For rollouts written by Codex CLI 0.144.0 and later, ccusage applies recorded `thread_settings_applied` tier changes chronologically: `priority` and legacy `fast` use Fast pricing, while `default` uses Standard pricing. Unmarked usage falls back to `config.toml` detection. Pass `--speed fast` or `--speed standard` to override every recorded tier. Fast pricing uses a model-specific multiplier only when one is available; otherwise, ccusage keeps standard pricing rather than inventing a rate.
 - **Legacy fallback** – Early September 2025 logs that never recorded `turn_context` metadata are still included; the CLI assumes `gpt-5` for pricing so you can review the tokens even though the model tag is missing (the JSON output also marks these rows with `"isFallback": true`).
@@ -61,7 +61,7 @@ These views support `--json`, `--compact`, `--offline`, and `--speed auto|standa
 | `CODEX_HOME` | Override the root directory, or comma-separated directories, containing Codex homes or saved `codex exec --json` JSONL files |
 | `LOG_LEVEL`  | Adjust log verbosity (0 silent … 5 trace)                                                                                    |
 
-When Codex emits a model alias, the CLI automatically resolves it through the LiteLLM pricing data when possible. The built-in `gpt-reserve` alias is priced as `gpt-5.6-luna`. For `codex-auto-review`, the Codex parser maps the label to the newest known Codex/OpenAI model available on the log date using a pinned models.dev snapshot before pricing uses the resolved model name. No manual override is needed.
+When Codex emits a model alias, the CLI automatically resolves it through the LiteLLM pricing data when possible. The built-in `gpt-reserve` alias is priced as `gpt-5.6-luna`. Codex logs retain `codex-auto-review` as a routing alias rather than recording its effective model, so ccusage applies a manually curated, best-effort timeline and marks the result with `"isFallback": true`. Based on OpenAI's [July 30, 2026 Auto-review migration announcement](https://community.openai.com/t/announcing-a-major-price-drop-for-5-6-terra-and-luna-and-fast-mode-for-5-6-sol/1388484), records from that date onward resolve to `gpt-5.6-luna`, while records from March 5 through July 29 resolve to `gpt-5.4`. Server-side routing or catalog overrides can still differ from this estimate.
 
 ## Speed Pricing
 
@@ -92,7 +92,7 @@ ccusage codex monthly --json
 ccusage codex session --json
 ```
 
-Session JSON includes per-model breakdowns, cached token counts, `lastActivity`, and `isFallback` flags for any events that required the legacy `gpt-5` pricing fallback.
+Session JSON includes per-model breakdowns, cached token counts, `lastActivity`, and `isFallback` flags for events that required either the legacy `gpt-5` pricing fallback or the manually curated `codex-auto-review` timeline.
 
 Have feedback or ideas? [Open an issue](https://github.com/ccusage/ccusage/issues/new) so we can improve Codex support.
 

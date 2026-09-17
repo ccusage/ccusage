@@ -29,6 +29,39 @@ ccusage blocks --json --no-cost
 
 This removes cost fields such as `totalCost`, `costUSD`, and nested `cost` values while keeping token, model, date, block, burn-rate, and projection fields.
 
+## Unpriced Models
+
+When a model has no known price, its usage is charged at `0`. Table output prints a warning on stderr; JSON output records it in the data instead, so scripts and dashboards can tell "free" from "unknown":
+
+- `totals.unpricedModels` lists the model names, sorted and deduplicated. The key is present only when at least one entry in the report had usage with no price, so `.totals.unpricedModels // []` is safe in `jq`.
+- Each affected entry in `modelBreakdowns` carries `"missingPricing": true`. Priced entries omit the key.
+
+Both fields describe pricing availability, not amounts, so `--no-cost` keeps them.
+
+```bash
+ccusage daily --json | jq '.totals.unpricedModels // []'
+```
+
+```json
+{
+	"totals": {
+		"inputTokens": 100488,
+		"outputTokens": 3994,
+		"cacheCreationTokens": 0,
+		"cacheReadTokens": 50688,
+		"totalTokens": 155170,
+		"totalCost": 0,
+		"unpricedModels": ["openrouter/auto-beta"]
+	}
+}
+```
+
+Detection follows the [cost mode](/guide/cost-modes): an entry counts as unpriced only when ccusage had to calculate its cost from tokens and found no price. In `display` mode, or in `auto` mode for an entry that carries its own stored cost, nothing is looked up, so nothing is reported. A model can therefore appear in `unpricedModels` and still show a positive cost when some of its entries carried stored costs. An absent key means no unpriced usage was detected under the selected mode, not that every price is current.
+
+Covered: `daily`, `weekly`, `monthly`, and `session` reports for every agent, including `--instances`, `--sections`, and `--by-agent`. Focused `codex` reports set `missingPricing` on the affected entries of each period's `models` map. Not covered: `blocks` and `session --id`, which have no `totals` object.
+
+Update ccusage, or run without `--offline`, once the pricing source lists the model.
+
 Unified reports also support JSON-oriented flags for dashboard-style consumers:
 
 ```bash

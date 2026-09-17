@@ -44,3 +44,5 @@ Token mapping:
 - `total_tokens` - provided directly or recomputed as input plus output for legacy entries.
 
 Pricing uses model metadata from `turn_context`. Early sessions without metadata fall back to `gpt-5`, mark `isFallbackModel === true`, and expose fallback rows as approximate in aggregate JSON.
+
+`codex-auto-review` is a server-routed alias and does not expose its effective model in the log. The adapter uses a manually curated timeline for API-equivalent cost estimates and keeps those events marked as fallback models. OpenAI announced a GPT-5.4 to GPT-5.6 Luna transition on 2026-07-30, so events from that date onward resolve to `gpt-5.6-luna`; events from 2026-03-05 through 2026-07-29 resolve to `gpt-5.4`. Server-side routing or catalog overrides can make the effective model differ from this estimate.
