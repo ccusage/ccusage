@@ -4,6 +4,6 @@
 	"private": true,
 	"description": "Dependency manifest for the Nix-built publint wrapper. Not part of the pnpm workspace; `bun.lock` and `bun.nix` here are what the sibling default.nix builds from.",
 	"dependencies": {
-		"publint": "0.3.12"
+		"publint": "0.3.24"
 	}
 }
