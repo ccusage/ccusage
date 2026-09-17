@@ -13,9 +13,9 @@
   ...
 }:
 {
-  "@types/node@24.13.3" = fetchurl {
-    url = "https://registry.npmjs.org/@types/node/-/node-24.13.3.tgz";
-    hash = "sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==";
+  "@types/node@24.13.4" = fetchurl {
+    url = "https://registry.npmjs.org/@types/node/-/node-24.13.4.tgz";
+    hash = "sha512-YJ7EqCstVTzIr0fMr7qul/977en+pQHrfmuKIo6Zr9i75Be21dr3MovcfvGtyvi2HAUrRerWps5sMO9I7WaxDw==";
   };
   "remeda@2.33.7" = fetchurl {
     url = "https://registry.npmjs.org/remeda/-/remeda-2.33.7.tgz";
