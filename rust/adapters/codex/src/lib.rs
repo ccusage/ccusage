@@ -29,7 +29,7 @@ pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
 use report::{print_table_from_groups, report_from_groups};
 
-use crate::cli::{AgentReportKind, CodexSpeed};
+use crate::cli::{AgentReportKind, CodexSpeed, CostMode};
 
 use serde_json::Value;
 
@@ -43,7 +43,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let groups = load_groups(&shared, args.kind)?;
     let speed = resolve_codex_speed(args.codex_speed);
     if wants_json(&shared) {
-        let output = report_from_groups(&groups, args.kind, &pricing, speed);
+        let output = report_from_groups(&groups, args.kind, &pricing, speed, shared.mode);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
     print_table_from_groups(&groups, args.kind, &pricing, speed, &shared)
@@ -58,7 +58,13 @@ pub fn report_json(
     speed: CodexSpeed,
 ) -> Result<Value> {
     let groups = aggregate_events(events, kind, timezone)?;
-    Ok(report_from_groups(&groups, kind, pricing, speed.into()))
+    Ok(report_from_groups(
+        &groups,
+        kind,
+        pricing,
+        speed.into(),
+        CostMode::Calculate,
+    ))
 }
 
 #[cfg(test)]
@@ -263,6 +269,7 @@ mod tests {
             AgentReportKind::Daily,
             &PricingMap::load_embedded(),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+            CostMode::Calculate,
         );
         let daily = &report["daily"][0];
         let model = &daily["models"]["gpt-5.6-terra"];
