@@ -16,8 +16,8 @@ catalogs:
       specifier: ^1.7.6
       version: 1.7.6
     vitepress-plugin-llms:
-      specifier: ^1.13.5
-      version: 1.13.5
+      specifier: ^1.14.0
+      version: 1.14.0
   types:
     '@types/node':
       specifier: ^24.13.3
@@ -74,7 +74,7 @@ importers:
         version: 1.7.6(vite@8.3.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
       vitepress-plugin-llms:
         specifier: catalog:docs
-        version: 1.13.5
+        version: 1.14.0
 
   packages/ccusage-darwin-arm64: {}
 
@@ -1154,8 +1154,8 @@ packages:
       vite:
         optional: true
 
-  vitepress-plugin-llms@1.13.5:
-    resolution: {integrity: sha512-CTiDkKRs0h64J5rdiICdHmXH4pM1gBu2S/MJ+OxSAm+vM72srBkHr86ZubzfMJbGJh4AMVKff4R3oCu8etI1ww==}
+  vitepress-plugin-llms@1.14.0:
+    resolution: {integrity: sha512-Qb42p9pYoRlMRbv+Yvh3reS4GInyr+ToU3G1tEC1Euz+gyBNywXkZIQPV/AoltizaakAeuI89Bkhkd7Y0jaM/w==}
     engines: {node: '>=18'}
 
   vitepress@2.0.0-alpha.20:
@@ -2242,7 +2242,7 @@ snapshots:
     optionalDependencies:
       vite: 8.3.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
 
-  vitepress-plugin-llms@1.13.5:
+  vitepress-plugin-llms@1.14.0:
     dependencies:
       '@11ty/gray-matter': 2.1.0
       markdown-it: 14.3.0
