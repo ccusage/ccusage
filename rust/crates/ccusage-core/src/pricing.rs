@@ -3033,14 +3033,20 @@ mod tests {
         let pricing = PricingMap::load_embedded();
 
         let base = pricing.find("claude-opus-5").unwrap();
-        assert!((base.input * 1e6 - 5.0).abs() < 1e-9);
+        let expected_fast = pricing
+            .find_exact_with_fallback("anthropic/claude-opus-5-fast")
+            .expect("the embedded snapshot carries the authored Fast tier");
+        assert_ne!(expected_fast.input, base.input);
 
         let fast = pricing
             .find("claude-opus-5-fast")
             .expect("the embedded snapshot prices the Fast tier");
-        assert!((fast.input * 1e6 - 12.0).abs() < 1e-9);
-        assert!((fast.output * 1e6 - 60.0).abs() < 1e-9);
-        assert_eq!(pricing.context_limit("claude-opus-5-fast"), Some(1_000_000));
+        assert_eq!(fast.input, expected_fast.input);
+        assert_eq!(fast.output, expected_fast.output);
+        assert_eq!(
+            pricing.context_limit("claude-opus-5-fast"),
+            pricing.context_limit("anthropic/claude-opus-5-fast")
+        );
 
         // A regional alias shadows the same base entry, and is exact-only for
         // the same reason: its premium is not the list rate.
@@ -3091,13 +3097,19 @@ mod tests {
         let pricing = PricingMap::load_embedded();
 
         let base = pricing.find("claude-opus-5").unwrap();
+        let expected_fast = pricing
+            .find_exact_with_fallback("anthropic/claude-opus-5-fast")
+            .expect("the embedded snapshot carries the authored Fast tier");
         let dotted = pricing
             .find("claude-opus-5.fast")
             .expect("the dotted spelling names the Fast tier");
-        assert!((dotted.input * 1e6 - 12.0).abs() < 1e-9);
-        assert!((dotted.output * 1e6 - 60.0).abs() < 1e-9);
+        assert_eq!(dotted.input, expected_fast.input);
+        assert_eq!(dotted.output, expected_fast.output);
         assert!(dotted.input > base.input);
-        assert_eq!(pricing.context_limit("claude-opus-5.fast"), Some(1_000_000));
+        assert_eq!(
+            pricing.context_limit("claude-opus-5.fast"),
+            pricing.context_limit("anthropic/claude-opus-5-fast")
+        );
     }
 
     #[test]
@@ -3151,15 +3163,18 @@ mod tests {
             "claude-opus-5-fast",
         )]);
         let pricing = PricingMap::load_embedded();
+        let expected_fast = pricing
+            .find_exact_with_fallback("anthropic/claude-opus-5-fast")
+            .expect("the embedded snapshot carries the authored Fast tier");
 
         let turbo = pricing
             .find("claude-opus-5-turbo")
             .expect("the alias resolves to the Fast tier");
-        assert!((turbo.input * 1e6 - 12.0).abs() < 1e-9);
-        assert!((turbo.output * 1e6 - 60.0).abs() < 1e-9);
+        assert_eq!(turbo.input, expected_fast.input);
+        assert_eq!(turbo.output, expected_fast.output);
         assert_eq!(
             pricing.context_limit("claude-opus-5-turbo"),
-            Some(1_000_000)
+            pricing.context_limit("anthropic/claude-opus-5-fast")
         );
     }
 

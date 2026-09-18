@@ -415,7 +415,15 @@ mod tests {
 
     #[test]
     fn accepts_normalized_provider_pricing_and_excludes_longer_fuzzy_matches() {
-        let pricing = PricingMap::load_embedded();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek/deepseek-v4-flash": {
+                    "input_cost_per_token": 0.00000014,
+                    "output_cost_per_token": 0.00000028
+                }
+            }"#,
+        );
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),
             timestamp_text: "2026-08-17T01:00:00.000Z".to_string(),
