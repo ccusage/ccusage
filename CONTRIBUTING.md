@@ -8,7 +8,7 @@ This guide exists to save maintainers and contributors time.
 
 Using AI tools is fine. Submitting generated output that you have not reviewed and cannot explain is not.
 
-If you use an agent, run it from the repository root so it picks up `CLAUDE.md` and the repo-local skills.
+If you use an agent, run it from the repository root so it picks up `AGENTS.md` and the repo-local skills.
 
 ## Contribution Gate
 
