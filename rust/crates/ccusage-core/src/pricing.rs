@@ -1316,36 +1316,18 @@ impl PricingMap {
         }
         // Full lookup (dropped the lock above so concurrent callers are not
         // serialized on the expensive fuzzy path).
-        let alias = crate::model_aliases::resolve_model_name(model);
-        let resolved_alias = alias.as_ref();
-        let fuzzy = self.allows_fuzzy_lookup(model, resolved_alias);
-        let result = self
-            .find_entry_or_alias(model, fuzzy)
-            .or_else(|| {
-                (resolved_alias != model)
-                    .then(|| self.find_entry_or_alias(resolved_alias, Fuzzy::Allowed))
-                    .flatten()
-            })
-            .or_else(|| {
+        let result = self.find_with_fallbacks(
+            model,
+            || {
                 self.enable_models_dev_fallback
-                    .then(|| {
-                        models_dev_pricing().and_then(|pricing| {
-                            pricing.find_entry_or_alias(resolved_alias, Fuzzy::Allowed)
-                        })
-                    })
+                    .then(models_dev_pricing)
                     .flatten()
-            })
-            // The embedded models.dev snapshot is a separate map, so it only
-            // resolves models the primary table misses and never perturbs its
-            // fuzzy alias matching. It works offline, unlike the network source.
-            .or_else(|| {
+            },
+            || {
                 self.enable_embedded_models_dev_fallback
-                    .then(|| {
-                        embedded_models_dev_pricing()
-                            .find_entry_or_alias(resolved_alias, Fuzzy::Allowed)
-                    })
-                    .flatten()
-            });
+                    .then(embedded_models_dev_pricing)
+            },
+        );
         // Store the result (including None for misses) so repeated lookups
         // for the same model that fails to match any pricing entry are also
         // short-circuited.
@@ -1355,6 +1337,42 @@ impl PricingMap {
         let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
         guard.insert(model.to_string(), result);
         result
+    }
+
+    fn find_with_fallbacks<'a>(
+        &self,
+        model: &str,
+        models_dev: impl FnOnce() -> Option<&'a PricingMap>,
+        embedded_models_dev: impl FnOnce() -> Option<&'a PricingMap>,
+    ) -> Option<Pricing> {
+        let alias = crate::model_aliases::resolve_model_name(model);
+        let resolved_alias = alias.as_ref();
+        let embedded_models_dev = embedded_models_dev();
+        let fuzzy =
+            self.allows_fuzzy_lookup_with_fallback(model, resolved_alias, embedded_models_dev);
+        self.find_entry_or_alias_with_fallback(model, fuzzy, embedded_models_dev)
+            .or_else(|| {
+                (resolved_alias != model)
+                    .then(|| {
+                        self.find_entry_or_alias_with_fallback(
+                            resolved_alias,
+                            Fuzzy::Allowed,
+                            embedded_models_dev,
+                        )
+                    })
+                    .flatten()
+            })
+            .or_else(|| {
+                models_dev()
+                    .and_then(|pricing| pricing.find_entry_or_alias(resolved_alias, Fuzzy::Allowed))
+            })
+            // The embedded models.dev snapshot is a separate map, so it only
+            // resolves models the primary table misses and never perturbs its
+            // fuzzy alias matching. It works offline, unlike the network source.
+            .or_else(|| {
+                embedded_models_dev
+                    .and_then(|pricing| pricing.find_entry_or_alias(resolved_alias, Fuzzy::Allowed))
+            })
     }
 
     /// Finds the pricing that applies to one usage event.
@@ -1430,21 +1448,56 @@ impl PricingMap {
     }
 
     fn find_entry_or_alias(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
+        self.find_entry_or_alias_with_fallback(
+            model,
+            fuzzy,
+            self.enable_embedded_models_dev_fallback
+                .then(embedded_models_dev_pricing),
+        )
+    }
+
+    fn find_entry_or_alias_with_fallback(
+        &self,
+        model: &str,
+        fuzzy: Fuzzy,
+        embedded_models_dev: Option<&PricingMap>,
+    ) -> Option<Pricing> {
         self.entries
             .get(model)
             .copied()
-            .or_else(|| pricing_alias(model).and_then(|alias| self.find_entry(alias, fuzzy)))
-            .or_else(|| self.find_entry(model, fuzzy))
+            .or_else(|| {
+                pricing_alias(model).and_then(|alias| {
+                    self.find_entry_with_fallback(alias, fuzzy, embedded_models_dev)
+                })
+            })
+            .or_else(|| self.find_entry_with_fallback(model, fuzzy, embedded_models_dev))
     }
 
+    #[cfg(test)]
     fn find_entry(&self, model: &str, fuzzy: Fuzzy) -> Option<Pricing> {
+        self.find_entry_with_fallback(
+            model,
+            fuzzy,
+            self.enable_embedded_models_dev_fallback
+                .then(embedded_models_dev_pricing),
+        )
+    }
+
+    fn find_entry_with_fallback(
+        &self,
+        model: &str,
+        fuzzy: Fuzzy,
+        embedded_models_dev: Option<&PricingMap>,
+    ) -> Option<Pricing> {
         self.entries.get(model).copied().or_else(|| {
             // A separator spelling of an exact-only id names that entry, so it
             // is answered from it rather than gated into a miss below.
             if let Some(id) = self.exact_only.id_spelled_by(model) {
                 return self.entries.get(id).copied();
             }
-            if fuzzy == Fuzzy::Denied || self.is_exact_only_lookup(model) {
+            if fuzzy == Fuzzy::Denied
+                || self.is_exact_only_lookup_with_fallback(model, embedded_models_dev)
+            {
                 return None;
             }
             let normalized_model = normalized_pricing_key(model);
@@ -1481,11 +1534,21 @@ impl PricingMap {
     /// interchangeably, so `claude-opus-5-eu` reaches the base model's entry
     /// just as `claude-opus-5@eu` would and has to be gated with it.
     fn is_exact_only_lookup(&self, model: &str) -> bool {
+        self.is_exact_only_lookup_with_fallback(
+            model,
+            self.enable_embedded_models_dev_fallback
+                .then(embedded_models_dev_pricing),
+        )
+    }
+
+    fn is_exact_only_lookup_with_fallback(
+        &self,
+        model: &str,
+        embedded_models_dev: Option<&PricingMap>,
+    ) -> bool {
         self.exact_only.contains_any_spelling(model)
-            || (self.enable_embedded_models_dev_fallback
-                && embedded_models_dev_pricing()
-                    .exact_only
-                    .contains_any_spelling(model))
+            || embedded_models_dev
+                .is_some_and(|pricing| pricing.exact_only.contains_any_spelling(model))
     }
 
     /// Whether the spelling a lookup recorded may be fuzzy-matched at all.
@@ -1496,8 +1559,15 @@ impl PricingMap {
     /// `claude-opus-5-fast` matches LiteLLM's `claude-opus-5` - would be billed
     /// at that model's rate and never reach the tier the alias names. Exact
     /// entries for the recorded spelling still win, as they do without an alias.
-    fn allows_fuzzy_lookup(&self, model: &str, resolved_alias: &str) -> Fuzzy {
-        if resolved_alias != model && self.is_exact_only_lookup(resolved_alias) {
+    fn allows_fuzzy_lookup_with_fallback(
+        &self,
+        model: &str,
+        resolved_alias: &str,
+        embedded_models_dev: Option<&PricingMap>,
+    ) -> Fuzzy {
+        if resolved_alias != model
+            && self.is_exact_only_lookup_with_fallback(resolved_alias, embedded_models_dev)
+        {
             return Fuzzy::Denied;
         }
         Fuzzy::Allowed
@@ -1526,7 +1596,9 @@ impl PricingMap {
     ) -> Option<u64> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
-        let fuzzy = self.allows_fuzzy_lookup(model, resolved_alias);
+        let embedded_models_dev = embedded_models_dev();
+        let fuzzy =
+            self.allows_fuzzy_lookup_with_fallback(model, resolved_alias, embedded_models_dev);
         self.context_limit_entry_or_alias(model, fuzzy)
             .or_else(|| {
                 (resolved_alias != model)
@@ -1539,7 +1611,7 @@ impl PricingMap {
                 })
             })
             .or_else(|| {
-                embedded_models_dev().and_then(|pricing| {
+                embedded_models_dev.and_then(|pricing| {
                     pricing.context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed)
                 })
             })
@@ -2666,6 +2738,36 @@ mod tests {
         pricing
     }
 
+    fn exact_only_fast_fallback_fixture() -> (PricingMap, PricingMap) {
+        let mut primary = PricingMap::default();
+        assert_eq!(
+            primary.load_json(
+                r#"{
+                    "claude-opus-5": {
+                        "input_cost_per_token": 0.000001,
+                        "output_cost_per_token": 0.000002
+                    }
+                }"#,
+            ),
+            1
+        );
+
+        let mut embedded_models_dev = PricingMap::default();
+        assert_eq!(
+            embedded_models_dev.load_models_dev_json_for_tests(
+                r#"{
+                    "claude-opus-5-fast": {
+                        "cost": { "input": 9, "output": 17 },
+                        "limit": { "context": 765432 },
+                        "exactOnly": true
+                    }
+                }"#,
+            ),
+            Some(1)
+        );
+        (primary, embedded_models_dev)
+    }
+
     fn timestamp(value: &str) -> crate::TimestampMs {
         crate::parse_ts_timestamp(value).unwrap()
     }
@@ -3024,36 +3126,40 @@ mod tests {
     }
 
     #[test]
-    fn embedded_pricing_prefers_an_exact_only_tier_over_a_fuzzy_litellm_match() {
+    fn exact_only_fallback_beats_a_fuzzy_primary_match() {
         // The snapshot lives in its own map, consulted only after the primary
-        // LiteLLM one misses, so marking `claude-opus-5-fast` exact-only there is
-        // not enough on its own: the primary fuzzy scan would answer with the
-        // base `claude-opus-5` entry it does carry and bill the tier at list
-        // price. Exercised through `load_embedded` to cover that lookup order.
-        let pricing = PricingMap::load_embedded();
+        // one misses, so marking `claude-opus-5-fast` exact-only there is not
+        // enough on its own: the primary fuzzy scan would answer with the base
+        // `claude-opus-5` entry it does carry and bill the tier at list price.
+        let (pricing, embedded_models_dev) = exact_only_fast_fallback_fixture();
 
         let base = pricing.find("claude-opus-5").unwrap();
-        let expected_fast = pricing
-            .find_exact_with_fallback("anthropic/claude-opus-5-fast")
-            .expect("the embedded snapshot carries the authored Fast tier");
-        assert_ne!(expected_fast.input, base.input);
-
         let fast = pricing
-            .find("claude-opus-5-fast")
-            .expect("the embedded snapshot prices the Fast tier");
-        assert_eq!(fast.input, expected_fast.input);
-        assert_eq!(fast.output, expected_fast.output);
+            .find_with_fallbacks("claude-opus-5-fast", || None, || Some(&embedded_models_dev))
+            .expect("the exact-only fallback prices the Fast tier");
+        assert_eq!(fast.input, 9e-6);
+        assert_eq!(fast.output, 17e-6);
+        assert_ne!(fast.input, base.input);
         assert_eq!(
-            pricing.context_limit("claude-opus-5-fast"),
-            pricing.context_limit("anthropic/claude-opus-5-fast")
+            pricing.context_limit_with_fallbacks(
+                "claude-opus-5-fast",
+                || None,
+                || Some(&embedded_models_dev),
+            ),
+            Some(765_432)
         );
+    }
 
-        // A regional alias shadows the same base entry, and is exact-only for
-        // the same reason: its premium is not the list rate.
-        let eu = pricing
-            .find("claude-opus-5@eu")
-            .expect("the embedded snapshot prices the EU alias");
-        assert!(eu.input > base.input);
+    #[test]
+    fn embedded_pricing_carries_exact_only_catalog_entries() {
+        let pricing = PricingMap::load_embedded();
+        let embedded = embedded_models_dev_pricing();
+
+        for model in ["claude-opus-5-fast", "claude-opus-5@eu"] {
+            assert!(embedded.exact_only.contains(model), "{model}");
+            assert!(pricing.find(model).is_some(), "{model}");
+            assert!(pricing.context_limit(model).is_some(), "{model}");
+        }
 
         // Gating keys the snapshot carries must not cost keys nothing prices
         // exactly their fuzzy match.
@@ -3094,21 +3200,22 @@ mod tests {
         // `claude-opus-5.fast` normalizes to the id the snapshot carries, so
         // leaving it out of the index lets the primary fuzzy scan answer with
         // the base `claude-opus-5` entry and bill the tier at list price.
-        let pricing = PricingMap::load_embedded();
+        let (pricing, embedded_models_dev) = exact_only_fast_fallback_fixture();
 
         let base = pricing.find("claude-opus-5").unwrap();
-        let expected_fast = pricing
-            .find_exact_with_fallback("anthropic/claude-opus-5-fast")
-            .expect("the embedded snapshot carries the authored Fast tier");
         let dotted = pricing
-            .find("claude-opus-5.fast")
+            .find_with_fallbacks("claude-opus-5.fast", || None, || Some(&embedded_models_dev))
             .expect("the dotted spelling names the Fast tier");
-        assert_eq!(dotted.input, expected_fast.input);
-        assert_eq!(dotted.output, expected_fast.output);
+        assert_eq!(dotted.input, 9e-6);
+        assert_eq!(dotted.output, 17e-6);
         assert!(dotted.input > base.input);
         assert_eq!(
-            pricing.context_limit("claude-opus-5.fast"),
-            pricing.context_limit("anthropic/claude-opus-5-fast")
+            pricing.context_limit_with_fallbacks(
+                "claude-opus-5.fast",
+                || None,
+                || Some(&embedded_models_dev),
+            ),
+            Some(765_432)
         );
     }
 
@@ -3162,19 +3269,24 @@ mod tests {
             "claude-opus-5-turbo",
             "claude-opus-5-fast",
         )]);
-        let pricing = PricingMap::load_embedded();
-        let expected_fast = pricing
-            .find_exact_with_fallback("anthropic/claude-opus-5-fast")
-            .expect("the embedded snapshot carries the authored Fast tier");
+        let (pricing, embedded_models_dev) = exact_only_fast_fallback_fixture();
 
         let turbo = pricing
-            .find("claude-opus-5-turbo")
+            .find_with_fallbacks(
+                "claude-opus-5-turbo",
+                || None,
+                || Some(&embedded_models_dev),
+            )
             .expect("the alias resolves to the Fast tier");
-        assert_eq!(turbo.input, expected_fast.input);
-        assert_eq!(turbo.output, expected_fast.output);
+        assert_eq!(turbo.input, 9e-6);
+        assert_eq!(turbo.output, 17e-6);
         assert_eq!(
-            pricing.context_limit("claude-opus-5-turbo"),
-            pricing.context_limit("anthropic/claude-opus-5-fast")
+            pricing.context_limit_with_fallbacks(
+                "claude-opus-5-turbo",
+                || None,
+                || Some(&embedded_models_dev),
+            ),
+            Some(765_432)
         );
     }
 
