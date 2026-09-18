@@ -174,7 +174,7 @@ jobs:
             run: nix build .#ccusage-tests --print-build-logs
           - name: JS test
             run: |
-              nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs nixpkgs#just
+              nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just
               pnpm install --frozen-lockfile
               mkdir -p "$HOME/.claude/projects"
               mkdir -p "$HOME/.config/claude/projects"
@@ -265,7 +265,7 @@ jobs:
       # shell is unnecessary. The package checks bring Nu through their Nix
       # shebangs; `publint` is the flake's own pinned build, invoked by every
       # package's prepack script.
-      - run: nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs .#publint
+      - run: nix profile install --inputs-from . .#pnpm nixpkgs#nodejs .#publint
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -387,12 +387,12 @@ jobs:
         shell: pwsh
         env:
           RUNNER_KIND: ${{ matrix.runner }}
-          # pnpm 11 defaults minimumReleaseAge to 1440 (24h), which would reject
+          # pnpm defaults minimumReleaseAge to 1440 (24h), which would reject
           # a pkg.pr.new preview published moments ago. Opt out via the config
           # env var (only pnpm reads PNPM_CONFIG_*, so npm ignores it).
           # https://pnpm.io/settings#minimumreleaseage
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
-          # pnpm 11 also defaults blockExoticSubdeps to true, which rejects the
+          # pnpm also defaults blockExoticSubdeps to true, which rejects the
           # URL-resolved native optional deps (e.g. @ccusage/ccusage-linux-x64)
           # that pkg.pr.new injects into the published ccusage manifest. Allow
           # them so `pnpm dlx <url>` can install the matching native binary.

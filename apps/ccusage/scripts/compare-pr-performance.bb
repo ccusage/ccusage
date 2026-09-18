@@ -1,5 +1,5 @@
 #!/usr/bin/env nix
-#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#bun nixpkgs#curl nixpkgs#git nixpkgs#hyperfine nixpkgs#nodejs nixpkgs#pnpm --command bb
+#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#bun nixpkgs#curl nixpkgs#git nixpkgs#hyperfine nixpkgs#nodejs ../../..#pnpm --command bb
 
 (require '[babashka.fs :as fs])
 

@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    pnpm-nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     bun2nix = {
       url = "github:nix-community/bun2nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -53,6 +54,7 @@
         ./nix/treefmt.nix
         ./nix/git-hooks.nix
         ./nix/packages.nix
+        ./nix/pnpm.nix
         ./nix/static-package.nix
         ./nix/darwin-x64-package.nix
         ./nix/tests.nix

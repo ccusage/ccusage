@@ -35,7 +35,7 @@ jobs:
           output: reports/external-links.md
       - uses: ./.github/actions/setup-nix-cache
       - name: Install documentation build tools
-        run: nix profile install --inputs-from . nixpkgs#pnpm nixpkgs#nodejs nixpkgs#just
+        run: nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just
       - run: pnpm install --frozen-lockfile
       - name: Build documentation
         run: just docs::build

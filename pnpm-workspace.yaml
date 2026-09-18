@@ -39,3 +39,7 @@ allowBuilds:
   workerd: true
 
 shellEmulator: true
+
+# Nix pins pnpm for local development and CI, so pnpm should not download a
+# second package-manager binary or add its bootstrap metadata to the lockfile.
+pmOnFail: ignore
