@@ -12,6 +12,7 @@ memchr.workspace = true
 rustc-hash.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+smallvec.workspace = true
 
 [dev-dependencies]
 ccusage-test-support.workspace = true

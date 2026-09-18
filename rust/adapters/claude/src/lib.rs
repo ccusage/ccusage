@@ -18,13 +18,14 @@ use serde::{
     Deserialize,
     de::{DeserializeOwned, Error as _, MapAccess, SeqAccess, Visitor},
 };
+use smallvec::SmallVec;
 
 use crate::{
     LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
     UsageSummary, calculate_cost, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     debug_log,
-    fast::{FxHashMap, SmallIndexVec, byte_lines, suffix_string},
+    fast::{FxHashMap, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
     progress,
 };
@@ -33,6 +34,13 @@ use crate::{
 pub use paths::timestamp_from_line;
 pub use paths::usage_files;
 pub(crate) use paths::{claude_paths, extract_project, extract_session_parts};
+
+struct DedupeIndex {
+    index: usize,
+    session_alias: Option<Arc<str>>,
+}
+
+type DedupeIndexVec = SmallVec<[DedupeIndex; 1]>;
 
 pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result<Vec<LoadedEntry>> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
@@ -98,7 +106,7 @@ fn load_entries_inner(
         ),
     );
 
-    let mut deduped_indexes: FxHashMap<u64, SmallIndexVec> = FxHashMap::default();
+    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
     let mut deduped: Vec<LoadedEntry> =
         Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
     for loaded_file in loaded_files {
@@ -144,7 +152,7 @@ fn should_replace_deduped_entry(candidate: &UsageEntry, existing: &UsageEntry) -
 
 fn push_deduped_entry(
     entry: LoadedEntry,
-    deduped_indexes: &mut FxHashMap<u64, SmallIndexVec>,
+    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
     deduped: &mut Vec<LoadedEntry>,
 ) {
     let dedupe_lookup = entry.data.message.id.as_deref().map(|message_id| {
@@ -154,13 +162,14 @@ fn push_deduped_entry(
         let existing_index = deduped_indexes
             .get(&exact_hash)
             .and_then(|indexes| {
-                indexes.iter().copied().find(|&index| {
+                indexes.iter().find_map(|dedupe_index| {
                     loaded_entry_matches_dedupe_key(
-                        &deduped[index],
+                        &deduped[dedupe_index.index],
                         message_id,
                         request_id,
                         session_id,
                     )
+                    .then_some(dedupe_index.index)
                 })
             })
             .or_else(|| {
@@ -168,14 +177,20 @@ fn push_deduped_entry(
                 let message_hash = usage_dedupe_hash(message_id, None, session_id);
                 let candidate_is_sidechain = is_sidechain_usage_entry(&entry.data);
                 deduped_indexes.get(&message_hash).and_then(|indexes| {
-                    indexes.iter().copied().find(|&index| {
-                        loaded_entry_matches_sidechain_dedupe_key(
-                            &deduped[index],
-                            message_id,
-                            session_id,
-                            entry.timestamp,
-                            candidate_is_sidechain,
-                        )
+                    indexes.iter().find_map(|dedupe_index| {
+                        let existing = &deduped[dedupe_index.index];
+                        let indexed_session_id = dedupe_index
+                            .session_alias
+                            .as_deref()
+                            .unwrap_or_else(|| loaded_entry_session_id(existing));
+                        (indexed_session_id == session_id
+                            && loaded_entry_matches_sidechain_dedupe_key(
+                                existing,
+                                message_id,
+                                entry.timestamp,
+                                candidate_is_sidechain,
+                            ))
+                        .then_some(dedupe_index.index)
                     })
                 })
             });
@@ -183,6 +198,26 @@ fn push_deduped_entry(
     });
 
     if let Some((hash, Some(index))) = dedupe_lookup {
+        let candidate_session_id = loaded_entry_session_id(&entry);
+        let existing_session_id = loaded_entry_session_id(&deduped[index]);
+        if candidate_session_id != existing_session_id
+            && let Some(message_id) = entry.data.message.id.as_deref()
+        {
+            // Cross-session copies can become the survivor, so keep every session route used by
+            // later sidechain replays.
+            push_deduped_session_alias(
+                deduped_indexes,
+                usage_dedupe_hash(message_id, None, candidate_session_id),
+                index,
+                candidate_session_id,
+            );
+            push_deduped_session_alias(
+                deduped_indexes,
+                usage_dedupe_hash(message_id, None, existing_session_id),
+                index,
+                existing_session_id,
+            );
+        }
         if should_replace_deduped_entry(&entry.data, &deduped[index].data) {
             deduped[index] = entry;
             push_deduped_index(deduped_indexes, hash, index);
@@ -269,12 +304,10 @@ fn loaded_entry_matches_dedupe_key(
 fn loaded_entry_matches_sidechain_dedupe_key(
     entry: &LoadedEntry,
     message_id: &str,
-    session_id: &str,
     timestamp: TimestampMs,
     candidate_is_sidechain: bool,
 ) -> bool {
     entry.data.message.id.as_deref() == Some(message_id)
-        && loaded_entry_session_id(entry) == session_id
         && entry.timestamp == timestamp
         && (candidate_is_sidechain || is_sidechain_usage_entry(&entry.data))
 }
@@ -284,13 +317,36 @@ fn is_sidechain_usage_entry(entry: &UsageEntry) -> bool {
 }
 
 fn push_deduped_index(
-    deduped_indexes: &mut FxHashMap<u64, SmallIndexVec>,
+    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
     hash: u64,
     index: usize,
 ) {
     let indexes = deduped_indexes.entry(hash).or_default();
-    if !indexes.contains(&index) {
-        indexes.push(index);
+    if !indexes
+        .iter()
+        .any(|dedupe_index| dedupe_index.index == index && dedupe_index.session_alias.is_none())
+    {
+        indexes.push(DedupeIndex {
+            index,
+            session_alias: None,
+        });
+    }
+}
+
+fn push_deduped_session_alias(
+    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
+    hash: u64,
+    index: usize,
+    session_id: &str,
+) {
+    let indexes = deduped_indexes.entry(hash).or_default();
+    if !indexes.iter().any(|dedupe_index| {
+        dedupe_index.index == index && dedupe_index.session_alias.as_deref() == Some(session_id)
+    }) {
+        indexes.push(DedupeIndex {
+            index,
+            session_alias: Some(Arc::from(session_id)),
+        });
     }
 }
 
@@ -1097,6 +1153,50 @@ mod tests {
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].data.message.usage.input_tokens, 200);
+    }
+
+    #[test]
+    fn dedupes_sidechain_replay_after_an_equal_copy_from_another_session() {
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let mut copied_parent = loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-parent",
+            is_sidechain: false,
+            cache_read_tokens: 20,
+            output_tokens: 10,
+        });
+        copied_parent.data.session_id = Some("session-b".to_string());
+        copied_parent.session_id = Arc::from("session-b");
+        push_deduped_entry(copied_parent, &mut deduped_indexes, &mut deduped);
+
+        push_deduped_entry(
+            loaded_usage_entry(UsageEntryFixture {
+                message_id: "msg-parent",
+                request_id: "req-parent",
+                is_sidechain: false,
+                cache_read_tokens: 20,
+                output_tokens: 10,
+            }),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+        push_deduped_entry(
+            loaded_usage_entry(UsageEntryFixture {
+                message_id: "msg-parent",
+                request_id: "req-sidechain-replay",
+                is_sidechain: true,
+                cache_read_tokens: 50_000,
+                output_tokens: 10,
+            }),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].data.request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 20);
     }
 
     #[test]

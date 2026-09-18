@@ -14,15 +14,15 @@ use crate::{
     ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
     UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
-    fast::{FxHashMap, SmallIndexVec, byte_lines, suffix_string},
+    fast::{FxHashMap, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
 };
 
 use super::{
-    advisor_usages_from_line, chunk_file_indexes_by_size, daily_usage_dedupe_hash,
+    DedupeIndexVec, advisor_usages_from_line, chunk_file_indexes_by_size, daily_usage_dedupe_hash,
     deserialize_usage_line, is_semver_prefix,
     paths::{claude_paths, extract_project, usage_files},
-    sidechain_replay_dedupe_hash,
+    push_deduped_index, push_deduped_session_alias, sidechain_replay_dedupe_hash,
 };
 
 pub(super) fn load_daily_summaries_inner(
@@ -56,7 +56,7 @@ pub(super) fn load_daily_summaries_inner(
         read_daily_usage_files_parallel(&files, tz.as_ref(), mode, pricing.as_ref())
     };
 
-    let mut deduped_indexes: FxHashMap<u64, SmallIndexVec> = FxHashMap::default();
+    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
     let mut deduped = Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
     for loaded_file in loaded_files {
         for entry in loaded_file.entries {
@@ -409,7 +409,7 @@ fn daily_usage_token_total(entry: &DailyLoadedEntry) -> u64 {
 
 fn push_deduped_daily_entry(
     entry: DailyLoadedEntry,
-    deduped_indexes: &mut FxHashMap<u64, SmallIndexVec>,
+    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
     deduped: &mut Vec<DailyLoadedEntry>,
 ) {
     let dedupe_lookup = entry.message_id.as_deref().map(|message_id| {
@@ -423,12 +423,14 @@ fn push_deduped_daily_entry(
         let existing_index = deduped_indexes
             .get(&exact_hash)
             .and_then(|indexes| {
-                indexes.iter().copied().find(|&index| {
-                    deduped[index].message_id.as_deref() == Some(message_id)
-                        && deduped[index].request_id.as_deref() == request_id
+                indexes.iter().find_map(|dedupe_index| {
+                    let existing = &deduped[dedupe_index.index];
+                    (existing.message_id.as_deref() == Some(message_id)
+                        && existing.request_id.as_deref() == request_id
                         && (request_id.is_some()
-                            || (deduped[index].session_id == entry.session_id
-                                && deduped[index].timestamp == entry.timestamp))
+                            || (existing.session_id == entry.session_id
+                                && existing.timestamp == entry.timestamp)))
+                        .then_some(dedupe_index.index)
                 })
             })
             .or_else(|| {
@@ -437,10 +439,16 @@ fn push_deduped_daily_entry(
                     sidechain_replay_dedupe_hash(message_id, entry.session_id.as_ref());
                 let candidate_is_sidechain = is_sidechain_daily_entry(&entry);
                 deduped_indexes.get(&message_hash).and_then(|indexes| {
-                    indexes.iter().copied().find(|&index| {
-                        deduped[index].message_id.as_deref() == Some(message_id)
-                            && deduped[index].session_id == entry.session_id
-                            && (candidate_is_sidechain || is_sidechain_daily_entry(&deduped[index]))
+                    indexes.iter().find_map(|dedupe_index| {
+                        let existing = &deduped[dedupe_index.index];
+                        let indexed_session_id = dedupe_index
+                            .session_alias
+                            .as_deref()
+                            .unwrap_or(existing.session_id.as_ref());
+                        (existing.message_id.as_deref() == Some(message_id)
+                            && indexed_session_id == entry.session_id.as_ref()
+                            && (candidate_is_sidechain || is_sidechain_daily_entry(existing)))
+                        .then_some(dedupe_index.index)
                     })
                 })
             });
@@ -448,11 +456,29 @@ fn push_deduped_daily_entry(
     });
 
     if let Some((hash, Some(index))) = dedupe_lookup {
+        if deduped[index].session_id != entry.session_id
+            && let Some(message_id) = entry.message_id.as_deref()
+        {
+            // Cross-session copies can become the survivor, so keep every session route used by
+            // later sidechain replays.
+            push_deduped_session_alias(
+                deduped_indexes,
+                sidechain_replay_dedupe_hash(message_id, entry.session_id.as_ref()),
+                index,
+                entry.session_id.as_ref(),
+            );
+            push_deduped_session_alias(
+                deduped_indexes,
+                sidechain_replay_dedupe_hash(message_id, deduped[index].session_id.as_ref()),
+                index,
+                deduped[index].session_id.as_ref(),
+            );
+        }
         if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
             deduped[index] = entry;
-            push_deduped_daily_index(deduped_indexes, hash, index);
+            push_deduped_index(deduped_indexes, hash, index);
             if let Some(message_id) = deduped[index].message_id.as_deref() {
-                push_deduped_daily_index(
+                push_deduped_index(
                     deduped_indexes,
                     sidechain_replay_dedupe_hash(message_id, deduped[index].session_id.as_ref()),
                     index,
@@ -465,9 +491,9 @@ fn push_deduped_daily_entry(
     let index = deduped.len();
     deduped.push(entry);
     if let Some((hash, None)) = dedupe_lookup {
-        push_deduped_daily_index(deduped_indexes, hash, index);
+        push_deduped_index(deduped_indexes, hash, index);
         if let Some(message_id) = deduped[index].message_id.as_deref() {
-            push_deduped_daily_index(
+            push_deduped_index(
                 deduped_indexes,
                 sidechain_replay_dedupe_hash(message_id, deduped[index].session_id.as_ref()),
                 index,
@@ -499,17 +525,6 @@ fn should_replace_deduped_daily_entry(
 
 fn is_sidechain_daily_entry(entry: &DailyLoadedEntry) -> bool {
     entry.is_sidechain == Some(true)
-}
-
-fn push_deduped_daily_index(
-    deduped_indexes: &mut FxHashMap<u64, SmallIndexVec>,
-    hash: u64,
-    index: usize,
-) {
-    let indexes = deduped_indexes.entry(hash).or_default();
-    if !indexes.contains(&index) {
-        indexes.push(index);
-    }
 }
 
 #[derive(Default)]
@@ -894,6 +909,62 @@ mod tests {
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].usage.input_tokens, 200);
+    }
+
+    #[test]
+    fn dedupes_daily_sidechain_replay_after_an_equal_copy_from_another_session() {
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        push_deduped_daily_entry(
+            daily_loaded_entry_at(
+                DailyEntryFixture {
+                    message_id: "msg-parent",
+                    request_id: "req-parent",
+                    is_sidechain: false,
+                    cache_read_tokens: 20,
+                    output_tokens: 10,
+                },
+                "session-b",
+                TimestampMs::from_millis(1_774_000_000_000),
+            ),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+        push_deduped_daily_entry(
+            daily_loaded_entry_at(
+                DailyEntryFixture {
+                    message_id: "msg-parent",
+                    request_id: "req-parent",
+                    is_sidechain: false,
+                    cache_read_tokens: 20,
+                    output_tokens: 10,
+                },
+                "session-a",
+                TimestampMs::from_millis(1_774_000_000_000),
+            ),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+        push_deduped_daily_entry(
+            daily_loaded_entry_at(
+                DailyEntryFixture {
+                    message_id: "msg-parent",
+                    request_id: "req-sidechain-replay",
+                    is_sidechain: true,
+                    cache_read_tokens: 50_000,
+                    output_tokens: 10,
+                },
+                "session-a",
+                TimestampMs::from_millis(1_774_000_000_000),
+            ),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
     struct DailyEntryFixture {
