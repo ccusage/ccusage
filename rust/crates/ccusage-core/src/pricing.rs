@@ -1347,21 +1347,16 @@ impl PricingMap {
     ) -> Option<Pricing> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
-        let embedded_models_dev = embedded_models_dev();
 
         // Keep exact primary hits on the local fast path. A fuzzy primary hit,
         // however, cannot be accepted until the live catalog has had a chance
         // to identify the request as one of its exact-only entries.
         if let Some(pricing) = self
-            .find_entry_or_alias_with_fallback(model, Fuzzy::Denied, embedded_models_dev)
+            .find_entry_or_alias_with_fallback(model, Fuzzy::Denied, None)
             .or_else(|| {
                 (resolved_alias != model)
                     .then(|| {
-                        self.find_entry_or_alias_with_fallback(
-                            resolved_alias,
-                            Fuzzy::Denied,
-                            embedded_models_dev,
-                        )
+                        self.find_entry_or_alias_with_fallback(resolved_alias, Fuzzy::Denied, None)
                     })
                     .flatten()
             })
@@ -1369,6 +1364,7 @@ impl PricingMap {
             return Some(pricing);
         }
 
+        let embedded_models_dev = embedded_models_dev();
         let models_dev = models_dev();
         let fuzzy = self.allows_fuzzy_lookup_with_fallbacks(
             model,
@@ -1586,9 +1582,9 @@ impl PricingMap {
 
     /// Whether the spelling a lookup recorded may be fuzzy-matched at all.
     ///
-    /// A `CCUSAGE_MODEL_ALIASES` entry pointing at an exact-only id is tried
-    /// only after this map has answered for the recorded spelling, so a spelling
-    /// that fuzzy-matches some other model - `claude-opus-5-turbo` aliased to
+    /// A configured or built-in alias pointing at an exact-only id is tried only
+    /// after this map has answered for the recorded spelling, so a spelling that
+    /// fuzzy-matches some other model - `claude-opus-5-turbo` aliased to
     /// `claude-opus-5-fast` matches LiteLLM's `claude-opus-5` - would be billed
     /// at that model's rate and never reach the tier the alias names. Exact
     /// entries for the recorded spelling still win, as they do without an alias.
@@ -1604,7 +1600,10 @@ impl PricingMap {
                 || models_dev
                     .is_some_and(|pricing| pricing.exact_only.contains_any_spelling(candidate))
         };
-        if is_exact_only(model) || (resolved_alias != model && is_exact_only(resolved_alias)) {
+        let requires_exact = |candidate| {
+            is_exact_only(candidate) || pricing_alias(candidate).is_some_and(&is_exact_only)
+        };
+        if requires_exact(model) || (resolved_alias != model && requires_exact(resolved_alias)) {
             return Fuzzy::Denied;
         }
         Fuzzy::Allowed
@@ -1633,7 +1632,6 @@ impl PricingMap {
     ) -> Option<u64> {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
-        let embedded_models_dev = embedded_models_dev();
 
         if let Some(context_limit) = self
             .context_limit_entry_or_alias(model, Fuzzy::Denied)
@@ -1646,6 +1644,7 @@ impl PricingMap {
             return Some(context_limit);
         }
 
+        let embedded_models_dev = embedded_models_dev();
         let models_dev = models_dev();
         let fuzzy = self.allows_fuzzy_lookup_with_fallbacks(
             model,
@@ -3272,6 +3271,7 @@ mod tests {
         );
 
         let live_lookups = AtomicUsize::new(0);
+        let embedded_lookups = AtomicUsize::new(0);
         let base = primary
             .find_with_fallbacks(
                 "kimi-k2.7-code",
@@ -3279,7 +3279,10 @@ mod tests {
                     live_lookups.fetch_add(1, Ordering::Relaxed);
                     Some(&models_dev)
                 },
-                || None,
+                || {
+                    embedded_lookups.fetch_add(1, Ordering::Relaxed);
+                    None
+                },
             )
             .expect("the primary map prices the base model exactly");
         assert_eq!(base.input, 1e-6);
@@ -3290,11 +3293,15 @@ mod tests {
                     live_lookups.fetch_add(1, Ordering::Relaxed);
                     Some(&models_dev)
                 },
-                || None,
+                || {
+                    embedded_lookups.fetch_add(1, Ordering::Relaxed);
+                    None
+                },
             ),
             Some(123_456)
         );
         assert_eq!(live_lookups.load(Ordering::Relaxed), 0);
+        assert_eq!(embedded_lookups.load(Ordering::Relaxed), 0);
     }
 
     #[test]
@@ -5076,6 +5083,7 @@ mod tests {
         );
 
         let live_lookups = AtomicUsize::new(0);
+        let embedded_lookups = AtomicUsize::new(0);
         let resolved = pricing
             .find_with_fallbacks(
                 "claude-opus-5-turbo",
@@ -5083,7 +5091,10 @@ mod tests {
                     live_lookups.fetch_add(1, Ordering::Relaxed);
                     None
                 },
-                || None,
+                || {
+                    embedded_lookups.fetch_add(1, Ordering::Relaxed);
+                    None
+                },
             )
             .unwrap();
         assert_eq!(resolved.input, 9e-6);
@@ -5095,11 +5106,56 @@ mod tests {
                     live_lookups.fetch_add(1, Ordering::Relaxed);
                     None
                 },
-                || None,
+                || {
+                    embedded_lookups.fetch_add(1, Ordering::Relaxed);
+                    None
+                },
             ),
             Some(765_432)
         );
         assert_eq!(live_lookups.load(Ordering::Relaxed), 0);
+        assert_eq!(embedded_lookups.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn pricing_lookup_preserves_a_live_exact_only_builtin_alias_target() {
+        let mut pricing = PricingMap::default();
+        assert_eq!(
+            pricing.load_json(
+                r#"{
+                    "gpt-5.6": {
+                        "input_cost_per_token": 0.000001,
+                        "output_cost_per_token": 0.000002,
+                        "max_input_tokens": 123456
+                    }
+                }"#,
+            ),
+            1
+        );
+        let mut models_dev = PricingMap::default();
+        assert_eq!(
+            models_dev.load_json(
+                r#"{
+                    "gpt-5.6-luna": {
+                        "input_cost_per_token": 0.000009,
+                        "output_cost_per_token": 0.000017,
+                        "max_input_tokens": 765432
+                    }
+                }"#,
+            ),
+            1
+        );
+        models_dev.exact_only.insert("gpt-5.6-luna".to_string());
+
+        let resolved = pricing
+            .find_with_fallbacks("gpt-reserve", || Some(&models_dev), || None)
+            .unwrap();
+        assert_eq!(resolved.input, 9e-6);
+        assert_eq!(resolved.output, 17e-6);
+        assert_eq!(
+            pricing.context_limit_with_fallbacks("gpt-reserve", || Some(&models_dev), || None,),
+            Some(765_432)
+        );
     }
 
     #[test]
