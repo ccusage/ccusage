@@ -1348,8 +1348,34 @@ impl PricingMap {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
         let embedded_models_dev = embedded_models_dev();
-        let fuzzy =
-            self.allows_fuzzy_lookup_with_fallback(model, resolved_alias, embedded_models_dev);
+
+        // Keep exact primary hits on the local fast path. A fuzzy primary hit,
+        // however, cannot be accepted until the live catalog has had a chance
+        // to identify the request as one of its exact-only entries.
+        if let Some(pricing) = self
+            .find_entry_or_alias_with_fallback(model, Fuzzy::Denied, embedded_models_dev)
+            .or_else(|| {
+                (resolved_alias != model)
+                    .then(|| {
+                        self.find_entry_or_alias_with_fallback(
+                            resolved_alias,
+                            Fuzzy::Denied,
+                            embedded_models_dev,
+                        )
+                    })
+                    .flatten()
+            })
+        {
+            return Some(pricing);
+        }
+
+        let models_dev = models_dev();
+        let fuzzy = self.allows_fuzzy_lookup_with_fallbacks(
+            model,
+            resolved_alias,
+            models_dev,
+            embedded_models_dev,
+        );
         self.find_entry_or_alias_with_fallback(model, fuzzy, embedded_models_dev)
             .or_else(|| {
                 (resolved_alias != model)
@@ -1363,7 +1389,7 @@ impl PricingMap {
                     .flatten()
             })
             .or_else(|| {
-                models_dev().and_then(|pricing| {
+                models_dev.and_then(|pricing| {
                     pricing.find_entry_or_alias_with_fallback(
                         resolved_alias,
                         fuzzy,
@@ -1531,9 +1557,11 @@ impl PricingMap {
     /// carried entry gates the scan, so a key nothing prices exactly still falls
     /// back to fuzzy matching rather than losing its rate.
     ///
-    /// The network catalog is deliberately not consulted: reading it would fetch
-    /// models.dev before the primary lookup has even missed, and it is generated
-    /// from the same rules as the snapshot the check already reads.
+    /// The lower-level check does not fetch the network catalog. Top-level
+    /// fallback lookup first tries exact primary entries, then loads the live
+    /// catalog and combines its exact-only set with this one before any fuzzy
+    /// primary scan. This preserves the local fast path without letting a live
+    /// tier be hidden by a primary base-model match.
     /// Membership is asked of every spelling of the id, not just the one the
     /// catalog wrote: the fuzzy scan the gate protects matches `.`, `@` and `-`
     /// interchangeably, so `claude-opus-5-eu` reaches the base model's entry
@@ -1564,16 +1592,19 @@ impl PricingMap {
     /// `claude-opus-5-fast` matches LiteLLM's `claude-opus-5` - would be billed
     /// at that model's rate and never reach the tier the alias names. Exact
     /// entries for the recorded spelling still win, as they do without an alias.
-    fn allows_fuzzy_lookup_with_fallback(
+    fn allows_fuzzy_lookup_with_fallbacks(
         &self,
         model: &str,
         resolved_alias: &str,
+        models_dev: Option<&PricingMap>,
         embedded_models_dev: Option<&PricingMap>,
     ) -> Fuzzy {
-        if self.is_exact_only_lookup_with_fallback(model, embedded_models_dev)
-            || (resolved_alias != model
-                && self.is_exact_only_lookup_with_fallback(resolved_alias, embedded_models_dev))
-        {
+        let is_exact_only = |candidate| {
+            self.is_exact_only_lookup_with_fallback(candidate, embedded_models_dev)
+                || models_dev
+                    .is_some_and(|pricing| pricing.exact_only.contains_any_spelling(candidate))
+        };
+        if is_exact_only(model) || (resolved_alias != model && is_exact_only(resolved_alias)) {
             return Fuzzy::Denied;
         }
         Fuzzy::Allowed
@@ -1603,8 +1634,25 @@ impl PricingMap {
         let alias = crate::model_aliases::resolve_model_name(model);
         let resolved_alias = alias.as_ref();
         let embedded_models_dev = embedded_models_dev();
-        let fuzzy =
-            self.allows_fuzzy_lookup_with_fallback(model, resolved_alias, embedded_models_dev);
+
+        if let Some(context_limit) = self
+            .context_limit_entry_or_alias(model, Fuzzy::Denied)
+            .or_else(|| {
+                (resolved_alias != model)
+                    .then(|| self.context_limit_entry_or_alias(resolved_alias, Fuzzy::Denied))
+                    .flatten()
+            })
+        {
+            return Some(context_limit);
+        }
+
+        let models_dev = models_dev();
+        let fuzzy = self.allows_fuzzy_lookup_with_fallbacks(
+            model,
+            resolved_alias,
+            models_dev,
+            embedded_models_dev,
+        );
         self.context_limit_entry_or_alias(model, fuzzy)
             .or_else(|| {
                 (resolved_alias != model)
@@ -1612,7 +1660,7 @@ impl PricingMap {
                     .flatten()
             })
             .or_else(|| {
-                models_dev()
+                models_dev
                     .and_then(|pricing| pricing.context_limit_entry_or_alias(resolved_alias, fuzzy))
             })
             .or_else(|| {
@@ -3170,6 +3218,83 @@ mod tests {
             ),
             Some(765_432)
         );
+    }
+
+    #[test]
+    fn live_exact_only_fallback_beats_a_fuzzy_primary_match() {
+        // The live catalog can add a separately priced tier before the
+        // embedded snapshot is regenerated. Its exact-only verdict must gate
+        // the primary map's fuzzy scan or that scan bills the base model.
+        let mut primary = PricingMap::default();
+        assert_eq!(
+            primary.load_json(
+                r#"{
+                    "kimi-k2.7-code": {
+                        "input_cost_per_token": 0.000001,
+                        "output_cost_per_token": 0.000002,
+                        "max_input_tokens": 123456
+                    }
+                }"#,
+            ),
+            1
+        );
+
+        let mut models_dev = PricingMap::default();
+        assert_eq!(
+            models_dev.load_models_dev_json_missing(
+                r#"{
+                    "moonshotai": {
+                        "models": {
+                            "kimi-k2.7-code-highspeed": {
+                                "cost": { "input": 9, "output": 17 },
+                                "limit": { "context": 765432 }
+                            }
+                        }
+                    }
+                }"#,
+            ),
+            Some(1)
+        );
+        assert!(models_dev.exact_only.contains("kimi-k2.7-code-highspeed"));
+
+        let tier = primary
+            .find_with_fallbacks("kimi-k2.7-code-highspeed", || Some(&models_dev), || None)
+            .expect("the live fallback prices the Highspeed tier");
+        assert_eq!(tier.input, 9e-6);
+        assert_eq!(tier.output, 17e-6);
+        assert_eq!(
+            primary.context_limit_with_fallbacks(
+                "kimi-k2.7-code-highspeed",
+                || Some(&models_dev),
+                || None,
+            ),
+            Some(765_432)
+        );
+
+        let live_lookups = AtomicUsize::new(0);
+        let base = primary
+            .find_with_fallbacks(
+                "kimi-k2.7-code",
+                || {
+                    live_lookups.fetch_add(1, Ordering::Relaxed);
+                    Some(&models_dev)
+                },
+                || None,
+            )
+            .expect("the primary map prices the base model exactly");
+        assert_eq!(base.input, 1e-6);
+        assert_eq!(
+            primary.context_limit_with_fallbacks(
+                "kimi-k2.7-code",
+                || {
+                    live_lookups.fetch_add(1, Ordering::Relaxed);
+                    Some(&models_dev)
+                },
+                || None,
+            ),
+            Some(123_456)
+        );
+        assert_eq!(live_lookups.load(Ordering::Relaxed), 0);
     }
 
     #[test]
