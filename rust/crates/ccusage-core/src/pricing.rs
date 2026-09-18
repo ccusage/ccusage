@@ -1676,7 +1676,7 @@ impl PricingMap {
                         self.context_limit_entry_or_alias_in(
                             &self.builtin_context_limits,
                             resolved_alias,
-                            Fuzzy::Allowed,
+                            fuzzy,
                         )
                     })
                     .flatten()
@@ -3308,6 +3308,15 @@ mod tests {
             assert!(pricing.context_limit(model).is_some(), "{model}");
         }
 
+        let expected_fast = embedded.find_exact("claude-opus-5-fast").unwrap();
+        let actual_fast = pricing.find("claude-opus-5-fast").unwrap();
+        assert_eq!(actual_fast.input, expected_fast.input);
+        assert_eq!(actual_fast.output, expected_fast.output);
+        assert_eq!(
+            pricing.context_limit("claude-opus-5-fast"),
+            embedded.context_limit("claude-opus-5-fast")
+        );
+
         // Gating keys the snapshot carries must not cost keys nothing prices
         // exactly their fuzzy match.
         assert!(pricing.find("claude-opus-5-20260115").is_some());
@@ -3438,6 +3447,32 @@ mod tests {
                 || Some(&embedded_models_dev),
             ),
             Some(765_432)
+        );
+
+        let mut builtin = PricingMap::default();
+        builtin
+            .builtin_context_limits
+            .insert("claude-opus-5".to_string(), 123_456);
+        let mut exact_only_without_context = PricingMap::default();
+        assert_eq!(
+            exact_only_without_context.load_models_dev_json_for_tests(
+                r#"{
+                    "claude-opus-5-fast": {
+                        "cost": { "input": 9, "output": 17 },
+                        "exactOnly": true
+                    }
+                }"#,
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            builtin.context_limit_with_fallbacks(
+                "claude-opus-5-turbo",
+                || None,
+                || Some(&exact_only_without_context),
+            ),
+            None,
+            "an exact-only alias without a published limit must not inherit a fuzzy builtin limit"
         );
     }
 
@@ -5013,6 +5048,58 @@ mod tests {
             pricing.context_limit("claude-opus-4-8"),
             pricing.context_limit_entry("claude-opus-4-8", Fuzzy::Allowed)
         );
+    }
+
+    #[test]
+    fn pricing_lookup_prefers_an_exact_alias_target_over_a_fuzzy_original_match() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+            "claude-opus-5-turbo",
+            "sentinel-exact-target",
+        )]);
+        let mut pricing = PricingMap::default();
+        assert_eq!(
+            pricing.load_json(
+                r#"{
+                    "claude-opus-5": {
+                        "input_cost_per_token": 0.000001,
+                        "output_cost_per_token": 0.000002,
+                        "max_input_tokens": 123456
+                    },
+                    "sentinel-exact-target": {
+                        "input_cost_per_token": 0.000009,
+                        "output_cost_per_token": 0.000017,
+                        "max_input_tokens": 765432
+                    }
+                }"#,
+            ),
+            2
+        );
+
+        let live_lookups = AtomicUsize::new(0);
+        let resolved = pricing
+            .find_with_fallbacks(
+                "claude-opus-5-turbo",
+                || {
+                    live_lookups.fetch_add(1, Ordering::Relaxed);
+                    None
+                },
+                || None,
+            )
+            .unwrap();
+        assert_eq!(resolved.input, 9e-6);
+        assert_eq!(resolved.output, 17e-6);
+        assert_eq!(
+            pricing.context_limit_with_fallbacks(
+                "claude-opus-5-turbo",
+                || {
+                    live_lookups.fetch_add(1, Ordering::Relaxed);
+                    None
+                },
+                || None,
+            ),
+            Some(765_432)
+        );
+        assert_eq!(live_lookups.load(Ordering::Relaxed), 0);
     }
 
     #[test]
