@@ -1200,6 +1200,51 @@ mod tests {
     }
 
     #[test]
+    fn dedupes_sidechain_replay_after_cross_session_survivor_replacement() {
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let mut copied_parent = loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-parent",
+            is_sidechain: false,
+            cache_read_tokens: 20,
+            output_tokens: 10,
+        });
+        copied_parent.data.session_id = Some("session-b".to_string());
+        copied_parent.session_id = Arc::from("session-b");
+        push_deduped_entry(copied_parent, &mut deduped_indexes, &mut deduped);
+
+        push_deduped_entry(
+            loaded_usage_entry(UsageEntryFixture {
+                message_id: "msg-parent",
+                request_id: "req-parent",
+                is_sidechain: false,
+                cache_read_tokens: 30,
+                output_tokens: 10,
+            }),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+
+        let mut copied_session_replay = loaded_usage_entry(UsageEntryFixture {
+            message_id: "msg-parent",
+            request_id: "req-sidechain-replay",
+            is_sidechain: true,
+            cache_read_tokens: 50_000,
+            output_tokens: 10,
+        });
+        copied_session_replay.data.session_id = Some("session-b".to_string());
+        copied_session_replay.session_id = Arc::from("session-b");
+        push_deduped_entry(copied_session_replay, &mut deduped_indexes, &mut deduped);
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].data.request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].session_id.as_ref(), "session-a");
+        assert_eq!(deduped[0].data.message.usage.cache_read_input_tokens, 30);
+    }
+
+    #[test]
     fn keeps_parent_usage_when_sidechain_replays_message_with_new_request_id() {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();

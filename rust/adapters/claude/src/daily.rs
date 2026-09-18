@@ -967,6 +967,63 @@ mod tests {
         assert_eq!(deduped[0].usage.cache_read_input_tokens, 20);
     }
 
+    #[test]
+    fn dedupes_daily_sidechain_replay_after_cross_session_survivor_replacement() {
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        push_deduped_daily_entry(
+            daily_loaded_entry_at(
+                DailyEntryFixture {
+                    message_id: "msg-parent",
+                    request_id: "req-parent",
+                    is_sidechain: false,
+                    cache_read_tokens: 20,
+                    output_tokens: 10,
+                },
+                "session-b",
+                TimestampMs::from_millis(1_774_000_000_000),
+            ),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+        push_deduped_daily_entry(
+            daily_loaded_entry_at(
+                DailyEntryFixture {
+                    message_id: "msg-parent",
+                    request_id: "req-parent",
+                    is_sidechain: false,
+                    cache_read_tokens: 30,
+                    output_tokens: 10,
+                },
+                "session-a",
+                TimestampMs::from_millis(1_774_000_000_000),
+            ),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+        push_deduped_daily_entry(
+            daily_loaded_entry_at(
+                DailyEntryFixture {
+                    message_id: "msg-parent",
+                    request_id: "req-sidechain-replay",
+                    is_sidechain: true,
+                    cache_read_tokens: 50_000,
+                    output_tokens: 10,
+                },
+                "session-b",
+                TimestampMs::from_millis(1_774_000_000_000),
+            ),
+            &mut deduped_indexes,
+            &mut deduped,
+        );
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].request_id.as_deref(), Some("req-parent"));
+        assert_eq!(deduped[0].session_id.as_ref(), "session-a");
+        assert_eq!(deduped[0].usage.cache_read_input_tokens, 30);
+    }
+
     struct DailyEntryFixture {
         message_id: &'static str,
         request_id: &'static str,
