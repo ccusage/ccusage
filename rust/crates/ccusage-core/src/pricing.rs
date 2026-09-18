@@ -1565,8 +1565,9 @@ impl PricingMap {
         resolved_alias: &str,
         embedded_models_dev: Option<&PricingMap>,
     ) -> Fuzzy {
-        if resolved_alias != model
-            && self.is_exact_only_lookup_with_fallback(resolved_alias, embedded_models_dev)
+        if self.is_exact_only_lookup_with_fallback(model, embedded_models_dev)
+            || (resolved_alias != model
+                && self.is_exact_only_lookup_with_fallback(resolved_alias, embedded_models_dev))
         {
             return Fuzzy::Denied;
         }
@@ -1602,7 +1603,7 @@ impl PricingMap {
         self.context_limit_entry_or_alias(model, fuzzy)
             .or_else(|| {
                 (resolved_alias != model)
-                    .then(|| self.context_limit_entry_or_alias(resolved_alias, Fuzzy::Allowed))
+                    .then(|| self.context_limit_entry_or_alias(resolved_alias, fuzzy))
                     .flatten()
             })
             .or_else(|| {
@@ -2745,7 +2746,8 @@ mod tests {
                 r#"{
                     "claude-opus-5": {
                         "input_cost_per_token": 0.000001,
-                        "output_cost_per_token": 0.000002
+                        "output_cost_per_token": 0.000002,
+                        "max_input_tokens": 123456
                     }
                 }"#,
             ),
