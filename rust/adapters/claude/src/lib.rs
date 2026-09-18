@@ -217,7 +217,9 @@ fn usage_dedupe_hash(message_id: &str, request_id: Option<&str>, session_id: &st
     let mut hasher = FxHasher::default();
     message_id.hash(&mut hasher);
     request_id.hash(&mut hasher);
-    session_id.hash(&mut hasher);
+    if request_id.is_none() {
+        session_id.hash(&mut hasher);
+    }
     hasher.finish()
 }
 
@@ -230,8 +232,8 @@ fn daily_usage_dedupe_hash(
     let mut hasher = FxHasher::default();
     message_id.hash(&mut hasher);
     request_id.hash(&mut hasher);
-    session_id.hash(&mut hasher);
     if request_id.is_none() {
+        session_id.hash(&mut hasher);
         timestamp.hash(&mut hasher);
     }
     hasher.finish()
@@ -261,7 +263,7 @@ fn loaded_entry_matches_dedupe_key(
 ) -> bool {
     entry.data.message.id.as_deref() == Some(message_id)
         && entry.data.request_id.as_deref() == request_id
-        && loaded_entry_session_id(entry) == session_id
+        && (request_id.is_some() || loaded_entry_session_id(entry) == session_id)
 }
 
 fn loaded_entry_matches_sidechain_dedupe_key(
@@ -1056,6 +1058,29 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
             "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        for path in [
+            fixture.path("projects/project-a/session-a/chat.jsonl"),
+            fixture.path("projects/project-a/session-b/chat.jsonl"),
+        ] {
+            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            for entry in loaded.entries {
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+            }
+        }
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].data.message.usage.input_tokens, 200);
+    }
+
+    #[test]
+    fn dedupes_copied_transcripts_with_the_same_request_id_across_sessions() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
         });
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();

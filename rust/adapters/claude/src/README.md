@@ -36,6 +36,9 @@ Sidechain entries:
   ID and effective session ID. Daily summary matching also includes timestamps,
   except for sidechain replays. Both keep gateway responses that reuse a message
   ID in different sessions separate.
+- When `requestId` is present, both loaders deduplicate matching message and
+  request IDs across sessions because Claude Code can copy one response into
+  multiple session transcripts.
 
 The term `session` has two meanings in this codebase:
 
