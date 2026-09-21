@@ -86,7 +86,7 @@ jobs:
         id: judge
         if: steps.access.outcome == 'success' && (steps.access.outputs.skip != 'true' || inputs.force_implementation == true)
         continue-on-error: true
-        uses: pullfrog/pullfrog@b6639f063a3017551d093eca1aeb9be12bf955b4 # v0.1.79
+        uses: pullfrog/pullfrog@e354ba26ce66bb317aa30ec13e4bdff962373474 # v0.1.81
         with:
           prompt: ${{ steps.request.outputs.prompt }}
           timeout: 15m
@@ -239,7 +239,7 @@ jobs:
       - name: Ask Pullfrog to implement the issue
         id: pullfrog
         if: steps.implementation_guard.outputs.skip != 'true'
-        uses: pullfrog/pullfrog@b6639f063a3017551d093eca1aeb9be12bf955b4 # v0.1.79
+        uses: pullfrog/pullfrog@e354ba26ce66bb317aa30ec13e4bdff962373474 # v0.1.81
         with:
           prompt: ${{ needs.apply.outputs.prompt }}
           timeout: 1h
