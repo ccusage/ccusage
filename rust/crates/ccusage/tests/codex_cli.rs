@@ -45,7 +45,11 @@ fn filters_codex_session_table_by_full_id() {
 
     assert!(output.contains(SESSION_UUID));
     assert!(!output.contains(OTHER_UUID));
-    assert!(output.contains("150"));
+    let selected_row = output
+        .lines()
+        .find(|line| line.contains(SESSION_UUID))
+        .expect("selected session row should render");
+    assert!(selected_row.contains("150"));
 }
 
 #[test]
@@ -65,8 +69,8 @@ fn reports_unknown_codex_session_id() {
 #[test]
 fn reports_ambiguous_codex_session_uuid() {
     let fixture = fs_fixture!({
-        "codex/sessions/2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage(100, 50),
-        "codex/sessions/2026/09/20/rollout-2026-09-20T10-00-00-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage(200, 75),
+        "codex/sessions/2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage("2026-09-19T23:22:40.000Z", 100, 50),
+        "codex/sessions/2026/09/20/rollout-2026-09-20T10-00-00-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage("2026-09-20T10:00:00.000Z", 200, 75),
     });
 
     let output = run_cli_output(&fixture, &["codex", "session", "--id", SESSION_UUID]);
@@ -79,14 +83,14 @@ fn reports_ambiguous_codex_session_uuid() {
 
 fn codex_fixture() -> Fixture {
     fs_fixture!({
-        "codex/sessions/2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage(100, 50),
-        "codex/sessions/2026/09/20/rollout-2026-09-20T10-00-00-01a0cc9d-d8d1-8741-ae93-971c986041a1.jsonl": usage(900, 100),
+        "codex/sessions/2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage("2026-09-19T23:22:40.000Z", 100, 50),
+        "codex/sessions/2026/09/20/rollout-2026-09-20T10-00-00-01a0cc9d-d8d1-8741-ae93-971c986041a1.jsonl": usage("2026-09-20T10:00:00.000Z", 900, 100),
     })
 }
 
-fn usage(input_tokens: u64, output_tokens: u64) -> String {
+fn usage(timestamp: &str, input_tokens: u64, output_tokens: u64) -> String {
     json!({
-        "timestamp": "2026-09-19T23:22:40.000Z",
+        "timestamp": timestamp,
         "type": "event_msg",
         "payload": {
             "type": "token_count",
