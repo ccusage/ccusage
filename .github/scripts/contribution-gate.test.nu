@@ -101,6 +101,28 @@ def test-coauthor-email []: nothing -> nothing {
         (coauthor-attribution alice 42 {email: null created_at: '2017-07-17T23:59:59Z'})
         {email: '' trailer: ''}
     )
+    let missing_created_at_result = (try {
+        coauthor-attribution alice 42 {email: null}
+        'accepted'
+    } catch {
+        'rejected'
+    })
+    (expect
+        'rejects missing account creation dates'
+        $missing_created_at_result
+        'rejected'
+    )
+    let malformed_created_at_result = (try {
+        coauthor-attribution alice 42 {email: null created_at: 'not-a-date'}
+        'accepted'
+    } catch {
+        'rejected'
+    })
+    (expect
+        'rejects malformed account creation dates'
+        $malformed_created_at_result
+        'rejected'
+    )
 }
 
 def test-implementation-commit-args []: nothing -> nothing {

@@ -492,14 +492,17 @@ export def pr-request []: nothing -> nothing {
     write-output prompt (pullfrog-payload $prompt pull_request_opened $number none true true)
 }
 
-export def coauthor-email [username: string, user_id: int, user: record]: nothing -> string {
+def resolve-coauthor-attribution [username: string, user_id: int, user: record]: nothing -> record {
     let public_email = $user | get --optional email | default ''
     let public_email = match $public_email {
         $value if ($value | describe) == 'string' => ($value | str trim)
         _ => ''
     }
-    let coauthor_email = if not ($public_email | is-empty) {
-        $public_email
+    if not ($public_email | is-empty) {
+        {
+            email: $public_email
+            trailer: $"Co-authored-by: ($username) <($public_email)>"
+        }
     } else {
         let created_at = $user | get --optional created_at
         if ($created_at | describe) != 'string' {
@@ -509,28 +512,27 @@ export def coauthor-email [username: string, user_id: int, user: record]: nothin
         let legacy_cutoff = '2017-07-18T00:00:00Z' | into datetime
         if $created_at < $legacy_cutoff {
             # GitHub does not expose whether a legacy account switched no-reply formats, so age alone cannot yield a reliable address.
-            error make {msg: $"Could not resolve a GitHub email for legacy account ($username) without a public email"}
+            {email: '', trailer: ''}
         } else {
-            $"($user_id)+($username)@users.noreply.github.com"
+            let email = $"($user_id)+($username)@users.noreply.github.com"
+            {
+                email: $email
+                trailer: $"Co-authored-by: ($username) <($email)>"
+            }
         }
     }
-    $coauthor_email
+}
+
+export def coauthor-email [username: string, user_id: int, user: record]: nothing -> string {
+    let attribution = resolve-coauthor-attribution $username $user_id $user
+    if ($attribution.email | is-empty) {
+        error make {msg: $"Could not resolve a GitHub email for legacy account ($username) without a public email"}
+    }
+    $attribution.email
 }
 
 export def coauthor-attribution [username: string, user_id: int, user: record]: nothing -> record {
-    let email = try {
-        coauthor-email $username $user_id $user
-    } catch {
-        ''
-    }
-    if ($email | is-empty) {
-        {email: '', trailer: ''}
-    } else {
-        {
-            email: $email
-            trailer: $"Co-authored-by: ($username) <($email)>"
-        }
-    }
+    resolve-coauthor-attribution $username $user_id $user
 }
 
 export def issue-implementation-request []: nothing -> nothing {
