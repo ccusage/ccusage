@@ -31,6 +31,7 @@ fn selects_codex_session_by_supported_id_forms() {
         assert!(report.get("totalCost").is_some());
         assert!(report.get("costUSD").is_none());
         assert!(report.get("sessions").is_none());
+        assert!(report.get("totals").is_none());
     }
 }
 
