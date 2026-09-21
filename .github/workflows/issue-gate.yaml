@@ -456,7 +456,7 @@ jobs:
         run: nu .github/scripts/contribution-gate.nu publish-implementation
 
       - name: Verify issue author co-authorship
-        if: steps.publish.outputs.skip != 'true'
+        if: steps.publish.outputs.skip != 'true' && needs.apply.outputs.coauthor_email != ''
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

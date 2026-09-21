@@ -11,10 +11,12 @@ use ./contribution-gate/requests.nu [
     cleanup-unvalidated-publication
     cleanup-operation-errors
     closing-pull-request-nodes
+    coauthor-attribution
     coauthor-email
     competing-closing-pull-request
     existing-implementation-pull-request
     implementation-branch
+    implementation-commit-args
     implementation-pull-request-body
     implementation-pull-request-for-branch
     implementation-result
@@ -85,6 +87,36 @@ def test-coauthor-email []: nothing -> nothing {
     expect 'uses the current no-reply format' (
         coauthor-email alice 42 {email: null created_at: '2017-07-18T00:00:00Z'}
     ) '42+alice@users.noreply.github.com'
+
+    (expect
+        'keeps verified co-author attribution'
+        (coauthor-attribution alice 42 {email: 'alice@example.com' created_at: '2020-01-01T00:00:00Z'})
+        {
+            email: 'alice@example.com'
+            trailer: 'Co-authored-by: alice <alice@example.com>'
+        }
+    )
+    (expect
+        'continues without ambiguous legacy attribution'
+        (coauthor-attribution alice 42 {email: null created_at: '2017-07-17T23:59:59Z'})
+        {email: '' trailer: ''}
+    )
+}
+
+def test-implementation-commit-args []: nothing -> nothing {
+    (expect
+        'commits without an unresolved co-author trailer'
+        (implementation-commit-args 'fix: automate implementation' '')
+        [commit '-m' 'fix: automate implementation']
+    )
+    (expect
+        'includes a verified co-author trailer'
+        (implementation-commit-args
+            'fix: automate implementation'
+            'Co-authored-by: alice <alice@example.com>'
+        )
+        [commit '-m' 'fix: automate implementation' '-m' 'Co-authored-by: alice <alice@example.com>']
+    )
 }
 
 def test-prompt-rendering []: nothing -> nothing {
@@ -780,6 +812,7 @@ def test-contribution-gate-comment []: nothing -> nothing {
 def main [] {
     test-coauthor-validation
     test-coauthor-email
+    test-implementation-commit-args
     test-prompt-rendering
     test-existing-implementation-pull-request
     test-implementation-result

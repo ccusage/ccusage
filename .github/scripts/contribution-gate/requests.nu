@@ -1,6 +1,4 @@
 use ./core.nu [
-    COMMENT_MARKER
-    comment-body
     format-gh-error
     gh-api-complete
     gh-api-body
@@ -11,7 +9,6 @@ use ./core.nu [
     write-output
 ]
 use ./context.nu [require-open-issue]
-use ./mutations.nu [upsert-comment]
 
 export const CLOSING_PULL_REQUEST_QUERY = 'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 100, includeClosedPrs: false) { nodes { number state url } pageInfo { hasNextPage } } } } }'
 
@@ -282,6 +279,14 @@ export def implementation-title [title: string]: nothing -> string {
     $sanitized
 }
 
+export def implementation-commit-args [title: string, coauthor_trailer: string]: nothing -> list<string> {
+    if ($coauthor_trailer | str trim | is-empty) {
+        [commit '-m' $title]
+    } else {
+        [commit '-m' $title '-m' $coauthor_trailer]
+    }
+}
+
 export def implementation-pull-request-body [marker: string, body: string, number: int]: nothing -> string {
     if $number <= 0 or ($marker | str trim | is-empty) or ($body | str trim | is-empty) {
         error make {msg: 'Implementation PR metadata is incomplete'}
@@ -512,6 +517,22 @@ export def coauthor-email [username: string, user_id: int, user: record]: nothin
     $coauthor_email
 }
 
+export def coauthor-attribution [username: string, user_id: int, user: record]: nothing -> record {
+    let email = try {
+        coauthor-email $username $user_id $user
+    } catch {
+        ''
+    }
+    if ($email | is-empty) {
+        {email: '', trailer: ''}
+    } else {
+        {
+            email: $email
+            trailer: $"Co-authored-by: ($username) <($email)>"
+        }
+    }
+}
+
 export def issue-implementation-request []: nothing -> nothing {
     let number = issue-number
     let repo = repository
@@ -519,19 +540,8 @@ export def issue-implementation-request []: nothing -> nothing {
     let issue_author = required-env ISSUE_AUTHOR
     let issue_author_id = required-env ISSUE_AUTHOR_ID | into int
     let user = gh-api-json [$"users/($issue_author)"]
-    let coauthor_email = (try {
-        coauthor-email $issue_author $issue_author_id $user
-    } catch {
-        null
-    })
-    if $coauthor_email == null {
-        let body = comment-body $COMMENT_MARKER 'Automatic implementation was not started because the issue author GitHub email could not be resolved reliably for co-author attribution. A maintainer can implement the issue manually or provide a verifiable author email.'
-        upsert-comment $repo $number $body --require-open-issue
-        write-output implementation none
-        return
-    }
+    let coauthor = coauthor-attribution $issue_author $issue_author_id $user
     let implementation_marker = $"<!-- pullfrog-accepted-issue: #($number) request-(random uuid) -->"
-    let coauthor_trailer = $"Co-authored-by: ($issue_author) <($coauthor_email)>"
     let implementation_branch = (implementation-branch
         $number
         (required-env GITHUB_RUN_ID | into int)
@@ -543,8 +553,8 @@ export def issue-implementation-request []: nothing -> nothing {
     }
     write-output prompt (pullfrog-payload $prompt issues_opened $number none false true)
     write-output implementation_marker $implementation_marker
-    write-output coauthor_trailer $coauthor_trailer
-    write-output coauthor_email $coauthor_email
+    write-output coauthor_trailer $coauthor.trailer
+    write-output coauthor_email $coauthor.email
     write-output implementation_branch $implementation_branch
     write-output implementation create_pr
 }
@@ -611,13 +621,8 @@ export def publish-implementation []: nothing -> nothing {
     git-run [config user.email '41898282+github-actions[bot]@users.noreply.github.com']
     git-run [switch '-c' $branch]
     let title = implementation-title $result.title
-    git-run [
-        commit
-        '-m'
-        $title
-        '-m'
-        (required-env COAUTHOR_TRAILER)
-    ]
+    let coauthor_trailer = $env | get --optional COAUTHOR_TRAILER | default ''
+    git-run (implementation-commit-args $title $coauthor_trailer)
     setup-git-auth
 
     require-open-issue | ignore
