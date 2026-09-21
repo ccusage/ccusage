@@ -27,7 +27,7 @@ pub use types::{
 };
 pub(crate) use types::{CodexRawUsage, merge_codex_service_tiers};
 
-use report::{print_table_from_groups, report_from_groups};
+use report::{print_table_from_groups, report_from_groups, session_detail_json};
 
 use crate::cli::{AgentReportKind, CodexSpeed, CostMode};
 
@@ -40,13 +40,76 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         log_level() != Some(0),
         shared.pricing_overrides.iter(),
     );
-    let groups = load_groups(&shared, args.kind)?;
+    let mut groups = load_groups(&shared, args.kind)?;
     let speed = resolve_codex_speed(args.codex_speed);
+    if let Some(requested_id) = args.session_id {
+        let session_id = resolve_session_id(&groups, &requested_id)?.to_string();
+        if wants_json(&shared) {
+            let output = session_detail_json(
+                &session_id,
+                &groups[&session_id],
+                &pricing,
+                speed,
+                shared.mode,
+            );
+            return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
+        }
+        groups.retain(|id, _| id == &session_id);
+    }
     if wants_json(&shared) {
         let output = report_from_groups(&groups, args.kind, &pricing, speed, shared.mode);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
     print_table_from_groups(&groups, args.kind, &pricing, speed, &shared)
+}
+
+fn resolve_session_id<'a>(
+    groups: &'a std::collections::BTreeMap<String, CodexGroup>,
+    requested_id: &str,
+) -> Result<&'a str> {
+    let original_id = requested_id;
+    let requested_id = original_id
+        .strip_prefix("codex://threads/")
+        .unwrap_or(original_id);
+    let requested_id = requested_id.strip_suffix(".jsonl").unwrap_or(requested_id);
+    let matches = groups
+        .keys()
+        .filter(|candidate| session_id_matches(candidate, requested_id))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [session_id] => Ok(session_id.as_str()),
+        [] => Err(cli_error(format!(
+            "No Codex session found with ID: {original_id}"
+        ))),
+        _ => Err(cli_error(format!(
+            "Codex session ID '{original_id}' is ambiguous and matches {} sessions.",
+            matches.len()
+        ))),
+    }
+}
+
+fn session_id_matches(candidate: &str, requested_id: &str) -> bool {
+    let candidate = candidate.strip_suffix(".jsonl").unwrap_or(candidate);
+    if candidate == requested_id
+        || candidate
+            .rsplit_once('/')
+            .map_or(candidate, |(_, file)| file)
+            == requested_id
+    {
+        return true;
+    }
+    is_codex_uuid(requested_id)
+        && candidate
+            .strip_suffix(requested_id)
+            .is_some_and(|prefix| prefix.ends_with('-'))
+}
+
+fn is_codex_uuid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
 }
 
 #[doc(hidden)]
@@ -78,6 +141,53 @@ mod tests {
     use crate::{CodexModelUsage, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket};
     use ccusage_test_support::fs_fixture;
     use serde_json::json;
+
+    fn session_groups(ids: &[&str]) -> BTreeMap<String, CodexGroup> {
+        ids.iter()
+            .map(|id| ((*id).to_string(), CodexGroup::default()))
+            .collect()
+    }
+
+    #[test]
+    fn resolves_codex_session_from_supported_id_forms() {
+        let full_id = "2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0";
+        let groups = session_groups(&[full_id]);
+
+        for requested in [
+            full_id,
+            "rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0",
+            "rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl",
+            "01a0bb8c-c7c0-7630-9d82-860b875930f0",
+            "codex://threads/01a0bb8c-c7c0-7630-9d82-860b875930f0",
+        ] {
+            assert_eq!(resolve_session_id(&groups, requested).unwrap(), full_id);
+        }
+    }
+
+    #[test]
+    fn rejects_ambiguous_codex_session_uuid() {
+        let uuid = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
+        let groups = session_groups(&[
+            "2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0",
+            "2026/09/20/rollout-2026-09-20T10-00-00-01a0bb8c-c7c0-7630-9d82-860b875930f0",
+        ]);
+
+        let error = resolve_session_id(&groups, uuid).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Codex session ID '{uuid}' is ambiguous and matches 2 sessions.")
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_codex_session_id() {
+        let groups = session_groups(&["2026/09/19/rollout-known"]);
+
+        let error = resolve_session_id(&groups, "missing").unwrap_err();
+
+        assert_eq!(error.to_string(), "No Codex session found with ID: missing");
+    }
 
     #[test]
     fn loads_directory_groups_with_date_filter_without_global_event_vector() {

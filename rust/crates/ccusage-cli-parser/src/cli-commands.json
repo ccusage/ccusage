@@ -9,6 +9,7 @@
 		"claude_session_options": ["shared_claude_options", "session_options"],
 		"claude_weekly_options": ["shared_claude_options", "weekly_options", "last_options"],
 		"codex_period_options": ["codex_options", "last_options"],
+		"codex_session_options": ["codex_options", "session_options"],
 		"openclaw_combined_options": ["agent_options", "openclaw_options"],
 		"openclaw_period_options": ["agent_options", "openclaw_options", "last_options"],
 		"pi_combined_options": ["agent_options", "pi_options"],
@@ -254,7 +255,7 @@
 			"path": ["codex", "session"],
 			"description": "Show Codex token usage grouped by session",
 			"usage": "ccusage codex session <OPTIONS>",
-			"options": "codex_options"
+			"options": "codex_session_options"
 		},
 		{
 			"path": ["opencode"],

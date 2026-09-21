@@ -683,6 +683,7 @@ fn parses_root_session_as_all_agent_report_without_id() {
     };
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
+    assert!(args.session_id.is_none());
 }
 
 #[test]
@@ -837,6 +838,17 @@ fn contextual_codex_help_lists_speed_choices() {
     assert!(help.contains("Show Codex token usage grouped by day"));
     assert!(help.contains("USAGE:\n  ccusage codex daily <OPTIONS>"));
     assert!(help.contains("choices: auto | standard | fast"));
+}
+
+#[test]
+fn contextual_codex_session_help_lists_id_option() {
+    let help = help_text_for_args(&[
+        "ccusage".to_string(),
+        "codex".to_string(),
+        "session".to_string(),
+    ]);
+
+    assert!(help.contains("-i, --id <id>"));
 }
 
 #[test]
@@ -1282,6 +1294,34 @@ fn parses_top_level_session_id_lookup() {
     };
     assert!(args.shared.json);
     assert_eq!(args.id.as_deref(), Some("abc"));
+}
+
+#[test]
+fn parses_codex_session_id_filter() {
+    let cli = parse(&[
+        "ccusage",
+        "codex",
+        "session",
+        "--json",
+        "--id",
+        "01a0bb8c-c7c0-7630-9d82-860b875930f0",
+    ]);
+    let Some(Command::Codex(args)) = cli.command else {
+        panic!("expected codex session command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Session);
+    assert!(args.shared.json);
+    assert_eq!(
+        args.session_id.as_deref(),
+        Some("01a0bb8c-c7c0-7630-9d82-860b875930f0")
+    );
+}
+
+#[test]
+fn rejects_codex_id_filter_outside_session_report() {
+    let error = parse_error(&["ccusage", "codex", "daily", "--id", "abc"]);
+
+    assert_eq!(error, "Unknown codex option '--id'");
 }
 
 #[test]

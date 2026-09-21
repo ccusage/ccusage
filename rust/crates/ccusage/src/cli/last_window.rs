@@ -91,6 +91,7 @@ mod tests {
         AgentCommandArgs {
             shared: shared_with_last(last),
             kind,
+            session_id: None,
             sections: None,
             by_agent: false,
             pi_path: None,

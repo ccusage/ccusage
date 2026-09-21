@@ -97,6 +97,29 @@ fn group_json(
     row
 }
 
+pub(super) fn session_detail_json(
+    session_id: &str,
+    group: &CodexGroup,
+    pricing: &PricingMap,
+    speed: CodexSpeedPolicy,
+    mode: CostMode,
+) -> Value {
+    let mut row = group_json(
+        session_id,
+        group,
+        AgentReportKind::Session,
+        pricing,
+        speed,
+        mode,
+    );
+    if let Some(object) = row.as_object_mut()
+        && let Some(cost) = object.remove("costUSD")
+    {
+        object.insert("totalCost".to_string(), cost);
+    }
+    row
+}
+
 pub fn non_cached_input_tokens(
     input_tokens: u64,
     cached_input_tokens: u64,

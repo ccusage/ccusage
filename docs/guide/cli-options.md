@@ -203,7 +203,8 @@ Options for session reports:
 
 ```bash
 # Filter by session ID
-ccusage session --id abc123-session
+ccusage claude session --id abc123-session
+ccusage codex session --id 01a0bb8c-c7c0-7630-9d82-860b875930f0
 
 # Filter by project
 ccusage session --project myproject

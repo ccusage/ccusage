@@ -174,6 +174,7 @@ pub struct StatuslineArgs {
 pub struct AgentCommandArgs {
     pub shared: SharedArgs,
     pub kind: AgentReportKind,
+    pub session_id: Option<String>,
     pub sections: Option<Vec<AgentReportKind>>,
     pub by_agent: bool,
     pub pi_path: Option<String>,

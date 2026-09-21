@@ -18,7 +18,8 @@ ccusage qwen session
 Query individual session details by providing a session ID:
 
 ```bash
-ccusage session --id <session-id>
+ccusage claude session --id <session-id>
+ccusage codex session --id <session-id>
 ```
 
 This is particularly useful for:
@@ -31,16 +32,16 @@ This is particularly useful for:
 
 ```bash
 # Get session data in table format
-ccusage session --id session-abc123-def456
+ccusage claude session --id session-abc123-def456
 
 # Get session data as JSON for scripting
-ccusage session --id session-abc123-def456 --json
+ccusage codex session --id codex://threads/01a0bb8c-c7c0-7630-9d82-860b875930f0 --json
 
 # Extract just the cost using jq
-ccusage session --id session-abc123-def456 --json | jq '.totalCost'
+ccusage codex session --id 01a0bb8c-c7c0-7630-9d82-860b875930f0 --json | jq '.totalCost'
 
 # Use in a custom statusline script
-COST=$(ccusage session --id "$SESSION_ID" --json | jq '.totalCost')
+COST=$(ccusage claude session --id "$SESSION_ID" --json | jq '.totalCost')
 echo "Current session: \$${COST}"
 ```
 
@@ -51,7 +52,9 @@ For Claude Code, session IDs are the actual filenames (without `.jsonl` extensio
 - `session-20260516-abc123-def456`
 - `project-conversation-xyz789`
 
-You can find Claude session IDs by running `ccusage claude session` and looking for the files in your Claude data directory. Other sources expose their own session or thread identifiers in focused session reports.
+You can find Claude session IDs by running `ccusage claude session` and looking for the files in your Claude data directory.
+
+For Codex, use the `sessionId` from `ccusage codex session --json`. The lookup accepts that full ID, its JSONL filename with or without the extension, the trailing UUID, or a `codex://threads/<uuid>` URI. A shortened UUID is not accepted, and a UUID that matches more than one session is reported as ambiguous.
 
 ## Example Output
 
@@ -104,13 +107,14 @@ Get detailed information about a specific session:
 
 ```bash
 # Query a specific session by ID
-ccusage session --id <session-id>
+ccusage claude session --id <session-id>
+ccusage codex session --id <session-id>
 
 # Get JSON output for a specific session
-ccusage session --id <session-id> --json
+ccusage codex session --id <session-id> --json
 
 # Short form using -i flag
-ccusage session -i <session-id>
+ccusage codex session -i <session-id>
 ```
 
 **Use cases:**
