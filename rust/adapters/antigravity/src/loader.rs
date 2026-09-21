@@ -21,17 +21,16 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     let database_paths = conversation_db_paths()?;
     let mut parsed_events = Vec::new();
     for database_path in database_paths {
-        if is_uninitialized_database(&database_path) {
-            debug_log(
+        match parse_sqlite_file(&database_path)? {
+            Some(events) => parsed_events.extend(events),
+            None => debug_log(
                 shared,
                 format!(
-                    "Skipping uninitialized Antigravity database '{}': zero-byte file",
+                    "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
                     database_path.display()
                 ),
-            );
-            continue;
+            ),
         }
-        parsed_events.extend(parse_sqlite_file(&database_path)?);
     }
     let mut events = deduplicate_events(parsed_events);
     events.sort_by_key(|event| event.timestamp);
@@ -39,15 +38,6 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         .into_iter()
         .map(|event| event_to_loaded(event, timezone.as_ref(), shared.mode, pricing))
         .collect())
-}
-
-/// Reports whether a conversation database was never initialized.
-///
-/// Antigravity leaves zero-byte `.db` files behind; opening one yields an empty
-/// SQLite database that fails later as a missing `gen_metadata` table. Skipping
-/// only empty files keeps nonempty corruption and schema errors propagating.
-fn is_uninitialized_database(database_path: &std::path::Path) -> bool {
-    std::fs::metadata(database_path).is_ok_and(|metadata| metadata.len() == 0)
 }
 
 fn deduplicate_events(
@@ -764,7 +754,9 @@ mod tests {
     #[test]
     fn returns_empty_report_when_only_zero_byte_databases_exist() {
         let fixture = Fixture::new();
-        let _ = fixture.write_file("conversations/empty.db", "");
+        let database = fixture.write_file("conversations/empty.db", "");
+
+        assert!(parse_sqlite_file(&database).unwrap().is_none());
 
         let entries = load_from_fixture(&fixture, true);
 

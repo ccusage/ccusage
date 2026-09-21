@@ -140,7 +140,7 @@ struct ProtoField<'a> {
 type ProtoResult<T> = std::result::Result<T, &'static str>;
 
 /// Parses one Antigravity conversation database in ascending generation order.
-pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<AntigravityUsageEvent>> {
+pub(super) fn parse_sqlite_file(path: &Path) -> Result<Option<Vec<AntigravityUsageEvent>>> {
     let fallback_timestamp = file_modified_timestamp(path);
     let connection =
         sqlite::Connection::open_with_flags(path, sqlite::OpenFlags::new().with_read_only())
@@ -150,6 +150,17 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<AntigravityUsageEvent
                     path.display()
                 ))
             })?;
+    connection
+        .execute("BEGIN DEFERRED TRANSACTION")
+        .map_err(|error| {
+            cli_error(format!(
+                "Failed to start an Antigravity database snapshot for '{}': {error}",
+                path.display()
+            ))
+        })?;
+    if database_snapshot_is_empty(&connection, path)? {
+        return Ok(None);
+    }
     let session_id = path
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -273,7 +284,37 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Vec<AntigravityUsageEvent
             );
         }
     }
-    Ok(events)
+    Ok(Some(events))
+}
+
+fn database_snapshot_is_empty(connection: &sqlite::Connection, path: &Path) -> Result<bool> {
+    let mut statement = connection.prepare("PRAGMA page_count").map_err(|error| {
+        cli_error(format!(
+            "Failed to inspect Antigravity database '{}': {error}",
+            path.display()
+        ))
+    })?;
+    if !matches!(
+        statement.next().map_err(|error| {
+            cli_error(format!(
+                "Failed to inspect Antigravity database '{}': {error}",
+                path.display()
+            ))
+        })?,
+        sqlite::State::Row
+    ) {
+        return Err(cli_error(format!(
+            "Failed to inspect Antigravity database '{}': page count is unavailable",
+            path.display()
+        )));
+    }
+    let page_count = statement.read::<i64, _>(0).map_err(|error| {
+        cli_error(format!(
+            "Failed to inspect Antigravity database '{}': {error}",
+            path.display()
+        ))
+    })?;
+    Ok(page_count == 0)
 }
 
 fn read_generation_rows(
