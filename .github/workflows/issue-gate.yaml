@@ -155,7 +155,7 @@ jobs:
       - name: Checkout the base repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.repository.default_branch }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -429,6 +429,15 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Checkout the dispatched workflow source
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .workflow-source
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Set up Nushell
         uses: hustcer/setup-nu@9215c80adb545a85c419d5085b76eb6d082f49e7 # v3.27
         with:
@@ -453,7 +462,10 @@ jobs:
           IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation/implementation.json
           IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation/implementation.patch
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
-        run: nu .github/scripts/contribution-gate.nu publish-implementation
+        run: >-
+          nu
+          ${{ github.event_name == 'workflow_dispatch' && '.workflow-source/.github/scripts/contribution-gate.nu' || '.github/scripts/contribution-gate.nu' }}
+          publish-implementation
 
       - name: Verify issue author co-authorship
         if: steps.publish.outputs.skip != 'true' && needs.apply.outputs.coauthor_email != ''
