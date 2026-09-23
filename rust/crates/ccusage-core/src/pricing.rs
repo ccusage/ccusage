@@ -1,6 +1,9 @@
 use std::{
     borrow::Cow,
-    sync::{Mutex, OnceLock},
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -812,7 +815,9 @@ enum ModelsDevJson {
 
 struct ModelsDevPricingCache {
     pricing: OnceLock<PricingMap>,
-    last_failure: Mutex<Option<Instant>>,
+    clock_origin: OnceLock<Instant>,
+    // One-based monotonic nanoseconds; zero means no failed fetch to retry.
+    retry_at_nanos: AtomicU64,
     failure_retry_after: Duration,
 }
 
@@ -820,17 +825,22 @@ impl ModelsDevPricingCache {
     const fn new(failure_retry_after: Duration) -> Self {
         Self {
             pricing: OnceLock::new(),
-            last_failure: Mutex::new(None),
+            clock_origin: OnceLock::new(),
+            retry_at_nanos: AtomicU64::new(0),
             failure_retry_after,
         }
     }
 
+    fn monotonic_nanos(&self) -> u64 {
+        let elapsed = self.clock_origin.get_or_init(Instant::now).elapsed();
+        u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX - 1)
+    }
+
     fn retry_due(&self) -> bool {
-        self.pricing.get().is_none()
-            && self.last_failure.lock().is_ok_and(|last_failure| {
-                last_failure
-                    .is_some_and(|failed_at| failed_at.elapsed() >= self.failure_retry_after)
-            })
+        let retry_at = self.retry_at_nanos.load(Ordering::Acquire);
+        retry_at != 0
+            && self.pricing.get().is_none()
+            && self.monotonic_nanos().saturating_add(1) >= retry_at
     }
 
     fn get_or_try_load<F>(&self, fetch_json: F) -> Option<&PricingMap>
@@ -840,22 +850,22 @@ impl ModelsDevPricingCache {
         if let Some(pricing) = self.pricing.get() {
             return Some(pricing);
         }
-        if self.last_failure.lock().is_ok_and(|last_failure| {
-            last_failure.is_some_and(|failed_at| failed_at.elapsed() < self.failure_retry_after)
-        }) {
-            return None;
+        if self.retry_at_nanos.load(Ordering::Acquire) != 0 && !self.retry_due() {
+            return self.pricing.get();
         }
 
         let Some(map) = load_models_dev_pricing(fetch_json) else {
-            if let Ok(mut last_failure) = self.last_failure.lock() {
-                *last_failure = Some(Instant::now());
-            }
+            let retry_after =
+                u64::try_from(self.failure_retry_after.as_nanos()).unwrap_or(u64::MAX - 1);
+            let retry_at = self
+                .monotonic_nanos()
+                .saturating_add(retry_after)
+                .saturating_add(1);
+            self.retry_at_nanos.store(retry_at, Ordering::Release);
             return None;
         };
         let _ = self.pricing.set(map);
-        if let Ok(mut last_failure) = self.last_failure.lock() {
-            *last_failure = None;
-        }
+        self.retry_at_nanos.store(0, Ordering::Release);
         self.pricing.get()
     }
 }
@@ -1348,34 +1358,42 @@ impl PricingMap {
     }
 
     pub fn find(&self, model: &str) -> Option<Pricing> {
-        self.find_cached(model, PricingLookupKind::Standard, || {
-            self.find_with_fallbacks(
-                model,
-                || {
-                    self.enable_models_dev_fallback
-                        .then(models_dev_pricing)
-                        .flatten()
-                },
-                || {
-                    self.enable_embedded_models_dev_fallback
-                        .then(embedded_models_dev_pricing)
-                },
-            )
-        })
+        let models_dev = self
+            .enable_models_dev_fallback
+            .then(models_dev_pricing_cache);
+        self.find_cached(
+            model,
+            PricingLookupKind::Standard,
+            models_dev,
+            &fetch_models_dev_json,
+            || {
+                self.find_with_fallbacks(
+                    model,
+                    || {
+                        self.enable_models_dev_fallback
+                            .then(models_dev_pricing)
+                            .flatten()
+                    },
+                    || {
+                        self.enable_embedded_models_dev_fallback
+                            .then(embedded_models_dev_pricing)
+                    },
+                )
+            },
+        )
     }
 
     fn find_cached(
         &self,
         model: &str,
         kind: PricingLookupKind,
+        models_dev: Option<&ModelsDevPricingCache>,
+        fetch_json: &impl Fn() -> std::io::Result<String>,
         lookup: impl FnOnce() -> Option<Pricing>,
     ) -> Option<Pricing> {
-        let models_dev = self
-            .enable_models_dev_fallback
-            .then(models_dev_pricing_cache);
         // A cache hit must still let a failed network load retry after its backoff.
         if let Some(models_dev) = models_dev.filter(|cache| cache.retry_due()) {
-            let _ = models_dev.get_or_try_load(fetch_models_dev_json);
+            let _ = models_dev.get_or_try_load(fetch_json);
         }
         let cache = self
             .lookup_cache
@@ -1503,22 +1521,31 @@ impl PricingMap {
     /// Unlike [`Self::find`], this lookup does not resolve aliases or use
     /// separator and fuzzy matching.
     pub fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
-        self.find_cached(model, PricingLookupKind::Exact, || {
-            self.find_exact_normalized(model)
-                .or_else(|| {
-                    self.enable_models_dev_fallback
-                        .then(|| {
-                            models_dev_pricing()
-                                .and_then(|pricing| pricing.find_exact_normalized(model))
-                        })
-                        .flatten()
-                })
-                .or_else(|| {
-                    self.enable_embedded_models_dev_fallback
-                        .then(|| embedded_models_dev_pricing().find_exact_normalized(model))
-                        .flatten()
-                })
-        })
+        let models_dev = self
+            .enable_models_dev_fallback
+            .then(models_dev_pricing_cache);
+        self.find_cached(
+            model,
+            PricingLookupKind::Exact,
+            models_dev,
+            &fetch_models_dev_json,
+            || {
+                self.find_exact_normalized(model)
+                    .or_else(|| {
+                        self.enable_models_dev_fallback
+                            .then(|| {
+                                models_dev_pricing()
+                                    .and_then(|pricing| pricing.find_exact_normalized(model))
+                            })
+                            .flatten()
+                    })
+                    .or_else(|| {
+                        self.enable_embedded_models_dev_fallback
+                            .then(|| embedded_models_dev_pricing().find_exact_normalized(model))
+                            .flatten()
+                    })
+            },
+        )
     }
 
     fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
@@ -2818,12 +2845,12 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        FastMultiplierOverrides, Fuzzy, Pricing, PricingEndpoint, PricingMap,
-        build_time_models_dev_json, build_time_pricing_json, embedded_models_dev_pricing,
-        long_context_split_threshold, model_without_date_suffix,
+        FastMultiplierOverrides, Fuzzy, ModelsDevPricingCache, Pricing, PricingEndpoint,
+        PricingLookupKind, PricingMap, build_time_models_dev_json, build_time_pricing_json,
+        embedded_models_dev_pricing, long_context_split_threshold, model_without_date_suffix,
     };
     use ccusage_test_support::fs_fixture;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     #[test]
     fn loads_embedded_claude_pricing() {
@@ -3842,6 +3869,80 @@ mod tests {
             pricing.context_limit_entry("gpt-retry", Fuzzy::Allowed),
             Some(42)
         );
+    }
+
+    #[test]
+    fn cached_lookup_modes_refresh_after_models_dev_recovers() {
+        const MODEL: &str = "gpt-retry-cache";
+        const LIVE_JSON: &str = r#"{
+            "openai": {
+                "id": "openai",
+                "name": "OpenAI",
+                "models": {
+                    "gpt-retry-cache": {
+                        "id": "gpt-retry-cache",
+                        "name": "GPT Retry Cache",
+                        "cost": {"input": 1.0, "output": 2.0}
+                    }
+                }
+            }
+        }"#;
+
+        for first_kind in [PricingLookupKind::Standard, PricingLookupKind::Exact] {
+            let pricing = PricingMap::default();
+            let models_dev = ModelsDevPricingCache::new(std::time::Duration::ZERO);
+            let available = AtomicBool::new(false);
+            let fetches = AtomicUsize::new(0);
+            let fetch_json = || {
+                fetches.fetch_add(1, Ordering::Relaxed);
+                if available.load(Ordering::Relaxed) {
+                    Ok(LIVE_JSON.to_string())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "temporary failure",
+                    ))
+                }
+            };
+            let lookup = |kind| {
+                pricing.find_cached(MODEL, kind, Some(&models_dev), &fetch_json, || match kind {
+                    PricingLookupKind::Standard => pricing.find_with_fallbacks(
+                        MODEL,
+                        || models_dev.get_or_try_load(&fetch_json),
+                        || None,
+                    ),
+                    PricingLookupKind::Exact => {
+                        pricing.find_exact_normalized(MODEL).or_else(|| {
+                            models_dev
+                                .get_or_try_load(&fetch_json)
+                                .and_then(|live| live.find_exact_normalized(MODEL))
+                        })
+                    }
+                })
+            };
+
+            assert!(lookup(PricingLookupKind::Standard).is_none());
+            assert!(lookup(PricingLookupKind::Exact).is_none());
+            {
+                let cache = pricing.lookup_cache.get().expect("both misses were cached");
+                let guard = cache.lock().unwrap();
+                assert!(guard.standard.get(MODEL).is_some_and(Option::is_none));
+                assert!(guard.exact.get(MODEL).is_some_and(Option::is_none));
+            }
+
+            let fetches_before_retry = fetches.load(Ordering::Relaxed);
+            available.store(true, Ordering::Relaxed);
+            let second_kind = match first_kind {
+                PricingLookupKind::Standard => PricingLookupKind::Exact,
+                PricingLookupKind::Exact => PricingLookupKind::Standard,
+            };
+            for kind in [first_kind, second_kind] {
+                let live = lookup(kind).expect("live pricing replaces the cached miss");
+                assert_eq!(live.input, 1e-6);
+                assert_eq!(live.output, 2e-6);
+            }
+            assert!(fetches.load(Ordering::Relaxed) > fetches_before_retry);
+        }
     }
 
     #[test]
