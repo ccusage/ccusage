@@ -415,6 +415,8 @@ struct PricingLookupCache {
     // The same model may resolve through fuzzy matching but miss an exact lookup.
     standard: FxHashMap<String, Option<Pricing>>,
     exact: FxHashMap<String, Option<Pricing>>,
+    // Both result maps must be recomputed when the live catalog first loads.
+    models_dev_loaded: bool,
 }
 
 impl PricingLookupCache {
@@ -429,6 +431,14 @@ impl PricingLookupCache {
         match kind {
             PricingLookupKind::Standard => &mut self.standard,
             PricingLookupKind::Exact => &mut self.exact,
+        }
+    }
+
+    fn sync_models_dev(&mut self, loaded: bool) {
+        if self.models_dev_loaded != loaded {
+            self.standard.clear();
+            self.exact.clear();
+            self.models_dev_loaded = loaded;
         }
     }
 }
@@ -813,6 +823,14 @@ impl ModelsDevPricingCache {
             last_failure: Mutex::new(None),
             failure_retry_after,
         }
+    }
+
+    fn retry_due(&self) -> bool {
+        self.pricing.get().is_none()
+            && self.last_failure.lock().is_ok_and(|last_failure| {
+                last_failure
+                    .is_some_and(|failed_at| failed_at.elapsed() >= self.failure_retry_after)
+            })
     }
 
     fn get_or_try_load<F>(&self, fetch_json: F) -> Option<&PricingMap>
@@ -1352,11 +1370,21 @@ impl PricingMap {
         kind: PricingLookupKind,
         lookup: impl FnOnce() -> Option<Pricing>,
     ) -> Option<Pricing> {
+        let models_dev = self
+            .enable_models_dev_fallback
+            .then(models_dev_pricing_cache);
+        // A cache hit must still let a failed network load retry after its backoff.
+        if let Some(models_dev) = models_dev.filter(|cache| cache.retry_due()) {
+            let _ = models_dev.get_or_try_load(fetch_models_dev_json);
+        }
         let cache = self
             .lookup_cache
             .get_or_init(|| Mutex::new(PricingLookupCache::default()));
+        let models_dev_loaded;
         {
-            let guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+            let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+            models_dev_loaded = models_dev.is_some_and(|cache| cache.pricing.get().is_some());
+            guard.sync_models_dev(models_dev_loaded);
             if let Some(&cached) = guard.entries(kind).get(model) {
                 return cached;
             }
@@ -1364,7 +1392,13 @@ impl PricingMap {
         // A miss may scan the pricing catalogs, so release the lock first.
         let result = lookup();
         let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
-        guard.entries_mut(kind).insert(model.to_string(), result);
+        let loaded_after_lookup = models_dev.is_some_and(|cache| cache.pricing.get().is_some());
+        guard.sync_models_dev(loaded_after_lookup);
+        // Another lookup may have loaded models.dev while this one was running.
+        // Recompute on the next call rather than caching a result from before it loaded.
+        if loaded_after_lookup == models_dev_loaded {
+            guard.entries_mut(kind).insert(model.to_string(), result);
+        }
         result
     }
 
@@ -2696,10 +2730,14 @@ fn should_log_pricing_refresh_details() -> bool {
     crate::log_level().is_some_and(|level| level >= 4)
 }
 
-fn models_dev_pricing() -> Option<&'static PricingMap> {
+fn models_dev_pricing_cache() -> &'static ModelsDevPricingCache {
     static MODELS_DEV_PRICING: ModelsDevPricingCache =
         ModelsDevPricingCache::new(MODELS_DEV_FAILURE_RETRY_AFTER);
-    MODELS_DEV_PRICING.get_or_try_load(fetch_models_dev_json)
+    &MODELS_DEV_PRICING
+}
+
+fn models_dev_pricing() -> Option<&'static PricingMap> {
+    models_dev_pricing_cache().get_or_try_load(fetch_models_dev_json)
 }
 
 /// Pricing built from the models.dev snapshot embedded at build time. Unlike the
