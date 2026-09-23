@@ -404,6 +404,35 @@ enum Fuzzy {
     Denied,
 }
 
+#[derive(Clone, Copy)]
+enum PricingLookupKind {
+    Standard,
+    Exact,
+}
+
+#[derive(Debug, Default)]
+struct PricingLookupCache {
+    // The same model may resolve through fuzzy matching but miss an exact lookup.
+    standard: FxHashMap<String, Option<Pricing>>,
+    exact: FxHashMap<String, Option<Pricing>>,
+}
+
+impl PricingLookupCache {
+    fn entries(&self, kind: PricingLookupKind) -> &FxHashMap<String, Option<Pricing>> {
+        match kind {
+            PricingLookupKind::Standard => &self.standard,
+            PricingLookupKind::Exact => &self.exact,
+        }
+    }
+
+    fn entries_mut(&mut self, kind: PricingLookupKind) -> &mut FxHashMap<String, Option<Pricing>> {
+        match kind {
+            PricingLookupKind::Standard => &mut self.standard,
+            PricingLookupKind::Exact => &mut self.exact,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PricingMap {
     entries: FxHashMap<String, Pricing>,
@@ -422,7 +451,7 @@ pub struct PricingMap {
     builtin_context_limits: FxHashMap<String, u64>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
-    find_cache: OnceLock<Mutex<FxHashMap<String, Option<Pricing>>>>,
+    lookup_cache: OnceLock<Mutex<PricingLookupCache>>,
 }
 
 /// The ids of [`PricingMap::exact_only`], indexed both as written and under the
@@ -516,7 +545,7 @@ impl Default for PricingMap {
             builtin_context_limits: FxHashMap::default(),
             enable_models_dev_fallback: false,
             enable_embedded_models_dev_fallback: false,
-            find_cache: OnceLock::new(),
+            lookup_cache: OnceLock::new(),
         }
     }
 }
@@ -1059,7 +1088,7 @@ impl PricingMap {
             }
             loaded_count += 1;
         }
-        self.clear_find_cache();
+        self.clear_lookup_caches();
         loaded_count
     }
 
@@ -1296,46 +1325,46 @@ impl PricingMap {
                 loaded_count += 1;
             }
         }
-        self.clear_find_cache();
+        self.clear_lookup_caches();
         loaded_count
     }
 
     pub fn find(&self, model: &str) -> Option<Pricing> {
-        // Fast path: check the model-level cache first. When the same model
-        // name is looked up repeatedly (e.g. across thousands of entries with
-        // only a few dozen unique models), the cache avoids re-running the
-        // expensive fuzzy fallback on every call.
+        self.find_cached(model, PricingLookupKind::Standard, || {
+            self.find_with_fallbacks(
+                model,
+                || {
+                    self.enable_models_dev_fallback
+                        .then(models_dev_pricing)
+                        .flatten()
+                },
+                || {
+                    self.enable_embedded_models_dev_fallback
+                        .then(embedded_models_dev_pricing)
+                },
+            )
+        })
+    }
+
+    fn find_cached(
+        &self,
+        model: &str,
+        kind: PricingLookupKind,
+        lookup: impl FnOnce() -> Option<Pricing>,
+    ) -> Option<Pricing> {
+        let cache = self
+            .lookup_cache
+            .get_or_init(|| Mutex::new(PricingLookupCache::default()));
         {
-            let cache = self
-                .find_cache
-                .get_or_init(|| Mutex::new(FxHashMap::default()));
             let guard = cache.lock().unwrap_or_else(|error| error.into_inner());
-            if let Some(&cached) = guard.get(model) {
+            if let Some(&cached) = guard.entries(kind).get(model) {
                 return cached;
             }
         }
-        // Full lookup (dropped the lock above so concurrent callers are not
-        // serialized on the expensive fuzzy path).
-        let result = self.find_with_fallbacks(
-            model,
-            || {
-                self.enable_models_dev_fallback
-                    .then(models_dev_pricing)
-                    .flatten()
-            },
-            || {
-                self.enable_embedded_models_dev_fallback
-                    .then(embedded_models_dev_pricing)
-            },
-        );
-        // Store the result (including None for misses) so repeated lookups
-        // for the same model that fails to match any pricing entry are also
-        // short-circuited.
-        let cache = self
-            .find_cache
-            .get_or_init(|| Mutex::new(FxHashMap::default()));
+        // A miss may scan the pricing catalogs, so release the lock first.
+        let result = lookup();
         let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
-        guard.insert(model.to_string(), result);
+        guard.entries_mut(kind).insert(model.to_string(), result);
         result
     }
 
@@ -1440,20 +1469,22 @@ impl PricingMap {
     /// Unlike [`Self::find`], this lookup does not resolve aliases or use
     /// separator and fuzzy matching.
     pub fn find_exact_with_fallback(&self, model: &str) -> Option<Pricing> {
-        self.find_exact_normalized(model)
-            .or_else(|| {
-                self.enable_models_dev_fallback
-                    .then(|| {
-                        models_dev_pricing()
-                            .and_then(|pricing| pricing.find_exact_normalized(model))
-                    })
-                    .flatten()
-            })
-            .or_else(|| {
-                self.enable_embedded_models_dev_fallback
-                    .then(|| embedded_models_dev_pricing().find_exact_normalized(model))
-                    .flatten()
-            })
+        self.find_cached(model, PricingLookupKind::Exact, || {
+            self.find_exact_normalized(model)
+                .or_else(|| {
+                    self.enable_models_dev_fallback
+                        .then(|| {
+                            models_dev_pricing()
+                                .and_then(|pricing| pricing.find_exact_normalized(model))
+                        })
+                        .flatten()
+                })
+                .or_else(|| {
+                    self.enable_embedded_models_dev_fallback
+                        .then(|| embedded_models_dev_pricing().find_exact_normalized(model))
+                        .flatten()
+                })
+        })
     }
 
     fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
@@ -1741,7 +1772,7 @@ impl PricingMap {
         for (model, override_value) in overrides {
             self.apply_override(model, override_value);
         }
-        self.clear_find_cache();
+        self.clear_lookup_caches();
     }
 
     fn apply_override(&mut self, model: &str, override_value: &PricingOverride) {
@@ -1838,10 +1869,11 @@ impl PricingMap {
         }
     }
 
-    fn clear_find_cache(&self) {
-        if let Some(cache) = self.find_cache.get() {
+    fn clear_lookup_caches(&self) {
+        if let Some(cache) = self.lookup_cache.get() {
             let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
-            guard.clear();
+            guard.standard.clear();
+            guard.exact.clear();
         }
     }
 
@@ -1897,7 +1929,7 @@ impl PricingMap {
             pricing.cache_read_above_200k = source.cache_read_above_200k;
             pricing.long_context_threshold = source.long_context_threshold;
         }
-        self.clear_find_cache();
+        self.clear_lookup_caches();
     }
 
     fn put_builtin_entry(&mut self, model: String, pricing: Pricing) {
