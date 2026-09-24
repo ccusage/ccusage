@@ -1694,6 +1694,101 @@ mod tests {
     }
 
     #[test]
+    fn keeps_fork_rows_when_session_messages_have_no_seq_column() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute(
+                "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, data TEXT)",
+            )
+            .unwrap();
+        for (id, session_id, input) in [
+            ("parent-msg", "parent", 100),
+            ("fork-copy", "fork", 100),
+            ("fork-own", "fork", 40),
+        ] {
+            insert_db_session_message(
+                &db_path,
+                id,
+                session_id,
+                "assistant",
+                1_767_312_000_000,
+                assistant_payload(input, 10, 0.01).as_str(),
+                true,
+            );
+        }
+        create_db_session_aggregate_table_with_fork_columns(&db_path, "session_v2", true);
+        insert_db_session_fork(
+            &db_path,
+            "session_v2",
+            "fork",
+            "parent",
+            r#"{"type":"through","messageID":"parent-msg"}"#,
+        );
+
+        let entries = fork_entries(&db_path);
+
+        // Pre-`seq` schemas cannot tell copies apart, so every row stays.
+        assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn excludes_copied_history_from_a_fork_of_a_fork() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
+        // The grandchild copies the fork's rows (including the fork's own
+        // turn) and names the fork's own message as its boundary.
+        for (copy_id, seq) in [
+            ("grand-copy-1", 0),
+            ("grand-copy-2", 1),
+            ("grand-copy-boundary", 2),
+            ("grand-copy-fork-own", 4),
+        ] {
+            insert_db_session_message(
+                &db_path,
+                copy_id,
+                "grandchild",
+                "assistant",
+                1_767_312_000_000 + seq,
+                assistant_payload(100, 10, 0.01).as_str(),
+                true,
+            );
+            set_db_session_message_seq(&db_path, copy_id, seq);
+        }
+        insert_db_session_message(
+            &db_path,
+            "grand-own",
+            "grandchild",
+            "assistant",
+            1_767_312_000_005,
+            assistant_payload(7, 1, 0.01).as_str(),
+            true,
+        );
+        set_db_session_message_seq(&db_path, "grand-own", 5);
+        insert_db_session_fork(
+            &db_path,
+            "session_v2",
+            "grandchild",
+            "fork",
+            r#"{"type":"through","messageID":"fork-own"}"#,
+        );
+
+        let entries = fork_entries(&db_path);
+
+        let grandchild_ids: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "grandchild")
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        assert_eq!(grandchild_ids, vec!["grand-own"]);
+        // Parent (4) + fork's own turn (1) + grandchild's own turn (1).
+        assert_eq!(entries.len(), 6);
+    }
+
+    #[test]
     fn skips_the_aggregate_of_a_fork_made_only_of_copies() {
         let fixture = fs_fixture!({});
         let db_path = fixture.path("opencode.db");
