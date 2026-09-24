@@ -427,6 +427,10 @@ fn load_entries_from_database(
                             .or_else(|| statement.read::<f64, _>(4).ok().map(|value| value as i64))
                             .unwrap_or(0);
                         if is_fork_copy(&fork_copies, &session_id, &statement) {
+                            // The fork's `session_v2` aggregate includes the
+                            // copied history, so a fork made only of copies
+                            // must still block the aggregate fallback.
+                            message_sessions.insert(session_id);
                             continue;
                         }
                         if !window.is_unbounded()
@@ -1687,6 +1691,48 @@ mod tests {
         let entries = fork_entries(&db_path);
 
         assert_eq!(entries.len(), 8);
+    }
+
+    #[test]
+    fn skips_the_aggregate_of_a_fork_made_only_of_copies() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
+        // A fresh fork with no turns of its own yet.
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute("DELETE FROM session_message WHERE id = 'fork-own'")
+            .unwrap();
+        // Its cumulative aggregate still carries the copied history.
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute(
+                "UPDATE session_v2 SET time_created = 1767312000000, cost = 0.03, \
+                 tokens_input = 600, tokens_output = 30, tokens_cache_read = 0, \
+                 tokens_cache_write = 0, tokens_reasoning = 0, \
+                 model = '{\"id\":\"gpt-test\",\"providerID\":\"openai\"}' WHERE id = 'fork'",
+            )
+            .unwrap();
+        let _guard = EnvVarsGuard::set_many([(
+            "OPENCODE_DATA_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries(&shared, AgentReportKind::Session).unwrap();
+
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry.session_id.as_ref() == "parent"),
+            "fork aggregate leaked into the session report"
+        );
+        assert_eq!(entries.len(), 4);
     }
 
     #[test]
