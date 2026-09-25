@@ -191,7 +191,7 @@ jobs:
     permissions:
       actions: write
       contents: read
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os || matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -321,7 +321,7 @@ jobs:
     needs:
       - changes
       - npm-publish-dry-run-and-upload-pkg-pr-now
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os || matrix.os }}
     timeout-minutes: 20
     # No checkout on purpose: the working directory stays empty so each package
     # runner behaves like a real end user instead of inheriting the repo's

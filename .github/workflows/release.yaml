@@ -50,7 +50,7 @@ jobs:
     name: ${{ matrix.name }}
     needs: tagpr
     if: needs.tagpr.outputs.tag != ''
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os || matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
