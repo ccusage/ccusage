@@ -29,7 +29,7 @@ jobs:
   # the flake's pinned nixpkgs so CI matches the dev shell.
   tirith-scan:
     name: tirith security scan
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 15
     # Read-only: this job executes PR-controlled code (the local action, the PR
     # flake, the installed tirith), so it must hold no write scopes. The SARIF
@@ -139,7 +139,7 @@ jobs:
   # gate can fail fast before any build/test work starts.
   preflight:
     name: security & lint preflight
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -155,7 +155,7 @@ jobs:
   test:
     needs: [changes, tirith-scan, preflight]
     if: needs.changes.outputs.code-changed == 'true'
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -191,7 +191,7 @@ jobs:
     permissions:
       actions: write
       contents: read
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && (matrix.os) || (matrix.os == 'blacksmith-32vcpu-ubuntu-2404-arm' && 'ubuntu-24.04-arm' || matrix.os == 'blacksmith-32vcpu-ubuntu-2404' && 'ubuntu-24.04' || matrix.os == 'blacksmith-12vcpu-macos-26' && 'macos-26' || matrix.os == 'blacksmith-32vcpu-windows-2025' && 'windows-2025' || matrix.os) }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -252,7 +252,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     outputs:
       urls: ${{ steps.publish.outputs.urls }}
       preview-url: ${{ steps.preview-url.outputs.url }}
@@ -314,7 +314,7 @@ jobs:
     needs:
       - changes
       - npm-publish-dry-run-and-upload-pkg-pr-now
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && (matrix.os) || (matrix.os == 'blacksmith-32vcpu-ubuntu-2404' && 'ubuntu-24.04' || matrix.os == 'blacksmith-32vcpu-ubuntu-2404-arm' && 'ubuntu-24.04-arm' || matrix.os == 'blacksmith-12vcpu-macos-26' && 'macos-26' || matrix.os == 'blacksmith-32vcpu-windows-2025' && 'windows-2025' || matrix.os) }}
     timeout-minutes: 20
     # No checkout on purpose: the working directory stays empty so each package
     # runner behaves like a real end user instead of inheriting the repo's
@@ -440,7 +440,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false

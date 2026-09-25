@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   pullfrog:
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     permissions:
       id-token: write
       contents: read
@@ -29,6 +29,7 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix-cache
       - name: Run agent
+        if: github.repository == 'ccusage/ccusage'
         uses: pullfrog/pullfrog@e354ba26ce66bb317aa30ec13e4bdff962373474 # v0.1.81
         with:
           prompt: ${{ inputs.prompt }}

@@ -16,7 +16,7 @@ concurrency:
 jobs:
   update-pricing:
     name: ${{ matrix.name }}
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: write

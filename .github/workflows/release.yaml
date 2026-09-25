@@ -20,7 +20,7 @@ jobs:
     # Label events only matter on tagpr's own release PR; skip the rest so
     # ordinary PR labeling doesn't spend runner time.
     if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'tagpr-from-')
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: write
@@ -50,7 +50,7 @@ jobs:
     name: ${{ matrix.name }}
     needs: tagpr
     if: needs.tagpr.outputs.tag != ''
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && (matrix.os) || (matrix.os == 'blacksmith-32vcpu-ubuntu-2404-arm' && 'ubuntu-24.04-arm' || matrix.os == 'blacksmith-32vcpu-ubuntu-2404' && 'ubuntu-24.04' || matrix.os == 'blacksmith-12vcpu-macos-26' && 'macos-26' || matrix.os == 'blacksmith-32vcpu-windows-2025' && 'windows-2025' || matrix.os) }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -155,7 +155,7 @@ jobs:
       - tagpr
       - npm
     if: needs.tagpr.outputs.tag != ''
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     permissions:
       contents: write
     steps:
