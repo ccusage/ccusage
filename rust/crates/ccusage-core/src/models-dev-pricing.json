@@ -16841,7 +16841,7 @@
 			"output": 0.22
 		},
 		"limit": {
-			"context": 131072
+			"context": 262144
 		}
 	},
 	"inclusionai/ling-3.0-flash:thinking": {
@@ -32496,8 +32496,8 @@
 	"~deepseek/deepseek-pro-latest": {
 		"cost": {
 			"cache_read": 0.08832,
-			"input": 0.09984,
-			"output": 2.88
+			"input": 0.2528,
+			"output": 1.9584
 		},
 		"exactOnly": true,
 		"limit": {
