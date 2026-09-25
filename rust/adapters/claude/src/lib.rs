@@ -229,6 +229,7 @@ fn push_deduped_entry(
                         message_id,
                         request_id,
                         session_id,
+                        entry.timestamp,
                     )
                     .then_some(dedupe_index.index)
                 })
@@ -356,10 +357,12 @@ fn loaded_entry_matches_dedupe_key(
     message_id: &str,
     request_id: Option<&str>,
     session_id: &str,
+    timestamp: TimestampMs,
 ) -> bool {
     entry.data.message.id.as_deref() == Some(message_id)
         && entry.data.request_id.as_deref() == request_id
-        && (request_id.is_some() || loaded_entry_session_id(entry) == session_id)
+        && (request_id.is_some()
+            || (loaded_entry_session_id(entry) == session_id && entry.timestamp == timestamp))
 }
 
 fn loaded_entry_matches_sidechain_dedupe_key(
@@ -1145,11 +1148,43 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_requestless_usage_from_same_session_at_distinct_timestamps() {
+    fn keeps_requestless_usage_from_same_session_at_distinct_timestamps() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": [
                 r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
                 r#"{"timestamp":"2026-05-22T02:34:41.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":250,"speed":"standard"}}}"#,
+            ]
+            .join("\n"),
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+        );
+        for entry in loaded.entries {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
+
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(
+            deduped
+                .iter()
+                .map(|entry| entry.data.message.usage.output_tokens)
+                .sum::<u64>(),
+            275
+        );
+    }
+
+    #[test]
+    fn dedupes_repeated_requestless_writes_at_the_same_timestamp() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":250,"speed":"standard"}}}"#,
             ]
             .join("\n"),
         });

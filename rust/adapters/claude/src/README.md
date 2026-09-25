@@ -32,10 +32,10 @@ Sidechain entries:
   matching timestamps for sidechain replays with different request IDs.
 - This behavior fixes the overcounting reported in
   [#913](https://github.com/ccusage/ccusage/issues/913).
-- When `requestId` is missing, the regular usage loader deduplicates by message
-  ID and effective session ID. Daily summary matching also includes timestamps,
-  except for sidechain replays. Both keep gateway responses that reuse a message
-  ID in different sessions separate.
+- When `requestId` is missing, both loaders deduplicate by message ID, effective
+  session ID, and timestamp. Repeated writes at the same timestamp still
+  collapse; distinct timestamps stay separate. Both keep gateway responses that
+  reuse a message ID in different sessions separate.
 - When `requestId` is present, both loaders deduplicate matching message and
   request IDs across sessions because Claude Code can copy one response into
   multiple session transcripts.

@@ -307,11 +307,39 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_reused_message_id_from_same_session_without_request_id() {
+    fn keeps_reused_message_id_from_same_session_without_request_id() {
         let fixture = fs_fixture!({
             "projects/project1/session1/chat.jsonl": [
                 r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}},"costUSD":0.001}"#,
                 r#"{"timestamp":"2025-01-10T10:00:01.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":250,"cache_creation_input_tokens":10,"cache_read_input_tokens":5,"speed":"standard"}},"costUSD":0.01}"#,
+            ]
+            .join("\n"),
+        });
+
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            ..SharedArgs::default()
+        };
+        let entries = load_entries(&shared, None).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.data.message.usage.output_tokens)
+                .sum::<u64>(),
+            275
+        );
+        assert_eq!(entries.iter().map(|entry| entry.cost).sum::<f64>(), 0.011);
+    }
+
+    #[test]
+    fn dedupes_repeated_requestless_writes_from_same_session_at_the_same_timestamp() {
+        let fixture = fs_fixture!({
+            "projects/project1/session1/chat.jsonl": [
+                r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}},"costUSD":0.001}"#,
+                r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":250,"cache_creation_input_tokens":10,"cache_read_input_tokens":5,"speed":"standard"}},"costUSD":0.01}"#,
             ]
             .join("\n"),
         });
@@ -394,6 +422,39 @@ mod tests {
                 "claude-opus-4-20250514".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn daily_summaries_match_entry_aggregation_for_requestless_rewrites() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": [
+                r#"{"timestamp":"2026-09-03T12:00:00.000Z","sessionId":"session-a","message":{"id":"msg-gateway","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+                r#"{"timestamp":"2026-09-04T12:00:00.000Z","sessionId":"session-a","message":{"id":"msg-gateway","model":"claude-sonnet-4-20250514","usage":{"input_tokens":30,"output_tokens":4}}}"#,
+            ]
+            .join("\n"),
+        });
+
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let entries = load_entries(&shared, None).unwrap();
+        let daily = load_daily_summaries(&shared, None, false).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        let expected_daily = summarize_by_key(
+            &entries,
+            |entry| entry.date.clone(),
+            |key| (key.to_string(), None),
+        )
+        .unwrap();
+        assert_eq!(
+            daily.iter().map(summary_json).collect::<Vec<_>>(),
+            expected_daily.iter().map(summary_json).collect::<Vec<_>>()
+        );
+        assert_eq!(daily.iter().map(|row| row.total_tokens()).sum::<u64>(), 46);
     }
 
     #[test]
