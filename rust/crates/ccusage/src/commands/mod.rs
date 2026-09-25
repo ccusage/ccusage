@@ -590,6 +590,7 @@ fn load_statusline_active_block(
                 return find_active_block(entries);
             }
             BlockAnchor::NeedsMoreHistory => {}
+            BlockAnchor::NeedsFullHistory => break,
         }
     }
     find_active_block(load_entries(shared, None).ok()?)
@@ -609,6 +610,9 @@ enum BlockAnchor {
     From(TimestampMs),
     /// The window holds no pause long enough to anchor block boundaries.
     NeedsMoreHistory,
+    /// Future-dated entries can form blocks after the current one, so only
+    /// the unbounded selection is safe.
+    NeedsFullHistory,
 }
 
 /// Decides whether the entries inside a window pin down the active block.
@@ -627,6 +631,9 @@ fn statusline_block_anchor(
     let Some(&last) = timestamps.last() else {
         return BlockAnchor::NoActiveBlock;
     };
+    if last > now {
+        return BlockAnchor::NeedsFullHistory;
+    }
     if now.duration_since(last) >= session_ms {
         return BlockAnchor::NoActiveBlock;
     }
@@ -1269,6 +1276,11 @@ mod tests {
         assert_eq!(
             statusline_block_anchor(&[at(9), at(4), at(1)], now, session),
             BlockAnchor::NeedsMoreHistory
+        );
+        // A gap before a future-dated entry must not hide the current block.
+        assert_eq!(
+            statusline_block_anchor(&[at(1), at(-8)], now, session),
+            BlockAnchor::NeedsFullHistory
         );
     }
 

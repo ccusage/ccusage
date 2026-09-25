@@ -91,10 +91,13 @@ pub(super) struct SinceFiles {
 ///
 /// Claude session JSONL files are append-only, so a file last written before
 /// the window opened cannot hold an entry inside it. Files are kept or dropped
-/// per session, the main transcript together with its subagent transcripts,
-/// because deduplication matches sidechain replays against their parent
-/// messages within a session; dropping the parent file alone would let a
-/// replay count twice. Only the file list is narrowed; entries parsed from a
+/// per session, the main transcript together with its subagent transcripts
+/// and any copy in another config root, because deduplication matches
+/// sidechain replays against their parent messages within a session; dropping
+/// the parent file alone would let a replay count twice. Copies of a message
+/// in other sessions, such as resumed transcripts, keep the original
+/// timestamp, so they fall on the same side of the window as the original.
+/// Only the file list is narrowed; entries parsed from a
 /// surviving file are untouched. Every file is kept when `since` is unset or
 /// unparsable, when the window opens ahead of the current clock, or when a
 /// file's mtime cannot be read.
@@ -128,32 +131,56 @@ pub(super) fn split_files_before_since(
         .iter()
         .filter(|file| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
         .map(|file| session_group_key(file))
-        .collect::<FxHashSet<_>>();
+        .collect::<FxHashSet<String>>();
     let (kept, pruned) = files
         .into_iter()
         .partition(|file| live_sessions.contains(&session_group_key(file)));
     SinceFiles { kept, pruned }
 }
 
-/// Identifies the session a usage file belongs to, so `<session>.jsonl` and
-/// everything under `<session>/` (such as `subagents/`) share one key.
-/// Paths outside the `projects/<project>/<session>` layout key on themselves.
-fn session_group_key(path: &Path) -> PathBuf {
-    let components = path.components().collect::<Vec<_>>();
-    let Some(projects_index) = components
+/// Identifies the session a usage file belongs to, relative to `projects/`
+/// so a session copied into another config root shares one key.
+///
+/// `<session>.jsonl` and everything under `<session>/` (such as `subagents/`)
+/// share a key. Legacy flat `agent-*.jsonl` sidechain transcripts sit beside
+/// their parent, so they key on the `sessionId` recorded inside them. Paths
+/// outside the `projects/<project>/<session>` layout key on themselves.
+fn session_group_key(path: &Path) -> String {
+    let components = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>();
+    let relative = components
         .iter()
-        .position(|component| component.as_os_str() == "projects")
-    else {
-        return path.to_path_buf();
+        .position(|component| component == "projects")
+        .map(|index| &components[index + 1..]);
+    let Some([project, session, rest @ ..]) = relative else {
+        return path.to_string_lossy().into_owned();
     };
-    // `projects/<project>/<session>.jsonl` or `projects/<project>/<session>/...`
-    let Some(session) = components.get(projects_index + 2) else {
-        return path.to_path_buf();
-    };
-    let mut key = components[..projects_index + 2].iter().collect::<PathBuf>();
-    let session = session.as_os_str().to_string_lossy();
-    key.push(session.strip_suffix(".jsonl").unwrap_or(&session));
-    key
+    let session = session.strip_suffix(".jsonl").unwrap_or(session);
+    if rest.is_empty()
+        && session.starts_with("agent-")
+        && let Some(parent_session) = recorded_session_id(path)
+    {
+        return format!("{project}/{parent_session}");
+    }
+    format!("{project}/{session}")
+}
+
+/// Reads the first `sessionId` recorded in a transcript without parsing it.
+fn recorded_session_id(path: &Path) -> Option<String> {
+    use std::io::Read as _;
+
+    const MARKER: &[u8] = br#""sessionId":""#;
+    let mut head = Vec::new();
+    fs::File::open(path)
+        .ok()?
+        .take(64 * 1024)
+        .read_to_end(&mut head)
+        .ok()?;
+    let start = memmem::find(&head, MARKER)? + MARKER.len();
+    let end = memchr::memchr(b'"', &head[start..])? + start;
+    String::from_utf8(head[start..end].to_vec()).ok()
 }
 
 fn file_modified_millis(path: &Path) -> Option<i64> {
@@ -402,5 +429,38 @@ mod tests {
 
         assert_eq!(split.kept, [live_parent, live_agent]);
         assert_eq!(split.pruned, [stale_parent, stale_agent]);
+    }
+
+    #[test]
+    fn keeps_legacy_flat_agent_transcripts_and_config_root_copies_with_their_session() {
+        let fixture = fs_fixture!({
+            "a/projects/p/live.jsonl": "{}",
+            "a/projects/p/agent-1234.jsonl": r#"{"sessionId":"live","timestamp":"2026-09-01T12:00:00Z"}"#,
+            "a/projects/p/agent-5678.jsonl": r#"{"sessionId":"stale","timestamp":"2026-09-01T12:00:00Z"}"#,
+            "b/projects/p/live.jsonl": "{}",
+        });
+        let root = fixture.root();
+        let live = root.join("a/projects/p/live.jsonl");
+        let live_agent = root.join("a/projects/p/agent-1234.jsonl");
+        let stale_agent = root.join("a/projects/p/agent-5678.jsonl");
+        let other_root_copy = root.join("b/projects/p/live.jsonl");
+        set_file_modified(&live, ts("2026-09-21T12:00:00Z"));
+        for stale in [&live_agent, &stale_agent, &other_root_copy] {
+            set_file_modified(stale, ts("2026-09-01T12:00:00Z"));
+        }
+
+        let split = split_files_before_since(
+            vec![
+                live_agent.clone(),
+                stale_agent.clone(),
+                live.clone(),
+                other_root_copy.clone(),
+            ],
+            &shared_since(Some("20260920")),
+            ts("2026-09-24T00:00:00Z"),
+        );
+
+        assert_eq!(split.kept, [live_agent, live, other_root_copy]);
+        assert_eq!(split.pruned, [stale_agent]);
     }
 }

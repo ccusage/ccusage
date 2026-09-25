@@ -479,3 +479,48 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
     );
     assert!(output.contains("Detected: Claude"), "{output}");
 }
+
+#[test]
+fn statusline_keeps_the_current_block_before_future_dated_entries() {
+    let fixture = Fixture::new();
+    let now_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+    let at = |offset_hours: i64| {
+        ccusage_core::format_rfc3339_millis(ccusage_core::TimestampMs::from_millis(
+            now_ms + offset_hours * 60 * 60 * 1000,
+        ))
+    };
+    // A skewed clock wrote an entry eight hours ahead, after a long pause.
+    let transcript = fixture.write_file(
+        "projects/project-a/session-now.jsonl",
+        [
+            usage_line(&at(-1), "session-now", "msg-now", "req-now", 1.0),
+            usage_line(&at(8), "session-now", "msg-future", "req-future", 9.0),
+        ]
+        .join("\n"),
+    );
+    let hook = format!(
+        r#"{{"session_id":"session-now","transcript_path":"{}","model":{{"display_name":"Model"}},"cost":{{"total_cost_usd":0}},"context_window":{{"total_input_tokens":1,"context_window_size":100}}}}"#,
+        transcript.display()
+    );
+
+    let output = run_ccusage(
+        &fixture,
+        &[
+            "statusline",
+            "--offline",
+            "--no-cache",
+            "--cost-source",
+            "cc",
+            "--timezone",
+            "UTC",
+        ],
+        Some(&hook),
+    );
+    assert!(output.contains("$1.00 block"), "{output}");
+}
