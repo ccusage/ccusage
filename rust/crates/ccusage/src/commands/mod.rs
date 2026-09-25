@@ -13,8 +13,8 @@ use serde_json::json;
 use crate::pricing::PricingMap;
 use crate::{
     BucketKind, Color, Context, DEFAULT_RECENT_DAYS, DEFAULT_SESSION_DURATION_HOURS,
-    MILLIS_PER_DAY, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs, UsageSummary,
-    block_json, calculate_burn_rate,
+    MILLIS_PER_DAY, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs,
+    UsageSummary, block_json, calculate_burn_rate,
     cli::{
         BlocksArgs, CostSource, DailyArgs, SessionArgs, SharedArgs, SortOrder, StatuslineArgs,
         VisualBurnRate, WeekDay, WeeklyArgs,
@@ -451,7 +451,7 @@ fn render_statusline(
         })
         .unwrap_or(0.0);
 
-    let blocks = load_entries(shared, None)
+    let blocks = load_entries(&statusline_block_shared(args, shared, utc_now()), None)
         .map(|entries| identify_session_blocks(entries, DEFAULT_SESSION_DURATION_HOURS))
         .unwrap_or_default();
     let active_block = blocks.iter().find(|block| block.is_active && !block.is_gap);
@@ -553,6 +553,31 @@ fn statusline_today_shared(
         pricing_overrides: shared.pricing_overrides.clone(),
         timezone: args.timezone.clone(),
         ..SharedArgs::default()
+    }
+}
+
+/// Bounds the active-block load to recently written usage files.
+///
+/// The active block only needs entries from the last session window. The
+/// lower bound reaches one extra day behind it so block boundaries, which chain
+/// from earlier entries, still line up with an unbounded load. `until` stays
+/// open because an active block ends in the future.
+fn statusline_block_shared(
+    args: &StatuslineArgs,
+    shared: &SharedArgs,
+    now: TimestampMs,
+) -> SharedArgs {
+    let lookback =
+        (DEFAULT_SESSION_DURATION_HOURS * MILLIS_PER_HOUR as f64) as i64 + MILLIS_PER_DAY;
+    let since = format_date(
+        TimestampMs::from_millis(now.as_millis() - lookback),
+        args.timezone.as_deref(),
+    )
+    .replace('-', "");
+    SharedArgs {
+        since: Some(since),
+        timezone: args.timezone.clone(),
+        ..shared.clone()
     }
 }
 
@@ -1101,6 +1126,27 @@ mod tests {
                 .pricing_overrides
                 .contains_key("statusline-model")
         );
+    }
+
+    #[test]
+    fn bounds_statusline_block_load_one_day_behind_the_session_window() {
+        let args = StatuslineArgs {
+            timezone: Some("Asia/Tokyo".to_string()),
+            ..StatuslineArgs::default()
+        };
+        let shared = SharedArgs {
+            offline: true,
+            ..SharedArgs::default()
+        };
+        // 2026-05-22T01:27:00+09:00
+        let now = TimestampMs::from_millis(1_779_380_820_000);
+
+        let block_shared = statusline_block_shared(&args, &shared, now);
+
+        assert_eq!(block_shared.since.as_deref(), Some("20260520"));
+        assert_eq!(block_shared.until, None);
+        assert_eq!(block_shared.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert!(block_shared.offline);
     }
 
     #[test]
