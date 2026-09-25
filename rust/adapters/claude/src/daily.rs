@@ -16,12 +16,13 @@ use crate::{
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
+    utc_now,
 };
 
 use super::{
-    DedupeIndexVec, advisor_usages_from_line, chunk_file_indexes_by_size, daily_usage_dedupe_hash,
-    deserialize_usage_line, is_semver_prefix,
-    paths::{claude_paths, extract_project, usage_files},
+    DailySummaries, DedupeIndexVec, advisor_usages_from_line, chunk_file_indexes_by_size,
+    daily_usage_dedupe_hash, deserialize_usage_line, is_semver_prefix,
+    paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
     push_deduped_index, push_deduped_session_alias, sidechain_replay_dedupe_hash,
 };
 
@@ -29,11 +30,15 @@ pub(super) fn load_daily_summaries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
-) -> Result<Vec<UsageSummary>> {
+) -> Result<DailySummaries> {
     let paths = claude_paths()?;
-    let files = usage_files(&paths, project_filter);
-    if files.is_empty() {
-        return Ok(Vec::new());
+    let SinceFiles { kept, pruned } =
+        split_files_before_since(usage_files(&paths, project_filter), shared, utc_now());
+    if kept.is_empty() && pruned.is_empty() {
+        return Ok(DailySummaries {
+            summaries: Vec::new(),
+            detected: false,
+        });
     }
 
     let pricing = if shared.mode == CostMode::Display {
@@ -46,14 +51,48 @@ pub(super) fn load_daily_summaries_inner(
         ))
     };
     let tz = parse_tz(shared.timezone.as_deref());
+    let summaries = summarize_daily_files(
+        &kept,
+        shared,
+        project_filter,
+        group_by_project,
+        tz.as_ref(),
+        pricing.as_ref(),
+    );
+    // Skipped sessions still hold Claude usage, so they keep Claude detected
+    // exactly as an unbounded load would. The first file with an entry settles it.
+    let detected = !summaries.is_empty()
+        || pruned.iter().any(|file| {
+            read_daily_usage_file(file, tz.as_ref(), shared.mode, pricing.as_ref())
+                .entries
+                .iter()
+                .any(|entry| project_filter.is_none_or(|filter| entry.project.as_ref() == filter))
+        });
+    Ok(DailySummaries {
+        summaries,
+        detected,
+    })
+}
+
+fn summarize_daily_files(
+    files: &[PathBuf],
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    group_by_project: bool,
+    tz: Option<&JiffTimeZone>,
+    pricing: Option<&PricingMap>,
+) -> Vec<UsageSummary> {
+    if files.is_empty() {
+        return Vec::new();
+    }
     let mode = shared.mode;
     let loaded_files = if shared.single_thread {
         files
             .iter()
-            .map(|file| read_daily_usage_file(file, tz.as_ref(), mode, pricing.as_ref()))
+            .map(|file| read_daily_usage_file(file, tz, mode, pricing))
             .collect::<Vec<_>>()
     } else {
-        read_daily_usage_files_parallel(&files, tz.as_ref(), mode, pricing.as_ref())
+        read_daily_usage_files_parallel(files, tz, mode, pricing)
     };
 
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
@@ -77,7 +116,7 @@ pub(super) fn load_daily_summaries_inner(
                 .or_default()
                 .add_entry(entry);
         }
-        return Ok(groups
+        return groups
             .into_iter()
             .map(|((date, project), group)| {
                 let mut summary = group.into_summary();
@@ -85,7 +124,7 @@ pub(super) fn load_daily_summaries_inner(
                 summary.project = Some(project.to_string());
                 summary
             })
-            .collect());
+            .collect();
     }
 
     let mut groups = BTreeMap::<String, DailyAccumulator>::new();
@@ -95,14 +134,14 @@ pub(super) fn load_daily_summaries_inner(
             .or_default()
             .add_entry(entry);
     }
-    Ok(groups
+    groups
         .into_iter()
         .map(|(key, group)| {
             let mut summary = group.into_summary();
             summary.date = Some(key);
             summary
         })
-        .collect())
+        .collect()
 }
 
 #[derive(Debug)]

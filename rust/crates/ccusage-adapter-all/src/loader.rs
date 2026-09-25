@@ -642,8 +642,10 @@ fn load_claude_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentR
         });
     }
 
-    let mut summaries = claude::load_daily_summaries(shared, None, false)?;
-    let detected = !summaries.is_empty();
+    let claude::DailySummaries {
+        mut summaries,
+        detected,
+    } = claude::load_daily_summaries_with_detection(shared, None, false)?;
     filter_daily_summaries_by_date(&mut summaries, shared);
     Ok(AgentRows {
         rows: summary_rows("claude", summaries, false),

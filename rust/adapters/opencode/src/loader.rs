@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -297,6 +297,7 @@ fn load_entries_from_database(
 
     let mut seen_message_ids = HashSet::new();
     let mut message_sessions = HashSet::new();
+    let fork_copies = fork_copy_cutoffs(&connection);
 
     if table_exists(&connection, "message") {
         // Push the window into SQL only while a sample of `time_created` still
@@ -425,6 +426,13 @@ fn load_entries_from_database(
                             .ok()
                             .or_else(|| statement.read::<f64, _>(4).ok().map(|value| value as i64))
                             .unwrap_or(0);
+                        // Copies neither count nor mark the fork as covered:
+                        // the fork's `session_v2` counters start at zero and
+                        // only hold fork-local usage, so they stay a valid
+                        // fallback when every fork-local row is gone.
+                        if is_fork_copy(&fork_copies, &session_id, &statement) {
+                            continue;
+                        }
                         if !window.is_unbounded()
                             && let Some(millis) = extract_message_timestamp(&data)
                             && !window.contains(millis)
@@ -597,6 +605,130 @@ fn table_exists(connection: &sqlite::Connection, table: &str) -> bool {
     matches!(statement.next(), Ok(sqlite::State::Row))
 }
 
+/// Fork sessions whose leading `seq` range is a copy of the parent history.
+///
+/// Returns the largest `seq` that is still copied history for each fork
+/// session, so the v2 row scan can drop inherited assistant usage while
+/// keeping what the fork generated itself. `session_v2` carries the fork
+/// link (`fork_session_id`) plus the boundary message; `session_message`
+/// carries the `seq` the fork kept when it copied the parent's rows.
+fn fork_copy_cutoffs(connection: &sqlite::Connection) -> HashMap<String, i64> {
+    let mut cutoffs = HashMap::new();
+    if !table_exists(connection, "session_v2") || !table_exists(connection, "session_message") {
+        return cutoffs;
+    }
+    let v2_columns = table_columns(connection, "session_v2");
+    if !["id", "fork_session_id", "fork_boundary"]
+        .into_iter()
+        .all(|column| v2_columns.contains(column))
+    {
+        return cutoffs;
+    }
+    let message_columns = table_columns(connection, "session_message");
+    if !["id", "session_id", "seq"]
+        .into_iter()
+        .all(|column| message_columns.contains(column))
+    {
+        return cutoffs;
+    }
+    let Ok(mut forks) = connection.prepare(
+        "SELECT id, fork_session_id, fork_boundary FROM session_v2 \
+         WHERE fork_session_id IS NOT NULL AND fork_boundary IS NOT NULL",
+    ) else {
+        return cutoffs;
+    };
+    while matches!(forks.next(), Ok(sqlite::State::Row)) {
+        let Ok(fork_id) = forks.read::<String, _>(0) else {
+            continue;
+        };
+        let Ok(parent_id) = forks.read::<String, _>(1) else {
+            continue;
+        };
+        let Ok(boundary) = forks.read::<String, _>(2) else {
+            continue;
+        };
+        if fork_id.is_empty() || parent_id.is_empty() {
+            continue;
+        }
+        if let Some(cutoff) = fork_copy_cutoff(connection, &parent_id, &boundary) {
+            cutoffs.insert(fork_id, cutoff);
+        }
+    }
+    cutoffs
+}
+
+/// Largest copied `seq` for one fork: the parent's boundary `seq` for a
+/// `through` fork, or the parent's last `seq` below the boundary for a
+/// `before` fork.
+///
+/// Returns `None` when the boundary cannot be resolved — a missing parent
+/// row, a missing boundary row, or an unparsable boundary payload — so the
+/// fork keeps all of its rows instead of being dropped on a guess.
+fn fork_copy_cutoff(
+    connection: &sqlite::Connection,
+    parent_id: &str,
+    boundary: &str,
+) -> Option<i64> {
+    let boundary: serde_json::Value = serde_json::from_str(boundary).ok()?;
+    let boundary_type = boundary.get("type")?.as_str()?;
+    // The boundary names the parent's message id, which the fork copy does
+    // not reuse (every copy gets a new id), so the lookup has to run against
+    // the parent session's rows and then compare by the preserved `seq`.
+    let parent_message_id = boundary.get("messageID")?.as_str()?;
+    let Ok(mut statement) = connection
+        .prepare("SELECT seq FROM session_message WHERE session_id = ?1 AND id = ?2 LIMIT 1")
+    else {
+        return None;
+    };
+    statement.bind((1, parent_id)).ok()?;
+    statement.bind((2, parent_message_id)).ok()?;
+    let boundary_seq = match statement.next() {
+        Ok(sqlite::State::Row) => statement.read::<i64, _>(0).ok()?,
+        _ => return None,
+    };
+    match boundary_type {
+        "through" => Some(boundary_seq),
+        // `seq` is sparse and the fork's own rows continue right after the
+        // last copied row, so `boundary_seq - 1` could swallow them.
+        "before" => last_parent_seq_before(connection, parent_id, boundary_seq),
+        _ => None,
+    }
+}
+
+fn last_parent_seq_before(
+    connection: &sqlite::Connection,
+    parent_id: &str,
+    boundary_seq: i64,
+) -> Option<i64> {
+    let Ok(mut statement) = connection
+        .prepare("SELECT MAX(seq) FROM session_message WHERE session_id = ?1 AND seq < ?2")
+    else {
+        return None;
+    };
+    statement.bind((1, parent_id)).ok()?;
+    statement.bind((2, boundary_seq)).ok()?;
+    match statement.next() {
+        // `MAX` over no rows is NULL: nothing was copied, so nothing is skipped.
+        Ok(sqlite::State::Row) => statement.read::<Option<i64>, _>(0).ok()?,
+        _ => None,
+    }
+}
+
+fn is_fork_copy(
+    fork_copies: &HashMap<String, i64>,
+    session_id: &str,
+    statement: &sqlite::Statement,
+) -> bool {
+    let Some(cutoff) = fork_copies.get(session_id) else {
+        return false;
+    };
+    // Without a readable `seq` the row cannot be classified, so it stays.
+    statement
+        .read::<i64, _>(5)
+        .ok()
+        .is_some_and(|seq| seq <= *cutoff)
+}
+
 fn table_columns(connection: &sqlite::Connection, table: &str) -> HashSet<String> {
     let sql = match table {
         "message" => "SELECT * FROM message LIMIT 0",
@@ -629,31 +761,29 @@ fn prepare_session_message_query(
         return None;
     }
     let has_time_created = columns.contains("time_created");
+    let has_seq = columns.contains("seq");
+    // `seq` is position 5 only when the column exists; `is_fork_copy`
+    // falls back to keeping the row when it cannot read a `seq`.
+    let seq_column = if has_seq { ", seq" } else { "" };
     let time_created = if has_time_created {
         "time_created"
     } else {
         "NULL"
     };
+    let select = format!(
+        "SELECT id, session_id, type, data, {time_created}{seq_column} FROM session_message"
+    );
     let sql = if has_time_created {
         match (window.start, window.end) {
-            (Some(_), Some(_)) => format!(
-                "SELECT id, session_id, type, data, {time_created} FROM session_message \
-                 WHERE time_created >= ?1 AND time_created < ?2"
-            ),
-            (Some(_), None) => format!(
-                "SELECT id, session_id, type, data, {time_created} FROM session_message \
-                 WHERE time_created >= ?1"
-            ),
-            (None, Some(_)) => format!(
-                "SELECT id, session_id, type, data, {time_created} FROM session_message \
-                 WHERE time_created < ?1"
-            ),
-            (None, None) => {
-                format!("SELECT id, session_id, type, data, {time_created} FROM session_message")
+            (Some(_), Some(_)) => {
+                format!("{select} WHERE time_created >= ?1 AND time_created < ?2",)
             }
+            (Some(_), None) => format!("{select} WHERE time_created >= ?1",),
+            (None, Some(_)) => format!("{select} WHERE time_created < ?1",),
+            (None, None) => select.clone(),
         }
     } else {
-        "SELECT id, session_id, type, data, NULL FROM session_message".to_string()
+        select.clone()
     };
     let mut statement = connection.prepare(&sql).ok()?;
     if has_time_created {
@@ -1062,11 +1192,21 @@ mod tests {
     fn create_db_session_message_table(path: &Path, with_time_created: bool) {
         let db = sqlite::open(path).unwrap();
         let schema = if with_time_created {
-            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, data TEXT)"
+            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER NOT NULL DEFAULT 0, time_created INTEGER, data TEXT)"
         } else {
-            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, data TEXT)"
+            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER NOT NULL DEFAULT 0, data TEXT)"
         };
         db.execute(schema).unwrap();
+    }
+
+    fn set_db_session_message_seq(path: &Path, id: &str, seq: i64) {
+        let db = sqlite::open(path).unwrap();
+        let mut statement = db
+            .prepare("UPDATE session_message SET seq = ?1 WHERE id = ?2")
+            .unwrap();
+        statement.bind((1, seq)).unwrap();
+        statement.bind((2, id)).unwrap();
+        statement.next().unwrap();
     }
 
     fn insert_db_session_message(
@@ -1108,16 +1248,60 @@ mod tests {
     }
 
     fn create_db_session_aggregate_table(path: &Path, table: &str) {
+        create_db_session_aggregate_table_with_fork_columns(path, table, false);
+    }
+
+    fn create_db_session_aggregate_table_with_fork_columns(
+        path: &Path,
+        table: &str,
+        with_fork_columns: bool,
+    ) {
+        let fork_columns = if with_fork_columns {
+            ", fork_session_id TEXT, fork_boundary TEXT"
+        } else {
+            ""
+        };
         let schema = match table {
             "session_v2" => {
-                "CREATE TABLE session_v2 (id TEXT PRIMARY KEY, time_created INTEGER, cost REAL, tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT)"
+                format!(
+                    "CREATE TABLE session_v2 (id TEXT PRIMARY KEY, time_created INTEGER, cost REAL, tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT{fork_columns})"
+                )
             }
             "session" => {
-                "CREATE TABLE session (id TEXT PRIMARY KEY, time_created INTEGER, cost REAL, tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT)"
+                format!(
+                    "CREATE TABLE session (id TEXT PRIMARY KEY, time_created INTEGER, cost REAL, tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_reasoning INTEGER, model TEXT{fork_columns})"
+                )
             }
             _ => panic!("unsupported test session table: {table}"),
         };
-        sqlite::open(path).unwrap().execute(schema).unwrap();
+        sqlite::open(path)
+            .unwrap()
+            .execute(schema.as_str())
+            .unwrap();
+    }
+
+    fn insert_db_session_fork(
+        path: &Path,
+        table: &str,
+        fork_id: &str,
+        parent_id: &str,
+        boundary: &str,
+    ) {
+        let sql = match table {
+            "session_v2" => {
+                "INSERT INTO session_v2 (id, fork_session_id, fork_boundary) VALUES (?1, ?2, ?3)"
+            }
+            "session" => {
+                "INSERT INTO session (id, fork_session_id, fork_boundary) VALUES (?1, ?2, ?3)"
+            }
+            _ => panic!("unsupported test session table: {table}"),
+        };
+        let db = sqlite::open(path).unwrap();
+        let mut statement = db.prepare(sql).unwrap();
+        statement.bind((1, fork_id)).unwrap();
+        statement.bind((2, parent_id)).unwrap();
+        statement.bind((3, boundary)).unwrap();
+        statement.next().unwrap();
     }
 
     struct SessionAggregateFixture<'a> {
@@ -1358,6 +1542,360 @@ mod tests {
         assert_eq!(entries[0].session_id.as_ref(), "legacy-session");
         assert_eq!(entries[0].data.message.usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
+    }
+
+    fn assistant_payload(input: u64, output: u64, cost: f64) -> String {
+        format!(
+            r#"{{"model":{{"id":"gpt-test","providerID":"openai"}},"time":{{"created":1767312000000}},"tokens":{{"input":{input},"output":{output}}},"cost":{cost}}}"#,
+        )
+    }
+
+    fn insert_fork_history(
+        db_path: &Path,
+        parent_id: &str,
+        fork_id: &str,
+        boundary_type: &str,
+        boundary_message_id: &str,
+    ) {
+        // Parent history: two assistant turns, then the boundary assistant
+        // turn, then a later assistant turn the fork never copies.
+        for (id, seq, input) in [
+            ("parent-msg-1", 0, 100),
+            ("parent-msg-2", 1, 200),
+            (boundary_message_id, 2, 300),
+            ("parent-msg-4", 3, 400),
+        ] {
+            insert_db_session_message(
+                db_path,
+                id,
+                parent_id,
+                "assistant",
+                1_767_312_000_000 + seq,
+                assistant_payload(input, 10, 0.01).as_str(),
+                true,
+            );
+            set_db_session_message_seq(db_path, id, seq);
+        }
+        // Fork copies: same `seq`, new ids, and the fork's own turn at seq 4.
+        // The boundary copy keeps usage so `through` vs `before` is observable.
+        for (copy_id, seq, input) in [
+            ("fork-copy-1", 0, 100),
+            ("fork-copy-2", 1, 200),
+            ("fork-copy-boundary", 2, 300),
+        ] {
+            insert_db_session_message(
+                db_path,
+                copy_id,
+                fork_id,
+                "assistant",
+                1_767_312_000_000 + seq,
+                assistant_payload(input, 10, 0.01).as_str(),
+                true,
+            );
+            set_db_session_message_seq(db_path, copy_id, seq);
+        }
+        insert_db_session_message(
+            db_path,
+            "fork-own",
+            fork_id,
+            "assistant",
+            1_767_312_000_004,
+            assistant_payload(40, 4, 0.02).as_str(),
+            true,
+        );
+        set_db_session_message_seq(db_path, "fork-own", 4);
+        create_db_session_aggregate_table_with_fork_columns(db_path, "session_v2", true);
+        insert_db_session_fork(
+            db_path,
+            "session_v2",
+            fork_id,
+            parent_id,
+            format!(r#"{{"type":"{boundary_type}","messageID":"{boundary_message_id}"}}"#,)
+                .as_str(),
+        );
+    }
+
+    fn fork_entries(db_path: &Path) -> Vec<crate::LoadedEntry> {
+        load_entries_from_directory(
+            db_path.parent().expect("fixture db has a parent directory"),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn excludes_copied_history_through_the_fork_boundary() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
+
+        let entries = fork_entries(&db_path);
+
+        // Parent keeps its four turns; the fork keeps only its own turn.
+        // `through` drops the copied boundary turn (seq 2) with the rest.
+        assert_eq!(entries.len(), 5);
+        let parent_input: u64 = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "parent")
+            .map(|entry| entry.data.message.usage.input_tokens)
+            .sum();
+        assert_eq!(parent_input, 1000);
+        let fork_entries: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "fork")
+            .collect();
+        assert_eq!(fork_entries.len(), 1);
+        assert_eq!(fork_entries[0].data.message.id.as_deref(), Some("fork-own"));
+        assert_eq!(fork_entries[0].data.message.usage.input_tokens, 40);
+    }
+
+    #[test]
+    fn excludes_copied_history_before_the_fork_boundary() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_fork_history(&db_path, "parent", "fork", "before", "boundary-msg");
+
+        let entries = fork_entries(&db_path);
+
+        // `before` keeps the copied boundary turn (seq 2) alongside the
+        // fork's own turn; everything at or below seq 1 is still dropped.
+        let mut fork_ids: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "fork")
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        fork_ids.sort_unstable();
+        assert_eq!(fork_ids, vec!["fork-copy-boundary", "fork-own"]);
+    }
+
+    #[test]
+    fn keeps_fork_rows_when_the_boundary_cannot_be_resolved() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
+        // Point the fork at a boundary message the parent never had.
+        let db = sqlite::open(&db_path).unwrap();
+        db.execute(
+            "UPDATE session_v2 SET fork_boundary = '{\"type\":\"through\",\"messageID\":\"missing\"}' \
+             WHERE id = 'fork'",
+        )
+        .unwrap();
+
+        let entries = fork_entries(&db_path);
+
+        assert_eq!(entries.len(), 8);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.session_id.as_ref() == "fork")
+                .count(),
+            4
+        );
+    }
+
+    #[test]
+    fn keeps_fork_rows_without_fork_metadata() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
+        // Drop the fork link: no `session_v2` row means no exclusion.
+        let db = sqlite::open(&db_path).unwrap();
+        db.execute("DROP TABLE session_v2").unwrap();
+
+        let entries = fork_entries(&db_path);
+
+        assert_eq!(entries.len(), 8);
+    }
+
+    #[test]
+    fn keeps_fork_rows_when_session_messages_have_no_seq_column() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute(
+                "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, time_created INTEGER, data TEXT)",
+            )
+            .unwrap();
+        for (id, session_id, input) in [
+            ("parent-msg", "parent", 100),
+            ("fork-copy", "fork", 100),
+            ("fork-own", "fork", 40),
+        ] {
+            insert_db_session_message(
+                &db_path,
+                id,
+                session_id,
+                "assistant",
+                1_767_312_000_000,
+                assistant_payload(input, 10, 0.01).as_str(),
+                true,
+            );
+        }
+        create_db_session_aggregate_table_with_fork_columns(&db_path, "session_v2", true);
+        insert_db_session_fork(
+            &db_path,
+            "session_v2",
+            "fork",
+            "parent",
+            r#"{"type":"through","messageID":"parent-msg"}"#,
+        );
+
+        let entries = fork_entries(&db_path);
+
+        // Pre-`seq` schemas cannot tell copies apart, so every row stays.
+        assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn excludes_copied_history_from_a_fork_of_a_fork() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
+        // The grandchild copies the fork's rows (including the fork's own
+        // turn) and names the fork's own message as its boundary.
+        for (copy_id, seq) in [
+            ("grand-copy-1", 0),
+            ("grand-copy-2", 1),
+            ("grand-copy-boundary", 2),
+            ("grand-copy-fork-own", 4),
+        ] {
+            insert_db_session_message(
+                &db_path,
+                copy_id,
+                "grandchild",
+                "assistant",
+                1_767_312_000_000 + seq,
+                assistant_payload(100, 10, 0.01).as_str(),
+                true,
+            );
+            set_db_session_message_seq(&db_path, copy_id, seq);
+        }
+        insert_db_session_message(
+            &db_path,
+            "grand-own",
+            "grandchild",
+            "assistant",
+            1_767_312_000_005,
+            assistant_payload(7, 1, 0.01).as_str(),
+            true,
+        );
+        set_db_session_message_seq(&db_path, "grand-own", 5);
+        insert_db_session_fork(
+            &db_path,
+            "session_v2",
+            "grandchild",
+            "fork",
+            r#"{"type":"through","messageID":"fork-own"}"#,
+        );
+
+        let entries = fork_entries(&db_path);
+
+        let grandchild_ids: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "grandchild")
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        assert_eq!(grandchild_ids, vec!["grand-own"]);
+        // Parent (4) + fork's own turn (1) + grandchild's own turn (1).
+        assert_eq!(entries.len(), 6);
+    }
+
+    #[test]
+    fn falls_back_to_the_fork_local_aggregate_when_only_copies_remain() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
+        // The fork's own turn was reverted, leaving only copied rows.
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute("DELETE FROM session_message WHERE id = 'fork-own'")
+            .unwrap();
+        // OpenCode v2 starts fork counters at zero, so the aggregate holds only
+        // the fork-local usage that survived the revert.
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute(
+                "UPDATE session_v2 SET time_created = 1767312000000, cost = 0.02, \
+                 tokens_input = 40, tokens_output = 4, tokens_cache_read = 0, \
+                 tokens_cache_write = 0, tokens_reasoning = 0, \
+                 model = '{\"id\":\"gpt-test\",\"providerID\":\"openai\"}' WHERE id = 'fork'",
+            )
+            .unwrap();
+        let _guard = EnvVarsGuard::set_many([(
+            "OPENCODE_DATA_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries(&shared, AgentReportKind::Session).unwrap();
+
+        let fork_input: Vec<u64> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "fork")
+            .map(|entry| entry.data.message.usage.input_tokens)
+            .collect();
+        assert_eq!(fork_input, vec![40]);
+        assert_eq!(entries.len(), 5);
+    }
+
+    #[test]
+    fn keeps_fork_rows_after_the_last_copy_when_before_seqs_are_sparse() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        create_db_session_aggregate_table_with_fork_columns(&db_path, "session_v2", true);
+        // Parent seqs have gaps; the fork copies rows 0 and 10, and its own row
+        // continues right after the last copy instead of below the boundary.
+        for (session_id, id, seq, input) in [
+            ("parent", "parent-a", 0, 100),
+            ("parent", "parent-b", 10, 200),
+            ("parent", "parent-boundary", 100, 300),
+            ("fork", "fork-copy-a", 0, 100),
+            ("fork", "fork-copy-b", 10, 200),
+            ("fork", "fork-own", 20, 40),
+        ] {
+            insert_db_session_message(
+                &db_path,
+                id,
+                session_id,
+                "assistant",
+                1_767_312_000_000 + seq,
+                assistant_payload(input, 10, 0.01).as_str(),
+                true,
+            );
+            set_db_session_message_seq(&db_path, id, seq);
+        }
+        insert_db_session_fork(
+            &db_path,
+            "session_v2",
+            "fork",
+            "parent",
+            r#"{"type":"before","messageID":"parent-boundary"}"#,
+        );
+
+        let entries = fork_entries(&db_path);
+
+        let fork_ids: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "fork")
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        assert_eq!(fork_ids, vec!["fork-own"]);
     }
 
     #[test]

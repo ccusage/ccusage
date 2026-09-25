@@ -10,11 +10,12 @@ use ccusage_adapter_common::filter_loaded_entries_by_date;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::blocks::SessionBlock;
 use crate::pricing::PricingMap;
 use crate::{
-    BucketKind, Color, Context, DEFAULT_RECENT_DAYS, DEFAULT_SESSION_DURATION_HOURS,
-    MILLIS_PER_DAY, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs, UsageSummary,
-    block_json, calculate_burn_rate,
+    BucketKind, Color, Context, DEFAULT_RECENT_DAYS, DEFAULT_SESSION_DURATION_HOURS, LoadedEntry,
+    MILLIS_PER_DAY, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Result, SessionAccumulator, TimestampMs,
+    UsageSummary, block_json, calculate_burn_rate,
     cli::{
         BlocksArgs, CostSource, DailyArgs, SessionArgs, SharedArgs, SortOrder, StatuslineArgs,
         VisualBurnRate, WeekDay, WeeklyArgs,
@@ -23,10 +24,10 @@ use crate::{
     fast::FxHashMap,
     filter_and_sort_summaries, filter_blocks_by_date, format_currency, format_date, format_number,
     format_remaining_time, format_rfc3339_millis, group_project_output, identify_session_blocks,
-    load_daily_summaries, load_entries, print_active_block_detail, print_blocks_table,
-    print_json_or_jq, print_usage_table, session_summary_json, sort_blocks, sort_summaries,
-    summarize_by_key, summarize_summaries_by_bucket, summary_json, total_usage_tokens, totals_json,
-    utc_now, wants_json,
+    load_daily_summaries, load_entries, load_entries_since, print_active_block_detail,
+    print_blocks_table, print_json_or_jq, print_usage_table, session_summary_json, sort_blocks,
+    sort_summaries, summarize_by_key, summarize_summaries_by_bucket, summary_json,
+    total_usage_tokens, totals_json, utc_now, wants_json,
 };
 
 pub(crate) fn run_daily(args: DailyArgs) -> Result<()> {
@@ -69,7 +70,7 @@ pub(crate) fn run_daily(args: DailyArgs) -> Result<()> {
 }
 
 pub(crate) fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
-    let entries = load_entries(&shared, None)?;
+    let entries = load_entries_since(&shared, None)?;
     let mut daily = summarize_by_key(
         &entries,
         |entry| entry.date.clone(),
@@ -108,7 +109,7 @@ pub(crate) fn run_bucket(shared: SharedArgs, kind: BucketKind) -> Result<()> {
 
 pub(crate) fn run_weekly(args: WeeklyArgs) -> Result<()> {
     let shared = args.shared.clone();
-    let entries = load_entries(&shared, None)?;
+    let entries = load_entries_since(&shared, None)?;
     let mut daily = summarize_by_key(
         &entries,
         |entry| entry.date.clone(),
@@ -180,7 +181,7 @@ pub(crate) fn run_session(args: SessionArgs) -> Result<()> {
 }
 
 fn load_session_rows(shared: &SharedArgs) -> Result<Vec<UsageSummary>> {
-    let mut entries = load_entries(shared, None)?;
+    let mut entries = load_entries_since(shared, None)?;
     filter_loaded_entries_by_date(&mut entries, shared);
     let mut grouped = Vec::<SessionAccumulator>::new();
     let mut group_indexes = FxHashMap::<(Arc<str>, Arc<str>), usize>::default();
@@ -205,7 +206,7 @@ fn load_session_rows(shared: &SharedArgs) -> Result<Vec<UsageSummary>> {
 }
 
 fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
-    let mut entries = load_entries(shared, None)?;
+    let mut entries = load_entries_since(shared, None)?;
     filter_loaded_entries_by_date(&mut entries, shared);
     let mut session_entries = entries
         .into_iter()
@@ -439,7 +440,7 @@ fn render_statusline(
     };
 
     let today_shared = statusline_today_shared(args, shared, utc_now());
-    let today_cost = load_entries(&today_shared, None)
+    let today_cost = load_entries_since(&today_shared, None)
         .map(|entries| {
             entries
                 .iter()
@@ -451,11 +452,8 @@ fn render_statusline(
         })
         .unwrap_or(0.0);
 
-    let blocks = load_entries(shared, None)
-        .map(|entries| identify_session_blocks(entries, DEFAULT_SESSION_DURATION_HOURS))
-        .unwrap_or_default();
-    let active_block = blocks.iter().find(|block| block.is_active && !block.is_gap);
-    let (block_info, burn_rate_info) = if let Some(block) = active_block {
+    let active_block = load_statusline_active_block(args, shared, utc_now());
+    let (block_info, burn_rate_info) = if let Some(block) = active_block.as_ref() {
         let remaining = block.end_time.duration_since(utc_now()) / MILLIS_PER_MINUTE;
         let mut burn = String::new();
         if let Some(rate) = calculate_burn_rate(block) {
@@ -553,6 +551,122 @@ fn statusline_today_shared(
         pricing_overrides: shared.pricing_overrides.clone(),
         timezone: args.timezone.clone(),
         ..SharedArgs::default()
+    }
+}
+
+/// Lookback windows, in days behind the session window, tried in turn before
+/// the active block falls back to the full history.
+const STATUSLINE_BLOCK_LOOKBACK_DAYS: [i64; 3] = [1, 7, 30];
+
+/// Finds the active billing block, reading only recent usage files when the
+/// history allows it.
+///
+/// Block boundaries chain from earlier entries until usage pauses for longer
+/// than a session window, so a bounded load only reproduces the unbounded
+/// blocks once it reaches back past such a pause. Each window is widened until
+/// it does, and the full history is read as a last resort.
+fn load_statusline_active_block(
+    args: &StatuslineArgs,
+    shared: &SharedArgs,
+    now: TimestampMs,
+) -> Option<SessionBlock> {
+    let session_ms = (DEFAULT_SESSION_DURATION_HOURS * MILLIS_PER_HOUR as f64) as i64;
+    for lookback_days in STATUSLINE_BLOCK_LOOKBACK_DAYS {
+        let window_shared = statusline_block_shared(args, shared, now, lookback_days);
+        let since = window_shared.since.clone().unwrap_or_default();
+        let mut entries = load_entries_since(&window_shared, None).ok()?;
+        // Entries dated before the window may come from partially skipped
+        // sessions; only the ones inside it are complete.
+        entries.retain(|entry| entry.date.replace('-', "") >= since);
+        entries.sort_by_key(|entry| entry.timestamp);
+        let timestamps = entries
+            .iter()
+            .map(|entry| entry.timestamp)
+            .collect::<Vec<_>>();
+        match statusline_block_anchor(&timestamps, now, session_ms) {
+            BlockAnchor::NoActiveBlock => return None,
+            BlockAnchor::From(start) => {
+                entries.retain(|entry| entry.timestamp >= start);
+                return find_active_block(entries);
+            }
+            BlockAnchor::NeedsMoreHistory => {}
+            BlockAnchor::NeedsFullHistory => break,
+        }
+    }
+    find_active_block(load_entries(shared, None).ok()?)
+}
+
+fn find_active_block(entries: Vec<LoadedEntry>) -> Option<SessionBlock> {
+    identify_session_blocks(entries, DEFAULT_SESSION_DURATION_HOURS)
+        .into_iter()
+        .find(|block| block.is_active && !block.is_gap)
+}
+
+#[derive(Debug, PartialEq)]
+enum BlockAnchor {
+    /// No entry falls inside the last session window, so no block is active.
+    NoActiveBlock,
+    /// Blocks from this entry onward match an unbounded load.
+    From(TimestampMs),
+    /// The window holds no pause long enough to anchor block boundaries.
+    NeedsMoreHistory,
+    /// Future-dated entries can form blocks after the current one, so only
+    /// the unbounded selection is safe.
+    NeedsFullHistory,
+}
+
+/// Decides whether the entries inside a window pin down the active block.
+///
+/// @param timestamps Sorted timestamps of every entry dated inside the window.
+/// @param now Current time.
+/// @param session_ms Session block length in milliseconds.
+/// @returns Where block boundaries become independent of older history.
+fn statusline_block_anchor(
+    timestamps: &[TimestampMs],
+    now: TimestampMs,
+    session_ms: i64,
+) -> BlockAnchor {
+    // The window reaches further back than one session, so without an entry in
+    // the last session window no block can be active, whatever lies before it.
+    let Some(&last) = timestamps.last() else {
+        return BlockAnchor::NoActiveBlock;
+    };
+    if last > now {
+        return BlockAnchor::NeedsFullHistory;
+    }
+    if now.duration_since(last) >= session_ms {
+        return BlockAnchor::NoActiveBlock;
+    }
+    // A pause longer than a session starts a fresh block at the next entry,
+    // which is the same rule `identify_session_blocks` applies.
+    timestamps
+        .windows(2)
+        .rposition(|pair| pair[1].duration_since(pair[0]) > session_ms)
+        .map_or(BlockAnchor::NeedsMoreHistory, |index| {
+            BlockAnchor::From(timestamps[index + 1])
+        })
+}
+
+/// Bounds a statusline load to the session window plus `lookback_days`.
+///
+/// `until` stays open because an active block ends in the future.
+fn statusline_block_shared(
+    args: &StatuslineArgs,
+    shared: &SharedArgs,
+    now: TimestampMs,
+    lookback_days: i64,
+) -> SharedArgs {
+    let lookback = (DEFAULT_SESSION_DURATION_HOURS * MILLIS_PER_HOUR as f64) as i64
+        + lookback_days * MILLIS_PER_DAY;
+    let since = format_date(
+        TimestampMs::from_millis(now.as_millis() - lookback),
+        args.timezone.as_deref(),
+    )
+    .replace('-', "");
+    SharedArgs {
+        since: Some(since),
+        timezone: args.timezone.clone(),
+        ..shared.clone()
     }
 }
 
@@ -1100,6 +1214,73 @@ mod tests {
             today_shared
                 .pricing_overrides
                 .contains_key("statusline-model")
+        );
+    }
+
+    #[test]
+    fn bounds_statusline_block_load_behind_the_session_window() {
+        let args = StatuslineArgs {
+            timezone: Some("Asia/Tokyo".to_string()),
+            ..StatuslineArgs::default()
+        };
+        let shared = SharedArgs {
+            offline: true,
+            ..SharedArgs::default()
+        };
+        // 2026-05-22T01:27:00+09:00
+        let now = TimestampMs::from_millis(1_779_380_820_000);
+
+        let block_shared = statusline_block_shared(&args, &shared, now, 1);
+
+        assert_eq!(block_shared.since.as_deref(), Some("20260520"));
+        assert_eq!(
+            statusline_block_shared(&args, &shared, now, 7)
+                .since
+                .as_deref(),
+            Some("20260514")
+        );
+        assert_eq!(block_shared.until, None);
+        assert_eq!(block_shared.timezone.as_deref(), Some("Asia/Tokyo"));
+        assert!(block_shared.offline);
+    }
+
+    #[test]
+    fn anchors_statusline_blocks_after_the_latest_long_pause() {
+        const HOUR: i64 = 60 * 60 * 1000;
+        let now = TimestampMs::from_millis(1_779_380_820_000);
+        let at = |hours_ago: i64| TimestampMs::from_millis(now.as_millis() - hours_ago * HOUR);
+        let session = 5 * HOUR;
+
+        assert_eq!(
+            statusline_block_anchor(&[], now, session),
+            BlockAnchor::NoActiveBlock
+        );
+        assert_eq!(
+            statusline_block_anchor(&[at(30), at(6)], now, session),
+            BlockAnchor::NoActiveBlock
+        );
+        // Only the latest pause longer than a session counts.
+        assert_eq!(
+            statusline_block_anchor(&[at(40), at(30), at(20), at(18), at(1)], now, session),
+            BlockAnchor::From(at(1))
+        );
+        assert_eq!(
+            statusline_block_anchor(
+                &[at(30), at(20), at(16), at(12), at(8), at(4)],
+                now,
+                session
+            ),
+            BlockAnchor::From(at(20))
+        );
+        // A pause of exactly one session keeps the chain going.
+        assert_eq!(
+            statusline_block_anchor(&[at(9), at(4), at(1)], now, session),
+            BlockAnchor::NeedsMoreHistory
+        );
+        // A gap before a future-dated entry must not hide the current block.
+        assert_eq!(
+            statusline_block_anchor(&[at(1), at(-8)], now, session),
+            BlockAnchor::NeedsFullHistory
         );
     }
 

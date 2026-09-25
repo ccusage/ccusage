@@ -33,7 +33,9 @@ use crate::{
 #[doc(hidden)]
 pub use paths::timestamp_from_line;
 pub use paths::usage_files;
-pub(crate) use paths::{claude_paths, extract_project, extract_session_parts};
+pub(crate) use paths::{
+    claude_paths, extract_project, extract_session_parts, split_files_before_since,
+};
 
 struct DedupeIndex {
     index: usize,
@@ -42,17 +44,61 @@ struct DedupeIndex {
 
 type DedupeIndexVec = SmallVec<[DedupeIndex; 1]>;
 
+/// Loads every deduplicated Claude usage entry, regardless of `since`.
+///
+/// Use this when a report reads history before the `--since` window, such as
+/// billing blocks anchored on earlier entries or whole-session totals.
 pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result<Vec<LoadedEntry>> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        load_entries_inner(shared, project_filter)
+        load_entries_inner(shared, project_filter, false)
     })
 }
 
+/// Loads Claude usage entries for a report that keeps only entries dated
+/// inside the `--since` window.
+///
+/// Sessions last written before the window are skipped without being read, so
+/// entries dated before `since` may be missing. Callers must discard those
+/// entries, which leaves the in-window result identical to [`load_entries`].
+///
+/// @param shared Report arguments; `since` and `timezone` bound the files read.
+/// @param project_filter Optional project directory to restrict the scan to.
+/// @returns Deduplicated entries, complete for every date on or after `since`.
+pub fn load_entries_since(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+) -> Result<Vec<LoadedEntry>> {
+    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
+        load_entries_inner(shared, project_filter, true)
+    })
+}
+
+/// Loads daily Claude summaries. Summaries dated before `since` may be
+/// missing, so callers must filter them by date.
 pub fn load_daily_summaries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
+    Ok(load_daily_summaries_with_detection(shared, project_filter, group_by_project)?.summaries)
+}
+
+/// Daily Claude summaries plus whether any Claude usage exists at all.
+pub struct DailySummaries {
+    /// Summaries, possibly missing dates before `since`.
+    pub summaries: Vec<UsageSummary>,
+    /// Whether any usage file holds an entry, including files skipped as
+    /// outside the `--since` window.
+    pub detected: bool,
+}
+
+/// Loads daily Claude summaries like [`load_daily_summaries`] and reports
+/// whether Claude usage was detected independently of the date window.
+pub fn load_daily_summaries_with_detection(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    group_by_project: bool,
+) -> Result<DailySummaries> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
         daily::load_daily_summaries_inner(shared, project_filter, group_by_project)
     })
@@ -61,6 +107,7 @@ pub fn load_daily_summaries(
 fn load_entries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
+    skip_files_before_since: bool,
 ) -> Result<Vec<LoadedEntry>> {
     let paths = claude_paths()?;
     debug_log(
@@ -76,6 +123,20 @@ fn load_entries_inner(
     );
     let files = usage_files(&paths, project_filter);
     debug_log(shared, format!("Found {} JSONL usage files", files.len()));
+    let files = if skip_files_before_since {
+        split_files_before_since(files, shared, utc_now()).kept
+    } else {
+        files
+    };
+    if skip_files_before_since && shared.since.is_some() {
+        debug_log(
+            shared,
+            format!(
+                "Kept {} JSONL usage files inside the --since window",
+                files.len()
+            ),
+        );
+    }
     if files.is_empty() {
         return Ok(Vec::new());
     }

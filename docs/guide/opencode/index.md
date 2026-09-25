@@ -66,6 +66,10 @@ OpenCode supports subagent sessions. The session report displays:
 - **Indented rows** (`↳`) for subagent sessions
 - **Subtotal rows** combining parent + subagents
 
+## Forked Sessions
+
+When OpenCode v2 forks a session, it copies the parent's history into the fork. ccusage counts only the usage the fork generates itself, so copied turns are not counted twice in session, daily, weekly, or monthly reports. If the fork's parent session or boundary message is no longer in the database, the fork keeps all of its rows.
+
 ## Environment Variables
 
 | Variable            | Description                                                                                |

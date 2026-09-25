@@ -16841,7 +16841,7 @@
 			"output": 0.22
 		},
 		"limit": {
-			"context": 131072
+			"context": 262144
 		}
 	},
 	"inclusionai/ling-3.0-flash:thinking": {
@@ -19945,6 +19945,16 @@
 			"context": 262144
 		}
 	},
+	"mistralai/devstral-2512": {
+		"cost": {
+			"cache_read": 0.04,
+			"input": 0.4,
+			"output": 2
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"mistralai/ministral-14b-2512": {
 		"cost": {
 			"cache_read": 0.02,
@@ -20006,6 +20016,16 @@
 			"context": 131072
 		}
 	},
+	"mistralai/mistral-large-2512": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.5,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"mistralai/mistral-medium-3": {
 		"cost": {
 			"cache_read": 0.04,
@@ -20048,8 +20068,9 @@
 	},
 	"mistralai/mistral-nemo": {
 		"cost": {
-			"input": 0.019,
-			"output": 0.03
+			"cache_read": 0.015,
+			"input": 0.15,
+			"output": 0.15
 		},
 		"exactOnly": true,
 		"limit": {
@@ -20107,12 +20128,12 @@
 	},
 	"mistralai/mistral-small-3.2-24b-instruct": {
 		"cost": {
-			"cache_read": 0.1,
-			"input": 0.2,
-			"output": 0.4
+			"cache_read": 0.01,
+			"input": 0.1,
+			"output": 0.3
 		},
 		"limit": {
-			"context": 128000
+			"context": 256000
 		}
 	},
 	"mistralai/mistral-small-4-119b-2603:thinking": {
@@ -23898,10 +23919,10 @@
 	},
 	"openai/gpt-luna-latest": {
 		"cost": {
-			"cache_read": 0.02,
-			"cache_write": 0.25,
-			"input": 0.2,
-			"output": 1.2
+			"cache_read": 0.01,
+			"cache_write": 0.125,
+			"input": 0.1,
+			"output": 0.5
 		},
 		"exactOnly": true,
 		"limit": {
@@ -25447,7 +25468,7 @@
 			"output": 0.52
 		},
 		"limit": {
-			"context": 131072
+			"context": 262144
 		}
 	},
 	"qwen/qwen3-vl-30b-a3b-thinking": {
@@ -30565,9 +30586,9 @@
 	},
 	"x-ai/grok-latest": {
 		"cost": {
-			"cache_read": 0.5,
-			"input": 2,
-			"output": 6
+			"cache_read": 0.4,
+			"input": 1.6,
+			"output": 4.8
 		},
 		"exactOnly": true,
 		"limit": {
@@ -31132,6 +31153,16 @@
 			"cache_write": 0.16,
 			"input": 0.16,
 			"output": 0.32
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"xiaomi/mimo-v2.6-flash-uncensored": {
+		"cost": {
+			"cache_read": 0.275,
+			"input": 0.5,
+			"output": 1.5
 		},
 		"limit": {
 			"context": 1048576
@@ -32455,7 +32486,7 @@
 		"cost": {
 			"cache_read": 0.01,
 			"input": 0.04,
-			"output": 1
+			"output": 0.49
 		},
 		"exactOnly": true,
 		"limit": {
@@ -32464,9 +32495,9 @@
 	},
 	"~deepseek/deepseek-pro-latest": {
 		"cost": {
-			"cache_read": 0.01239,
-			"input": 0.3894,
-			"output": 1.1682
+			"cache_read": 0.08832,
+			"input": 0.2528,
+			"output": 1.9584
 		},
 		"exactOnly": true,
 		"limit": {
@@ -32520,9 +32551,9 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.3,
-			"input": 1.35,
-			"output": 11.5
+			"cache_read": 0.33,
+			"input": 0.8845,
+			"output": 10.5346
 		},
 		"exactOnly": true,
 		"limit": {
