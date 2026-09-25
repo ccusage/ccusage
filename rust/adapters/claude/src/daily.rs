@@ -516,9 +516,16 @@ fn push_deduped_daily_entry(
             }
         }
         if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
-            deduped[index] = entry;
-            push_deduped_index(deduped_indexes, hash, index);
-            if let Some(message_id) = deduped[index].message_id.as_deref() {
+            let previous = std::mem::replace(&mut deduped[index], entry);
+            // The survivor is already indexed under its previous keys. Only register the keys
+            // that changed, so repeated same-timestamp rewrites do not rescan large buckets.
+            if daily_entry_exact_hash(&previous) != Some(hash) {
+                push_deduped_index(deduped_indexes, hash, index);
+            }
+            let replay_route_changed = previous.session_id != deduped[index].session_id
+                || is_sidechain_daily_entry(&previous) != is_sidechain_daily_entry(&deduped[index])
+                || previous.message_id != deduped[index].message_id;
+            if replay_route_changed && let Some(message_id) = deduped[index].message_id.as_deref() {
                 let session_id = deduped[index].session_id.as_ref();
                 push_deduped_index(
                     deduped_indexes,
@@ -558,6 +565,17 @@ fn push_deduped_daily_entry(
             }
         }
     }
+}
+
+fn daily_entry_exact_hash(entry: &DailyLoadedEntry) -> Option<u64> {
+    entry.message_id.as_deref().map(|message_id| {
+        usage_dedupe_hash(
+            message_id,
+            entry.request_id.as_deref(),
+            entry.session_id.as_ref(),
+            entry.timestamp,
+        )
+    })
 }
 
 fn should_replace_deduped_daily_entry(
