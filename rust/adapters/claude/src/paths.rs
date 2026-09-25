@@ -77,39 +77,83 @@ pub fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathB
 /// wall-clock mtimes, plus sessions flushed well after the entries they hold.
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
 
-/// Drops usage files whose mtime predates the `--since` window.
+/// Usage files split by whether they can hold entries inside a `--since`
+/// window.
+pub(super) struct SinceFiles {
+    /// Files that may hold entries inside the window, in discovery order.
+    pub(super) kept: Vec<PathBuf>,
+    /// Files skipped because their whole session was last written before it.
+    pub(super) pruned: Vec<PathBuf>,
+}
+
+/// Drops sessions whose files were all last written before the `--since`
+/// window.
 ///
 /// Claude session JSONL files are append-only, so a file last written before
-/// the window opened cannot hold an entry inside it. Only the file list is
-/// narrowed; entries parsed from a surviving file are untouched. Every file is
-/// kept when `since` is unset or unparsable, when the window opens ahead of the
-/// current clock, or when a file's mtime cannot be read.
+/// the window opened cannot hold an entry inside it. Files are kept or dropped
+/// per session, the main transcript together with its subagent transcripts,
+/// because deduplication matches sidechain replays against their parent
+/// messages within a session; dropping the parent file alone would let a
+/// replay count twice. Only the file list is narrowed; entries parsed from a
+/// surviving file are untouched. Every file is kept when `since` is unset or
+/// unparsable, when the window opens ahead of the current clock, or when a
+/// file's mtime cannot be read.
 ///
 /// @param files Discovered usage files.
 /// @param shared Report arguments providing `since` and `timezone`.
 /// @param now Current wall-clock time.
-/// @returns The files that may contain entries inside the window.
-pub(super) fn prune_files_before_since(
+/// @returns The kept files and the pruned ones, each in discovery order.
+pub(super) fn split_files_before_since(
     files: Vec<PathBuf>,
     shared: &SharedArgs,
     now: TimestampMs,
-) -> Vec<PathBuf> {
+) -> SinceFiles {
+    let keep_all = |files| SinceFiles {
+        kept: files,
+        pruned: Vec::new(),
+    };
     let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
     let (Some(since_ms), _) =
         date_range_bounds_ms(shared.since.as_deref(), None, timezone.as_ref())
     else {
-        return files;
+        return keep_all(files);
     };
     // Entry timestamps can outrun any mtime the filesystem reports when the
     // window starts in the future, so an mtime cannot rule a file out.
     if since_ms > now.as_millis() {
-        return files;
+        return keep_all(files);
     }
     let threshold = since_ms.saturating_sub(MTIME_PRUNE_MARGIN_MS);
-    files
-        .into_iter()
+    let live_sessions = files
+        .iter()
         .filter(|file| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
-        .collect()
+        .map(|file| session_group_key(file))
+        .collect::<FxHashSet<_>>();
+    let (kept, pruned) = files
+        .into_iter()
+        .partition(|file| live_sessions.contains(&session_group_key(file)));
+    SinceFiles { kept, pruned }
+}
+
+/// Identifies the session a usage file belongs to, so `<session>.jsonl` and
+/// everything under `<session>/` (such as `subagents/`) share one key.
+/// Paths outside the `projects/<project>/<session>` layout key on themselves.
+fn session_group_key(path: &Path) -> PathBuf {
+    let components = path.components().collect::<Vec<_>>();
+    let Some(projects_index) = components
+        .iter()
+        .position(|component| component.as_os_str() == "projects")
+    else {
+        return path.to_path_buf();
+    };
+    // `projects/<project>/<session>.jsonl` or `projects/<project>/<session>/...`
+    let Some(session) = components.get(projects_index + 2) else {
+        return path.to_path_buf();
+    };
+    let mut key = components[..projects_index + 2].iter().collect::<PathBuf>();
+    let session = session.as_os_str().to_string_lossy();
+    key.push(session.strip_suffix(".jsonl").unwrap_or(&session));
+    key
 }
 
 fn file_modified_millis(path: &Path) -> Option<i64> {
@@ -219,7 +263,7 @@ mod tests {
 
     use ccusage_test_support::fs_fixture;
 
-    use super::prune_files_before_since;
+    use super::split_files_before_since;
     use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs, parse_ts_timestamp};
 
     fn set_file_modified(path: &Path, timestamp: TimestampMs) {
@@ -272,11 +316,12 @@ mod tests {
         });
         let files = fixture_files(fixture.root());
 
-        let kept = prune_files_before_since(
+        let kept = split_files_before_since(
             files,
             &shared_since(Some("20260920")),
             ts("2026-09-24T00:00:00Z"),
-        );
+        )
+        .kept;
 
         assert_eq!(file_names(&kept), ["fresh.jsonl", "margin.jsonl"]);
     }
@@ -290,7 +335,8 @@ mod tests {
         });
         let files = fixture_files(fixture.root());
 
-        let kept = prune_files_before_since(files, &shared_since(None), ts("2026-09-24T00:00:00Z"));
+        let kept =
+            split_files_before_since(files, &shared_since(None), ts("2026-09-24T00:00:00Z")).kept;
 
         assert_eq!(kept.len(), 3);
     }
@@ -305,7 +351,7 @@ mod tests {
         let files = fixture_files(fixture.root());
         let now = TimestampMs::from_millis(ts("2026-09-30T00:00:00Z").as_millis() - MILLIS_PER_DAY);
 
-        let kept = prune_files_before_since(files, &shared_since(Some("20260930")), now);
+        let kept = split_files_before_since(files, &shared_since(Some("20260930")), now).kept;
 
         assert_eq!(kept.len(), 3);
     }
@@ -314,12 +360,47 @@ mod tests {
     fn keeps_files_whose_metadata_cannot_be_read() {
         let missing = PathBuf::from("/nonexistent/ccusage/projects/p/missing.jsonl");
 
-        let kept = prune_files_before_since(
+        let kept = split_files_before_since(
             vec![missing.clone()],
+            &shared_since(Some("20260920")),
+            ts("2026-09-24T00:00:00Z"),
+        )
+        .kept;
+
+        assert_eq!(kept, [missing]);
+    }
+
+    #[test]
+    fn keeps_or_prunes_a_session_together_with_its_subagents() {
+        let fixture = fs_fixture!({
+            "projects/p/live.jsonl": "{}",
+            "projects/p/live/subagents/agent-a.jsonl": "{}",
+            "projects/p/stale.jsonl": "{}",
+            "projects/p/stale/subagents/agent-b.jsonl": "{}",
+        });
+        let root = fixture.root();
+        let live_parent = root.join("projects/p/live.jsonl");
+        let live_agent = root.join("projects/p/live/subagents/agent-a.jsonl");
+        let stale_parent = root.join("projects/p/stale.jsonl");
+        let stale_agent = root.join("projects/p/stale/subagents/agent-b.jsonl");
+        // Only the live session's subagent was written inside the window.
+        set_file_modified(&live_parent, ts("2026-09-01T12:00:00Z"));
+        set_file_modified(&live_agent, ts("2026-09-21T12:00:00Z"));
+        set_file_modified(&stale_parent, ts("2026-09-01T12:00:00Z"));
+        set_file_modified(&stale_agent, ts("2026-09-02T12:00:00Z"));
+
+        let split = split_files_before_since(
+            vec![
+                live_parent.clone(),
+                live_agent.clone(),
+                stale_parent.clone(),
+                stale_agent.clone(),
+            ],
             &shared_since(Some("20260920")),
             ts("2026-09-24T00:00:00Z"),
         );
 
-        assert_eq!(kept, [missing]);
+        assert_eq!(split.kept, [live_parent, live_agent]);
+        assert_eq!(split.pruned, [stale_parent, stale_agent]);
     }
 }

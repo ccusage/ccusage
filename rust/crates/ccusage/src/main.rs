@@ -4,7 +4,7 @@ mod cli;
 mod commands;
 mod http;
 
-pub(crate) use adapter::claude::{load_daily_summaries, load_entries};
+pub(crate) use adapter::claude::{load_daily_summaries, load_entries, load_entries_since};
 #[cfg(test)]
 pub(crate) use adapter::codex::CodexTokenUsageEvent;
 pub(crate) use blocks::{
