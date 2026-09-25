@@ -1,15 +1,21 @@
 use std::{
     env, fs,
+    io::{BufRead as _, BufReader},
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
+use serde::Deserialize;
 
 use crate::{
-    MILLIS_PER_DAY, Result, cli::SharedArgs, cli_error, date_range_bounds_ms, fast::FxHashSet,
-    home, parse_tz, path_utils::expand_home_path,
+    MILLIS_PER_DAY, Result,
+    cli::SharedArgs,
+    cli_error, date_range_bounds_ms,
+    fast::{FxHashMap, FxHashSet},
+    home, parse_tz,
+    path_utils::expand_home_path,
 };
 use crate::{TimestampMs, parse_ts_timestamp};
 use ccusage_adapter_common::collect_usage_files;
@@ -90,17 +96,19 @@ pub(super) struct SinceFiles {
 /// window.
 ///
 /// Claude session JSONL files are append-only, so a file last written before
-/// the window opened cannot hold an entry inside it. Files are kept or dropped
-/// per session, the main transcript together with its subagent transcripts
-/// and any copy in another config root, because deduplication matches
-/// sidechain replays against their parent messages within a session; dropping
-/// the parent file alone would let a replay count twice. Copies of a message
-/// in other sessions, such as resumed transcripts, keep the original
-/// timestamp, so they fall on the same side of the window as the original.
-/// Only the file list is narrowed; entries parsed from a
-/// surviving file are untouched. Every file is kept when `since` is unset or
-/// unparsable, when the window opens ahead of the current clock, or when a
-/// file's mtime cannot be read.
+/// the window opened cannot hold an entry inside it. Deduplication matches
+/// sidechain replays against their parent messages by session ID, which spans
+/// files (subagent and workflow transcripts, legacy flat `agent-*.jsonl`
+/// files, copies in another config root), so files are kept or dropped per
+/// connected group of session IDs: dropping a parent file alone would let its
+/// replay count twice. Copies of a message in other sessions, such as resumed
+/// transcripts, keep the original timestamp, so they fall on the same side of
+/// the window as the original.
+///
+/// Only the file list is narrowed; entries parsed from a surviving file are
+/// untouched. Every file is kept when `since` is unset or unparsable, when the
+/// window opens ahead of the current clock, or when a file's mtime cannot be
+/// read.
 ///
 /// @param files Discovered usage files.
 /// @param shared Report arguments providing `since` and `timezone`.
@@ -127,60 +135,102 @@ pub(super) fn split_files_before_since(
         return keep_all(files);
     }
     let threshold = since_ms.saturating_sub(MTIME_PRUNE_MARGIN_MS);
-    let live_sessions = files
-        .iter()
-        .filter(|file| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
-        .map(|file| session_group_key(file))
-        .collect::<FxHashSet<String>>();
-    let (kept, pruned) = files
-        .into_iter()
-        .partition(|file| live_sessions.contains(&session_group_key(file)));
-    SinceFiles { kept, pruned }
-}
 
-/// Identifies the session a usage file belongs to, relative to `projects/`
-/// so a session copied into another config root shares one key.
-///
-/// `<session>.jsonl` and everything under `<session>/` (such as `subagents/`)
-/// share a key. Legacy flat `agent-*.jsonl` sidechain transcripts sit beside
-/// their parent, so they key on the `sessionId` recorded inside them. Paths
-/// outside the `projects/<project>/<session>` layout key on themselves.
-fn session_group_key(path: &Path) -> String {
-    let components = path
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy())
+    // Union every file's session IDs so files sharing any ID share a group.
+    let mut sessions = SessionGroups::default();
+    let file_groups = files
+        .iter()
+        .map(|file| {
+            let (path_session, _) = extract_session_parts(file);
+            let group = sessions.id(&path_session);
+            if let Some(recorded) = recorded_session_id(file) {
+                let recorded = sessions.id(&recorded);
+                sessions.union(group, recorded);
+            }
+            group
+        })
         .collect::<Vec<_>>();
-    let relative = components
+    let live_groups = files
         .iter()
-        .position(|component| component == "projects")
-        .map(|index| &components[index + 1..]);
-    let Some([project, session, rest @ ..]) = relative else {
-        return path.to_string_lossy().into_owned();
+        .zip(&file_groups)
+        .filter(|(file, _)| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
+        .map(|(_, &group)| sessions.root(group))
+        .collect::<FxHashSet<_>>();
+
+    let mut split = SinceFiles {
+        kept: Vec::new(),
+        pruned: Vec::new(),
     };
-    let session = session.strip_suffix(".jsonl").unwrap_or(session);
-    if rest.is_empty()
-        && session.starts_with("agent-")
-        && let Some(parent_session) = recorded_session_id(path)
-    {
-        return format!("{project}/{parent_session}");
+    for (file, group) in files.into_iter().zip(file_groups) {
+        if live_groups.contains(&sessions.root(group)) {
+            split.kept.push(file);
+        } else {
+            split.pruned.push(file);
+        }
     }
-    format!("{project}/{session}")
+    split
 }
 
-/// Reads the first `sessionId` recorded in a transcript without parsing it.
-fn recorded_session_id(path: &Path) -> Option<String> {
-    use std::io::Read as _;
+/// Union-find over session IDs.
+#[derive(Default)]
+struct SessionGroups {
+    ids: FxHashMap<String, usize>,
+    parents: Vec<usize>,
+}
 
-    const MARKER: &[u8] = br#""sessionId":""#;
-    let mut head = Vec::new();
-    fs::File::open(path)
-        .ok()?
-        .take(64 * 1024)
-        .read_to_end(&mut head)
-        .ok()?;
-    let start = memmem::find(&head, MARKER)? + MARKER.len();
-    let end = memchr::memchr(b'"', &head[start..])? + start;
-    String::from_utf8(head[start..end].to_vec()).ok()
+impl SessionGroups {
+    fn id(&mut self, session: &str) -> usize {
+        if let Some(&id) = self.ids.get(session) {
+            return id;
+        }
+        let id = self.parents.len();
+        self.parents.push(id);
+        self.ids.insert(session.to_string(), id);
+        id
+    }
+
+    fn root(&mut self, mut id: usize) -> usize {
+        while self.parents[id] != id {
+            // Path halving: point each visited node at its grandparent.
+            self.parents[id] = self.parents[self.parents[id]];
+            id = self.parents[id];
+        }
+        id
+    }
+
+    fn union(&mut self, left: usize, right: usize) {
+        let (left, right) = (self.root(left), self.root(right));
+        self.parents[left] = right;
+    }
+}
+
+/// Returns the first `sessionId` a transcript records, which is the session
+/// the loaders attribute its entries to. Transcripts record a single session,
+/// so reading stops at the first line that names one.
+fn recorded_session_id(path: &Path) -> Option<String> {
+    #[derive(Deserialize)]
+    struct SessionIdProbe {
+        #[serde(rename = "sessionId")]
+        session_id: Option<String>,
+    }
+
+    let mut reader = BufReader::new(fs::File::open(path).ok()?);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        if reader.read_until(b'\n', &mut line).ok()? == 0 {
+            return None;
+        }
+        if memmem::find(&line, b"\"sessionId\"").is_none() {
+            continue;
+        }
+        if let Ok(SessionIdProbe {
+            session_id: Some(session_id),
+        }) = serde_json::from_slice(&line)
+        {
+            return Some(session_id);
+        }
+    }
 }
 
 fn file_modified_millis(path: &Path) -> Option<i64> {
@@ -462,5 +512,44 @@ mod tests {
 
         assert_eq!(split.kept, [live_agent, live, other_root_copy]);
         assert_eq!(split.pruned, [stale_agent]);
+    }
+
+    #[test]
+    fn keeps_sessions_linked_by_a_recorded_session_id_in_another_directory() {
+        let fixture = fs_fixture!({
+            "projects/p/session-y.jsonl": r#"{"sessionId":"session-y"}"#,
+            "projects/p/session-x/subagents/workflows/wf_1/agent-a.jsonl": "{\"type\":\"summary\"}\n{\"sessionId\" : \"session-y\"}",
+        });
+        let root = fixture.root();
+        let parent = root.join("projects/p/session-y.jsonl");
+        let workflow_agent =
+            root.join("projects/p/session-x/subagents/workflows/wf_1/agent-a.jsonl");
+        set_file_modified(&parent, ts("2026-09-01T12:00:00Z"));
+        set_file_modified(&workflow_agent, ts("2026-09-21T12:00:00Z"));
+
+        let split = split_files_before_since(
+            vec![parent.clone(), workflow_agent.clone()],
+            &shared_since(Some("20260920")),
+            ts("2026-09-24T00:00:00Z"),
+        );
+
+        assert_eq!(split.kept, [parent, workflow_agent]);
+        assert!(split.pruned.is_empty());
+    }
+
+    #[test]
+    fn reads_the_recorded_session_id_past_long_leading_lines() {
+        let padding = format!(
+            r#"{{"type":"summary","text":"{}"}}"#,
+            "x".repeat(100 * 1024)
+        );
+        let fixture = fs_fixture!({
+            "projects/p/agent-1.jsonl": format!("{padding}\n{{\"sessionId\":  \"parent\"}}"),
+        });
+
+        assert_eq!(
+            super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
+            Some("parent")
+        );
     }
 }

@@ -524,3 +524,64 @@ fn statusline_keeps_the_current_block_before_future_dated_entries() {
     );
     assert!(output.contains("$1.00 block"), "{output}");
 }
+
+#[test]
+fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
+    let fixture = Fixture::new();
+    let parent = fixture.write_file(
+        "projects/project-a/session-a.jsonl",
+        usage_line(
+            "2026-09-01T12:00:00.000Z",
+            "session-a",
+            "msg-parent",
+            "req-parent",
+            1.0,
+        ),
+    );
+    // Workflow transcripts can live under one session and record another.
+    let workflow = fixture.write_file(
+        "projects/project-a/session-b/subagents/workflows/wf_1/agent-a.jsonl",
+        [
+            sidechain_line(
+                "2026-09-11T12:00:00.000Z",
+                "session-a",
+                "msg-parent",
+                "req-replay",
+                2.0,
+            ),
+            sidechain_line(
+                "2026-09-11T12:05:00.000Z",
+                "session-a",
+                "msg-answer",
+                "req-answer",
+                1.0,
+            ),
+        ]
+        .join("\n"),
+    );
+    // 2026-09-01T12:00:00Z and 2026-09-11T12:05:00Z
+    set_file_modified(&parent, 1_788_264_000);
+    set_file_modified(&workflow, 1_789_128_300);
+
+    let output = assert_output_ignores_mtimes(
+        &fixture,
+        &[parent, workflow],
+        FRESH_MTIME,
+        &[
+            "claude",
+            "daily",
+            "--since",
+            "20260910",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--json",
+        ],
+        None,
+        str::to_string,
+    );
+    let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
+}
