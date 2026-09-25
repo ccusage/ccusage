@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   pullfrog:
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read

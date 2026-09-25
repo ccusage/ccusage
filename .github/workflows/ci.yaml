@@ -29,7 +29,7 @@ jobs:
   # the flake's pinned nixpkgs so CI matches the dev shell.
   tirith-scan:
     name: tirith security scan
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     # Read-only: this job executes PR-controlled code (the local action, the PR
     # flake, the installed tirith), so it must hold no write scopes. The SARIF
@@ -139,7 +139,7 @@ jobs:
   # gate can fail fast before any build/test work starts.
   preflight:
     name: security & lint preflight
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -155,7 +155,7 @@ jobs:
   test:
     needs: [changes, tirith-scan, preflight]
     if: needs.changes.outputs.code-changed == 'true'
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -252,7 +252,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     outputs:
       urls: ${{ steps.publish.outputs.urls }}
       preview-url: ${{ steps.preview-url.outputs.url }}
@@ -442,7 +442,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
