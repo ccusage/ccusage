@@ -426,11 +426,11 @@ fn load_entries_from_database(
                             .ok()
                             .or_else(|| statement.read::<f64, _>(4).ok().map(|value| value as i64))
                             .unwrap_or(0);
+                        // Copies neither count nor mark the fork as covered:
+                        // the fork's `session_v2` counters start at zero and
+                        // only hold fork-local usage, so they stay a valid
+                        // fallback when every fork-local row is gone.
                         if is_fork_copy(&fork_copies, &session_id, &statement) {
-                            // The fork's `session_v2` aggregate includes the
-                            // copied history, so a fork made only of copies
-                            // must still block the aggregate fallback.
-                            message_sessions.insert(session_id);
                             continue;
                         }
                         if !window.is_unbounded()
@@ -658,7 +658,8 @@ fn fork_copy_cutoffs(connection: &sqlite::Connection) -> HashMap<String, i64> {
 }
 
 /// Largest copied `seq` for one fork: the parent's boundary `seq` for a
-/// `through` fork, or one below it for a `before` fork.
+/// `through` fork, or the parent's last `seq` below the boundary for a
+/// `before` fork.
 ///
 /// Returns `None` when the boundary cannot be resolved — a missing parent
 /// row, a missing boundary row, or an unparsable boundary payload — so the
@@ -687,7 +688,28 @@ fn fork_copy_cutoff(
     };
     match boundary_type {
         "through" => Some(boundary_seq),
-        "before" => Some(boundary_seq - 1),
+        // `seq` is sparse and the fork's own rows continue right after the
+        // last copied row, so `boundary_seq - 1` could swallow them.
+        "before" => last_parent_seq_before(connection, parent_id, boundary_seq),
+        _ => None,
+    }
+}
+
+fn last_parent_seq_before(
+    connection: &sqlite::Connection,
+    parent_id: &str,
+    boundary_seq: i64,
+) -> Option<i64> {
+    let Ok(mut statement) = connection
+        .prepare("SELECT MAX(seq) FROM session_message WHERE session_id = ?1 AND seq < ?2")
+    else {
+        return None;
+    };
+    statement.bind((1, parent_id)).ok()?;
+    statement.bind((2, boundary_seq)).ok()?;
+    match statement.next() {
+        // `MAX` over no rows is NULL: nothing was copied, so nothing is skipped.
+        Ok(sqlite::State::Row) => statement.read::<Option<i64>, _>(0).ok()?,
         _ => None,
     }
 }
@@ -1789,22 +1811,23 @@ mod tests {
     }
 
     #[test]
-    fn skips_the_aggregate_of_a_fork_made_only_of_copies() {
+    fn falls_back_to_the_fork_local_aggregate_when_only_copies_remain() {
         let fixture = fs_fixture!({});
         let db_path = fixture.path("opencode.db");
         create_db_session_message_table(&db_path, true);
         insert_fork_history(&db_path, "parent", "fork", "through", "boundary-msg");
-        // A fresh fork with no turns of its own yet.
+        // The fork's own turn was reverted, leaving only copied rows.
         sqlite::open(&db_path)
             .unwrap()
             .execute("DELETE FROM session_message WHERE id = 'fork-own'")
             .unwrap();
-        // Its cumulative aggregate still carries the copied history.
+        // OpenCode v2 starts fork counters at zero, so the aggregate holds only
+        // the fork-local usage that survived the revert.
         sqlite::open(&db_path)
             .unwrap()
             .execute(
-                "UPDATE session_v2 SET time_created = 1767312000000, cost = 0.03, \
-                 tokens_input = 600, tokens_output = 30, tokens_cache_read = 0, \
+                "UPDATE session_v2 SET time_created = 1767312000000, cost = 0.02, \
+                 tokens_input = 40, tokens_output = 4, tokens_cache_read = 0, \
                  tokens_cache_write = 0, tokens_reasoning = 0, \
                  model = '{\"id\":\"gpt-test\",\"providerID\":\"openai\"}' WHERE id = 'fork'",
             )
@@ -1821,13 +1844,58 @@ mod tests {
 
         let entries = load_entries(&shared, AgentReportKind::Session).unwrap();
 
-        assert!(
-            entries
-                .iter()
-                .all(|entry| entry.session_id.as_ref() == "parent"),
-            "fork aggregate leaked into the session report"
+        let fork_input: Vec<u64> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "fork")
+            .map(|entry| entry.data.message.usage.input_tokens)
+            .collect();
+        assert_eq!(fork_input, vec![40]);
+        assert_eq!(entries.len(), 5);
+    }
+
+    #[test]
+    fn keeps_fork_rows_after_the_last_copy_when_before_seqs_are_sparse() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        create_db_session_aggregate_table_with_fork_columns(&db_path, "session_v2", true);
+        // Parent seqs have gaps; the fork copies rows 0 and 10, and its own row
+        // continues right after the last copy instead of below the boundary.
+        for (session_id, id, seq, input) in [
+            ("parent", "parent-a", 0, 100),
+            ("parent", "parent-b", 10, 200),
+            ("parent", "parent-boundary", 100, 300),
+            ("fork", "fork-copy-a", 0, 100),
+            ("fork", "fork-copy-b", 10, 200),
+            ("fork", "fork-own", 20, 40),
+        ] {
+            insert_db_session_message(
+                &db_path,
+                id,
+                session_id,
+                "assistant",
+                1_767_312_000_000 + seq,
+                assistant_payload(input, 10, 0.01).as_str(),
+                true,
+            );
+            set_db_session_message_seq(&db_path, id, seq);
+        }
+        insert_db_session_fork(
+            &db_path,
+            "session_v2",
+            "fork",
+            "parent",
+            r#"{"type":"before","messageID":"parent-boundary"}"#,
         );
-        assert_eq!(entries.len(), 4);
+
+        let entries = fork_entries(&db_path);
+
+        let fork_ids: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "fork")
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        assert_eq!(fork_ids, vec!["fork-own"]);
     }
 
     #[test]
