@@ -20,7 +20,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
-      id-token: none
+      id-token: write
     outputs:
       access_outcome: ${{ steps.access.outcome }}
       skip: ${{ steps.access.outputs.skip }}

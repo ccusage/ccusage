@@ -25468,7 +25468,7 @@
 			"output": 0.52
 		},
 		"limit": {
-			"context": 131072
+			"context": 262144
 		}
 	},
 	"qwen/qwen3-vl-30b-a3b-thinking": {
@@ -32542,8 +32542,8 @@
 	"~moonshotai/kimi-latest": {
 		"cost": {
 			"cache_read": 0.3,
-			"input": 1.35,
-			"output": 11.5
+			"input": 0.8845,
+			"output": 10.5346
 		},
 		"exactOnly": true,
 		"limit": {

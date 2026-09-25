@@ -423,6 +423,15 @@ pub struct PricingMap {
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
     find_cache: OnceLock<Mutex<FxHashMap<String, Option<Pricing>>>>,
+    /// Every entry key under its normalized spelling, mapped to the one key
+    /// carrying that spelling, or `None` when several keys share it.
+    ///
+    /// Built on the first normalized lookup so [`Self::find_exact_normalized`]
+    /// does not rescan the whole table per call; parsers that price every
+    /// event through it would otherwise spend most of a report there. Keys
+    /// rather than rates are stored, so only a change to the key set has to
+    /// drop it.
+    normalized_keys: OnceLock<FxHashMap<String, Option<String>>>,
 }
 
 /// The ids of [`PricingMap::exact_only`], indexed both as written and under the
@@ -517,6 +526,7 @@ impl Default for PricingMap {
             enable_models_dev_fallback: false,
             enable_embedded_models_dev_fallback: false,
             find_cache: OnceLock::new(),
+            normalized_keys: OnceLock::new(),
         }
     }
 }
@@ -1465,12 +1475,26 @@ impl PricingMap {
                     .and_then(|id| self.entries.get(id).copied());
             }
 
-            let normalized_model = normalized_pricing_key(model);
-            let mut matches = self.entries.iter().filter(|(candidate, _)| {
-                normalized_pricing_key(candidate).as_ref() == normalized_model.as_ref()
-            });
-            let (_, pricing) = matches.next()?;
-            matches.next().is_none().then_some(*pricing)
+            let key = self
+                .normalized_keys()
+                .get(normalized_pricing_key(model).as_ref())?
+                .as_deref()?;
+            self.entries.get(key).copied()
+        })
+    }
+
+    fn normalized_keys(&self) -> &FxHashMap<String, Option<String>> {
+        self.normalized_keys.get_or_init(|| {
+            let mut index = FxHashMap::default();
+            for key in self.entries.keys() {
+                index
+                    .entry(normalized_pricing_key(key).into_owned())
+                    // A second key with the same spelling makes it name
+                    // neither entry.
+                    .and_modify(|slot| *slot = None)
+                    .or_insert_with(|| Some(key.clone()));
+            }
+            index
         })
     }
 
@@ -1838,11 +1862,12 @@ impl PricingMap {
         }
     }
 
-    fn clear_find_cache(&self) {
+    fn clear_find_cache(&mut self) {
         if let Some(cache) = self.find_cache.get() {
             let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
             guard.clear();
         }
+        self.normalized_keys.take();
     }
 
     #[cfg(test)]
@@ -1902,6 +1927,7 @@ impl PricingMap {
 
     fn put_builtin_entry(&mut self, model: String, pricing: Pricing) {
         self.entries.entry(model).or_insert(pricing);
+        self.clear_find_cache();
     }
 
     /// z.ai's catalog needs one provider fact LiteLLM does not publish: GLM
@@ -1926,6 +1952,7 @@ impl PricingMap {
                 slot.insert(pricing);
             }
         }
+        self.clear_find_cache();
     }
 
     /// Last-resort rates for models ccusage must always price, used only when
@@ -3424,6 +3451,77 @@ mod tests {
             .expect("the normalized primary entry should resolve");
         assert_eq!(resolved.input, 0.000009);
         assert_eq!(resolved.output, 0.000010);
+    }
+
+    #[test]
+    fn exact_fallback_lookup_rejects_a_spelling_shared_by_two_entries() {
+        // `acme-alpha-1.5` and `acme.alpha@1.5` both normalize to
+        // `acme-alpha-1-5`, so that spelling names neither entry.
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "acme-alpha-1.5": { "input_cost_per_token": 0.000001 },
+                "acme.alpha@1.5": { "input_cost_per_token": 0.000002 }
+            }"#,
+        );
+
+        assert!(pricing.find_exact_with_fallback("acme-alpha-1-5").is_none());
+    }
+
+    #[test]
+    fn exact_fallback_lookup_sees_a_colliding_entry_added_after_a_lookup() {
+        let mut pricing = PricingMap::default();
+        pricing.put_builtin_entry(
+            "acme-alpha-1.5".to_string(),
+            Pricing {
+                input: 1e-6,
+                ..Pricing::empty()
+            },
+        );
+        let resolved = pricing
+            .find_exact_with_fallback("acme-alpha-1-5")
+            .expect("a single normalized match should resolve");
+        assert_eq!(resolved.input, 1e-6);
+
+        pricing.put_builtin_entry(
+            "acme.alpha@1.5".to_string(),
+            Pricing {
+                input: 2e-6,
+                ..Pricing::empty()
+            },
+        );
+
+        assert!(pricing.find_exact_with_fallback("acme-alpha-1-5").is_none());
+    }
+
+    #[test]
+    fn exact_fallback_lookup_sees_rates_patched_after_a_lookup() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "zai/glm-test.5": {
+                    "input_cost_per_token": 0.2,
+                    "output_cost_per_token": 1.1
+                }
+            }"#,
+        );
+        let before = pricing
+            .find_exact_with_fallback("zai/glm-test-5")
+            .expect("the normalized entry should resolve");
+        assert!(!before.cache_read_explicit);
+
+        pricing.put_builtin_glm(
+            "zai/glm-test.5",
+            Pricing {
+                cache_read: 0.03,
+                cache_read_explicit: true,
+                cache_create_explicit: true,
+                ..Pricing::empty()
+            },
+        );
+
+        let after = pricing.find_exact_with_fallback("zai/glm-test-5").unwrap();
+        assert_eq!(after.cache_read, 0.03);
     }
 
     #[test]
