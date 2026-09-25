@@ -191,7 +191,7 @@ jobs:
     permissions:
       actions: write
       contents: read
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && (matrix.os) || (matrix.os == 'blacksmith-32vcpu-ubuntu-2404-arm' && 'ubuntu-24.04-arm' || matrix.os == 'blacksmith-32vcpu-ubuntu-2404' && 'ubuntu-24.04' || matrix.os == 'blacksmith-12vcpu-macos-26' && 'macos-26' || matrix.os == 'blacksmith-32vcpu-windows-2025' && 'windows-2025' || matrix.os) }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -199,26 +199,31 @@ jobs:
         include:
           - name: build-linux-arm64
             os: blacksmith-32vcpu-ubuntu-2404-arm
+            public_os: ubuntu-24.04-arm
             platform: linux
             arch: arm64
             binary: result/bin/ccusage
           - name: build-linux-x64
             os: blacksmith-32vcpu-ubuntu-2404
+            public_os: ubuntu-24.04
             platform: linux
             arch: x64
             binary: result/bin/ccusage
           - name: build-mac-arm64
             os: blacksmith-12vcpu-macos-26
+            public_os: macos-26
             platform: darwin
             arch: arm64
             binary: result/bin/ccusage
           - name: build-mac-x64
             os: blacksmith-12vcpu-macos-26
+            public_os: macos-26
             platform: darwin
             arch: x64
             binary: result/bin/ccusage
           - name: build-windows-x64
             os: blacksmith-32vcpu-windows-2025
+            public_os: windows-2025
             platform: win32
             arch: x64
             binary: rust/target/release/ccusage.exe
@@ -316,7 +321,7 @@ jobs:
     needs:
       - changes
       - npm-publish-dry-run-and-upload-pkg-pr-now
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && (matrix.os) || (matrix.os == 'blacksmith-32vcpu-ubuntu-2404' && 'ubuntu-24.04' || matrix.os == 'blacksmith-32vcpu-ubuntu-2404-arm' && 'ubuntu-24.04-arm' || matrix.os == 'blacksmith-12vcpu-macos-26' && 'macos-26' || matrix.os == 'blacksmith-32vcpu-windows-2025' && 'windows-2025' || matrix.os) }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os }}
     timeout-minutes: 20
     # No checkout on purpose: the working directory stays empty so each package
     # runner behaves like a real end user instead of inheriting the repo's
@@ -345,6 +350,17 @@ jobs:
         runner:
           - npm
           - pnpm
+        include:
+          - os: blacksmith-32vcpu-ubuntu-2404
+            public_os: ubuntu-24.04
+          - os: blacksmith-32vcpu-ubuntu-2404-arm
+            public_os: ubuntu-24.04-arm
+          - os: blacksmith-12vcpu-macos-26
+            public_os: macos-26
+          - os: macos-15-intel
+            public_os: macos-15-intel
+          - os: blacksmith-32vcpu-windows-2025
+            public_os: windows-2025
 
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

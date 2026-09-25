@@ -50,7 +50,7 @@ jobs:
     name: ${{ matrix.name }}
     needs: tagpr
     if: needs.tagpr.outputs.tag != ''
-    runs-on: ${{ github.repository == 'ccusage/ccusage' && (matrix.os) || (matrix.os == 'blacksmith-32vcpu-ubuntu-2404-arm' && 'ubuntu-24.04-arm' || matrix.os == 'blacksmith-32vcpu-ubuntu-2404' && 'ubuntu-24.04' || matrix.os == 'blacksmith-12vcpu-macos-26' && 'macos-26' || matrix.os == 'blacksmith-32vcpu-windows-2025' && 'windows-2025' || matrix.os) }}
+    runs-on: ${{ github.repository == 'ccusage/ccusage' && matrix.os || matrix.public_os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -58,31 +58,37 @@ jobs:
         include:
           - name: build-linux-arm64
             os: blacksmith-32vcpu-ubuntu-2404-arm
+            public_os: ubuntu-24.04-arm
             platform: linux
             arch: arm64
             binary: result/bin/ccusage
           - name: build-linux-x64
             os: blacksmith-32vcpu-ubuntu-2404
+            public_os: ubuntu-24.04
             platform: linux
             arch: x64
             binary: result/bin/ccusage
           - name: build-mac-arm64
             os: blacksmith-12vcpu-macos-26
+            public_os: macos-26
             platform: darwin
             arch: arm64
             binary: result/bin/ccusage
           - name: build-mac-x64
             os: blacksmith-12vcpu-macos-26
+            public_os: macos-26
             platform: darwin
             arch: x64
             binary: result/bin/ccusage
           - name: build-windows-arm64
             os: windows-11-arm
+            public_os: windows-11-arm
             platform: win32
             arch: arm64
             binary: rust/target/release/ccusage.exe
           - name: build-windows-x64
             os: blacksmith-32vcpu-windows-2025
+            public_os: windows-2025
             platform: win32
             arch: x64
             binary: rust/target/release/ccusage.exe
