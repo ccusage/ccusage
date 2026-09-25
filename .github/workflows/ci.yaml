@@ -248,7 +248,7 @@ jobs:
     needs:
       - changes
       - build-native-packages
-    if: needs.changes.outputs.code-changed == 'true'
+    if: github.repository == 'ccusage/ccusage' && (needs.changes.outputs.code-changed == 'true')
     permissions:
       actions: read
       contents: read
@@ -278,6 +278,7 @@ jobs:
             tar -xf "$archive"
           done
       - id: publish
+        if: github.repository == 'ccusage/ccusage'
         # Fetched on demand rather than carried as a root devDependency: this
         # job is the only thing that runs it, and it never needs to resolve
         # against the workspace. Renovate does not update `dlx` specifiers, so
@@ -286,6 +287,7 @@ jobs:
       # Resolve the ccusage CLI preview URL and build the E2E fixture here (this
       # job has the checkout); the E2E jobs then run without a checkout.
       - id: preview-url
+        if: github.repository == 'ccusage/ccusage'
         env:
           URLS: ${{ steps.publish.outputs.urls }}
         run: |
