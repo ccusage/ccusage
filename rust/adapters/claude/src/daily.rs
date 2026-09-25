@@ -16,12 +16,13 @@ use crate::{
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
+    utc_now,
 };
 
 use super::{
     DedupeIndexVec, advisor_usages_from_line, chunk_file_indexes_by_size, daily_usage_dedupe_hash,
     deserialize_usage_line, is_semver_prefix,
-    paths::{claude_paths, extract_project, usage_files},
+    paths::{claude_paths, extract_project, prune_files_before_since, usage_files},
     push_deduped_index, push_deduped_session_alias, sidechain_replay_dedupe_hash,
 };
 
@@ -31,7 +32,7 @@ pub(super) fn load_daily_summaries_inner(
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
     let paths = claude_paths()?;
-    let files = usage_files(&paths, project_filter);
+    let files = prune_files_before_since(usage_files(&paths, project_filter), shared, utc_now());
     if files.is_empty() {
         return Ok(Vec::new());
     }

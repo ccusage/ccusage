@@ -1,11 +1,16 @@
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
+use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 
-use crate::{Result, cli_error, fast::FxHashSet, home, path_utils::expand_home_path};
+use crate::{
+    MILLIS_PER_DAY, Result, cli::SharedArgs, cli_error, date_range_bounds_ms, fast::FxHashSet,
+    home, parse_tz, path_utils::expand_home_path,
+};
 use crate::{TimestampMs, parse_ts_timestamp};
 use ccusage_adapter_common::collect_usage_files;
 
@@ -65,6 +70,58 @@ pub fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathB
     }
     files.sort_by_cached_key(|path| path.to_string_lossy().into_owned());
     files
+}
+
+/// Margin subtracted from the `--since` lower bound before comparing it with
+/// file mtimes. It absorbs the gap between the timezone-resolved bound and
+/// wall-clock mtimes, plus sessions flushed well after the entries they hold.
+const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
+
+/// Drops usage files whose mtime predates the `--since` window.
+///
+/// Claude session JSONL files are append-only, so a file last written before
+/// the window opened cannot hold an entry inside it. Only the file list is
+/// narrowed; entries parsed from a surviving file are untouched. Every file is
+/// kept when `since` is unset or unparsable, when the window opens ahead of the
+/// current clock, or when a file's mtime cannot be read.
+///
+/// @param files Discovered usage files.
+/// @param shared Report arguments providing `since` and `timezone`.
+/// @param now Current wall-clock time.
+/// @returns The files that may contain entries inside the window.
+pub(super) fn prune_files_before_since(
+    files: Vec<PathBuf>,
+    shared: &SharedArgs,
+    now: TimestampMs,
+) -> Vec<PathBuf> {
+    let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
+    let (Some(since_ms), _) =
+        date_range_bounds_ms(shared.since.as_deref(), None, timezone.as_ref())
+    else {
+        return files;
+    };
+    // Entry timestamps can outrun any mtime the filesystem reports when the
+    // window starts in the future, so an mtime cannot rule a file out.
+    if since_ms > now.as_millis() {
+        return files;
+    }
+    let threshold = since_ms.saturating_sub(MTIME_PRUNE_MARGIN_MS);
+    files
+        .into_iter()
+        .filter(|file| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
+        .collect()
+}
+
+fn file_modified_millis(path: &Path) -> Option<i64> {
+    fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_millis()
+        .try_into()
+        .ok()
 }
 
 pub(super) fn is_project_path_segment(value: &str) -> bool {
@@ -150,4 +207,119 @@ pub fn extract_session_parts(path: &Path) -> (String, String) {
         "Unknown Project".to_string()
     };
     (session_id, project_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::{File, FileTimes},
+        path::{Path, PathBuf},
+        time::{Duration, UNIX_EPOCH},
+    };
+
+    use ccusage_test_support::fs_fixture;
+
+    use super::prune_files_before_since;
+    use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs, parse_ts_timestamp};
+
+    fn set_file_modified(path: &Path, timestamp: TimestampMs) {
+        let milliseconds = u64::try_from(timestamp.as_millis()).unwrap();
+        File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(
+                FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)),
+            )
+            .unwrap();
+    }
+
+    fn ts(value: &str) -> TimestampMs {
+        parse_ts_timestamp(value).unwrap()
+    }
+
+    fn shared_since(since: Option<&str>) -> SharedArgs {
+        SharedArgs {
+            since: since.map(str::to_string),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        }
+    }
+
+    fn file_names(files: &[PathBuf]) -> Vec<String> {
+        files
+            .iter()
+            .map(|file| file.file_name().unwrap().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn fixture_files(root: &Path) -> Vec<PathBuf> {
+        let old = root.join("projects/p/old.jsonl");
+        let margin = root.join("projects/p/margin.jsonl");
+        let fresh = root.join("projects/p/fresh.jsonl");
+        set_file_modified(&old, ts("2026-09-18T12:00:00Z"));
+        set_file_modified(&margin, ts("2026-09-19T12:00:00Z"));
+        set_file_modified(&fresh, ts("2026-09-20T12:00:00Z"));
+        vec![fresh, margin, old]
+    }
+
+    #[test]
+    fn prunes_files_last_written_before_the_since_margin() {
+        let fixture = fs_fixture!({
+            "projects/p/old.jsonl": "{}",
+            "projects/p/margin.jsonl": "{}",
+            "projects/p/fresh.jsonl": "{}",
+        });
+        let files = fixture_files(fixture.root());
+
+        let kept = prune_files_before_since(
+            files,
+            &shared_since(Some("20260920")),
+            ts("2026-09-24T00:00:00Z"),
+        );
+
+        assert_eq!(file_names(&kept), ["fresh.jsonl", "margin.jsonl"]);
+    }
+
+    #[test]
+    fn keeps_every_file_without_a_since_bound() {
+        let fixture = fs_fixture!({
+            "projects/p/old.jsonl": "{}",
+            "projects/p/margin.jsonl": "{}",
+            "projects/p/fresh.jsonl": "{}",
+        });
+        let files = fixture_files(fixture.root());
+
+        let kept = prune_files_before_since(files, &shared_since(None), ts("2026-09-24T00:00:00Z"));
+
+        assert_eq!(kept.len(), 3);
+    }
+
+    #[test]
+    fn keeps_every_file_when_the_window_opens_in_the_future() {
+        let fixture = fs_fixture!({
+            "projects/p/old.jsonl": "{}",
+            "projects/p/margin.jsonl": "{}",
+            "projects/p/fresh.jsonl": "{}",
+        });
+        let files = fixture_files(fixture.root());
+        let now = TimestampMs::from_millis(ts("2026-09-30T00:00:00Z").as_millis() - MILLIS_PER_DAY);
+
+        let kept = prune_files_before_since(files, &shared_since(Some("20260930")), now);
+
+        assert_eq!(kept.len(), 3);
+    }
+
+    #[test]
+    fn keeps_files_whose_metadata_cannot_be_read() {
+        let missing = PathBuf::from("/nonexistent/ccusage/projects/p/missing.jsonl");
+
+        let kept = prune_files_before_since(
+            vec![missing.clone()],
+            &shared_since(Some("20260920")),
+            ts("2026-09-24T00:00:00Z"),
+        );
+
+        assert_eq!(kept, [missing]);
+    }
 }

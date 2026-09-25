@@ -33,7 +33,9 @@ use crate::{
 #[doc(hidden)]
 pub use paths::timestamp_from_line;
 pub use paths::usage_files;
-pub(crate) use paths::{claude_paths, extract_project, extract_session_parts};
+pub(crate) use paths::{
+    claude_paths, extract_project, extract_session_parts, prune_files_before_since,
+};
 
 struct DedupeIndex {
     index: usize,
@@ -76,6 +78,16 @@ fn load_entries_inner(
     );
     let files = usage_files(&paths, project_filter);
     debug_log(shared, format!("Found {} JSONL usage files", files.len()));
+    let files = prune_files_before_since(files, shared, utc_now());
+    if shared.since.is_some() {
+        debug_log(
+            shared,
+            format!(
+                "Kept {} JSONL usage files inside the --since window",
+                files.len()
+            ),
+        );
+    }
     if files.is_empty() {
         return Ok(Vec::new());
     }
