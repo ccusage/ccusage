@@ -2065,46 +2065,6 @@
 			"context": 1000000
 		}
 	},
-	"accounts/fireworks/models/deepseek-v4-flash-0731": {
-		"cost": {
-			"cache_read": 0.007,
-			"input": 0.22,
-			"output": 0.66
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
-	"accounts/fireworks/models/deepseek-v4-flash-vision-exp": {
-		"cost": {
-			"cache_read": 0.007,
-			"input": 0.22,
-			"output": 0.66
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
-	"accounts/fireworks/models/deepseek-v4-pro": {
-		"cost": {
-			"cache_read": 0.6,
-			"input": 1.2,
-			"output": 1.2
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
-	"accounts/fireworks/models/deepseek-v4-pro-0813": {
-		"cost": {
-			"cache_read": 0.044,
-			"input": 1.32,
-			"output": 3.96
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
 	"accounts/fireworks/models/deepseek-v4p1-flash": {
 		"cost": {
 			"cache_read": 0.007,
@@ -2123,16 +2083,6 @@
 		},
 		"limit": {
 			"context": 1048576
-		}
-	},
-	"accounts/fireworks/models/glm-5p2": {
-		"cost": {
-			"cache_read": 0.14,
-			"input": 1.4,
-			"output": 4.4
-		},
-		"limit": {
-			"context": 1048575
 		}
 	},
 	"accounts/fireworks/models/glm-5p3": {
@@ -2176,26 +2126,6 @@
 			"context": 1048576
 		}
 	},
-	"accounts/fireworks/models/kimi-k2p6": {
-		"cost": {
-			"cache_read": 0.16,
-			"input": 0.95,
-			"output": 4
-		},
-		"limit": {
-			"context": 262000
-		}
-	},
-	"accounts/fireworks/models/kimi-k2p7-code": {
-		"cost": {
-			"cache_read": 0.19,
-			"input": 0.95,
-			"output": 4
-		},
-		"limit": {
-			"context": 262000
-		}
-	},
 	"accounts/fireworks/models/kimi-k3": {
 		"cost": {
 			"cache_read": 0.3,
@@ -2206,16 +2136,6 @@
 			"context": 1048576
 		}
 	},
-	"accounts/fireworks/models/minimax-m2p7": {
-		"cost": {
-			"cache_read": 0.6,
-			"input": 1.2,
-			"output": 1.2
-		},
-		"limit": {
-			"context": 196608
-		}
-	},
 	"accounts/fireworks/models/minimax-m3": {
 		"cost": {
 			"cache_read": 0.06,
@@ -2224,16 +2144,6 @@
 		},
 		"limit": {
 			"context": 512000
-		}
-	},
-	"accounts/fireworks/models/muse-glimmer-30b": {
-		"cost": {
-			"cache_read": 0.04,
-			"input": 0.35,
-			"output": 1.5
-		},
-		"limit": {
-			"context": 131072
 		}
 	},
 	"accounts/fireworks/models/nemotron-3-ultra-nvfp4": {
@@ -2251,16 +2161,6 @@
 			"cache_read": 0.01,
 			"input": 0.05,
 			"output": 0.2
-		},
-		"limit": {
-			"context": 262144
-		}
-	},
-	"accounts/fireworks/models/qwen3p7-plus": {
-		"cost": {
-			"cache_read": 0.08,
-			"input": 0.4,
-			"output": 1.6
 		},
 		"limit": {
 			"context": 262144
@@ -2295,16 +2195,6 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 1000000
-		}
-	},
-	"accounts/fireworks/routers/glm-5p2-fast": {
-		"cost": {
-			"cache_read": 0.21,
-			"input": 2.1,
-			"output": 6.6
-		},
-		"limit": {
-			"context": 1048575
 		}
 	},
 	"accounts/fireworks/routers/glm-5p3-fast": {
