@@ -43,3 +43,8 @@ shellEmulator: true
 # Nix pins pnpm for local development and CI, so pnpm should not download a
 # second package-manager binary or add its bootstrap metadata to the lockfile.
 pmOnFail: ignore
+
+# Collapse duplicate versions when one satisfies every range, so the lockfile
+# does not accumulate redundant copies between manual `pnpm dedupe` runs.
+# Requires pnpm 12.6+; older pnpm warns and ignores it.
+autoDedupe: true
