@@ -31084,6 +31084,16 @@
 			"context": 1048576
 		}
 	},
+	"xiaomi/mimo-v2.6-flash-uncensored:thinking": {
+		"cost": {
+			"cache_read": 0.275,
+			"input": 0.5,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"xiaomi/mimo-v2.6-pro": {
 		"cost": {
 			"cache_read": 0.005,
