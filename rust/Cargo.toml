@@ -62,7 +62,7 @@ schemars = "0.8"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 smallvec = "1.16.1"
-sqlite = { version = "0.37.0", default-features = false, features = ["bundled", "linkage"] }
+sqlite = { version = "0.37.3", default-features = false, features = ["bundled", "linkage"] }
 terminal_size = "0.4.4"
 unicode-width = "0.2.2"
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
