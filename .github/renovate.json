@@ -30,6 +30,7 @@
 	],
 	"postUpdateOptions": ["pnpmDedupe"],
 	"rangeStrategy": "bump",
+	"rebaseWhen": "conflicted",
 	"vulnerabilityAlerts": {
 		"labels": ["security"]
 	}
