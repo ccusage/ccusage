@@ -16,6 +16,12 @@ ccusage pi daily --json
 ccusage pi daily --pi-path /path/to/sessions
 ```
 
+Cost rules: `--mode display` uses the `usage.cost.total` value from the session.
+In the default `auto` mode, an explicit `pricingOverrides` entry for the
+prefixed or bare model name recalculates cost from tokens, even when the session
+contains a display cost of zero. Without an override, Auto keeps a valid stored
+cost and calculates from tokens only when that cost is missing or invalid.
+
 Forked session files may replay the usage history of their parent. For Pi's
 tree-format sessions, the parent candidate follows the root-to-leaf path ending
 at the final physical entry rather than physical JSONL order; abandoned sibling

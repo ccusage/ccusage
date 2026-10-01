@@ -430,7 +430,7 @@ ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the bin
 
 ### Raw Model Names
 
-Keys in `pricingOverrides` must match the **raw model name** as recorded in the source logs, including any adapter prefix:
+Keys in `pricingOverrides` should match the model label reported by ccusage, including any adapter prefix:
 
 | Adapter                                | Prefix    | Example key                    |
 | -------------------------------------- | --------- | ------------------------------ |
@@ -439,6 +439,7 @@ Keys in `pricingOverrides` must match the **raw model name** as recorded in the 
 | Others (Claude, Codex, OpenCode, etc.) | none      | `claude-sonnet-4-5`, `gpt-5.5` |
 
 To find the exact name, run `ccusage <agent> daily --json` and look at the `model` field in the per-row breakdown.
+Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
 
 ### Supported Fields
 
@@ -458,6 +459,8 @@ All fields are optional. Unspecified fields fall back to the LiteLLM entry (when
 - `pricingOverrides` controls **specific entries** — patch in or replace prices for individual models.
 
 Overrides apply in both online and offline modes.
+
+For Pi and named Pi stores, Auto mode uses an explicit override to calculate cost from tokens even when the session contains a recorded cost. Display mode continues to show the recorded cost.
 
 This is useful for:
 

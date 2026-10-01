@@ -238,13 +238,15 @@ impl<'a> PiStoreContext<'a> {
     }
 
     fn cost(self, input: PiCostInput<'_>, mode: CostMode, pricing: Option<&PricingMap>) -> f64 {
-        let source_cost = source_cost_for_mode(input.display_cost, mode);
+        let override_model = pricing_override_model(input.raw_model, input.display_model, pricing);
+        let source_cost = source_cost_for_mode(input.display_cost, mode, override_model.is_some());
         match self {
             Self::Default => {
-                let model = input
-                    .display_model
-                    .filter(|model| {
-                        pricing.is_some_and(|pricing| pricing.find_exact(model).is_some())
+                let model = override_model
+                    .or_else(|| {
+                        input.display_model.filter(|model| {
+                            pricing.is_some_and(|pricing| pricing.find_exact(model).is_some())
+                        })
                     })
                     .or(input.raw_model)
                     .or(input.display_model);
@@ -278,10 +280,12 @@ impl<'a> PiStoreContext<'a> {
         mode: CostMode,
         pricing: Option<&PricingMap>,
     ) -> Option<String> {
-        let source_cost = source_cost_for_mode(display_cost, mode);
+        let override_model = pricing_override_model(raw_model, display_model, pricing);
+        let source_cost = source_cost_for_mode(display_cost, mode, override_model.is_some());
         match self {
             Self::Default => {
-                missing_pricing_model_for_usage(display_model, usage, source_cost, mode, pricing)
+                let model = override_model.or(display_model);
+                missing_pricing_model_for_usage(model, usage, source_cost, mode, pricing)
             }
             Self::Named { .. } => missing_store_pricing_model(
                 raw_model,
@@ -622,11 +626,26 @@ fn calculate_store_cost(
     }
 }
 
-fn source_cost_for_mode(display_cost: Option<f64>, mode: CostMode) -> Option<f64> {
-    if mode == CostMode::Auto {
-        display_cost.filter(|cost| cost.is_finite() && *cost >= 0.0)
-    } else {
-        display_cost
+fn pricing_override_model<'a>(
+    raw_model: Option<&'a str>,
+    display_model: Option<&'a str>,
+    pricing: Option<&PricingMap>,
+) -> Option<&'a str> {
+    let pricing = pricing?;
+    display_model
+        .filter(|model| pricing.has_user_override(model))
+        .or_else(|| raw_model.filter(|model| pricing.has_user_override(model)))
+}
+
+fn source_cost_for_mode(
+    display_cost: Option<f64>,
+    mode: CostMode,
+    has_override: bool,
+) -> Option<f64> {
+    match mode {
+        CostMode::Auto if has_override => None,
+        CostMode::Auto => display_cost.filter(|cost| cost.is_finite() && *cost >= 0.0),
+        _ => display_cost,
     }
 }
 
@@ -669,8 +688,9 @@ fn store_pricing(
     pricing: Option<&PricingMap>,
 ) -> Option<Pricing> {
     let pricing = pricing?;
-    display_model
-        .and_then(|model| pricing.find_exact(model))
+    pricing_override_model(raw_model, display_model, Some(pricing))
+        .and_then(|model| pricing.find(model))
+        .or_else(|| display_model.and_then(|model| pricing.find_exact(model)))
         .or_else(|| raw_model.and_then(|model| pricing.find(model)))
 }
 
@@ -681,8 +701,9 @@ fn store_pricing_at(
     pricing: Option<&PricingMap>,
 ) -> Option<Pricing> {
     let pricing = pricing?;
-    display_model
-        .and_then(|model| pricing.find_exact(model))
+    pricing_override_model(raw_model, display_model, Some(pricing))
+        .and_then(|model| pricing.find_at(model, timestamp))
+        .or_else(|| display_model.and_then(|model| pricing.find_exact(model)))
         .or_else(|| raw_model.and_then(|model| pricing.find_at(model, timestamp)))
 }
 
@@ -737,6 +758,91 @@ mod tests {
             output_tokens: 2000,
             ..crate::TokenUsageRaw::default()
         }
+    }
+
+    fn pricing_with_override(model: &str) -> PricingMap {
+        let model = model.to_string();
+        let override_value = crate::cli::PricingOverride {
+            input_cost_per_token: Some(0.001),
+            output_cost_per_token: Some(0.002),
+            ..Default::default()
+        };
+        PricingMap::load_with_overrides(true, false, [(&model, &override_value)])
+    }
+
+    #[test]
+    fn default_store_auto_uses_pricing_override_over_recorded_cost() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"my-custom-model","usage":{"input":1000,"output":2000,"cost":{"total":0}}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let pricing = pricing_with_override("[pi] my-custom-model");
+
+        let auto = read_session_file(&file, None, CostMode::Auto, Some(&pricing)).unwrap();
+        assert_eq!(auto[0].cost, 5.0);
+        assert_eq!(auto[0].data.cost_usd, Some(0.0));
+        assert_eq!(auto[0].missing_pricing_model, None);
+
+        let display = read_session_file(&file, None, CostMode::Display, Some(&pricing)).unwrap();
+        assert_eq!(display[0].cost, 0.0);
+    }
+
+    #[test]
+    fn named_store_auto_uses_pricing_override_over_recorded_cost() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"my-custom-model","usage":{"input":1000,"output":2000,"cost":{"total":0}}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let pricing = pricing_with_override("[omp] my-custom-model");
+
+        let auto = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Auto,
+            Some(&pricing),
+            "omp",
+        )
+        .unwrap();
+        assert_eq!(auto[0].cost, 5.0);
+        assert_eq!(auto[0].data.cost_usd, Some(0.0));
+        assert_eq!(auto[0].missing_pricing_model, None);
+
+        let display = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Display,
+            Some(&pricing),
+            "omp",
+        )
+        .unwrap();
+        assert_eq!(display[0].cost, 0.0);
+    }
+
+    #[test]
+    fn bare_model_override_applies_to_default_and_named_stores() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"my-custom-model","usage":{"input":1000,"output":2000,"cost":{"total":0}}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let pricing = pricing_with_override("my-custom-model");
+
+        let default = read_session_file(&file, None, CostMode::Auto, Some(&pricing)).unwrap();
+        assert_eq!(default[0].cost, 5.0);
+        assert_eq!(default[0].missing_pricing_model, None);
+
+        let named = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Auto,
+            Some(&pricing),
+            "omp",
+        )
+        .unwrap();
+        assert_eq!(named[0].cost, 5.0);
+        assert_eq!(named[0].missing_pricing_model, None);
     }
 
     #[test]

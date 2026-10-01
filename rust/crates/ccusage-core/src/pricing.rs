@@ -1444,6 +1444,14 @@ impl PricingMap {
         self.entries.get(model).copied()
     }
 
+    /// Whether a user supplied pricing for this model id or its configured alias.
+    pub fn has_user_override(&self, model: &str) -> bool {
+        self.user_overrides.contains_key(model)
+            || self
+                .user_overrides
+                .contains_key(crate::model_aliases::resolve_model_name(model).as_ref())
+    }
+
     /// Finds pricing by exact model id in the primary map or an enabled
     /// models.dev fallback.
     ///
@@ -5641,6 +5649,23 @@ mod tests {
             let mut map = BTreeMap::new();
             map.insert(model.to_string(), override_value);
             map
+        }
+
+        #[test]
+        fn user_override_detection_resolves_configured_model_aliases() {
+            let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+                "private-model",
+                "custom-model",
+            )]);
+            let mut pricing = PricingMap::default();
+            let overrides = build_overrides("custom-model", |o| {
+                o.input_cost_per_token = Some(0.001);
+            });
+            pricing.apply_overrides(overrides.iter());
+
+            assert!(pricing.has_user_override("custom-model"));
+            assert!(pricing.has_user_override("private-model"));
+            assert!(!pricing.has_user_override("unrelated-model"));
         }
 
         #[test]
