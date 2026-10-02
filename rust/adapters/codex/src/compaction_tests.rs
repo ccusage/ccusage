@@ -311,6 +311,36 @@ fn local_compaction_usage_already_in_cumulative_counts_is_not_added_again() {
 }
 
 #[test]
+fn invalid_or_completed_records_do_not_hide_pending_compaction_usage() {
+    let old_record = r#"{"timestamp":"2026-09-01T00:00:01Z","type":"token_usage_record","payload":{"response_id":"old-response","usage":{"input_tokens":100,"output_tokens":20}}}"#;
+    for gap in [
+        r#"{"type":"token_usage_record","payload":{"response_id":" "}}"#,
+        r#"{"type":"token_usage_record","payload":{"response_id":"invalid-response","usage":{"input_tokens":1}}}"#,
+        r#"{"timestamp":"2026-09-01T00:00:04Z","type":"token_usage_record","payload":{"response_id":"empty-usage","usage":{}}}"#,
+        old_record,
+    ] {
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                r#"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,
+                old_record,
+                r#"{"timestamp":"2026-09-01T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
+                r#"{"type":"compacted","payload":{"compaction_response_id":"old-response"}}"#,
+                r#"{"timestamp":"2026-09-01T00:00:03Z","type":"token_usage_record","payload":{"response_id":"new-response","usage":{"input_tokens":300,"output_tokens":30}}}"#,
+                gap,
+                r#"{"timestamp":"2026-09-01T00:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":400,"output_tokens":50}}}}"#,
+                r#"{"type":"compacted","payload":{"compaction_response_id":"new-response"}}"#,
+            ].join("\n"),
+        });
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+        assert_eq!(
+            events.iter().map(|event| event.total_tokens).sum::<u64>(),
+            450
+        );
+        assert!(events.iter().all(|event| event.response_id.is_none()));
+    }
+}
+
+#[test]
 fn thread_totals_identify_already_counted_compaction_without_an_earlier_snapshot() {
     let fixture = fs_fixture!({
         "session.jsonl": [

@@ -361,7 +361,6 @@ fn visit_codex_session_entry(
         return Ok(());
     }
     if entry_type == Some("token_usage_record") {
-        compaction_usage.latest_usage_response_id = None;
         let Some(payload) = value.payload.as_ref() else {
             return Ok(());
         };
