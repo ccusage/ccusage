@@ -17,6 +17,12 @@
 	"mode": "full",
 	"packageRules": [
 		{
+			"description": "Keep bun2nix lockfile v2/v3 support pinned until released.",
+			"matchManagers": ["nix"],
+			"matchDepNames": ["bun2nix"],
+			"enabled": false
+		},
+		{
 			"description": "Keep the working Tirith scanner pinned until workflow analysis is compatible.",
 			"matchManagers": ["nix"],
 			"matchDepNames": ["tirith-nixpkgs"],
