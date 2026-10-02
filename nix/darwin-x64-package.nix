@@ -28,7 +28,7 @@ in
         overlays = [ inputs.rust-overlay.overlays.default ];
       };
     in
-    pkgs.lib.mkIf pkgs.stdenv.isDarwin {
+    pkgs.lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
       packages.ccusage-darwin-x64 =
         let
           target = "x86_64-apple-darwin";

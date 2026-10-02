@@ -219,7 +219,7 @@ fn push_deduped_entry(
     let dedupe_lookup = entry.data.message.id.as_deref().map(|message_id| {
         let request_id = entry.data.request_id.as_deref();
         let session_id = loaded_entry_session_id(&entry);
-        let exact_hash = usage_dedupe_hash(message_id, request_id, session_id);
+        let exact_hash = usage_dedupe_hash(message_id, request_id, session_id, entry.timestamp);
         let existing_index = deduped_indexes
             .get(&exact_hash)
             .and_then(|indexes| {
@@ -229,15 +229,23 @@ fn push_deduped_entry(
                         message_id,
                         request_id,
                         session_id,
+                        entry.timestamp,
                     )
                     .then_some(dedupe_index.index)
                 })
             })
             .or_else(|| {
-                // /btw sidechain logs can replay parent messages with new request IDs.
-                let message_hash = usage_dedupe_hash(message_id, None, session_id);
+                // /btw sidechain logs can replay parent messages with new request IDs. A
+                // replay needs a sidechain on at least one side, so a parent candidate only
+                // has to look through sidechain entries; this keeps gateway logs that reuse
+                // one message ID for every response from rescanning all earlier entries.
                 let candidate_is_sidechain = is_sidechain_usage_entry(&entry.data);
-                deduped_indexes.get(&message_hash).and_then(|indexes| {
+                let route_hash = if candidate_is_sidechain {
+                    sidechain_replay_dedupe_hash(message_id, session_id)
+                } else {
+                    sidechain_entry_replay_dedupe_hash(message_id, session_id)
+                };
+                deduped_indexes.get(&route_hash).and_then(|indexes| {
                     indexes.iter().find_map(|dedupe_index| {
                         let existing = &deduped[dedupe_index.index];
                         let indexed_session_id = dedupe_index
@@ -248,6 +256,7 @@ fn push_deduped_entry(
                             && loaded_entry_matches_sidechain_dedupe_key(
                                 existing,
                                 message_id,
+                                request_id,
                                 entry.timestamp,
                                 candidate_is_sidechain,
                             ))
@@ -266,29 +275,43 @@ fn push_deduped_entry(
         {
             // Cross-session copies can become the survivor, so keep every session route used by
             // later sidechain replays.
-            push_deduped_session_alias(
-                deduped_indexes,
-                usage_dedupe_hash(message_id, None, candidate_session_id),
-                index,
-                candidate_session_id,
-            );
-            push_deduped_session_alias(
-                deduped_indexes,
-                usage_dedupe_hash(message_id, None, existing_session_id),
-                index,
-                existing_session_id,
-            );
+            for session_id in [candidate_session_id, existing_session_id] {
+                for route_hash in [
+                    sidechain_replay_dedupe_hash(message_id, session_id),
+                    sidechain_entry_replay_dedupe_hash(message_id, session_id),
+                ] {
+                    push_deduped_session_alias(deduped_indexes, route_hash, index, session_id);
+                }
+            }
         }
         if should_replace_deduped_entry(&entry.data, &deduped[index].data) {
-            deduped[index] = entry;
-            push_deduped_index(deduped_indexes, hash, index);
-            if let Some(message_id) = deduped[index].data.message.id.as_deref() {
+            let previous = std::mem::replace(&mut deduped[index], entry);
+            // The survivor is already indexed under its previous keys. Only register the keys
+            // that changed, so repeated same-timestamp rewrites do not rescan large buckets.
+            if loaded_entry_exact_hash(&previous) != Some(hash) {
+                push_deduped_index(deduped_indexes, hash, index);
+            }
+            let replay_route_changed = loaded_entry_session_id(&previous)
+                != loaded_entry_session_id(&deduped[index])
+                || is_sidechain_usage_entry(&previous.data)
+                    != is_sidechain_usage_entry(&deduped[index].data)
+                || previous.data.message.id != deduped[index].data.message.id;
+            if replay_route_changed
+                && let Some(message_id) = deduped[index].data.message.id.as_deref()
+            {
                 let session_id = loaded_entry_session_id(&deduped[index]);
                 push_deduped_index(
                     deduped_indexes,
-                    usage_dedupe_hash(message_id, None, session_id),
+                    sidechain_replay_dedupe_hash(message_id, session_id),
                     index,
                 );
+                if is_sidechain_usage_entry(&deduped[index].data) {
+                    push_deduped_index(
+                        deduped_indexes,
+                        sidechain_entry_replay_dedupe_hash(message_id, session_id),
+                        index,
+                    );
+                }
             }
         }
         return;
@@ -297,29 +320,32 @@ fn push_deduped_entry(
     let index = deduped.len();
     deduped.push(entry);
     if let Some((hash, None)) = dedupe_lookup {
-        push_deduped_index(deduped_indexes, hash, index);
+        // `index` is new, so none of these buckets can already hold it.
+        push_new_deduped_index(deduped_indexes, hash, index);
         if let Some(message_id) = deduped[index].data.message.id.as_deref() {
             let session_id = loaded_entry_session_id(&deduped[index]);
-            push_deduped_index(
+            push_new_deduped_index(
                 deduped_indexes,
-                usage_dedupe_hash(message_id, None, session_id),
+                sidechain_replay_dedupe_hash(message_id, session_id),
                 index,
             );
+            if is_sidechain_usage_entry(&deduped[index].data) {
+                push_new_deduped_index(
+                    deduped_indexes,
+                    sidechain_entry_replay_dedupe_hash(message_id, session_id),
+                    index,
+                );
+            }
         }
     }
 }
 
-fn usage_dedupe_hash(message_id: &str, request_id: Option<&str>, session_id: &str) -> u64 {
-    let mut hasher = FxHasher::default();
-    message_id.hash(&mut hasher);
-    request_id.hash(&mut hasher);
-    if request_id.is_none() {
-        session_id.hash(&mut hasher);
-    }
-    hasher.finish()
-}
-
-fn daily_usage_dedupe_hash(
+/// Exact-match dedupe key shared by the entry and daily loaders.
+///
+/// Matching message and request IDs identify one response across sessions. Without a request
+/// ID, gateways can reuse one message ID for every response, so the key is scoped to the
+/// session and timestamp instead.
+fn usage_dedupe_hash(
     message_id: &str,
     request_id: Option<&str>,
     session_id: &str,
@@ -343,6 +369,26 @@ fn sidechain_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64 {
     hasher.finish()
 }
 
+/// Replay route that only indexes sidechain entries, for parent candidates.
+fn sidechain_entry_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64 {
+    let mut hasher = FxHasher::default();
+    "sidechain-replay-entry".hash(&mut hasher);
+    message_id.hash(&mut hasher);
+    session_id.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn loaded_entry_exact_hash(entry: &LoadedEntry) -> Option<u64> {
+    entry.data.message.id.as_deref().map(|message_id| {
+        usage_dedupe_hash(
+            message_id,
+            entry.data.request_id.as_deref(),
+            loaded_entry_session_id(entry),
+            entry.timestamp,
+        )
+    })
+}
+
 fn loaded_entry_session_id(entry: &LoadedEntry) -> &str {
     entry
         .data
@@ -356,20 +402,26 @@ fn loaded_entry_matches_dedupe_key(
     message_id: &str,
     request_id: Option<&str>,
     session_id: &str,
+    timestamp: TimestampMs,
 ) -> bool {
     entry.data.message.id.as_deref() == Some(message_id)
         && entry.data.request_id.as_deref() == request_id
-        && (request_id.is_some() || loaded_entry_session_id(entry) == session_id)
+        && (request_id.is_some()
+            || (loaded_entry_session_id(entry) == session_id && entry.timestamp == timestamp))
 }
 
 fn loaded_entry_matches_sidechain_dedupe_key(
     entry: &LoadedEntry,
     message_id: &str,
+    request_id: Option<&str>,
     timestamp: TimestampMs,
     candidate_is_sidechain: bool,
 ) -> bool {
+    // Requestless replays match across timestamps, as in the daily loader. Replays that carry
+    // a new request ID still need the parent's timestamp in this loader.
+    let requestless = request_id.is_none() && entry.data.request_id.is_none();
     entry.data.message.id.as_deref() == Some(message_id)
-        && entry.timestamp == timestamp
+        && (requestless || entry.timestamp == timestamp)
         && (candidate_is_sidechain || is_sidechain_usage_entry(&entry.data))
 }
 
@@ -392,6 +444,17 @@ fn push_deduped_index(
             session_alias: None,
         });
     }
+}
+
+fn push_new_deduped_index(
+    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
+    hash: u64,
+    index: usize,
+) {
+    deduped_indexes.entry(hash).or_default().push(DedupeIndex {
+        index,
+        session_alias: None,
+    });
 }
 
 fn push_deduped_session_alias(
@@ -1145,11 +1208,43 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_requestless_usage_from_same_session_at_distinct_timestamps() {
+    fn keeps_requestless_usage_from_same_session_at_distinct_timestamps() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": [
                 r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
                 r#"{"timestamp":"2026-05-22T02:34:41.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":250,"speed":"standard"}}}"#,
+            ]
+            .join("\n"),
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+        );
+        for entry in loaded.entries {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
+
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(
+            deduped
+                .iter()
+                .map(|entry| entry.data.message.usage.output_tokens)
+                .sum::<u64>(),
+            275
+        );
+    }
+
+    #[test]
+    fn dedupes_repeated_requestless_writes_at_the_same_timestamp() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"ocgo","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":250,"speed":"standard"}}}"#,
             ]
             .join("\n"),
         });

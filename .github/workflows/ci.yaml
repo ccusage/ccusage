@@ -26,7 +26,7 @@ jobs:
   # `pull_request_target`), so fork PRs only ever get a read-only token and
   # cannot leak secrets while we scan their code. The downstream jobs `needs`
   # this job, so they are skipped unless tirith passes. tirith is installed from
-  # the flake's pinned nixpkgs so CI matches the dev shell.
+  # the flake's pinned package so CI matches the dev shell.
   tirith-scan:
     name: tirith security scan
     runs-on: blacksmith-32vcpu-ubuntu-2404
@@ -44,7 +44,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
       - name: Install tirith
-        run: nix profile install --inputs-from . nixpkgs#tirith
+        run: nix profile install .#tirith
       # One pass produces the SARIF report and sets the gate exit code. tirith's
       # `--ci` exit code is: 0 = no findings, 1 = findings at/above --fail-on,
       # 2 = findings present but all below it. We capture it (rather than letting
@@ -123,7 +123,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tirith-sarif
-      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: results.sarif
           category: tirith

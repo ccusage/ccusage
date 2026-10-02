@@ -37,7 +37,7 @@ in
           structure = "link";
         };
       };
-      installLocalHook = lib.trim (
+      installLocalHook = lib.removeSuffix "\n" (
         agentLib.mkShellHook {
           inherit pkgs bundle;
           targets = localTargets;

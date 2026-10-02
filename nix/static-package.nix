@@ -34,7 +34,7 @@ in
         overlays = [ inputs.rust-overlay.overlays.default ];
       };
     in
-    pkgs.lib.mkIf pkgs.stdenv.isLinux {
+    pkgs.lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       packages.ccusage-static =
         let
           linuxStaticTarget =

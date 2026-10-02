@@ -585,3 +585,101 @@ fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
     let json: serde_json::Value = serde_json::from_str(&output).unwrap();
     assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
 }
+
+fn requestless_line(
+    timestamp: &str,
+    session: &str,
+    message: &str,
+    input_tokens: u64,
+    cache_read_tokens: u64,
+    is_sidechain: bool,
+) -> String {
+    format!(
+        r#"{{"timestamp":"{timestamp}","sessionId":"{session}","isSidechain":{is_sidechain},"message":{{"id":"{message}","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":{input_tokens},"output_tokens":2,"cache_read_input_tokens":{cache_read_tokens}}}}}}}"#
+    )
+}
+
+/// Total tokens reported by each Claude report for the same window.
+fn claude_report_totals(fixture: &Fixture) -> Vec<(&'static str, u64)> {
+    ["daily", "weekly", "monthly", "session"]
+        .into_iter()
+        .map(|command| {
+            let output = run_ccusage(
+                fixture,
+                &[
+                    "claude",
+                    command,
+                    "--since",
+                    "20260901",
+                    "--until",
+                    "20260930",
+                    "--timezone",
+                    "UTC",
+                    "--mode",
+                    "display",
+                    "--offline",
+                    "--json",
+                ],
+                None,
+            );
+            let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+            (command, json["totals"]["totalTokens"].as_u64().unwrap())
+        })
+        .collect()
+}
+
+#[test]
+fn requestless_sidechain_replays_are_counted_once_in_every_report() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-a.jsonl",
+        requestless_line(
+            "2026-09-11T12:00:00.000Z",
+            "session-a",
+            "msg-parent",
+            10,
+            20,
+            false,
+        ),
+    );
+    // The /btw replay repeats the parent message, and its cache read, minutes later.
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/subagents/agent-a.jsonl",
+        requestless_line(
+            "2026-09-11T12:05:00.000Z",
+            "session-a",
+            "msg-parent",
+            10,
+            50_000,
+            true,
+        ),
+    );
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 32, "claude {command}");
+    }
+}
+
+#[test]
+fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
+    let fixture = Fixture::new();
+    // A relay that answers every response with the same message ID and no request ID; each
+    // timestamp is a separate API call.
+    let lines = (0..3)
+        .map(|minute| {
+            requestless_line(
+                &format!("2026-09-1{}T12:0{minute}:00.000Z", minute + 1),
+                "session-a",
+                "ocgo",
+                100,
+                0,
+                false,
+            )
+        })
+        .collect::<Vec<_>>();
+    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 306, "claude {command}");
+    }
+}
