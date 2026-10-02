@@ -629,6 +629,7 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let events = vec![CodexTokenUsageEvent {
             session_id: "codex-session".to_string(),
+            response_id: None,
             timestamp: "2026-01-02T00:00:01.000Z".to_string(),
             model: Some("gpt-5".to_string()),
             input_tokens: 100,
@@ -672,6 +673,7 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let events = vec![CodexTokenUsageEvent {
             session_id: "codex-session".to_string(),
+            response_id: None,
             timestamp: "2026-01-02T00:00:01.000Z".to_string(),
             model: Some("gpt-5.3-codex".to_string()),
             input_tokens: 120,
@@ -711,6 +713,7 @@ mod tests {
         );
         let events = vec![CodexTokenUsageEvent {
             session_id: "codex-session".to_string(),
+            response_id: None,
             timestamp: "2026-01-02T00:00:01.000Z".to_string(),
             model: Some("gpt-test".to_string()),
             input_tokens: 10,
@@ -749,6 +752,7 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let events = vec![CodexTokenUsageEvent {
             session_id: "codex-session".to_string(),
+            response_id: None,
             timestamp: "2026-03-18T00:00:01.000Z".to_string(),
             model: Some("gpt-5.4".to_string()),
             input_tokens: 100,

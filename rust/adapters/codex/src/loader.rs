@@ -227,6 +227,9 @@ fn read_codex_session_file(
         path,
         replay_plan.replay_prefix(path),
         |event| {
+            if replay_plan.is_replayed_compaction(path, event.response_id.as_deref()) {
+                return Ok(());
+            }
             events.push(event);
             Ok(())
         },
@@ -238,15 +241,20 @@ fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
     let mut indexes = FxHashMap::<_, usize>::default();
     let mut deduped = Vec::<CodexTokenUsageEvent>::with_capacity(events.len());
     for event in events.drain(..) {
-        let key = (
-            CompactString::new(&event.timestamp),
-            event.model.as_deref().map(CompactString::new),
-            event.input_tokens,
-            event.cached_input_tokens,
-            event.cache_creation_tokens,
-            event.output_tokens,
-            event.reasoning_output_tokens,
-            event.total_tokens,
+        let key = event.response_id.as_deref().map_or_else(
+            || {
+                CodexEventDeduplicationKey::Usage(
+                    CompactString::new(&event.timestamp),
+                    event.model.as_deref().map(CompactString::new),
+                    event.input_tokens,
+                    event.cached_input_tokens,
+                    event.cache_creation_tokens,
+                    event.output_tokens,
+                    event.reasoning_output_tokens,
+                    event.total_tokens,
+                )
+            },
+            |response_id| CodexEventDeduplicationKey::Response(CompactString::new(response_id)),
         );
         if let Some(index) = indexes.get(&key).copied() {
             let retained = &mut deduped[index];
@@ -258,6 +266,21 @@ fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
         }
     }
     *events = deduped;
+}
+
+#[derive(Hash, PartialEq, Eq)]
+enum CodexEventDeduplicationKey {
+    Response(CompactString),
+    Usage(
+        CompactString,
+        Option<CompactString>,
+        u64,
+        u64,
+        u64,
+        u64,
+        u64,
+        u64,
+    ),
 }
 
 #[cfg(test)]
@@ -272,6 +295,7 @@ mod tests {
     fn codex_event(session_id: &str) -> CodexTokenUsageEvent {
         CodexTokenUsageEvent {
             session_id: session_id.to_string(),
+            response_id: None,
             timestamp: "2026-01-02T00:00:00.000Z".to_string(),
             model: Some("gpt-5".to_string()),
             input_tokens: 100,
@@ -488,6 +512,21 @@ mod tests {
     fn dedupes_matching_codex_usage_events_from_distinct_sessions() {
         let mut events = vec![codex_event("session-a"), codex_event("session-b")];
 
+        dedupe_codex_events(&mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].session_id, "session-a");
+    }
+
+    #[test]
+    fn dedupes_compaction_usage_by_response_id() {
+        let mut first = codex_event("session-a");
+        first.response_id = Some("response-1".to_string());
+        let mut copied = codex_event("session-b");
+        copied.response_id = Some("response-1".to_string());
+        copied.model = Some("gpt-reserve".to_string());
+
+        let mut events = vec![first, copied];
         dedupe_codex_events(&mut events);
 
         assert_eq!(events.len(), 1);
