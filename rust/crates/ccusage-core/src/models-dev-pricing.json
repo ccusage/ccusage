@@ -33147,9 +33147,9 @@
 	},
 	"~deepseek/deepseek-flash-latest": {
 		"cost": {
-			"cache_read": 0.002115,
-			"input": 0.015,
-			"output": 1.2
+			"cache_read": 0.02,
+			"input": 0.02,
+			"output": 0.6
 		},
 		"exactOnly": true,
 		"limit": {
@@ -33169,9 +33169,9 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.012825,
-			"input": 0.012825,
-			"output": 1.6
+			"cache_read": 0.005775,
+			"input": 0.005775,
+			"output": 1.472
 		},
 		"limit": {
 			"context": 1048576
