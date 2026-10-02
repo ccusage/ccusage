@@ -28,6 +28,7 @@ in
           (with pkgs; [
             nodejs
             config.packages.pnpm
+            config.packages.tirith
             bun
             inputs.bun2nix.packages.${system}.default
             nushell
