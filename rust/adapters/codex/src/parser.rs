@@ -633,7 +633,7 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     let has_nested_token_count = !has_event_msg
         && has_compact_type
         && line.len() < 64 * 1024
-        && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
+        && memchr::memmem::find(line, b"token_count").is_some();
     let has_nested_thread_settings_applied = !has_event_msg
         && has_compact_type
         && line.len() < 64 * 1024
@@ -641,6 +641,7 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     let has_compaction_type = memchr::memmem::find(line, b"token_usage_record").is_some()
         || memchr::memmem::find(line, b"compacted").is_some();
     if has_event_msg
+        || memchr::memmem::find(line, b"turn_context").is_some()
         || has_nested_token_count
         || has_nested_thread_settings_applied
         || has_compaction_type
@@ -1500,6 +1501,20 @@ mod tests {
                 Some(CodexLineKind::Session)
             ));
         }
+    }
+
+    #[test]
+    fn loads_token_counts_with_spaces_after_type_colons() {
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                r#"{"type": "turn_context", "payload": {"model": "gpt-5-mini"}}"#,
+                r#"{"timestamp": "2026-09-01T00:00:01Z", "type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 100, "output_tokens": 20}}}}"#,
+            ].join("\n"),
+        });
+        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].total_tokens, 120);
+        assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
     }
     #[test]
     fn counts_compaction_usage_without_changing_cumulative_baseline() {
