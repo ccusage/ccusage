@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_timestamp};
 
-use super::parser::{codex_value_timestamp, visit_codex_session_file};
+use super::parser::{codex_value_timestamp, visit_codex_session_file_with_compaction_history};
 
 #[cfg(test)]
 #[derive(Debug, Eq, PartialEq)]
@@ -357,19 +357,27 @@ fn read_usage_events(sessions_dir: &Path, path: &Path) -> ParentUsage {
         usage: Vec::new(),
         compactions: HashMap::new(),
     };
-    let _ = visit_codex_session_file(sessions_dir, path, None, |event| {
-        // Response IDs deduplicate compactions independently of this normal
-        // token-count prefix, including when a fork omits compaction records.
-        if let Some(response_id) = event.response_id {
-            stream
-                .compactions
-                .insert(response_id, parse_ts_timestamp(&event.timestamp));
-            return Ok(());
-        }
-        stream.timestamps.push(parse_ts_timestamp(&event.timestamp));
-        stream.usage.push(event.raw_usage());
-        Ok(())
-    });
+    let ParentUsage {
+        timestamps,
+        usage,
+        compactions,
+    } = &mut stream;
+    let _ = visit_codex_session_file_with_compaction_history(
+        sessions_dir,
+        path,
+        None,
+        Some(compactions),
+        |event| {
+            // Response IDs deduplicate compactions independently of this normal
+            // token-count prefix, including when a fork omits compaction records.
+            if event.response_id.is_some() {
+                return Ok(());
+            }
+            timestamps.push(parse_ts_timestamp(&event.timestamp));
+            usage.push(event.raw_usage());
+            Ok(())
+        },
+    );
     stream
 }
 

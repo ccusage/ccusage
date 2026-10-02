@@ -26,7 +26,7 @@ Automatic compaction usage is recorded separately:
 - Keep its request timestamp and recorded service tier. Missing model metadata uses the active `turn_context` and marks the attribution as a fallback.
 - Compaction usage does not advance the normal cumulative baseline or change the active turn model.
 - Deduplicate copied compactions by response ID, independently of normal token-count replay matching. Retain the first file's attribution even when files are parsed in parallel.
-- Preserve parent compaction IDs in the replay plan, so a date-bounded child report does not count a copied request when its parent lies outside the report range.
+- Preserve all matched parent compaction IDs in the replay plan, including usage already covered by a cumulative snapshot, so a date-bounded child report does not count a copied request when its parent lies outside the report range.
 
 Relevant speed-setting event in Codex CLI 0.144.0 and later:
 

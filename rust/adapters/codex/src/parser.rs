@@ -76,6 +76,7 @@ struct CodexCompactionUsageState {
     pending_usage: HashMap<String, CodexPendingUsage>,
     emitted_response_ids: HashSet<String>,
     latest_usage_response_id: Option<String>,
+    recorded_usage_timestamps: Option<HashMap<String, Option<TimestampMs>>>,
 }
 
 struct CodexPendingUsage {
@@ -184,6 +185,24 @@ pub(super) fn visit_codex_session_file(
     sessions_dir: &Path,
     path: &Path,
     replayed_prefix: Option<&[CodexRawUsage]>,
+    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+) -> Result<()> {
+    visit_codex_session_file_with_compaction_history(
+        sessions_dir,
+        path,
+        replayed_prefix,
+        None,
+        visit,
+    )
+}
+
+/// Visits usage while optionally retaining matched compaction identities,
+/// including requests already covered by cumulative usage in a parent log.
+pub(super) fn visit_codex_session_file_with_compaction_history(
+    sessions_dir: &Path,
+    path: &Path,
+    replayed_prefix: Option<&[CodexRawUsage]>,
+    compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
     let Ok(file) = fs::File::open(path) else {
@@ -193,6 +212,9 @@ pub(super) fn visit_codex_session_file(
     let mut line = Vec::new();
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
+    if compaction_history.is_some() {
+        state.compaction_usage.recorded_usage_timestamps = Some(HashMap::new());
+    }
     let fallback_timestamp = file_modified_timestamp(path);
     let mut replay = match replayed_prefix {
         Some(prefix) => CodexReplayState::MatchingParent { prefix, index: 0 },
@@ -247,7 +269,7 @@ pub(super) fn visit_codex_session_file(
     loop {
         line.clear();
         let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
-            return Ok(());
+            break;
         };
         if bytes_read == 0 {
             break;
@@ -284,6 +306,20 @@ pub(super) fn visit_codex_session_file(
                 };
             }
         }
+    }
+
+    if let Some(history) = compaction_history
+        && let Some(mut timestamps) = state.compaction_usage.recorded_usage_timestamps
+    {
+        // Parent identity survives accounting suppression. A copied child can
+        // retain a compaction pair while its cumulative snapshot is missing.
+        timestamps.retain(|response_id, _| {
+            state
+                .compaction_usage
+                .compacted_response_ids
+                .contains(response_id)
+        });
+        history.extend(timestamps);
     }
 
     Ok(())
@@ -355,6 +391,12 @@ fn visit_codex_session_entry(
             && raw_usage.total_tokens == 0
         {
             return Ok(());
+        }
+
+        if let Some(timestamps) = compaction_usage.recorded_usage_timestamps.as_mut() {
+            timestamps
+                .entry(response_id.clone())
+                .or_insert_with(|| parse_ts_timestamp(&timestamp));
         }
 
         let parsed_model = codex_model_from_payload(payload);

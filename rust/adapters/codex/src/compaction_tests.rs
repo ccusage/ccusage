@@ -133,6 +133,49 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
 }
 
 #[test]
+fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot() {
+    let fixture = fs_fixture!({
+        "2026/09/01/parent.jsonl": [
+            r#"{"type":"session_meta","payload":{"id":"parent"}}"#,
+            r#"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,
+            r#"{"timestamp":"2026-09-01T00:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
+            r#"{"timestamp":"2026-09-01T00:00:02Z","type":"token_usage_record","payload":{"response_id":"response-1","usage":{"input_tokens":300,"output_tokens":20}}}"#,
+            r#"{"timestamp":"2026-09-01T00:00:03Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":400,"output_tokens":40},"last_token_usage":{"input_tokens":300,"output_tokens":20}}}}"#,
+            r#"{"type":"compacted","payload":{"compaction_response_id":"response-1"}}"#,
+        ].join("\n"),
+        "2026/09/02/child.jsonl": [
+            json!({"timestamp": "2026-09-02T00:00:00Z", "type": "session_meta", "payload": {"id": "child", "forked_from_id": "parent"}}).to_string(),
+            token_count("2026-09-02T00:00:01Z", 100),
+            compaction_log("2026-09-02T00:00:02Z", "gpt-5", 300),
+            compaction_log("2026-09-02T00:01:00Z", "gpt-5", 50).replace("response-1", "child-response"),
+            token_count("2026-09-02T00:02:00Z", 30),
+        ].join("\n"),
+    });
+    crate::paths::set_file_modified(
+        &fixture.path("2026/09/01/parent.jsonl"),
+        crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
+    );
+    let _guard = ccusage_test_support::EnvVarGuard::set("CODEX_HOME", fixture.root());
+    for single_thread in [true, false] {
+        let shared = SharedArgs {
+            since: Some("20260902".into()),
+            timezone: Some("UTC".into()),
+            single_thread,
+            ..SharedArgs::default()
+        };
+        let groups =
+            load_groups_from_directory(fixture.root(), &shared, AgentReportKind::Daily).unwrap();
+        assert_eq!(groups["2026-09-02"].total_tokens, 120);
+        let (events, _) = crate::load_codex_events_with_detection(&shared).unwrap();
+        assert_eq!(
+            events.iter().map(|event| event.total_tokens).sum::<u64>(),
+            120
+        );
+        assert_eq!(events[0].response_id.as_deref(), Some("child-response"));
+    }
+}
+
+#[test]
 fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
     let fixture = fs_fixture!({
         "a-first.jsonl": compaction_log("2026-09-01T00:00:01Z", "gpt-5", 300),
