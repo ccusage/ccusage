@@ -95,14 +95,68 @@ Daily JSON
       "outputTokens": 8,
       "totalCost": 0.0001375,
       "totalTokens": 15
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2026-02-03",
+      "inputTokens": 40,
+      "messageCount": 2,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.06,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00025,
+          "inputTokens": 40,
+          "modelName": "gpt-5.4",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4",
+        "unknown"
+      ],
+      "outputTokens": 10,
+      "totalCost": 0.06025,
+      "totalTokens": 50
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2026-02-04",
+      "inputTokens": 0,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.02,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 0,
+      "totalCost": 0.02,
+      "totalTokens": 0
     }
   ],
   "totals": {
     "cacheCreationTokens": 45,
     "cacheReadTokens": 30,
-    "inputTokens": 235,
-    "outputTokens": 132,
-    "totalCost": 0.004161875,
-    "totalTokens": 442
+    "inputTokens": 275,
+    "outputTokens": 142,
+    "totalCost": 0.084411875,
+    "totalTokens": 492
   }
 }
