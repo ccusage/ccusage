@@ -675,6 +675,9 @@ fn merge_override_fields(target: &mut PricingOverride, source: ConfigPricingOver
     if source.fast_multiplier.is_some() {
         target.fast_multiplier = source.fast_multiplier;
     }
+    if source.flex_multiplier.is_some() {
+        target.flex_multiplier = source.flex_multiplier;
+    }
 }
 
 impl From<ConfigPricingOverride> for PricingOverride {
@@ -692,6 +695,7 @@ impl From<ConfigPricingOverride> for PricingOverride {
                 .cache_read_input_token_cost_above_200k_tokens,
             max_input_tokens: value.max_input_tokens,
             fast_multiplier: value.fast_multiplier,
+            flex_multiplier: value.flex_multiplier,
         }
     }
 }
@@ -735,6 +739,7 @@ impl From<ConfigCodexSpeed> for CodexSpeed {
             ConfigCodexSpeed::Auto => Self::Auto,
             ConfigCodexSpeed::Standard => Self::Standard,
             ConfigCodexSpeed::Fast => Self::Fast,
+            ConfigCodexSpeed::Flex => Self::Flex,
         }
     }
 }
@@ -1051,6 +1056,8 @@ mod tests {
             PricingOverride {
                 input_cost_per_token: Some(2.5e-6),
                 output_cost_per_token: Some(1.5e-5),
+                fast_multiplier: Some(2.0),
+                flex_multiplier: Some(0.75),
                 ..Default::default()
             },
         );
@@ -1071,6 +1078,8 @@ mod tests {
         // Parent fields preserved
         assert_eq!(result.input_cost_per_token, Some(2.5e-6));
         assert_eq!(result.output_cost_per_token, Some(1.5e-5));
+        assert_eq!(result.fast_multiplier, Some(2.0));
+        assert_eq!(result.flex_multiplier, Some(0.75));
         // Child field applied
         assert_eq!(result.max_input_tokens, Some(1_000_000));
     }
@@ -1087,6 +1096,8 @@ mod tests {
                 input_cost_per_token: Some(3e-6),
                 output_cost_per_token: Some(15e-6),
                 cache_read_input_token_cost: Some(3e-7),
+                fast_multiplier: Some(2.0),
+                flex_multiplier: Some(0.75),
                 ..Default::default()
             },
         );
@@ -1097,6 +1108,8 @@ mod tests {
             "model-a".to_string(),
             ConfigPricingOverride {
                 input_cost_per_token: Some(2e-6),
+                fast_multiplier: Some(3.0),
+                flex_multiplier: Some(0.5),
                 ..Default::default()
             },
         );
@@ -1107,6 +1120,26 @@ mod tests {
         assert_eq!(result.input_cost_per_token, Some(2e-6)); // overridden
         assert_eq!(result.output_cost_per_token, Some(15e-6)); // preserved
         assert_eq!(result.cache_read_input_token_cost, Some(3e-7)); // preserved
+        assert_eq!(result.fast_multiplier, Some(3.0));
+        assert_eq!(result.flex_multiplier, Some(0.5));
+    }
+
+    #[test]
+    fn merge_pricing_overrides_preserves_flex_multiplier_for_new_models() {
+        let mut current = BTreeMap::new();
+        let incoming = BTreeMap::from([(
+            "new-model".to_string(),
+            ConfigPricingOverride {
+                input_cost_per_token: Some(1e-6),
+                flex_multiplier: Some(0.5),
+                ..Default::default()
+            },
+        )]);
+
+        merge_pricing_overrides(&mut current, incoming);
+
+        assert_eq!(current["new-model"].input_cost_per_token, Some(1e-6));
+        assert_eq!(current["new-model"].flex_multiplier, Some(0.5));
     }
 
     #[test]

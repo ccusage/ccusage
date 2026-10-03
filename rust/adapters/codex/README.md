@@ -59,6 +59,7 @@ chunking, and ordered parallel reads.
 - `rustc-hash`
 - `serde`
 - `serde_json`
+- `toml`
 
 ## Build layer
 

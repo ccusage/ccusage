@@ -11,6 +11,10 @@ pub mod model_aliases;
 pub mod output;
 pub mod path_utils;
 pub mod pricing;
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../build.rs"]
+mod pricing_snapshot;
 pub mod progress;
 pub mod project_names;
 pub mod summary;

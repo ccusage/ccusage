@@ -1196,6 +1196,7 @@ fn parse_codex_speed(value: &str) -> Result<CodexSpeed, String> {
         "auto" => Ok(CodexSpeed::Auto),
         "standard" => Ok(CodexSpeed::Standard),
         "fast" => Ok(CodexSpeed::Fast),
+        "flex" => Ok(CodexSpeed::Flex),
         _ => Err(format!("Invalid speed option '{value}'")),
     }
 }
