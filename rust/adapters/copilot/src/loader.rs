@@ -129,7 +129,7 @@ struct SessionStateReconciliation {
     entries: Vec<CopilotUsageEntry>,
     shutdown_entries: Vec<CopilotUsageEntry>,
     /// Per-model credits reported at each shutdown, keyed by session and
-    /// shutdown timestamp, including shutdowns before `--since`.
+    /// shutdown timestamp, including shutdowns outside `--since`/`--until`.
     attributed_nano_aiu: HashMap<(String, i64), u64>,
 }
 
@@ -162,13 +162,14 @@ fn reconcile_session_state_entries(
         let latest_visible = sorted.iter().rposition(|index| {
             until_millis.is_none_or(|end| entries[*index].timestamp.as_millis() < end)
         });
-        let Some(latest_pos) = latest_visible else {
-            continue;
-        };
-        shutdown_entries.push(entries[sorted[latest_pos]].clone());
+        if let Some(latest_pos) = latest_visible {
+            shutdown_entries.push(entries[sorted[latest_pos]].clone());
+        }
         let mut previous: Option<&CopilotUsageEntry> = None;
-        for position in 0..=latest_pos {
-            let current = &entries[sorted[position]];
+        // Credits are collected past `--until` too, so a breakdown that a later
+        // shutdown catches up on is judged the same way in every date range.
+        for (position, index) in sorted.iter().enumerate() {
+            let current = &entries[*index];
             let reconciled = previous.map_or_else(
                 || current.clone(),
                 |baseline| subtract_usage(current, baseline),
@@ -177,7 +178,9 @@ fn reconcile_session_state_entries(
             *attributed_nano_aiu
                 .entry((current.session_id.clone(), current.timestamp.as_millis()))
                 .or_default() += reconciled.nano_aiu;
-            if since_millis.is_some_and(|start| current.timestamp.as_millis() < start) {
+            if latest_visible.is_none_or(|latest_pos| position > latest_pos)
+                || since_millis.is_some_and(|start| current.timestamp.as_millis() < start)
+            {
                 continue;
             }
             if has_usage(&reconciled) {
@@ -1428,6 +1431,31 @@ mod tests {
         });
 
         let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-02".to_string(), "test-model".to_string(), 150, 0)]
+        );
+    }
+
+    #[test]
+    fn credit_gaps_do_not_depend_on_until() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                checkpoint("checkpoint-1", "2026-01-02T09:00:00.000Z", 30),
+                shutdown("shutdown-1", "2026-01-02T10:00:00.000Z", 30, Some(30)),
+                checkpoint("checkpoint-2", "2026-01-02T11:00:00.000Z", 50),
+                shutdown("shutdown-2", "2026-01-02T12:00:00.000Z", 50, Some(35)),
+                shutdown("shutdown-3", "2026-01-03T10:00:00.000Z", 50, Some(50)),
+            ]
+            .join("\n"),
+        });
+        let shared = crate::cli::SharedArgs {
+            until: Some("20260102".to_string()),
+            ..utc_args()
+        };
+
+        let entries = load_copilot_home(&fixture, &shared);
 
         assert_eq!(
             credit_rows(&entries),
