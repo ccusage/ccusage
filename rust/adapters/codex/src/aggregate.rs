@@ -13,7 +13,7 @@ use rustc_hash::FxHasher;
 use crate::{
     CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, Result,
     cli::{AgentReportKind, SharedArgs, WeekDay},
-    fast::FxHashMap,
+    fast::{FxHashMap, FxHashSet},
     format_date_tz, merge_codex_service_tiers, parse_ts_timestamp, parse_tz, wants_json,
     week_start,
 };
@@ -21,7 +21,13 @@ use crate::{
 use super::{parser, paths, replay::CodexReplayPlan};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct CodexEventKey {
+enum CodexEventKey {
+    Response(CompactString),
+    Usage(CodexUsageKey),
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct CodexUsageKey {
     session_hash: u64,
     session_len: usize,
     timestamp: crate::TimestampMs,
@@ -39,6 +45,13 @@ struct CodexDedupeRecord {
     service_tier: Option<CodexServiceTier>,
     model: CompactString,
     session_id: Option<CompactString>,
+    compaction: Option<Box<CodexCompactionEvent>>,
+}
+
+struct CodexCompactionEvent {
+    file_index: usize,
+    timestamp: crate::TimestampMs,
+    event: CodexTokenUsageEvent,
 }
 
 type CodexDedupeMap = FxHashMap<CodexEventKey, CodexDedupeRecord>;
@@ -56,6 +69,7 @@ struct CodexAggregateRun<'a> {
     shared: &'a SharedArgs,
     kind: AgentReportKind,
     replay_plan: &'a CodexReplayPlan,
+    file_offset: usize,
 }
 
 pub fn load_groups(
@@ -100,6 +114,7 @@ fn load_groups_from_sources(
     };
     let mut groups = BTreeMap::new();
     let seen = create_dedupe_shards();
+    let mut file_offset = 0;
     for (group, files) in file_groups.iter().zip(&files_by_group) {
         if files.is_empty() {
             continue;
@@ -113,10 +128,12 @@ fn load_groups_from_sources(
                     shared,
                     kind,
                     replay_plan: &replay_plan,
+                    file_offset,
                 },
                 &seen,
             )?,
         );
+        file_offset += files.len();
     }
     apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
     Ok(groups)
@@ -144,6 +161,7 @@ pub(super) fn load_groups_from_directory(
         shared,
         kind,
         replay_plan: &replay_plan,
+        file_offset: 0,
     };
     if shared.single_thread {
         return aggregate_files_local(&run);
@@ -171,8 +189,8 @@ fn aggregate_files(
     let mut groups = BTreeMap::new();
     let timezone =
         parse_tz(run.shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
-    for file in run.files {
-        aggregate_file(run, file, timezone.as_ref(), seen, &mut groups)?;
+    for (index, _) in run.files.iter().enumerate() {
+        aggregate_file(run, index, timezone.as_ref(), seen, &mut groups)?;
     }
     Ok(groups)
 }
@@ -198,7 +216,7 @@ fn aggregate_files_parallel(
                 let timezone = parse_tz(run.shared.timezone.as_deref())
                     .or_else(|| Some(JiffTimeZone::system()));
                 for index in chunk {
-                    aggregate_file(run, &run.files[index], timezone.as_ref(), seen, &mut groups)?;
+                    aggregate_file(run, index, timezone.as_ref(), seen, &mut groups)?;
                 }
                 Result::<BTreeMap<String, CodexGroup>>::Ok(groups)
             }));
@@ -219,16 +237,33 @@ fn aggregate_files_parallel(
 
 fn aggregate_file(
     run: &CodexAggregateRun<'_>,
-    file: &Path,
+    file_index: usize,
     timezone: Option<&JiffTimeZone>,
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
+    let file = &run.files[file_index];
     parser::visit_codex_session_file(
         run.sessions_dir,
         file,
         run.replay_plan.replay_prefix(file),
-        |event| add_event_to_groups(&event, run.kind, timezone, run.shared, seen, groups),
+        |event| {
+            if run
+                .replay_plan
+                .is_replayed_compaction(file, event.response_id.as_deref())
+            {
+                return Ok(());
+            }
+            add_event_to_groups(
+                &event,
+                run.kind,
+                timezone,
+                run.shared,
+                seen,
+                groups,
+                run.file_offset + file_index,
+            )
+        },
     )
 }
 
@@ -245,23 +280,39 @@ fn aggregate_files_local_with_seen(run: &CodexAggregateRun<'_>) -> Result<CodexA
     };
     let timezone =
         parse_tz(run.shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
-    for file in run.files {
-        aggregate_file_local(run, file, timezone.as_ref(), &mut aggregation)?;
+    for (index, _) in run.files.iter().enumerate() {
+        aggregate_file_local(run, index, timezone.as_ref(), &mut aggregation)?;
     }
     Ok(aggregation)
 }
 
 fn aggregate_file_local(
     run: &CodexAggregateRun<'_>,
-    file: &Path,
+    file_index: usize,
     timezone: Option<&JiffTimeZone>,
     aggregation: &mut CodexAggregation,
 ) -> Result<()> {
+    let file = &run.files[file_index];
     parser::visit_codex_session_file(
         run.sessions_dir,
         file,
         run.replay_plan.replay_prefix(file),
-        |event| add_event_to_groups_local(&event, run.kind, timezone, run.shared, aggregation),
+        |event| {
+            if run
+                .replay_plan
+                .is_replayed_compaction(file, event.response_id.as_deref())
+            {
+                return Ok(());
+            }
+            add_event_to_groups_local(
+                &event,
+                run.kind,
+                timezone,
+                run.shared,
+                aggregation,
+                run.file_offset + file_index,
+            )
+        },
     )
 }
 
@@ -272,6 +323,7 @@ fn add_event_to_groups(
     shared: &SharedArgs,
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
+    file_index: usize,
 ) -> Result<()> {
     let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
         return Ok(());
@@ -279,7 +331,7 @@ fn add_event_to_groups(
     let model = crate::model_aliases::resolve_model_name(model);
     let timestamp = parse_ts_timestamp(&event.timestamp)
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
-    if !insert_event_key(event, timestamp, model.as_ref(), kind, seen) {
+    if !insert_event_key(event, timestamp, model.as_ref(), kind, seen, file_index) {
         return Ok(());
     }
     add_deduped_event_to_groups(
@@ -299,6 +351,7 @@ fn add_event_to_groups_local(
     timezone: Option<&JiffTimeZone>,
     shared: &SharedArgs,
     aggregation: &mut CodexAggregation,
+    file_index: usize,
 ) -> Result<()> {
     let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
         return Ok(());
@@ -307,7 +360,15 @@ fn add_event_to_groups_local(
     let timestamp = parse_ts_timestamp(&event.timestamp)
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
     let key = codex_event_key(event, timestamp, model.as_ref(), kind);
-    if !insert_dedupe_record(&mut aggregation.seen, key, event, model.as_ref(), kind) {
+    if !insert_dedupe_record(
+        &mut aggregation.seen,
+        key,
+        event,
+        model.as_ref(),
+        kind,
+        timestamp,
+        file_index,
+    ) {
         return Ok(());
     }
     add_deduped_event_to_groups(
@@ -538,6 +599,31 @@ fn apply_recorded_usage_entries<'a>(
 ) {
     let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
     for (key, record) in records {
+        if let Some(compaction) = &record.compaction {
+            // Workers may encounter a later file first. Compaction usage is
+            // added only after every worker has selected the first file's copy.
+            let mut event = compaction.event.clone();
+            event.service_tier = record.service_tier;
+            if let Some(period) = codex_period_for(
+                compaction.timestamp,
+                Some(&event.session_id),
+                kind,
+                timezone.as_ref(),
+                shared,
+            ) {
+                accumulate_codex_event_into_group(
+                    groups.entry(period).or_default(),
+                    &event,
+                    &record.model,
+                    compaction.timestamp,
+                    true,
+                );
+            }
+            continue;
+        }
+        let CodexEventKey::Usage(key) = key else {
+            continue;
+        };
         let Some(service_tier) = record.service_tier else {
             continue;
         };
@@ -605,6 +691,7 @@ fn insert_event_key(
     model: &str,
     kind: AgentReportKind,
     seen: &CodexDedupeShards,
+    file_index: usize,
 ) -> bool {
     let key = codex_event_key(event, timestamp, model, kind);
     let mut hasher = FxHasher::default();
@@ -616,6 +703,8 @@ fn insert_event_key(
         event,
         model,
         kind,
+        timestamp,
+        file_index,
     )
 }
 
@@ -625,9 +714,21 @@ fn insert_dedupe_record(
     event: &CodexTokenUsageEvent,
     model: &str,
     kind: AgentReportKind,
+    timestamp: crate::TimestampMs,
+    file_index: usize,
 ) -> bool {
     if let Some(record) = seen.get_mut(&key) {
         record.service_tier = merge_codex_service_tiers(record.service_tier, event.service_tier);
+        if let Some(compaction) = record.compaction.as_mut()
+            && file_index < compaction.file_index
+        {
+            compaction.file_index = file_index;
+            compaction.timestamp = timestamp;
+            compaction.event = event.clone();
+            record.model = CompactString::new(model);
+            record.session_id =
+                (kind == AgentReportKind::Session).then(|| CompactString::new(&event.session_id));
+        }
         return false;
     }
     seen.insert(
@@ -637,9 +738,16 @@ fn insert_dedupe_record(
             model: CompactString::new(model),
             session_id: (kind == AgentReportKind::Session)
                 .then(|| CompactString::new(&event.session_id)),
+            compaction: event.response_id.as_ref().map(|_| {
+                Box::new(CodexCompactionEvent {
+                    file_index,
+                    timestamp,
+                    event: event.clone(),
+                })
+            }),
         },
     );
-    true
+    event.response_id.is_none()
 }
 
 fn codex_event_key(
@@ -648,12 +756,15 @@ fn codex_event_key(
     model: &str,
     kind: AgentReportKind,
 ) -> CodexEventKey {
+    if let Some(response_id) = &event.response_id {
+        return CodexEventKey::Response(CompactString::new(response_id));
+    }
     let (session_hash, session_len) = if kind == AgentReportKind::Session {
         (hash_text(&event.session_id), event.session_id.len())
     } else {
         (0, 0)
     };
-    CodexEventKey {
+    CodexEventKey::Usage(CodexUsageKey {
         session_hash,
         session_len,
         timestamp,
@@ -665,7 +776,7 @@ fn codex_event_key(
         output_tokens: event.output_tokens,
         reasoning_output_tokens: event.reasoning_output_tokens,
         total_tokens: event.total_tokens,
-    }
+    })
 }
 
 fn hash_text(value: &str) -> u64 {
@@ -740,11 +851,37 @@ pub fn aggregate_events(
     timezone: Option<&str>,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let mut groups = BTreeMap::new();
+    let mut seen_compaction_responses = FxHashSet::default();
+    let mut compaction_tiers = FxHashMap::default();
+    // Match loader and streaming aggregation: a copied record can supply a
+    // tier missing from the first copy, without changing its usage or owner.
+    for event in events {
+        if let Some(response_id) = event.response_id.as_deref()
+            && event
+                .model
+                .as_deref()
+                .is_some_and(|model| !model.is_empty())
+        {
+            let tier = compaction_tiers.entry(response_id).or_insert(None);
+            *tier = merge_codex_service_tiers(*tier, event.service_tier);
+        }
+    }
     let timezone = parse_tz(timezone).or_else(|| Some(JiffTimeZone::system()));
     for event in events {
         let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
             continue;
         };
+        if let Some(response_id) = event.response_id.as_deref()
+            && !seen_compaction_responses.insert(response_id)
+        {
+            continue;
+        }
+        let merged_event = event.response_id.as_deref().map(|response_id| {
+            let mut merged = event.clone();
+            merged.service_tier = compaction_tiers[response_id];
+            merged
+        });
+        let event = merged_event.as_ref().unwrap_or(event);
         let timestamp = parse_ts_timestamp(&event.timestamp).ok_or_else(|| {
             crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp))
         })?;
@@ -799,6 +936,59 @@ mod tests {
     };
 
     #[test]
+    fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
+        let first = CodexTokenUsageEvent {
+            session_id: "first-session".into(),
+            response_id: Some("response-1".into()),
+            timestamp: "2026-09-01T00:00:01Z".into(),
+            model: Some("gpt-5".into()),
+            input_tokens: 300,
+            cached_input_tokens: 0,
+            cache_creation_tokens: 0,
+            output_tokens: 20,
+            reasoning_output_tokens: 0,
+            total_tokens: 320,
+            is_fallback_model: true,
+            service_tier: Some(CodexServiceTier::Standard),
+        };
+        let mut copied = first.clone();
+        copied.session_id = "copied-session".into();
+        copied.timestamp = "2026-09-02T00:00:01Z".into();
+        copied.model = Some("gpt-5-mini".into());
+        copied.input_tokens = 500;
+        copied.total_tokens = 520;
+        copied.service_tier = Some(CodexServiceTier::Fast);
+        let shared = SharedArgs {
+            timezone: Some("UTC".into()),
+            ..SharedArgs::default()
+        };
+        let seen = create_dedupe_shards();
+        let mut groups = BTreeMap::new();
+        for (event, file_index) in [(&copied, 1), (&first, 0)] {
+            add_event_to_groups(
+                event,
+                AgentReportKind::Session,
+                None,
+                &shared,
+                &seen,
+                &mut groups,
+                file_index,
+            )
+            .unwrap();
+        }
+        apply_recorded_usage_from_shards(&mut groups, &seen, &shared, AgentReportKind::Session);
+
+        assert_eq!(groups.len(), 1);
+        let group = &groups["first-session"];
+        assert_eq!(group.total_tokens, 320);
+        assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
+        assert_eq!(
+            group.models["gpt-5"].recorded_standard_usage.input_tokens,
+            300
+        );
+    }
+
+    #[test]
     fn selects_codex_period_for_each_report_kind() {
         let timestamp = parse_ts_timestamp("2026-05-29T08:01:00.000Z").unwrap();
         let timezone = parse_tz(Some("UTC")).unwrap();
@@ -828,6 +1018,7 @@ mod tests {
     fn stores_timestamped_usage_only_for_time_dependent_models() {
         let event = |model: &str| CodexTokenUsageEvent {
             session_id: "session-1".to_string(),
+            response_id: None,
             timestamp: "2026-08-17T01:00:00.000Z".to_string(),
             model: Some(model.to_string()),
             input_tokens: 1_000_000,

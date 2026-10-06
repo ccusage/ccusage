@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_timestamp};
 
-use super::parser::{codex_value_timestamp, visit_codex_session_file};
+use super::parser::{codex_value_timestamp, visit_codex_session_file_with_compaction_history};
 
 #[cfg(test)]
 #[derive(Debug, Eq, PartialEq)]
@@ -86,6 +86,7 @@ struct ParentReplay {
 struct ParentUsage {
     timestamps: Vec<Option<TimestampMs>>,
     usage: Vec<CodexRawUsage>,
+    compactions: HashMap<String, Option<TimestampMs>>,
 }
 
 impl CodexReplayPlan {
@@ -173,6 +174,28 @@ impl CodexReplayPlan {
                 .unwrap_or(stream.usage.len())
         });
         Some(&stream.usage[..replay_len])
+    }
+
+    /// Recognizes copied compaction requests even when date filtering excludes
+    /// their parent from the report. Requests after the fork stay countable.
+    pub(super) fn is_replayed_compaction(&self, child: &Path, response_id: Option<&str>) -> bool {
+        let Some(response_id) = response_id else {
+            return false;
+        };
+        let Some(parent) = self.parent_by_child.get(child) else {
+            return false;
+        };
+        let Some(timestamp) = parent
+            .path
+            .as_ref()
+            .and_then(|path| self.usage_by_parent.get(path))
+            .and_then(|stream| stream.compactions.get(response_id))
+        else {
+            return false;
+        };
+        parent
+            .forked_at
+            .is_none_or(|forked_at| timestamp.is_none_or(|timestamp| timestamp <= forked_at))
     }
 }
 
@@ -324,31 +347,38 @@ fn read_parent_usage(
 }
 
 fn read_parent_usage_file(path: &Path, sessions_dir: &Path) -> (PathBuf, ParentUsage) {
-    let (timestamps, usage) = read_usage_events(sessions_dir, path)
-        .into_iter()
-        .map(|(timestamp, usage)| (parse_ts_timestamp(&timestamp), usage))
-        .unzip();
-    (path.to_path_buf(), ParentUsage { timestamps, usage })
+    (path.to_path_buf(), read_usage_events(sessions_dir, path))
 }
 
-fn read_usage_events(sessions_dir: &Path, path: &Path) -> Vec<(String, CodexRawUsage)> {
+fn read_usage_events(sessions_dir: &Path, path: &Path) -> ParentUsage {
     observe_parent_usage(path);
-    let mut usage = Vec::new();
-    let _ = visit_codex_session_file(sessions_dir, path, None, |event| {
-        usage.push((
-            event.timestamp,
-            CodexRawUsage {
-                input_tokens: event.input_tokens,
-                cached_input_tokens: event.cached_input_tokens,
-                cache_creation_tokens: event.cache_creation_tokens,
-                output_tokens: event.output_tokens,
-                reasoning_output_tokens: event.reasoning_output_tokens,
-                total_tokens: event.total_tokens,
-            },
-        ));
-        Ok(())
-    });
-    usage
+    let mut stream = ParentUsage {
+        timestamps: Vec::new(),
+        usage: Vec::new(),
+        compactions: HashMap::new(),
+    };
+    let ParentUsage {
+        timestamps,
+        usage,
+        compactions,
+    } = &mut stream;
+    let _ = visit_codex_session_file_with_compaction_history(
+        sessions_dir,
+        path,
+        None,
+        Some(compactions),
+        |event| {
+            // Response IDs deduplicate compactions independently of this normal
+            // token-count prefix, including when a fork omits compaction records.
+            if event.response_id.is_some() {
+                return Ok(());
+            }
+            timestamps.push(parse_ts_timestamp(&event.timestamp));
+            usage.push(event.raw_usage());
+            Ok(())
+        },
+    );
+    stream
 }
 
 #[derive(Clone, Default)]

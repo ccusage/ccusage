@@ -18,6 +18,16 @@ Relevant JSONL event:
 - `payload.info.last_token_usage` is the current turn delta.
 - If only cumulative totals exist, subtract prior totals to recover deltas.
 
+Automatic compaction usage is recorded separately:
+
+- A top-level `token_usage_record` carries `payload.response_id` and `payload.usage`.
+- Count it only when its response ID matches a `compacted` item's `payload.compaction_response_id`, in either record order.
+- Local compactions also emit an advancing `token_count` between the response record and marker. When that snapshot accounts for the record's request usage or matches its cumulative `thread_token_usage`, do not add the usage again. Remote v2 compactions lack this advance.
+- Keep its request timestamp and recorded service tier. Missing model metadata uses the active `turn_context` and marks the attribution as a fallback.
+- Compaction usage does not advance the normal cumulative baseline or change the active turn model.
+- Deduplicate copied compactions by response ID, independently of normal token-count replay matching. Retain the first file's session, timestamp, and model attribution even when files are parsed in parallel; merge service tiers across copies.
+- Preserve all matched parent compaction IDs in the replay plan, including usage already covered by a cumulative snapshot, so a date-bounded child report does not count a copied request when its parent lies outside the report range.
+
 Relevant speed-setting event in Codex CLI 0.144.0 and later:
 
 - `type === "event_msg"`
