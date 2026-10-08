@@ -683,3 +683,33 @@ fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
         assert_eq!(total, 306, "claude {command}");
     }
 }
+
+#[test]
+fn requestless_anthropic_message_id_content_blocks_are_counted_once_in_every_report() {
+    let fixture = Fixture::new();
+    // Claude Code writes one line per content block with the same real message ID, no
+    // request ID, and distinct timestamps for one response.
+    let lines = [
+        requestless_line(
+            "2026-09-11T12:00:00.000Z",
+            "session-a",
+            "msg_01AbC2DeF3",
+            100,
+            0,
+            false,
+        ),
+        requestless_line(
+            "2026-09-11T12:00:00.500Z",
+            "session-a",
+            "msg_01AbC2DeF3",
+            100,
+            0,
+            false,
+        ),
+    ];
+    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 102, "claude {command}");
+    }
+}

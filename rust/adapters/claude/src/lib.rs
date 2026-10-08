@@ -344,7 +344,9 @@ fn push_deduped_entry(
 ///
 /// Matching message and request IDs identify one response across sessions. Without a request
 /// ID, gateways can reuse one message ID for every response, so the key is scoped to the
-/// session and timestamp instead.
+/// session and timestamp instead. Real Anthropic IDs (`msg_` prefix) are unique per response,
+/// so requestless entries with one collapse by session across timestamps: Claude Code writes
+/// one line per content block with the same `message.id` but distinct timestamps.
 fn usage_dedupe_hash(
     message_id: &str,
     request_id: Option<&str>,
@@ -356,9 +358,17 @@ fn usage_dedupe_hash(
     request_id.hash(&mut hasher);
     if request_id.is_none() {
         session_id.hash(&mut hasher);
-        timestamp.hash(&mut hasher);
+        if !is_anthropic_message_id(message_id) {
+            timestamp.hash(&mut hasher);
+        }
     }
     hasher.finish()
+}
+
+/// Real Anthropic message IDs are unique per response, unlike the placeholder IDs gateways
+/// reuse for every response.
+pub(crate) fn is_anthropic_message_id(message_id: &str) -> bool {
+    message_id.starts_with("msg_")
 }
 
 fn sidechain_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64 {
@@ -407,7 +417,8 @@ fn loaded_entry_matches_dedupe_key(
     entry.data.message.id.as_deref() == Some(message_id)
         && entry.data.request_id.as_deref() == request_id
         && (request_id.is_some()
-            || (loaded_entry_session_id(entry) == session_id && entry.timestamp == timestamp))
+            || (loaded_entry_session_id(entry) == session_id
+                && (is_anthropic_message_id(message_id) || entry.timestamp == timestamp)))
 }
 
 fn loaded_entry_matches_sidechain_dedupe_key(
@@ -1237,6 +1248,32 @@ mod tests {
                 .sum::<u64>(),
             275
         );
+    }
+
+    #[test]
+    fn dedupes_anthropic_message_id_from_same_session_at_distinct_timestamps() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","message":{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.500Z","message":{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":25}}}"#,
+            ]
+            .join("\n"),
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+        );
+        for entry in loaded.entries {
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        }
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].data.message.usage.output_tokens, 25);
     }
 
     #[test]
