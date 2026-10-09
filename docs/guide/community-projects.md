@@ -19,6 +19,7 @@ These projects are maintained independently and are not affiliated with the ccus
 ## CLI Utilities
 
 - [scx](https://github.com/yamamuteki/scx) - Convert ccusage USD output from stdin into a local currency
+- [cachemiss](https://github.com/CedricConday/cachemiss) - Lists every prompt-cache rebuild in your Claude Code transcripts with its reason (from `message.diagnostics.cache_miss_reason` when the field is present, otherwise inferred and marked as such), the tokens rewritten, and the write premium over a cache read, per session, agent, and model
 
 ## Web Applications
 
@@ -26,6 +27,7 @@ These projects are maintained independently and are not affiliated with the ccus
 - [viberank](https://viberank.app) - A community-driven leaderboard for Claude Code usage. ([GitHub](https://github.com/sculptdotfun/viberank))
 - [CCWarriors](https://ccwarriors.xyz) - Live leaderboard of AI coding spend across Claude Code, Codex, Gemini, and other ccusage-readable agents, with per-tool filters and real-time updates. ([GitHub](https://github.com/distroinfinity/ccwarriors))
 - [Token Battle](https://tokenbattle.vercel.app) - AI coding cost leaderboard for comparing monthly ccusage exports from Claude Code, Codex CLI, and Gemini CLI, with dashboard uploads, public rankings, and shareable profiles.
+- [TokenNations](https://tokennations.app) - Country-vs-country leaderboard for AI coding usage. The CLI reads Claude Code, Codex, Gemini CLI, and other ccusage-readable agents locally and syncs only token counts.
 
 ## Contributing
 
