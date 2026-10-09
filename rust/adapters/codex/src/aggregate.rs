@@ -1056,6 +1056,7 @@ mod tests {
             total_tokens: 1_025,
             is_fallback_model: false,
             service_tier: Some(CodexServiceTier::Flex),
+            response_id: None,
         };
 
         let groups = aggregate_events(&[event], AgentReportKind::Daily, Some("UTC")).unwrap();
