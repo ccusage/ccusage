@@ -47,7 +47,7 @@ Monthly JSON
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.06,
+          "cost": 0.08,
           "inputTokens": 0,
           "modelName": "unknown",
           "outputTokens": 0
@@ -67,7 +67,7 @@ Monthly JSON
       ],
       "outputTokens": 48,
       "period": "2026-02",
-      "totalCost": 0.061049374999999996,
+      "totalCost": 0.08104937499999999,
       "totalTokens": 185
     }
   ],
@@ -76,7 +76,7 @@ Monthly JSON
     "cacheReadTokens": 30,
     "inputTokens": 275,
     "outputTokens": 142,
-    "totalCost": 0.064411875,
+    "totalCost": 0.084411875,
     "totalTokens": 492
   }
 }
