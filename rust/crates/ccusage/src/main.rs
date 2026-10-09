@@ -360,8 +360,8 @@ mod tests {
     fn dedupes_repeated_requestless_writes_from_same_session_at_the_same_timestamp() {
         let fixture = fs_fixture!({
             "projects/project1/session1/chat.jsonl": [
-                r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}},"costUSD":0.001}"#,
-                r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"msg_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":250,"cache_creation_input_tokens":10,"cache_read_input_tokens":5,"speed":"standard"}},"costUSD":0.01}"#,
+                r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"gateway_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":25,"cache_creation_input_tokens":10,"cache_read_input_tokens":5}},"costUSD":0.001}"#,
+                r#"{"timestamp":"2025-01-10T10:00:00.000Z","message":{"id":"gateway_123","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":250,"cache_creation_input_tokens":10,"cache_read_input_tokens":5,"speed":"standard"}},"costUSD":0.01}"#,
             ]
             .join("\n"),
         });

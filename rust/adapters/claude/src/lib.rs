@@ -367,6 +367,9 @@ fn usage_dedupe_hash(
 
 /// Real Anthropic message IDs are unique per response, unlike the placeholder IDs gateways
 /// reuse for every response.
+///
+/// The prefix is a heuristic: only a request ID proves two lines belong to one response, so a
+/// gateway that reused a `msg_`-shaped placeholder would collapse to one entry per session.
 pub(crate) fn is_anthropic_message_id(message_id: &str) -> bool {
     message_id.starts_with("msg_")
 }

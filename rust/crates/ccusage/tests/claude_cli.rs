@@ -713,3 +713,29 @@ fn requestless_anthropic_message_id_content_blocks_are_counted_once_in_every_rep
         assert_eq!(total, 102, "claude {command}");
     }
 }
+
+#[test]
+fn requestless_anthropic_message_id_keeps_largest_usage_across_days_and_sessions() {
+    let fixture = Fixture::new();
+    let line = |timestamp: &str, session: &str, output_tokens: u64| {
+        format!(
+            r#"{{"timestamp":"{timestamp}","sessionId":"{session}","message":{{"id":"msg_01AbC2DeF3","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":{output_tokens}}}}}}}"#
+        )
+    };
+    // Content-block lines of one streamed response straddle midnight with growing output, so
+    // every report must keep only the final, largest line rather than one line per day.
+    let session_a = [
+        line("2026-09-11T23:59:59.900Z", "session-a", 5),
+        line("2026-09-12T00:00:00.100Z", "session-a", 50),
+    ];
+    let _ = fixture.write_file("projects/project-a/session-a.jsonl", session_a.join("\n"));
+    // The same message ID in another session is a separate copy and stays counted.
+    let _ = fixture.write_file(
+        "projects/project-a/session-b.jsonl",
+        line("2026-09-12T01:00:00.000Z", "session-b", 5),
+    );
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 150 + 105, "claude {command}");
+    }
+}
