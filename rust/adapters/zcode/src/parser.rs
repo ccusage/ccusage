@@ -186,14 +186,17 @@ fn pricing_model(
 
 fn is_zai_provider(provider_id: Option<&str>) -> bool {
     provider_id.is_some_and(|provider| {
+        let normalized = provider.trim().to_ascii_lowercase();
+        let normalized = normalized.as_str();
         matches!(
-            provider.trim().to_ascii_lowercase().as_str(),
+            normalized,
             "zai"
                 | "z.ai"
                 | "zai-coding-plan"
                 | "builtin:zai-coding-plan"
                 | "builtin:bigmodel-coding-plan"
-        )
+        ) || normalized.starts_with("account:zai-")
+            || normalized.starts_with("builtin:zai-")
     })
 }
 
@@ -243,6 +246,32 @@ mod tests {
         assert_eq!(entry.data.message.model.as_deref(), Some("GLM-5.3"));
         assert_eq!(entry.data.version.as_deref(), Some("0.16.3"));
         assert_eq!(entry.data.timestamp, "2026-08-16T19:37:22.666Z");
+    }
+
+    #[test]
+    fn prices_current_zai_account_and_builtin_plan_ids() {
+        let pricing = PricingMap::load_embedded();
+        for provider in [
+            "account:zai-individual-coding-plan",
+            "account:zai-start-plan",
+            "builtin:zai-start-plan",
+        ] {
+            for model in ["GLM-5.3", "GLM-5.3-Flash"] {
+                let mut row = row();
+                row.provider_id = Some(provider.to_string());
+                row.model_id = model.to_string();
+                let entry = row_to_entry(
+                    row,
+                    Some(&JiffTimeZone::UTC),
+                    CostMode::Calculate,
+                    &pricing,
+                    &BTreeMap::new(),
+                )
+                .unwrap();
+                assert!(entry.cost > 0.0, "{provider} {model}");
+                assert!(entry.missing_pricing_model.is_none(), "{provider} {model}");
+            }
+        }
     }
 
     #[test]
