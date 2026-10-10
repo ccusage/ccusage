@@ -75,7 +75,7 @@ jobs:
       # gate then blocks the PR.
       - name: Upload SARIF artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tirith-sarif
           path: results.sarif
@@ -299,7 +299,7 @@ jobs:
           JS
       - name: Generate E2E fixture
         run: .github/scripts/generate-e2e-fixture.nu "$RUNNER_TEMP/e2e-fixture"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ccusage-e2e-fixture
           path: ${{ runner.temp }}/e2e-fixture
