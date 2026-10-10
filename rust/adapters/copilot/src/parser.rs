@@ -141,8 +141,9 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
     let sets = CandidateSets::new(&candidates);
     Ok(candidates
         .into_iter()
-        .filter(|candidate| should_emit_candidate(candidate, &sets))
-        .map(|candidate| CopilotUsageEntry {
+        .enumerate()
+        .filter(|(index, candidate)| should_emit_candidate(*index, candidate, &sets))
+        .map(|(_, candidate)| CopilotUsageEntry {
             timestamp: candidate.timestamp,
             timestamp_text: crate::format_rfc3339_millis(candidate.timestamp),
             session_id: candidate.session_id,
@@ -438,8 +439,10 @@ fn to_candidate(
             "gen_ai.usage.total.token_count",
         ],
     );
+    // Copilot counts cache reads and writes in the input tokens, as it does in
+    // session-state `inputTokens`.
     let usage = TokenUsageRaw {
-        input_tokens: input.saturating_sub(input.min(cache_read)),
+        input_tokens: input.saturating_sub(cache_read.saturating_add(cache_creation)),
         output_tokens: output,
         cache_creation_input_tokens: cache_creation,
         cache_read_input_tokens: cache_read,
@@ -495,11 +498,13 @@ struct CandidateSets {
     chat_response_ids: HashSet<String>,
     inference_response_ids: HashSet<String>,
     agent_turn_response_ids: HashSet<String>,
+    repeated_chat_spans: HashSet<usize>,
 }
 
 impl CandidateSets {
     fn new(candidates: &[CopilotUsageCandidate]) -> Self {
         Self {
+            repeated_chat_spans: repeated_chat_spans(candidates),
             chat_traces: source_trace_ids(candidates, CopilotUsageSource::ChatSpan),
             inference_traces: source_trace_ids(candidates, CopilotUsageSource::InferenceLog),
             agent_turn_traces: source_trace_ids(candidates, CopilotUsageSource::AgentTurnLog),
@@ -538,7 +543,49 @@ fn source_response_ids(
         .collect()
 }
 
-fn should_emit_candidate(candidate: &CopilotUsageCandidate, sets: &CandidateSets) -> bool {
+/// The Copilot CLI exports some chat spans a second time, under a new trace or
+/// span ID but with the response ID and usage of the original call. VS Code
+/// reports one response ID on every call of a turn, so the usage tells calls
+/// apart. Returns the chat spans that repeat an earlier one.
+fn repeated_chat_spans(candidates: &[CopilotUsageCandidate]) -> HashSet<usize> {
+    let mut earliest = HashMap::new();
+    let mut repeated = HashSet::new();
+    for (index, candidate) in candidates.iter().enumerate() {
+        if candidate.source != CopilotUsageSource::ChatSpan {
+            continue;
+        }
+        let Some(response_id) = candidate.response_id.as_deref() else {
+            continue;
+        };
+        let call = (
+            response_id,
+            candidate.model.as_str(),
+            candidate.input_tokens,
+            candidate.output_tokens,
+            candidate.cache_creation_tokens,
+            candidate.cache_read_tokens,
+            candidate.reasoning_output_tokens,
+            candidate.extra_total_tokens,
+        );
+        let kept = *earliest.entry(call).or_insert(index);
+        if kept == index {
+            continue;
+        }
+        if candidate.timestamp < candidates[kept].timestamp {
+            repeated.insert(kept);
+            earliest.insert(call, index);
+        } else {
+            repeated.insert(index);
+        }
+    }
+    repeated
+}
+
+fn should_emit_candidate(
+    index: usize,
+    candidate: &CopilotUsageCandidate,
+    sets: &CandidateSets,
+) -> bool {
     let trace_match = |values: &HashSet<String>| {
         candidate
             .trace_id
@@ -552,7 +599,7 @@ fn should_emit_candidate(candidate: &CopilotUsageCandidate, sets: &CandidateSets
             .is_some_and(|response_id| values.contains(response_id))
     };
     match candidate.source {
-        CopilotUsageSource::ChatSpan => true,
+        CopilotUsageSource::ChatSpan => !sets.repeated_chat_spans.contains(&index),
         CopilotUsageSource::InferenceLog => {
             !trace_match(&sets.chat_traces) && !response_match(&sets.chat_response_ids)
         }
