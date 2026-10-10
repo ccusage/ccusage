@@ -23380,6 +23380,29 @@
 			"context": 1050000
 		}
 	},
+	"openai-gpt-61-sol-ultrafast": {
+		"cost": {
+			"cache_read": 0.75,
+			"cache_write": 18.75,
+			"input": 15,
+			"output": 75,
+			"tiers": [
+				{
+					"cache_read": 1.5,
+					"cache_write": 37.5,
+					"input": 30,
+					"output": 112.5,
+					"tier": {
+						"size": 272000,
+						"type": "context"
+					}
+				}
+			]
+		},
+		"limit": {
+			"context": 1050000
+		}
+	},
 	"openai-o1": {
 		"cost": {
 			"cache_read": 7.5,
@@ -33721,7 +33744,7 @@
 	"~deepseek/deepseek-flash-latest": {
 		"cost": {
 			"cache_read": 0.005,
-			"input": 0.0029,
+			"input": 0.001,
 			"output": 0.6
 		},
 		"exactOnly": true,
@@ -33742,8 +33765,8 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.006,
-			"input": 0.006,
+			"cache_read": 0.0073,
+			"input": 0.0073,
 			"output": 1.28
 		},
 		"limit": {
@@ -33787,9 +33810,9 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.29,
-			"input": 0.446,
-			"output": 14.9
+			"cache_read": 0.3,
+			"input": 0.4,
+			"output": 14.89
 		},
 		"exactOnly": true,
 		"limit": {
