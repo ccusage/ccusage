@@ -14,8 +14,8 @@ use super::{
     paths::{CopilotSourceKind, paths},
 };
 use crate::{
-    LoadedEntry, Result, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage_at,
-    cli::CostMode, date_range_bounds_ms, debug_log, format_date_tz,
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    calculate_cost_for_usage_at, cli::CostMode, date_range_bounds_ms, debug_log, format_date_tz,
     missing_pricing_model_for_usage, parse_tz, read_files_parallel,
 };
 
@@ -83,8 +83,12 @@ fn load_entries_inner(
         shared.until.as_deref(),
         tz.as_ref(),
     );
-    let session_state =
-        reconcile_session_state_entries(session_state_entries, since_millis, until_millis);
+    let session_state = reconcile_session_state_entries(
+        session_state_entries,
+        &otel_call_timestamps(&otel_entries),
+        since_millis,
+        until_millis,
+    );
     // OpenTelemetry rows record every model call, so sessions that have them
     // are left to that source rather than to the coarser credit totals.
     let otel_sessions = otel_entries
@@ -98,20 +102,15 @@ fn load_entries_inner(
         since_millis,
         until_millis,
     );
-    let latest_shutdown_timestamps = session_state
-        .shutdown_entries
+    let otel_after = session_state
+        .otel_after
         .iter()
-        .map(|entry| {
-            (
-                (entry.session_id.as_str(), entry.model.as_str()),
-                entry.timestamp,
-            )
-        })
+        .map(|((session_id, model), timestamp)| ((session_id.as_str(), model.as_str()), *timestamp))
         .collect::<HashMap<_, _>>();
     otel_entries.retain(|entry| {
-        latest_shutdown_timestamps
+        otel_after
             .get(&(entry.session_id.as_str(), entry.model.as_str()))
-            .is_none_or(|shutdown_timestamp| entry.timestamp > *shutdown_timestamp)
+            .is_none_or(|after| entry.timestamp > *after)
     });
 
     let mut entries = session_state
@@ -127,10 +126,72 @@ fn load_entries_inner(
 
 struct SessionStateReconciliation {
     entries: Vec<CopilotUsageEntry>,
-    shutdown_entries: Vec<CopilotUsageEntry>,
+    /// Per `(session, model)`, the time after which OpenTelemetry rows are
+    /// reported: the latest shutdown through `--until`, or the shutdown before
+    /// the intervals that OTel replaces. Without an entry, every row counts.
+    otel_after: HashMap<(String, String), TimestampMs>,
     /// Per-model credits reported at each shutdown, keyed by session and
     /// shutdown timestamp, including shutdowns outside `--since`/`--until`.
     attributed_nano_aiu: HashMap<(String, i64), u64>,
+}
+
+/// OpenTelemetry has one row per model call; timestamps per `(session, model)`,
+/// sorted.
+fn otel_call_timestamps(
+    entries: &[CopilotUsageEntry],
+) -> HashMap<(String, String), Vec<TimestampMs>> {
+    let mut calls = HashMap::<(String, String), Vec<TimestampMs>>::new();
+    for entry in entries {
+        calls
+            .entry((entry.session_id.clone(), entry.model.clone()))
+            .or_default()
+            .push(entry.timestamp);
+    }
+    for timestamps in calls.values_mut() {
+        timestamps.sort_unstable();
+    }
+    calls
+}
+
+/// A Copilot process restores the breakdown of the session's last shutdown, so
+/// the calls of a process that ended without one (killed, crashed, or restarted
+/// by the app) are missing from every later shutdown, while OpenTelemetry still
+/// has a row for each of them. Counted from the first shutdown interval that has
+/// OTel rows, OTel replaces the shutdown intervals when it holds more calls than
+/// they report; returns the position of that interval in `sorted`. Shutdowns
+/// without request counts cannot be compared and keep their intervals. The
+/// comparison runs over every shutdown, so it does not depend on the date range.
+fn otel_replacement_start(
+    entries: &[CopilotUsageEntry],
+    sorted: &[usize],
+    calls: &[TimestampMs],
+) -> Option<usize> {
+    if sorted
+        .iter()
+        .any(|index| entries[*index].request_count == 0)
+    {
+        return None;
+    }
+    let mut start = None;
+    let mut counted_calls = 0;
+    let mut otel_calls = 0_u64;
+    let mut reported_calls = 0_u64;
+    let mut previous_requests = 0;
+    for (position, index) in sorted.iter().enumerate() {
+        let entry = &entries[*index];
+        let calls_through_shutdown = calls.partition_point(|call| *call <= entry.timestamp);
+        let interval_calls = calls_through_shutdown - counted_calls;
+        counted_calls = calls_through_shutdown;
+        if start.is_none() && interval_calls > 0 {
+            start = Some(position);
+        }
+        if start.is_some() {
+            otel_calls += interval_calls as u64;
+            reported_calls += entry.request_count.saturating_sub(previous_requests);
+        }
+        previous_requests = entry.request_count;
+    }
+    start.filter(|_| otel_calls > reported_calls)
 }
 
 // Session-state usage is cumulative per `(session, model)`, so resumed sessions
@@ -139,6 +200,7 @@ struct SessionStateReconciliation {
 // predecessor, keeping daily attribution while preserving the total.
 fn reconcile_session_state_entries(
     entries: Vec<CopilotUsageEntry>,
+    otel_calls: &HashMap<(String, String), Vec<TimestampMs>>,
     since_millis: Option<i64>,
     until_millis: Option<i64>,
 ) -> SessionStateReconciliation {
@@ -151,7 +213,7 @@ fn reconcile_session_state_entries(
             .push(index);
     }
     let mut interval_indices = Vec::new();
-    let mut shutdown_entries = Vec::new();
+    let mut otel_after = HashMap::new();
     let mut attributed_nano_aiu = HashMap::<(String, i64), u64>::new();
     // Sort keys for deterministic output across HashMap iteration.
     let mut keys = grouped.keys().cloned().collect::<Vec<_>>();
@@ -162,8 +224,15 @@ fn reconcile_session_state_entries(
         let latest_visible = sorted.iter().rposition(|index| {
             until_millis.is_none_or(|end| entries[*index].timestamp.as_millis() < end)
         });
-        if let Some(latest_pos) = latest_visible {
-            shutdown_entries.push(entries[sorted[latest_pos]].clone());
+        let otel_start = otel_calls
+            .get(&key)
+            .and_then(|calls| otel_replacement_start(&entries, &sorted, calls));
+        let otel_after_position = match otel_start {
+            Some(start) => start.checked_sub(1),
+            None => latest_visible,
+        };
+        if let Some(position) = otel_after_position {
+            otel_after.insert(key.clone(), entries[sorted[position]].timestamp);
         }
         let mut previous: Option<&CopilotUsageEntry> = None;
         // Credits are collected past `--until` too, so a breakdown that a later
@@ -179,6 +248,7 @@ fn reconcile_session_state_entries(
                 .entry((current.session_id.clone(), current.timestamp.as_millis()))
                 .or_default() += reconciled.nano_aiu;
             if latest_visible.is_none_or(|latest_pos| position > latest_pos)
+                || otel_start.is_some_and(|start| position >= start)
                 || since_millis.is_some_and(|start| current.timestamp.as_millis() < start)
             {
                 continue;
@@ -190,10 +260,9 @@ fn reconcile_session_state_entries(
     }
     // Keep chronological order for downstream sorting stability.
     interval_indices.sort_by_key(|entry| (entry.timestamp, entry.dedup_key.clone()));
-    shutdown_entries.sort_by_key(|entry| (entry.timestamp, entry.dedup_key.clone()));
     SessionStateReconciliation {
         entries: interval_indices,
-        shutdown_entries,
+        otel_after,
         attributed_nano_aiu,
     }
 }
@@ -500,7 +569,7 @@ mod tests {
         assert_eq!(entries[0].timestamp_text, "2026-04-11T19:04:24.967Z");
         assert_eq!(entries[0].session_id, "conv-1");
         assert_eq!(entries[0].model, "claude-sonnet-4");
-        assert_eq!(entries[0].input_tokens, 19_329);
+        assert_eq!(entries[0].input_tokens, 19_304);
         assert_eq!(entries[0].output_tokens, 281);
         assert_eq!(entries[0].cache_creation_tokens, 25);
         assert_eq!(entries[0].cache_read_tokens, 123);
@@ -567,6 +636,81 @@ mod tests {
         assert_eq!(entries[0].output_tokens, 10);
     }
 
+    fn chat_span(
+        (trace_id, span_id): (&str, &str),
+        end_seconds: u64,
+        response_id: &str,
+        input_tokens: u64,
+    ) -> String {
+        json!({
+            "type": "span",
+            "traceId": trace_id,
+            "spanId": span_id,
+            "name": "chat test-model",
+            "endTime": [end_seconds, 0_u64],
+            "attributes": {
+                "gen_ai.operation.name": "chat",
+                "gen_ai.response.model": "test-model",
+                "gen_ai.conversation.id": "conv-1",
+                "gen_ai.response.id": response_id,
+                "gen_ai.usage.input_tokens": input_tokens,
+                "gen_ai.usage.output_tokens": 10,
+            },
+        })
+        .to_string()
+    }
+
+    fn dedup_keys(entries: &[CopilotUsageEntry]) -> Vec<&str> {
+        entries
+            .iter()
+            .map(|entry| entry.dedup_key.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn counts_a_re_exported_chat_span_once() {
+        let fixture = fs_fixture!({
+            "copilot.jsonl": [
+                chat_span(("trace-1", "span-1"), 1_775_934_264, "resp-1", 100),
+                chat_span(("trace-1", "span-2"), 1_775_934_300, "resp-2", 200),
+                // The CLI exports some calls a second time, with the response
+                // ID and usage of the call but a new trace or span ID.
+                chat_span(("trace-2", "span-3"), 1_775_934_368, "resp-1", 100),
+                chat_span(("trace-1", "span-4"), 1_775_934_370, "resp-2", 200),
+                chat_span(("trace-3", "span-5"), 1_775_934_500, "resp-3", 300),
+                chat_span(("trace-1", "span-6"), 1_775_934_400, "resp-3", 300),
+            ]
+            .join("\n"),
+        });
+
+        let entries = parse_otel_file(&fixture.path("copilot.jsonl")).unwrap();
+
+        assert_eq!(
+            dedup_keys(&entries),
+            ["trace-1:span-1", "trace-1:span-2", "trace-1:span-6"]
+        );
+    }
+
+    #[test]
+    fn keeps_calls_of_one_turn_that_share_a_response_id() {
+        // VS Code reports the response ID of the turn on every call it makes.
+        let fixture = fs_fixture!({
+            "copilot.jsonl": [
+                chat_span(("trace-1", "span-1"), 1_775_934_264, "turn-1", 1_000),
+                chat_span(("trace-1", "span-2"), 1_775_934_270, "turn-1", 1_200),
+                chat_span(("trace-1", "span-3"), 1_775_934_280, "turn-1", 1_400),
+            ]
+            .join("\n"),
+        });
+
+        let entries = parse_otel_file(&fixture.path("copilot.jsonl")).unwrap();
+
+        assert_eq!(
+            dedup_keys(&entries),
+            ["trace-1:span-1", "trace-1:span-2", "trace-1:span-3"]
+        );
+    }
+
     #[test]
     fn does_not_double_count_reasoning_tokens() {
         let fixture = fs_fixture!({
@@ -602,19 +746,19 @@ mod tests {
         let rows = summarize_entries(&loaded, AgentReportKind::Daily).unwrap();
         let report = report_from_rows(&rows, AgentReportKind::Daily);
 
-        assert_eq!(report["daily"][0]["inputTokens"], 90);
+        assert_eq!(report["daily"][0]["inputTokens"], 70);
         assert_eq!(report["daily"][0]["outputTokens"], 50);
-        assert_eq!(report["daily"][0]["totalTokens"], 170);
-        assert_eq!(report["daily"][0]["totalCost"], 290.0);
+        assert_eq!(report["daily"][0]["totalTokens"], 150);
+        assert_eq!(report["daily"][0]["totalCost"], 270.0);
         assert_eq!(
             report["daily"][0]["modelBreakdowns"],
             json!([{
                 "modelName": "test-model",
-                "inputTokens": 90,
+                "inputTokens": 70,
                 "outputTokens": 50,
                 "cacheCreationTokens": 20,
                 "cacheReadTokens": 10,
-                "cost": 290.0
+                "cost": 270.0
             }])
         );
     }
@@ -639,7 +783,7 @@ mod tests {
                         "gen_ai.usage.cache_read.input_tokens": 10,
                         "gen_ai.usage.cache_creation.input_tokens": 20,
                         "gen_ai.usage.reasoning.output_tokens": 5,
-                        "gen_ai.usage.total_tokens": 175,
+                        "gen_ai.usage.total_tokens": 155,
                     },
                 })
             ),
@@ -656,9 +800,66 @@ mod tests {
 
         assert_eq!(loaded[0].extra_total_tokens, 5);
         assert_eq!(report["daily"][0]["outputTokens"], 50);
-        assert_eq!(report["daily"][0]["totalTokens"], 175);
-        assert_eq!(report["daily"][0]["totalCost"], 300.0);
-        assert_eq!(report["daily"][0]["modelBreakdowns"][0]["cost"], 300.0);
+        assert_eq!(report["daily"][0]["totalTokens"], 155);
+        assert_eq!(report["daily"][0]["totalCost"], 280.0);
+        assert_eq!(report["daily"][0]["modelBreakdowns"][0]["cost"], 280.0);
+    }
+
+    #[test]
+    fn splits_otel_input_tokens_like_session_state() {
+        // Copilot counts cache reads and writes in the input tokens of both
+        // sources; one call, as each source records it.
+        let fixture = fs_fixture!({
+            "copilot.jsonl": json!({
+                "type": "span",
+                "traceId": "trace-1",
+                "spanId": "span-1",
+                "name": "chat claude-haiku-4.5",
+                "endTime": [1_775_934_264_u64, 0_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "claude-haiku-4.5",
+                    "gen_ai.conversation.id": "session-1",
+                    "gen_ai.usage.input_tokens": 20_000,
+                    "gen_ai.usage.output_tokens": 300,
+                    "gen_ai.usage.cache_read.input_tokens": 12_000,
+                    "gen_ai.usage.cache_write.input_tokens": 7_990,
+                },
+            })
+            .to_string(),
+            "session-1/events.jsonl": json!({
+                "type": "session.shutdown",
+                "id": "shutdown-1",
+                "timestamp": "2026-04-11T19:04:24.000Z",
+                "data": {"modelMetrics": {"claude-haiku-4.5": {
+                    "usage": {
+                        "inputTokens": 20_000,
+                        "outputTokens": 300,
+                        "cacheReadTokens": 12_000,
+                        "cacheWriteTokens": 7_990
+                    },
+                    "requests": {"count": 1}
+                }}}
+            })
+            .to_string(),
+        });
+        let split = |entry: &CopilotUsageEntry| {
+            (
+                entry.input_tokens,
+                entry.cache_read_tokens,
+                entry.cache_creation_tokens,
+                entry.output_tokens,
+            )
+        };
+
+        let otel = parse_otel_file(&fixture.path("copilot.jsonl")).unwrap();
+        let session_state =
+            super::super::parser::parse_session_state_file(&fixture.path("session-1/events.jsonl"))
+                .unwrap()
+                .entries;
+
+        assert_eq!(split(&otel[0]), (10, 12_000, 7_990, 300));
+        assert_eq!(split(&otel[0]), split(&session_state[0]));
     }
 
     #[test]
@@ -1547,6 +1748,243 @@ mod tests {
         assert_eq!(
             credit_rows(&entries),
             [("2026-01-02".to_string(), "unknown".to_string(), 0, 0)]
+        );
+    }
+
+    /// A shutdown whose `test-model` breakdown reports `requests` requests of
+    /// 100 input tokens each.
+    fn shutdown_with_requests(id: &str, timestamp: &str, requests: u64) -> String {
+        json!({
+            "type": "session.shutdown",
+            "id": id,
+            "timestamp": timestamp,
+            "data": {"modelMetrics": {"test-model": {
+                "usage": {"inputTokens": requests * 100, "outputTokens": requests * 10},
+                "requests": {"count": requests}
+            }}}
+        })
+        .to_string()
+    }
+
+    /// One `test-model` call of `session-1` with a single input token.
+    fn otel_call(span_id: &str, timestamp: &str) -> String {
+        let seconds = crate::parse_ts_timestamp(timestamp).unwrap().as_millis() / 1_000;
+        json!({
+            "type": "span",
+            "traceId": "trace-1",
+            "spanId": span_id,
+            "name": "chat test-model",
+            "endTime": [seconds, 0_u64],
+            "attributes": {
+                "gen_ai.operation.name": "chat",
+                "gen_ai.response.model": "test-model",
+                "gen_ai.conversation.id": "session-1",
+                "gen_ai.usage.input_tokens": 1,
+                "gen_ai.usage.output_tokens": 1
+            }
+        })
+        .to_string()
+    }
+
+    /// `(timestamp, input tokens)` per entry: OTel calls have one input token,
+    /// shutdown intervals 100 per request.
+    fn usage_rows(entries: &[LoadedEntry]) -> Vec<(String, u64)> {
+        entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.data.timestamp.clone(),
+                    entry.data.message.usage.input_tokens,
+                )
+            })
+            .collect()
+    }
+
+    fn rows_on(rows: &[(String, u64)], date: &str) -> Vec<(String, u64)> {
+        rows.iter()
+            .filter(|(timestamp, _)| timestamp.starts_with(date))
+            .cloned()
+            .collect()
+    }
+
+    /// The first process shuts down cleanly after two calls, the second makes
+    /// three calls and dies without a shutdown, and the third restores the
+    /// breakdown of the first shutdown, makes one call and shuts down with three
+    /// requests: the three calls of the second process are in no shutdown.
+    fn crashed_process_fixture() -> ccusage_test_support::Fixture {
+        fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown_with_requests("shutdown-1", "2026-01-02T10:00:00.000Z", 2),
+                shutdown_with_requests("shutdown-2", "2026-01-03T10:00:00.000Z", 3),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": [
+                otel_call("first-1", "2026-01-02T09:00:00.000Z"),
+                otel_call("first-2", "2026-01-02T09:30:00.000Z"),
+                otel_call("crashed-1", "2026-01-02T20:00:00.000Z"),
+                otel_call("crashed-2", "2026-01-02T21:00:00.000Z"),
+                otel_call("crashed-3", "2026-01-03T08:00:00.000Z"),
+                otel_call("restored-1", "2026-01-03T09:00:00.000Z"),
+                otel_call("after-shutdown", "2026-01-03T11:00:00.000Z"),
+            ]
+            .join("\n"),
+        })
+    }
+
+    #[test]
+    fn reports_otel_calls_of_a_process_that_ended_without_a_shutdown() {
+        let fixture = crashed_process_fixture();
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+                ("2026-01-02T09:30:00.000Z".to_string(), 1),
+                ("2026-01-02T20:00:00.000Z".to_string(), 1),
+                ("2026-01-02T21:00:00.000Z".to_string(), 1),
+                ("2026-01-03T08:00:00.000Z".to_string(), 1),
+                ("2026-01-03T09:00:00.000Z".to_string(), 1),
+                ("2026-01-03T11:00:00.000Z".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn otel_reconciliation_does_not_depend_on_the_date_range() {
+        let fixture = crashed_process_fixture();
+        let full = usage_rows(&load_copilot_home(&fixture, &utc_args()));
+        let until = crate::cli::SharedArgs {
+            until: Some("20260102".to_string()),
+            ..utc_args()
+        };
+        let since = crate::cli::SharedArgs {
+            since: Some("20260103".to_string()),
+            ..utc_args()
+        };
+
+        assert_eq!(
+            usage_rows(&load_copilot_home(&fixture, &until)),
+            rows_on(&full, "2026-01-02")
+        );
+        assert_eq!(
+            usage_rows(&load_copilot_home(&fixture, &since)),
+            rows_on(&full, "2026-01-03")
+        );
+    }
+
+    #[test]
+    fn keeps_shutdown_usage_from_before_the_otel_export_started() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown_with_requests("shutdown-1", "2026-01-02T10:00:00.000Z", 2),
+                shutdown_with_requests("shutdown-2", "2026-01-03T10:00:00.000Z", 3),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": [
+                otel_call("crashed-1", "2026-01-02T20:00:00.000Z"),
+                otel_call("crashed-2", "2026-01-02T21:00:00.000Z"),
+                otel_call("restored-1", "2026-01-03T09:00:00.000Z"),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T10:00:00.000Z".to_string(), 200),
+                ("2026-01-02T20:00:00.000Z".to_string(), 1),
+                ("2026-01-02T21:00:00.000Z".to_string(), 1),
+                ("2026-01-03T09:00:00.000Z".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_shutdown_intervals_when_otel_has_no_calls_they_miss() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown_with_requests("shutdown-1", "2026-01-02T10:00:00.000Z", 2),
+                shutdown_with_requests("shutdown-2", "2026-01-03T10:00:00.000Z", 3),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": [
+                otel_call("first-1", "2026-01-02T09:00:00.000Z"),
+                otel_call("first-2", "2026-01-02T09:30:00.000Z"),
+                otel_call("second-1", "2026-01-03T09:00:00.000Z"),
+                otel_call("after-shutdown", "2026-01-03T11:00:00.000Z"),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T10:00:00.000Z".to_string(), 200),
+                ("2026-01-03T10:00:00.000Z".to_string(), 100),
+                ("2026-01-03T11:00:00.000Z".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_double_count_calls_a_concurrent_process_shuts_down_with() {
+        // Process A resumes after shutdown-1 and makes two calls. Process B
+        // resumes the same session, makes none and shuts down first, with the
+        // breakdown of shutdown-1; A's later shutdown reports A's two calls.
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown_with_requests("shutdown-1", "2026-01-02T10:00:00.000Z", 1),
+                shutdown_with_requests("shutdown-b", "2026-01-02T10:55:00.000Z", 1),
+                shutdown_with_requests("shutdown-a", "2026-01-02T11:00:00.000Z", 3),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": [
+                otel_call("first-1", "2026-01-02T09:00:00.000Z"),
+                otel_call("a-1", "2026-01-02T10:40:00.000Z"),
+                otel_call("a-2", "2026-01-02T10:50:00.000Z"),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T10:00:00.000Z".to_string(), 100),
+                ("2026-01-02T11:00:00.000Z".to_string(), 200),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_shutdowns_without_request_counts_to_the_shutdown_breakdown() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": json!({
+                "type": "session.shutdown",
+                "id": "shutdown-1",
+                "timestamp": "2026-01-02T10:00:00.000Z",
+                "data": {"modelMetrics": {"test-model": {"usage": {"inputTokens": 100}}}}
+            })
+            .to_string(),
+            "home/.copilot/otel/otel.jsonl": [
+                otel_call("first-1", "2026-01-02T09:00:00.000Z"),
+                otel_call("first-2", "2026-01-02T09:30:00.000Z"),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [("2026-01-02T10:00:00.000Z".to_string(), 100)]
         );
     }
 }
