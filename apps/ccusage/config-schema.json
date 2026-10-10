@@ -134,6 +134,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -297,6 +301,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -466,6 +474,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -632,6 +644,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -812,6 +828,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -978,6 +998,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -1141,6 +1165,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -1313,6 +1341,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"flexMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
 											"inputCostPerToken": {
 												"format": "double",
 												"type": "number"
@@ -1479,6 +1511,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -1653,6 +1689,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -1831,6 +1871,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -1997,6 +2041,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -2134,6 +2182,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -2286,6 +2338,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -2504,6 +2560,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -2736,6 +2796,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -2902,6 +2966,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -3065,6 +3133,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -3237,6 +3309,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"flexMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
 											"inputCostPerToken": {
 												"format": "double",
 												"type": "number"
@@ -3401,6 +3477,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -3442,7 +3522,7 @@
 										"speed": {
 											"default": "auto",
 											"description": "Codex speed normalization strategy.",
-											"enum": ["auto", "standard", "fast"],
+											"enum": ["auto", "standard", "fast", "flex"],
 											"markdownDescription": "Codex speed normalization strategy.",
 											"type": "string"
 										},
@@ -3560,6 +3640,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -3601,7 +3685,7 @@
 										"speed": {
 											"default": "auto",
 											"description": "Codex speed normalization strategy.",
-											"enum": ["auto", "standard", "fast"],
+											"enum": ["auto", "standard", "fast", "flex"],
 											"markdownDescription": "Codex speed normalization strategy.",
 											"type": "string"
 										},
@@ -3719,6 +3803,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -3760,7 +3848,7 @@
 										"speed": {
 											"default": "auto",
 											"description": "Codex speed normalization strategy.",
-											"enum": ["auto", "standard", "fast"],
+											"enum": ["auto", "standard", "fast", "flex"],
 											"markdownDescription": "Codex speed normalization strategy.",
 											"type": "string"
 										},
@@ -3881,6 +3969,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"flexMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
 											"inputCostPerToken": {
 												"format": "double",
 												"type": "number"
@@ -3922,7 +4014,7 @@
 								"speed": {
 									"default": "auto",
 									"description": "Codex speed normalization strategy.",
-									"enum": ["auto", "standard", "fast"],
+									"enum": ["auto", "standard", "fast", "flex"],
 									"markdownDescription": "Codex speed normalization strategy.",
 									"type": "string"
 								},
@@ -4050,6 +4142,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -4224,6 +4320,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -4402,6 +4502,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"flexMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
 											"inputCostPerToken": {
 												"format": "double",
 												"type": "number"
@@ -4568,6 +4672,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"flexMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
 											"inputCostPerToken": {
 												"format": "double",
 												"type": "number"
@@ -4705,6 +4813,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -4857,6 +4969,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -5051,6 +5167,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -5217,6 +5337,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -5380,6 +5504,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -5552,6 +5680,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"flexMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
 											"inputCostPerToken": {
 												"format": "double",
 												"type": "number"
@@ -5720,6 +5852,10 @@
 										"type": "number"
 									},
 									"fastMultiplier": {
+										"format": "double",
+										"type": "number"
+									},
+									"flexMultiplier": {
 										"format": "double",
 										"type": "number"
 									},
@@ -5897,6 +6033,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -6060,6 +6200,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -6229,6 +6373,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -6395,6 +6543,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -6575,6 +6727,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -6738,6 +6894,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -6907,6 +7067,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -7073,6 +7237,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -7253,6 +7421,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -7416,6 +7588,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -7585,6 +7761,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -7751,6 +7931,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -7931,6 +8115,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -8094,6 +8282,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -8263,6 +8455,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -8429,6 +8625,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -8609,6 +8809,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -8772,6 +8976,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -8941,6 +9149,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -9107,6 +9319,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -9287,6 +9503,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -9450,6 +9670,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -9619,6 +9843,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -9785,6 +10013,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -9965,6 +10197,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -10131,6 +10367,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -10294,6 +10534,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -10466,6 +10710,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"flexMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
 											"inputCostPerToken": {
 												"format": "double",
 												"type": "number"
@@ -10635,6 +10883,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -10789,6 +11041,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -10949,6 +11205,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -11106,6 +11366,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -11285,6 +11549,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -11448,6 +11716,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -11617,6 +11889,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -11780,6 +12056,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -11952,6 +12232,10 @@
 												"format": "double",
 												"type": "number"
 											},
+											"flexMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
 											"inputCostPerToken": {
 												"format": "double",
 												"type": "number"
@@ -12121,6 +12405,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -12275,6 +12563,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -12435,6 +12727,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -12592,6 +12888,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -12794,6 +13094,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -12957,6 +13261,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -13126,6 +13434,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -13292,6 +13604,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},
@@ -13472,6 +13788,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -13635,6 +13955,10 @@
 														"type": "number"
 													},
 													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
 														"format": "double",
 														"type": "number"
 													},
@@ -13804,6 +14128,10 @@
 														"format": "double",
 														"type": "number"
 													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
 													"inputCostPerToken": {
 														"format": "double",
 														"type": "number"
@@ -13970,6 +14298,10 @@
 												"type": "number"
 											},
 											"fastMultiplier": {
+												"format": "double",
+												"type": "number"
+											},
+											"flexMultiplier": {
 												"format": "double",
 												"type": "number"
 											},

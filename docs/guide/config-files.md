@@ -443,13 +443,14 @@ Pi also accepts a bare model name as an override key; that key applies to the de
 
 ### Supported Fields
 
-All fields are optional. Unspecified fields fall back to the LiteLLM entry (when one exists) or `0.0`:
+All fields are optional. Unspecified fields keep existing values. Without a pricing entry, token rates default to `0.0` and speed multipliers to `1.0`.
 
 - `inputCostPerToken`, `outputCostPerToken` — base per-token rates
 - `cacheCreationInputTokenCost`, `cacheReadInputTokenCost` — cache pricing
 - `inputCostPerTokenAbove200kTokens`, `outputCostPerTokenAbove200kTokens`, `cacheCreationInputTokenCostAbove200kTokens`, `cacheReadInputTokenCostAbove200kTokens` — tiered pricing past 200k tokens
 - `maxInputTokens` — context window limit (used by the Claude statusline hook)
-- `fastMultiplier` — multiplier applied when the message is recorded as fast-mode
+- `fastMultiplier` applies when Codex usage uses Fast pricing.
+- `flexMultiplier` applies when Codex usage uses Flex pricing.
 
 ### Overrides vs Offline Mode
 

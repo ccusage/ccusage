@@ -16,6 +16,7 @@ pub struct CodexRawUsage {
 pub enum CodexServiceTier {
     Standard,
     Fast,
+    Flex,
 }
 
 pub const fn merge_codex_service_tiers(
@@ -31,6 +32,9 @@ pub const fn merge_codex_service_tiers(
         }
         (Some(CodexServiceTier::Fast), _) | (_, Some(CodexServiceTier::Fast)) => {
             Some(CodexServiceTier::Fast)
+        }
+        (Some(CodexServiceTier::Flex), _) | (_, Some(CodexServiceTier::Flex)) => {
+            Some(CodexServiceTier::Flex)
         }
         (None, None) => None,
     }
@@ -82,6 +86,7 @@ pub struct CodexTimestampedUsage {
     pub(crate) usage: CodexUsageBucket,
     pub(crate) recorded_standard_usage: CodexUsageBucket,
     pub(crate) recorded_fast_usage: CodexUsageBucket,
+    pub(crate) recorded_flex_usage: CodexUsageBucket,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -103,6 +108,7 @@ pub struct CodexModelUsage {
     pub long_context_output_tokens: u64,
     pub recorded_standard_usage: CodexUsageBucket,
     pub recorded_fast_usage: CodexUsageBucket,
+    pub recorded_flex_usage: CodexUsageBucket,
     /// Exact event timestamps keep time-dependent pricing available after aggregation.
     pub timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub is_fallback: bool,

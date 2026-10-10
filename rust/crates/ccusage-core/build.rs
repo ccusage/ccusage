@@ -14,6 +14,7 @@ const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
 #[cfg(feature = "fetch-litellm-pricing")]
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 
+#[cfg(not(test))]
 fn main() {
     println!("cargo:rerun-if-env-changed={PRICING_JSON_PATH_ENV}");
 
@@ -80,12 +81,12 @@ fn fetch_pricing_json() -> String {
     );
 }
 
-#[cfg(feature = "fetch-litellm-pricing")]
+#[cfg(all(feature = "fetch-litellm-pricing", not(test)))]
 fn fetch_pricing_json() -> String {
     download_pricing_json().expect("fetch LiteLLM pricing for embed")
 }
 
-#[cfg(feature = "fetch-litellm-pricing")]
+#[cfg(all(feature = "fetch-litellm-pricing", not(test)))]
 fn download_pricing_json() -> std::io::Result<String> {
     let response = minreq::get(litellm_pricing_url()?)
         .with_timeout(PRICING_FETCH_TIMEOUT_SECONDS)
@@ -182,13 +183,15 @@ fn compact_pricing_json(json: &str) -> Option<String> {
                 fields.insert(target.to_string(), value.clone());
             }
         }
-        if let Some(fast) = pricing
-            .get("provider_specific_entry")
-            .and_then(Value::as_object)
-            .and_then(|entry| entry.get("fast"))
-            .filter(|value| !value.is_null())
-        {
-            fields.insert("fast".to_string(), fast.clone());
+        for tier in ["fast", "flex"] {
+            if let Some(multiplier) = pricing
+                .get("provider_specific_entry")
+                .and_then(Value::as_object)
+                .and_then(|entry| entry.get(tier))
+                .filter(|value| !value.is_null())
+            {
+                fields.insert(tier.to_string(), multiplier.clone());
+            }
         }
         if fields.contains_key("i") && fields.contains_key("o") {
             compact.insert(model, Value::Object(fields));
@@ -207,8 +210,46 @@ fn is_embedded_model(model: &str) -> bool {
         || model.starts_with("jp.anthropic.")
         || model.starts_with("au.anthropic.")
         || model.starts_with("gpt-")
+        || model == "o3"
+        || model.starts_with("o3-")
+        || model == "o4-mini"
+        || model.starts_with("o4-mini-")
         || model.starts_with("openai/")
         || model.starts_with("azure/")
         || model.starts_with("zai/")
         || model.starts_with("openrouter/openai/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compact_pricing_json;
+    use crate::PricingMap;
+
+    #[test]
+    fn keeps_service_tier_multipliers_in_embedded_pricing() {
+        let compact = compact_pricing_json(
+            r#"{
+                "gpt-test": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002,
+                    "provider_specific_entry": { "fast": 2, "flex": 0.5 }
+                },
+                "gpt-flex-only": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002,
+                    "provider_specific_entry": { "fast": null, "flex": 0.25 }
+                }
+            }"#,
+        )
+        .unwrap();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(&compact);
+
+        let both = pricing.find_exact("gpt-test").unwrap();
+        assert_eq!(both.fast_multiplier, 2.0);
+        assert_eq!(both.flex_multiplier, 0.5);
+        let flex_only = pricing.find_exact("gpt-flex-only").unwrap();
+        assert_eq!(flex_only.fast_multiplier, 1.0);
+        assert_eq!(flex_only.flex_multiplier, 0.25);
+    }
 }
