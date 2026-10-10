@@ -501,6 +501,7 @@ fn accumulate_codex_event_into_model_usage(
                     Some(&mut timestamped_usage.recorded_standard_usage)
                 }
                 Some(CodexServiceTier::Fast) => Some(&mut timestamped_usage.recorded_fast_usage),
+                Some(CodexServiceTier::Flex) => Some(&mut timestamped_usage.recorded_flex_usage),
                 None => None,
             };
             if let Some(recorded_usage) = recorded_usage {
@@ -512,6 +513,7 @@ fn accumulate_codex_event_into_model_usage(
         let recorded_usage = match event.service_tier {
             Some(CodexServiceTier::Standard) => Some(&mut model_usage.recorded_standard_usage),
             Some(CodexServiceTier::Fast) => Some(&mut model_usage.recorded_fast_usage),
+            Some(CodexServiceTier::Flex) => Some(&mut model_usage.recorded_flex_usage),
             None => None,
         };
         if let Some(recorded_usage) = recorded_usage {
@@ -559,6 +561,7 @@ fn merge_recorded_codex_usage(
     let recorded_usage = match service_tier {
         CodexServiceTier::Standard => &mut model_usage.recorded_standard_usage,
         CodexServiceTier::Fast => &mut model_usage.recorded_fast_usage,
+        CodexServiceTier::Flex => &mut model_usage.recorded_flex_usage,
     };
     merge_codex_usage_bucket(recorded_usage, usage);
 
@@ -570,6 +573,7 @@ fn merge_recorded_codex_usage(
         let recorded_usage = match service_tier {
             CodexServiceTier::Standard => &mut timestamped_usage.recorded_standard_usage,
             CodexServiceTier::Fast => &mut timestamped_usage.recorded_fast_usage,
+            CodexServiceTier::Flex => &mut timestamped_usage.recorded_flex_usage,
         };
         merge_codex_usage_bucket(recorded_usage, usage);
     }
@@ -821,6 +825,7 @@ fn merge_codex_model_usage(target: &mut crate::CodexModelUsage, source: crate::C
         source.recorded_standard_usage,
     );
     merge_codex_usage_bucket(&mut target.recorded_fast_usage, source.recorded_fast_usage);
+    merge_codex_usage_bucket(&mut target.recorded_flex_usage, source.recorded_flex_usage);
     for (timestamp, usage) in source.timestamped_usage {
         let target_usage = target.timestamped_usage.entry(timestamp).or_default();
         merge_codex_usage_bucket(&mut target_usage.usage, usage.usage);
@@ -831,6 +836,10 @@ fn merge_codex_model_usage(target: &mut crate::CodexModelUsage, source: crate::C
         merge_codex_usage_bucket(
             &mut target_usage.recorded_fast_usage,
             usage.recorded_fast_usage,
+        );
+        merge_codex_usage_bucket(
+            &mut target_usage.recorded_flex_usage,
+            usage.recorded_flex_usage,
         );
     }
     target.is_fallback |= source.is_fallback;
@@ -1031,6 +1040,33 @@ mod tests {
 
         assert!(models["gpt-5"].timestamped_usage.is_empty());
         assert_eq!(models["deepseek-v4-flash"].timestamped_usage.len(), 1);
+    }
+
+    #[test]
+    fn records_flex_usage_in_model_buckets() {
+        let event = CodexTokenUsageEvent {
+            session_id: "session-1".to_string(),
+            timestamp: "2026-08-17T01:00:00.000Z".to_string(),
+            model: Some("gpt-test".to_string()),
+            input_tokens: 1_000,
+            cached_input_tokens: 100,
+            cache_creation_tokens: 50,
+            output_tokens: 25,
+            reasoning_output_tokens: 5,
+            total_tokens: 1_025,
+            is_fallback_model: false,
+            service_tier: Some(CodexServiceTier::Flex),
+            response_id: None,
+        };
+
+        let groups = aggregate_events(&[event], AgentReportKind::Daily, Some("UTC")).unwrap();
+        let usage = &groups["2026-08-17"].models["gpt-test"];
+
+        assert_eq!(usage.input_tokens, 1_000);
+        assert_eq!(usage.recorded_flex_usage.input_tokens, 1_000);
+        assert_eq!(usage.recorded_flex_usage.cached_input_tokens, 100);
+        assert_eq!(usage.recorded_flex_usage.cache_creation_tokens, 50);
+        assert_eq!(usage.recorded_flex_usage.output_tokens, 25);
     }
 
     #[test]

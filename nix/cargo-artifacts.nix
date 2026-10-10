@@ -69,6 +69,7 @@ let
     names:
     lib.optionals (lib.elem "ccusage-core" names) [
       (rustRoot + /crates/ccusage-core/src/fast-multiplier-overrides.json)
+      (rustRoot + /crates/ccusage-core/src/flex-multiplier-overrides.json)
       (rustRoot + /crates/ccusage-core/src/models-dev-pricing.json)
       (rustRoot + /crates/ccusage-core/src/models-dev-catalog-rules.json)
     ]

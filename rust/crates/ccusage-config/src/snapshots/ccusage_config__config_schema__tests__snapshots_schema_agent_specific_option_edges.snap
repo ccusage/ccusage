@@ -96,6 +96,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "format": "double",
               "type": "number"
             },
+            "flexMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
             "inputCostPerToken": {
               "format": "double",
               "type": "number"
@@ -260,6 +264,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "format": "double",
               "type": "number"
             },
+            "flexMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
             "inputCostPerToken": {
               "format": "double",
               "type": "number"
@@ -304,7 +312,8 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "enum": [
           "auto",
           "standard",
-          "fast"
+          "fast",
+          "flex"
         ],
         "markdownDescription": "Codex speed normalization strategy.",
         "type": "string"
@@ -442,6 +451,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "type": "number"
             },
             "fastMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
+            "flexMultiplier": {
               "format": "double",
               "type": "number"
             },
@@ -618,6 +631,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "format": "double",
               "type": "number"
             },
+            "flexMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
             "inputCostPerToken": {
               "format": "double",
               "type": "number"
@@ -780,6 +797,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "type": "number"
             },
             "fastMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
+            "flexMultiplier": {
               "format": "double",
               "type": "number"
             },
@@ -955,6 +976,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "format": "double",
               "type": "number"
             },
+            "flexMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
             "inputCostPerToken": {
               "format": "double",
               "type": "number"
@@ -1120,6 +1145,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "format": "double",
               "type": "number"
             },
+            "flexMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
             "inputCostPerToken": {
               "format": "double",
               "type": "number"
@@ -1282,6 +1311,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "type": "number"
             },
             "fastMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
+            "flexMultiplier": {
               "format": "double",
               "type": "number"
             },
@@ -1488,6 +1521,10 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
               "type": "number"
             },
             "fastMultiplier": {
+              "format": "double",
+              "type": "number"
+            },
+            "flexMultiplier": {
               "format": "double",
               "type": "number"
             },

@@ -33,9 +33,16 @@ Relevant speed-setting event in Codex CLI 0.144.0 and later:
 - `type === "event_msg"`
 - `payload.type === "thread_settings_applied"`
 - `payload.thread_settings.service_tier === "priority"` (or legacy `"fast"`) selects Fast.
+- `payload.thread_settings.service_tier === "flex"` selects Flex.
 - `payload.thread_settings.service_tier === "default"` selects Standard. Codex Desktop spells the same tier `"standard"`; both appear in the same CLI version, so this is a value mapping and not a version split.
 - Token usage inherits the latest recognized setting in the rollout. A settings event without a `service_tier` key leaves the previous tier in place (auto-review threads emit these); a tier that is present but unrecognized clears it so a stale value is not inherited.
 - `thread_settings_applied` is not emitted per turn, so short rollouts carry no tier at all and stay unclassified for report policy to resolve.
+
+Unclassified usage uses the top-level `service_tier` in each Codex home's
+`config.toml`, overridden by a legacy named profile only when the top-level
+`profile` selects it. Inactive profiles and tier-like text inside strings do not
+affect pricing. Profile selections made through CLI flags or separate profile
+files require an explicit `--speed` override for unclassified usage.
 
 Relevant MultiAgent V2 subagent replay markers:
 

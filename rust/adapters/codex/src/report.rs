@@ -209,6 +209,7 @@ pub fn calculate_codex_model_cost(
     calculate_codex_usage_cost(
         model_usage_bucket(usage),
         usage.recorded_standard_usage,
+        usage.recorded_flex_usage,
         usage.recorded_fast_usage,
         &pricing,
         speed,
@@ -223,6 +224,7 @@ fn calculate_codex_timestamped_cost(
     calculate_codex_usage_cost(
         usage.usage,
         usage.recorded_standard_usage,
+        usage.recorded_flex_usage,
         usage.recorded_fast_usage,
         pricing,
         speed,
@@ -232,20 +234,43 @@ fn calculate_codex_timestamped_cost(
 fn calculate_codex_usage_cost(
     total_usage: CodexUsageBucket,
     recorded_standard_usage: CodexUsageBucket,
+    recorded_flex_usage: CodexUsageBucket,
     recorded_fast_usage: CodexUsageBucket,
     pricing: &crate::Pricing,
     speed: CodexSpeedPolicy,
 ) -> f64 {
     let standard_cost = calculate_codex_bucket_cost(&total_usage, pricing);
-    let fast_usage = match speed {
-        CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => return standard_cost,
-        CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => total_usage,
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard) => recorded_fast_usage,
-        CodexSpeedPolicy::Auto(CodexServiceTier::Fast) => {
-            subtract_codex_usage_bucket(total_usage, recorded_standard_usage)
+    let unclassified_usage = subtract_codex_usage_bucket(
+        total_usage,
+        add_codex_usage_buckets(
+            recorded_standard_usage,
+            add_codex_usage_buckets(recorded_flex_usage, recorded_fast_usage),
+        ),
+    );
+    let (flex_usage, fast_usage) = match speed {
+        CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => {
+            return standard_cost;
         }
+        CodexSpeedPolicy::Forced(CodexServiceTier::Flex) => {
+            (total_usage, CodexUsageBucket::default())
+        }
+        CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => {
+            (CodexUsageBucket::default(), total_usage)
+        }
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard) => {
+            (recorded_flex_usage, recorded_fast_usage)
+        }
+        CodexSpeedPolicy::Auto(CodexServiceTier::Flex) => (
+            add_codex_usage_buckets(recorded_flex_usage, unclassified_usage),
+            recorded_fast_usage,
+        ),
+        CodexSpeedPolicy::Auto(CodexServiceTier::Fast) => (
+            recorded_flex_usage,
+            add_codex_usage_buckets(recorded_fast_usage, unclassified_usage),
+        ),
     };
     standard_cost
+        + calculate_codex_bucket_cost(&flex_usage, pricing) * (pricing.flex_multiplier - 1.0)
         + calculate_codex_bucket_cost(&fast_usage, pricing) * (pricing.fast_multiplier - 1.0)
 }
 
@@ -287,6 +312,31 @@ fn subtract_codex_usage_bucket(
         long_context_output_tokens: total
             .long_context_output_tokens
             .saturating_sub(excluded.long_context_output_tokens),
+    }
+}
+
+fn add_codex_usage_buckets(left: CodexUsageBucket, right: CodexUsageBucket) -> CodexUsageBucket {
+    CodexUsageBucket {
+        input_tokens: left.input_tokens.saturating_add(right.input_tokens),
+        cached_input_tokens: left
+            .cached_input_tokens
+            .saturating_add(right.cached_input_tokens),
+        cache_creation_tokens: left
+            .cache_creation_tokens
+            .saturating_add(right.cache_creation_tokens),
+        output_tokens: left.output_tokens.saturating_add(right.output_tokens),
+        long_context_input_tokens: left
+            .long_context_input_tokens
+            .saturating_add(right.long_context_input_tokens),
+        long_context_cached_input_tokens: left
+            .long_context_cached_input_tokens
+            .saturating_add(right.long_context_cached_input_tokens),
+        long_context_cache_creation_tokens: left
+            .long_context_cache_creation_tokens
+            .saturating_add(right.long_context_cache_creation_tokens),
+        long_context_output_tokens: left
+            .long_context_output_tokens
+            .saturating_add(right.long_context_output_tokens),
     }
 }
 
