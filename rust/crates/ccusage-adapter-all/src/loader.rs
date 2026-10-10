@@ -783,7 +783,8 @@ fn summary_rows(
                 .or(summary.session_id.as_ref())?
                 .clone();
             let total_tokens = summary.total_tokens();
-            if total_tokens == 0 {
+            // Cost-only rows, such as Copilot credits missing from modelMetrics, still bill.
+            if total_tokens == 0 && summary.total_cost == 0.0 {
                 return None;
             }
             let metadata = summary_metadata(&summary, include_project_path);

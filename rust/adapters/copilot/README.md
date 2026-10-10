@@ -33,6 +33,14 @@ separate. Session-state reasoning tokens are already included in output tokens; 
 reasoning is included when total usage metadata shows it is separate. Internal model suffixes such
 as `-1m` and `-1m-internal` are removed before pricing and source deduplication.
 
+`modelMetrics` only covers the running Copilot process, while the session-wide `totalNanoAiu`
+on `session.shutdown` and `session.usage_checkpoint` covers the whole session (1 AIU is one
+GitHub AI credit, $0.01). At every shutdown, and at checkpoints after the last one, the session total
+minus the per-model `totalNanoAiu` reported so far is unexplained; what stays unexplained at every
+later snapshot becomes cost-only `unknown` entries, dated where it first stays. Sessions without checkpoints
+(older Copilot versions restart both totals on every resume), with a shutdown missing either total,
+or with OpenTelemetry rows get no such entries.
+
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.
 

@@ -21,7 +21,7 @@ use crate::{
 
 use super::{
     DailySummaries, DedupeIndexVec, advisor_usages_from_line, chunk_file_indexes_by_size,
-    deserialize_usage_line, is_semver_prefix,
+    deserialize_usage_line, is_anthropic_message_id, is_semver_prefix,
     paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
     sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
@@ -469,7 +469,8 @@ fn push_deduped_daily_entry(
                         && existing.request_id.as_deref() == request_id
                         && (request_id.is_some()
                             || (existing.session_id == entry.session_id
-                                && existing.timestamp == entry.timestamp)))
+                                && (is_anthropic_message_id(message_id)
+                                    || existing.timestamp == entry.timestamp))))
                         .then_some(dedupe_index.index)
                 })
             })
@@ -893,6 +894,43 @@ mod tests {
                 .sum::<u64>(),
             30
         );
+    }
+
+    #[test]
+    fn dedupes_anthropic_message_id_from_same_session_at_distinct_timestamps() {
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let mut first = daily_loaded_entry_at(
+            DailyEntryFixture {
+                message_id: "msg_01AbC2DeF3",
+                request_id: "unused",
+                is_sidechain: false,
+                cache_read_tokens: 0,
+                output_tokens: 25,
+            },
+            "session-a",
+            TimestampMs::from_millis(1_774_000_000_000),
+        );
+        first.request_id = None;
+        push_deduped_daily_entry(first, &mut deduped_indexes, &mut deduped);
+
+        let mut second = daily_loaded_entry_at(
+            DailyEntryFixture {
+                message_id: "msg_01AbC2DeF3",
+                request_id: "unused",
+                is_sidechain: false,
+                cache_read_tokens: 0,
+                output_tokens: 25,
+            },
+            "session-a",
+            TimestampMs::from_millis(1_774_000_000_500),
+        );
+        second.request_id = None;
+        push_deduped_daily_entry(second, &mut deduped_indexes, &mut deduped);
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].usage.output_tokens, 25);
     }
 
     #[test]

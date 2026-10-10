@@ -74,6 +74,9 @@ fn copilot_fixture() -> Fixture {
         "copilot/session-state/session-b/events.jsonl": include_str!(
             "../../../adapters/copilot/tests/fixtures/session-state/session-b/events.jsonl"
         ),
+        "copilot/session-state/session-credits/events.jsonl": include_str!(
+            "../../../adapters/copilot/tests/fixtures/session-state/session-credits/events.jsonl"
+        ),
         "copilot/otel/trace.jsonl": include_str!(
             "../../../adapters/copilot/tests/fixtures/otel/trace.jsonl"
         ),

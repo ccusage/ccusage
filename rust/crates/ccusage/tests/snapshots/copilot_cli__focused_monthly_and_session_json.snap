@@ -31,34 +31,43 @@ Monthly JSON
     {
       "cacheCreationTokens": 15,
       "cacheReadTokens": 10,
-      "inputTokens": 72,
-      "messageCount": 1,
+      "inputTokens": 112,
+      "messageCount": 3,
       "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.08,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0
+        },
         {
           "cacheCreationTokens": 15,
           "cacheReadTokens": 10,
-          "cost": 0.0007993750000000001,
-          "inputTokens": 72,
+          "cost": 0.001049375,
+          "inputTokens": 112,
           "modelName": "gpt-5.4",
-          "outputTokens": 38
+          "outputTokens": 48
         }
       ],
       "modelsUsed": [
-        "gpt-5.4"
+        "gpt-5.4",
+        "unknown"
       ],
       "month": "2026-02",
-      "outputTokens": 38,
-      "totalCost": 0.0007993750000000001,
-      "totalTokens": 135
+      "outputTokens": 48,
+      "totalCost": 0.08104937499999999,
+      "totalTokens": 185
     }
   ],
   "totals": {
     "cacheCreationTokens": 45,
     "cacheReadTokens": 30,
-    "inputTokens": 235,
-    "outputTokens": 132,
-    "totalCost": 0.004161875,
-    "totalTokens": 442
+    "inputTokens": 275,
+    "outputTokens": 142,
+    "totalCost": 0.084411875,
+    "totalTokens": 492
   }
 }
 
@@ -141,14 +150,49 @@ Session JSON
       "sessionId": "session-c",
       "totalCost": 0.0001375,
       "totalTokens": 15
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-02-03T02:00:00.000Z",
+      "inputTokens": 40,
+      "lastActivity": "2026-02-04T01:00:00.000Z",
+      "messageCount": 2,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.08,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00025,
+          "inputTokens": 40,
+          "modelName": "gpt-5.4",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.4",
+        "unknown"
+      ],
+      "outputTokens": 10,
+      "projectPath": "GitHub Copilot CLI",
+      "sessionId": "session-credits",
+      "totalCost": 0.08025,
+      "totalTokens": 50
     }
   ],
   "totals": {
     "cacheCreationTokens": 45,
     "cacheReadTokens": 30,
-    "inputTokens": 235,
-    "outputTokens": 132,
-    "totalCost": 0.004161875,
-    "totalTokens": 442
+    "inputTokens": 275,
+    "outputTokens": 142,
+    "totalCost": 0.084411875,
+    "totalTokens": 492
   }
 }

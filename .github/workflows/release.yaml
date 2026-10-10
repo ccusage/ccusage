@@ -117,7 +117,9 @@ jobs:
       - build-native-packages
     if: needs.tagpr.outputs.tag != ''
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 10
+    # The pinned pnpm is compiled from source, and a cache miss on this arm
+    # runner takes longer than ten minutes to build it.
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
