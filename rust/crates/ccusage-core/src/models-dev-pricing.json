@@ -5347,7 +5347,7 @@
 	},
 	"aws-bedrock/claude-sonnet-5-5": {
 		"cost": {
-			"cache_read": 0.2,
+			"cache_read": 0.1,
 			"cache_write": 2.5,
 			"input": 2,
 			"output": 10
@@ -5608,7 +5608,7 @@
 	},
 	"azure-anthropic/claude-sonnet-5-5": {
 		"cost": {
-			"cache_read": 0.2,
+			"cache_read": 0.1,
 			"cache_write": 2.5,
 			"input": 2,
 			"output": 10
@@ -33765,8 +33765,8 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.0168,
-			"input": 0.0168,
+			"cache_read": 0.018,
+			"input": 0.018,
 			"output": 1.28
 		},
 		"limit": {
