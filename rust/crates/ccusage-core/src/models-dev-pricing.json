@@ -3529,6 +3529,15 @@
 			"context": 128000
 		}
 	},
+	"amazon/qwen.qwen3-coder-next": {
+		"cost": {
+			"input": 0.6,
+			"output": 1.44
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"amazon/zai.glm-4.7-flash": {
 		"cost": {
 			"input": 0.07,
@@ -9223,6 +9232,28 @@
 			"context": 1000000
 		}
 	},
+	"databricks/databricks-qwen3-next-80b-a3b-instruct": {
+		"cost": {
+			"cache_read": 0.015001,
+			"cache_write": 0.15001,
+			"input": 0.15001,
+			"output": 1.20001
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
+	"databricks/databricks-qwen3-next-80b-a3b-instruct@eu": {
+		"cost": {
+			"cache_read": 0.015001,
+			"cache_write": 0.15001,
+			"input": 0.15001,
+			"output": 1.20001
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
 	"deep-deepseek-v4-flash": {
 		"cost": {
 			"cache_read": 0.0308,
@@ -9280,6 +9311,62 @@
 		},
 		"limit": {
 			"context": 4096
+		}
+	},
+	"deepinfra/Qwen/Qwen3-235B-A22B-Instruct-2507": {
+		"cost": {
+			"input": 0.09,
+			"output": 0.55
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"deepinfra/Qwen/Qwen3-Coder-480B-A35B-Instruct": {
+		"cost": {
+			"input": 0.4,
+			"output": 1.6
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"deepinfra/Qwen/Qwen3-Max": {
+		"cost": {
+			"cache_read": 0.24,
+			"input": 1.2,
+			"output": 6
+		},
+		"limit": {
+			"context": 256000
+		}
+	},
+	"deepinfra/Qwen/Qwen3-Next-80B-A3B-Instruct": {
+		"cost": {
+			"input": 0.09,
+			"output": 1.1
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"deepinfra/Qwen/Qwen3-VL-235B-A22B-Instruct": {
+		"cost": {
+			"cache_read": 0.11,
+			"input": 0.2,
+			"output": 0.88
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"deepinfra/Qwen/Qwen3-VL-30B-A3B-Instruct": {
+		"cost": {
+			"input": 0.15,
+			"output": 0.6
+		},
+		"limit": {
+			"context": 262144
 		}
 	},
 	"deepinfra/deepseek-ai/DeepSeek-R1": {
@@ -17711,6 +17798,15 @@
 			"context": 512
 		}
 	},
+	"ionos/Qwen/Qwen3-Coder-Next": {
+		"cost": {
+			"input": 0.16809,
+			"output": 0.89648
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"ionos/meta-llama/Llama-3.3-70B-Instruct": {
 		"cost": {
 			"input": 0.72839,
@@ -21598,6 +21694,16 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 1000000
+		}
+	},
+	"nebius/Qwen/Qwen3-235B-A22B-Instruct-2507": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 0.2,
+			"output": 0.6
+		},
+		"limit": {
+			"context": 262144
 		}
 	},
 	"nebius/deepseek-ai/DeepSeek-V4-Flash-0731": {
@@ -26138,24 +26244,13 @@
 	},
 	"qwen/qwen-vl-max": {
 		"cost": {
-			"cache_read": 0.16,
-			"input": 0.8,
-			"output": 3.2
+			"cache_read": 0.023,
+			"input": 0.23,
+			"output": 0.58
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 131072
-		}
-	},
-	"qwen/qwen-vl-plus": {
-		"cost": {
-			"cache_read": 0.042,
-			"input": 0.21,
-			"output": 0.63
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 131072
+			"context": 128000
 		}
 	},
 	"qwen/qwen2.5-coder-32b-instruct": {
@@ -26319,21 +26414,12 @@
 			"context": 262144
 		}
 	},
-	"qwen/qwen3-coder-next@eu": {
-		"cost": {
-			"input": 0.3,
-			"output": 1.5
-		},
-		"limit": {
-			"context": 262144
-		}
-	},
 	"qwen/qwen3-coder-plus": {
 		"cost": {
-			"cache_read": 0.2,
-			"cache_write": 1.25,
-			"input": 1,
-			"output": 5
+			"cache_read": 0.1148,
+			"cache_write": 0.7175,
+			"input": 0.574,
+			"output": 2.294
 		},
 		"limit": {
 			"context": 1000000
@@ -26347,17 +26433,6 @@
 		},
 		"limit": {
 			"context": 256000
-		}
-	},
-	"qwen/qwen3-max@eu": {
-		"cost": {
-			"cache_read": 0.24,
-			"cache_write": 1.5,
-			"input": 1.2,
-			"output": 6
-		},
-		"limit": {
-			"context": 262144
 		}
 	},
 	"qwen/qwen3-next-80b-a3b-thinking": {
@@ -27069,16 +27144,6 @@
 		},
 		"limit": {
 			"context": 262144
-		}
-	},
-	"qwen/qwq-plus": {
-		"cost": {
-			"input": 0.8,
-			"output": 2.4
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 131072
 		}
 	},
 	"qwen2-5-14b-instruct": {
@@ -28363,6 +28428,24 @@
 		"cost": {
 			"input": 1.00854,
 			"output": 1.00854
+		},
+		"limit": {
+			"context": 128000
+		}
+	},
+	"scaleway/qwen3-235b-a22b-instruct-2507": {
+		"cost": {
+			"input": 0.84045,
+			"output": 2.52135
+		},
+		"limit": {
+			"context": 250000
+		}
+	},
+	"scaleway/qwen3-coder-30b-a3b-instruct": {
+		"cost": {
+			"input": 0.22412,
+			"output": 0.89648
 		},
 		"limit": {
 			"context": 128000
