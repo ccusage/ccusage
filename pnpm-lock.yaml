@@ -59,7 +59,7 @@ importers:
     devDependencies:
       '@ryoppippi/vite-plugin-cloudflare-redirect':
         specifier: catalog:docs
-        version: 1.1.3(vite@8.3.3(@types/node@24.19.1))
+        version: 1.1.3(vite@8.3.4(@types/node@24.19.1))
       '@types/node':
         specifier: catalog:types
         version: 24.19.1
@@ -71,7 +71,7 @@ importers:
         version: 2.0.0-alpha.20(@types/node@24.19.1)(postcss@8.5.29)
       vitepress-plugin-group-icons:
         specifier: catalog:docs
-        version: 1.7.7(vite@8.3.3(@types/node@24.19.1))
+        version: 1.7.7(vite@8.3.4(@types/node@24.19.1))
       vitepress-plugin-llms:
         specifier: catalog:docs
         version: 1.14.0
@@ -941,8 +941,8 @@ packages:
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
 
-  vite@8.3.3:
-    resolution: {integrity: sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg==}
+  vite@8.3.4:
+    resolution: {integrity: sha512-IftLE8phJhdNRIGNEV4JCCvfNScoZQVfcXaN8TQropWGJtOHcu+iAB9pHcuGvmEb/kddw0LBe/jS8ztdC6xdiQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -1137,11 +1137,11 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@ryoppippi/vite-plugin-cloudflare-redirect@1.1.3(vite@8.3.3(@types/node@24.19.1))':
+  '@ryoppippi/vite-plugin-cloudflare-redirect@1.1.3(vite@8.3.4(@types/node@24.19.1))':
     dependencies:
       cloudflare-redirect-parser: 1.0.0
       defu: 6.1.7
-      vite: 8.3.3(@types/node@24.19.1)
+      vite: 8.3.4(@types/node@24.19.1)
 
   '@shikijs/core@4.5.0':
     dependencies:
@@ -1225,10 +1225,10 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vitejs/plugin-vue@6.0.9(vite@8.3.3(@types/node@24.19.1))(vue@3.5.43)':
+  '@vitejs/plugin-vue@6.0.9(vite@8.3.4(@types/node@24.19.1))(vue@3.5.43)':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.3.3(@types/node@24.19.1)
+      vite: 8.3.4(@types/node@24.19.1)
       vue: 3.5.43
 
   '@vue/compiler-core@3.5.43':
@@ -1950,7 +1950,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite@8.3.3(@types/node@24.19.1):
+  vite@8.3.4(@types/node@24.19.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -1961,13 +1961,13 @@ snapshots:
       '@types/node': 24.19.1
       fsevents: 2.3.3
 
-  vitepress-plugin-group-icons@1.7.7(vite@8.3.3(@types/node@24.19.1)):
+  vitepress-plugin-group-icons@1.7.7(vite@8.3.4(@types/node@24.19.1)):
     dependencies:
       '@iconify-json/logos': 1.2.15
       '@iconify-json/vscode-icons': 1.2.86
       '@iconify/utils': 3.1.7
     optionalDependencies:
-      vite: 8.3.3(@types/node@24.19.1)
+      vite: 8.3.4(@types/node@24.19.1)
 
   vitepress-plugin-llms@1.14.0:
     dependencies:
@@ -1996,7 +1996,7 @@ snapshots:
       '@iconify-json/simple-icons': 1.2.99
       '@shikijs/transformers': 4.5.0
       '@types/markdown-it': 14.2.0
-      '@vitejs/plugin-vue': 6.0.9(vite@8.3.3(@types/node@24.19.1))(vue@3.5.43)
+      '@vitejs/plugin-vue': 6.0.9(vite@8.3.4(@types/node@24.19.1))(vue@3.5.43)
       '@vue/devtools-api': 8.2.1
       '@vue/shared': 3.5.43
       '@vueuse/core': 14.4.0(vue@3.5.43)
@@ -2005,7 +2005,7 @@ snapshots:
       mark.js: 8.11.1
       minisearch: 7.2.0
       shiki: 4.5.0
-      vite: 8.3.3(@types/node@24.19.1)
+      vite: 8.3.4(@types/node@24.19.1)
       vue: 3.5.43
     optionalDependencies:
       postcss: 8.5.29
