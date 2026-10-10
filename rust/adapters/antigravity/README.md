@@ -19,6 +19,7 @@ The adapter reads `.db` files below these default roots:
 - `~/.gemini/antigravity-cli/conversations/`
 - `~/.gemini/antigravity-ide/conversations/`
 - `~/.gemini/antigravity-backup/conversations/`
+- `~/.gemini/antigravity-acp/conversations/`
 - `~/.config/antigravity/conversations/`
 
 `ANTIGRAVITY_DATA_DIR` accepts one or more comma-separated data roots. Each
