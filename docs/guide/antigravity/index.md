@@ -28,6 +28,7 @@ By default, ccusage scans these local conversation roots:
 - `~/.gemini/antigravity-cli/conversations/`
 - `~/.gemini/antigravity-ide/conversations/`
 - `~/.gemini/antigravity-backup/conversations/`
+- `~/.gemini/antigravity-acp/conversations/`
 - `~/.config/antigravity/conversations/`
 
 Each root is independent from Gemini CLI discovery. To use one or more custom

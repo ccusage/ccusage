@@ -6,11 +6,12 @@ use crate::Result;
 
 pub(super) const ANTIGRAVITY_DATA_DIR_ENV: &str = "ANTIGRAVITY_DATA_DIR";
 
-const DEFAULT_ANTIGRAVITY_ROOTS: [&str; 5] = [
+const DEFAULT_ANTIGRAVITY_ROOTS: [&str; 6] = [
     ".gemini/antigravity",
     ".gemini/antigravity-cli",
     ".gemini/antigravity-ide",
     ".gemini/antigravity-backup",
+    ".gemini/antigravity-acp",
     ".config/antigravity",
 ];
 
@@ -71,6 +72,7 @@ mod tests {
             ".gemini/antigravity-cli/conversations/cli.db": "",
             ".gemini/antigravity-ide/conversations/ide-alt.db": "",
             ".gemini/antigravity-backup/conversations/backup.db": "",
+            ".gemini/antigravity-acp/conversations/acp.db": "",
             ".config/antigravity/conversations/config.db": "",
         });
         let _guard = EnvVarsGuard::set_many([
@@ -81,7 +83,7 @@ mod tests {
 
         let paths = conversation_db_paths().unwrap();
 
-        assert_eq!(paths.len(), 5);
+        assert_eq!(paths.len(), 6);
         assert!(paths.iter().all(|path| path.extension().unwrap() == "db"));
     }
 
