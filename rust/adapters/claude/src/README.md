@@ -35,8 +35,10 @@ Sidechain entries:
   [#913](https://github.com/ccusage/ccusage/issues/913).
 - When `requestId` is missing, both loaders deduplicate by message ID, effective
   session ID, and timestamp. Repeated writes at the same timestamp still
-  collapse; distinct timestamps stay separate. Both keep gateway responses that
-  reuse a message ID in different sessions separate.
+  collapse; distinct timestamps stay separate, except that real Anthropic
+  message IDs (`msg_` prefix) collapse across timestamps because Claude Code
+  writes one line per content block for a single response. Both keep gateway
+  responses that reuse a message ID in different sessions separate.
 - When `requestId` is present, both loaders deduplicate matching message and
   request IDs across sessions because Claude Code can copy one response into
   multiple session transcripts.

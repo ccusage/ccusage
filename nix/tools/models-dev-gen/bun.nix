@@ -17,9 +17,9 @@
     url = "https://registry.npmjs.org/@types/node/-/node-24.13.3.tgz";
     hash = "sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==";
   };
-  "remeda@2.33.7" = fetchurl {
-    url = "https://registry.npmjs.org/remeda/-/remeda-2.33.7.tgz";
-    hash = "sha512-cXlyjevWx5AcslOUEETG4o8XYi9UkoCXcJmj7XhPFVbla+ITuOBxv6ijBrmbeg+ZhzmDThkNdO+iXKUfrJep1w==";
+  "remeda@2.51.0" = fetchurl {
+    url = "https://registry.npmjs.org/remeda/-/remeda-2.51.0.tgz";
+    hash = "sha512-4X/oHoc10jkt1w1V8yG/8tS8jYYj7vaNZs3nrvuDVRE1+nDqRAnX/L0PbwL4wOKcXSLHnkXyOQOinSBGQdJ35A==";
   };
   "undici-types@7.18.2" = fetchurl {
     url = "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz";

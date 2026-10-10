@@ -37,7 +37,7 @@ jobs:
           ref: main
           fetch-depth: 0
       - id: tagpr
-        uses: Songmu/tagpr@967f2ab22be958948fb5bd439bfa3d404dd9dee8 # v1.21.1
+        uses: Songmu/tagpr@0c4eb5a3b0862693702acea436a7c68bd586530d # v1.21.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -117,7 +117,9 @@ jobs:
       - build-native-packages
     if: needs.tagpr.outputs.tag != ''
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 10
+    # The pinned pnpm is compiled from source, and a cache miss on this arm
+    # runner takes longer than ten minutes to build it.
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
@@ -138,7 +140,7 @@ jobs:
       # the flake's own pinned build, invoked by every package's prepack script.
       - run: nix profile install --inputs-from . .#pnpm .#publint
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: ccusage-native-*
           path: ${{ runner.temp }}/native-packages

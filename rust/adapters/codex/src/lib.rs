@@ -678,6 +678,27 @@ mod tests {
     }
 
     #[test]
+    fn applies_documented_gpt_6_fast_multipliers() {
+        let pricing = PricingMap::load_embedded();
+        let usage = CodexModelUsage {
+            input_tokens: 1_000_000,
+            cached_input_tokens: 500_000,
+            output_tokens: 100_000,
+            total_tokens: 1_100_000,
+            ..CodexModelUsage::default()
+        };
+
+        for model in ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"] {
+            let standard =
+                calculate_codex_model_cost(model, &usage, &pricing, CodexSpeed::Standard);
+            let fast = calculate_codex_model_cost(model, &usage, &pricing, CodexSpeed::Fast);
+
+            assert!(standard > 0.0, "{model} has embedded pricing");
+            assert!((fast - (standard * 2.0)).abs() < 1e-9, "{model}");
+        }
+    }
+
+    #[test]
     fn uses_recorded_service_tiers_in_auto_mode() {
         let mut pricing = PricingMap::default();
         pricing.load_json(

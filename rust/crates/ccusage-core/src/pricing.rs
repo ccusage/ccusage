@@ -4867,7 +4867,7 @@ mod tests {
         for (name, fast, flex) in [
             ("openai/gpt-6-astra", 2.0, 0.5),
             ("openai.gpt-5.4", 2.0, 0.5),
-            ("global.openai.gpt-6.1-sol", 1.0, 0.5),
+            ("global.openai.gpt-6.1-sol", 2.0, 0.5),
             ("global.openai.gpt-5.4-mini-2026-03-17", 1.0, 0.5),
             ("openai.gpt-5.4-mini-extra", 1.0, 1.0),
         ] {

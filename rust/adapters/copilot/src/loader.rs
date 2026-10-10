@@ -1,9 +1,16 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    path::Path,
+    sync::Arc,
+};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{CopilotUsageEntry, parse_otel_file, parse_session_state_file},
+    parser::{
+        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry, parse_otel_file,
+        parse_session_state_file,
+    },
     paths::{CopilotSourceKind, paths},
 };
 use crate::{
@@ -56,15 +63,19 @@ fn load_entries_inner(
                     path.display(),
                 ),
             );
-            Vec::new()
+            CopilotSourceUsage::default()
         })
     });
     let mut otel_entries = Vec::new();
     let mut session_state_entries = Vec::new();
-    for (source, file_entries) in sources.iter().map(|source| source.kind).zip(parsed) {
+    let mut credit_snapshots = Vec::new();
+    for (source, file_usage) in sources.iter().map(|source| source.kind).zip(parsed) {
         match source {
-            CopilotSourceKind::Otel => otel_entries.extend(file_entries),
-            CopilotSourceKind::SessionState => session_state_entries.extend(file_entries),
+            CopilotSourceKind::Otel => otel_entries.extend(file_usage.entries),
+            CopilotSourceKind::SessionState => {
+                session_state_entries.extend(file_usage.entries);
+                credit_snapshots.extend(file_usage.credit_snapshots);
+            }
         }
     }
     let (since_millis, until_millis) = date_range_bounds_ms(
@@ -74,6 +85,19 @@ fn load_entries_inner(
     );
     let session_state =
         reconcile_session_state_entries(session_state_entries, since_millis, until_millis);
+    // OpenTelemetry rows record every model call, so sessions that have them
+    // are left to that source rather than to the coarser credit totals.
+    let otel_sessions = otel_entries
+        .iter()
+        .map(|entry| entry.session_id.clone())
+        .collect::<HashSet<_>>();
+    let credit_gaps = credit_gap_entries(
+        credit_snapshots,
+        &session_state.attributed_nano_aiu,
+        &otel_sessions,
+        since_millis,
+        until_millis,
+    );
     let latest_shutdown_timestamps = session_state
         .shutdown_entries
         .iter()
@@ -94,6 +118,7 @@ fn load_entries_inner(
         .entries
         .into_iter()
         .chain(otel_entries)
+        .chain(credit_gaps)
         .map(|entry| usage_entry_to_loaded(entry, tz.as_ref(), shared.mode, pricing))
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
@@ -103,6 +128,9 @@ fn load_entries_inner(
 struct SessionStateReconciliation {
     entries: Vec<CopilotUsageEntry>,
     shutdown_entries: Vec<CopilotUsageEntry>,
+    /// Per-model credits reported at each shutdown, keyed by session and
+    /// shutdown timestamp, including shutdowns outside `--since`/`--until`.
+    attributed_nano_aiu: HashMap<(String, i64), u64>,
 }
 
 // Session-state usage is cumulative per `(session, model)`, so resumed sessions
@@ -124,6 +152,7 @@ fn reconcile_session_state_entries(
     }
     let mut interval_indices = Vec::new();
     let mut shutdown_entries = Vec::new();
+    let mut attributed_nano_aiu = HashMap::<(String, i64), u64>::new();
     // Sort keys for deterministic output across HashMap iteration.
     let mut keys = grouped.keys().cloned().collect::<Vec<_>>();
     keys.sort();
@@ -133,22 +162,27 @@ fn reconcile_session_state_entries(
         let latest_visible = sorted.iter().rposition(|index| {
             until_millis.is_none_or(|end| entries[*index].timestamp.as_millis() < end)
         });
-        let Some(latest_pos) = latest_visible else {
-            continue;
-        };
-        shutdown_entries.push(entries[sorted[latest_pos]].clone());
+        if let Some(latest_pos) = latest_visible {
+            shutdown_entries.push(entries[sorted[latest_pos]].clone());
+        }
         let mut previous: Option<&CopilotUsageEntry> = None;
-        for position in 0..=latest_pos {
-            let current = &entries[sorted[position]];
-            if since_millis.is_some_and(|start| current.timestamp.as_millis() < start) {
-                previous = Some(current);
-                continue;
-            }
+        // Credits are collected past `--until` too, so a breakdown that a later
+        // shutdown catches up on is judged the same way in every date range.
+        for (position, index) in sorted.iter().enumerate() {
+            let current = &entries[*index];
             let reconciled = previous.map_or_else(
                 || current.clone(),
                 |baseline| subtract_usage(current, baseline),
             );
             previous = Some(current);
+            *attributed_nano_aiu
+                .entry((current.session_id.clone(), current.timestamp.as_millis()))
+                .or_default() += reconciled.nano_aiu;
+            if latest_visible.is_none_or(|latest_pos| position > latest_pos)
+                || since_millis.is_some_and(|start| current.timestamp.as_millis() < start)
+            {
+                continue;
+            }
             if has_usage(&reconciled) {
                 interval_indices.push(reconciled);
             }
@@ -160,6 +194,116 @@ fn reconcile_session_state_entries(
     SessionStateReconciliation {
         entries: interval_indices,
         shutdown_entries,
+        attributed_nano_aiu,
+    }
+}
+
+/// Model label for credits Copilot billed without saying which model used them.
+const UNATTRIBUTED_MODEL: &str = "unknown";
+
+/// Credits in the session-wide `totalNanoAiu` that no `modelMetrics` entry
+/// accounts for, as cost-only entries.
+///
+/// `modelMetrics` only covers the running Copilot process: a resumed session,
+/// or a session the client restarted, reports an empty or partial breakdown,
+/// while `totalNanoAiu` keeps the whole session. At every shutdown, and at the
+/// checkpoints after the last one (sessions still open or never shut down
+/// cleanly), the unexplained amount is the session total minus the per-model
+/// credits reported so far. A shutdown can carry a breakdown that a later one
+/// catches up on, so only what stays unexplained at every later snapshot is
+/// reported, dated at the first snapshot from which it stays. Checkpoints
+/// before a shutdown are already part of that shutdown's total.
+///
+/// Only sessions with checkpoints qualify: Copilot versions that predate them
+/// restart both totals on every resume, so the cumulative reading used for
+/// `modelMetrics` does not hold there and the two cannot be compared.
+fn credit_gap_entries(
+    snapshots: Vec<CopilotCreditSnapshot>,
+    attributed_nano_aiu: &HashMap<(String, i64), u64>,
+    skipped_sessions: &HashSet<String>,
+    since_millis: Option<i64>,
+    until_millis: Option<i64>,
+) -> Vec<CopilotUsageEntry> {
+    let mut seen = HashSet::new();
+    let mut sessions = BTreeMap::<String, Vec<CopilotCreditSnapshot>>::new();
+    for snapshot in snapshots {
+        if seen.insert(snapshot.dedup_key.clone()) {
+            sessions
+                .entry(snapshot.session_id.clone())
+                .or_default()
+                .push(snapshot);
+        }
+    }
+    let mut gaps = Vec::new();
+    for (session_id, mut snapshots) in sessions {
+        // Sessions without checkpoints come from Copilot versions that restart
+        // their totals. Without a credit total on every shutdown, the token
+        // usage already reported cannot be told apart from what is missing.
+        if skipped_sessions.contains(&session_id)
+            || snapshots.iter().all(|snapshot| snapshot.is_shutdown)
+            || snapshots
+                .iter()
+                .any(|snapshot| snapshot.is_shutdown && snapshot.total_nano_aiu.is_none())
+        {
+            continue;
+        }
+        snapshots.sort_by_key(|snapshot| (snapshot.timestamp, snapshot.is_shutdown));
+        let last_shutdown = snapshots.iter().rposition(|snapshot| snapshot.is_shutdown);
+        let mut session_total = 0_u64;
+        let mut attributed = 0_u64;
+        let mut points = Vec::new();
+        for (position, snapshot) in snapshots.iter().enumerate() {
+            if !snapshot.is_shutdown && last_shutdown.is_some_and(|last| position < last) {
+                continue;
+            }
+            session_total = session_total.max(snapshot.total_nano_aiu.unwrap_or_default());
+            if snapshot.is_shutdown {
+                attributed += attributed_nano_aiu
+                    .get(&(session_id.clone(), snapshot.timestamp.as_millis()))
+                    .copied()
+                    .unwrap_or_default();
+            }
+            points.push((snapshot, session_total.saturating_sub(attributed)));
+        }
+        let mut lasting = u64::MAX;
+        for (_, unexplained) in points.iter_mut().rev() {
+            lasting = lasting.min(*unexplained);
+            *unexplained = lasting;
+        }
+        let mut reported = 0_u64;
+        for (snapshot, lasting) in points {
+            let gap = lasting.saturating_sub(reported);
+            reported = reported.max(lasting);
+            let millis = snapshot.timestamp.as_millis();
+            if gap == 0
+                || since_millis.is_some_and(|start| millis < start)
+                || until_millis.is_some_and(|end| millis >= end)
+            {
+                continue;
+            }
+            gaps.push(credit_gap_entry(snapshot, gap));
+        }
+    }
+    gaps
+}
+
+fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotUsageEntry {
+    CopilotUsageEntry {
+        timestamp: snapshot.timestamp,
+        timestamp_text: crate::format_rfc3339_millis(snapshot.timestamp),
+        session_id: snapshot.session_id.clone(),
+        model: UNATTRIBUTED_MODEL.to_string(),
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        reasoning_output_tokens: 0,
+        extra_total_tokens: 0,
+        request_count: 0,
+        nano_aiu,
+        // One AIU is one GitHub AI credit, billed at $0.01.
+        cost_usd: Some(nano_aiu as f64 / 1e11),
+        dedup_key: snapshot.dedup_key.clone(),
     }
 }
 
@@ -202,6 +346,8 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
             .extra_total_tokens
             .saturating_sub(baseline.extra_total_tokens),
         request_count: current.request_count.saturating_sub(baseline.request_count),
+        nano_aiu: current.nano_aiu.saturating_sub(baseline.nano_aiu),
+        cost_usd: None,
         dedup_key: current.dedup_key.clone(),
     }
 }
@@ -216,9 +362,12 @@ fn has_usage(entry: &CopilotUsageEntry) -> bool {
         || entry.request_count > 0
 }
 
-fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<Vec<CopilotUsageEntry>> {
+fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<CopilotSourceUsage> {
     match kind {
-        CopilotSourceKind::Otel => parse_otel_file(path),
+        CopilotSourceKind::Otel => Ok(CopilotSourceUsage {
+            entries: parse_otel_file(path)?,
+            credit_snapshots: Vec::new(),
+        }),
         CopilotSourceKind::SessionState => parse_session_state_file(path),
     }
 }
@@ -231,6 +380,7 @@ fn read_otel_file(
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
     Ok(read_source_file(path, CopilotSourceKind::Otel)?
+        .entries
         .into_iter()
         .map(|entry| usage_entry_to_loaded(entry, tz, mode, pricing))
         .collect())
@@ -264,7 +414,7 @@ fn usage_entry_to_loaded(
             model: Some(entry.model.clone()),
             id: Some(entry.dedup_key),
         },
-        cost_usd: None,
+        cost_usd: entry.cost_usd,
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
@@ -272,13 +422,18 @@ fn usage_entry_to_loaded(
     let cost = calculate_cost_for_usage_at(
         Some(&entry.model),
         cost_usage,
-        None,
+        entry.cost_usd,
         Some(entry.timestamp),
         mode,
         Some(pricing),
     );
-    let missing_pricing_model =
-        missing_pricing_model_for_usage(Some(&entry.model), cost_usage, None, mode, Some(pricing));
+    let missing_pricing_model = missing_pricing_model_for_usage(
+        Some(&entry.model),
+        cost_usage,
+        entry.cost_usd,
+        mode,
+        Some(pricing),
+    );
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -1086,5 +1241,312 @@ mod tests {
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);
         assert_eq!(entries[0].data.message.usage.output_tokens, 50);
         assert_eq!(entries[0].message_count, Some(1));
+    }
+
+    const NANO_AIU_PER_CREDIT: u64 = 1_000_000_000;
+
+    fn checkpoint(id: &str, timestamp: &str, credits: u64) -> String {
+        json!({
+            "type": "session.usage_checkpoint",
+            "id": id,
+            "timestamp": timestamp,
+            "data": {"totalNanoAiu": credits * NANO_AIU_PER_CREDIT}
+        })
+        .to_string()
+    }
+
+    fn shutdown(id: &str, timestamp: &str, credits: u64, model_credits: Option<u64>) -> String {
+        let mut model = json!({"usage": {"inputTokens": 100, "outputTokens": 50}});
+        if let Some(model_credits) = model_credits {
+            model["totalNanoAiu"] = json!(model_credits * NANO_AIU_PER_CREDIT);
+        }
+        json!({
+            "type": "session.shutdown",
+            "id": id,
+            "timestamp": timestamp,
+            "data": {
+                "totalNanoAiu": credits * NANO_AIU_PER_CREDIT,
+                "modelMetrics": {"test-model": model}
+            }
+        })
+        .to_string()
+    }
+
+    fn load_copilot_home(
+        fixture: &ccusage_test_support::Fixture,
+        shared: &crate::cli::SharedArgs,
+    ) -> Vec<LoadedEntry> {
+        let _guard = EnvVarsGuard::set_many([
+            ("HOME", Some(OsString::from(fixture.path("home")))),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+            (super::super::paths::COPILOT_HOME_ENV, None),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let mut entries = load_entries_inner(shared, &crate::PricingMap::default()).unwrap();
+        ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, shared);
+        entries
+    }
+
+    fn utc_args() -> crate::cli::SharedArgs {
+        crate::cli::SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..crate::cli::SharedArgs::default()
+        }
+    }
+
+    /// `(date, model, total tokens, cost in whole credits)` per entry.
+    fn credit_rows(entries: &[LoadedEntry]) -> Vec<(String, String, u64, u64)> {
+        entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.date.to_string(),
+                    entry.model.clone().unwrap_or_default(),
+                    crate::total_usage_tokens(entry.data.message.usage),
+                    (entry.cost * 100.0).round() as u64,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reports_session_credits_missing_from_model_metrics() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                checkpoint("checkpoint-1", "2026-01-02T10:00:00.000Z", 51),
+                checkpoint("checkpoint-2", "2026-01-02T10:10:00.000Z", 73),
+                shutdown("shutdown-1", "2026-01-02T10:20:00.000Z", 93, Some(42)),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [
+                ("2026-01-02".to_string(), "test-model".to_string(), 150, 0),
+                ("2026-01-02".to_string(), "unknown".to_string(), 0, 51),
+            ]
+        );
+        assert_eq!(entries[1].message_count, None);
+        assert_eq!(entries[1].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn reports_checkpoint_credits_of_sessions_without_a_shutdown() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown("shutdown-1", "2026-01-02T10:00:00.000Z", 10, Some(10)),
+                checkpoint("checkpoint-1", "2026-01-02T11:00:00.000Z", 25),
+                checkpoint("checkpoint-2", "2026-01-03T11:00:00.000Z", 40),
+            ]
+            .join("\n"),
+            "home/.copilot/session-state/session-2/events.jsonl":
+                checkpoint("checkpoint-3", "2026-01-03T12:00:00.000Z", 7),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [
+                ("2026-01-02".to_string(), "test-model".to_string(), 150, 0),
+                ("2026-01-02".to_string(), "unknown".to_string(), 0, 15),
+                ("2026-01-03".to_string(), "unknown".to_string(), 0, 15),
+                ("2026-01-03".to_string(), "unknown".to_string(), 0, 7),
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_resumed_session_credits_when_the_last_shutdown_has_no_model_metrics() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                checkpoint("checkpoint-1", "2026-01-02T10:00:00.000Z", 1_072),
+                json!({
+                    "type": "session.resume",
+                    "timestamp": "2026-01-03T09:00:00.000Z",
+                    "data": {}
+                })
+                .to_string(),
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-1",
+                    "timestamp": "2026-01-03T10:00:00.000Z",
+                    "data": {"totalNanoAiu": 1_072 * NANO_AIU_PER_CREDIT, "modelMetrics": {}}
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-03".to_string(), "unknown".to_string(), 0, 1_072)]
+        );
+    }
+
+    #[test]
+    fn subtracts_credit_snapshots_before_since() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown("shutdown-1", "2026-01-02T10:00:00.000Z", 30, Some(10)),
+                checkpoint("checkpoint-1", "2026-01-03T10:00:00.000Z", 50),
+            ]
+            .join("\n"),
+        });
+        let shared = crate::cli::SharedArgs {
+            since: Some("20260103".to_string()),
+            ..utc_args()
+        };
+
+        let entries = load_copilot_home(&fixture, &shared);
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-03".to_string(), "unknown".to_string(), 0, 20)]
+        );
+    }
+
+    #[test]
+    fn does_not_count_credits_that_a_later_shutdown_attributes() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                checkpoint("checkpoint-1", "2026-01-02T09:00:00.000Z", 30),
+                shutdown("shutdown-1", "2026-01-02T10:00:00.000Z", 30, Some(30)),
+                checkpoint("checkpoint-2", "2026-01-02T11:00:00.000Z", 50),
+                shutdown("shutdown-2", "2026-01-02T12:00:00.000Z", 50, Some(35)),
+                shutdown("shutdown-3", "2026-01-02T13:00:00.000Z", 50, Some(50)),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-02".to_string(), "test-model".to_string(), 150, 0)]
+        );
+    }
+
+    #[test]
+    fn credit_gaps_do_not_depend_on_until() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                checkpoint("checkpoint-1", "2026-01-02T09:00:00.000Z", 30),
+                shutdown("shutdown-1", "2026-01-02T10:00:00.000Z", 30, Some(30)),
+                checkpoint("checkpoint-2", "2026-01-02T11:00:00.000Z", 50),
+                shutdown("shutdown-2", "2026-01-02T12:00:00.000Z", 50, Some(35)),
+                shutdown("shutdown-3", "2026-01-03T10:00:00.000Z", 50, Some(50)),
+            ]
+            .join("\n"),
+        });
+        let shared = crate::cli::SharedArgs {
+            until: Some("20260102".to_string()),
+            ..utc_args()
+        };
+
+        let entries = load_copilot_home(&fixture, &shared);
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-02".to_string(), "test-model".to_string(), 150, 0)]
+        );
+    }
+
+    #[test]
+    fn leaves_sessions_without_checkpoints_unchanged() {
+        // Copilot versions without checkpoints restart both totals on resume.
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown("shutdown-1", "2026-01-02T10:00:00.000Z", 60, Some(40)),
+                shutdown("shutdown-2", "2026-01-03T10:00:00.000Z", 25, Some(25)),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-02".to_string(), "test-model".to_string(), 150, 0)]
+        );
+    }
+
+    #[test]
+    fn leaves_sessions_with_incomplete_credit_totals_unchanged() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                checkpoint("checkpoint-1", "2026-01-02T09:00:00.000Z", 20),
+                shutdown("shutdown-1", "2026-01-02T10:00:00.000Z", 93, None),
+                checkpoint("checkpoint-2", "2026-01-02T11:00:00.000Z", 120),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-02".to_string(), "test-model".to_string(), 150, 0)]
+        );
+    }
+
+    #[test]
+    fn leaves_credit_gaps_to_otel_when_a_session_has_otel_rows() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl":
+                checkpoint("checkpoint-1", "2026-01-02T10:00:00.000Z", 20),
+            "home/.copilot/otel/otel.jsonl": json!({
+                "type": "span",
+                "traceId": "trace-1",
+                "spanId": "span-1",
+                "name": "chat test-model",
+                "endTime": [1_767_348_000_u64, 0_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "test-model",
+                    "gen_ai.conversation.id": "session-1",
+                    "gen_ai.usage.input_tokens": 11,
+                    "gen_ai.usage.output_tokens": 12
+                }
+            })
+            .to_string(),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-02".to_string(), "test-model".to_string(), 23, 0)]
+        );
+    }
+
+    #[test]
+    fn calculate_mode_does_not_price_credit_only_entries() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl":
+                checkpoint("checkpoint-1", "2026-01-02T10:00:00.000Z", 20),
+        });
+        let shared = crate::cli::SharedArgs {
+            mode: CostMode::Calculate,
+            ..utc_args()
+        };
+
+        let entries = load_copilot_home(&fixture, &shared);
+
+        assert_eq!(
+            credit_rows(&entries),
+            [("2026-01-02".to_string(), "unknown".to_string(), 0, 0)]
+        );
     }
 }
