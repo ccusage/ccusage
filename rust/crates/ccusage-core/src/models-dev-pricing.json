@@ -8067,8 +8067,8 @@
 	},
 	"claw-high": {
 		"cost": {
-			"cache_read": 0.2,
-			"input": 0.6,
+			"cache_read": 0.06,
+			"input": 0.3,
 			"output": 2.2
 		},
 		"exactOnly": true,
@@ -8078,9 +8078,9 @@
 	},
 	"claw-low": {
 		"cost": {
-			"cache_read": 0.2,
+			"cache_read": 0.06,
 			"cache_write": 0.08333,
-			"input": 0.6,
+			"input": 0.3,
 			"output": 2.2
 		},
 		"exactOnly": true,
@@ -8090,8 +8090,8 @@
 	},
 	"claw-medium": {
 		"cost": {
-			"cache_read": 0.2,
-			"input": 0.6,
+			"cache_read": 0.06,
+			"input": 0.3,
 			"output": 2.2
 		},
 		"exactOnly": true,
@@ -17161,8 +17161,8 @@
 	},
 	"hermes-high": {
 		"cost": {
-			"cache_read": 0.2,
-			"input": 0.6,
+			"cache_read": 0.06,
+			"input": 0.3,
 			"output": 2.2
 		},
 		"exactOnly": true,
@@ -17172,9 +17172,9 @@
 	},
 	"hermes-low": {
 		"cost": {
-			"cache_read": 0.2,
+			"cache_read": 0.06,
 			"cache_write": 0.08333,
-			"input": 0.6,
+			"input": 0.3,
 			"output": 2.2
 		},
 		"exactOnly": true,
@@ -17184,8 +17184,8 @@
 	},
 	"hermes-medium": {
 		"cost": {
-			"cache_read": 0.2,
-			"input": 0.6,
+			"cache_read": 0.06,
+			"input": 0.3,
 			"output": 2.2
 		},
 		"exactOnly": true,
@@ -33091,8 +33091,8 @@
 	},
 	"z-ai/glm-5.3:thinking": {
 		"cost": {
-			"cache_read": 0.2,
-			"input": 0.6,
+			"cache_read": 0.06,
+			"input": 0.3,
 			"output": 2.2
 		},
 		"limit": {
@@ -33142,8 +33142,8 @@
 	},
 	"z-ai/glm-latest": {
 		"cost": {
-			"cache_read": 0.2,
-			"input": 0.6,
+			"cache_read": 0.06,
+			"input": 0.3,
 			"output": 2.2
 		},
 		"exactOnly": true,
@@ -33848,8 +33848,8 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.0116,
-			"input": 0.0116,
+			"cache_read": 0.0126,
+			"input": 0.0126,
 			"output": 1.28
 		},
 		"limit": {
