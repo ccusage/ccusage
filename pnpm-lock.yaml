@@ -13,7 +13,7 @@ catalogs:
       specifier: 2.0.0-alpha.20
       version: 2.0.0-alpha.20
     vitepress-plugin-group-icons:
-      specifier: ^1.7.6
+      specifier: ^1.7.7
       version: 1.7.7
     vitepress-plugin-llms:
       specifier: ^1.14.0
