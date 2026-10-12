@@ -45,9 +45,9 @@
     url = "https://registry.npmjs.org/c12/-/c12-3.3.4.tgz";
     hash = "sha512-cM0ApFQSBXuourJejzwv/AuPRvAxordTyParRVcHjjtXirtkzM0uK2L9TTn9s0cXZbG7E55jCivRQzoxYmRAlA==";
   };
-  "cac@7.0.1" = fetchurl {
-    url = "https://registry.npmjs.org/cac/-/cac-7.0.1.tgz";
-    hash = "sha512-86diuUyeeWM8CrqhpGCaDafrzjS1s++7sWy2AbAPoFNz/xKv7ID57CR4pZsMuGCh60PtsnEx4z68b+Vgt07VPw==";
+  "cac@7.1.0" = fetchurl {
+    url = "https://registry.npmjs.org/cac/-/cac-7.1.0.tgz";
+    hash = "sha512-LMDU/U2yA4IPIY8KT0NsNPWEYZvAMkbgyspxJ6btJaYV+WMDOHAZCmB0lsTObiHaRS1V/ztKAl7+TSkTqXyeoA==";
   };
   "changelogen@0.5.7" = fetchurl {
     url = "https://registry.npmjs.org/changelogen/-/changelogen-0.5.7.tgz";
