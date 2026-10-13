@@ -117,7 +117,7 @@ jobs:
       - build-native-packages
     if: needs.tagpr.outputs.tag != ''
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 10
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
