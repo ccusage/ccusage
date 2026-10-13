@@ -54,17 +54,10 @@ jobs:
       actions: write
     steps:
       - name: Dispatch CI on the release branch
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
+          GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ fromJSON(needs.tagpr.outputs.pull_request).head.ref }}
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'ci.yaml',
-              ref: process.env.HEAD_REF,
-            });
+        run: gh workflow run ci.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
 
   # The release jobs below run in this workflow instead of a tag-triggered one
   # because tags pushed with GITHUB_TOKEN do not trigger `on: push: tags`
