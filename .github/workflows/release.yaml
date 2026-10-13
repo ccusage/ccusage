@@ -42,15 +42,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # The repository requires approval before pull_request workflows run for
-  # external contributors, and github-actions[bot], which opens the release PR,
-  # counts as one. workflow_dispatch is exempt from that gate and GITHUB_TOKEN
-  # may trigger it, so CI is dispatched on the release branch whenever tagpr
-  # creates or updates the PR; the runs report on the PR's head commit.
+  # pull_request runs on the release PR need approval because
+  # github-actions[bot] counts as an external contributor; workflow_dispatch
+  # does not.
   ci:
     needs: tagpr
-    # tagpr also emits pull_request when it tags a merged release PR; that
-    # branch is gone by then.
     if: needs.tagpr.outputs.tag == '' && needs.tagpr.outputs.pull_request != ''
     runs-on: ubuntu-slim
     timeout-minutes: 5
