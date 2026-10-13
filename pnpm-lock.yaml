@@ -319,12 +319,12 @@ packages:
   '@ungap/structured-clone@1.4.0':
     resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
 
-  '@vitejs/plugin-vue@6.0.9':
-    resolution: {integrity: sha512-rD/MORlhaZMlXWW0rEn4FB4wMinWC0z/D7Ye160S5+Rs1mC8ZDAdcDp4SjKfUhG5t8q1ktcPVw4xuTkPRlzrSA==}
+  '@vitejs/plugin-vue@6.0.10':
+    resolution: {integrity: sha512-b80aUQh3n+qEzzZm5oQp3rT2QImeCx58K6eFl/RkJ3d65KW0kTuv5lNsLRVAjbW9YRUpo/wzmvzMgV34bTAItA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       vite: ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
-      vue: ^3.2.25
+      vue: ^3.2.25 || ^3.6.0-rc.10
 
   '@vue/compiler-core@3.5.43':
     resolution: {integrity: sha512-zdiLhnbe1QQqgDT8xZMpNmyqZ3qlI+/Q/FHQco57Kwl/b05HhCzN6eVGN9QU9rbga4CrS0H5SYY8VGHZCt/1Hg==}
@@ -1225,7 +1225,7 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vitejs/plugin-vue@6.0.9(vite@8.3.4(@types/node@24.19.2))(vue@3.5.43)':
+  '@vitejs/plugin-vue@6.0.10(vite@8.3.4(@types/node@24.19.2))(vue@3.5.43)':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.4(@types/node@24.19.2)
@@ -1996,7 +1996,7 @@ snapshots:
       '@iconify-json/simple-icons': 1.2.99
       '@shikijs/transformers': 4.5.0
       '@types/markdown-it': 14.2.0
-      '@vitejs/plugin-vue': 6.0.9(vite@8.3.4(@types/node@24.19.2))(vue@3.5.43)
+      '@vitejs/plugin-vue': 6.0.10(vite@8.3.4(@types/node@24.19.2))(vue@3.5.43)
       '@vue/devtools-api': 8.2.1
       '@vue/shared': 3.5.43
       '@vueuse/core': 14.4.0(vue@3.5.43)
