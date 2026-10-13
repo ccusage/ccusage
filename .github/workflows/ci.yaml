@@ -469,8 +469,10 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix-cache
         with:
-          # js and rust legs share this job id, so scope the cache per runtime.
-          cache-scope: ${{ matrix.runtime }}
+          # This job only runs on pull requests, which never commit a sticky
+          # disk, so both legs read test's instead: it installs `just` and the
+          # same flake inputs on every push to main.
+          disk-job: test
       # This job only benchmarks the prebuilt ccusage binary bundled in the
       # installed pkg.pr.new package (no Rust build happens here), so the full
       # `nix develop` dev shell is unnecessary. Install just the tools the perf
