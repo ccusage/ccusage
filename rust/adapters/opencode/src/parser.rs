@@ -642,7 +642,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(entry.cost, 0.000143);
+        // The rate comes from LiteLLM's per-token prices or, when models.dev
+        // marks the id exact-only, from its per-million prices, and the two
+        // round differently in the last bit.
+        assert!(
+            (entry.cost - 0.000143).abs() < 1e-12,
+            "k2p6 cost was {}",
+            entry.cost
+        );
     }
 
     #[test]
