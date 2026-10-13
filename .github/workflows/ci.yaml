@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # tagpr's release PR is opened with GITHUB_TOKEN, so its pull_request runs
+  # wait for approval; release.yaml dispatches CI on the release branch instead.
+  workflow_dispatch:
 
 permissions: read-all
 
