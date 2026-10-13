@@ -13,12 +13,16 @@ inputs:
       macOS Nix cache. arm64 and x64 share the same arm64 runner, so without a
       per-leg scope the two builds clobber one cache.
     required: true
+  save-nix-cache:
+    description: Whether this job may persist the Nix store; forwarded to setup-nix-cache as `save`.
+    default: 'true'
 runs:
   using: composite
   steps:
     - uses: ./.github/actions/setup-nix-cache
       with:
         cache-scope: ${{ inputs.cache-scope }}
+        save: ${{ inputs.save-nix-cache }}
 
     - name: Build macOS binary
       shell: bash

@@ -15,12 +15,16 @@ inputs:
       Unique matrix-entry identifier (the matrix `name`) used to scope the Nix
       cache so the arm64 and x64 legs do not share one key.
     required: true
+  save-nix-cache:
+    description: Whether this job may persist the Nix store; forwarded to setup-nix-cache as `save`.
+    default: 'true'
 runs:
   using: composite
   steps:
     - uses: ./.github/actions/setup-nix-cache
       with:
         cache-scope: ${{ inputs.cache-scope }}
+        save: ${{ inputs.save-nix-cache }}
         gc-max-store-size-linux: 4G
 
     - name: Build Linux static binary
@@ -39,6 +43,7 @@ runs:
     # (and, through keep-outputs, their toolchain) from the next trim until a
     # later run replaces it.
     - name: Root current Crane artifacts for cache save
+      if: inputs.save-nix-cache == 'true'
       shell: bash
       run: |
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"

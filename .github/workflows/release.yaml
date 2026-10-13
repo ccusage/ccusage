@@ -110,18 +110,24 @@ jobs:
         with:
           ref: ${{ needs.tagpr.outputs.tag }}
           persist-credentials: false
+      # Linux mounts the sticky disk CI commits on every push to main. Saving
+      # here would only race those commits on Linux, and on macOS the release's
+      # own cache entries are evicted long before the next release, while the
+      # save delays the npm job.
       - uses: ./.github/actions/build-linux-native-package
         if: matrix.platform == 'linux'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
+          save-nix-cache: false
       - uses: ./.github/actions/build-macos-nix-native-package
         if: matrix.platform == 'darwin'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
+          save-nix-cache: false
       - uses: ./.github/actions/build-windows-native-package
         if: matrix.platform == 'win32'
         with:
