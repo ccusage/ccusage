@@ -764,6 +764,32 @@ mod tests {
     }
 
     #[test]
+    fn returns_empty_report_for_fresh_install_without_conversations_directory() {
+        let fixture = Fixture::new();
+        let summaries_path = fixture.path(".gemini/antigravity-cli/conversation_summaries.db");
+        let _ = fixture.create_dir_all(".gemini/antigravity-cli");
+        let connection = sqlite::open(&summaries_path).unwrap();
+        connection
+            .execute("CREATE TABLE summaries (id INTEGER PRIMARY KEY)")
+            .unwrap();
+        let _guard = EnvVarsGuard::set_many([
+            (super::super::paths::ANTIGRAVITY_DATA_DIR_ENV, None),
+            ("HOME", Some(OsString::from(fixture.root()))),
+            ("USERPROFILE", Some(OsString::from(fixture.root()))),
+        ]);
+
+        assert!(
+            super::super::paths::conversation_db_paths()
+                .unwrap()
+                .is_empty()
+        );
+
+        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
+
+        assert!(entries.is_empty());
+    }
+
+    #[test]
     fn still_propagates_errors_for_nonempty_databases_alongside_empty_ones() {
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/empty.db", "");

@@ -15,24 +15,32 @@ const DEFAULT_ANTIGRAVITY_ROOTS: [&str; 6] = [
     ".config/antigravity",
 ];
 
-fn roots() -> Vec<PathBuf> {
+/// Resolves the Antigravity data roots. The flag is true when the roots come
+/// from the `ANTIGRAVITY_DATA_DIR` override rather than the default home roots.
+fn resolve_roots() -> (Vec<PathBuf>, bool) {
     if let Ok(value) = env::var(ANTIGRAVITY_DATA_DIR_ENV) {
-        return value
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect();
+        return (
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+                .collect(),
+            true,
+        );
     }
 
-    crate::home::home_dir()
-        .into_iter()
-        .flat_map(|home| {
-            DEFAULT_ANTIGRAVITY_ROOTS
-                .into_iter()
-                .map(move |root| home.join(root))
-        })
-        .collect()
+    (
+        crate::home::home_dir()
+            .into_iter()
+            .flat_map(|home| {
+                DEFAULT_ANTIGRAVITY_ROOTS
+                    .into_iter()
+                    .map(move |root| home.join(root))
+            })
+            .collect(),
+        false,
+    )
 }
 
 fn conversation_dir(root: PathBuf) -> PathBuf {
@@ -41,11 +49,21 @@ fn conversation_dir(root: PathBuf) -> PathBuf {
 }
 
 pub(super) fn conversation_db_paths() -> Result<Vec<PathBuf>> {
+    let (roots, custom_root) = resolve_roots();
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
-    for root in roots().into_iter().map(conversation_dir) {
+    for root in roots {
+        // Default roots must contain `conversations/`; otherwise a fresh install
+        // with only `conversation_summaries.db` at the root would abort the
+        // whole report with `no such table: gen_metadata`. Custom
+        // `ANTIGRAVITY_DATA_DIR` entries keep the fallback so a directory can
+        // be either a data root or the conversation directory itself.
+        if !custom_root && !root.join("conversations").is_dir() {
+            continue;
+        }
+        let dir = conversation_dir(root);
         let mut files = Vec::new();
-        collect_files_with_extension(&root, "db", &mut files);
+        collect_files_with_extension(&dir, "db", &mut files);
         for path in files {
             let canonical_path = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if seen.insert(canonical_path) {
@@ -132,6 +150,25 @@ mod tests {
         assert_eq!(
             conversation_db_paths().unwrap(),
             vec![fixture.path("conversations/session.db")]
+        );
+    }
+
+    #[test]
+    fn skips_default_roots_without_a_conversations_directory() {
+        let fixture = fs_fixture!({
+            ".gemini/antigravity-cli/conversation_summaries.db": "",
+            ".gemini/antigravity-cli/conversations/session.db": "",
+            ".gemini/antigravity/conversation_summaries.db": "",
+        });
+        let _guard = EnvVarsGuard::set_many([
+            (ANTIGRAVITY_DATA_DIR_ENV, None),
+            ("HOME", Some(OsString::from(fixture.root()))),
+            ("USERPROFILE", Some(OsString::from(fixture.root()))),
+        ]);
+
+        assert_eq!(
+            conversation_db_paths().unwrap(),
+            vec![fixture.path(".gemini/antigravity-cli/conversations/session.db")]
         );
     }
 }
