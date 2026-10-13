@@ -1,11 +1,11 @@
-name: Setup Nix with action cache
+name: Setup Nix with a persistent store
 description: >
-  Install Nix and restore/save the store with cache-nix-action, shared by Linux
-  and macOS. cache-nix-action only caches non-substitutable paths (the crane
-  deps, not the cache.nixos.org toolchain). Linux jobs root the current Crane
-  artifacts after building; garbage collection then removes superseded
-  generations before saving so restored caches do not grow on every commit.
-  Blacksmith evicts stale entries, so no purge step is needed.
+  Install Nix with a store that persists across runs. On Blacksmith Linux
+  runners /nix is a sticky disk: a block device cloned from the last committed
+  snapshot, so the whole store is there at mount time without a restore or save
+  step and without counting against the Actions cache quota. Runners without
+  sticky disks (macOS, GitHub-hosted) fall back to cache-nix-action, which
+  restores and saves the store through the Actions cache.
 inputs:
   cache-scope:
     description: >
@@ -14,14 +14,57 @@ inputs:
       each leg separate without leaning on runner.arch. Leave empty for
       single-leg jobs, which github.job alone already distinguishes.
     default: ''
+  disk-job:
+    description: >
+      Job id whose sticky disk to mount instead of this job's own. Lets a job
+      that never commits (e.g. one that only runs on pull requests) start from
+      the store another job with the same closure keeps warm.
+    default: ''
+  save:
+    description: >
+      Whether this job may persist the store for later runs. Sticky disks only
+      commit from runs on main that are not pull_request(_target) events, so
+      pull request code can never write a store that main and releases read.
+    default: 'true'
   gc-max-store-size-linux:
     description: >
-      Optional Linux store size limit applied before cache save. Callers must
-      root every artifact they want the garbage collector to retain.
+      Optional Linux store size limit applied before a cache-nix-action save.
+      Callers must root every artifact they want the garbage collector to retain.
     default: ''
 runs:
   using: composite
   steps:
+    - name: Select Nix store backend
+      id: backend
+      shell: bash
+      env:
+        SAVE: ${{ inputs.save }}
+        TRUSTED_REF: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target' }}
+      run: |
+        # stickydisk reads the same variable to find the Blacksmith agent.
+        if [ "$RUNNER_OS" = Linux ] && [ -n "${BLACKSMITH_STICKY_DISK_GRPC_PORT:-}" ]; then
+          echo "sticky=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "sticky=false" >> "$GITHUB_OUTPUT"
+        fi
+        if [ "$SAVE" = true ] && [ "$TRUSTED_REF" = true ]; then
+          echo "commit=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "commit=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    # The key has no workflow name, so release.yaml's build-native-packages
+    # mounts the disk ci.yaml keeps warm on every push to main. It is mounted
+    # before Nix is installed; nix-quick-install-action keeps an existing
+    # writable /nix and only adds its own paths to the database.
+    - name: Mount Nix store sticky disk
+      if: steps.backend.outputs.sticky == 'true'
+      uses: useblacksmith/stickydisk@3f6be1451e3cad893b778bc93495c80452a5da26 # v1.7.2
+      with:
+        key: ${{ github.repository }}-nix-${{ runner.arch }}-${{ inputs.disk-job || github.job }}-${{ inputs.cache-scope }}
+        path: /nix
+        commit: ${{ steps.backend.outputs.commit }}
+
     - name: Install Nix
       uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
       with:
@@ -30,15 +73,33 @@ runs:
         # otherwise keep its documented default of max-jobs = 1 and build the
         # independent Crane artifact layers one at a time. cores stays at the
         # default 0 so the single dependency derivation, which compiles the whole
-        # third-party graph, still gets every core.
+        # third-party graph, still gets every core. keep-derivations and
+        # keep-outputs make garbage collection keep the build-time closure
+        # (toolchain, vendored sources, Crane deps) of every rooted artifact,
+        # not only its runtime closure.
         nix_conf: |
           access-tokens = github.com=${{ github.token }}
           max-jobs = auto
+          keep-derivations = true
+          keep-outputs = true
+
+    # package.json only supplies the final binary version. It is excluded
+    # because release bumps do not change the deps-only Crane derivation.
+    # Likewise, checks and developer-tooling modules do not affect Cargo
+    # artifacts; only package modules participate in this hash.
+    - name: Hash Nix cache inputs
+      if: steps.backend.outputs.sticky != 'true'
+      id: deps
+      shell: bash
+      env:
+        DEPS_HASH: ${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}
+      run: echo "hash=$DEPS_HASH" >> "$GITHUB_OUTPUT"
 
     # github.workflow is included so workflows that share a job id (e.g.
     # build-native-packages in both ci.yaml and release.yaml) do not collide on
     # the same primary-key and block each other from saving updated entries.
     - name: Cache Nix store
+      if: steps.backend.outputs.sticky != 'true'
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
         # The commit sha is appended so every commit writes a fresh entry:
@@ -47,17 +108,14 @@ runs:
         # forever. restore-prefixes-first-match (without the sha) then restores
         # the newest prior entry to warm the deps. Blacksmith handles stale cache
         # eviction without the GitHub REST API used by this action's purge mode.
-        # package.json only supplies the final binary version. It is excluded
-        # because release bumps do not change the deps-only Crane derivation.
-        # Likewise, checks and developer-tooling modules do not affect Cargo
-        # artifacts; only package modules participate in this key.
-        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-${{ github.sha }}
+        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ steps.deps.outputs.hash }}-${{ github.sha }}
         # First prefix prefers the current deps hash. The second drops the hash so
         # a flake change that only adds developer tooling still restores the newest
         # prior store instead of starting from a cold cache.
         restore-prefixes-first-match: |
-          nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-
+          nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ steps.deps.outputs.hash }}-
           nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-
+        save: ${{ inputs.save }}
         gc-max-store-size-linux: ${{ inputs.gc-max-store-size-linux }}
 
     - name: Fix single-user Nix store ownership
@@ -69,3 +127,22 @@ runs:
             sudo chown -R "$USER:$(id -gn)" "$path"
           fi
         done
+
+    # A committed disk keeps everything every earlier run added, so trim it
+    # once it passes half its capacity. Only committing runs trim: elsewhere the
+    # changes are discarded and every later run would pay for the same GC.
+    # Persistent roots under /nix/var/nix/gcroots (see build-linux-native-package)
+    # and the current profile generations survive; out-links from earlier runs
+    # pointed into their own workspaces and no longer count.
+    - name: Trim Nix store sticky disk
+      if: steps.backend.outputs.sticky == 'true'
+      shell: bash
+      env:
+        COMMIT: ${{ steps.backend.outputs.commit }}
+      run: |
+        df -h /nix
+        read -r size used < <(df -B1 --output=size,used /nix | tail -n1)
+        if [ "$COMMIT" = true ] && [ "$used" -gt $((size / 2)) ]; then
+          nix-collect-garbage --delete-old
+          df -h /nix
+        fi

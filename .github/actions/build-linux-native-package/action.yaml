@@ -34,12 +34,17 @@ runs:
           nix build .#ccusage-static --print-build-logs
         fi
 
+    # The link lives inside the store's own gcroots, so it persists with a
+    # sticky disk or a cache-nix-action entry and protects these artifacts
+    # (and, through keep-outputs, their toolchain) from the next trim until a
+    # later run replaces it.
     - name: Root current Crane artifacts for cache save
       shell: bash
       run: |
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+        mkdir -p /nix/var/nix/gcroots/ci
         nix build ".#packages.$system.ccusage-static.passthru.workspaceArtifacts.cacheRoot" \
-          --out-link "$RUNNER_TEMP/ccusage-cargo-artifacts"
+          --out-link /nix/var/nix/gcroots/ci/ccusage-cargo-artifacts
 
     - name: Verify Linux binary is static
       shell: bash

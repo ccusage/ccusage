@@ -19,7 +19,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      # This workflow only runs on pull requests, which never commit a sticky
+      # disk, so borrow preflight's: it builds the same treefmt closure on main.
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          disk-job: preflight
       - name: Apply formatting and lint fixes
         run: |
           nix fmt -- --no-cache
