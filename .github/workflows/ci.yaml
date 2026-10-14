@@ -4,8 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Dispatched by release.yaml for tagpr's release PR; reported back to the PR
-  # as the `CI (release dispatch)` commit status.
+  # Dispatched by release.yaml for tagpr's release PR.
   workflow_dispatch:
 
 permissions: read-all
@@ -579,10 +578,7 @@ jobs:
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
 
-  # workflow_dispatch runs (release.yaml dispatches them on tagpr's release
-  # branch) are not attached to the release PR, so their checks never show up
-  # there. Mirror the run onto the head commit as a commit status instead, which
-  # the PR does show and the branch ruleset can require.
+  # Dispatch runs aren't attached to the release PR; report via commit status.
   release-dispatch-status-pending:
     name: release dispatch status (pending)
     if: github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'tagpr-from-')
