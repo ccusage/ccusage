@@ -20,13 +20,16 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 ## Data source
 
-- `~/.codex/sessions/**/*.jsonl` and `*.jsonl.zst`
-- `~/.codex/archived_sessions/**/*.jsonl` and `*.jsonl.zst`
+- `~/.codex/sessions/**/*.jsonl`
+- `~/.codex/sessions/**/*.jsonl.zst`
+- `~/.codex/archived_sessions/**/*.jsonl`
+- `~/.codex/archived_sessions/**/*.jsonl.zst`
 
 Record shapes, token mapping, and cost rules are documented in [`src/README.md`](src/README.md).
 
-Uses `ccusage-adapter-common` for walking, size-balanced chunking, and ordered parallel
-reads; `reader.rs` streams `.jsonl.zst` rollouts through `zstd` without unpacking them to disk.
+Uses `ccusage-adapter-common` for walking and size-balanced chunking. `loader.rs` performs
+the ordered parallel reads, and `reader.rs` streams `.jsonl.zst` rollouts through `zstd`
+without unpacking them to disk.
 
 ## Public surface
 
