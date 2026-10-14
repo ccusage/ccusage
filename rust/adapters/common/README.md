@@ -22,6 +22,7 @@ layers.
 - `report::print_table_for_agent`
 - `collect_usage_files`
 - `collect_files_with_extension`
+- `collect_files_matching`
 - `filter_loaded_entries_by_date`
 - `chunk_file_indexes_by_size`
 - `read_files_parallel`
