@@ -49,16 +49,30 @@ in
         # files when the content actually differs. This keeps the formatter
         # idempotent: rewriting an unchanged file bumps its mtime, which
         # `treefmt --fail-on-change` (pre-push) reports as a spurious change.
+        # treefmt may run this formatter as several concurrent batches, so a
+        # plain `cp` into a missing destination can lose the create race with
+        # "File exists". Each copy is staged beside its destination and renamed
+        # into place, which is atomic and never conflicts.
         text = ''
           tmp="$(mktemp --suffix=.json)"
-          trap 'rm -f "$tmp"' EXIT
+          staged=""
+          trap 'rm -f "$tmp" "$staged"' EXIT
+          install_if_changed() {
+            if cmp -s "$1" "$2"; then
+              return
+            fi
+            staged="$(mktemp "$2.XXXXXX")"
+            cp "$1" "$staged"
+            # mktemp creates the file 0600; match the tracked file's mode.
+            chmod 0644 "$staged"
+            mv -f "$staged" "$2"
+            staged=""
+          }
           generate-config-schema "$tmp"
           oxfmt --write "$tmp"
-          if ! cmp -s "$tmp" apps/ccusage/config-schema.json; then
-            cp -f "$tmp" apps/ccusage/config-schema.json
-          fi
-          if [ -d docs/public ] && ! cmp -s apps/ccusage/config-schema.json docs/public/config-schema.json; then
-            cp -f apps/ccusage/config-schema.json docs/public/config-schema.json
+          install_if_changed "$tmp" apps/ccusage/config-schema.json
+          if [ -d docs/public ]; then
+            install_if_changed apps/ccusage/config-schema.json docs/public/config-schema.json
           fi
         '';
       };
