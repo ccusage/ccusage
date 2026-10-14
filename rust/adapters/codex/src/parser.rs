@@ -129,7 +129,7 @@ const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
 /// history it did not spend; one that pauses between them was recording its own
 /// turns from the start.
 fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
-    let Ok(mut reader) = open_rollout_reader(path) else {
+    let Ok((mut reader, _)) = open_rollout_reader(path) else {
         return None;
     };
     let mut line = Vec::new();
@@ -206,7 +206,7 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    let Ok(mut reader) = open_rollout_reader(path) else {
+    let Ok((mut reader, opened_path)) = open_rollout_reader(path) else {
         return Ok(());
     };
     let mut line = Vec::new();
@@ -215,7 +215,7 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     if compaction_history.is_some() {
         state.compaction_usage.recorded_usage_timestamps = Some(HashMap::new());
     }
-    let fallback_timestamp = file_modified_timestamp(path);
+    let fallback_timestamp = file_modified_timestamp(&opened_path);
     let mut replay = match replayed_prefix {
         Some(prefix) => CodexReplayState::MatchingParent { prefix, index: 0 },
         None => CodexReplayState::Done,

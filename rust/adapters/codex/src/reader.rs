@@ -28,13 +28,14 @@ pub(super) fn uncompressed_rollout_path(path: &Path) -> PathBuf {
     }
 }
 
-pub(super) fn open_rollout_reader(path: &Path) -> io::Result<Box<dyn BufRead>> {
+pub(super) fn open_rollout_reader(path: &Path) -> io::Result<(Box<dyn BufRead>, PathBuf)> {
     match open_encoded_rollout(path) {
         // Codex may compress or restore the rollout between discovery and this open.
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            open_encoded_rollout(&other_encoding_path(path))
+            let other = other_encoding_path(path);
+            Ok((open_encoded_rollout(&other)?, other))
         }
-        result => result,
+        result => Ok((result?, path.to_path_buf())),
     }
 }
 

@@ -391,7 +391,7 @@ struct CodexSessionMetadata {
 
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     observe_metadata_probe(path);
-    let Ok(mut reader) = open_rollout_reader(path) else {
+    let Ok((mut reader, _)) = open_rollout_reader(path) else {
         return CodexSessionMetadata::default();
     };
     let mut line = String::new();

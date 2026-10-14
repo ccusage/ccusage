@@ -244,6 +244,33 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
 }
 
 #[test]
+fn dates_headless_usage_from_the_encoding_opened_after_migration() {
+    let fixture = Fixture::new();
+    let headless = json!({"type": "turn.completed", "usage": {
+        "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+    }})
+    .to_string();
+    let plain = fixture.write_file("run.jsonl", &headless);
+    let files = paths::collect_codex_usage_files(fixture.root());
+    fs::remove_file(&plain).unwrap();
+    let compressed = write_compressed(&fixture, "run.jsonl.zst", &headless);
+    paths::set_file_modified(
+        &compressed,
+        crate::parse_ts_timestamp("2026-10-14T12:00:00.000Z").unwrap(),
+    );
+
+    let mut visited = Vec::new();
+    crate::parser::visit_codex_session_file(fixture.root(), &files[0], None, |event| {
+        visited.push(event);
+        Ok(())
+    })
+    .unwrap();
+
+    assert_eq!(visited.len(), 1);
+    assert_eq!(visited[0].timestamp, "2026-10-14T12:00:00.000Z");
+}
+
+#[test]
 fn removes_inherited_usage_when_parent_and_child_are_compressed() {
     let fixture = Fixture::new();
     let _ = write_compressed(
