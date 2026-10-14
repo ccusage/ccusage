@@ -54,7 +54,7 @@ For Claude Code, session IDs are the actual filenames (without `.jsonl` extensio
 
 You can find Claude session IDs by running `ccusage claude session` and looking for the files in your Claude data directory.
 
-For Codex, use the `sessionId` from `ccusage codex session --json`. The lookup accepts that full ID, its JSONL filename with or without the extension, the trailing UUID, or a `codex://threads/<uuid>` URI. A shortened UUID is not accepted, and a UUID that matches more than one session is reported as ambiguous.
+For Codex, use the `sessionId` from `ccusage codex session --json`. The lookup accepts that full ID, its JSONL filename with or without the `.jsonl` or `.jsonl.zst` extension, the trailing UUID, or a `codex://threads/<uuid>` URI. A shortened UUID is not accepted, and a UUID that matches more than one session is reported as ambiguous.
 
 ## Example Output
 
