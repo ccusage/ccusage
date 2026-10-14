@@ -1,10 +1,11 @@
-use ccusage_adapter_common::{chunk_file_indexes_by_size, collect_usage_files};
+use ccusage_adapter_common::chunk_file_indexes_by_size;
 use ccusage_core::*;
 
 mod aggregate;
 mod loader;
 mod parser;
 mod paths;
+mod reader;
 mod replay;
 mod report;
 mod speed;
@@ -12,6 +13,8 @@ mod types;
 
 #[cfg(test)]
 mod compaction_tests;
+#[cfg(test)]
+mod compression_tests;
 
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
@@ -74,6 +77,7 @@ fn resolve_session_id<'a>(
     let requested_id = original_id
         .strip_prefix("codex://threads/")
         .unwrap_or(original_id);
+    let requested_id = requested_id.strip_suffix(".zst").unwrap_or(requested_id);
     let requested_id = requested_id.strip_suffix(".jsonl").unwrap_or(requested_id);
     let matches = groups
         .keys()
@@ -160,6 +164,7 @@ mod tests {
             full_id,
             "rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0",
             "rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl",
+            "rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl.zst",
             "01a0bb8c-c7c0-7630-9d82-860b875930f0",
             "codex://threads/01a0bb8c-c7c0-7630-9d82-860b875930f0",
         ] {

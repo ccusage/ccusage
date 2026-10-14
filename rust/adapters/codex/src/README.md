@@ -7,8 +7,10 @@ ${CODEX_HOME:-~/.codex}/sessions/
 ${CODEX_HOME:-~/.codex}/archived_sessions/
 ```
 
-When both directories contain the same relative JSONL path for one Codex home,
-the active `sessions/` copy wins.
+Rollouts are plain `.jsonl` or Zstandard-compressed `.jsonl.zst`. Compression does not
+change the session ID. When both encodings of a rollout exist in one directory, the
+plain copy wins, as it does in Codex. When both directories contain the same relative
+rollout path for one Codex home, the active `sessions/` copy wins regardless of encoding.
 
 Relevant JSONL event:
 

@@ -10,11 +10,14 @@ use std::{
     time::Duration,
 };
 
+use ccusage_adapter_common::collect_files_matching;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
 
 use crate::{
     Result, cli::SharedArgs, cli_error, date_range_bounds_ms, fast::FxHashSet, home, parse_tz,
 };
+
+use super::reader::{is_rollout_file, uncompressed_rollout_path};
 
 pub(super) fn codex_usage_sources() -> Result<Vec<CodexUsageSource>> {
     Ok(codex_usage_sources_from_homes(codex_home_paths()?))
@@ -84,8 +87,12 @@ pub(super) struct CodexUsageFileGroup {
 
 pub(super) fn collect_codex_usage_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    crate::collect_usage_files(dir, &mut files);
+    collect_files_matching(dir, &is_rollout_file, &mut files);
     files.sort();
+    // Sorting puts `x.jsonl` before `x.jsonl.zst`. Codex also prefers the plain
+    // copy: resuming a compressed rollout restores it before removing the `.zst`.
+    let mut seen = FxHashSet::default();
+    files.retain(|path| seen.insert(uncompressed_rollout_path(path)));
     files
 }
 
@@ -219,8 +226,11 @@ fn parse_date_part(value: &str, length: usize) -> Option<u16> {
 }
 
 fn codex_usage_file_key(source: &CodexUsageSource, file: &Path) -> (PathBuf, PathBuf) {
-    let relative = file.strip_prefix(&source.dir).unwrap_or(file).to_path_buf();
-    (source.dedupe_scope.clone(), relative)
+    let relative = file.strip_prefix(&source.dir).unwrap_or(file);
+    (
+        source.dedupe_scope.clone(),
+        uncompressed_rollout_path(relative),
+    )
 }
 
 pub(super) fn codex_home_paths() -> Result<Vec<PathBuf>> {
@@ -334,6 +344,38 @@ mod tests {
                 CodexUsageFileGroup {
                     dir: fixture.path("codex/archived_sessions"),
                     files: vec![fixture.path("codex/archived_sessions/archive-only.jsonl")],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn deduplicates_rollouts_across_encodings_and_session_directories() {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("codex/sessions/both.jsonl", "");
+        let _ = fixture.write_file("codex/sessions/both.jsonl.zst", "");
+        let _ = fixture.write_file("codex/sessions/compressed.jsonl.zst", "");
+        let _ = fixture.write_file("codex/sessions/other.zst", "");
+        let _ = fixture.write_file("codex/archived_sessions/compressed.jsonl", "");
+        let _ = fixture.write_file("codex/archived_sessions/both.jsonl.zst", "");
+        let _ = fixture.write_file("codex/archived_sessions/archived.jsonl.zst", "");
+
+        let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
+        let groups = collect_deduped_codex_usage_files(&sources);
+
+        assert_eq!(
+            groups,
+            vec![
+                CodexUsageFileGroup {
+                    dir: fixture.path("codex/sessions"),
+                    files: vec![
+                        fixture.path("codex/sessions/both.jsonl"),
+                        fixture.path("codex/sessions/compressed.jsonl.zst"),
+                    ],
+                },
+                CodexUsageFileGroup {
+                    dir: fixture.path("codex/archived_sessions"),
+                    files: vec![fixture.path("codex/archived_sessions/archived.jsonl.zst")],
                 },
             ]
         );

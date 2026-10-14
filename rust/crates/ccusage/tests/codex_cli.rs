@@ -82,6 +82,42 @@ fn reports_ambiguous_codex_session_uuid() {
     )));
 }
 
+#[test]
+fn reports_compressed_codex_rollouts_alongside_plain_ones() {
+    let fixture = codex_fixture();
+    let compressed = fixture.write_file(
+        format!("codex/archived_sessions/2026/09/21/{SESSION_FILE}-zst.jsonl.zst"),
+        "",
+    );
+    std::fs::write(
+        &compressed,
+        zstd::stream::encode_all(usage("2026-09-21T08:00:00.000Z", 300, 25).as_bytes(), 3).unwrap(),
+    )
+    .unwrap();
+
+    let daily: Value =
+        serde_json::from_str(&run_cli(&fixture, &["codex", "daily", "--json"])).unwrap();
+    let session: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[
+            "codex",
+            "session",
+            "--id",
+            &format!("{SESSION_FILE}-zst.jsonl.zst"),
+            "--json",
+        ],
+    ))
+    .unwrap();
+
+    assert_eq!(daily["daily"].as_array().unwrap().len(), 3);
+    assert_eq!(daily["totals"]["totalTokens"], 150 + 1000 + 325);
+    assert_eq!(
+        session["sessionId"],
+        format!("2026/09/21/{SESSION_FILE}-zst")
+    );
+    assert_eq!(session["totalTokens"], 325);
+}
+
 fn codex_fixture() -> Fixture {
     fs_fixture!({
         "codex/sessions/2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage("2026-09-19T23:22:40.000Z", 100, 50),

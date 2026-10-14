@@ -50,6 +50,7 @@ serde_json.workspace = true
 ccusage-test-support.workspace = true
 insta.workspace = true
 sqlite.workspace = true
+zstd.workspace = true
 
 # mimalloc measurably beats the musl allocator on the static Linux build's
 # allocation-heavy JSONL parsing.

@@ -1,7 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
-    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     thread,
 };
@@ -13,7 +11,10 @@ use serde_json::Value;
 
 use crate::{CodexRawUsage, TimestampMs, chunk_file_indexes_by_size, parse_ts_timestamp};
 
-use super::parser::{codex_value_timestamp, visit_codex_session_file_with_compaction_history};
+use super::{
+    parser::{codex_value_timestamp, visit_codex_session_file_with_compaction_history},
+    reader::open_rollout_reader,
+};
 
 #[cfg(test)]
 #[derive(Debug, Eq, PartialEq)]
@@ -390,10 +391,9 @@ struct CodexSessionMetadata {
 
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     observe_metadata_probe(path);
-    let Ok(file) = File::open(path) else {
+    let Ok(mut reader) = open_rollout_reader(path) else {
         return CodexSessionMetadata::default();
     };
-    let mut reader = BufReader::new(file);
     let mut line = String::new();
     let Ok(bytes_read) = reader.read_line(&mut line) else {
         return CodexSessionMetadata::default();

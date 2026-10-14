@@ -67,6 +67,7 @@ terminal_size = "0.4.4"
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
 unicode-width = "0.2.2"
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
+zstd = { version = "0.14.2", default-features = false }
 
 [profile.release]
 codegen-units = 1

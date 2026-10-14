@@ -2,7 +2,6 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     fs,
-    io::{BufRead, BufReader},
     path::Path,
     sync::LazyLock,
 };
@@ -15,9 +14,12 @@ use crate::{
     CodexRawUsage, CodexServiceTier, CodexTokenUsageEvent, Result, TimestampMs, parse_ts_timestamp,
 };
 
-use super::types::{
-    CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
-    CodexSessionLogEntry, CodexTimestamp,
+use super::{
+    reader::{open_rollout_reader, uncompressed_rollout_path},
+    types::{
+        CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
+        CodexSessionLogEntry, CodexTimestamp,
+    },
 };
 
 static EVENT_MSG_TYPE_FINDER: LazyLock<Finder<'static>> =
@@ -127,10 +129,9 @@ const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
 /// history it did not spend; one that pauses between them was recording its own
 /// turns from the start.
 fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
-    let Ok(file) = fs::File::open(path) else {
+    let Ok(mut reader) = open_rollout_reader(path) else {
         return None;
     };
-    let mut reader = BufReader::new(file);
     let mut line = Vec::new();
     let mut first: Option<TimestampMs> = None;
 
@@ -205,10 +206,9 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    let Ok(file) = fs::File::open(path) else {
+    let Ok(mut reader) = open_rollout_reader(path) else {
         return Ok(());
     };
-    let mut reader = BufReader::with_capacity(128 * 1024, file);
     let mut line = Vec::new();
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
@@ -891,7 +891,7 @@ fn codex_is_leap_year(year: u16) -> bool {
 
 fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
     let relative = path.strip_prefix(sessions_dir).unwrap_or(path);
-    let mut session_id = relative
+    let mut session_id = uncompressed_rollout_path(relative)
         .with_extension("")
         .components()
         .filter_map(|component| component.as_os_str().to_str())
