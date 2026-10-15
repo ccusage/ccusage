@@ -340,8 +340,6 @@ jobs:
         # One job per package runner, each installed via its official action.
         # Excluded:
         #   yarn - no official install action (it expects corepack, which we avoid)
-        #   deno - the npm: specifier only resolves a registry name@version, not
-        #          the tarball URL that pkg.pr.new serves (denoland/deno#28686)
         runner:
           - npm
           - pnpm
