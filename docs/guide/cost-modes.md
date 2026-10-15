@@ -26,7 +26,7 @@ ccusage daily
 
 1. **Pre-calculated costs available** → Uses Claude's `costUSD` values
 2. **No pre-calculated costs** → Calculates from token counts using model pricing
-3. **Mixed data** → Uses the best method for each entry
+3. **Mixed data** → Uses the best method for each entry; JSON output reports the stored part of each model's cost as [`storedCost`](/guide/json-output#stored-costs)
 
 #### Best for:
 

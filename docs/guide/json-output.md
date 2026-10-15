@@ -27,7 +27,7 @@ ccusage daily --json --no-cost
 ccusage blocks --json --no-cost
 ```
 
-This removes cost fields such as `totalCost`, `costUSD`, and nested `cost` values while keeping token, model, date, block, burn-rate, and projection fields.
+This removes cost fields such as `totalCost`, `costUSD`, `storedCost`, and nested `cost` values while keeping token, model, date, block, burn-rate, and projection fields.
 
 ## Unpriced Models
 
@@ -283,6 +283,22 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 		"totalCost": 0.023137500000000002,
 		"totalTokens": 1850
 	}
+}
+```
+
+## Stored Costs
+
+In `auto` [cost mode](/guide/cost-modes), an entry's `cost` can add together costs stored in the agent's logs (such as Claude's `costUSD`) and costs calculated from the pricing table. Each `modelBreakdowns` entry where at least one record used its stored cost carries `storedCost`, the part of `cost` that came from stored values; `cost - storedCost` is the calculated part. Entries without stored costs omit the key, and `calculate` and `display` modes never emit it.
+
+```json
+{
+	"modelName": "claude-sonnet-4-20250514",
+	"inputTokens": 1500,
+	"outputTokens": 100,
+	"cacheCreationTokens": 20,
+	"cacheReadTokens": 30,
+	"cost": 0.503084,
+	"storedCost": 0.5
 }
 ```
 
