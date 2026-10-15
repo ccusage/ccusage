@@ -866,6 +866,7 @@ fn model_name_from_id(model_id: u64) -> String {
         1071 => "gemini-3.6-flash-high".to_string(),
         1072 => "gemini-3.6-flash-medium".to_string(),
         1073 => "gemini-3.6-flash-low".to_string(),
+        1417 => "gemini-4-argon".to_string(),
         1_000.. => format!("model_placeholder_m{}", model_id - 1_000),
         _ => format!("antigravity-model-{model_id}"),
     }
@@ -917,6 +918,7 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         "model_placeholder_m71" => "gemini-3.6-flash-high",
         "model_placeholder_m72" => "gemini-3.6-flash-medium",
         "model_placeholder_m73" => "gemini-3.6-flash-low",
+        "model_placeholder_m417" => "gemini-4-argon",
         "model_placeholder_m26" => "claude-opus-4-6",
         "model_placeholder_m35" => "claude-sonnet-4-6",
         "model_placeholder_m36" | "model_placeholder_m37" | "model_placeholder_m16" => {
@@ -1542,6 +1544,12 @@ mod tests {
                 "model_placeholder_m73",
                 "Gemini 3.6 Flash (Low)",
                 "gemini-3.6-flash-low",
+            ),
+            (
+                1417,
+                "model_placeholder_m417",
+                "Gemini 4 Argon",
+                "gemini-4-argon",
             ),
         ];
 
