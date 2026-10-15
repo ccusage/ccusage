@@ -174,6 +174,7 @@ fn merge_model_breakdowns(
         b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
         b.cost += item.cost;
         b.missing_pricing |= item.missing_pricing;
+        b.add_stored_cost(item.stored_cost);
     }
     breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
     breakdowns
@@ -202,6 +203,7 @@ fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
             b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
             b.cost += item.cost;
             b.missing_pricing |= item.missing_pricing;
+            b.add_stored_cost(item.stored_cost);
         }
     }
     breakdowns

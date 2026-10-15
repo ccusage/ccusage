@@ -31,7 +31,7 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
             if !seen_sessions.insert(entry.session_id.clone()) {
                 continue;
             }
-            entries.push(to_loaded_entry(entry, tz.as_ref(), pricing));
+            entries.push(to_loaded_entry(entry, tz.as_ref(), shared.mode, pricing));
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);
@@ -175,7 +175,7 @@ mod tests {
         let tz = crate::parse_tz(shared.timezone.as_deref());
         let entries = load_state_db_entries(&db_path, &shared)
             .into_iter()
-            .map(|entry| to_loaded_entry(entry, tz.as_ref(), &pricing))
+            .map(|entry| to_loaded_entry(entry, tz.as_ref(), shared.mode, &pricing))
             .collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);

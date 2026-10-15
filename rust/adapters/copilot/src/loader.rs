@@ -16,7 +16,7 @@ use super::{
 use crate::{
     LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     calculate_cost_for_usage_at, cli::CostMode, date_range_bounds_ms, debug_log, format_date_tz,
-    missing_pricing_model_for_usage, parse_tz, read_files_parallel,
+    missing_pricing_model_for_usage, parse_tz, read_files_parallel, stored_cost_for_mode,
 };
 
 pub fn load_entries(
@@ -503,6 +503,7 @@ fn usage_entry_to_loaded(
         mode,
         Some(pricing),
     );
+    let stored_cost = stored_cost_for_mode(entry.cost_usd, mode);
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -517,6 +518,7 @@ fn usage_entry_to_loaded(
         data,
         usage_limit_reset_time: None,
         missing_pricing_model,
+        stored_cost,
     }
 }
 

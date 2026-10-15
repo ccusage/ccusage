@@ -125,6 +125,7 @@ mod tests {
             // `outputTokens`, so no tokens sit outside the counted buckets.
             extra_total_tokens: 0,
             message_count: None,
+            stored_cost: None,
         }
     }
 

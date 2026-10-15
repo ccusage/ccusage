@@ -86,6 +86,7 @@ fn to_loaded_entry(
         missing_pricing_model,
         message_count: None,
         data,
+        stored_cost: None,
     }
 }
 
@@ -257,6 +258,7 @@ mod tests {
             usage_limit_reset_time: None,
             missing_pricing_model: None,
             message_count: None,
+            stored_cost: None,
         };
         let rows = summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
         let report = report_from_rows(&rows, AgentReportKind::Daily);

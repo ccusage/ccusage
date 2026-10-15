@@ -109,9 +109,18 @@ pub struct ModelBreakdown {
     /// Present in JSON only when true, so priced breakdowns keep their shape.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_pricing: bool,
+    /// Part of `cost` taken from stored `costUSD` values in `auto` mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stored_cost: Option<f64>,
 }
 
 impl ModelBreakdown {
+    pub fn add_stored_cost(&mut self, stored_cost: Option<f64>) {
+        if let Some(stored_cost) = stored_cost {
+            *self.stored_cost.get_or_insert(0.0) += stored_cost;
+        }
+    }
+
     pub fn total_tokens(&self) -> u64 {
         self.input_tokens
             .saturating_add(self.output_tokens)
@@ -136,6 +145,7 @@ pub struct LoadedEntry {
     pub model: Option<String>,
     pub usage_limit_reset_time: Option<TimestampMs>,
     pub missing_pricing_model: Option<String>,
+    pub stored_cost: Option<f64>,
 }
 
 #[derive(Debug)]

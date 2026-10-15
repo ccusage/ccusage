@@ -875,6 +875,7 @@ mod tests {
             model: Some("claude-sonnet-4-20250514".to_string()),
             usage_limit_reset_time: None,
             missing_pricing_model: None,
+            stored_cost: None,
         };
 
         let rows = adapter::amp::summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
@@ -960,6 +961,7 @@ mod tests {
             model: Some("[pi] gpt-5.4".to_string()),
             usage_limit_reset_time: None,
             missing_pricing_model: None,
+            stored_cost: None,
         };
 
         let rows = adapter::pi::summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
@@ -1022,6 +1024,7 @@ mod tests {
             model: Some("claude-sonnet-4-20250514".to_string()),
             usage_limit_reset_time: None,
             missing_pricing_model: None,
+            stored_cost: None,
         };
 
         let report =

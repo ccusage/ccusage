@@ -50,7 +50,8 @@ Monthly JSON
           "cost": 0.08,
           "inputTokens": 0,
           "modelName": "unknown",
-          "outputTokens": 0
+          "outputTokens": 0,
+          "storedCost": 0.08
         },
         {
           "cacheCreationTokens": 15,
@@ -99,7 +100,8 @@ Session JSON
           "cost": 0.08,
           "inputTokens": 0,
           "modelName": "unknown",
-          "outputTokens": 0
+          "outputTokens": 0,
+          "storedCost": 0.08
         },
         {
           "cacheCreationTokens": 0,

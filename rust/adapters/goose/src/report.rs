@@ -117,6 +117,7 @@ mod tests {
             missing_pricing_model: None,
             extra_total_tokens: 30,
             message_count: None,
+            stored_cost: None,
         };
         let rows = summarize_entries(&[entry], AgentReportKind::Daily).unwrap();
         let report = report_from_rows(&rows, AgentReportKind::Daily);

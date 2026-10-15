@@ -27,7 +27,7 @@ use crate::{
     debug_log,
     fast::{FxHashMap, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
-    progress,
+    progress, stored_cost_for_mode,
 };
 
 #[doc(hidden)]
@@ -530,6 +530,7 @@ fn read_usage_file(
             mode,
             pricing,
         );
+        let stored_cost = stored_cost_for_mode(data.cost_usd, mode);
         let usage_limit_reset_time =
             usage_limit_reset_time_from_line_bytes(line, data.is_api_error_message);
         let model = data.message.model.as_ref().and_then(|model| {
@@ -555,6 +556,7 @@ fn read_usage_file(
             model,
             usage_limit_reset_time,
             missing_pricing_model,
+            stored_cost,
         };
         let mut advisor_entries = Vec::new();
         for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
@@ -594,6 +596,7 @@ fn read_usage_file(
                 model: Some(advisor.model),
                 usage_limit_reset_time,
                 missing_pricing_model,
+                stored_cost: None,
             });
         }
         loaded_file.entries.push(entry);
@@ -1577,6 +1580,7 @@ mod tests {
             model: Some("claude-sonnet-4-20250514".to_string()),
             usage_limit_reset_time: None,
             missing_pricing_model: None,
+            stored_cost: None,
         }
     }
 }

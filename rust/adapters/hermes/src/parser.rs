@@ -5,7 +5,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
-    missing_pricing_model_for_candidates,
+    missing_pricing_model_for_candidates, stored_cost_for_mode,
 };
 
 pub(super) struct HermesEntry {
@@ -142,9 +142,11 @@ fn infer_provider_from_model(model: &str) -> &'static str {
 pub(super) fn to_loaded_entry(
     entry: HermesEntry,
     tz: Option<&JiffTimeZone>,
+    mode: CostMode,
     pricing: &PricingMap,
 ) -> LoadedEntry {
     let cost = calculate_hermes_cost(&entry, pricing);
+    let stored_cost = stored_cost_for_mode(entry.cost_usd.filter(|cost| *cost > 0.0), mode);
     let missing_pricing_model = missing_hermes_pricing(&entry, pricing);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
@@ -173,6 +175,7 @@ pub(super) fn to_loaded_entry(
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        stored_cost,
         data,
     }
 }

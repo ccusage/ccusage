@@ -567,6 +567,7 @@ pub fn strip_cost_json(value: &mut Value) {
             map.remove("totalCost");
             map.remove("costUSD");
             map.remove("cost");
+            map.remove("storedCost");
             for (_, child) in map.iter_mut() {
                 strip_cost_json(child);
             }
@@ -711,6 +712,7 @@ mod tests {
             extra_total_tokens: 0,
             cost: if missing_pricing { 0.0 } else { 0.25 },
             missing_pricing,
+            stored_cost: None,
         }
     }
 
@@ -743,6 +745,19 @@ mod tests {
     }
 
     #[test]
+    fn model_breakdown_json_includes_stored_cost_only_when_present() {
+        let calculated = serde_json::to_value(breakdown("gpt-5", false)).unwrap();
+        let stored = serde_json::to_value(ModelBreakdown {
+            stored_cost: Some(0.5),
+            ..breakdown("claude-sonnet-4-20250514", false)
+        })
+        .unwrap();
+
+        assert!(calculated.get("storedCost").is_none());
+        assert_eq!(stored["storedCost"], 0.5);
+    }
+
+    #[test]
     fn strip_cost_json_removes_cost_fields_recursively() {
         let mut value = json!({
             "daily": [
@@ -754,6 +769,7 @@ mod tests {
                         {
                             "modelName": "gpt-5",
                             "costUSD": 0.1,
+                            "storedCost": 0.1,
                             "inputTokens": 100,
                             "missingPricing": true
                         }
@@ -920,6 +936,7 @@ mod tests {
             extra_total_tokens: 7,
             cost: 0.25,
             missing_pricing: false,
+            stored_cost: None,
         };
 
         assert_eq!(breakdown.total_tokens(), 172);
@@ -956,6 +973,7 @@ mod tests {
                     extra_total_tokens: 0,
                     cost: 0.3,
                     missing_pricing: false,
+                    stored_cost: None,
                 },
                 ModelBreakdown {
                     model_name: "claude-sonnet-4-20250514".to_string(),
@@ -966,6 +984,7 @@ mod tests {
                     extra_total_tokens: 0,
                     cost: 0.12,
                     missing_pricing: false,
+                    stored_cost: None,
                 },
             ],
             project: project.map(str::to_string),

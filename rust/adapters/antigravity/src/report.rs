@@ -112,6 +112,7 @@ mod tests {
             model: Some("gemini-3-pro".to_string()),
             usage_limit_reset_time: None,
             missing_pricing_model: None,
+            stored_cost: None,
         }
     }
 

@@ -109,7 +109,8 @@ Daily JSON
           "cost": 0.06,
           "inputTokens": 0,
           "modelName": "unknown",
-          "outputTokens": 0
+          "outputTokens": 0,
+          "storedCost": 0.06
         },
         {
           "cacheCreationTokens": 0,
@@ -140,7 +141,8 @@ Daily JSON
           "cost": 0.02,
           "inputTokens": 0,
           "modelName": "unknown",
-          "outputTokens": 0
+          "outputTokens": 0,
+          "storedCost": 0.02
         }
       ],
       "modelsUsed": [

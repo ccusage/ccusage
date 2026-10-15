@@ -324,6 +324,7 @@ mod tests {
                     extra_total_tokens: 4,
                     cost: 0.15,
                     missing_pricing: false,
+                    stored_cost: None,
                 },
                 ModelBreakdown {
                     model_name: "model-b".to_string(),
@@ -334,6 +335,7 @@ mod tests {
                     extra_total_tokens: 3,
                     cost: 0.10,
                     missing_pricing: false,
+                    stored_cost: None,
                 },
             ],
             project: None,

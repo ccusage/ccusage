@@ -215,6 +215,7 @@ fn parse_ledger_events(
             usage_limit_reset_time: None,
             missing_pricing_model,
             data,
+            stored_cost: None,
         });
     }
     entries
@@ -323,6 +324,7 @@ fn parse_message_usage(
             usage_limit_reset_time: None,
             missing_pricing_model,
             data,
+            stored_cost: None,
         });
     }
     entries

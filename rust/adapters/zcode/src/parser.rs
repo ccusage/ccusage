@@ -137,6 +137,7 @@ pub(super) fn row_to_entry(
         model: Some(raw_model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        stored_cost: None,
     })
 }
 

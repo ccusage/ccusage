@@ -323,6 +323,7 @@ pub(super) fn parse_session_files(
                 // them to `extra_total_tokens` would bill them into the grand total a
                 // second time.
                 extra_total_tokens: 0,
+                stored_cost: None,
             });
             let _ = model_usage.total_tokens;
         }

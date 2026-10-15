@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::{
     LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, format_date_tz,
-    missing_pricing_model_for_candidates,
+    missing_pricing_model_for_candidates, stored_cost_for_mode,
 };
 use ccusage_adapter_common::jsonl;
 
@@ -154,6 +154,7 @@ pub(super) fn message_value_to_entry(
     let cost = calculate_kilo_cost(&cost_data, provider.as_deref(), mode, pricing);
     let missing_pricing_model =
         missing_kilo_pricing(&cost_data, provider.as_deref(), mode, pricing);
+    let stored_cost = stored_cost_for_mode(cost_data.cost_usd, mode);
     Some(LoadedEntry {
         date: format_date_tz(timestamp, tz),
         timestamp,
@@ -166,6 +167,7 @@ pub(super) fn message_value_to_entry(
         model: Some(model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        stored_cost,
         message_count: None,
         data,
     })
