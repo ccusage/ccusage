@@ -345,6 +345,7 @@ jobs:
         runner:
           - npm
           - pnpm
+          - bun
 
     steps:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -354,6 +355,10 @@ jobs:
         if: matrix.runner == 'pnpm'
         with:
           version: latest
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: matrix.runner == 'bun'
+        with:
+          bun-version: latest
       - name: Download E2E fixture
         shell: pwsh
         env:
@@ -413,6 +418,8 @@ jobs:
             switch ($env:RUNNER_KIND) {
               'npm' { return (npx --yes $url @ccArgs) }
               'pnpm' { return (pnpm dlx $url @ccArgs) }
+              # bunx rejects a bare URL as the package, so name the binary.
+              'bun' { return (bunx --package $url ccusage @ccArgs) }
             }
           }
           Invoke-Ccusage @('--version') | Out-Host
