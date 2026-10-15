@@ -20,13 +20,17 @@ def main [] {
     let version = (expected_version $repo_root)
     if (native_package_includes_binary $native_package_root $binary_name) and (has_expected_version $native_binary $version) {
         if not (is_portable_binary $target_platform $native_binary) {
-            error make {msg: $"($native_binary) depends on dynamic libraries that do not exist on end-user machines; rebuild it \(Linux packages must be static, macOS packages may only link system dylibs)"}
+            error make {
+                msg: $"($native_binary) depends on dynamic libraries that do not exist on end-user machines; rebuild it \(Linux packages must be static, macOS packages may only link system dylibs)"
+            }
         }
         exit 0
     }
     ^cargo build --manifest-path ($repo_root | path join rust Cargo.toml) --release --bin ccusage
     if not (has_expected_version $cargo_binary $version) {
-        error make {msg: $"($cargo_binary) did not report version ($version) after cargo build"}
+        error make {
+            msg: $"($cargo_binary) did not report version ($version) after cargo build"
+        }
     }
 }
 def node_platform [] {
