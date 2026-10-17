@@ -83,7 +83,10 @@ in
           pkgs.coreutils
         ];
         text = ''
-          for lockfile in nix/tools/*/bun.lock; do
+          if [ "$#" -eq 0 ]; then
+            set -- nix/tools/*/bun.lock
+          fi
+          for lockfile in "$@"; do
             toolDir="$(dirname "$lockfile")"
             echo "Regenerating $toolDir"
             (cd "$toolDir" && bun2nix -o bun.nix)
@@ -122,6 +125,7 @@ in
           "rust/crates/ccusage-core/src/models-dev-pricing.json"
           "rust/crates/ccusage-core/src/models-dev-catalog-rules.json"
           "rust/adapters/codex/src/codex-auto-review-fallbacks.json"
+          "nix/tools/*/bun.lock"
         ];
 
         # The tagpr PR template is a Go text/template, and oxfmt's markdown
@@ -130,10 +134,10 @@ in
         # `bun.lock`/`bun.nix` under nix/tools are regenerated verbatim by `bun
         # install` and `bun2nix`. Formatting them fights the generators: oxfmt
         # rewrites the JSONC lockfile, and deadnix strips the unused arguments
-        # that bun.nix's `callPackage` signature requires.
+        # that bun.nix's `callPackage` signature requires. `bun.lock` stays
+        # visible to the bun-nix formatter, which derives `bun.nix` from it.
         settings.global.excludes = [
           ".github/tagpr-template.md"
-          "nix/tools/*/bun.lock"
           "nix/tools/*/bun.nix"
         ];
 
@@ -145,6 +149,7 @@ in
             command = lib.getExe pkgs.oxfmt;
             options = [ "--no-error-on-unmatched-pattern" ];
             includes = [ "*" ];
+            excludes = [ "nix/tools/*/bun.lock" ];
             priority = 4;
           };
           actionlint = {
@@ -229,6 +234,11 @@ in
             ];
             priority = 10;
           };
+          bun-nix = {
+            command = lib.getExe generateBunNix;
+            includes = [ "nix/tools/*/bun.lock" ];
+            priority = 11;
+          };
         };
       };
 
@@ -241,9 +251,9 @@ in
         program = lib.getExe schemaGen;
       };
       # `nix run .#generate-bun-nix` derives every committed bun.nix from its
-      # sibling bun.lock. Renovate uses this before committing dependency
-      # updates, while contributors can use `just gen-bun-nix` when a manifest
-      # also needs Bun to resolve a new lockfile.
+      # sibling bun.lock. It is also the bun-nix treefmt formatter, so autofix.ci
+      # commits the result on dependency PRs; contributors can use
+      # `just gen-bun-nix` when a manifest also needs Bun to resolve a new lockfile.
       apps.generate-bun-nix = {
         type = "app";
         program = lib.getExe generateBunNix;
