@@ -10892,13 +10892,24 @@
 	},
 	"deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.003,
-			"input": 0.15,
-			"output": 0.6
+			"cache_read": 0.008,
+			"input": 0.04,
+			"output": 0.08
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 1050000
+			"context": 1048576
+		}
+	},
+	"deepseek-v4.1-flash-1017@eu": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.5,
+			"output": 1.5
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"deepseek-v4.1-flash-552b": {
@@ -19734,6 +19745,16 @@
 			"context": 512
 		}
 	},
+	"meta-models/Muse-Spark-Open-816B-A42B": {
+		"cost": {
+			"cache_read": 0.15,
+			"input": 1.25,
+			"output": 4.25
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"meta-models/muse-spark-open": {
 		"cost": {
 			"cache_read": 1.25,
@@ -23541,6 +23562,16 @@
 		},
 		"limit": {
 			"context": 8192
+		}
+	},
+	"nvidia/NVIDIA-Nemotron-3.5-Super-VL": {
+		"cost": {
+			"cache_read": 0.02,
+			"input": 0.15,
+			"output": 0.5
+		},
+		"limit": {
+			"context": 262144
 		}
 	},
 	"nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B": {
@@ -34980,8 +35011,8 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.0067,
-			"input": 0.0067,
+			"cache_read": 0.0058,
+			"input": 0.0058,
 			"output": 1.28
 		},
 		"limit": {
