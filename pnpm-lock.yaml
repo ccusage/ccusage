@@ -20,7 +20,7 @@ catalogs:
       version: 1.14.0
   types:
     '@types/node':
-      specifier: ^24.13.3
+      specifier: ^24.19.2
       version: 24.19.2
     '@types/react':
       specifier: ^19.3.0
