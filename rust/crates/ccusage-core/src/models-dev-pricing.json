@@ -27938,7 +27938,7 @@
 			"output": 3
 		},
 		"limit": {
-			"context": 1010000
+			"context": 1048576
 		}
 	},
 	"qwen/qwen3.8-27b-uncensored:thinking": {
@@ -27948,7 +27948,7 @@
 			"output": 3
 		},
 		"limit": {
-			"context": 1010000
+			"context": 1048576
 		}
 	},
 	"qwen/qwen3.8-27b:thinking": {
@@ -31257,6 +31257,16 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 262144
+		}
+	},
+	"unbiased/pareto-26.10": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.8,
+			"output": 3.2
+		},
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"unbiased/pareto-26.10-preview": {
@@ -35011,8 +35021,8 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.0045,
-			"input": 0.0045,
+			"cache_read": 0.0162,
+			"input": 0.0162,
 			"output": 1.28
 		},
 		"limit": {
@@ -35204,13 +35214,13 @@
 	},
 	"~unbiased/pareto-latest": {
 		"cost": {
-			"cache_read": 0.25,
-			"input": 2.5,
-			"output": 7.5
+			"cache_read": 0.03,
+			"input": 0.8,
+			"output": 3.2
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 262144
+			"context": 1048576
 		}
 	},
 	"~x-ai/grok-latest": {
