@@ -108,12 +108,8 @@ in
           ${lib.getExe config.packages.syncAgentSkills}
           ${config.pre-commit.shellHook}
 
-          # The hooks live in the git common dir, so every worktree shares them,
-          # but each reads its worktree's untracked config symlink. A worktree
-          # whose dev shell has never loaded has no such symlink, and without
-          # `--allow-missing-config` every commit there aborts. git-hooks.nix has
-          # no option for the flag, so reinstall with it, comparing before writing
-          # as git-hooks.nix does.
+          # Hooks are shared across worktrees, but the config symlink only exists
+          # where this shell has loaded; git-hooks.nix cannot pass this flag.
           for stage in ${lib.escapeShellArgs config.pre-commit.settings.installStages}; do
             hookFile=$(${lib.getExe config.pre-commit.settings.gitPackage} rev-parse --path-format=absolute --git-path "hooks/$stage")
             if ! grep -q -- --skip-on-missing-config "$hookFile" 2>/dev/null; then
