@@ -10403,6 +10403,16 @@
 			"context": 1048576
 		}
 	},
+	"deepseek-ai/DeepSeek-V4.1-Flash-1017": {
+		"cost": {
+			"cache_read": 0.006,
+			"input": 0.2,
+			"output": 0.6
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"deepseek-ai/DeepSeek-V4.1-Flash-Fast": {
 		"cost": {
 			"input": 0.6,
@@ -10901,9 +10911,9 @@
 	},
 	"deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.008,
-			"input": 0.04,
-			"output": 0.08
+			"cache_read": 0.128,
+			"input": 0.511,
+			"output": 1.534
 		},
 		"exactOnly": true,
 		"limit": {
@@ -10965,6 +10975,16 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 1048560
+		}
+	},
+	"deepseek-v4.1-flash:1017": {
+		"cost": {
+			"cache_read": 0.003,
+			"input": 0.15,
+			"output": 0.6
+		},
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"deepseek-v4.1-flash:fast": {
@@ -11361,9 +11381,10 @@
 	},
 	"deepseek/deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.003,
-			"input": 0.15,
-			"output": 0.6
+			"cache_read": 0.006,
+			"cache_write": 0.3,
+			"input": 0.3,
+			"output": 1.2
 		},
 		"limit": {
 			"context": 1048576
@@ -14020,6 +14041,7 @@
 	},
 	"glm-4.5v": {
 		"cost": {
+			"cache_read": 0.11,
 			"input": 0.6,
 			"output": 1.8
 		},
@@ -14040,6 +14062,7 @@
 	},
 	"glm-4.6v": {
 		"cost": {
+			"cache_read": 0.05,
 			"input": 0.3,
 			"output": 0.9
 		},
@@ -20007,7 +20030,7 @@
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 1048576
+			"context": 1040000
 		}
 	},
 	"meta/muse-wonder": {
@@ -20029,6 +20052,16 @@
 		},
 		"limit": {
 			"context": 1048576
+		}
+	},
+	"metis": {
+		"cost": {
+			"input": 0.137,
+			"output": 0
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 32768
 		}
 	},
 	"microsoft/microsoft-decision-1": {
@@ -28906,6 +28939,17 @@
 			"context": 1000000
 		}
 	},
+	"reflection/beam": {
+		"cost": {
+			"cache_read": 0.25,
+			"input": 0.25,
+			"output": 1
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"reflection/beam-1.0": {
 		"cost": {
 			"cache_read": 0.05,
@@ -35031,7 +35075,7 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.001523,
-			"input": 0.00392,
+			"input": 0.01208,
 			"output": 0.143616
 		},
 		"limit": {
