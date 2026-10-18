@@ -49,8 +49,40 @@ def main [
         {scenario: $scenario.name, crane: $crane, 'cargo-nix-plugin': $plugin}
     }
 
+    let binaries = [crane plugin] | each {|builder|
+        let out = ^nix build --no-link --print-out-paths ...($targets | get $builder) | str trim
+        let bin = $out | path join bin ccusage
+        {
+            builder: $builder
+            bytes: (ls $bin | get 0.size | into int)
+            'linked libraries': (linked-libraries $bin | str join '<br>')
+        }
+    }
+
     let table = $rows | to md
+    let binary_table = $binaries | to md
     print $"plugin build: ($plugin_build)"
     print $table
-    $"### ($system)\n\nplugin build: ($plugin_build)\n\n($table)\n\n" | save --append $summary
+    print $binary_table
+    $"### ($system)\n\nplugin build: ($plugin_build)\n\n($table)\n\n($binary_table)\n\n" | save --append $summary
+}
+
+# Shared libraries the binary loads at runtime, so a store path that end-user
+# machines lack stands out next to the system ones.
+def linked-libraries [bin: path]: nothing -> list<string> {
+    match $nu.os-info.name {
+        macos => (
+            ^otool -L $bin
+            | lines
+            | skip 1
+            | str trim
+            | each { split row ' ' | first }
+        )
+        _ => (
+            ^readelf -d $bin
+            | lines
+            | parse --regex 'NEEDED.*\[(?<lib>[^\]]+)\]'
+            | get lib
+        )
+    }
 }
