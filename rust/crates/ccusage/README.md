@@ -41,6 +41,7 @@ source in its own `ccusage-adapter-*` crate.
 - `ccusage-cli-parser`
 - `ccusage-config`
 - `ccusage-core`
+- `ccusage-pricing-snapshots`
 - `serde`
 - `serde_json`
 
