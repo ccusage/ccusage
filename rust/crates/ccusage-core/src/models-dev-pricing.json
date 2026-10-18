@@ -8693,7 +8693,7 @@
 	},
 	"cloudflare/clef-flash": {
 		"cost": {
-			"input": 0.021,
+			"input": 0.038,
 			"output": 0
 		},
 		"exactOnly": true,
@@ -35030,9 +35030,9 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.0057,
-			"input": 0.0057,
-			"output": 1.28
+			"cache_read": 0.001523,
+			"input": 0.00392,
+			"output": 0.143616
 		},
 		"limit": {
 			"context": 1048576
