@@ -75,6 +75,7 @@ in
             inherit pkgs;
             commonArgs = staticCommonArgs;
             cargoArtifacts = staticDependencyArtifacts;
+            inherit (staticDepsOnlyArgs) dummySrc;
             cargoTargetArgs = "--target ${linuxStaticTarget}";
           };
           staticCargoArtifacts = staticWorkspaceArtifacts.adapters;

@@ -107,6 +107,7 @@ let
       root
       ;
     cargoArtifacts = dependencyArtifacts;
+    inherit (depsOnlyArgs) dummySrc;
   };
   cargoArtifacts = workspaceArtifacts.adapters;
 in
