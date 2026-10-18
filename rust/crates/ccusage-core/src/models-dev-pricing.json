@@ -10064,6 +10064,15 @@
 			"context": 131072
 		}
 	},
+	"deepinfra/nemotron-3-super-120b-a12b": {
+		"cost": {
+			"input": 0.085,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
 	"deepinfra/nemotron-3-ultra-550b": {
 		"cost": {
 			"cache_read": 0.1,
@@ -35021,8 +35030,8 @@
 	},
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
-			"cache_read": 0.0132,
-			"input": 0.0132,
+			"cache_read": 0.0057,
+			"input": 0.0057,
 			"output": 1.28
 		},
 		"limit": {
@@ -35247,9 +35256,9 @@
 	},
 	"~z-ai/glm-flash-latest": {
 		"cost": {
-			"cache_read": 0.04,
-			"input": 0.06,
-			"output": 1.6
+			"cache_read": 0.006,
+			"input": 0.048,
+			"output": 0.2
 		},
 		"exactOnly": true,
 		"limit": {
