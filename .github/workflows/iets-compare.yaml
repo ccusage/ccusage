@@ -43,7 +43,7 @@ jobs:
       # iets builds through a daemon, which single-user Nix in CI lacks.
       - name: Start a Nix daemon for iets
         run: |
-          nohup nix daemon --force-trusted > "$RUNNER_TEMP/nix-daemon.log" 2>&1 &
+          nohup nix daemon --extra-experimental-features daemon-trust-override --force-trusted > "$RUNNER_TEMP/nix-daemon.log" 2>&1 &
           for _ in $(seq 50); do
             if [ -S /nix/var/nix/daemon-socket/socket ]; then
               exit 0
