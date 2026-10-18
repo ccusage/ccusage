@@ -29,7 +29,7 @@ npx ccusage@latest
 ```
 
 ```bash [pkg.pr.new preview]
-bunx --package https://pkg.pr.new/ccusage@<pr-number-or-commit-sha> ccusage --offline
+bunx -p https://pkg.pr.new/ccusage@<pr-number-or-commit-sha> ccusage --offline
 ```
 
 :::
