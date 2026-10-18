@@ -22,8 +22,9 @@ use webpki::ring as algs;
 ///
 /// Only TLS 1.3 suites are offered: both pricing hosts negotiate TLS 1.3, and
 /// the TLS 1.2 suites would keep their key schedule and AEAD glue in the binary.
-/// A middlebox that only speaks TLS 1.2 could not complete the handshake anyway,
-/// because the client trusts no root beyond the embedded web PKI ones.
+/// TLS-intercepting middleboxes already failed, because the client trusts no
+/// root beyond the embedded web PKI ones; an `https://` proxy with a publicly
+/// trusted certificate now needs TLS 1.3 as well.
 ///
 /// X25519 is the only key exchange group, which both hosts pick on their own;
 /// the NIST curves stay for certificate signatures, not for key agreement.
