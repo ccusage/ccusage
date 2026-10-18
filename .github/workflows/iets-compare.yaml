@@ -1,8 +1,6 @@
 name: iets comparison
 
-# Experiment: compare Nix with iets (https://github.com/numtide/iets), a Rust
-# reimplementation of the Nix evaluator, on this flake. Each leg checks that
-# both tools produce the same derivations and dev shell, and times them.
+# Experiment: compare Nix with iets (https://github.com/numtide/iets) on this flake.
 on:
   pull_request:
     paths:
@@ -23,8 +21,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The build comparison needs every check built first, which only the
-          # Linux leg can afford: it starts from the store the test job keeps warm.
           - name: linux-x64
             os: blacksmith-32vcpu-ubuntu-2404
             build: true
@@ -44,8 +40,7 @@ jobs:
         env:
           IETS_REV: 79c4346887c450eb684bb66402cb16fd5c9bbd77
         run: nix build "github:numtide/iets/$IETS_REV" --out-link "$RUNNER_TEMP/iets"
-      # iets has no store of its own and builds through a Nix daemon, but
-      # nix-quick-install-action sets up a single-user store without one.
+      # iets builds through a daemon, which single-user Nix in CI lacks.
       - name: Start a Nix daemon for iets
         run: |
           nohup nix daemon --force-trusted > "$RUNNER_TEMP/nix-daemon.log" 2>&1 &

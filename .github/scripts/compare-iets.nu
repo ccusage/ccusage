@@ -3,9 +3,7 @@
 
 const DRV_PATHS = 'builtins.mapAttrs (_: check: check.drvPath)'
 
-# Compare Nix with iets (https://github.com/numtide/iets) on this flake: whether
-# both evaluate to the same derivations and dev shell, and how long each takes.
-# Writes a Markdown report to the GitHub step summary, or stdout outside CI.
+# Check that iets matches Nix on this flake, and time both.
 def main [
     iets: path # the iets binary
     --build # also time a no-op build of every check; they must already be built
@@ -17,9 +15,7 @@ def main [
     let shell = $".#devShells.($system).default"
     let tmp = mktemp --directory
 
-    # iets's tracing and IR caches would turn every run after the first into a
-    # cache hit. A CI job starts without them, so time the uncached evaluation,
-    # and turn off Nix's flake eval cache to match.
+    # A fresh CI job has no eval cache, so time both uncached.
     $env.IETS_CACHE = '0'
 
     let parity = [
@@ -82,11 +78,9 @@ def main [
     }
 }
 
-# Evaluate every check's drvPath with both tools.
 def compare-checks [iets: path, checks: string]: nothing -> record {
     let nix = ^nix eval --json $checks --apply $DRV_PATHS | from json
-    # eval-jobs prints one JSON line per job, with an `error` key in place of
-    # the drvPath when the job fails to evaluate.
+    # A job that fails to evaluate has `error` instead of `drvPath`.
     let jobs = ^$iets eval-jobs --flake $checks | lines | each { from json }
     let iets_drvs = $jobs
     | each {|job| {($job.attr): ($job.drvPath? | default $"error: ($job.error?)")} }
@@ -107,7 +101,6 @@ def compare-checks [iets: path, checks: string]: nothing -> record {
     }
 }
 
-# Print the dev shell with both tools and compare the bytes.
 def compare-dev-env [iets: path, shell: string, tmp: path]: nothing -> record {
     ^nix print-dev-env $shell | save $"($tmp)/nix-dev-env.sh"
     ^$iets print-dev-env $shell | save $"($tmp)/iets-dev-env.sh"
@@ -121,7 +114,6 @@ def compare-dev-env [iets: path, shell: string, tmp: path]: nothing -> record {
     }
 }
 
-# Time one Nix command against its iets counterpart and return a Markdown section.
 def benchmark [case: record<title: string, nix: string, iets: string>, out: path, runs: int]: nothing -> string {
     (
         ^hyperfine --warmup 1 --runs $runs --style basic
