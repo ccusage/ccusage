@@ -37,11 +37,11 @@ instead, which falls back to that crate when nothing was installed.
 - `ccusage-terminal`
 - `jiff`
 - `memchr`
+- `miniz_oxide`
 - `rustc-hash`
 - `serde`
 - `serde_json`
 - `smallvec`
-- `ureq`
 - `ccusage-pricing-snapshots` — optional, behind the test-only `test-snapshots`
   feature
 
