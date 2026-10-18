@@ -13,6 +13,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
+    cargo-nix-plugin = {
+      url = "github:anthropics/cargo-nix-plugin";
+      flake = false;
+    };
     flake-parts.url = "github:hercules-ci/flake-parts";
     agent-skills = {
       url = "github:Kyure-A/agent-skills-nix";
@@ -58,6 +62,7 @@
         ./nix/treefmt.nix
         ./nix/git-hooks.nix
         ./nix/packages.nix
+        ./nix/cargo-nix-plugin.nix
         ./nix/pnpm.nix
         ./nix/tirith.nix
         ./nix/static-package.nix

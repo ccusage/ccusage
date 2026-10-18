@@ -44,6 +44,22 @@
         "type": "github"
       }
     },
+    "cargo-nix-plugin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792190757,
+        "narHash": "sha256-2+uVu5o0koHtab36LO99Dhy7IhQr2u4Jw36KonAdGuk=",
+        "owner": "anthropics",
+        "repo": "cargo-nix-plugin",
+        "rev": "00f311abab999b4ad4c7f3fa3d85bb17beb91aee",
+        "type": "github"
+      },
+      "original": {
+        "owner": "anthropics",
+        "repo": "cargo-nix-plugin",
+        "type": "github"
+      }
+    },
     "crane": {
       "locked": {
         "lastModified": 1791754810,
@@ -233,6 +249,7 @@
       "inputs": {
         "agent-skills": "agent-skills",
         "bun2nix": "bun2nix",
+        "cargo-nix-plugin": "cargo-nix-plugin",
         "crane": "crane",
         "flake-parts": "flake-parts_2",
         "git-hooks": "git-hooks",
