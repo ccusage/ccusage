@@ -9834,6 +9834,16 @@
 			"context": 1048576
 		}
 	},
+	"deepinfra/deepseek-ai/DeepSeek-V4.1-Flash-1017": {
+		"cost": {
+			"cache_read": 0.006,
+			"input": 0.2,
+			"output": 0.6
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"deepinfra/deepseek-v3.2": {
 		"cost": {
 			"cache_read": 0.13,
@@ -11385,6 +11395,16 @@
 			"cache_write": 0.3,
 			"input": 0.3,
 			"output": 1.2
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"deepseek/deepseek-v4.1-flash-1017-fast": {
+		"cost": {
+			"cache_read": 0.014,
+			"input": 0.6,
+			"output": 2.4
 		},
 		"limit": {
 			"context": 1048576
@@ -35075,7 +35095,7 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.001523,
-			"input": 0.01208,
+			"input": 0.00392,
 			"output": 0.143616
 		},
 		"limit": {
