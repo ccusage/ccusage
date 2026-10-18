@@ -10,12 +10,31 @@ inputs:
 runs:
   using: composite
   steps:
+    # rust-toolchain.toml also lists clippy, rustfmt, and llvm-tools for local
+    # development, which rustup would otherwise download on the first cargo call
+    # (~50 MB of the ~150 MB of xz archives). The release build only needs the
+    # minimal profile of the same channel; RUSTUP_TOOLCHAIN takes precedence
+    # over the toolchain file, so cargo does not install the rest.
+    - name: Install Rust toolchain
+      id: toolchain
+      shell: bash
+      run: |
+        channel="$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)"
+        if [ -z "$channel" ]; then
+          echo "::error file=rust-toolchain.toml::no channel found"
+          exit 1
+        fi
+        rustup toolchain install "$channel" --profile minimal --no-self-update
+        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
     - uses: ./.github/actions/setup-native-build-cache
       with:
         platform: win32
 
     - name: Build Cargo native binary
       shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
       # Nix cannot target Windows, so this is the one build that downloads the
       # LiteLLM pricing snapshot instead of reading it from the pinned input.
       run: cargo build --manifest-path rust/Cargo.toml --release --bin ccusage --features fetch-litellm-pricing
