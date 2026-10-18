@@ -103,6 +103,14 @@ in
               cargo = rustToolchain;
               extraRustcOpts = (args.extraRustcOpts or [ ]) ++ profileOpts isHost args;
             }
+            # The builder hardcodes OPT_LEVEL=3 for build scripts, so the cc
+            # crate compiles vendored C at -O3 where Cargo's opt-level = "s"
+            # gives -Os. CFLAGS lands after cc's own flag, and the last -O wins.
+            // lib.optionalAttrs (!isHost && !isWorkspaceCrate args.crateName) {
+              env = (args.env or { }) // {
+                CFLAGS = "-Os";
+              };
+            }
             // lib.optionalAttrs (salt != "") { CNP_SALT = salt; }
           );
         crateOverrides = pkgs.defaultCrateOverrides // {
@@ -114,7 +122,7 @@ in
           ccusage-core = _: {
             env.CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}/model_prices_and_context_window.json";
           };
-          sqlite3-src = _: { env = cargoConfigEnv; };
+          sqlite3-src = attrs: { env = (attrs.env or { }) // cargoConfigEnv; };
           # Cargo builds the vendored zstd statically; nixpkgs' default override
           # links the store dylib instead, which end-user Macs do not have.
           zstd-sys = _: { };
