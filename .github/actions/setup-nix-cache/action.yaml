@@ -87,34 +87,44 @@ runs:
     # because release bumps do not change the deps-only Crane derivation.
     # Likewise, checks and developer-tooling modules do not affect Cargo
     # artifacts; only package modules participate in this hash.
-    - name: Hash Nix cache inputs
+    #
+    # The commit sha ends the primary key so every commit writes a fresh entry:
+    # cache-nix-action skips saving on an exact primary-key hit, so a key that
+    # only depended on the deps hash would persist the first run's store
+    # forever. The restore prefixes (without the sha) then restore the newest
+    # prior entry to warm the deps: the first prefers the current deps hash, the
+    # second drops it so a flake change that only adds developer tooling still
+    # restores a warm store. Blacksmith handles stale cache eviction without the
+    # GitHub REST API used by cache-nix-action's purge mode.
+    #
+    # Like the sticky disk key, the key has no workflow name, so release.yaml's
+    # macOS builds, which never save, restore the entry ci.yaml saved on main,
+    # often for the very commit being released. Two workflows sharing a job id
+    # can only collide on the primary key for the same commit, whose stores hold
+    # the same build.
+    - name: Compute Nix cache key
       if: steps.backend.outputs.sticky != 'true'
-      id: deps
+      id: key
       shell: bash
       env:
         DEPS_HASH: ${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}
-      run: echo "hash=$DEPS_HASH" >> "$GITHUB_OUTPUT"
+        SCOPE: nix-${{ github.job }}-${{ inputs.cache-scope }}
+        SHA: ${{ github.sha }}
+      run: |
+        {
+          echo "primary=$SCOPE-$DEPS_HASH-$SHA"
+          echo "restore-prefixes<<EOF"
+          echo "$SCOPE-$DEPS_HASH-"
+          echo "$SCOPE-"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
 
-    # github.workflow is included so workflows that share a job id (e.g.
-    # build-native-packages in both ci.yaml and release.yaml) do not collide on
-    # the same primary-key and block each other from saving updated entries.
     - name: Cache Nix store
       if: steps.backend.outputs.sticky != 'true'
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
-        # The commit sha is appended so every commit writes a fresh entry:
-        # cache-nix-action skips saving on an exact primary-key hit, so a key that
-        # only depended on the deps hash would persist the first run's store
-        # forever. restore-prefixes-first-match (without the sha) then restores
-        # the newest prior entry to warm the deps. Blacksmith handles stale cache
-        # eviction without the GitHub REST API used by this action's purge mode.
-        primary-key: nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ steps.deps.outputs.hash }}-${{ github.sha }}
-        # First prefix prefers the current deps hash. The second drops the hash so
-        # a flake change that only adds developer tooling still restores the newest
-        # prior store instead of starting from a cold cache.
-        restore-prefixes-first-match: |
-          nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-${{ steps.deps.outputs.hash }}-
-          nix-${{ github.workflow }}-${{ github.job }}-${{ inputs.cache-scope }}-
+        primary-key: ${{ steps.key.outputs.primary }}
+        restore-prefixes-first-match: ${{ steps.key.outputs.restore-prefixes }}
         save: ${{ inputs.save }}
         gc-max-store-size-linux: ${{ inputs.gc-max-store-size-linux }}
 
