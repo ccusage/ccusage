@@ -1,14 +1,16 @@
 name: update pricing
 
 on:
+  push:
+    branches: [main]
   schedule:
-    - cron: '0 * * * *'
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions: {}
 
-# Both legs push to main, so a manual dispatch landing on top of the hourly
-# schedule would otherwise race the other run's push.
+# Both legs push to main, so overlapping runs from pushes, the schedule, or a
+# manual dispatch would otherwise race each other's push.
 concurrency:
   group: update-pricing
   cancel-in-progress: false
