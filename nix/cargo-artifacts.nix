@@ -33,7 +33,6 @@
 # costs more than recompiling the unchanged adapters.
 {
   cargoArtifacts,
-  cargoTargetArgs ? "",
   commonArgs,
   craneLib,
   # The dependency layer's dummy source; the layers overlay their real crates on it.
@@ -50,10 +49,6 @@ let
     "ccusage-adapter-common"
     "ccusage-terminal"
   ];
-  # Not part of the binary, so the binary's build command skips it; the
-  # foundation layer builds it separately for the test derivation, which shares
-  # many of its dependency units.
-  testSupportCrates = [ "ccusage-test-support" ];
   agentNames = [
     "amp"
     "antigravity"
@@ -139,7 +134,6 @@ let
       cargoArtifacts,
       name,
       realCrates,
-      extraBuildCommand ? "",
     }:
     craneLib.mkCargoDerivation (
       artifactCommonArgs
@@ -148,27 +142,19 @@ let
         pnameSuffix = "-build";
         inherit cargoArtifacts;
         src = sourceFor realCrates;
-        buildPhaseCargoCommand = ''
-          cargoWithProfile build ${commonArgs.cargoExtraArgs}
-          ${extraBuildCommand}
-        '';
+        buildPhaseCargoCommand = "cargoWithProfile build ${commonArgs.cargoExtraArgs}";
       }
     );
 
   foundation = mkArtifacts {
     name = "ccusage-foundation";
     inherit cargoArtifacts;
-    realCrates = foundationCrates ++ testSupportCrates;
-    extraBuildCommand = lib.concatStringsSep " " (
-      [ "cargoWithProfile build" ]
-      ++ map (name: "-p ${name}") testSupportCrates
-      ++ lib.optional (cargoTargetArgs != "") cargoTargetArgs
-    );
+    realCrates = foundationCrates;
   };
   adapters = mkArtifacts {
     name = "ccusage-adapters";
     cargoArtifacts = foundation;
-    realCrates = foundationCrates ++ testSupportCrates ++ adapterCrates;
+    realCrates = foundationCrates ++ adapterCrates;
   };
   cacheRoot = pkgs.linkFarm "ccusage-cargo-artifact-cache-root" [
     {

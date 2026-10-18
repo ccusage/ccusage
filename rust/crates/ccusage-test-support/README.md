@@ -29,4 +29,4 @@ at runtime.
 
 ## Build layer
 
-Built in the `foundation` Crane artifact layer, so a change here recompiles every adapter. It is a dev-dependency only, so it never reaches the shipped binary.
+Outside the Crane artifact layers: they build only the shipped binary's dependency graph, and this crate is a dev-dependency only, so it never reaches that binary. The test, clippy and hawk derivations compile it themselves.

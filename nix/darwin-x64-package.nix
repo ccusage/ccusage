@@ -62,7 +62,6 @@ in
             commonArgs = crossCommonArgs;
             cargoArtifacts = crossDependencyArtifacts;
             inherit (crossDepsOnlyArgs) dummySrc;
-            cargoTargetArgs = "--target ${target}";
           };
           crossCargoArtifacts = crossWorkspaceArtifacts.adapters;
         in
