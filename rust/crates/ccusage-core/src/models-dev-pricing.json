@@ -4672,56 +4672,6 @@
 			"context": 1000000
 		}
 	},
-	"anthropic/claude-sonnet-4:thinking": {
-		"cost": {
-			"cache_read": 0.3,
-			"input": 3,
-			"output": 15
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
-	"anthropic/claude-sonnet-4:thinking:1024": {
-		"cost": {
-			"cache_read": 0.3,
-			"input": 3,
-			"output": 15
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
-	"anthropic/claude-sonnet-4:thinking:32768": {
-		"cost": {
-			"cache_read": 0.3,
-			"input": 3,
-			"output": 15
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
-	"anthropic/claude-sonnet-4:thinking:64000": {
-		"cost": {
-			"cache_read": 0.3,
-			"input": 3,
-			"output": 15
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
-	"anthropic/claude-sonnet-4:thinking:8192": {
-		"cost": {
-			"cache_read": 0.3,
-			"input": 3,
-			"output": 15
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
 	"anthropic/claude-sonnet-5": {
 		"cost": {
 			"cache_read": 0.2,
@@ -35095,7 +35045,7 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.001523,
-			"input": 0.01592,
+			"input": 0.0052,
 			"output": 0.143616
 		},
 		"limit": {
