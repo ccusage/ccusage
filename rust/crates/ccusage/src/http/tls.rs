@@ -19,9 +19,18 @@ use rustls::{
 use webpki::ring as algs;
 
 /// Builds the provider the pricing client hands to rustls.
+///
+/// Only TLS 1.3 suites are offered: both pricing hosts negotiate TLS 1.3, and
+/// the TLS 1.2 suites would keep their key schedule and AEAD glue in the binary.
+/// A middlebox that only speaks TLS 1.2 could not complete the handshake anyway,
+/// because the client trusts no root beyond the embedded web PKI ones.
 pub(super) fn provider() -> CryptoProvider {
     CryptoProvider {
-        cipher_suites: ring::ALL_CIPHER_SUITES.to_vec(),
+        cipher_suites: vec![
+            ring::cipher_suite::TLS13_AES_256_GCM_SHA384,
+            ring::cipher_suite::TLS13_AES_128_GCM_SHA256,
+            ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+        ],
         kx_groups: ring::ALL_KX_GROUPS.to_vec(),
         signature_verification_algorithms: SIGNATURE_ALGORITHMS,
         secure_random: &VerifyOnly,
@@ -132,6 +141,15 @@ mod tests {
                 .with_safe_default_protocol_versions()
                 .is_ok(),
             "rustls must accept the provider"
+        );
+    }
+
+    #[test]
+    fn provider_cannot_negotiate_tls_1_2() {
+        assert!(
+            ClientConfig::builder_with_provider(Arc::new(provider()))
+                .with_protocol_versions(&[&rustls::version::TLS12])
+                .is_err()
         );
     }
 }
