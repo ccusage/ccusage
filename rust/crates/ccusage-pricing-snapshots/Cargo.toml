@@ -1,0 +1,28 @@
+[package]
+name = "ccusage-pricing-snapshots"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+publish.workspace = true
+
+[features]
+# Off by default: the pricing snapshot normally arrives through
+# CCUSAGE_PRICING_JSON_PATH, and minreq's rustls stack is the workspace's most
+# expensive build-dependency. See build.rs.
+fetch-litellm-pricing = ["dep:minreq"]
+
+[build-dependencies]
+miniz_oxide.workspace = true
+minreq = { workspace = true, optional = true }
+# float_roundtrip: the snapshots are minified through a parse -> serialize
+# round-trip, and serde_json's default float parsing is not correctly rounded,
+# so without it a handful of prices shift by one ULP on the way into the
+# binary. Host-only, so it costs the shipped binary nothing.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[dev-dependencies]
+# build.rs is compiled into the unit tests, and its compaction test loads the
+# result through the runtime loader.
+ccusage-core.workspace = true
+miniz_oxide.workspace = true
+serde_json.workspace = true

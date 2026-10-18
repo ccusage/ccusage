@@ -14,22 +14,62 @@ use crate::{
     fast::{FxHashMap, FxHashSet},
 };
 
-// The embedded snapshots ship deflated - the models.dev one alone would
-// otherwise add a quarter megabyte of JSON to the binary - and are inflated
-// once, on first use, by the accessors below.
-const BUILD_TIME_PRICING_DEFLATE: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/litellm-pricing.json.deflate"));
-const BUILD_TIME_MODELS_DEV_DEFLATE: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/models-dev-pricing.json.deflate"));
-const MODELS_DEV_CATALOG_RULES_DEFLATE: &[u8] = include_bytes!(concat!(
-    env!("OUT_DIR"),
-    "/models-dev-catalog-rules.json.deflate"
-));
 const FAST_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("fast-multiplier-overrides.json");
 const FLEX_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("flex-multiplier-overrides.json");
 
-/// Inflate one of the deflated snapshots above. Infallible by construction:
-/// build.rs produced the bytes from JSON it had just serialized.
+/// The pricing snapshots the binary embeds, minified and deflated - the
+/// models.dev one alone would otherwise add a quarter megabyte of JSON - and
+/// inflated once, on first use, by the accessors below.
+///
+/// They are compiled by `ccusage-pricing-snapshots`, which only the binary
+/// depends on, and handed over through [`set_embedded_snapshots`]. Embedding
+/// them here instead would make every routine snapshot refresh recompile this
+/// crate and every adapter built on it.
+#[derive(Clone, Copy, Debug)]
+pub struct EmbeddedSnapshots {
+    /// LiteLLM pricing, compacted to the model families priced offline.
+    pub litellm_pricing: &'static [u8],
+    /// The committed models.dev pricing snapshot.
+    pub models_dev_pricing: &'static [u8],
+    /// The committed models.dev catalog rules.
+    pub models_dev_catalog_rules: &'static [u8],
+}
+
+static EMBEDDED_SNAPSHOTS: OnceLock<EmbeddedSnapshots> = OnceLock::new();
+
+/// Installs the embedded pricing snapshots.
+///
+/// The binary calls this at startup, before anything loads pricing; later calls
+/// are ignored. Tests enable the `test-snapshots` feature instead.
+///
+/// # Example
+///
+/// ```ignore
+/// ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
+///     litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
+///     models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
+///     models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
+/// });
+/// ```
+pub fn set_embedded_snapshots(snapshots: EmbeddedSnapshots) {
+    let _ = EMBEDDED_SNAPSHOTS.set(snapshots);
+}
+
+fn embedded_snapshots() -> &'static EmbeddedSnapshots {
+    #[cfg(any(test, feature = "test-snapshots"))]
+    set_embedded_snapshots(EmbeddedSnapshots {
+        litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
+        models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
+        models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
+    });
+    EMBEDDED_SNAPSHOTS
+        .get()
+        .expect("embedded pricing snapshots must be installed with set_embedded_snapshots")
+}
+
+/// Inflate one of the embedded snapshots. Infallible by construction: the
+/// snapshot crate's build script produced the bytes from JSON it had just
+/// serialized.
 fn inflate_snapshot(cell: &'static OnceLock<String>, deflated: &[u8]) -> &'static str {
     cell.get_or_init(|| {
         let bytes = miniz_oxide::inflate::decompress_to_vec(deflated)
@@ -40,17 +80,17 @@ fn inflate_snapshot(cell: &'static OnceLock<String>, deflated: &[u8]) -> &'stati
 
 fn build_time_pricing_json() -> &'static str {
     static JSON: OnceLock<String> = OnceLock::new();
-    inflate_snapshot(&JSON, BUILD_TIME_PRICING_DEFLATE)
+    inflate_snapshot(&JSON, embedded_snapshots().litellm_pricing)
 }
 
 fn build_time_models_dev_json() -> &'static str {
     static JSON: OnceLock<String> = OnceLock::new();
-    inflate_snapshot(&JSON, BUILD_TIME_MODELS_DEV_DEFLATE)
+    inflate_snapshot(&JSON, embedded_snapshots().models_dev_pricing)
 }
 
 fn models_dev_catalog_rules_json() -> &'static str {
     static JSON: OnceLock<String> = OnceLock::new();
-    inflate_snapshot(&JSON, MODELS_DEV_CATALOG_RULES_DEFLATE)
+    inflate_snapshot(&JSON, embedded_snapshots().models_dev_catalog_rules)
 }
 const LITELLM_PRICING_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";

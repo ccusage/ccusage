@@ -31,6 +31,11 @@ let
     "ccusage-terminal"
     "ccusage-test-support"
   ];
+  # The pricing snapshots are compiled into their own crate, which only the final
+  # binary builds, so a routine snapshot refresh leaves every layer here cached.
+  # Its sources still go into each layer because ccusage-core dev-depends on it
+  # and Cargo resolves the whole workspace; the snapshot data itself does not.
+  snapshotCrates = [ "ccusage-pricing-snapshots" ];
   agentNames = [
     "amp"
     "antigravity"
@@ -70,8 +75,6 @@ let
     lib.optionals (lib.elem "ccusage-core" names) [
       (rustRoot + /crates/ccusage-core/src/fast-multiplier-overrides.json)
       (rustRoot + /crates/ccusage-core/src/flex-multiplier-overrides.json)
-      (rustRoot + /crates/ccusage-core/src/models-dev-pricing.json)
-      (rustRoot + /crates/ccusage-core/src/models-dev-catalog-rules.json)
     ]
     ++ lib.optionals (lib.elem "ccusage-adapter-codex" names) [
       (rustRoot + /adapters/codex/src/codex-auto-review-fallbacks.json)
@@ -95,6 +98,8 @@ let
     + lib.optionalString (cargoTargetArgs != "") " ${cargoTargetArgs}";
   artifactCommonArgs =
     builtins.removeAttrs commonArgs [
+      # Only the snapshot crate's build script reads it, and no layer builds that.
+      "CCUSAGE_PRICING_JSON_PATH"
       "CCUSAGE_VERSION"
       "cargoExtraArgs"
       "src"
@@ -125,13 +130,13 @@ let
     name = "ccusage-foundation";
     inherit cargoArtifacts;
     packages = foundationCrates;
-    sources = foundationCrates;
+    sources = foundationCrates ++ snapshotCrates;
   };
   adapters = mkArtifacts {
     name = "ccusage-adapters";
     cargoArtifacts = foundation;
     packages = adapterCrates;
-    sources = foundationCrates ++ adapterCrates;
+    sources = foundationCrates ++ snapshotCrates ++ adapterCrates;
   };
   cacheRoot = pkgs.linkFarm "ccusage-cargo-artifact-cache-root" [
     {

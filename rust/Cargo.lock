@@ -143,6 +143,7 @@ dependencies = [
  "ccusage-cli-parser",
  "ccusage-config",
  "ccusage-core",
+ "ccusage-pricing-snapshots",
  "ccusage-test-support",
  "insta",
  "mimalloc",
@@ -460,17 +461,27 @@ name = "ccusage-core"
 version = "0.0.0"
 dependencies = [
  "ccusage-cli",
+ "ccusage-pricing-snapshots",
  "ccusage-terminal",
  "ccusage-test-support",
  "insta",
  "jiff",
  "memchr",
  "miniz_oxide",
- "minreq",
  "rustc-hash",
  "serde",
  "serde_json",
  "smallvec",
+]
+
+[[package]]
+name = "ccusage-pricing-snapshots"
+version = "0.0.0"
+dependencies = [
+ "ccusage-core",
+ "miniz_oxide",
+ "minreq",
+ "serde_json",
 ]
 
 [[package]]

@@ -40,6 +40,7 @@ ccusage-cli = { path = "crates/ccusage-cli" }
 ccusage-cli-parser = { path = "crates/ccusage-cli-parser" }
 ccusage-config = { path = "crates/ccusage-config" }
 ccusage-core = { path = "crates/ccusage-core" }
+ccusage-pricing-snapshots = { path = "crates/ccusage-pricing-snapshots" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }
 ccusage-test-support = { path = "crates/ccusage-test-support" }
 assert_fs = "1.1.4"
@@ -52,8 +53,8 @@ jiff = { version = "0.2.38", default-features = false, features = [
 	"tzdb-bundle-platform",
 ] }
 memchr = "2.8.3"
-# Inflate-only consumer of the deflated pricing snapshots build.rs embeds; the
-# compression side is a build-dependency of ccusage-core.
+# Inflate-only consumer of the deflated pricing snapshots ccusage-pricing-snapshots
+# embeds; the compression side is a build-dependency of that crate.
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 mimalloc = "0.1.52"
 minreq = { version = "3.0.0", default-features = false, features = ["https-rustls"] }

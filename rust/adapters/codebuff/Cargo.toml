@@ -11,4 +11,5 @@ jiff.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+ccusage-core = { workspace = true, features = ["test-snapshots"] }
 ccusage-test-support.workspace = true
