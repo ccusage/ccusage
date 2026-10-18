@@ -77,13 +77,24 @@ runs:
         path: ccusage-native-win32-${{ inputs.arch }}.tar
         if-no-files-found: error
 
-    - name: Save Cargo cache
+    # Workspace crates rebuild on every run (see the restore step), so their
+    # outputs, about a quarter of rust/target, would only slow every restore.
+    # Every workspace crate name starts with ccusage and no dependency's does.
+    - name: Drop workspace outputs from the Cargo cache
+      id: cargo-cache-prune
       if: >-
         inputs.save-cargo-cache == 'true'
         && steps.cargo-cache.outputs.cache-hit != 'true'
         && github.ref == 'refs/heads/main'
         && github.event_name != 'pull_request'
         && github.event_name != 'pull_request_target'
+      shell: bash
+      run: |
+        cd rust/target/release
+        rm -rf ccusage* deps/*ccusage* .fingerprint/ccusage* build/ccusage*
+
+    - name: Save Cargo cache
+      if: steps.cargo-cache-prune.outcome == 'success'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
