@@ -30833,6 +30833,16 @@
 			"context": 1048576
 		}
 	},
+	"tensorx/deepseek/deepseek-v4.1-flash-1017": {
+		"cost": {
+			"cache_read": 0.125,
+			"input": 0.5,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"tensorx/moonshotai/kimi-k2.5": {
 		"cost": {
 			"cache_read": 0.125,
@@ -31333,16 +31343,6 @@
 		}
 	},
 	"unbiased/pareto-26.10": {
-		"cost": {
-			"cache_read": 0.03,
-			"input": 0.8,
-			"output": 3.2
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"unbiased/pareto-26.10-preview": {
 		"cost": {
 			"cache_read": 0.03,
 			"input": 0.8,
@@ -35095,7 +35095,7 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.001523,
-			"input": 0.01592,
+			"input": 0.0052,
 			"output": 0.143616
 		},
 		"limit": {
