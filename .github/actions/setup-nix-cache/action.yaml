@@ -31,6 +31,25 @@ inputs:
       Optional Linux store size limit applied before a cache-nix-action save.
       Callers must root every artifact they want the garbage collector to retain.
     default: ''
+  defer-save:
+    description: >
+      Only restore the cache-nix-action store here and leave saving to the
+      caller, which runs cache-nix-action/save with the `primary-key` output
+      when the `save` output is true. A caller nested in another composite
+      action needs this: the post-job save of a nested cache-nix-action step
+      read `save` as empty and silently skipped every save. It also lets the
+      caller root what the next run needs before the save collects garbage.
+      Has no effect on sticky disks.
+    default: 'false'
+outputs:
+  primary-key:
+    description: cache-nix-action key for this run's store; empty on sticky disks.
+    value: ${{ steps.key.outputs.primary }}
+  save:
+    description: >
+      Whether this run may persist the store: `save` is true and the run is a
+      push to main rather than a pull request.
+    value: ${{ steps.backend.outputs.commit }}
 runs:
   using: composite
   steps:
@@ -120,13 +139,20 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Cache Nix store
-      if: steps.backend.outputs.sticky != 'true'
+      if: steps.backend.outputs.sticky != 'true' && inputs.defer-save != 'true'
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
         primary-key: ${{ steps.key.outputs.primary }}
         restore-prefixes-first-match: ${{ steps.key.outputs.restore-prefixes }}
         save: ${{ inputs.save }}
         gc-max-store-size-linux: ${{ inputs.gc-max-store-size-linux }}
+
+    - name: Restore Nix store
+      if: steps.backend.outputs.sticky != 'true' && inputs.defer-save == 'true'
+      uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      with:
+        primary-key: ${{ steps.key.outputs.primary }}
+        restore-prefixes-first-match: ${{ steps.key.outputs.restore-prefixes }}
 
     - name: Fix single-user Nix store ownership
       if: runner.os != 'Windows'

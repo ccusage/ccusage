@@ -20,11 +20,14 @@ runs:
   using: composite
   steps:
     - uses: ./.github/actions/setup-nix-cache
+      id: nix
       with:
         cache-scope: ${{ inputs.cache-scope }}
         save: ${{ inputs.save-nix-cache }}
+        defer-save: 'true'
 
     - name: Build macOS binary
+      id: build
       shell: bash
       env:
         ARCH: ${{ inputs.arch }}
@@ -33,16 +36,53 @@ runs:
         # (the Apple SDK is multi-arch), so no separate Intel runner is needed.
         case "$ARCH" in
           x64)
-            nix build .#ccusage-darwin-x64 --print-build-logs
+            package=ccusage-darwin-x64
             ;;
           arm64)
-            nix build .#ccusage --print-build-logs
+            package=ccusage
             ;;
           *)
             echo "Unsupported arch: $ARCH" >&2
             exit 1
             ;;
         esac
+        echo "package=$package" >> "$GITHUB_OUTPUT"
+        nix build ".#$package" --print-build-logs
+
+    # The save below collects every path that nothing roots, so root what the
+    # next run needs: the Crane layers (and, through keep-outputs, their
+    # toolchain and vendored sources) and the flake inputs this build fetched,
+    # which no derivation references. ./result already roots the binary. The
+    # links live inside the store's own gcroots, so they are saved with it and
+    # keep these paths until a later run replaces them. Pull requests root too,
+    # which costs seconds and checks the attribute paths before main relies on
+    # them.
+    - name: Root current Crane artifacts and flake inputs for cache save
+      if: inputs.save-nix-cache == 'true'
+      shell: bash
+      env:
+        PACKAGE: ${{ steps.build.outputs.package }}
+      run: |
+        system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+        roots=/nix/var/nix/gcroots/ci
+        mkdir -p "$roots"
+        nix build ".#packages.$system.$PACKAGE.passthru.workspaceArtifacts.cacheRoot" \
+          --out-link "$roots/ccusage-cargo-artifacts"
+
+        # --dry-run computes each locked input's store path without fetching
+        # it, so inputs this build never needed (other nixpkgs pins, developer
+        # tooling) are skipped instead of downloaded into the cache.
+        rm -rf "$roots/flake-inputs"
+        mkdir -p "$roots/flake-inputs"
+        nix flake archive --dry-run --json \
+          | jq -r '.inputs | .. | .path? // empty' \
+          | sort -u \
+          | while read -r path; do
+              if [ -e "$path" ]; then
+                ln -s "$path" "$roots/flake-inputs/${path#/nix/store/}"
+              fi
+            done
+        echo "Rooted $(find "$roots/flake-inputs" -type l | wc -l | tr -d ' ') flake inputs"
 
     - name: Stage native package
       shell: bash
@@ -62,3 +102,14 @@ runs:
         name: ccusage-native-darwin-${{ inputs.arch }}
         path: ccusage-native-darwin-${{ inputs.arch }}.tar
         if-no-files-found: error
+
+    # An explicit step rather than cache-nix-action's post-job save, which never
+    # ran here (see setup-nix-cache's defer-save). A limit of 0 collects every
+    # unrooted path, so each entry holds one build closure instead of growing
+    # with every commit's Crane layers and binaries.
+    - name: Save Nix store
+      if: steps.nix.outputs.save == 'true'
+      uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      with:
+        primary-key: ${{ steps.nix.outputs.primary-key }}
+        gc-max-store-size-macos: '0'
