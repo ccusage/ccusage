@@ -1,16 +1,16 @@
 { inputs, lib, ... }:
-let
-  root = ./..;
-in
 {
   perSystem =
     { system, ... }:
     let
       pkgs = import inputs.nixpkgs { inherit system; };
       agentLib = inputs.agent-skills.lib.agent-skills;
-      localSkills = inputs.nix-filter {
-        inherit root;
-        include = [ ".agents/skills" ];
+      # A fileset reads only the skills tree; filtering from the repository root
+      # copies the whole checkout into the store, so editing any file made the
+      # dev shell evaluation start from scratch.
+      localSkills = lib.fileset.toSource {
+        root = ./..;
+        fileset = ../.agents/skills;
       };
       sources = {
         local = {
