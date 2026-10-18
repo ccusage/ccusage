@@ -9,7 +9,7 @@ def main [
     --system: string # Nix system attribute, e.g. x86_64-linux
     --summary: path # Markdown file to append the result table to
 ] {
-    let rev = open flake.lock | get nodes.cargo-nix-plugin.locked.rev
+    let rev = open --raw flake.lock | from json | get nodes.cargo-nix-plugin.locked.rev
     let plugin_build = timeit {
         ^nix build --out-link cargo-nix-plugin $"github:anthropics/cargo-nix-plugin/($rev)#cargo-nix-plugin"
     }
