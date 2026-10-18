@@ -117,10 +117,11 @@ runs:
     # GitHub REST API used by cache-nix-action's purge mode.
     #
     # Like the sticky disk key, the key has no workflow name, so release.yaml's
-    # macOS builds, which never save, restore the entry ci.yaml saved on main,
-    # often for the very commit being released. Two workflows sharing a job id
-    # can only collide on the primary key for the same commit, whose stores hold
-    # the same build.
+    # macOS builds, which never save, restore the entry ci.yaml saved for the
+    # previous main commit: release starts before CI saves for the release
+    # commit, which only bumps package.json files outside the deps hash. Two
+    # workflows sharing a job id can only collide on the primary key for the
+    # same commit, whose stores hold the same build.
     - name: Compute Nix cache key
       if: steps.backend.outputs.sticky != 'true'
       id: key
