@@ -103,7 +103,7 @@ pnpm dlx ccusage
 pnpx ccusage
 
 # PR preview builds
-bunx -p https://pkg.pr.new/ccusage/ccusage@<pr-number> ccusage --offline
+bunx --package https://pkg.pr.new/ccusage@<pr-number-or-commit-sha> ccusage --offline
 ```
 
 > [bunx](https://bun.com/docs/pm/bunx) caches the downloaded package, so repeated runs are faster after the first launch.
