@@ -18,6 +18,11 @@ concurrency:
 jobs:
   update-pricing:
     name: ${{ matrix.name }}
+    if: >-
+      github.event_name != 'push' || !(
+        startsWith(github.event.head_commit.message, 'chore: release v') ||
+        startsWith(github.event.head_commit.message, 'chore(pricing): ')
+      )
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 60
     permissions:

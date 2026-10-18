@@ -2008,10 +2008,10 @@ impl PricingMap {
     }
 
     /// Last-resort rates for models ccusage must always price, used only when
-    /// the loaded snapshots miss the key: upstream data is refreshed on every push to main,
-    /// so overwriting it with these frozen numbers would reintroduce stale
-    /// prices whenever a vendor changes theirs (OpenAI cut the gpt-5.6 rates
-    /// after these were written).
+    /// the loaded snapshots miss the key: upstream data is refreshed on every
+    /// push to main and daily, so overwriting it with these frozen numbers
+    /// would reintroduce stale prices whenever a vendor changes theirs (OpenAI
+    /// cut the gpt-5.6 rates after these were written).
     fn put_builtin_pricing(
         &mut self,
         fast_multiplier_overrides: &SpeedMultiplierOverrides,
