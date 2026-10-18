@@ -246,6 +246,46 @@ jobs:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
 
+  # Experiment: time Crane against anthropics/cargo-nix-plugin on real runners.
+  # Informational only, so ci-gate does not wait on it.
+  cargo-nix-plugin-bench:
+    needs: [changes]
+    if: needs.changes.outputs.code-changed == 'true'
+    name: cargo-nix-plugin bench ${{ matrix.name }}
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Mounts test's disk, so Crane starts from the layers main keeps warm
+          # while the plugin's per-crate derivations start cold.
+          - name: linux-x64
+            os: blacksmith-32vcpu-ubuntu-2404
+            system: x86_64-linux
+            disk-job: test
+          # No shared store on macOS, so both builders start cold.
+          - name: mac-arm64
+            os: blacksmith-12vcpu-macos-26
+            system: aarch64-darwin
+            disk-job: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          cache-scope: ${{ matrix.name }}
+          disk-job: ${{ matrix.disk-job }}
+          save: false
+      - name: Benchmark Crane against cargo-nix-plugin
+        env:
+          SYSTEM: ${{ matrix.system }}
+        run: .github/scripts/bench-cargo-nix-plugin.nu --system "$SYSTEM" --summary "$GITHUB_STEP_SUMMARY"
+
   npm-publish-dry-run-and-upload-pkg-pr-now:
     needs:
       - changes
