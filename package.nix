@@ -40,9 +40,7 @@ let
   commonArgs = {
     pname = cliPackageJson.name;
     inherit version src;
-    # Vendor from the filtered source rather than letting each Crane builder
-    # derive it: buildDepsOnly would otherwise read Cargo.lock out of the
-    # mkDummySrc derivation, which is import-from-derivation.
+    # Vendoring from mkDummySrc would be import-from-derivation.
     cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
     strictDeps = true;
     doCheck = false;
