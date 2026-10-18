@@ -1,0 +1,66 @@
+name: iets comparison
+
+# Experiment: compare Nix with iets (https://github.com/numtide/iets), a Rust
+# reimplementation of the Nix evaluator, on this flake. Each leg checks that
+# both tools produce the same derivations and dev shell, and times them.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/iets-compare.yaml
+      - .github/scripts/compare-iets.nu
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  compare:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The build comparison needs every check built first, which only the
+          # Linux leg can afford: it starts from the store the test job keeps warm.
+          - name: linux-x64
+            os: blacksmith-32vcpu-ubuntu-2404
+            build: true
+          - name: mac-arm64
+            os: blacksmith-12vcpu-macos-26
+            build: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          disk-job: test
+          save: 'false'
+      - name: Build iets
+        env:
+          IETS_REV: 79c4346887c450eb684bb66402cb16fd5c9bbd77
+        run: nix build "github:numtide/iets/$IETS_REV" --out-link "$RUNNER_TEMP/iets"
+      # iets has no store of its own and builds through a Nix daemon, but
+      # nix-quick-install-action sets up a single-user store without one.
+      - name: Start a Nix daemon for iets
+        run: |
+          nohup nix daemon --force-trusted > "$RUNNER_TEMP/nix-daemon.log" 2>&1 &
+          for _ in $(seq 50); do
+            if [ -S /nix/var/nix/daemon-socket/socket ]; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          cat "$RUNNER_TEMP/nix-daemon.log"
+          exit 1
+      - name: Build every check with Nix
+        if: matrix.build
+        run: nix flake check
+      - name: Compare Nix with iets
+        env:
+          BUILD: ${{ matrix.build }}
+        run: .github/scripts/compare-iets.nu "$RUNNER_TEMP/iets/bin/iets" "--build=$BUILD"
