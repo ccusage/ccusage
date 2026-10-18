@@ -24,6 +24,9 @@ use webpki::ring as algs;
 /// the TLS 1.2 suites would keep their key schedule and AEAD glue in the binary.
 /// A middlebox that only speaks TLS 1.2 could not complete the handshake anyway,
 /// because the client trusts no root beyond the embedded web PKI ones.
+///
+/// X25519 is the only key exchange group, which both hosts pick on their own;
+/// the NIST curves stay for certificate signatures, not for key agreement.
 pub(super) fn provider() -> CryptoProvider {
     CryptoProvider {
         cipher_suites: vec![
@@ -31,7 +34,7 @@ pub(super) fn provider() -> CryptoProvider {
             ring::cipher_suite::TLS13_AES_128_GCM_SHA256,
             ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
         ],
-        kx_groups: ring::ALL_KX_GROUPS.to_vec(),
+        kx_groups: vec![ring::kx_group::X25519],
         signature_verification_algorithms: SIGNATURE_ALGORITHMS,
         secure_random: &VerifyOnly,
         key_provider: &VerifyOnly,
