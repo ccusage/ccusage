@@ -361,6 +361,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
                 extra_total_tokens: 0,
                 cost: 0.0,
                 missing_pricing: true,
+                stored_cost: None,
             },
             ModelBreakdown {
                 model_name: "gpt-5".to_string(),
@@ -371,6 +372,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
                 extra_total_tokens: 0,
                 cost: 0.01,
                 missing_pricing: false,
+                stored_cost: None,
             },
         ],
     };

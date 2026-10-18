@@ -13,17 +13,17 @@
   ...
 }:
 {
-  "@types/node@24.13.3" = fetchurl {
-    url = "https://registry.npmjs.org/@types/node/-/node-24.13.3.tgz";
-    hash = "sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==";
+  "@types/node@24.19.2" = fetchurl {
+    url = "https://registry.npmjs.org/@types/node/-/node-24.19.2.tgz";
+    hash = "sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==";
   };
-  "remeda@2.51.0" = fetchurl {
-    url = "https://registry.npmjs.org/remeda/-/remeda-2.51.0.tgz";
-    hash = "sha512-4X/oHoc10jkt1w1V8yG/8tS8jYYj7vaNZs3nrvuDVRE1+nDqRAnX/L0PbwL4wOKcXSLHnkXyOQOinSBGQdJ35A==";
+  "remeda@2.33.7" = fetchurl {
+    url = "https://registry.npmjs.org/remeda/-/remeda-2.33.7.tgz";
+    hash = "sha512-cXlyjevWx5AcslOUEETG4o8XYi9UkoCXcJmj7XhPFVbla+ITuOBxv6ijBrmbeg+ZhzmDThkNdO+iXKUfrJep1w==";
   };
-  "undici-types@7.18.2" = fetchurl {
-    url = "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz";
-    hash = "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==";
+  "undici-types@7.24.6" = fetchurl {
+    url = "https://registry.npmjs.org/undici-types/-/undici-types-7.24.6.tgz";
+    hash = "sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==";
   };
   "zod@3.24.2" = fetchurl {
     url = "https://registry.npmjs.org/zod/-/zod-3.24.2.tgz";

@@ -1,4 +1,4 @@
-{ inputs, ... }:
+{ inputs, lib, ... }:
 let
   root = ./..;
 in
@@ -22,16 +22,21 @@ in
         commonArgs
         version
         ;
-      nixFilter = inputs.nix-filter.lib;
-      rustSrc = import ./rust-src.nix { inherit nixFilter root; };
-      repoSrc = nixFilter {
-        inherit root;
-        exclude = [
-          (nixFilter.matchName "node_modules")
-          (nixFilter.matchName "target")
-          (nixFilter.matchName "dist")
-          (nixFilter.matchName "coverage")
-        ];
+      rustSrc = import ./rust-src.nix { inherit lib root; };
+      repoSrc = lib.cleanSourceWith {
+        name = "source";
+        src = root;
+        filter =
+          path: type:
+          !(
+            type == "directory"
+            && builtins.elem (baseNameOf path) [
+              "node_modules"
+              "target"
+              "dist"
+              "coverage"
+            ]
+          );
       };
       ccusage-clippy = craneLib.cargoClippy (
         commonArgs

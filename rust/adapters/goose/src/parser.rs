@@ -92,6 +92,7 @@ pub(super) fn row_to_entry(
         extra_total_tokens: reasoning_tokens,
         message_count: None,
         data,
+        stored_cost: None,
     })
 }
 

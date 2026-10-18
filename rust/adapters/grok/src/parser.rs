@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
-    missing_pricing_model_for_candidates, total_usage_tokens,
+    missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
 };
 use ccusage_adapter_common::jsonl;
 use ccusage_core::fast::LinePrefilter;
@@ -323,6 +323,7 @@ pub(super) fn parse_session_files(
                 // them to `extra_total_tokens` would bill them into the grand total a
                 // second time.
                 extra_total_tokens: 0,
+                stored_cost: stored_cost_for_mode(cost_usd, mode),
             });
             let _ = model_usage.total_tokens;
         }
@@ -1079,6 +1080,24 @@ mod tests {
         );
         assert!((entries[0].cost - 0.0185192).abs() < 1e-12);
         assert_eq!(entries[0].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn auto_mode_marks_recorded_ticks_as_stored_cost() {
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-1/updates.jsonl": r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":18444,"outputTokens":130,"costUsdTicks":185192000,"modelUsage":{"grok-4.5-build":{"inputTokens":18444,"outputTokens":130,"costUsdTicks":185192000}}}},"_meta":{"eventId":"evt-cost"}}}"#,
+        });
+        let files = GrokSessionFiles {
+            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
+            summary: None,
+        };
+        let pricing = PricingMap::load_embedded();
+        let stored_cost =
+            |mode| parse_session_files(&files, None, mode, &pricing).unwrap()[0].stored_cost;
+
+        assert!(stored_cost(CostMode::Auto).is_some_and(|cost| (cost - 0.0185192).abs() < 1e-12));
+        assert_eq!(stored_cost(CostMode::Calculate), None);
+        assert_eq!(stored_cost(CostMode::Display), None);
     }
 
     #[test]

@@ -24,6 +24,11 @@ jobs:
       - uses: ./.github/actions/setup-nix-cache
         with:
           disk-job: preflight
+      - name: Regenerate Bun derivations
+        run: |
+          nix run .#generate-bun-nix
+          git restore --staged --worktree -- . ':(exclude,glob)nix/tools/*/bun.nix'
+          git clean -fd -- . ':(exclude,glob)nix/tools/*/bun.nix'
       - name: Apply formatting and lint fixes
         run: |
           nix fmt -- --no-cache

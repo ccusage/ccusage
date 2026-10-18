@@ -40,6 +40,8 @@ let
   commonArgs = {
     pname = cliPackageJson.name;
     inherit version src;
+    # Vendoring from mkDummySrc would be import-from-derivation.
+    cargoVendorDir = craneLib.vendorCargoDeps { inherit src; };
     strictDeps = true;
     doCheck = false;
     cargoExtraArgs = "-p ccusage --bin ccusage";

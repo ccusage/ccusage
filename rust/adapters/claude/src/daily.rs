@@ -16,7 +16,7 @@ use crate::{
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
-    utc_now,
+    stored_cost_for_mode, utc_now,
 };
 
 use super::{
@@ -161,6 +161,7 @@ struct DailyLoadedEntry {
     cost: f64,
     model: Option<String>,
     missing_pricing_model: Option<String>,
+    stored_cost: Option<f64>,
     message_id: Option<String>,
     request_id: Option<String>,
     is_sidechain: Option<bool>,
@@ -361,6 +362,7 @@ fn read_daily_usage_file(
             cost,
             model,
             missing_pricing_model,
+            stored_cost: stored_cost_for_mode(data.cost_usd, mode),
             message_id: data.message.id,
             request_id: data.request_id,
             is_sidechain: data.is_sidechain,
@@ -389,6 +391,7 @@ fn read_daily_usage_file(
                 ),
                 model: Some(advisor.model),
                 missing_pricing_model,
+                stored_cost: None,
                 message_id: message_id
                     .as_ref()
                     .map(|message_id| format!("{message_id}:advisor:{index}")),
@@ -640,6 +643,7 @@ impl DailyAccumulator {
             if entry.missing_pricing_model.is_some() {
                 breakdown.missing_pricing = true;
             }
+            breakdown.add_stored_cost(entry.stored_cost);
         }
     }
 
@@ -1166,6 +1170,7 @@ mod tests {
             message_id: Some(fixture.message_id.to_string()),
             request_id: Some(fixture.request_id.to_string()),
             is_sidechain: Some(fixture.is_sidechain),
+            stored_cost: None,
         }
     }
 

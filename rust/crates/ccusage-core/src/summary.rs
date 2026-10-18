@@ -93,6 +93,7 @@ impl UsageAccumulator {
             if entry.missing_pricing_model.is_some() {
                 breakdown.missing_pricing = true;
             }
+            breakdown.add_stored_cost(entry.stored_cost);
         }
     }
 
@@ -280,6 +281,7 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
                 .saturating_add(item.extra_total_tokens);
             breakdown.cost += item.cost;
             breakdown.missing_pricing |= item.missing_pricing;
+            breakdown.add_stored_cost(item.stored_cost);
         }
     }
     summary
@@ -608,6 +610,63 @@ mod tests {
     }
 
     #[test]
+    fn tracks_stored_cost_in_model_breakdowns() {
+        let fixture = |timestamp, model, cost| LoadedEntryFixture {
+            date: "2026-01-02",
+            timestamp,
+            session_id: "session-a",
+            project_path: "/workspace/project",
+            model: Some(model),
+            input_tokens: 100,
+            output_tokens: 10,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            extra_total_tokens: 0,
+            cost,
+            credits: None,
+            message_count: None,
+            version: None,
+            missing_pricing_model: None,
+        };
+        let stored = LoadedEntry {
+            stored_cost: Some(0.5),
+            ..loaded_entry(fixture(1_767_316_800_000, "claude-sonnet-4-20250514", 0.5))
+        };
+        let calculated = loaded_entry(fixture(1_767_316_801_000, "claude-sonnet-4-20250514", 0.25));
+        let other = loaded_entry(fixture(1_767_316_802_000, "gpt-5", 0.125));
+
+        let rows = summarize_by_key(
+            &[stored.clone(), calculated, other, stored],
+            |entry| entry.date.clone(),
+            |key| (key.to_string(), None),
+        )
+        .unwrap();
+
+        let breakdowns = &rows[0].model_breakdowns;
+        assert_eq!(breakdowns[0].model_name, "claude-sonnet-4-20250514");
+        assert_eq!(breakdowns[0].cost, 1.25);
+        assert_eq!(breakdowns[0].stored_cost, Some(1.0));
+        assert_eq!(breakdowns[1].model_name, "gpt-5");
+        assert_eq!(breakdowns[1].stored_cost, None);
+
+        let mut next_day = summary_row(SummaryFixture {
+            date: Some("2026-01-03"),
+            model: "claude-sonnet-4-20250514",
+            cost: 0.25,
+            input_tokens: 100,
+        });
+        next_day.model_breakdowns[0].stored_cost = Some(0.25);
+        let monthly = summarize_summaries_by_bucket(
+            &[rows[0].clone(), next_day],
+            BucketKind::Monthly,
+            WeekDay::Sunday,
+        );
+
+        assert_eq!(monthly[0].model_breakdowns[0].stored_cost, Some(1.25));
+        assert_eq!(monthly[0].model_breakdowns[1].stored_cost, None);
+    }
+
+    #[test]
     fn applies_model_aliases_to_model_breakdowns() {
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([
             ("private-alpha", "gpt-5.5"),
@@ -714,6 +773,7 @@ mod tests {
             model: fixture.model.map(str::to_string),
             usage_limit_reset_time: None,
             missing_pricing_model: fixture.missing_pricing_model.map(str::to_string),
+            stored_cost: None,
         }
     }
 
@@ -751,6 +811,7 @@ mod tests {
                 extra_total_tokens: 3,
                 cost: fixture.cost,
                 missing_pricing: false,
+                stored_cost: None,
             }],
             project: None,
             versions: None,

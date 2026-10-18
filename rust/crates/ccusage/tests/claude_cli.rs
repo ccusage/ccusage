@@ -739,3 +739,54 @@ fn requestless_anthropic_message_id_keeps_largest_usage_across_days_and_sessions
         assert_eq!(total, 150 + 105, "claude {command}");
     }
 }
+
+#[test]
+fn auto_mode_breakdowns_report_the_stored_part_of_cost() {
+    let fixture = Fixture::new();
+    let lines = [
+        r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1000,"output_tokens":100}}}"#,
+        r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","costUSD":0.5,"message":{"id":"message-b","model":"claude-sonnet-4-20250514","usage":{"input_tokens":500,"output_tokens":10}}}"#,
+    ];
+    let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+
+    let breakdown = |args: &[&str], pointer: &str| -> serde_json::Value {
+        let base = ["--json", "--offline", "--timezone", "UTC"];
+        let args = args.iter().chain(&base).copied().collect::<Vec<_>>();
+        let json: serde_json::Value =
+            serde_json::from_str(&run_ccusage(&fixture, &args, None)).unwrap();
+        json.pointer(pointer).unwrap().clone()
+    };
+    let reports = [
+        (&["claude", "daily"][..], "/daily/0/modelBreakdowns/0"),
+        (&["claude", "session"][..], "/sessions/0/modelBreakdowns/0"),
+        (&["claude", "monthly"][..], "/monthly/0/modelBreakdowns/0"),
+        (
+            &["daily", "--by-agent"][..],
+            "/daily/0/agents/0/modelBreakdowns/0",
+        ),
+    ];
+
+    for (args, pointer) in reports {
+        let auto = breakdown(args, pointer);
+        assert_eq!(auto["storedCost"], 0.5, "{args:?}: {auto}");
+        assert!(auto["cost"].as_f64().unwrap() > 0.5, "{args:?}: {auto}");
+
+        for mode in ["calculate", "display"] {
+            let args = args
+                .iter()
+                .copied()
+                .chain(["--mode", mode])
+                .collect::<Vec<_>>();
+            let other = breakdown(&args, pointer);
+            assert!(other.get("storedCost").is_none(), "{args:?}: {other}");
+        }
+
+        let args = args
+            .iter()
+            .copied()
+            .chain(["--no-cost"])
+            .collect::<Vec<_>>();
+        let stripped = breakdown(&args, pointer);
+        assert!(stripped.get("storedCost").is_none(), "{args:?}: {stripped}");
+    }
+}

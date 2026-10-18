@@ -45,6 +45,10 @@ pub fn calculate_cost_for_usage_at(
     }
 }
 
+pub fn stored_cost_for_mode(cost_usd: Option<f64>, mode: CostMode) -> Option<f64> {
+    cost_usd.filter(|_| mode == CostMode::Auto)
+}
+
 pub fn missing_pricing_model_for_usage(
     model: Option<&str>,
     usage: crate::TokenUsageRaw,

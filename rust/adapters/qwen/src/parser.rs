@@ -206,6 +206,7 @@ fn parse_line(
         usage_limit_reset_time: None,
         missing_pricing_model,
         extra_total_tokens,
+        stored_cost: None,
     })
 }
 
@@ -403,6 +404,7 @@ mod tests {
             model: Some("model:1".to_string()),
             usage_limit_reset_time: None,
             missing_pricing_model: None,
+            stored_cost: None,
         };
 
         assert_eq!(

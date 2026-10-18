@@ -176,6 +176,7 @@ mod tests {
                 extra_total_tokens: 7,
                 cost: 0.25,
                 missing_pricing: false,
+                stored_cost: None,
             }],
             project: None,
             versions: Some(vec!["1.0.0".to_string()]),
@@ -218,6 +219,7 @@ mod tests {
             model: Some("gpt-5.2-codex".to_string()),
             usage_limit_reset_time: None,
             missing_pricing_model: None,
+            stored_cost: None,
         }
     }
 }

@@ -107,6 +107,16 @@ in
 
           ${lib.getExe config.packages.syncAgentSkills}
           ${config.pre-commit.shellHook}
+
+          # Hooks are shared across worktrees, but the config symlink only exists
+          # where this shell has loaded; git-hooks.nix cannot pass this flag.
+          for stage in ${lib.escapeShellArgs config.pre-commit.settings.installStages}; do
+            hookFile=$(${lib.getExe config.pre-commit.settings.gitPackage} rev-parse --path-format=absolute --git-path "hooks/$stage")
+            if ! grep -q -- --skip-on-missing-config "$hookFile" 2>/dev/null; then
+              ${lib.getExe config.pre-commit.settings.package} install \
+                -c ${config.pre-commit.settings.configPath} -t "$stage" --allow-missing-config >/dev/null
+            fi
+          done
         ''
         + gitWtHook;
       };

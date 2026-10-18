@@ -3,7 +3,7 @@
 # recompiling into an uncached `rust/target` on every CI run. Built by the CI
 # test job via `nix build .#ccusage-tests`; the derivation succeeds only when
 # `cargo test --workspace` passes.
-{ inputs, ... }:
+{ inputs, lib, ... }:
 let
   root = ./..;
 in
@@ -22,8 +22,7 @@ in
       rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
       craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       inherit (config.packages.ccusage.passthru) cargoArtifacts commonArgs;
-      nixFilter = inputs.nix-filter.lib;
-      testSrc = import ./rust-src.nix { inherit nixFilter root; };
+      testSrc = import ./rust-src.nix { inherit lib root; };
     in
     {
       packages.ccusage-tests = craneLib.cargoTest (

@@ -857,6 +857,7 @@ where
                 cost: codex::calculate_codex_model_cost(model, usage, pricing, speed),
                 missing_pricing: mode != CostMode::Display
                     && codex::codex_model_missing_pricing(model, usage, pricing),
+                stored_cost: None,
             }
         })
         .collect();
