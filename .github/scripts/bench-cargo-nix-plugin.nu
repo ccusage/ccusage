@@ -2,7 +2,8 @@
 #! nix shell --inputs-from ../.. nixpkgs#nushell nixpkgs#git --command nu
 
 # Compare Crane against the experimental cargo-nix-plugin build of ccusage:
-# one build from whatever store the job restored, then one rebuild after each
+# one build from whatever store the job restored (with the shared toolchain
+# already fetched), then one rebuild after each
 # edit to an adapter, the shared core, and the binary crate. Every edit is
 # reverted before the next scenario so both builders see the same source.
 def main [
@@ -14,6 +15,8 @@ def main [
         ^nix build --out-link cargo-nix-plugin $"github:anthropics/cargo-nix-plugin/($rev)#cargo-nix-plugin"
     }
     let plugin_files = pwd | path join cargo-nix-plugin lib nix plugins
+
+    ^nix build --no-link $".#legacyPackages.($system).cnp.sharedInputs"
 
     let targets = {
         crane: [$".#packages.($system).ccusage"]

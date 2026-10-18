@@ -260,17 +260,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Mounts test's disk, so Crane starts from the layers main keeps warm
-          # while the plugin's per-crate derivations start cold.
+          # The scoped cache key matches no existing store, so both builders
+          # start cold and compete on equal terms.
           - name: linux-x64
             os: blacksmith-32vcpu-ubuntu-2404
             system: x86_64-linux
-            disk-job: test
-          # No shared store on macOS, so both builders start cold.
           - name: mac-arm64
             os: blacksmith-12vcpu-macos-26
             system: aarch64-darwin
-            disk-job: ''
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -279,7 +276,6 @@ jobs:
       - uses: ./.github/actions/setup-nix-cache
         with:
           cache-scope: ${{ matrix.name }}
-          disk-job: ${{ matrix.disk-job }}
           save: false
       - name: Benchmark Crane against cargo-nix-plugin
         env:

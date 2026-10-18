@@ -126,6 +126,16 @@ in
         inherit cargoNix;
         ccusage = cargoNix.workspaceMembers.ccusage.build;
         clippy = cargoNix.clippy.allWorkspaceMembers;
+        # Toolchain and linkers both builders share, so a benchmark can fetch
+        # them up front instead of charging them to whichever builder runs first.
+        sharedInputs = pkgs.linkFarmFromDrvs "cnp-shared-inputs" (
+          [ rustToolchain ]
+          ++ lib.optionals stdenv.hostPlatform.isLinux [ pkgs.mold ]
+          ++ lib.optionals stdenv.hostPlatform.isDarwin [
+            pkgs.lld
+            pkgs.apple-sdk_15
+          ]
+        );
       };
     };
 }
