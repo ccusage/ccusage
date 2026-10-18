@@ -41,14 +41,15 @@ pub(super) fn provider() -> CryptoProvider {
     }
 }
 
-/// The signature algorithms rustls' ring provider verifies, in its order.
+/// The signature algorithms rustls' ring provider verifies, in its order, minus
+/// Ed25519: the CA/Browser Forum Baseline Requirements allow only RSA and ECDSA
+/// keys, so no publicly trusted chain or TLS 1.3 server signature can use it.
 static SIGNATURE_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     all: &[
         algs::ECDSA_P256_SHA256,
         algs::ECDSA_P256_SHA384,
         algs::ECDSA_P384_SHA256,
         algs::ECDSA_P384_SHA384,
-        algs::ED25519,
         algs::RSA_PSS_2048_8192_SHA256_LEGACY_KEY,
         algs::RSA_PSS_2048_8192_SHA384_LEGACY_KEY,
         algs::RSA_PSS_2048_8192_SHA512_LEGACY_KEY,
@@ -69,7 +70,6 @@ static SIGNATURE_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
             SignatureScheme::ECDSA_NISTP256_SHA256,
             &[algs::ECDSA_P256_SHA256, algs::ECDSA_P384_SHA256],
         ),
-        (SignatureScheme::ED25519, &[algs::ED25519]),
         (
             SignatureScheme::RSA_PSS_SHA512,
             &[algs::RSA_PSS_2048_8192_SHA512_LEGACY_KEY],
