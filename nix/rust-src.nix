@@ -4,13 +4,13 @@
 #   * ccusage-core/build.rs   reads ../../../flake.lock
 #   * config_schema.rs tests  include_str! ../../../../ccusage.example.json
 #   * main.rs tests           include_str! ../../../../package.json
-{ nixFilter, root }:
-nixFilter {
+{ lib, root }:
+lib.fileset.toSource {
   inherit root;
-  include = [
-    "rust"
-    "flake.lock"
-    "ccusage.example.json"
-    "package.json"
+  fileset = lib.fileset.unions [
+    (root + /rust)
+    (root + /flake.lock)
+    (root + /ccusage.example.json)
+    (root + /package.json)
   ];
 }
