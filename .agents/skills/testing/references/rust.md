@@ -45,8 +45,12 @@ doubles as documentation, not for broad CLI behavior.
 
 ## Pricing And Model Names
 
-Pricing resolves against two embedded snapshots: the LiteLLM one generated into
-`OUT_DIR` at build time, and the committed `models-dev-pricing.json`.
+Pricing resolves against two embedded snapshots, both compiled by
+`ccusage-pricing-snapshots`: the LiteLLM one generated into `OUT_DIR` at build time,
+and the committed `models-dev-pricing.json`. A crate whose tests load pricing enables
+`ccusage-core = { workspace = true, features = ["test-snapshots"] }` in its
+`[dev-dependencies]`; without it, loading pricing panics because only the binary
+installs the snapshots.
 `PricingMap::load_embedded()` reads only those and touches no network, so tests use it;
 `load_with_overrides(offline: false, ..)` is the path that fetches. Lookup is not plain
 equality — alias and separator handling means the tests in
