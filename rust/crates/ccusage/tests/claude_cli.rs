@@ -717,8 +717,6 @@ fn requestless_anthropic_message_id_content_blocks_are_counted_once_in_every_rep
 #[test]
 fn requestless_response_message_id_content_blocks_are_counted_once_in_every_report() {
     let fixture = Fixture::new();
-    // A GPT model behind an Anthropic-compatible gateway passes its Responses API id through
-    // as `message.id`; like the `msg_` case, one response is one line per content block.
     let lines = [
         requestless_line(
             "2026-09-11T12:00:00.000Z",

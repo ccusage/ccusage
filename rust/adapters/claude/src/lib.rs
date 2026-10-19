@@ -344,9 +344,9 @@ fn push_deduped_entry(
 ///
 /// Matching message and request IDs identify one response across sessions. Without a request
 /// ID, gateways can reuse one message ID for every response, so the key is scoped to the
-/// session and timestamp instead. Real response IDs (`msg_` and `resp_` prefixes) are unique
-/// per response, so requestless entries with one collapse by session across timestamps: Claude
-/// Code writes one line per content block with the same `message.id` but distinct timestamps.
+/// session and timestamp instead. Real Anthropic IDs (`msg_` prefix) are unique per response,
+/// so requestless entries with one collapse by session across timestamps: Claude Code writes
+/// one line per content block with the same `message.id` but distinct timestamps.
 fn usage_dedupe_hash(
     message_id: &str,
     request_id: Option<&str>,
@@ -365,14 +365,12 @@ fn usage_dedupe_hash(
     hasher.finish()
 }
 
-/// Real response IDs are unique per response, unlike the placeholder IDs gateways
+/// Real Anthropic message IDs are unique per response, unlike the placeholder IDs gateways
 /// reuse for every response.
 ///
 /// The prefix is a heuristic: only a request ID proves two lines belong to one response, so a
-/// gateway that reused a response-shaped placeholder would collapse to one entry per session.
-/// OpenAI's Responses API mints one `resp_` ID per response, the same way Anthropic mints one
-/// `msg_` ID per response, so both collapse across the content-block timestamps Claude Code
-/// writes for a single response.
+/// gateway that reused a `msg_`-shaped placeholder would collapse to one entry per session.
+/// OpenAI Responses API `resp_` IDs are treated the same way.
 pub(crate) fn is_anthropic_message_id(message_id: &str) -> bool {
     message_id.starts_with("msg_") || message_id.starts_with("resp_")
 }
