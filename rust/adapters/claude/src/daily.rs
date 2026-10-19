@@ -938,6 +938,43 @@ mod tests {
     }
 
     #[test]
+    fn dedupes_response_message_id_from_same_session_at_distinct_timestamps() {
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let mut first = daily_loaded_entry_at(
+            DailyEntryFixture {
+                message_id: "resp_0123456789abcdef",
+                request_id: "unused",
+                is_sidechain: false,
+                cache_read_tokens: 0,
+                output_tokens: 25,
+            },
+            "session-a",
+            TimestampMs::from_millis(1_774_000_000_000),
+        );
+        first.request_id = None;
+        push_deduped_daily_entry(first, &mut deduped_indexes, &mut deduped);
+
+        let mut second = daily_loaded_entry_at(
+            DailyEntryFixture {
+                message_id: "resp_0123456789abcdef",
+                request_id: "unused",
+                is_sidechain: false,
+                cache_read_tokens: 0,
+                output_tokens: 25,
+            },
+            "session-a",
+            TimestampMs::from_millis(1_774_000_000_500),
+        );
+        second.request_id = None;
+        push_deduped_daily_entry(second, &mut deduped_indexes, &mut deduped);
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].usage.output_tokens, 25);
+    }
+
+    #[test]
     fn keeps_daily_sidechain_replay_from_distinct_session() {
         let mut deduped_indexes = Default::default();
         let mut deduped = Vec::new();

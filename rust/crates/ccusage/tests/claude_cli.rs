@@ -715,6 +715,36 @@ fn requestless_anthropic_message_id_content_blocks_are_counted_once_in_every_rep
 }
 
 #[test]
+fn requestless_response_message_id_content_blocks_are_counted_once_in_every_report() {
+    let fixture = Fixture::new();
+    // A GPT model behind an Anthropic-compatible gateway passes its Responses API id through
+    // as `message.id`; like the `msg_` case, one response is one line per content block.
+    let lines = [
+        requestless_line(
+            "2026-09-11T12:00:00.000Z",
+            "session-a",
+            "resp_0123456789abcdef",
+            100,
+            0,
+            false,
+        ),
+        requestless_line(
+            "2026-09-11T12:00:00.500Z",
+            "session-a",
+            "resp_0123456789abcdef",
+            100,
+            0,
+            false,
+        ),
+    ];
+    let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 102, "claude {command}");
+    }
+}
+
+#[test]
 fn requestless_anthropic_message_id_keeps_largest_usage_across_days_and_sessions() {
     let fixture = Fixture::new();
     let line = |timestamp: &str, session: &str, output_tokens: u64| {
