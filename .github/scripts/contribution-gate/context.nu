@@ -10,7 +10,9 @@ export def issue-context-record [requested_number: int, issue: record]: nothing 
 
     let actual_number = $issue | get --optional number
     if ($actual_number | describe) != 'int' or $actual_number != $requested_number {
-        error make {msg: $"GitHub returned an unexpected issue number for #($requested_number)"}
+        error make {
+            msg: $"GitHub returned an unexpected issue number for #($requested_number)"
+        }
     }
     if ($issue | get --optional state) != 'open' {
         error make {msg: $"Issue #($requested_number) is not open"}
