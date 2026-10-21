@@ -65,6 +65,7 @@ fn main() -> Result<()> {
                 pi_path: None,
                 open_claw_path: None,
                 codex_speed: cli::CodexSpeed::Auto,
+                start_of_week: cli::WeekDay::Monday,
             };
             adapter::all::run(args)
         }

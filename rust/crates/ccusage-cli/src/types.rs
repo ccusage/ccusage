@@ -180,6 +180,7 @@ pub struct AgentCommandArgs {
     pub pi_path: Option<String>,
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,
+    pub start_of_week: WeekDay,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -3,6 +3,7 @@
 		"agent_period_options": ["agent_options", "last_options"],
 		"all_agent_period_options": ["all_agent_options", "last_options"],
 		"all_agent_session_options": ["all_agent_options", "session_options"],
+		"all_agent_weekly_options": ["all_agent_options", "all_weekly_options", "last_options"],
 		"blocks_combined_options": ["shared_claude_options", "blocks_options"],
 		"claude_daily_options": ["shared_claude_options", "daily_options", "last_options"],
 		"claude_monthly_options": ["shared_claude_options", "last_options"],
@@ -133,7 +134,7 @@
 			"path": ["weekly"],
 			"description": "Show all detected coding (agent) CLI usage grouped by week",
 			"usage": "ccusage weekly <OPTIONS>",
-			"options": "all_agent_period_options"
+			"options": "all_agent_weekly_options"
 		},
 		{
 			"path": ["session"],

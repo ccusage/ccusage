@@ -427,5 +427,13 @@
 			"default": "sunday",
 			"choices": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
 		}
+	],
+	"all_weekly_options": [
+		{
+			"flags": "-w, --start-of-week [start-of-week]",
+			"description": "Start day of the week",
+			"default": "monday",
+			"choices": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+		}
 	]
 }

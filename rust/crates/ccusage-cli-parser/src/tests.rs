@@ -900,6 +900,83 @@ fn contextual_root_session_help_lists_id_option() {
 }
 
 #[test]
+fn contextual_root_weekly_help_lists_start_of_week_option() {
+    let help = help_text_for_args(&["ccusage".to_string(), "weekly".to_string()]);
+
+    assert!(help.contains("-w, --start-of-week [start-of-week]"));
+    assert!(help.contains("default: monday"));
+
+    let daily_help = help_text_for_args(&["ccusage".to_string(), "daily".to_string()]);
+    assert!(!daily_help.contains("--start-of-week"));
+}
+
+#[test]
+fn parses_top_level_weekly_start_of_week() {
+    let cli = parse(&[
+        "ccusage",
+        "weekly",
+        "--json",
+        "--offline",
+        "--last",
+        "1",
+        "-w",
+        "wednesday",
+    ]);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert_eq!(args.start_of_week, WeekDay::Wednesday);
+    assert!(args.shared.json);
+    assert!(args.shared.offline);
+    assert_eq!(args.shared.last, Some(1));
+
+    let cli = parse(&["ccusage", "weekly", "--start-of-week=friday"]);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.start_of_week, WeekDay::Friday);
+
+    let cli = parse(&["ccusage", "weekly"]);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.start_of_week, WeekDay::Monday);
+}
+
+#[test]
+fn applies_weekly_config_start_of_week_to_top_level_weekly() {
+    let config = TestConfig {
+        weekly_start: Some(WeekDay::Sunday),
+        ..TestConfig::default()
+    };
+
+    let cli = parse_with_config(&["ccusage", "weekly"], &config);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.start_of_week, WeekDay::Sunday);
+
+    let cli = parse_with_config(&["ccusage", "weekly", "-w", "tuesday"], &config);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.start_of_week, WeekDay::Tuesday);
+}
+
+#[test]
+fn rejects_start_of_week_outside_weekly_reports() {
+    assert_eq!(
+        parse_error(&["ccusage", "daily", "-w", "monday"]),
+        "Unknown option '-w'"
+    );
+    assert_eq!(
+        parse_error(&["ccusage", "weekly", "-w", "someday"]),
+        "Invalid week day 'someday'"
+    );
+}
+
+#[test]
 fn contextual_statusline_help_lists_choice_options() {
     let help = help_text_for_args(&["ccusage".to_string(), "statusline".to_string()]);
 

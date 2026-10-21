@@ -26,12 +26,16 @@ use super::{
     },
 };
 
-pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AllLoadResult> {
+pub(super) fn load_rows(
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+    start_of_week: WeekDay,
+) -> Result<AllLoadResult> {
     let pricing = load_pricing(shared);
     let load_kind = load_kind_for_report(kind);
     let loaded = load_base_rows(load_kind, shared, &pricing)?;
     Ok(AllLoadResult {
-        rows: finish_rows(kind, loaded.rows, shared),
+        rows: finish_rows(kind, loaded.rows, shared, start_of_week),
         detected_agents: loaded.detected_agents,
     })
 }
@@ -39,6 +43,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
 pub(super) fn load_sections(
     kinds: &[AgentReportKind],
     shared: &SharedArgs,
+    start_of_week: WeekDay,
 ) -> Result<AllSectionsLoadResult> {
     let pricing = load_pricing(shared);
     let daily_base = needs_daily_family(kinds)
@@ -62,12 +67,12 @@ pub(super) fn load_sections(
         let rows = if *kind == AgentReportKind::Session {
             session_base
                 .as_ref()
-                .map(|base| finish_rows(*kind, base.rows.clone(), shared))
+                .map(|base| finish_rows(*kind, base.rows.clone(), shared, start_of_week))
                 .unwrap_or_default()
         } else {
             daily_base
                 .as_ref()
-                .map(|base| finish_rows(*kind, base.rows.clone(), shared))
+                .map(|base| finish_rows(*kind, base.rows.clone(), shared, start_of_week))
                 .unwrap_or_default()
         };
         sections.push((*kind, rows));
@@ -395,7 +400,12 @@ fn load_base_rows(
     })
 }
 
-fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs) -> Vec<AllRow> {
+fn finish_rows(
+    kind: AgentReportKind,
+    mut rows: Vec<AllRow>,
+    shared: &SharedArgs,
+    start_of_week: WeekDay,
+) -> Vec<AllRow> {
     if kind == AgentReportKind::Session {
         for row in &mut rows {
             row.metadata_agents = None;
@@ -414,7 +424,7 @@ fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs
         return rows;
     }
 
-    let mut aggregated = aggregate_rows(rows, kind);
+    let mut aggregated = aggregate_rows(rows, kind, start_of_week);
     sort_rows(&mut aggregated, &shared.order);
     aggregated
 }
@@ -886,7 +896,11 @@ where
     }
 }
 
-pub(super) fn aggregate_rows(rows: Vec<AllRow>, kind: AgentReportKind) -> Vec<AllRow> {
+pub(super) fn aggregate_rows(
+    rows: Vec<AllRow>,
+    kind: AgentReportKind,
+    start_of_week: WeekDay,
+) -> Vec<AllRow> {
     let mut groups = BTreeMap::<String, AllAccumulator>::new();
     for mut row in rows {
         let period = match kind {
@@ -895,8 +909,9 @@ pub(super) fn aggregate_rows(rows: Vec<AllRow>, kind: AgentReportKind) -> Vec<Al
                 .period
                 .get(..7)
                 .map_or_else(|| row.period.clone(), str::to_string),
-            AgentReportKind::Weekly => crate::week_start(&row.period, WeekDay::Monday)
-                .unwrap_or_else(|| row.period.clone()),
+            AgentReportKind::Weekly => {
+                crate::week_start(&row.period, start_of_week).unwrap_or_else(|| row.period.clone())
+            }
             AgentReportKind::Session => row.period.clone(),
         };
         row.period = period.clone();
@@ -957,7 +972,7 @@ mod tests {
             sorting_row("z-cheap", "claude", 1.0),
             sorting_row("b-zero", "claude", 0.0),
         ];
-        let sorted = finish_rows(AgentReportKind::Session, rows, &shared);
+        let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday);
         let keys: Vec<_> = sorted
             .iter()
             .map(|row| (row.period.as_str(), row.agent))
@@ -991,7 +1006,7 @@ mod tests {
                 order_explicit,
                 ..SharedArgs::default()
             };
-            let sorted = finish_rows(AgentReportKind::Session, rows, &shared);
+            let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday);
             let keys: Vec<_> = sorted
                 .iter()
                 .map(|row| (row.period.as_str(), row.agent))
@@ -1012,11 +1027,20 @@ mod tests {
     #[test]
     fn session_cost_order_handles_empty_and_single_row_reports() {
         let shared = SharedArgs::default();
-        assert!(finish_rows(AgentReportKind::Session, Vec::new(), &shared).is_empty());
+        assert!(
+            finish_rows(
+                AgentReportKind::Session,
+                Vec::new(),
+                &shared,
+                WeekDay::Monday
+            )
+            .is_empty()
+        );
         let rows = finish_rows(
             AgentReportKind::Session,
             vec![sorting_row("only-session", "claude", 0.0)],
             &shared,
+            WeekDay::Monday,
         );
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].period, "only-session");
@@ -1042,7 +1066,7 @@ mod tests {
                     order,
                     ..SharedArgs::default()
                 };
-                let sorted = finish_rows(kind, rows, &shared);
+                let sorted = finish_rows(kind, rows, &shared, WeekDay::Monday);
                 let costs: Vec<_> = sorted.iter().map(|row| row.total_cost).collect();
                 assert_eq!(costs, expected_costs, "{kind:?} {order:?}");
             }
@@ -1204,7 +1228,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Session, &shared).unwrap();
+        let result = load_rows(AgentReportKind::Session, &shared, WeekDay::Monday).unwrap();
         let omp_rows = result
             .rows
             .iter()
@@ -1277,7 +1301,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Session, &shared).unwrap();
+        let result = load_rows(AgentReportKind::Session, &shared, WeekDay::Monday).unwrap();
         let pi_rows = result
             .rows
             .iter()
@@ -1440,7 +1464,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday) else {
             panic!("expected default pi path collision");
         };
 
@@ -1478,7 +1502,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday) else {
             panic!("expected named pi store path collision");
         };
 
@@ -1510,7 +1534,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday) else {
             panic!("expected nested default pi path collision");
         };
 
@@ -1549,7 +1573,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday) else {
             panic!("expected partial named pi store path collision");
         };
 
@@ -1578,7 +1602,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Daily, &shared).unwrap();
+        let result = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday).unwrap();
 
         assert!(result.detected_agents.contains(&"omp"));
         assert_eq!(result.rows.len(), 1);
@@ -1619,7 +1643,7 @@ mod tests {
             .rows,
         );
 
-        let aggregated = aggregate_rows(rows, AgentReportKind::Daily);
+        let aggregated = aggregate_rows(rows, AgentReportKind::Daily, WeekDay::Monday);
 
         assert_eq!(aggregated.len(), 1);
         assert_eq!(aggregated[0].metadata_agents, Some(vec!["omp", "pi"]));

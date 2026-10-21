@@ -39,9 +39,10 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let kind = args.kind;
     let shared = args.shared;
     let include_agents = args.by_agent;
+    let start_of_week = args.start_of_week;
     if let Some(sections) = args.sections {
         let sections = requested_sections(kind, sections);
-        let result = loader::load_sections(&sections, &shared)?;
+        let result = loader::load_sections(&sections, &shared, start_of_week)?;
         if wants_json(&shared) {
             return report::print_sections_report_json(
                 &result.sections,
@@ -61,7 +62,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         }
         return Ok(());
     }
-    let result = loader::load_rows(kind, &shared)?;
+    let result = loader::load_rows(kind, &shared, start_of_week)?;
     if wants_json(&shared) {
         let output = report::report_json_with_agents(&result.rows, kind, include_agents);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
