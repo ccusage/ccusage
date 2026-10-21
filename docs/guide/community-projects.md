@@ -10,6 +10,7 @@ These projects are maintained independently and are not affiliated with the ccus
 - [ClaudeCode_Dashboard](https://github.com/m-sigepon/ClaudeCode_Dashboard) - Web dashboard with charts and visualizations
 - [Ccusage App](https://github.com/EthanBarlo/ccusage-app) - Native application to display ccusage data in graphs and visualizations
 - [CCOwl](https://github.com/sivchari/ccowl) - A cross-platform status bar application that monitors Claude Code usage in real-time.
+- [ccx](https://github.com/aaronwong1999/ccx) - macOS menu bar app that continues a Claude Code session in Codex (and back) with its full context; reads `ccusage blocks --json` to warn when the current 5-hour block is on pace to pass your largest one
 
 ## Extensions & Integrations
 
