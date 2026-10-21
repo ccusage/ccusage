@@ -1078,6 +1078,39 @@ fn unified_session_rows_use_grok_home() {
     assert_unified_rows_use_grok_home(AgentReportKind::Session);
 }
 
+#[test]
+fn unified_weekly_rows_and_sections_honor_start_of_week() {
+    let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-grok","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20}}}},"_meta":{"eventId":"evt-grok"}}}"#;
+    let fixture = fs_fixture!({
+        "grok/sessions/proj/sess-grok/updates.jsonl": line,
+    });
+    let _env = isolated_agent_env(&fixture, "GROK_HOME", fixture.path("grok").into_os_string());
+    let shared = fixture_shared("20250615", "20250615");
+
+    for (start_of_week, week) in [
+        (WeekDay::Sunday, "2025-06-15"),
+        (WeekDay::Monday, "2025-06-09"),
+    ] {
+        let rows = load_rows(AgentReportKind::Weekly, &shared, start_of_week).unwrap();
+        let periods: Vec<_> = rows.rows.iter().map(|row| row.period.as_str()).collect();
+        assert_eq!(periods, [week], "{start_of_week:?} load_rows");
+
+        let sections = load_sections(
+            &[AgentReportKind::Daily, AgentReportKind::Weekly],
+            &shared,
+            start_of_week,
+        )
+        .unwrap();
+        let (_, weekly) = sections
+            .sections
+            .iter()
+            .find(|(kind, _)| *kind == AgentReportKind::Weekly)
+            .unwrap();
+        let periods: Vec<_> = weekly.iter().map(|row| row.period.as_str()).collect();
+        assert_eq!(periods, [week], "{start_of_week:?} load_sections");
+    }
+}
+
 fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs) {
     for command_kind in [AgentReportKind::Daily, AgentReportKind::Session] {
         let sections = match command_kind {

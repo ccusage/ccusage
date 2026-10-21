@@ -51,8 +51,11 @@ Configure which day starts the week:
 ccusage weekly --start-of-week monday
 ccusage weekly -w monday
 
-# Start week on Sunday (default for ccusage claude weekly)
+# Start week on Sunday
 ccusage weekly --start-of-week sunday
+
+# ccusage claude weekly starts on Sunday by default
+ccusage claude weekly
 
 # Other options: tuesday, wednesday, thursday, friday, saturday
 ```
