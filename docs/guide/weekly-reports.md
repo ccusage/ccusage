@@ -47,12 +47,12 @@ The columns are identical to daily reports but aggregated by week:
 Configure which day starts the week:
 
 ```bash
-# Start week on Sunday (default)
-ccusage weekly --start-of-week sunday
-
-# Start week on Monday
+# Start week on Monday (default for ccusage weekly)
 ccusage weekly --start-of-week monday
 ccusage weekly -w monday
+
+# Start week on Sunday (default for ccusage claude weekly)
+ccusage weekly --start-of-week sunday
 
 # Other options: tuesday, wednesday, thursday, friday, saturday
 ```
