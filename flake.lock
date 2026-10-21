@@ -138,11 +138,11 @@
     "litellm": {
       "flake": false,
       "locked": {
-        "lastModified": 1792220951,
-        "narHash": "sha256-xdcOab5Usq8lOxtsfO1KHQxSj/ADgH/rfCWli/CQbc0=",
+        "lastModified": 1792553099,
+        "narHash": "sha256-1FOuZyM7PO+u6mWHh9IE2pvzoduxQRquYmkpyRnVk60=",
         "owner": "BerriAI",
         "repo": "litellm",
-        "rev": "1fd7f81f97cffec77621964ba18998b224281726",
+        "rev": "8d6b8dab3db519d33cdb7b94b4dba37f1269cde4",
         "type": "github"
       },
       "original": {
@@ -154,31 +154,16 @@
     "models-dev": {
       "flake": false,
       "locked": {
-        "lastModified": 1792247056,
-        "narHash": "sha256-Xqooihg0ktxGnSgieFIsYuO/+L40mgd2Xz2Clfi42Zw=",
+        "lastModified": 1792553564,
+        "narHash": "sha256-9hNL6JbcjXggW25jpgAAhqi55SoDMOgFhhaWF1wJlk0=",
         "owner": "anomalyco",
         "repo": "models.dev",
-        "rev": "70bb56535691a1d0c2edcad479986fa061d4fdd9",
+        "rev": "0334651e4125b6b00cd86206418763b2bb83a270",
         "type": "github"
       },
       "original": {
         "owner": "anomalyco",
         "repo": "models.dev",
-        "type": "github"
-      }
-    },
-    "nix-filter": {
-      "locked": {
-        "lastModified": 1791915028,
-        "narHash": "sha256-/vtxTQyuha8ssLhL5a1zsHoZM8R5gwWXZNun5CG+DrQ=",
-        "owner": "numtide",
-        "repo": "nix-filter",
-        "rev": "f54d82f341662c8b5c3ae92e614fe0a8c256b995",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "nix-filter",
         "type": "github"
       }
     },
@@ -238,7 +223,6 @@
         "git-hooks": "git-hooks",
         "litellm": "litellm",
         "models-dev": "models-dev",
-        "nix-filter": "nix-filter",
         "nixpkgs": "nixpkgs",
         "pnpm-nixpkgs": "pnpm-nixpkgs",
         "rust-overlay": "rust-overlay",

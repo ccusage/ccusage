@@ -30,7 +30,6 @@
       url = "github:anomalyco/models.dev";
       flake = false;
     };
-    nix-filter.url = "github:numtide/nix-filter";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";

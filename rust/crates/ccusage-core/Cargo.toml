@@ -2,17 +2,18 @@
 name = "ccusage-core"
 version.workspace = true
 edition.workspace = true
-build = "build.rs"
 publish.workspace = true
 
 [features]
-# Off by default: the pricing snapshot normally arrives through
-# CCUSAGE_PRICING_JSON_PATH, and minreq's rustls stack is the workspace's most
-# expensive build-dependency. See build.rs.
-fetch-litellm-pricing = ["dep:minreq"]
+# Tests only: falls back to the snapshots in ccusage-pricing-snapshots when none
+# were installed, so a test does not have to install them before loading
+# pricing. Crates enable it from [dev-dependencies], which Cargo leaves out of
+# `cargo build`, so the Crane layers and the shipped binary never compile it.
+test-snapshots = ["dep:ccusage-pricing-snapshots"]
 
 [dependencies]
 ccusage-cli.workspace = true
+ccusage-pricing-snapshots = { workspace = true, optional = true }
 ccusage-terminal.workspace = true
 jiff.workspace = true
 memchr.workspace = true
@@ -22,15 +23,7 @@ serde.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
 
-[build-dependencies]
-miniz_oxide.workspace = true
-minreq = { workspace = true, optional = true }
-# float_roundtrip: the snapshots are minified through a parse -> serialize
-# round-trip, and serde_json's default float parsing is not correctly rounded,
-# so without it a handful of prices shift by one ULP on the way into the
-# binary. Host-only, so it costs the shipped binary nothing.
-serde_json = { workspace = true, features = ["float_roundtrip"] }
-
 [dev-dependencies]
+ccusage-pricing-snapshots.workspace = true
 ccusage-test-support.workspace = true
 insta.workspace = true

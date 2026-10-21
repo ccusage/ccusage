@@ -36,7 +36,7 @@ Sidechain entries:
 - When `requestId` is missing, both loaders deduplicate by message ID, effective
   session ID, and timestamp. Repeated writes at the same timestamp still
   collapse; distinct timestamps stay separate, except that real Anthropic
-  message IDs (`msg_` prefix) collapse across timestamps because Claude Code
+  message IDs (`msg_` prefix) and OpenAI `resp_` IDs collapse across timestamps because Claude Code
   writes one line per content block for a single response. Both keep gateway
   responses that reuse a message ID in different sessions separate.
 - When `requestId` is present, both loaders deduplicate matching message and

@@ -61,7 +61,7 @@ in
             inherit (pkgs) lib;
             commonArgs = crossCommonArgs;
             cargoArtifacts = crossDependencyArtifacts;
-            cargoTargetArgs = "--target ${target}";
+            inherit (crossDepsOnlyArgs) dummySrc;
           };
           crossCargoArtifacts = crossWorkspaceArtifacts.adapters;
         in

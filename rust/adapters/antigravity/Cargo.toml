@@ -12,6 +12,6 @@ serde_json.workspace = true
 sqlite.workspace = true
 
 [dev-dependencies]
-ccusage-core = { workspace = true, features = ["fetch-litellm-pricing"] }
+ccusage-core = { workspace = true, features = ["test-snapshots"] }
 ccusage-test-support.workspace = true
 insta.workspace = true

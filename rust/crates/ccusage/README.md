@@ -13,6 +13,10 @@ source in its own `ccusage-adapter-*` crate.
   `blocks` and `statusline`.
 - `adapter/` — the thin aliases that map each `ccusage <agent>` subcommand to its
   adapter crate.
+- `http.rs` and `http/` — the pricing refresh's HTTP client, installed into
+  `ccusage-core` at startup: ureq with an ETag cache and 304 revalidation, over a
+  verify-only rustls provider (TLS 1.3, X25519, RSA and ECDSA verification).
+  Keeping it here keeps ureq, rustls and ring out of the crates every adapter builds.
 - `bin/generate_config_schema.rs` — writes `apps/ccusage/config-schema.json`; the
   `config-schema` flake check fails when the committed file drifts.
 
@@ -41,8 +45,13 @@ source in its own `ccusage-adapter-*` crate.
 - `ccusage-cli-parser`
 - `ccusage-config`
 - `ccusage-core`
+- `ccusage-pricing-snapshots`
+- `ring`
+- `rustls`
+- `rustls-webpki`
 - `serde`
 - `serde_json`
+- `ureq`
 
 ## Build layer
 

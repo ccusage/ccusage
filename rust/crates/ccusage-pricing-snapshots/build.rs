@@ -223,7 +223,7 @@ fn is_embedded_model(model: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::compact_pricing_json;
-    use crate::PricingMap;
+    use ccusage_core::PricingMap;
 
     #[test]
     fn keeps_service_tier_multipliers_in_embedded_pricing() {

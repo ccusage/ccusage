@@ -88,12 +88,12 @@ update-litellm-pricing:
 
 # Regenerate committed models.dev snapshots from the pinned input
 gen-models-dev-pricing:
-    snapshots="$(nix build .#models-dev-pricing --no-link --print-out-paths)" && cp "$snapshots/models-dev-pricing.json" rust/crates/ccusage-core/src/models-dev-pricing.json && cp "$snapshots/models-dev-catalog-rules.json" rust/crates/ccusage-core/src/models-dev-catalog-rules.json && cp "$snapshots/codex-auto-review-fallbacks.json" rust/adapters/codex/src/codex-auto-review-fallbacks.json
-    chmod u+w rust/crates/ccusage-core/src/models-dev-pricing.json
-    chmod u+w rust/crates/ccusage-core/src/models-dev-catalog-rules.json
+    snapshots="$(nix build .#models-dev-pricing --no-link --print-out-paths)" && cp "$snapshots/models-dev-pricing.json" rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json && cp "$snapshots/models-dev-catalog-rules.json" rust/crates/ccusage-pricing-snapshots/src/models-dev-catalog-rules.json && cp "$snapshots/codex-auto-review-fallbacks.json" rust/adapters/codex/src/codex-auto-review-fallbacks.json
+    chmod u+w rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json
+    chmod u+w rust/crates/ccusage-pricing-snapshots/src/models-dev-catalog-rules.json
     chmod u+w rust/adapters/codex/src/codex-auto-review-fallbacks.json
-    nix fmt rust/crates/ccusage-core/src/models-dev-pricing.json
-    nix fmt rust/crates/ccusage-core/src/models-dev-catalog-rules.json
+    nix fmt rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json
+    nix fmt rust/crates/ccusage-pricing-snapshots/src/models-dev-catalog-rules.json
     nix fmt rust/adapters/codex/src/codex-auto-review-fallbacks.json
 
 # Update the pinned models.dev input, regenerate its pricing snapshot, and validate

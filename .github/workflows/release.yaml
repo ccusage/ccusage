@@ -38,7 +38,7 @@ jobs:
           ref: main
           fetch-depth: 0
       - id: tagpr
-        uses: Songmu/tagpr@0c4eb5a3b0862693702acea436a7c68bd586530d # v1.21.2
+        uses: Songmu/tagpr@1fcd7292d1fe8ea9a8313eef46b8d80b7a15d227 # v1.21.3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -128,11 +128,15 @@ jobs:
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
           save-nix-cache: false
+      # CI saves the x64 Cargo cache on pushes to main. Nothing in CI builds
+      # Windows arm64, so its leg here is the only writer of its cache; it saves
+      # only when the dependency key changes.
       - uses: ./.github/actions/build-windows-native-package
         if: matrix.platform == 'win32'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
+          save-cargo-cache: ${{ matrix.arch == 'arm64' }}
 
   npm:
     needs:

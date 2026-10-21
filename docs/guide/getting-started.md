@@ -30,7 +30,7 @@ pnpm dlx ccusage
 ```
 
 ```bash [pkg.pr.new preview]
-bunx -p https://pkg.pr.new/ccusage/ccusage@<pr-number> ccusage --offline
+bunx -p https://pkg.pr.new/ccusage@<pr-number-or-commit-sha> ccusage --offline
 ```
 
 :::

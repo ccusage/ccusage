@@ -7,15 +7,51 @@ inputs:
   binary:
     description: Path to the built ccusage binary
     required: true
+  save-cargo-cache:
+    description: >
+      Whether this job may persist the Cargo cache. Saves additionally require a
+      run on main outside pull requests and a dependency key with no entry yet,
+      so pull request code never writes a cache that main and releases read.
+    default: 'true'
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/setup-native-build-cache
+    # rust-toolchain.toml also lists clippy, rustfmt, and llvm-tools for local
+    # development, which rustup would otherwise download on the first cargo call
+    # (~50 MB of the ~150 MB of xz archives). The release build only needs the
+    # minimal profile of the same channel; RUSTUP_TOOLCHAIN takes precedence
+    # over the toolchain file, so cargo does not install the rest.
+    - name: Install Rust toolchain
+      id: toolchain
+      shell: bash
+      run: |
+        channel="$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)"
+        if [ -z "$channel" ]; then
+          echo "::error file=rust-toolchain.toml::no channel found"
+          exit 1
+        fi
+        rustup toolchain install "$channel" --profile minimal --no-self-update
+        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+    # Keyed on everything that decides the dependency build (toolchain, Cargo
+    # config, lockfile, and manifests) rather than the commit: workspace crates
+    # recompile on every run anyway because checkout gives their sources fresh
+    # mtimes, so only dependency changes make a new entry worth saving.
+    - name: Restore Cargo cache
+      id: cargo-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        platform: win32
+        path: |
+          ~/.cargo/registry
+          rust/target
+        key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}
+        restore-keys: |
+          cargo-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Build Cargo native binary
       shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
       # Nix cannot target Windows, so this is the one build that downloads the
       # LiteLLM pricing snapshot instead of reading it from the pinned input.
       run: cargo build --manifest-path rust/Cargo.toml --release --bin ccusage --features fetch-litellm-pricing
@@ -40,3 +76,28 @@ runs:
         name: ccusage-native-win32-${{ inputs.arch }}
         path: ccusage-native-win32-${{ inputs.arch }}.tar
         if-no-files-found: error
+
+    # Workspace crates rebuild on every run (see the restore step), so their
+    # outputs, about a quarter of rust/target, would only slow every restore.
+    # Every workspace crate name starts with ccusage and no dependency's does.
+    - name: Drop workspace outputs from the Cargo cache
+      id: cargo-cache-prune
+      if: >-
+        inputs.save-cargo-cache == 'true'
+        && steps.cargo-cache.outputs.cache-hit != 'true'
+        && github.ref == 'refs/heads/main'
+        && github.event_name != 'pull_request'
+        && github.event_name != 'pull_request_target'
+      shell: bash
+      run: |
+        cd rust/target/release
+        rm -rf ccusage* deps/*ccusage* .fingerprint/ccusage* build/ccusage*
+
+    - name: Save Cargo cache
+      if: steps.cargo-cache-prune.outcome == 'success'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          rust/target
+        key: ${{ steps.cargo-cache.outputs.cache-primary-key }}

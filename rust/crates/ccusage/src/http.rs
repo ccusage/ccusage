@@ -2,11 +2,16 @@ use std::{
     fs,
     io::{self, Read},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
 use ccusage_core::pricing::PricingEndpoint;
+
+mod tls;
 
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 const PRICING_FETCH_MAX_BYTES: u64 = 64 * 1024 * 1024;
@@ -74,6 +79,11 @@ fn fetch_json_with_cache_dir_inner(
 
     let agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)))
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .unversioned_rustls_crypto_provider(Arc::new(tls::provider()))
+                .build(),
+        )
         .build()
         .new_agent();
     let mut request = agent.get(url);

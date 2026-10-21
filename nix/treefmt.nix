@@ -119,8 +119,8 @@ in
         # comment too if they are spelled out here. Only typos is excluded,
         # because the JSON formatter is what keeps these files reviewable.
         settings.formatter.typos.excludes = [
-          "rust/crates/ccusage-core/src/models-dev-pricing.json"
-          "rust/crates/ccusage-core/src/models-dev-catalog-rules.json"
+          "rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json"
+          "rust/crates/ccusage-pricing-snapshots/src/models-dev-catalog-rules.json"
           "rust/adapters/codex/src/codex-auto-review-fallbacks.json"
         ];
 
