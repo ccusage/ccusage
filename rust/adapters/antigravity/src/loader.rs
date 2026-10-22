@@ -139,10 +139,14 @@ mod tests {
                     "gemini-3.6-flash": {
                         "input_cost_per_token": 0.000003,
                         "output_cost_per_token": 0.000004
+                    },
+                    "claude-opus-5-5": {
+                        "input_cost_per_token": 0.000005,
+                        "output_cost_per_token": 0.000025
                     }
                 }"#
             ),
-            2
+            3
         );
         pricing
     }
@@ -682,8 +686,55 @@ mod tests {
             &[],
             &[],
         );
+        create_database(
+            &fixture.path("third/conversations/third.db"),
+            &[
+                (
+                    1,
+                    metadata_blob(
+                        None,
+                        Some(UsageFixture {
+                            model_id: Some(1402),
+                            input_tokens: 300,
+                            total_output_tokens: 60,
+                            visible_output_tokens: 60,
+                            response_id: Some("snapshot-opus-id"),
+                            ..UsageFixture::default()
+                        }),
+                        Some((1_781_481_600, 0)),
+                        &[],
+                    ),
+                ),
+                (
+                    2,
+                    metadata_blob(
+                        Some("model_placeholder_m402"),
+                        Some(UsageFixture {
+                            input_tokens: 400,
+                            total_output_tokens: 80,
+                            visible_output_tokens: 80,
+                            response_id: Some("snapshot-opus-placeholder"),
+                            ..UsageFixture::default()
+                        }),
+                        Some((1_781_481_660, 0)),
+                        &[],
+                    ),
+                ),
+            ],
+            &[],
+            &[],
+        );
         let pricing = snapshot_pricing();
         let entries = load_from_fixture_with_pricing(&fixture, true, &pricing);
+        for response_id in ["snapshot-opus-id", "snapshot-opus-placeholder"] {
+            let entry = entries
+                .iter()
+                .find(|entry| entry.data.message.id.as_deref() == Some(response_id))
+                .unwrap();
+            assert_eq!(entry.model.as_deref(), Some("claude-opus-5-5"));
+            assert!(entry.cost > 0.0);
+            assert!(entry.missing_pricing_model.is_none());
+        }
         let periods = [
             crate::cli::AgentReportKind::Daily,
             crate::cli::AgentReportKind::Weekly,

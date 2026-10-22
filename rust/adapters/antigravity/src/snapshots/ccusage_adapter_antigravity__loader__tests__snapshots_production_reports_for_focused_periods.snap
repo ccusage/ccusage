@@ -49,15 +49,37 @@ expression: reports
           "outputTokens": 50,
           "totalCost": 0.0008,
           "totalTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "date": "2026-06-15",
+          "inputTokens": 700,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.007,
+              "inputTokens": 700,
+              "modelName": "claude-opus-5-5",
+              "outputTokens": 140
+            }
+          ],
+          "modelsUsed": [
+            "claude-opus-5-5"
+          ],
+          "outputTokens": 140,
+          "totalCost": 0.007,
+          "totalTokens": 840
         }
       ],
       "totals": {
         "cacheCreationTokens": 5,
         "cacheReadTokens": 20,
-        "inputTokens": 300,
-        "outputTokens": 80,
-        "totalCost": 0.000987,
-        "totalTokens": 415
+        "inputTokens": 1000,
+        "outputTokens": 220,
+        "totalCost": 0.007987000000000001,
+        "totalTokens": 1255
       }
     },
     "table": [
@@ -86,6 +108,19 @@ expression: reports
         "output": 50,
         "period": "2026-06-08",
         "total": 250
+      },
+      {
+        "cacheCreate": 0,
+        "cacheRead": 0,
+        "cost": 0.007,
+        "firstColumn": "Date",
+        "input": 700,
+        "models": [
+          "claude-opus-5-5"
+        ],
+        "output": 140,
+        "period": "2026-06-15",
+        "total": 840
       }
     ]
   },
@@ -117,8 +152,16 @@ expression: reports
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "inputTokens": 200,
+          "inputTokens": 900,
           "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.007,
+              "inputTokens": 700,
+              "modelName": "claude-opus-5-5",
+              "outputTokens": 140
+            },
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
@@ -129,21 +172,22 @@ expression: reports
             }
           ],
           "modelsUsed": [
-            "gemini-3.6-flash"
+            "gemini-3.6-flash",
+            "claude-opus-5-5"
           ],
           "month": "2026-06",
-          "outputTokens": 50,
-          "totalCost": 0.0008,
-          "totalTokens": 250
+          "outputTokens": 190,
+          "totalCost": 0.0078000000000000005,
+          "totalTokens": 1090
         }
       ],
       "totals": {
         "cacheCreationTokens": 5,
         "cacheReadTokens": 20,
-        "inputTokens": 300,
-        "outputTokens": 80,
-        "totalCost": 0.000987,
-        "totalTokens": 415
+        "inputTokens": 1000,
+        "outputTokens": 220,
+        "totalCost": 0.007987000000000001,
+        "totalTokens": 1255
       }
     },
     "table": [
@@ -163,15 +207,16 @@ expression: reports
       {
         "cacheCreate": 0,
         "cacheRead": 0,
-        "cost": 0.0008,
+        "cost": 0.0078000000000000005,
         "firstColumn": "Month",
-        "input": 200,
+        "input": 900,
         "models": [
-          "gemini-3.6-flash"
+          "gemini-3.6-flash",
+          "claude-opus-5-5"
         ],
-        "output": 50,
+        "output": 190,
         "period": "2026-06",
-        "total": 250
+        "total": 1090
       }
     ]
   },
@@ -227,15 +272,40 @@ expression: reports
           "sessionId": "second",
           "totalCost": 0.0008,
           "totalTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "firstActivity": "2026-06-15T00:00:00.000Z",
+          "inputTokens": 700,
+          "lastActivity": "2026-06-15T00:01:00.000Z",
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.007,
+              "inputTokens": 700,
+              "modelName": "claude-opus-5-5",
+              "outputTokens": 140
+            }
+          ],
+          "modelsUsed": [
+            "claude-opus-5-5"
+          ],
+          "outputTokens": 140,
+          "projectPath": "Antigravity",
+          "sessionId": "third",
+          "totalCost": 0.007,
+          "totalTokens": 840
         }
       ],
       "totals": {
         "cacheCreationTokens": 5,
         "cacheReadTokens": 20,
-        "inputTokens": 300,
-        "outputTokens": 80,
-        "totalCost": 0.000987,
-        "totalTokens": 415
+        "inputTokens": 1000,
+        "outputTokens": 220,
+        "totalCost": 0.007987000000000001,
+        "totalTokens": 1255
       }
     },
     "table": [
@@ -264,6 +334,19 @@ expression: reports
         "output": 50,
         "period": "second",
         "total": 250
+      },
+      {
+        "cacheCreate": 0,
+        "cacheRead": 0,
+        "cost": 0.007,
+        "firstColumn": "Session",
+        "input": 700,
+        "models": [
+          "claude-opus-5-5"
+        ],
+        "output": 140,
+        "period": "third",
+        "total": 840
       }
     ]
   },
@@ -272,10 +355,10 @@ expression: reports
       "totals": {
         "cacheCreationTokens": 5,
         "cacheReadTokens": 20,
-        "inputTokens": 300,
-        "outputTokens": 80,
-        "totalCost": 0.000987,
-        "totalTokens": 415
+        "inputTokens": 1000,
+        "outputTokens": 220,
+        "totalCost": 0.007987000000000001,
+        "totalTokens": 1255
       },
       "weekly": [
         {
@@ -321,6 +404,28 @@ expression: reports
           "totalCost": 0.0008,
           "totalTokens": 250,
           "week": "2026-06-08"
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 700,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.007,
+              "inputTokens": 700,
+              "modelName": "claude-opus-5-5",
+              "outputTokens": 140
+            }
+          ],
+          "modelsUsed": [
+            "claude-opus-5-5"
+          ],
+          "outputTokens": 140,
+          "totalCost": 0.007,
+          "totalTokens": 840,
+          "week": "2026-06-15"
         }
       ]
     },
@@ -350,6 +455,19 @@ expression: reports
         "output": 50,
         "period": "2026-06-08",
         "total": 250
+      },
+      {
+        "cacheCreate": 0,
+        "cacheRead": 0,
+        "cost": 0.007,
+        "firstColumn": "Week",
+        "input": 700,
+        "models": [
+          "claude-opus-5-5"
+        ],
+        "output": 140,
+        "period": "2026-06-15",
+        "total": 840
       }
     ]
   }
