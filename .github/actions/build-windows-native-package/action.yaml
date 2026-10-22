@@ -52,6 +52,8 @@ runs:
       shell: bash
       env:
         RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+        # Mirrors package.nix, which bakes the endpoint into every Nix-built release.
+        CCUSAGE_TELEMETRY_ENDPOINT: https://telemetry.ccusage.com/v1/ping
       # Nix cannot target Windows, so this is the one build that downloads the
       # LiteLLM pricing snapshot instead of reading it from the pinned input.
       run: cargo build --manifest-path rust/Cargo.toml --release --bin ccusage --features fetch-litellm-pricing

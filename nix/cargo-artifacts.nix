@@ -120,6 +120,7 @@ let
     builtins.removeAttrs commonArgs [
       # Only the snapshot crate's build script reads it, and it stays a dummy here.
       "CCUSAGE_PRICING_JSON_PATH"
+      "CCUSAGE_TELEMETRY_ENDPOINT"
       "CCUSAGE_VERSION"
       "cargoExtraArgs"
       "src"

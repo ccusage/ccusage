@@ -47,6 +47,9 @@ let
     cargoExtraArgs = "-p ccusage --bin ccusage";
     CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}/model_prices_and_context_window.json";
     CCUSAGE_VERSION = version;
+    # Only release builds report usage; plain `cargo build` compiles telemetry
+    # without an endpoint, so development runs never reach the collector.
+    CCUSAGE_TELEMETRY_ENDPOINT = "https://telemetry.ccusage.com/v1/ping";
     RUSTFLAGS =
       # Splitting the runtime into per-adapter crates makes each crate
       # instantiate the shared generic machinery for its own types, and stable
@@ -87,6 +90,7 @@ let
   depsOnlyArgs =
     builtins.removeAttrs commonArgs [
       "CCUSAGE_PRICING_JSON_PATH"
+      "CCUSAGE_TELEMETRY_ENDPOINT"
       "CCUSAGE_VERSION"
       "src"
     ]
