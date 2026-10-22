@@ -28,7 +28,10 @@ skills below and loads when the task triggers them.
 The production CLI is Rust-first. Source-specific runtime behavior belongs in
 `rust/adapters/<agent>`, shared behavior in `ccusage-core` or `ccusage-adapter-common`.
 `apps/ccusage` is the npm surface only - bin launcher, schema artifact, packaging and benchmark
-scripts - and not a place for adapter logic.
+scripts - and not a place for adapter logic. `apps/telemetry` is the Cloudflare Worker that
+collects the anonymous daily ping sent by `rust/crates/ccusage/src/telemetry.rs`. The payload is
+defined once, as `Ping` in `rust/crates/ccusage-telemetry`; the Worker's schema is generated from
+it with `just telemetry::generate-schema`, never edited by hand.
 
 Read the nearest `AGENTS.md` before editing:
 
