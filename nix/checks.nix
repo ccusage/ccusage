@@ -120,6 +120,48 @@ in
 
             touch "$out"
           '';
+      generateTelemetrySchema = craneLib.buildPackage (
+        commonArgs
+        // {
+          pname = "generate-telemetry-schema";
+          # The generator only needs serde and schemars, so skip the adapter artifacts.
+          cargoArtifacts = workspaceArtifacts.foundation;
+          cargoExtraArgs = "-p ccusage-telemetry --bin generate-telemetry-schema";
+          doCheck = false;
+          meta = {
+            mainProgram = "generate-telemetry-schema";
+          };
+        }
+      );
+      # Fail `nix flake check` when the collector Worker's ping schema drifts from
+      # the Rust `Ping` type the CLI sends. A drifted Worker would reject real pings
+      # with a 400 that nobody sees (run `just telemetry::generate-schema` to fix).
+      telemetry-schema =
+        pkgs.runCommand "telemetry-schema-check"
+          {
+            src = repoSrc;
+            nativeBuildInputs = [
+              generateTelemetrySchema
+              pkgs.oxfmt
+              pkgs.diffutils
+            ];
+          }
+          ''
+            cp -R "$src" source
+            chmod -R u+w source
+            cd source
+
+            generate-telemetry-schema generated.ts
+            oxfmt --write generated.ts
+
+            if ! diff -u apps/telemetry/src/v1/ping-schema.gen.ts generated.ts; then
+              echo "ERROR: apps/telemetry/src/v1/ping-schema.gen.ts is out of sync with the Rust Ping type." >&2
+              echo "Run 'just telemetry::generate-schema' and commit the result." >&2
+              exit 1
+            fi
+
+            touch "$out"
+          '';
       # Fail `nix flake check` when a tool's committed `bun.nix` no longer matches
       # what `bun2nix` derives from its `bun.lock`. Renovate bumps `bun.lock`
       # without knowing about `bun.nix`, and a stale pair would otherwise only
@@ -171,6 +213,7 @@ in
           ccusage-fmt
           ccusage-hawk
           config-schema
+          telemetry-schema
           ;
         oxlint = mkRepoCheck "oxlint-check" [ pkgs.oxlint ] ''
           oxlint --config nix/oxlint-check.json .
