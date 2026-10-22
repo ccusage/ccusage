@@ -488,6 +488,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ccusage-telemetry"
+version = "0.0.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ccusage-terminal"
 version = "0.0.0"
 dependencies = [
