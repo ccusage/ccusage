@@ -38,6 +38,37 @@ pub(crate) fn fetch_json(url: &str) -> io::Result<String> {
     fetch_json_with_cache_dir(url, cache_dir.as_deref(), endpoint)
 }
 
+/// Sends a JSON body with a POST and reports only whether the server accepted it.
+///
+/// Telemetry is the only caller; it ignores the result, so the error carries no
+/// detail beyond what a debug print would need.
+pub(crate) fn post_json(url: &str, body: &str, timeout: Duration) -> io::Result<()> {
+    let status = agent(timeout)
+        .post(url)
+        .header("content-type", "application/json")
+        .send(body)
+        .map_err(|error| io::Error::other(error.to_string()))?
+        .status()
+        .as_u16();
+    if (200..300).contains(&status) {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!("HTTP {status}")))
+    }
+}
+
+fn agent(timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .unversioned_rustls_crypto_provider(Arc::new(tls::provider()))
+                .build(),
+        )
+        .build()
+        .new_agent()
+}
+
 /// Returns a per-user cache directory, or `None` when no safe directory exists.
 fn default_cache_dir() -> Option<PathBuf> {
     cache_dir_under(
@@ -77,16 +108,7 @@ fn fetch_json_with_cache_dir_inner(
         None
     };
 
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)))
-        .tls_config(
-            ureq::tls::TlsConfig::builder()
-                .unversioned_rustls_crypto_provider(Arc::new(tls::provider()))
-                .build(),
-        )
-        .build()
-        .new_agent();
-    let mut request = agent.get(url);
+    let mut request = agent(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)).get(url);
     if let Some(cached) = cached.as_ref() {
         request = request.header("if-none-match", &cached.etag);
     }

@@ -208,6 +208,10 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
         Some(Command::ZCode(args)) => agent_command_snapshot("zcode", args),
+        Some(Command::Telemetry(action)) => json!({
+            "type": "telemetry",
+            "action": format!("{action:?}"),
+        }),
     }
 }
 
@@ -319,6 +323,34 @@ fn leaves_the_short_alias_of_the_removed_locale_option_unused() {
     assert_eq!(
         parse_error(&["ccusage", "daily", "-l", "1"]),
         "Unknown option '-l'"
+    );
+}
+
+#[test]
+fn parses_telemetry_actions_with_status_as_the_default() {
+    for (args, action) in [
+        (&["ccusage", "telemetry"][..], "Status"),
+        (&["ccusage", "telemetry", "status"][..], "Status"),
+        (&["ccusage", "telemetry", "enable"][..], "Enable"),
+        (&["ccusage", "telemetry", "disable"][..], "Disable"),
+    ] {
+        assert_eq!(
+            cli_snapshot(parse(args))["command"],
+            json!({ "type": "telemetry", "action": action }),
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_unknown_telemetry_actions_and_extra_arguments() {
+    assert_eq!(
+        parse_error(&["ccusage", "telemetry", "off"]),
+        "Unknown telemetry action 'off'. Expected status, enable, or disable."
+    );
+    assert_eq!(
+        parse_error(&["ccusage", "telemetry", "enable", "now"]),
+        "Unexpected argument 'now'"
     );
 }
 

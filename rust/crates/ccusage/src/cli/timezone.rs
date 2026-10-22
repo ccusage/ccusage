@@ -22,6 +22,7 @@ fn effective_timezone(cli: &Cli) -> Option<&str> {
     match cli.command.as_ref() {
         None => cli.shared.timezone.as_deref(),
         Some(Command::Statusline(args)) => args.timezone.as_deref(),
+        Some(Command::Telemetry(_)) => None,
         Some(command) => command_shared(command).timezone.as_deref(),
     }
 }
@@ -52,6 +53,7 @@ fn command_shared(command: &Command) -> &SharedArgs {
         | Command::Grok(args)
         | Command::ZCode(args) => &args.shared,
         Command::Statusline(_) => unreachable!("statusline keeps its own timezone field"),
+        Command::Telemetry(_) => unreachable!("telemetry takes no report options"),
     }
 }
 

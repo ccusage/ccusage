@@ -28,6 +28,15 @@ pub enum Command {
     OpenClaw(AgentCommandArgs),
     Grok(AgentCommandArgs),
     ZCode(AgentCommandArgs),
+    Telemetry(TelemetryAction),
+}
+
+/// What `ccusage telemetry` should do with the stored telemetry preference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TelemetryAction {
+    Status,
+    Enable,
+    Disable,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -5,8 +5,8 @@ use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
     CostSource, DATE_BOUND_FORMATS, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS,
-    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, TelemetryAction, VisualBurnRate, WeekDay,
+    WeeklyArgs, normalize_date_bound,
 };
 
 use crate::Cli;
@@ -359,8 +359,23 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::ZCode,
         ),
+        "telemetry" => parse_telemetry_command(parser),
         _ => Err(format!("Unknown command '{command}'")),
     }
+}
+
+fn parse_telemetry_command(parser: &mut ArgParser) -> Result<Command, String> {
+    let action = match parser.next().as_deref() {
+        None | Some("status") => TelemetryAction::Status,
+        Some("enable") => TelemetryAction::Enable,
+        Some("disable") => TelemetryAction::Disable,
+        Some(other) => {
+            return Err(format!(
+                "Unknown telemetry action '{other}'. Expected status, enable, or disable."
+            ));
+        }
+    };
+    Ok(Command::Telemetry(action))
 }
 
 fn accepts_root_all_options(command: &str) -> bool {
@@ -805,6 +820,7 @@ fn is_command(arg: &str) -> bool {
             | "qwen"
             | "grok"
             | "zcode"
+            | "telemetry"
     )
 }
 
@@ -1074,7 +1090,7 @@ fn report_shared<'a>(
         Some(Command::Weekly(args)) => (&args.shared, true),
         Some(Command::Session(args)) => (&args.shared, false),
         Some(Command::Blocks(args)) => (&args.shared, false),
-        Some(Command::Statusline(_)) => (root_shared, false),
+        Some(Command::Statusline(_) | Command::Telemetry(_)) => (root_shared, false),
         Some(
             Command::Codex(args)
             | Command::OpenCode(args)
@@ -1121,7 +1137,10 @@ fn last_option_error(command: Option<&Command>, root_shared: &SharedArgs) -> Opt
 /// orders them. A reversed window would otherwise load everything and print an
 /// empty report that looks like missing data.
 fn date_window_error(command: Option<&Command>, root_shared: &SharedArgs) -> Option<String> {
-    if matches!(command, Some(Command::Statusline(_))) {
+    if matches!(
+        command,
+        Some(Command::Statusline(_) | Command::Telemetry(_))
+    ) {
         return None;
     }
     let (shared, _) = report_shared(command, root_shared);

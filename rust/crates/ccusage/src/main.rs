@@ -3,6 +3,7 @@ mod blocks;
 mod cli;
 mod commands;
 mod http;
+mod telemetry;
 
 pub(crate) use adapter::claude::{load_daily_summaries, load_entries, load_entries_since};
 #[cfg(test)]
@@ -30,7 +31,8 @@ fn main() -> Result<()> {
     });
     pricing::set_json_fetcher(http::fetch_json);
     let cli = cli::parse();
-    match cli.command {
+    let ping = telemetry::start(cli.command.as_ref());
+    let result = match cli.command {
         Some(Command::All(args)) => adapter::all::run(args),
         Some(Command::Daily(args)) => commands::run_daily(args),
         Some(Command::Monthly(shared)) => commands::run_bucket(shared, BucketKind::Monthly),
@@ -55,6 +57,7 @@ fn main() -> Result<()> {
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
         Some(Command::Grok(args)) => adapter::grok::run(args),
         Some(Command::ZCode(args)) => adapter::zcode::run(args),
+        Some(Command::Telemetry(action)) => telemetry::run(action),
         None => {
             let args = AgentCommandArgs {
                 shared: cli.shared,
@@ -68,7 +71,11 @@ fn main() -> Result<()> {
             };
             adapter::all::run(args)
         }
+    };
+    if let Some(ping) = ping {
+        ping.finish();
     }
+    result
 }
 
 #[cfg(test)]

@@ -113,6 +113,10 @@
 			{
 				"name": "zcode",
 				"description": "Show ZCode usage commands"
+			},
+			{
+				"name": "telemetry",
+				"description": "Show or change the anonymous usage telemetry setting"
 			}
 		]
 	},
@@ -858,6 +862,25 @@
 			"description": "Show ZCode usage grouped by session",
 			"usage": "ccusage zcode session <OPTIONS>",
 			"options": "agent_options"
+		},
+		{
+			"path": ["telemetry"],
+			"description": "Show or change the anonymous usage telemetry setting (status when no command is given). See https://ccusage.com/guide/telemetry",
+			"usage": "ccusage telemetry <COMMANDS>",
+			"commands": [
+				{
+					"name": "status",
+					"description": "Show whether telemetry is enabled and why (default)"
+				},
+				{
+					"name": "enable",
+					"description": "Enable anonymous usage telemetry"
+				},
+				{
+					"name": "disable",
+					"description": "Disable anonymous usage telemetry"
+				}
+			]
 		}
 	]
 }

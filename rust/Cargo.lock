@@ -144,6 +144,7 @@ dependencies = [
  "ccusage-config",
  "ccusage-core",
  "ccusage-pricing-snapshots",
+ "ccusage-telemetry",
  "ccusage-test-support",
  "insta",
  "mimalloc",
