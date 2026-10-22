@@ -867,6 +867,7 @@ fn model_name_from_id(model_id: u64) -> String {
         1072 => "gemini-3.6-flash-medium".to_string(),
         1073 => "gemini-3.6-flash-low".to_string(),
         1417..=1419 => "gemini-4-argon".to_string(),
+        1402 => "claude-opus-5-5".to_string(),
         1050 => "gemini-3.1-flash-lite".to_string(),
         1_000.. => format!("model_placeholder_m{}", model_id - 1_000),
         _ => format!("antigravity-model-{model_id}"),
@@ -922,6 +923,7 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         "model_placeholder_m417" | "model_placeholder_m418" | "model_placeholder_m419" => {
             "gemini-4-argon"
         }
+        "model_placeholder_m402" => "claude-opus-5-5",
         "model_placeholder_m50" => "gemini-3.1-flash-lite",
         "model_placeholder_m26" => "claude-opus-4-6",
         "model_placeholder_m35" => "claude-sonnet-4-6",
@@ -1590,6 +1592,41 @@ mod tests {
         assert_eq!(
             normalize_antigravity_model("Gemini 3.8 Flash").as_deref(),
             Some("gemini-3.8-flash")
+        );
+    }
+
+    #[test]
+    fn maps_claude_opus_5_5_id_and_placeholder_to_priced_model() {
+        assert_eq!(model_name_from_id(1402), "claude-opus-5-5");
+        assert_eq!(
+            normalize_antigravity_model("model_placeholder_m402").as_deref(),
+            Some("claude-opus-5-5")
+        );
+
+        let pricing = PricingMap::load_embedded();
+        let usage = TokenUsageRaw {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            ..TokenUsageRaw::default()
+        };
+        let cost = calculate_antigravity_cost(
+            &model_name_from_id(1402),
+            None,
+            usage,
+            TimestampMs::UNIX_EPOCH,
+            CostMode::Calculate,
+            &pricing,
+        );
+        assert!(cost > 0.0);
+        assert!(
+            missing_antigravity_pricing(
+                "claude-opus-5-5",
+                None,
+                usage,
+                CostMode::Calculate,
+                &pricing,
+            )
+            .is_none()
         );
     }
 
