@@ -58,6 +58,10 @@ Empty entries, directories that do not exist, and missing explicit files are ski
 
 Specifies where ccusage should look for Claude Code data. See [Claude Code](/guide/claude/) for default paths, multiple-directory behavior, and Claude-specific examples.
 
+## Telemetry
+
+`CCUSAGE_TELEMETRY_DISABLED` and `DO_NOT_TRACK` turn off the anonymous daily usage ping, which is also off whenever `CI` is set. `CCUSAGE_TELEMETRY_DEBUG=1` prints the payload instead of sending it. See [Telemetry](/guide/telemetry) for exactly what is sent.
+
 ## LOG_LEVEL
 
 Controls the verbosity of log output.
