@@ -181,6 +181,20 @@ pub struct AgentCommandArgs {
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,
     pub start_of_week: WeekDay,
+    /// Per-source options of a unified report, keyed by agent name. A source
+    /// without an entry loads with `shared`.
+    pub sources: BTreeMap<String, SourceArgs>,
+}
+
+/// The options a unified report loads one source with: the same command line
+/// read through that source's config sections, so `ccusage daily` sees an agent
+/// the way `ccusage <agent> daily` does.
+#[derive(Clone, Debug, Default)]
+pub struct SourceArgs {
+    pub shared: SharedArgs,
+    pub pi_path: Option<String>,
+    pub open_claw_path: Option<String>,
+    pub codex_speed: CodexSpeed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

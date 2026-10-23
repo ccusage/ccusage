@@ -76,6 +76,8 @@ fn agent_window_target(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use ccusage_cli::{CodexSpeed, SortOrder, WeeklyArgs};
 
     use super::*;
@@ -99,6 +101,7 @@ mod tests {
             open_claw_path: None,
             codex_speed: CodexSpeed::Auto,
             start_of_week: WeekDay::Monday,
+            sources: BTreeMap::new(),
         }
     }
 

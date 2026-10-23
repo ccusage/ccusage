@@ -66,6 +66,7 @@ fn main() -> Result<()> {
                 open_claw_path: None,
                 codex_speed: cli::CodexSpeed::Auto,
                 start_of_week: cli::WeekDay::Monday,
+                sources: std::collections::BTreeMap::new(),
             };
             adapter::all::run(args)
         }
