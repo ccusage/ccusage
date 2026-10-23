@@ -413,7 +413,21 @@ mod tests {
                 "deepseek-v4-flash".to_string()
             ]
         );
-        assert!((calculate_hermes_cost(&entry, &pricing) - 0.14).abs() < 1e-12);
+        let provider_cost = pricing
+            .find_exact_with_fallback("deepseek/deepseek-v4-flash")
+            .unwrap()
+            .input
+            * 1_000_000.0;
+        let raw_model_cost = calculate_cost_for_usage_at(
+            Some("deepseek-v4-flash"),
+            entry.usage,
+            None,
+            Some(entry.timestamp),
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        assert!((provider_cost - raw_model_cost).abs() > 1e-12);
+        assert!((calculate_hermes_cost(&entry, &pricing) - provider_cost).abs() < 1e-12);
     }
 
     #[test]
