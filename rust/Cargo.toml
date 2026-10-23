@@ -63,7 +63,7 @@ minreq = { version = "3.0.0", default-features = false, features = ["https-rustl
 ring = { version = "0.17.14", default-features = false }
 rustc-hash = "2.1.3"
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
-rustls-webpki = { version = "0.103.15", default-features = false, features = ["ring"] }
+rustls-webpki = { version = "0.103.16", default-features = false, features = ["ring"] }
 schemars = "0.8"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
