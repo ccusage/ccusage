@@ -14,7 +14,7 @@ use crate::{
         amp, antigravity, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
         kilo, kimi, openclaw, opencode, pi, qwen, zcode,
     },
-    cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, WeekDay},
+    cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
 };
 
@@ -26,14 +26,20 @@ use super::{
     },
 };
 
+/// No per-source options, which is how the tests that do not exercise them
+/// call the loader.
+#[cfg(test)]
+pub(super) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
+
 pub(super) fn load_rows(
     kind: AgentReportKind,
     shared: &SharedArgs,
+    sources: &BTreeMap<String, SourceArgs>,
     start_of_week: WeekDay,
 ) -> Result<AllLoadResult> {
     let pricing = load_pricing(shared);
     let load_kind = load_kind_for_report(kind);
-    let loaded = load_base_rows(load_kind, shared, &pricing)?;
+    let loaded = load_base_rows(load_kind, shared, sources, &pricing)?;
     Ok(AllLoadResult {
         rows: finish_rows(kind, loaded.rows, shared, start_of_week),
         detected_agents: loaded.detected_agents,
@@ -43,14 +49,15 @@ pub(super) fn load_rows(
 pub(super) fn load_sections(
     kinds: &[AgentReportKind],
     shared: &SharedArgs,
+    sources: &BTreeMap<String, SourceArgs>,
     start_of_week: WeekDay,
 ) -> Result<AllSectionsLoadResult> {
     let pricing = load_pricing(shared);
     let daily_base = needs_daily_family(kinds)
-        .then(|| load_base_rows(AgentReportKind::Daily, shared, &pricing))
+        .then(|| load_base_rows(AgentReportKind::Daily, shared, sources, &pricing))
         .transpose()?;
     let session_base = needs_session(kinds)
-        .then(|| load_base_rows(AgentReportKind::Session, shared, &pricing))
+        .then(|| load_base_rows(AgentReportKind::Session, shared, sources, &pricing))
         .transpose()?;
 
     let daily_detected_agents = daily_base
@@ -102,9 +109,33 @@ fn load_kind_for_report(kind: AgentReportKind) -> AgentReportKind {
     }
 }
 
+/// The shared options each source loads with: the ones the config resolved for
+/// it, or the unified ones for a source the config does not address. `json` is
+/// forced the way `load_base_rows` forces it on the unified options, since the
+/// sources only feed the unified report.
+fn shared_by_source(
+    sources: &BTreeMap<String, SourceArgs>,
+    shared: &SharedArgs,
+) -> BTreeMap<&'static str, SharedArgs> {
+    BUILT_IN_AGENT_NAMES
+        .iter()
+        .map(|agent| {
+            let options = sources.get(*agent).map_or(shared, |source| &source.shared);
+            (
+                *agent,
+                SharedArgs {
+                    json: true,
+                    ..options.clone()
+                },
+            )
+        })
+        .collect()
+}
+
 fn load_base_rows(
     load_kind: AgentReportKind,
     shared: &SharedArgs,
+    sources: &BTreeMap<String, SourceArgs>,
     pricing: &PricingMap,
 ) -> Result<AllLoadResult> {
     let mut progress = crate::progress::UsageLoadProgress::new(
@@ -118,29 +149,42 @@ fn load_base_rows(
         json: true,
         ..shared.clone()
     };
+    let source_shared = shared_by_source(sources, shared);
+    let codex_speed = sources
+        .get("codex")
+        .map_or(CodexSpeed::Auto, |source| source.codex_speed);
+    let pi_path = sources
+        .get("pi")
+        .and_then(|source| source.pi_path.as_deref());
+    let open_claw_path = sources
+        .get("openclaw")
+        .and_then(|source| source.open_claw_path.as_deref());
     let mut specs = vec![
         AgentLoadSpec {
             index: 0,
             agent: BUILT_IN_AGENT_NAMES[0],
             progress_agent: crate::progress::UsageLoadAgent("Claude"),
-            load: Box::new(|| load_claude_rows(load_kind, &loader_shared)),
+            load: Box::new(|| load_claude_rows(load_kind, &source_shared["claude"])),
         },
         AgentLoadSpec {
             index: 1,
             agent: BUILT_IN_AGENT_NAMES[1],
             progress_agent: crate::progress::UsageLoadAgent("Codex"),
-            load: Box::new(|| load_codex_rows(load_kind, &loader_shared, pricing)),
+            load: Box::new(|| {
+                load_codex_rows(load_kind, &source_shared["codex"], pricing, codex_speed)
+            }),
         },
         AgentLoadSpec {
             index: 2,
             agent: BUILT_IN_AGENT_NAMES[2],
             progress_agent: crate::progress::UsageLoadAgent("OpenCode"),
             load: Box::new(|| {
+                let shared = &source_shared["opencode"];
                 let mut rows = load_summary_agent_rows(
                     "opencode",
                     load_kind,
-                    &loader_shared,
-                    || opencode::load_entries(&loader_shared, load_kind),
+                    shared,
+                    || opencode::load_entries(shared, load_kind),
                     opencode::summarize_entries,
                 )?;
                 // The OpenCode loader narrows to the date window as it reads, so
@@ -159,7 +203,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "amp",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["amp"],
                     pricing,
                     amp::load_entries,
                     amp::summarize_entries,
@@ -174,7 +218,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "droid",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["droid"],
                     pricing,
                     droid::load_entries,
                     droid::summarize_entries,
@@ -189,7 +233,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "codebuff",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["codebuff"],
                     pricing,
                     codebuff::load_entries,
                     codebuff::summarize_entries,
@@ -204,7 +248,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "hermes",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["hermes"],
                     pricing,
                     hermes::load_entries,
                     hermes::summarize_entries,
@@ -216,7 +260,7 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[7],
             progress_agent: crate::progress::UsageLoadAgent("pi-agent"),
             load: Box::new(|| {
-                load_pi_format_agent_rows("pi", None, load_kind, &loader_shared, pricing)
+                load_pi_format_agent_rows("pi", pi_path, load_kind, &source_shared["pi"], pricing)
             }),
         },
         AgentLoadSpec {
@@ -227,7 +271,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "goose",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["goose"],
                     pricing,
                     goose::load_entries,
                     goose::summarize_entries,
@@ -239,11 +283,12 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[9],
             progress_agent: crate::progress::UsageLoadAgent("OpenClaw"),
             load: Box::new(|| {
+                let shared = &source_shared["openclaw"];
                 load_summary_agent_rows(
                     "openclaw",
                     load_kind,
-                    &loader_shared,
-                    || openclaw::load_entries(&loader_shared, None, Some(pricing)),
+                    shared,
+                    || openclaw::load_entries(shared, open_claw_path, Some(pricing)),
                     openclaw::summarize_entries,
                 )
             }),
@@ -256,7 +301,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "kilo",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["kilo"],
                     pricing,
                     kilo::load_entries,
                     kilo::summarize_entries,
@@ -271,7 +316,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "copilot",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["copilot"],
                     pricing,
                     copilot::load_entries,
                     copilot::summarize_entries,
@@ -286,7 +331,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "gemini",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["gemini"],
                     pricing,
                     gemini::load_entries,
                     gemini::summarize_entries,
@@ -301,7 +346,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "antigravity",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["antigravity"],
                     pricing,
                     antigravity::load_entries,
                     antigravity::summarize_entries,
@@ -316,7 +361,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "kimi",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["kimi"],
                     pricing,
                     kimi::load_entries,
                     kimi::summarize_entries,
@@ -327,18 +372,19 @@ fn load_base_rows(
             index: 15,
             agent: BUILT_IN_AGENT_NAMES[15],
             progress_agent: crate::progress::UsageLoadAgent("Qwen"),
-            load: Box::new(|| load_qwen_rows(load_kind, &loader_shared)),
+            load: Box::new(|| load_qwen_rows(load_kind, &source_shared["qwen"])),
         },
         AgentLoadSpec {
             index: 16,
             agent: BUILT_IN_AGENT_NAMES[16],
             progress_agent: crate::progress::UsageLoadAgent("Grok"),
             load: Box::new(|| {
+                let shared = &source_shared["grok"];
                 let mut rows = load_summary_agent_rows(
                     "grok",
                     load_kind,
-                    &loader_shared,
-                    || grok::load_entries(&loader_shared, pricing),
+                    shared,
+                    || grok::load_entries(shared, pricing),
                     grok::summarize_entries,
                 )?;
                 rows.detected = rows.detected || grok::has_data();
@@ -353,7 +399,7 @@ fn load_base_rows(
                 load_priced_summary_agent_rows(
                     "zcode",
                     load_kind,
-                    &loader_shared,
+                    &source_shared["zcode"],
                     pricing,
                     zcode::load_entries,
                     zcode::summarize_entries,
@@ -678,11 +724,12 @@ fn load_codex_rows(
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
+    requested_speed: CodexSpeed,
 ) -> Result<AgentRows> {
     if shared.since.is_none() && shared.until.is_none() {
         let groups = codex::load_groups(shared, kind)?;
         let detected = !groups.is_empty();
-        let speed = codex::resolve_codex_speed(CodexSpeed::Auto);
+        let speed = codex::resolve_codex_speed(requested_speed);
         return Ok(AgentRows {
             rows: groups
                 .iter()
@@ -695,7 +742,7 @@ fn load_codex_rows(
     let (mut events, detected) = codex::load_codex_events_with_detection(shared)?;
     codex::filter_events_by_date(&mut events, shared)?;
     let groups = codex::aggregate_events(&events, kind, shared.timezone.as_deref())?;
-    let speed = codex::resolve_codex_speed(CodexSpeed::Auto);
+    let speed = codex::resolve_codex_speed(requested_speed);
     Ok(AgentRows {
         rows: groups
             .iter()
@@ -1228,7 +1275,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Session, &shared, WeekDay::Monday).unwrap();
+        let result =
+            load_rows(AgentReportKind::Session, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
         let omp_rows = result
             .rows
             .iter()
@@ -1301,7 +1349,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Session, &shared, WeekDay::Monday).unwrap();
+        let result =
+            load_rows(AgentReportKind::Session, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
         let pi_rows = result
             .rows
             .iter()
@@ -1464,7 +1513,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday)
+        else {
             panic!("expected default pi path collision");
         };
 
@@ -1502,7 +1552,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday)
+        else {
             panic!("expected named pi store path collision");
         };
 
@@ -1534,7 +1585,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday)
+        else {
             panic!("expected nested default pi path collision");
         };
 
@@ -1573,7 +1625,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday) else {
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday)
+        else {
             panic!("expected partial named pi store path collision");
         };
 
@@ -1602,7 +1655,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday).unwrap();
+        let result =
+            load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
 
         assert!(result.detected_agents.contains(&"omp"));
         assert_eq!(result.rows.len(), 1);
@@ -1610,6 +1664,78 @@ mod tests {
         assert_eq!(result.rows[0].models_used, vec!["[omp] gpt-5"]);
         assert_eq!(result.rows[0].input_tokens, 30);
         assert_eq!(result.rows[0].output_tokens, 40);
+    }
+
+    #[test]
+    fn load_rows_reads_the_default_pi_store_from_its_source_pi_path() {
+        let fixture = fs_fixture!({
+            "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("empty-default"));
+        let shared = SharedArgs {
+            json: true,
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            since: Some("20990102".to_string()),
+            until: Some("20990102".to_string()),
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "pi".to_string(),
+            SourceArgs {
+                shared: shared.clone(),
+                pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+                ..SourceArgs::default()
+            },
+        )]);
+
+        let unified =
+            load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert!(!unified.detected_agents.contains(&"pi"));
+        assert!(result.detected_agents.contains(&"pi"));
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].metadata_agents, Some(vec!["pi"]));
+        assert_eq!(result.rows[0].input_tokens, 30);
+        assert_eq!(result.rows[0].output_tokens, 40);
+    }
+
+    #[test]
+    fn load_rows_filters_a_source_by_its_own_date_window() {
+        let fixture = fs_fixture!({
+            "pi/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("pi/sessions"));
+        let shared = SharedArgs {
+            json: true,
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            since: Some("20990101".to_string()),
+            until: Some("20990103".to_string()),
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "pi".to_string(),
+            SourceArgs {
+                shared: SharedArgs {
+                    since: Some("20990105".to_string()),
+                    until: Some("20990106".to_string()),
+                    ..shared.clone()
+                },
+                ..SourceArgs::default()
+            },
+        )]);
+
+        let unified =
+            load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert_eq!(unified.rows.len(), 1);
+        assert!(result.rows.is_empty());
+        assert!(result.detected_agents.contains(&"pi"));
     }
 
     #[test]

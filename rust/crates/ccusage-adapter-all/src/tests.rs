@@ -16,6 +16,7 @@ use super::*;
 use crate::{
     Align, CodexGroup, CodexModelUsage, ModelBreakdown, PricingMap,
     cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs, WeekDay},
+    loader::NO_SOURCES,
     model_aliases::set_model_aliases_for_tests,
 };
 use ccusage_test_support::{EnvVarsGuard, fs_fixture, zcode::create_fixture};
@@ -723,7 +724,8 @@ fn unified_sessions_sort_by_cost_in_json_and_table() {
             order_explicit,
             ..shared.clone()
         };
-        let result = load_rows(AgentReportKind::Session, &shared, WeekDay::Monday).unwrap();
+        let result =
+            load_rows(AgentReportKind::Session, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
         let report = report_json(&result.rows, AgentReportKind::Session);
         let ids: Vec<_> = report["session"]
             .as_array()
@@ -805,9 +807,11 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
     let mut shared = fixture_shared("20990101", "20990201");
     shared.mode = CostMode::Calculate;
 
-    let daily = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday).unwrap();
-    let monthly = load_rows(AgentReportKind::Monthly, &shared, WeekDay::Monday).unwrap();
-    let session = load_rows(AgentReportKind::Session, &shared, WeekDay::Monday).unwrap();
+    let daily = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+    let monthly =
+        load_rows(AgentReportKind::Monthly, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+    let session =
+        load_rows(AgentReportKind::Session, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
 
     assert_eq!(daily.detected_agents, vec!["zcode"]);
     assert_eq!(monthly.detected_agents, vec!["zcode"]);
@@ -898,7 +902,7 @@ fn unified_report_omits_zcode_without_usage_database() {
     );
     let shared = fixture_shared("20990101", "20990201");
 
-    let result = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday).unwrap();
+    let result = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
 
     assert!(result.rows.is_empty());
     assert!(result.detected_agents.is_empty());
@@ -927,7 +931,7 @@ fn unified_report_filters_codex_paths_before_loading_historical_rows() {
     );
     let shared = fixture_shared("20260315", "20260315");
 
-    let result = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday).unwrap();
+    let result = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
 
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.rows[0].period, "2026-03-15");
@@ -1055,7 +1059,7 @@ fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {
     let _env = isolated_agent_env(&fixture, "GROK_HOME", fixture.path("grok").into_os_string());
     let shared = fixture_shared("20250615", "20250615");
 
-    let result = loader::load_rows(kind, &shared, WeekDay::Monday).unwrap();
+    let result = loader::load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
 
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.detected_agents, vec!["grok"]);
@@ -1091,13 +1095,15 @@ fn unified_weekly_rows_and_sections_honor_start_of_week() {
         (WeekDay::Sunday, "2025-06-15"),
         (WeekDay::Monday, "2025-06-09"),
     ] {
-        let rows = load_rows(AgentReportKind::Weekly, &shared, start_of_week).unwrap();
+        let rows =
+            load_rows(AgentReportKind::Weekly, &shared, &NO_SOURCES, start_of_week).unwrap();
         let periods: Vec<_> = rows.rows.iter().map(|row| row.period.as_str()).collect();
         assert_eq!(periods, [week], "{start_of_week:?} load_rows");
 
         let sections = load_sections(
             &[AgentReportKind::Daily, AgentReportKind::Weekly],
             &shared,
+            &NO_SOURCES,
             start_of_week,
         )
         .unwrap();
@@ -1128,7 +1134,7 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
             ],
             AgentReportKind::Weekly | AgentReportKind::Monthly => unreachable!(),
         };
-        let section_rows = load_sections(&sections, shared, WeekDay::Monday).unwrap();
+        let section_rows = load_sections(&sections, shared, &NO_SOURCES, WeekDay::Monday).unwrap();
         let report = sections_report_json(&section_rows.sections, command_kind, false);
 
         for section_kind in [
@@ -1137,7 +1143,7 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
             AgentReportKind::Monthly,
             AgentReportKind::Session,
         ] {
-            let standalone = load_rows(section_kind, shared, WeekDay::Monday).unwrap();
+            let standalone = load_rows(section_kind, shared, &NO_SOURCES, WeekDay::Monday).unwrap();
             let standalone_report = report_json(&standalone.rows, section_kind);
             let key = match section_kind {
                 AgentReportKind::Daily => "daily",
