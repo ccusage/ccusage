@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { createRequire } from 'node:module';
 import { describe, it, mock } from 'node:test';
 import {
 	createNativeSpawner,
@@ -8,6 +9,10 @@ import {
 	resolveCliRuntime,
 	resolveNativeBinary,
 } from './cli.js';
+
+const require = createRequire(import.meta.url);
+/** @type {{ version: string }} */
+const packageJson = require('../package.json');
 
 void describe(resolveCliRuntime.name, () => {
 	void it('resolves the native package binary for the current supported platform', () => {
@@ -58,8 +63,21 @@ void describe(resolveCliRuntime.name, () => {
 				platform: 'darwin',
 			}),
 			{
-				errorMessage:
-					'ccusage native binary is not available for darwin-arm64. Reinstall ccusage so optional native dependencies are installed.\n',
+				errorMessage: `Missing optional native package "@ccusage/ccusage-darwin-arm64@${packageJson.version}" for darwin-arm64. It may be absent because of npm --before/--min-release-age, mise minimum_release_age, or --omit=optional. Reinstall ccusage with optional dependencies enabled and no release-age cutoff.\n`,
+			},
+		);
+	});
+
+	void it('reports unsupported native binary targets without suggesting an optional package', () => {
+		assert.deepEqual(
+			resolveCliRuntime({
+				arch: 'riscv64',
+				argv: [],
+				nativeBinaryPath: null,
+				platform: 'freebsd',
+			}),
+			{
+				errorMessage: 'ccusage does not provide a native binary for freebsd-riscv64.\n',
 			},
 		);
 	});

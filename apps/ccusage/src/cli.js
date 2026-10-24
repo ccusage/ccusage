@@ -7,6 +7,9 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
+/** @type {{ version: string }} */
+const packageJson = require('../package.json');
+const wrapperVersion = packageJson.version;
 
 /**
  * @typedef {{ args: string[]; command: string } | { errorMessage: string }} CliRuntime
@@ -103,8 +106,16 @@ function resolveCliRuntime({
 		};
 	}
 
+	const target = `${platform}-${arch}`;
+	const packageName = getNativePackageName(platform, arch);
+	if (packageName == null) {
+		return {
+			errorMessage: `ccusage does not provide a native binary for ${target}.\n`,
+		};
+	}
+
 	return {
-		errorMessage: `ccusage native binary is not available for ${platform}-${arch}. Reinstall ccusage so optional native dependencies are installed.\n`,
+		errorMessage: `Missing optional native package "${packageName}@${wrapperVersion}" for ${target}. It may be absent because of npm --before/--min-release-age, mise minimum_release_age, or --omit=optional. Reinstall ccusage with optional dependencies enabled and no release-age cutoff.\n`,
 	};
 }
 
