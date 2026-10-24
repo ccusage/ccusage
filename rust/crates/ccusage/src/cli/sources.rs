@@ -13,11 +13,7 @@ use super::Cli;
 /// come from parsing the same command line against that source's view of the
 /// config rather than from patching the unified options afterwards. A source
 /// the config does not address keeps the unified options.
-pub(crate) fn resolve(
-    unified: &mut AgentCommandArgs,
-    args: &[OsString],
-    config: &ConfigContext,
-) {
+pub(crate) fn resolve(unified: &mut AgentCommandArgs, args: &[OsString], config: &ConfigContext) {
     for agent in BUILT_IN_AGENT_NAMES {
         let Some(view) = config.for_source(agent) else {
             continue;
@@ -62,9 +58,37 @@ mod tests {
         "openclaw": { "commands": { "daily": { "openClawPath": "/data/openclaw" } } }
     }"#;
 
-    fn unified(args: &[&str]) -> AgentCommandArgs {
+    const REPORT_CONFIG: &str = r#"{
+        "defaults": {
+            "since": "20260101",
+            "mode": "display",
+            "timezone": "UTC",
+            "offline": true
+        },
+        "codex": {
+            "defaults": {
+                "speed": "fast",
+                "timezone": "Europe/London",
+                "offline": false
+            },
+            "commands": {
+                "daily": { "since": "20260301" },
+                "weekly": { "since": "20260302" },
+                "monthly": { "since": "20260303" },
+                "session": { "since": "20260304" }
+            }
+        },
+        "commands": {
+            "codex:daily": { "mode": "calculate" },
+            "codex:weekly": { "mode": "display" },
+            "codex:monthly": { "mode": "auto" },
+            "codex:session": { "mode": "calculate" }
+        }
+    }"#;
+
+    fn unified_with_config(args: &[&str], config_contents: &str) -> AgentCommandArgs {
         let fixture = fs_fixture!({
-            "ccusage.json": CONFIG,
+            "ccusage.json": config_contents,
         });
         let config_path = fixture.path("ccusage.json").to_string_lossy().into_owned();
         let args = args
@@ -84,6 +108,10 @@ mod tests {
         unified
     }
 
+    fn unified(args: &[&str]) -> AgentCommandArgs {
+        unified_with_config(args, CONFIG)
+    }
+
     #[test]
     fn reads_each_source_through_its_own_config_sections() {
         let unified = unified(&["daily"]);
@@ -94,19 +122,110 @@ mod tests {
         assert_eq!(codex.shared.since.as_deref(), Some("20260301"));
         assert_eq!(codex.shared.mode, CostMode::Calculate);
         assert_eq!(codex.codex_speed, CodexSpeed::Fast);
-        assert_eq!(unified.sources["pi"].pi_path.as_deref(), Some("/data/pi/sessions"));
-        assert_eq!(unified.sources["openclaw"].open_claw_path.as_deref(), Some("/data/openclaw"));
+        assert_eq!(
+            unified.sources["pi"].pi_path.as_deref(),
+            Some("/data/pi/sessions")
+        );
+        assert_eq!(
+            unified.sources["openclaw"].open_claw_path.as_deref(),
+            Some("/data/openclaw")
+        );
         assert!(!unified.sources.contains_key("amp"));
     }
 
     #[test]
     fn keeps_command_line_flags_above_source_sections() {
-        let unified = unified(&["daily", "--since", "20260601", "--mode", "auto"]);
+        let unified = unified_with_config(
+            &[
+                "daily",
+                "--since",
+                "20260601",
+                "--mode",
+                "auto",
+                "--timezone",
+                "Pacific/Auckland",
+                "--offline",
+            ],
+            REPORT_CONFIG,
+        );
 
         let codex = &unified.sources["codex"];
         assert_eq!(codex.shared.since.as_deref(), Some("20260601"));
         assert_eq!(codex.shared.mode, CostMode::Auto);
+        assert_eq!(codex.shared.timezone.as_deref(), Some("Pacific/Auckland"));
+        assert!(codex.shared.offline);
         assert_eq!(codex.codex_speed, CodexSpeed::Fast);
+    }
+
+    #[test]
+    fn applies_source_and_command_sections_for_each_unified_report() {
+        let cases = [
+            (
+                "bare default",
+                &[][..],
+                AgentReportKind::Daily,
+                "20260301",
+                CostMode::Calculate,
+            ),
+            (
+                "daily",
+                &["daily"][..],
+                AgentReportKind::Daily,
+                "20260301",
+                CostMode::Calculate,
+            ),
+            (
+                "weekly",
+                &["weekly"][..],
+                AgentReportKind::Weekly,
+                "20260302",
+                CostMode::Display,
+            ),
+            (
+                "monthly",
+                &["monthly"][..],
+                AgentReportKind::Monthly,
+                "20260303",
+                CostMode::Auto,
+            ),
+            (
+                "session",
+                &["session"][..],
+                AgentReportKind::Session,
+                "20260304",
+                CostMode::Calculate,
+            ),
+        ];
+
+        for (name, args, kind, since, mode) in cases {
+            let unified = unified_with_config(args, REPORT_CONFIG);
+
+            assert_eq!(unified.kind, kind, "{name}");
+            let codex = &unified.sources["codex"];
+            assert_eq!(codex.shared.since.as_deref(), Some(since), "{name}");
+            assert_eq!(codex.shared.mode, mode, "{name}");
+            assert_eq!(
+                codex.shared.timezone.as_deref(),
+                Some("Europe/London"),
+                "{name}"
+            );
+            assert!(!codex.shared.offline, "{name}");
+            assert_eq!(codex.codex_speed, CodexSpeed::Fast, "{name}");
+        }
+    }
+
+    #[test]
+    fn applies_colon_command_config_without_a_source_object() {
+        let config = r#"{
+            "commands": {
+                "codex:daily": { "since": "20260602", "mode": "auto" }
+            }
+        }"#;
+        let unified = unified_with_config(&["daily"], config);
+
+        let codex = &unified.sources["codex"];
+        assert_eq!(codex.shared.since.as_deref(), Some("20260602"));
+        assert_eq!(codex.shared.mode, CostMode::Auto);
     }
 
     #[test]
@@ -114,8 +233,14 @@ mod tests {
         let unified = unified(&[]);
 
         assert_eq!(unified.kind, AgentReportKind::Daily);
-        assert_eq!(unified.sources["codex"].shared.since.as_deref(), Some("20260301"));
-        assert_eq!(unified.sources["pi"].pi_path.as_deref(), Some("/data/pi/sessions"));
+        assert_eq!(
+            unified.sources["codex"].shared.since.as_deref(),
+            Some("20260301")
+        );
+        assert_eq!(
+            unified.sources["pi"].pi_path.as_deref(),
+            Some("/data/pi/sessions")
+        );
     }
 
     #[test]
