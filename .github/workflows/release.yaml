@@ -175,7 +175,13 @@ jobs:
           for archive in "$RUNNER_TEMP"/native-packages/*.tar; do
             tar -xf "$archive"
           done
-      - run: pnpm --filter='./apps/ccusage' --filter='./packages/ccusage-*' publish --provenance --no-git-checks --access public
+      - name: Publish native packages
+        run: pnpm --recursive --filter='./packages/ccusage-*' publish --provenance --no-git-checks --access public
+      - name: Wait for native package registry availability
+        run: .github/scripts/npm-registry-gate.nu
+        timeout-minutes: 5
+      - name: Publish wrapper
+        run: pnpm --recursive --filter='./apps/ccusage' publish --provenance --no-git-checks --access public
 
   release:
     needs:
