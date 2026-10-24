@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::{Arc, mpsc},
     thread,
 };
 
@@ -37,9 +37,18 @@ pub(super) fn load_rows(
     sources: &BTreeMap<String, SourceArgs>,
     start_of_week: WeekDay,
 ) -> Result<AllLoadResult> {
-    let pricing = load_pricing(shared);
+    let source_shared = shared_by_source(sources, shared);
+    let (pricing, unified_pricing) =
+        load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
     let load_kind = load_kind_for_report(kind);
-    let loaded = load_base_rows(load_kind, shared, sources, &pricing)?;
+    let loaded = load_base_rows(
+        load_kind,
+        shared,
+        sources,
+        &source_shared,
+        &pricing,
+        unified_pricing.as_deref(),
+    )?;
     Ok(AllLoadResult {
         rows: finish_rows(kind, loaded.rows, shared, start_of_week),
         detected_agents: loaded.detected_agents,
@@ -52,12 +61,32 @@ pub(super) fn load_sections(
     sources: &BTreeMap<String, SourceArgs>,
     start_of_week: WeekDay,
 ) -> Result<AllSectionsLoadResult> {
-    let pricing = load_pricing(shared);
+    let source_shared = shared_by_source(sources, shared);
+    let (pricing, unified_pricing) =
+        load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
     let daily_base = needs_daily_family(kinds)
-        .then(|| load_base_rows(AgentReportKind::Daily, shared, sources, &pricing))
+        .then(|| {
+            load_base_rows(
+                AgentReportKind::Daily,
+                shared,
+                sources,
+                &source_shared,
+                &pricing,
+                unified_pricing.as_deref(),
+            )
+        })
         .transpose()?;
     let session_base = needs_session(kinds)
-        .then(|| load_base_rows(AgentReportKind::Session, shared, sources, &pricing))
+        .then(|| {
+            load_base_rows(
+                AgentReportKind::Session,
+                shared,
+                sources,
+                &source_shared,
+                &pricing,
+                unified_pricing.as_deref(),
+            )
+        })
         .transpose()?;
 
     let daily_detected_agents = daily_base
@@ -92,12 +121,64 @@ pub(super) fn load_sections(
     })
 }
 
-fn load_pricing(shared: &SharedArgs) -> PricingMap {
-    PricingMap::load_with_overrides(
-        shared.offline,
-        crate::log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    )
+struct CachedPricingMap {
+    offline: bool,
+    overrides: BTreeMap<String, crate::cli::PricingOverride>,
+    pricing: Arc<PricingMap>,
+}
+
+fn cached_pricing_map(
+    shared: &SharedArgs,
+    bases: &mut BTreeMap<bool, Arc<PricingMap>>,
+    cached: &mut Vec<CachedPricingMap>,
+) -> Arc<PricingMap> {
+    if let Some(entry) = cached.iter().find(|entry| {
+        entry.offline == shared.offline && entry.overrides == shared.pricing_overrides
+    }) {
+        return Arc::clone(&entry.pricing);
+    }
+
+    let base = bases.entry(shared.offline).or_insert_with(|| {
+        Arc::new(PricingMap::load_with_overrides(
+            shared.offline,
+            crate::log_level() != Some(0),
+            std::iter::empty::<(&String, &crate::cli::PricingOverride)>(),
+        ))
+    });
+    let pricing = if shared.pricing_overrides.is_empty() {
+        Arc::clone(base)
+    } else {
+        Arc::new(base.with_user_overrides(shared.pricing_overrides.iter()))
+    };
+    cached.push(CachedPricingMap {
+        offline: shared.offline,
+        overrides: shared.pricing_overrides.clone(),
+        pricing: Arc::clone(&pricing),
+    });
+    pricing
+}
+
+fn load_pricing(
+    shared: &SharedArgs,
+    source_shared: &BTreeMap<&'static str, SharedArgs>,
+    load_unified: bool,
+) -> (
+    BTreeMap<&'static str, Arc<PricingMap>>,
+    Option<Arc<PricingMap>>,
+) {
+    let mut bases = BTreeMap::new();
+    let mut cached = Vec::new();
+    let pricing_by_source = BUILT_IN_AGENT_NAMES
+        .iter()
+        .map(|agent| {
+            (
+                *agent,
+                cached_pricing_map(&source_shared[agent], &mut bases, &mut cached),
+            )
+        })
+        .collect();
+    let unified_pricing = load_unified.then(|| cached_pricing_map(shared, &mut bases, &mut cached));
+    (pricing_by_source, unified_pricing)
 }
 
 fn load_kind_for_report(kind: AgentReportKind) -> AgentReportKind {
@@ -136,7 +217,9 @@ fn load_base_rows(
     load_kind: AgentReportKind,
     shared: &SharedArgs,
     sources: &BTreeMap<String, SourceArgs>,
-    pricing: &PricingMap,
+    source_shared: &BTreeMap<&'static str, SharedArgs>,
+    pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
+    unified_pricing: Option<&PricingMap>,
 ) -> Result<AllLoadResult> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
@@ -149,7 +232,6 @@ fn load_base_rows(
         json: true,
         ..shared.clone()
     };
-    let source_shared = shared_by_source(sources, shared);
     let codex_speed = sources
         .get("codex")
         .map_or(CodexSpeed::Auto, |source| source.codex_speed);
@@ -171,7 +253,12 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[1],
             progress_agent: crate::progress::UsageLoadAgent("Codex"),
             load: Box::new(|| {
-                load_codex_rows(load_kind, &source_shared["codex"], pricing, codex_speed)
+                load_codex_rows(
+                    load_kind,
+                    &source_shared["codex"],
+                    &pricing["codex"],
+                    codex_speed,
+                )
             }),
         },
         AgentLoadSpec {
@@ -204,7 +291,7 @@ fn load_base_rows(
                     "amp",
                     load_kind,
                     &source_shared["amp"],
-                    pricing,
+                    &pricing["amp"],
                     amp::load_entries,
                     amp::summarize_entries,
                 )
@@ -219,7 +306,7 @@ fn load_base_rows(
                     "droid",
                     load_kind,
                     &source_shared["droid"],
-                    pricing,
+                    &pricing["droid"],
                     droid::load_entries,
                     droid::summarize_entries,
                 )
@@ -234,7 +321,7 @@ fn load_base_rows(
                     "codebuff",
                     load_kind,
                     &source_shared["codebuff"],
-                    pricing,
+                    &pricing["codebuff"],
                     codebuff::load_entries,
                     codebuff::summarize_entries,
                 )
@@ -249,7 +336,7 @@ fn load_base_rows(
                     "hermes",
                     load_kind,
                     &source_shared["hermes"],
-                    pricing,
+                    &pricing["hermes"],
                     hermes::load_entries,
                     hermes::summarize_entries,
                 )
@@ -260,7 +347,13 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[7],
             progress_agent: crate::progress::UsageLoadAgent("pi-agent"),
             load: Box::new(|| {
-                load_pi_format_agent_rows("pi", pi_path, load_kind, &source_shared["pi"], pricing)
+                load_pi_format_agent_rows(
+                    "pi",
+                    pi_path,
+                    load_kind,
+                    &source_shared["pi"],
+                    &pricing["pi"],
+                )
             }),
         },
         AgentLoadSpec {
@@ -272,7 +365,7 @@ fn load_base_rows(
                     "goose",
                     load_kind,
                     &source_shared["goose"],
-                    pricing,
+                    &pricing["goose"],
                     goose::load_entries,
                     goose::summarize_entries,
                 )
@@ -288,7 +381,13 @@ fn load_base_rows(
                     "openclaw",
                     load_kind,
                     shared,
-                    || openclaw::load_entries(shared, open_claw_path, Some(pricing)),
+                    || {
+                        openclaw::load_entries(
+                            shared,
+                            open_claw_path,
+                            Some(pricing["openclaw"].as_ref()),
+                        )
+                    },
                     openclaw::summarize_entries,
                 )
             }),
@@ -302,7 +401,7 @@ fn load_base_rows(
                     "kilo",
                     load_kind,
                     &source_shared["kilo"],
-                    pricing,
+                    &pricing["kilo"],
                     kilo::load_entries,
                     kilo::summarize_entries,
                 )
@@ -317,7 +416,7 @@ fn load_base_rows(
                     "copilot",
                     load_kind,
                     &source_shared["copilot"],
-                    pricing,
+                    &pricing["copilot"],
                     copilot::load_entries,
                     copilot::summarize_entries,
                 )
@@ -332,7 +431,7 @@ fn load_base_rows(
                     "gemini",
                     load_kind,
                     &source_shared["gemini"],
-                    pricing,
+                    &pricing["gemini"],
                     gemini::load_entries,
                     gemini::summarize_entries,
                 )
@@ -347,7 +446,7 @@ fn load_base_rows(
                     "antigravity",
                     load_kind,
                     &source_shared["antigravity"],
-                    pricing,
+                    &pricing["antigravity"],
                     antigravity::load_entries,
                     antigravity::summarize_entries,
                 )
@@ -362,7 +461,7 @@ fn load_base_rows(
                     "kimi",
                     load_kind,
                     &source_shared["kimi"],
-                    pricing,
+                    &pricing["kimi"],
                     kimi::load_entries,
                     kimi::summarize_entries,
                 )
@@ -384,7 +483,7 @@ fn load_base_rows(
                     "grok",
                     load_kind,
                     shared,
-                    || grok::load_entries(shared, pricing),
+                    || grok::load_entries(shared, &pricing["grok"]),
                     grok::summarize_entries,
                 )?;
                 rows.detected = rows.detected || grok::has_data();
@@ -400,20 +499,21 @@ fn load_base_rows(
                     "zcode",
                     load_kind,
                     &source_shared["zcode"],
-                    pricing,
+                    &pricing["zcode"],
                     zcode::load_entries,
                     zcode::summarize_entries,
                 )
             }),
         },
     ];
-    let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores)?;
+    let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores, pi_path)?;
     for store in named_pi_stores {
         let agent = leak_agent_name(&store.name);
         let paths = store.paths;
         let index = specs.len();
         let loader_shared_ref = &loader_shared;
-        let pricing_ref = pricing;
+        let pricing_ref =
+            unified_pricing.expect("unified pricing is loaded when named pi stores are configured");
         specs.push(AgentLoadSpec {
             index,
             agent,
@@ -556,9 +656,12 @@ struct ResolvedNamedPiStore {
     paths: Vec<PathBuf>,
 }
 
-fn resolve_named_pi_store_paths(stores: &[NamedPiStore]) -> Result<Vec<ResolvedNamedPiStore>> {
+fn resolve_named_pi_store_paths(
+    stores: &[NamedPiStore],
+    default_pi_path: Option<&str>,
+) -> Result<Vec<ResolvedNamedPiStore>> {
     let mut owners = BTreeMap::<PathBuf, String>::new();
-    for path in pi::default_paths(None)? {
+    for path in pi::default_paths(default_pi_path)? {
         owners.insert(path_key(&path), "default pi store".to_string());
     }
 
@@ -974,7 +1077,7 @@ pub(super) fn aggregate_rows(
 mod tests {
     use super::*;
     use ccusage_cli::NamedPiStore;
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_test_support::{EnvVarGuard, EnvVarsGuard, fs_fixture};
 
     fn usage_summary(date: &str, input_tokens: u64) -> UsageSummary {
         UsageSummary {
@@ -1004,6 +1107,67 @@ mod tests {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
         summary_rows(agent, vec![summary], false).pop().unwrap()
+    }
+
+    fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> EnvVarsGuard {
+        let _ = fixture.create_dir_all("claude-config/projects");
+        let _ = fixture.create_dir_all("pi/sessions");
+        EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.root().as_os_str().to_os_string())),
+            (
+                "CLAUDE_CONFIG_DIR",
+                Some(fixture.path("claude-config").into_os_string()),
+            ),
+            (
+                "CODEX_HOME",
+                Some(fixture.path("codex-home").into_os_string()),
+            ),
+            (
+                "PI_AGENT_DIR",
+                Some(fixture.path("pi/sessions").into_os_string()),
+            ),
+            (
+                "OPENCLAW_DIR",
+                Some(fixture.path("openclaw-home").into_os_string()),
+            ),
+        ])
+    }
+
+    fn codex_rollout(date: &str, model: &str, input_tokens: u64, output_tokens: u64) -> String {
+        [
+            serde_json::json!({"type":"turn_context","payload":{"model":model}}).to_string(),
+            serde_json::json!({
+                "timestamp": format!("{date}T00:00:00.000Z"),
+                "type": "event_msg",
+                "payload": {
+                    "type": "thread_settings_applied",
+                    "thread_settings": {"service_tier": "default"},
+                },
+            })
+            .to_string(),
+            serde_json::json!({
+                "timestamp": format!("{date}T00:00:01.000Z"),
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "model": model,
+                        "last_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": input_tokens + output_tokens,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": input_tokens + output_tokens,
+                        },
+                    },
+                },
+            })
+            .to_string(),
+        ]
+        .join("\n")
     }
 
     #[test]
@@ -1275,8 +1439,13 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result =
-            load_rows(AgentReportKind::Session, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let result = load_rows(
+            AgentReportKind::Session,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
         let omp_rows = result
             .rows
             .iter()
@@ -1349,8 +1518,13 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result =
-            load_rows(AgentReportKind::Session, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let result = load_rows(
+            AgentReportKind::Session,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
         let pi_rows = result
             .rows
             .iter()
@@ -1513,8 +1687,12 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday)
-        else {
+        let Err(error) = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        ) else {
             panic!("expected default pi path collision");
         };
 
@@ -1552,8 +1730,12 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday)
-        else {
+        let Err(error) = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        ) else {
             panic!("expected named pi store path collision");
         };
 
@@ -1585,8 +1767,12 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday)
-        else {
+        let Err(error) = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        ) else {
             panic!("expected nested default pi path collision");
         };
 
@@ -1625,8 +1811,12 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday)
-        else {
+        let Err(error) = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        ) else {
             panic!("expected partial named pi store path collision");
         };
 
@@ -1655,8 +1845,13 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let result =
-            load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let result = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
 
         assert!(result.detected_agents.contains(&"omp"));
         assert_eq!(result.rows.len(), 1);
@@ -1671,7 +1866,7 @@ mod tests {
         let fixture = fs_fixture!({
             "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("empty-default"));
+        let _environment = isolated_source_environment(&fixture);
         let shared = SharedArgs {
             json: true,
             mode: crate::cli::CostMode::Display,
@@ -1690,8 +1885,13 @@ mod tests {
             },
         )]);
 
-        let unified =
-            load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let unified = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
         let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
         assert!(!unified.detected_agents.contains(&"pi"));
@@ -1707,7 +1907,7 @@ mod tests {
         let fixture = fs_fixture!({
             "pi/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("pi/sessions"));
+        let _environment = isolated_source_environment(&fixture);
         let shared = SharedArgs {
             json: true,
             mode: crate::cli::CostMode::Display,
@@ -1729,13 +1929,285 @@ mod tests {
             },
         )]);
 
-        let unified =
-            load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let unified = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
         let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
         assert_eq!(unified.rows.len(), 1);
         assert!(result.rows.is_empty());
         assert!(result.detected_agents.contains(&"pi"));
+    }
+
+    #[test]
+    fn loads_codex_and_pi_with_source_pricing_speed_and_date_options() {
+        let fixture = fs_fixture!({
+            "codex-home/sessions/2026/07/21/before.jsonl": codex_rollout(
+                "2026-07-21",
+                "gpt-source-config",
+                900,
+                100,
+            ),
+            "codex-home/sessions/2026/07/22/in-range.jsonl": codex_rollout(
+                "2026-07-22",
+                "gpt-source-config",
+                1000,
+                500,
+            ),
+            "pi/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2026-07-22T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":1000,"output":500}}}"#,
+        });
+        let _environment = isolated_source_environment(&fixture);
+        let shared = SharedArgs {
+            mode: CostMode::Calculate,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            since: Some("20260720".to_string()),
+            until: Some("20260723".to_string()),
+            ..SharedArgs::default()
+        };
+        let pricing_overrides = BTreeMap::from([(
+            "gpt-source-config".to_string(),
+            crate::cli::PricingOverride {
+                input_cost_per_token: Some(1e-6),
+                output_cost_per_token: Some(2e-6),
+                fast_multiplier: Some(3.0),
+                ..Default::default()
+            },
+        )]);
+        let pi_pricing_overrides = BTreeMap::from([(
+            "gpt-source-config".to_string(),
+            crate::cli::PricingOverride {
+                input_cost_per_token: Some(5e-6),
+                output_cost_per_token: Some(10e-6),
+                ..Default::default()
+            },
+        )]);
+        let sources = BTreeMap::from([
+            (
+                "codex".to_string(),
+                SourceArgs {
+                    shared: SharedArgs {
+                        since: Some("20260722".to_string()),
+                        until: Some("20260722".to_string()),
+                        pricing_overrides,
+                        ..shared.clone()
+                    },
+                    codex_speed: CodexSpeed::Fast,
+                    ..SourceArgs::default()
+                },
+            ),
+            (
+                "pi".to_string(),
+                SourceArgs {
+                    shared: SharedArgs {
+                        pricing_overrides: pi_pricing_overrides,
+                        ..shared.clone()
+                    },
+                    ..SourceArgs::default()
+                },
+            ),
+        ]);
+
+        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].metadata_agents, Some(vec!["codex", "pi"]));
+        let breakdowns = result.rows[0].agent_breakdowns.as_ref().unwrap();
+        let codex_row = breakdowns
+            .iter()
+            .find(|row| row.agent == "codex")
+            .expect("Codex fixture should produce a row");
+        assert_eq!(codex_row.period, "2026-07-22");
+        assert_eq!(codex_row.input_tokens, 1000);
+        assert_eq!(codex_row.output_tokens, 500);
+        assert!((codex_row.total_cost - 0.006).abs() < f64::EPSILON);
+        let pi_row = breakdowns
+            .iter()
+            .find(|row| row.agent == "pi")
+            .expect("Pi fixture should produce a row");
+        assert!((pi_row.total_cost - 0.01).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn loads_codex_with_source_pricing_speed_without_date_bounds() {
+        let fixture = fs_fixture!({
+            "codex-home/sessions/2026/07/22/in-range.jsonl": codex_rollout(
+                "2026-07-22",
+                "gpt-source-config",
+                1000,
+                500,
+            ),
+        });
+        let _environment = isolated_source_environment(&fixture);
+        let shared = SharedArgs {
+            mode: CostMode::Calculate,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "codex".to_string(),
+            SourceArgs {
+                shared: SharedArgs {
+                    pricing_overrides: BTreeMap::from([(
+                        "gpt-source-config".to_string(),
+                        crate::cli::PricingOverride {
+                            input_cost_per_token: Some(1e-6),
+                            output_cost_per_token: Some(2e-6),
+                            fast_multiplier: Some(3.0),
+                            ..Default::default()
+                        },
+                    )]),
+                    ..shared.clone()
+                },
+                codex_speed: CodexSpeed::Fast,
+                ..SourceArgs::default()
+            },
+        )]);
+
+        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].input_tokens, 1000);
+        assert_eq!(result.rows[0].output_tokens, 500);
+        assert!((result.rows[0].total_cost - 0.006).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn reads_openclaw_entries_from_the_source_custom_path() {
+        let fixture = fs_fixture!({
+            "custom-openclaw/agents/main/sessions/custom.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1660,"output":55,"totalTokens":1715,"cost":{"total":0.02}},"timestamp":1769753935279}}"#,
+        });
+        let _environment = isolated_source_environment(&fixture);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "openclaw".to_string(),
+            SourceArgs {
+                shared: shared.clone(),
+                open_claw_path: Some(
+                    fixture
+                        .path("custom-openclaw")
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                ..SourceArgs::default()
+            },
+        )]);
+
+        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert!(result.detected_agents.contains(&"openclaw"));
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].input_tokens, 1660);
+        assert_eq!(result.rows[0].output_tokens, 55);
+        assert!((result.rows[0].total_cost - 0.02).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn rejects_named_pi_store_overlapping_the_source_custom_path() {
+        let fixture = fs_fixture!({
+            "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _environment = isolated_source_environment(&fixture);
+        let custom_pi_path = fixture.path("custom/pi").to_string_lossy().into_owned();
+        let shared = SharedArgs {
+            offline: true,
+            since: Some("20990102".to_string()),
+            until: Some("20990102".to_string()),
+            pi_stores: vec![NamedPiStore {
+                name: "fork".to_string(),
+                path: custom_pi_path.clone(),
+            }],
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "pi".to_string(),
+            SourceArgs {
+                shared: shared.clone(),
+                pi_path: Some(custom_pi_path),
+                ..SourceArgs::default()
+            },
+        )]);
+
+        let Err(error) = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday)
+        else {
+            panic!("expected named pi store to collide with the configured pi path");
+        };
+
+        assert!(error.to_string().contains("Invalid ccusage config"));
+        assert!(error.to_string().contains("fork"));
+        assert!(error.to_string().contains("default pi store"));
+    }
+
+    #[test]
+    fn named_pi_stores_keep_unified_shared_and_pricing_options() {
+        let fixture = fs_fixture!({
+            "fork/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-named-source-config","usage":{"input":1000,"output":500}}}"#,
+        });
+        let _environment = isolated_source_environment(&fixture);
+        let pricing_key = "[fork] gpt-named-source-config".to_string();
+        let shared = SharedArgs {
+            mode: CostMode::Calculate,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            since: Some("20990102".to_string()),
+            until: Some("20990102".to_string()),
+            pi_stores: vec![NamedPiStore {
+                name: "fork".to_string(),
+                path: fixture.path("fork/sessions").to_string_lossy().into_owned(),
+            }],
+            pricing_overrides: BTreeMap::from([(
+                pricing_key.clone(),
+                crate::cli::PricingOverride {
+                    input_cost_per_token: Some(1e-6),
+                    output_cost_per_token: Some(2e-6),
+                    ..Default::default()
+                },
+            )]),
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "pi".to_string(),
+            SourceArgs {
+                shared: SharedArgs {
+                    since: Some("20990105".to_string()),
+                    until: Some("20990106".to_string()),
+                    pricing_overrides: BTreeMap::from([(
+                        pricing_key,
+                        crate::cli::PricingOverride {
+                            input_cost_per_token: Some(10e-6),
+                            output_cost_per_token: Some(20e-6),
+                            ..Default::default()
+                        },
+                    )]),
+                    ..shared.clone()
+                },
+                ..SourceArgs::default()
+            },
+        )]);
+
+        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert!(result.detected_agents.contains(&"fork"));
+        let named_store = result.rows[0]
+            .agent_breakdowns
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|row| row.agent == "fork")
+            .expect("named store should use the unified date window");
+        assert_eq!(named_store.input_tokens, 1000);
+        assert_eq!(named_store.output_tokens, 500);
+        assert!((named_store.total_cost - 0.002).abs() < f64::EPSILON);
     }
 
     #[test]
