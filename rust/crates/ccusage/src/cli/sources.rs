@@ -1,7 +1,8 @@
 use std::ffi::OsString;
 
 use ccusage_cli::{
-    AgentCommandArgs, AgentReportKind, CliConfig, Command, DailyArgs, SharedArgs, SourceArgs,
+    AgentCommandArgs, AgentReportKind, CliConfig, CodexSpeed, Command, DailyArgs, SharedArgs,
+    SourceArgs,
 };
 use ccusage_config::ConfigContext;
 use ccusage_core::BUILT_IN_AGENT_NAMES;
@@ -29,6 +30,45 @@ pub(crate) fn resolve(
             SourceArgs {
                 shared: unified.shared.clone(),
                 claude_project: Some(claude_project),
+                ..SourceArgs::default()
+            },
+        );
+    }
+    let mut global_source = SourceArgs {
+        shared: unified.shared.clone(),
+        ..SourceArgs::default()
+    };
+    config.apply_agent_args(
+        &mut global_source.codex_speed,
+        Some(&mut global_source.pi_path),
+        Some(&mut global_source.open_claw_path),
+    );
+    if global_source.codex_speed != CodexSpeed::Auto {
+        unified.sources.insert(
+            "codex".to_string(),
+            SourceArgs {
+                shared: global_source.shared.clone(),
+                codex_speed: global_source.codex_speed,
+                ..SourceArgs::default()
+            },
+        );
+    }
+    if let Some(pi_path) = global_source.pi_path {
+        unified.sources.insert(
+            "pi".to_string(),
+            SourceArgs {
+                shared: global_source.shared.clone(),
+                pi_path: Some(pi_path),
+                ..SourceArgs::default()
+            },
+        );
+    }
+    if let Some(open_claw_path) = global_source.open_claw_path {
+        unified.sources.insert(
+            "openclaw".to_string(),
+            SourceArgs {
+                shared: global_source.shared,
+                open_claw_path: Some(open_claw_path),
                 ..SourceArgs::default()
             },
         );
@@ -123,6 +163,14 @@ mod tests {
         }
     }"#;
 
+    const GLOBAL_AGENT_CONFIG: &str = r#"{
+        "defaults": {
+            "speed": "fast",
+            "piPath": "/global/pi/sessions",
+            "openClawPath": "/global/openclaw"
+        }
+    }"#;
+
     fn try_unified_with_config(
         args: &[&str],
         config_contents: &str,
@@ -175,6 +223,128 @@ mod tests {
             Some("/data/openclaw")
         );
         assert!(!unified.sources.contains_key("amp"));
+    }
+
+    #[test]
+    fn applies_global_agent_defaults_to_relevant_unified_sources_for_each_report() {
+        let cases = [
+            ("bare default", &[][..], AgentReportKind::Daily),
+            ("daily", &["daily"][..], AgentReportKind::Daily),
+            ("weekly", &["weekly"][..], AgentReportKind::Weekly),
+            ("monthly", &["monthly"][..], AgentReportKind::Monthly),
+            ("session", &["session"][..], AgentReportKind::Session),
+        ];
+
+        for (name, args, kind) in cases {
+            let unified = unified_with_config(args, GLOBAL_AGENT_CONFIG);
+
+            assert_eq!(unified.kind, kind, "{name}");
+            assert_eq!(
+                unified
+                    .sources
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                ["codex", "openclaw", "pi"],
+                "{name}"
+            );
+
+            let codex = &unified.sources["codex"];
+            assert_eq!(codex.codex_speed, CodexSpeed::Fast, "{name}");
+            assert!(codex.pi_path.is_none(), "{name}");
+            assert!(codex.open_claw_path.is_none(), "{name}");
+
+            let pi = &unified.sources["pi"];
+            assert_eq!(pi.pi_path.as_deref(), Some("/global/pi/sessions"), "{name}");
+            assert_eq!(pi.codex_speed, CodexSpeed::Auto, "{name}");
+            assert!(pi.open_claw_path.is_none(), "{name}");
+
+            let openclaw = &unified.sources["openclaw"];
+            assert_eq!(
+                openclaw.open_claw_path.as_deref(),
+                Some("/global/openclaw"),
+                "{name}"
+            );
+            assert_eq!(openclaw.codex_speed, CodexSpeed::Auto, "{name}");
+            assert!(openclaw.pi_path.is_none(), "{name}");
+        }
+    }
+
+    #[test]
+    fn source_agent_sections_override_global_defaults_and_cli_overrides_shared_defaults() {
+        let config = r#"{
+            "defaults": {
+                "since": "20260101",
+                "offline": false,
+                "speed": "fast",
+                "piPath": "/global/pi/sessions",
+                "openClawPath": "/global/openclaw"
+            },
+            "codex": {
+                "defaults": { "speed": "standard" },
+                "commands": { "daily": { "speed": "flex" } }
+            },
+            "pi": { "defaults": { "piPath": "/source/pi/sessions" } },
+            "openclaw": {
+                "commands": { "daily": { "openClawPath": "/source/openclaw" } }
+            }
+        }"#;
+        let unified = unified_with_config(&["daily", "--since", "20260401", "--offline"], config);
+
+        assert_eq!(unified.shared.since.as_deref(), Some("20260401"));
+        assert!(unified.shared.offline);
+        assert_eq!(
+            unified
+                .sources
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["codex", "openclaw", "pi"]
+        );
+        for source in unified.sources.values() {
+            assert_eq!(source.shared.since.as_deref(), Some("20260401"));
+            assert!(source.shared.offline);
+        }
+        assert_eq!(unified.sources["codex"].codex_speed, CodexSpeed::Flex);
+        assert_eq!(
+            unified.sources["pi"].pi_path.as_deref(),
+            Some("/source/pi/sessions")
+        );
+        assert_eq!(
+            unified.sources["openclaw"].open_claw_path.as_deref(),
+            Some("/source/openclaw")
+        );
+    }
+
+    #[test]
+    fn applies_global_report_level_agent_options_without_source_sections() {
+        let config = r#"{
+            "defaults": {
+                "speed": "standard",
+                "piPath": "/global/pi/sessions",
+                "openClawPath": "/global/openclaw"
+            },
+            "commands": { "daily": { "speed": "flex" } }
+        }"#;
+        let unified = unified_with_config(&["daily"], config);
+
+        assert_eq!(unified.sources["codex"].codex_speed, CodexSpeed::Flex);
+        assert_eq!(
+            unified.sources["pi"].pi_path.as_deref(),
+            Some("/global/pi/sessions")
+        );
+        assert_eq!(
+            unified.sources["openclaw"].open_claw_path.as_deref(),
+            Some("/global/openclaw")
+        );
+        assert_eq!(
+            unified
+                .sources
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["codex", "openclaw", "pi"]
+        );
     }
 
     #[test]
