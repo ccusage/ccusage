@@ -17,30 +17,38 @@ pub(crate) fn parse() -> Command {
         exit_with_usage(&message);
     });
     let config = ConfigContext::from_args(&arg_strings);
-    let mut command = unified_or_command(parse_with(args.clone(), &config));
-    if let Command::All(unified) = &mut command {
-        sources::resolve(unified, &args, &config);
+    let mut command = unified_or_command(
+        try_parse_with(args.clone(), &config, None)
+            .unwrap_or_else(|message| exit_with_usage(&message)),
+    );
+    if let Command::All(unified) = &mut command
+        && let Err(message) = sources::resolve(unified, &args, &config)
+    {
+        exit_with_usage(&message);
     }
     command
 }
 
 /// Parses one command line against one view of the config, with the checks
 /// and resolutions that need the parsed command.
-fn parse_with(args: Vec<OsString>, config: &ConfigContext) -> Cli {
+fn try_parse_with(
+    args: Vec<OsString>,
+    config: &ConfigContext,
+    unified_week_start: Option<WeekDay>,
+) -> Result<Cli, String> {
     let mut cli = Cli::parse_from_with_config(
         args,
         config,
         DEFAULT_SESSION_DURATION_HOURS,
         env!("CCUSAGE_VERSION"),
-    )
-    .unwrap_or_else(|message| exit_with_usage(&message));
-    if let Err(message) = timezone::validate(&cli) {
-        exit_with_usage(&message);
+    )?;
+    if let (Some(start_of_week), Some(Command::All(args))) = (unified_week_start, &mut cli.command)
+    {
+        args.start_of_week = start_of_week;
     }
-    if let Err(message) = last_window::resolve(&mut cli) {
-        exit_with_usage(&message);
-    }
-    cli
+    timezone::validate(&cli)?;
+    last_window::resolve(&mut cli)?;
+    Ok(cli)
 }
 
 /// A bare `ccusage` is the unified daily report over the root options.

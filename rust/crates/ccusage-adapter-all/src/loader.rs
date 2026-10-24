@@ -170,6 +170,7 @@ fn load_pricing(
     let mut cached = Vec::new();
     let pricing_by_source = BUILT_IN_AGENT_NAMES
         .iter()
+        .filter(|agent| !["claude", "opencode", "qwen"].contains(agent))
         .map(|agent| {
             (
                 *agent,
@@ -235,6 +236,9 @@ fn load_base_rows(
     let codex_speed = sources
         .get("codex")
         .map_or(CodexSpeed::Auto, |source| source.codex_speed);
+    let claude_project = sources
+        .get("claude")
+        .and_then(|source| source.claude_project.as_deref());
     let pi_path = sources
         .get("pi")
         .and_then(|source| source.pi_path.as_deref());
@@ -246,7 +250,9 @@ fn load_base_rows(
             index: 0,
             agent: BUILT_IN_AGENT_NAMES[0],
             progress_agent: crate::progress::UsageLoadAgent("Claude"),
-            load: Box::new(|| load_claude_rows(load_kind, &source_shared["claude"])),
+            load: Box::new(|| {
+                load_claude_rows(load_kind, &source_shared["claude"], claude_project)
+            }),
         },
         AgentLoadSpec {
             index: 1,
@@ -789,9 +795,13 @@ fn filtered_pi_format_agent_rows(
     })
 }
 
-fn load_claude_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRows> {
+fn load_claude_rows(
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+) -> Result<AgentRows> {
     if kind == AgentReportKind::Session {
-        let entries = claude::load_entries(shared, None)?;
+        let entries = claude::load_entries(shared, project_filter)?;
         let detected = !entries.is_empty();
         let mut summaries = summarize_entry_sessions(&entries)?;
         filter_session_summaries(&mut summaries, shared);
@@ -804,7 +814,7 @@ fn load_claude_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentR
     let claude::DailySummaries {
         mut summaries,
         detected,
-    } = claude::load_daily_summaries_with_detection(shared, None, false)?;
+    } = claude::load_daily_summaries_with_detection(shared, project_filter, false)?;
     filter_daily_summaries_by_date(&mut summaries, shared);
     Ok(AgentRows {
         rows: summary_rows("claude", summaries, false),
@@ -1107,6 +1117,89 @@ mod tests {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
         summary_rows(agent, vec![summary], false).pop().unwrap()
+    }
+
+    #[test]
+    fn pricing_maps_exclude_sources_that_load_their_own_pricing() {
+        let shared = SharedArgs {
+            offline: true,
+            ..SharedArgs::default()
+        };
+        let source_shared = shared_by_source(&BTreeMap::new(), &shared);
+
+        let (pricing_by_source, unified_pricing) = load_pricing(&shared, &source_shared, false);
+
+        for agent in ["claude", "opencode", "qwen"] {
+            assert!(
+                !pricing_by_source.contains_key(agent),
+                "{agent} has its own pricing map"
+            );
+        }
+        for agent in BUILT_IN_AGENT_NAMES {
+            if !["claude", "opencode", "qwen"].contains(agent) {
+                assert!(
+                    pricing_by_source.contains_key(agent),
+                    "{agent} needs a pricing map"
+                );
+            }
+        }
+        assert!(unified_pricing.is_none());
+    }
+
+    #[test]
+    fn source_claude_project_filters_daily_and_session_rows_without_filtering_other_sources() {
+        let fixture = fs_fixture!({
+            "claude-config/projects/project-a/session-a.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"session-a","costUSD":0.01,"message":{"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"model":"claude-sonnet-4-20250514","id":"msg-a"}}"#,
+            "claude-config/projects/project-b/session-b.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"session-b","costUSD":0.02,"message":{"usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"model":"claude-sonnet-4-20250514","id":"msg-b"}}"#,
+            "pi/sessions/project-pi/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":7,"output":3}}}"#,
+        });
+        let _environment = isolated_source_environment(&fixture);
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "claude".to_string(),
+            SourceArgs {
+                shared: shared.clone(),
+                claude_project: Some("project-a".to_string()),
+                ..SourceArgs::default()
+            },
+        )]);
+
+        let daily = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert_eq!(daily.rows.len(), 1);
+        assert_eq!(daily.rows[0].period, "2099-01-02");
+        assert_eq!(daily.rows[0].metadata_agents, Some(vec!["claude", "pi"]));
+        assert_eq!(daily.rows[0].input_tokens, 17);
+        assert_eq!(daily.rows[0].output_tokens, 8);
+        assert!((daily.rows[0].total_cost - 0.01).abs() < f64::EPSILON);
+
+        let sessions =
+            load_rows(AgentReportKind::Session, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert!(
+            sessions
+                .rows
+                .iter()
+                .any(|row| row.agent == "claude" && row.period == "session-a")
+        );
+        assert!(
+            !sessions
+                .rows
+                .iter()
+                .any(|row| row.agent == "claude" && row.period == "session-b")
+        );
+        assert!(
+            sessions
+                .rows
+                .iter()
+                .any(|row| row.agent == "pi" && row.period == "pi-session")
+        );
     }
 
     fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> EnvVarsGuard {

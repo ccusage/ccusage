@@ -192,6 +192,7 @@ pub struct AgentCommandArgs {
 #[derive(Clone, Debug, Default)]
 pub struct SourceArgs {
     pub shared: SharedArgs,
+    pub claude_project: Option<String>,
     pub pi_path: Option<String>,
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,

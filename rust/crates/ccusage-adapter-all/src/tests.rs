@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::{
     Align, CodexGroup, CodexModelUsage, ModelBreakdown, PricingMap,
-    cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs, WeekDay},
+    cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs, SourceArgs, WeekDay},
     loader::NO_SOURCES,
     model_aliases::set_model_aliases_for_tests,
 };
@@ -774,6 +774,70 @@ fn multi_section_claude_fixture_matches_standalone_sections_for_daily_and_sessio
     let shared = fixture_shared("20990102", "20990102");
 
     assert_daily_family_and_session_sections_match_standalone(&shared);
+}
+
+#[test]
+fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
+    let fixture = fs_fixture!({
+        "custom/pi/sessions/project-a/agent_in-range.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":1000,"output":500}}}"#,
+        "custom/pi/sessions/project-b/agent_out-of-range.jsonl": r#"{"type":"message","timestamp":"2099-01-03T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":10000,"output":5000}}}"#,
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "PI_AGENT_DIR",
+        fixture.path("empty-default").into_os_string(),
+    );
+    let shared = SharedArgs {
+        mode: CostMode::Calculate,
+        ..fixture_shared("20990101", "20990104")
+    };
+    let sources = std::collections::BTreeMap::from([(
+        "pi".to_string(),
+        SourceArgs {
+            shared: SharedArgs {
+                since: Some("20990102".to_string()),
+                until: Some("20990102".to_string()),
+                pricing_overrides: std::collections::BTreeMap::from([(
+                    "gpt-source-config".to_string(),
+                    crate::cli::PricingOverride {
+                        input_cost_per_token: Some(1e-6),
+                        output_cost_per_token: Some(2e-6),
+                        ..Default::default()
+                    },
+                )]),
+                ..shared.clone()
+            },
+            pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+            ..SourceArgs::default()
+        },
+    )]);
+
+    let sections = load_sections(
+        &[AgentReportKind::Daily, AgentReportKind::Session],
+        &shared,
+        &sources,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    let daily_rows = &sections.sections[0].1;
+    assert_eq!(daily_rows.len(), 1);
+    assert_eq!(daily_rows[0].period, "2099-01-02");
+    assert_eq!(daily_rows[0].metadata_agents, Some(vec!["pi"]));
+    assert_eq!(daily_rows[0].input_tokens, 1_000);
+    assert_eq!(daily_rows[0].output_tokens, 500);
+    assert!((daily_rows[0].total_cost - 0.002).abs() < f64::EPSILON);
+
+    let session_rows = &sections.sections[1].1;
+    assert_eq!(session_rows.len(), 1);
+    assert_eq!(session_rows[0].period, "in-range");
+    assert_eq!(session_rows[0].agent, "pi");
+    assert_eq!(
+        session_rows[0].metadata.as_ref().unwrap()["projectPath"],
+        "project-a"
+    );
+    assert_eq!(session_rows[0].input_tokens, 1_000);
+    assert_eq!(session_rows[0].output_tokens, 500);
+    assert!((session_rows[0].total_cost - 0.002).abs() < f64::EPSILON);
 }
 
 #[test]
