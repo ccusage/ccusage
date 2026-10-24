@@ -1186,7 +1186,10 @@ mod tests {
         );
 
         assert_eq!(
-            config.for_source("codex").expect("codex sections").config_error(),
+            config
+                .for_source("codex")
+                .expect("codex sections")
+                .config_error(),
             Some(
                 "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
             )

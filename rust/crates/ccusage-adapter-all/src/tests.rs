@@ -724,8 +724,13 @@ fn unified_sessions_sort_by_cost_in_json_and_table() {
             order_explicit,
             ..shared.clone()
         };
-        let result =
-            load_rows(AgentReportKind::Session, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let result = load_rows(
+            AgentReportKind::Session,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
         let report = report_json(&result.rows, AgentReportKind::Session);
         let ids: Vec<_> = report["session"]
             .as_array()
@@ -807,11 +812,27 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
     let mut shared = fixture_shared("20990101", "20990201");
     shared.mode = CostMode::Calculate;
 
-    let daily = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
-    let monthly =
-        load_rows(AgentReportKind::Monthly, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
-    let session =
-        load_rows(AgentReportKind::Session, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+    let daily = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    let monthly = load_rows(
+        AgentReportKind::Monthly,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    let session = load_rows(
+        AgentReportKind::Session,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
 
     assert_eq!(daily.detected_agents, vec!["zcode"]);
     assert_eq!(monthly.detected_agents, vec!["zcode"]);
@@ -902,7 +923,13 @@ fn unified_report_omits_zcode_without_usage_database() {
     );
     let shared = fixture_shared("20990101", "20990201");
 
-    let result = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+    let result = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
 
     assert!(result.rows.is_empty());
     assert!(result.detected_agents.is_empty());
@@ -931,7 +958,13 @@ fn unified_report_filters_codex_paths_before_loading_historical_rows() {
     );
     let shared = fixture_shared("20260315", "20260315");
 
-    let result = load_rows(AgentReportKind::Daily, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+    let result = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
 
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.rows[0].period, "2026-03-15");
@@ -1095,8 +1128,7 @@ fn unified_weekly_rows_and_sections_honor_start_of_week() {
         (WeekDay::Sunday, "2025-06-15"),
         (WeekDay::Monday, "2025-06-09"),
     ] {
-        let rows =
-            load_rows(AgentReportKind::Weekly, &shared, &NO_SOURCES, start_of_week).unwrap();
+        let rows = load_rows(AgentReportKind::Weekly, &shared, &NO_SOURCES, start_of_week).unwrap();
         let periods: Vec<_> = rows.rows.iter().map(|row| row.period.as_str()).collect();
         assert_eq!(periods, [week], "{start_of_week:?} load_rows");
 
