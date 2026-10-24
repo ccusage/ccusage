@@ -14,7 +14,7 @@ pub(crate) use blocks::{
 #[cfg(test)]
 pub(crate) use ccusage_adapter_common::chunk_file_indexes_by_size;
 pub(crate) use ccusage_core::*;
-use cli::{AgentCommandArgs, AgentReportKind, Command};
+use cli::Command;
 #[cfg(test)]
 use pricing::PricingMap;
 
@@ -29,46 +29,31 @@ fn main() -> Result<()> {
         models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
     });
     pricing::set_json_fetcher(http::fetch_json);
-    let cli = cli::parse();
-    match cli.command {
-        Some(Command::All(args)) => adapter::all::run(args),
-        Some(Command::Daily(args)) => commands::run_daily(args),
-        Some(Command::Monthly(shared)) => commands::run_bucket(shared, BucketKind::Monthly),
-        Some(Command::Weekly(args)) => commands::run_weekly(args),
-        Some(Command::Session(args)) => commands::run_session(args),
-        Some(Command::Blocks(args)) => commands::run_blocks(args),
-        Some(Command::Statusline(args)) => commands::run_statusline(args),
-        Some(Command::Codex(args)) => adapter::codex::run(args),
-        Some(Command::OpenCode(args)) => adapter::opencode::run(args),
-        Some(Command::Amp(args)) => adapter::amp::run(args),
-        Some(Command::Droid(args)) => adapter::droid::run(args),
-        Some(Command::Codebuff(args)) => adapter::codebuff::run(args),
-        Some(Command::Hermes(args)) => adapter::hermes::run(args),
-        Some(Command::Pi(args)) => adapter::pi::run(args),
-        Some(Command::Goose(args)) => adapter::goose::run(args),
-        Some(Command::Kilo(args)) => adapter::kilo::run(args),
-        Some(Command::Qwen(args)) => adapter::qwen::run(args),
-        Some(Command::Copilot(args)) => adapter::copilot::run(args),
-        Some(Command::Gemini(args)) => adapter::gemini::run(args),
-        Some(Command::Antigravity(args)) => adapter::antigravity::run(args),
-        Some(Command::Kimi(args)) => adapter::kimi::run(args),
-        Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
-        Some(Command::Grok(args)) => adapter::grok::run(args),
-        Some(Command::ZCode(args)) => adapter::zcode::run(args),
-        None => {
-            let args = AgentCommandArgs {
-                shared: cli.shared,
-                kind: AgentReportKind::Daily,
-                session_id: None,
-                sections: None,
-                by_agent: false,
-                pi_path: None,
-                open_claw_path: None,
-                codex_speed: cli::CodexSpeed::Auto,
-                start_of_week: cli::WeekDay::Monday,
-            };
-            adapter::all::run(args)
-        }
+    match cli::parse() {
+        Command::All(args) => adapter::all::run(args),
+        Command::Daily(args) => commands::run_daily(args),
+        Command::Monthly(shared) => commands::run_bucket(shared, BucketKind::Monthly),
+        Command::Weekly(args) => commands::run_weekly(args),
+        Command::Session(args) => commands::run_session(args),
+        Command::Blocks(args) => commands::run_blocks(args),
+        Command::Statusline(args) => commands::run_statusline(args),
+        Command::Codex(args) => adapter::codex::run(args),
+        Command::OpenCode(args) => adapter::opencode::run(args),
+        Command::Amp(args) => adapter::amp::run(args),
+        Command::Droid(args) => adapter::droid::run(args),
+        Command::Codebuff(args) => adapter::codebuff::run(args),
+        Command::Hermes(args) => adapter::hermes::run(args),
+        Command::Pi(args) => adapter::pi::run(args),
+        Command::Goose(args) => adapter::goose::run(args),
+        Command::Kilo(args) => adapter::kilo::run(args),
+        Command::Qwen(args) => adapter::qwen::run(args),
+        Command::Copilot(args) => adapter::copilot::run(args),
+        Command::Gemini(args) => adapter::gemini::run(args),
+        Command::Antigravity(args) => adapter::antigravity::run(args),
+        Command::Kimi(args) => adapter::kimi::run(args),
+        Command::OpenClaw(args) => adapter::openclaw::run(args),
+        Command::Grok(args) => adapter::grok::run(args),
+        Command::ZCode(args) => adapter::zcode::run(args),
     }
 }
 
@@ -81,7 +66,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        cli::{CostMode, SharedArgs, SortOrder, WeekDay},
+        cli::{AgentCommandArgs, AgentReportKind, CostMode, SharedArgs, SortOrder, WeekDay},
         cost::tiered_cost,
     };
 

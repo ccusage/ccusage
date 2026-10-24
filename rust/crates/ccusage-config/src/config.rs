@@ -54,6 +54,42 @@ impl ConfigContext {
         context
     }
 
+    /// The config as `ccusage <agent> <report>` reads it, for a unified report
+    /// that loads `agent` as one of its sources: `<agent>.defaults`,
+    /// `<agent>.commands.<report>` and `commands.<agent>:<report>` join the
+    /// layers the unified command already applies. `None` when the file says
+    /// nothing about that agent, so the source keeps the unified options, and
+    /// for commands that already name an agent.
+    pub fn for_source(&self, agent: &str) -> Option<Self> {
+        if self.command.agent.is_some() {
+            return None;
+        }
+        let root = self.value.as_ref().and_then(Value::as_object)?;
+        let report = &self.command.report;
+        let raw = format!("{agent} {report}");
+        let colon_name = format!("{agent}:{report}");
+        let addressed = object_at(root, agent).is_some()
+            || object_at(root, "commands").is_some_and(|commands| {
+                object_at(commands, &raw).is_some() || object_at(commands, &colon_name).is_some()
+            });
+        if !addressed {
+            return None;
+        }
+        let mut context = Self {
+            value: self.value.clone(),
+            command: ConfigCommand {
+                raw,
+                agent: Some(agent.to_string()),
+                report: report.clone(),
+            },
+            pi_stores: self.pi_stores.clone(),
+            pi_store_error: self.pi_store_error.clone(),
+            date_bound_error: None,
+        };
+        context.date_bound_error = context.detect_date_bound_error();
+        Some(context)
+    }
+
     /// Named pi stores only reach commands that read them, so their parse error
     /// stays gated on those commands.
     fn active_pi_store_error(&self) -> Option<&str> {
@@ -1043,6 +1079,121 @@ mod tests {
 
         assert!(shared.offline);
         assert!(shared.json);
+    }
+
+    #[test]
+    fn source_view_reads_the_sections_a_focused_command_would() {
+        let config = context(
+            json!({
+                "defaults": {
+                    "mode": "display",
+                    "since": "20260101"
+                },
+                "commands": {
+                    "daily": {
+                        "breakdown": true
+                    },
+                    "codex:daily": {
+                        "timezone": "UTC"
+                    }
+                },
+                "codex": {
+                    "defaults": {
+                        "speed": "fast",
+                        "since": "20260301"
+                    },
+                    "commands": {
+                        "daily": {
+                            "mode": "calculate"
+                        }
+                    }
+                }
+            }),
+            "daily",
+            None,
+            "daily",
+        );
+
+        let codex = config.for_source("codex").expect("codex sections");
+        let mut shared = SharedArgs::with_defaults();
+        codex.apply_shared(&mut shared);
+        let mut speed = CodexSpeed::Auto;
+        codex.apply_agent_args(&mut speed, None, None);
+
+        assert_eq!(shared.since.as_deref(), Some("20260301"));
+        assert_eq!(shared.mode, CostMode::Calculate);
+        assert_eq!(shared.timezone.as_deref(), Some("UTC"));
+        assert!(shared.breakdown);
+        assert_eq!(speed, CodexSpeed::Fast);
+    }
+
+    #[test]
+    fn source_view_exists_only_for_agents_the_config_addresses() {
+        let config = context(
+            json!({
+                "defaults": {
+                    "mode": "display"
+                },
+                "commands": {
+                    "pi:daily": {
+                        "json": true
+                    }
+                },
+                "openclaw": {
+                    "defaults": {
+                        "offline": true
+                    }
+                }
+            }),
+            "daily",
+            None,
+            "daily",
+        );
+
+        assert!(config.for_source("pi").is_some());
+        assert!(config.for_source("openclaw").is_some());
+        assert!(config.for_source("codex").is_none());
+
+        let focused = context(
+            json!({
+                "codex": {
+                    "defaults": {
+                        "speed": "fast"
+                    }
+                }
+            }),
+            "codex daily",
+            Some("codex"),
+            "daily",
+        );
+
+        assert!(focused.for_source("codex").is_none());
+    }
+
+    #[test]
+    fn source_view_rejects_invalid_source_date_bounds() {
+        let config = context(
+            json!({
+                "codex": {
+                    "defaults": {
+                        "since": "2026-02-30"
+                    }
+                }
+            }),
+            "daily",
+            None,
+            "daily",
+        );
+
+        assert_eq!(
+            config
+                .for_source("codex")
+                .expect("codex sections")
+                .config_error(),
+            Some(
+                "Invalid ccusage config: since '2026-02-30' is not a valid date. Expected YYYY-MM-DD or YYYYMMDD"
+            )
+        );
     }
 
     #[test]

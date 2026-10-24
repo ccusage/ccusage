@@ -28,6 +28,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `types::SessionArgs`
 - `types::SharedArgs`
 - `types::SortOrder`
+- `types::SourceArgs`
 - `types::StatuslineArgs`
 - `types::VisualBurnRate`
 - `types::WeekDay`

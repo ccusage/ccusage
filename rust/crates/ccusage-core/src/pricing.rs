@@ -488,7 +488,7 @@ pub struct PricingMap {
 /// as `claude-opus-5-eu` passes the gate and is billed at the base model's rate,
 /// which is exactly what marking the id exact-only was meant to prevent. That
 /// spelling names the tier, so it resolves to it rather than losing its rate.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct ExactOnlyKeys {
     raw: FxHashSet<String>,
     /// Every id under its normalized spelling, mapped back to the id it names.
@@ -1073,6 +1073,30 @@ impl PricingMap {
         // overrides get the final word.
         map.fill_long_context_rates_from_models_dev();
         map.enable_models_dev_fallback = !offline;
+        map.apply_overrides(overrides);
+        map
+    }
+
+    /// Returns an independent pricing map with additional user overrides.
+    ///
+    /// This lets callers share one fetched or embedded base between reports
+    /// while keeping each report's override cache separate.
+    /// The base map must not already contain user overrides.
+    pub fn with_user_overrides<'a, I>(&self, overrides: I) -> Self
+    where
+        I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
+    {
+        let mut map = Self {
+            entries: self.entries.clone(),
+            user_overrides: self.user_overrides.clone(),
+            exact_only: self.exact_only.clone(),
+            context_limits: self.context_limits.clone(),
+            builtin_context_limits: self.builtin_context_limits.clone(),
+            enable_models_dev_fallback: self.enable_models_dev_fallback,
+            enable_embedded_models_dev_fallback: self.enable_embedded_models_dev_fallback,
+            find_cache: OnceLock::new(),
+            normalized_keys: OnceLock::new(),
+        };
         map.apply_overrides(overrides);
         map
     }

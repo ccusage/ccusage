@@ -15,7 +15,8 @@ use serde_json::{Value, json};
 use super::*;
 use crate::{
     Align, CodexGroup, CodexModelUsage, ModelBreakdown, PricingMap,
-    cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs, WeekDay},
+    cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs, SourceArgs, WeekDay},
+    loader::NO_SOURCES,
     model_aliases::set_model_aliases_for_tests,
 };
 use ccusage_test_support::{EnvVarsGuard, fs_fixture, zcode::create_fixture};
@@ -723,7 +724,13 @@ fn unified_sessions_sort_by_cost_in_json_and_table() {
             order_explicit,
             ..shared.clone()
         };
-        let result = load_rows(AgentReportKind::Session, &shared, WeekDay::Monday).unwrap();
+        let result = load_rows(
+            AgentReportKind::Session,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
         let report = report_json(&result.rows, AgentReportKind::Session);
         let ids: Vec<_> = report["session"]
             .as_array()
@@ -770,6 +777,70 @@ fn multi_section_claude_fixture_matches_standalone_sections_for_daily_and_sessio
 }
 
 #[test]
+fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
+    let fixture = fs_fixture!({
+        "custom/pi/sessions/project-a/agent_in-range.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":1000,"output":500}}}"#,
+        "custom/pi/sessions/project-b/agent_out-of-range.jsonl": r#"{"type":"message","timestamp":"2099-01-03T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":10000,"output":5000}}}"#,
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "PI_AGENT_DIR",
+        fixture.path("empty-default").into_os_string(),
+    );
+    let shared = SharedArgs {
+        mode: CostMode::Calculate,
+        ..fixture_shared("20990101", "20990104")
+    };
+    let sources = std::collections::BTreeMap::from([(
+        "pi".to_string(),
+        SourceArgs {
+            shared: SharedArgs {
+                since: Some("20990102".to_string()),
+                until: Some("20990102".to_string()),
+                pricing_overrides: std::collections::BTreeMap::from([(
+                    "gpt-source-config".to_string(),
+                    crate::cli::PricingOverride {
+                        input_cost_per_token: Some(1e-6),
+                        output_cost_per_token: Some(2e-6),
+                        ..Default::default()
+                    },
+                )]),
+                ..shared.clone()
+            },
+            pi_path: Some(fixture.path("custom/pi").to_string_lossy().into_owned()),
+            ..SourceArgs::default()
+        },
+    )]);
+
+    let sections = load_sections(
+        &[AgentReportKind::Daily, AgentReportKind::Session],
+        &shared,
+        &sources,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    let daily_rows = &sections.sections[0].1;
+    assert_eq!(daily_rows.len(), 1);
+    assert_eq!(daily_rows[0].period, "2099-01-02");
+    assert_eq!(daily_rows[0].metadata_agents, Some(vec!["pi"]));
+    assert_eq!(daily_rows[0].input_tokens, 1_000);
+    assert_eq!(daily_rows[0].output_tokens, 500);
+    assert!((daily_rows[0].total_cost - 0.002).abs() < f64::EPSILON);
+
+    let session_rows = &sections.sections[1].1;
+    assert_eq!(session_rows.len(), 1);
+    assert_eq!(session_rows[0].period, "in-range");
+    assert_eq!(session_rows[0].agent, "pi");
+    assert_eq!(
+        session_rows[0].metadata.as_ref().unwrap()["projectPath"],
+        "project-a"
+    );
+    assert_eq!(session_rows[0].input_tokens, 1_000);
+    assert_eq!(session_rows[0].output_tokens, 500);
+    assert!((session_rows[0].total_cost - 0.002).abs() < f64::EPSILON);
+}
+
+#[test]
 fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session_invocations() {
     let _aliases = set_model_aliases_for_tests([("private-alpha", "gpt-5.2")]);
     let duplicate_session_usage = codex_usage_line("2099-02-01T08:01:00.000Z", "gpt-5.2", 1_000);
@@ -805,9 +876,27 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
     let mut shared = fixture_shared("20990101", "20990201");
     shared.mode = CostMode::Calculate;
 
-    let daily = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday).unwrap();
-    let monthly = load_rows(AgentReportKind::Monthly, &shared, WeekDay::Monday).unwrap();
-    let session = load_rows(AgentReportKind::Session, &shared, WeekDay::Monday).unwrap();
+    let daily = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    let monthly = load_rows(
+        AgentReportKind::Monthly,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    let session = load_rows(
+        AgentReportKind::Session,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
 
     assert_eq!(daily.detected_agents, vec!["zcode"]);
     assert_eq!(monthly.detected_agents, vec!["zcode"]);
@@ -898,7 +987,13 @@ fn unified_report_omits_zcode_without_usage_database() {
     );
     let shared = fixture_shared("20990101", "20990201");
 
-    let result = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday).unwrap();
+    let result = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
 
     assert!(result.rows.is_empty());
     assert!(result.detected_agents.is_empty());
@@ -927,7 +1022,13 @@ fn unified_report_filters_codex_paths_before_loading_historical_rows() {
     );
     let shared = fixture_shared("20260315", "20260315");
 
-    let result = load_rows(AgentReportKind::Daily, &shared, WeekDay::Monday).unwrap();
+    let result = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
 
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.rows[0].period, "2026-03-15");
@@ -1013,8 +1114,11 @@ fn isolated_agent_env(
     source_key: &'static str,
     source_value: OsString,
 ) -> EnvVarsGuard {
+    let _ = fixture.create_dir_all("empty-xdg-config");
+    let _ = fixture.create_dir_all("empty-xdg-data");
     let home = fixture.path("empty-home").into_os_string();
     let xdg_config = fixture.path("empty-xdg-config").into_os_string();
+    let xdg_data = fixture.path("empty-xdg-data").into_os_string();
     let mut vars = [
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
@@ -1033,6 +1137,8 @@ fn isolated_agent_env(
         "QWEN_DATA_DIR",
         "GROK_HOME",
         "ZCODE_HOME",
+        "ANTIGRAVITY_DATA_DIR",
+        "COPILOT_HOME",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))
@@ -1043,6 +1149,7 @@ fn isolated_agent_env(
         Some(fixture.path("empty-userprofile").into_os_string()),
     ));
     vars.push(("XDG_CONFIG_HOME", Some(xdg_config)));
+    vars.push(("XDG_DATA_HOME", Some(xdg_data)));
     vars.push((source_key, Some(source_value)));
     EnvVarsGuard::set_many(vars)
 }
@@ -1055,7 +1162,7 @@ fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {
     let _env = isolated_agent_env(&fixture, "GROK_HOME", fixture.path("grok").into_os_string());
     let shared = fixture_shared("20250615", "20250615");
 
-    let result = loader::load_rows(kind, &shared, WeekDay::Monday).unwrap();
+    let result = loader::load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
 
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.detected_agents, vec!["grok"]);
@@ -1091,13 +1198,14 @@ fn unified_weekly_rows_and_sections_honor_start_of_week() {
         (WeekDay::Sunday, "2025-06-15"),
         (WeekDay::Monday, "2025-06-09"),
     ] {
-        let rows = load_rows(AgentReportKind::Weekly, &shared, start_of_week).unwrap();
+        let rows = load_rows(AgentReportKind::Weekly, &shared, &NO_SOURCES, start_of_week).unwrap();
         let periods: Vec<_> = rows.rows.iter().map(|row| row.period.as_str()).collect();
         assert_eq!(periods, [week], "{start_of_week:?} load_rows");
 
         let sections = load_sections(
             &[AgentReportKind::Daily, AgentReportKind::Weekly],
             &shared,
+            &NO_SOURCES,
             start_of_week,
         )
         .unwrap();
@@ -1128,7 +1236,7 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
             ],
             AgentReportKind::Weekly | AgentReportKind::Monthly => unreachable!(),
         };
-        let section_rows = load_sections(&sections, shared, WeekDay::Monday).unwrap();
+        let section_rows = load_sections(&sections, shared, &NO_SOURCES, WeekDay::Monday).unwrap();
         let report = sections_report_json(&section_rows.sections, command_kind, false);
 
         for section_kind in [
@@ -1137,7 +1245,7 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
             AgentReportKind::Monthly,
             AgentReportKind::Session,
         ] {
-            let standalone = load_rows(section_kind, shared, WeekDay::Monday).unwrap();
+            let standalone = load_rows(section_kind, shared, &NO_SOURCES, WeekDay::Monday).unwrap();
             let standalone_report = report_json(&standalone.rows, section_kind);
             let key = match section_kind {
                 AgentReportKind::Daily => "daily",
