@@ -1077,7 +1077,7 @@ pub(super) fn aggregate_rows(
 mod tests {
     use super::*;
     use ccusage_cli::NamedPiStore;
-    use ccusage_test_support::{EnvVarGuard, EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     fn usage_summary(date: &str, input_tokens: u64) -> UsageSummary {
         UsageSummary {
@@ -1110,10 +1110,23 @@ mod tests {
     }
 
     fn isolated_source_environment(fixture: &ccusage_test_support::Fixture) -> EnvVarsGuard {
+        isolated_source_environment_with_pi_agent_dir(fixture, "pi/sessions")
+    }
+
+    fn isolated_source_environment_with_pi_agent_dir(
+        fixture: &ccusage_test_support::Fixture,
+        pi_agent_dir: &str,
+    ) -> EnvVarsGuard {
         let _ = fixture.create_dir_all("claude-config/projects");
         let _ = fixture.create_dir_all("pi/sessions");
+        let _ = fixture.create_dir_all("empty-xdg-config");
+        let _ = fixture.create_dir_all("empty-xdg-data");
         EnvVarsGuard::set_many([
             ("HOME", Some(fixture.root().as_os_str().to_os_string())),
+            (
+                "USERPROFILE",
+                Some(fixture.path("empty-userprofile").into_os_string()),
+            ),
             (
                 "CLAUDE_CONFIG_DIR",
                 Some(fixture.path("claude-config").into_os_string()),
@@ -1122,13 +1135,36 @@ mod tests {
                 "CODEX_HOME",
                 Some(fixture.path("codex-home").into_os_string()),
             ),
+            ("OPENCODE_DATA_DIR", None),
+            ("AMP_DATA_DIR", None),
+            ("DROID_SESSIONS_DIR", None),
+            ("CODEBUFF_DATA_DIR", None),
+            ("HERMES_HOME", None),
             (
                 "PI_AGENT_DIR",
-                Some(fixture.path("pi/sessions").into_os_string()),
+                Some(fixture.path(pi_agent_dir).into_os_string()),
             ),
+            ("GOOSE_PATH_ROOT", None),
             (
                 "OPENCLAW_DIR",
                 Some(fixture.path("openclaw-home").into_os_string()),
+            ),
+            ("KILO_DATA_DIR", None),
+            ("COPILOT_OTEL_FILE_EXPORTER_PATH", None),
+            ("COPILOT_HOME", None),
+            ("GEMINI_DATA_DIR", None),
+            ("KIMI_DATA_DIR", None),
+            ("QWEN_DATA_DIR", None),
+            ("GROK_HOME", None),
+            ("ZCODE_HOME", None),
+            ("ANTIGRAVITY_DATA_DIR", None),
+            (
+                "XDG_CONFIG_HOME",
+                Some(fixture.path("empty-xdg-config").into_os_string()),
+            ),
+            (
+                "XDG_DATA_HOME",
+                Some(fixture.path("empty-xdg-data").into_os_string()),
             ),
         ])
     }
@@ -1423,7 +1459,7 @@ mod tests {
             "omp/sessions/project-a/agent_inside-session.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
             "omp/sessions/project-a/agent_outside-session.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("empty-default"));
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
         let store_path = fixture.path("omp/sessions").to_string_lossy().into_owned();
         let shared = SharedArgs {
             json: true,
@@ -1507,7 +1543,7 @@ mod tests {
             "pi/sessions/project-a/agent_until-day.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
             "pi/sessions/project-a/agent_after-day.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("pi/sessions"));
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "pi/sessions");
         let shared = SharedArgs {
             json: true,
             mode: crate::cli::CostMode::Display,
@@ -1669,7 +1705,8 @@ mod tests {
         let fixture = fs_fixture!({
             ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path(".pi/agent/sessions"));
+        let _environment =
+            isolated_source_environment_with_pi_agent_dir(&fixture, ".pi/agent/sessions");
         let shared = SharedArgs {
             json: true,
             mode: crate::cli::CostMode::Display,
@@ -1706,7 +1743,7 @@ mod tests {
         let fixture = fs_fixture!({
             "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("empty-default"));
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
         let path = fixture
             .path("shared/sessions")
             .to_string_lossy()
@@ -1749,7 +1786,8 @@ mod tests {
         let fixture = fs_fixture!({
             ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path(".pi/agent/sessions"));
+        let _environment =
+            isolated_source_environment_with_pi_agent_dir(&fixture, ".pi/agent/sessions");
         let shared = SharedArgs {
             json: true,
             mode: crate::cli::CostMode::Display,
@@ -1786,7 +1824,7 @@ mod tests {
         let fixture = fs_fixture!({
             "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("empty-default"));
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
         let shared_path = fixture
             .path("shared/sessions")
             .to_string_lossy()
@@ -1830,7 +1868,7 @@ mod tests {
         let fixture = fs_fixture!({
             "omp/sessions/project-a/agent_omp-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
-        let _pi_agent_dir = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("empty-default"));
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
         let shared = SharedArgs {
             json: true,
             mode: crate::cli::CostMode::Display,

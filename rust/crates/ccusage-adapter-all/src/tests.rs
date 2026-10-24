@@ -1050,8 +1050,11 @@ fn isolated_agent_env(
     source_key: &'static str,
     source_value: OsString,
 ) -> EnvVarsGuard {
+    let _ = fixture.create_dir_all("empty-xdg-config");
+    let _ = fixture.create_dir_all("empty-xdg-data");
     let home = fixture.path("empty-home").into_os_string();
     let xdg_config = fixture.path("empty-xdg-config").into_os_string();
+    let xdg_data = fixture.path("empty-xdg-data").into_os_string();
     let mut vars = [
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
@@ -1070,6 +1073,8 @@ fn isolated_agent_env(
         "QWEN_DATA_DIR",
         "GROK_HOME",
         "ZCODE_HOME",
+        "ANTIGRAVITY_DATA_DIR",
+        "COPILOT_HOME",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))
@@ -1080,6 +1085,7 @@ fn isolated_agent_env(
         Some(fixture.path("empty-userprofile").into_os_string()),
     ));
     vars.push(("XDG_CONFIG_HOME", Some(xdg_config)));
+    vars.push(("XDG_DATA_HOME", Some(xdg_data)));
     vars.push((source_key, Some(source_value)));
     EnvVarsGuard::set_many(vars)
 }
