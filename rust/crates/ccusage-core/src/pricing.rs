@@ -1081,6 +1081,7 @@ impl PricingMap {
     ///
     /// This lets callers share one fetched or embedded base between reports
     /// while keeping each report's override cache separate.
+    /// The base map must not already contain user overrides.
     pub fn with_user_overrides<'a, I>(&self, overrides: I) -> Self
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
