@@ -87,7 +87,14 @@ function resolveNativeBinary({
 }
 
 /**
- * @param {{ arch?: string; argv: string[]; nativeBinaryPath?: string | null; platform?: string }} options
+ * @returns {string}
+ */
+function readPackageVersion() {
+	return /** @type {{ version: string }} */ (require('../package.json')).version;
+}
+
+/**
+ * @param {{ arch?: string; argv: string[]; nativeBinaryPath?: string | null; platform?: string; version?: string }} options
  * @returns {CliRuntime}
  */
 function resolveCliRuntime({
@@ -95,6 +102,7 @@ function resolveCliRuntime({
 	arch = process.arch,
 	nativeBinaryPath = resolveNativeBinary(),
 	platform = process.platform,
+	version,
 }) {
 	if (nativeBinaryPath != null) {
 		return {
@@ -103,8 +111,19 @@ function resolveCliRuntime({
 		};
 	}
 
+	const packageName = getNativePackageName(platform, arch);
+	if (packageName == null) {
+		return {
+			errorMessage: `ccusage native binary is not available for ${platform}-${arch}: this platform is not supported.\n`,
+		};
+	}
+
+	const packageVersion = version ?? readPackageVersion();
 	return {
-		errorMessage: `ccusage native binary is not available for ${platform}-${arch}. Reinstall ccusage so optional native dependencies are installed.\n`,
+		errorMessage:
+			`ccusage native binary is not available for ${platform}-${arch}: ${packageName}@${packageVersion} is not installed.\n` +
+			'The optional native dependency was likely skipped by an install-age cutoff (npm --before or --min-release-age, mise minimum_release_age) or by --omit=optional.\n' +
+			`Reinstall ccusage@${packageVersion} with optional dependencies once ${packageName}@${packageVersion} is within the cutoff.\n`,
 	};
 }
 

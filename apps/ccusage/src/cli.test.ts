@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { describe, it, mock } from 'node:test';
 import {
 	createNativeSpawner,
@@ -8,6 +9,10 @@ import {
 	resolveCliRuntime,
 	resolveNativeBinary,
 } from './cli.js';
+
+const packageJson = JSON.parse(
+	readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+) as { version: string };
 
 void describe(resolveCliRuntime.name, () => {
 	void it('resolves the native package binary for the current supported platform', () => {
@@ -56,10 +61,43 @@ void describe(resolveCliRuntime.name, () => {
 				argv: ['daily'],
 				nativeBinaryPath: null,
 				platform: 'darwin',
+				version: '20.0.38',
 			}),
 			{
 				errorMessage:
-					'ccusage native binary is not available for darwin-arm64. Reinstall ccusage so optional native dependencies are installed.\n',
+					'ccusage native binary is not available for darwin-arm64: @ccusage/ccusage-darwin-arm64@20.0.38 is not installed.\n' +
+					'The optional native dependency was likely skipped by an install-age cutoff (npm --before or --min-release-age, mise minimum_release_age) or by --omit=optional.\n' +
+					'Reinstall ccusage@20.0.38 with optional dependencies once @ccusage/ccusage-darwin-arm64@20.0.38 is within the cutoff.\n',
+			},
+		);
+	});
+
+	void it('names the version from the package manifest when the native package is missing', () => {
+		const runtime = resolveCliRuntime({
+			arch: 'x64',
+			argv: [],
+			nativeBinaryPath: null,
+			platform: 'linux',
+		});
+
+		assert.ok('errorMessage' in runtime);
+		assert.match(
+			runtime.errorMessage,
+			new RegExp(`@ccusage/ccusage-linux-x64@${packageJson.version.replaceAll('.', '\\.')} `),
+		);
+	});
+
+	void it('reports unsupported platforms without a native package', () => {
+		assert.deepEqual(
+			resolveCliRuntime({
+				arch: 'x64',
+				argv: [],
+				nativeBinaryPath: null,
+				platform: 'freebsd',
+			}),
+			{
+				errorMessage:
+					'ccusage native binary is not available for freebsd-x64: this platform is not supported.\n',
 			},
 		);
 	});
