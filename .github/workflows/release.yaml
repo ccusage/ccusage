@@ -175,7 +175,33 @@ jobs:
           for archive in "$RUNNER_TEMP"/native-packages/*.tar; do
             tar -xf "$archive"
           done
-      - run: pnpm --filter='./apps/ccusage' --filter='./packages/ccusage-*' publish --provenance --no-git-checks --access public
+      # The wrapper must land after its optional native packages: npm installs
+      # under a release-age cutoff (--before) silently skip optional deps that
+      # are newer than the cutoff, leaving a wrapper without its binary.
+      - name: Publish native packages
+        run: pnpm --filter='./packages/ccusage-*' publish --provenance --no-git-checks --access public
+      - name: Wait for native packages on the registry
+        run: |
+          version="$(node -p "require('./apps/ccusage/package.json').version")"
+          for attempt in $(seq 1 30); do
+            missing=()
+            for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64 win32-arm64; do
+              package="@ccusage/ccusage-${platform}@${version}"
+              if [ "$(npm view "$package" version 2>/dev/null)" != "$version" ]; then
+                missing+=("$package")
+              fi
+            done
+            if [ "${#missing[@]}" -eq 0 ]; then
+              echo "All native packages for ${version} are available."
+              exit 0
+            fi
+            echo "Attempt ${attempt}: waiting for ${missing[*]}"
+            sleep 10
+          done
+          echo "::error::Native packages are not available on npm: ${missing[*]}"
+          exit 1
+      - name: Publish ccusage wrapper
+        run: pnpm --filter='./apps/ccusage' publish --provenance --no-git-checks --access public
 
   release:
     needs:
