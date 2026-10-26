@@ -140,7 +140,7 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
     };
     let mut line = Vec::new();
     let mut first: Option<TimestampMs> = None;
-    let mut previous_totals = None;
+    let mut session_start = None;
 
     loop {
         line.clear();
@@ -149,6 +149,16 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
         };
         if bytes_read == 0 {
             return None;
+        }
+        if memchr::memmem::find(&line, b"session_meta").is_some()
+            && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line)
+            && value.entry_type.as_deref() == Some("session_meta")
+        {
+            if session_start.is_none() {
+                session_start = codex_session_timestamp(value.timestamp.as_ref())
+                    .and_then(|timestamp| parse_ts_timestamp(&timestamp));
+            }
+            continue;
         }
         let Some(CodexLineKind::Session) = codex_line_usage_kind(&line) else {
             continue;
@@ -165,8 +175,9 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
         let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
             continue;
         };
-        let usage = codex_token_count_usage(info, &mut previous_totals);
-        if !usage.delta.as_ref().is_some_and(has_codex_token_usage) {
+        if info
+            .is_none_or(|info| info.last_token_usage.is_none() && info.total_token_usage.is_none())
+        {
             continue;
         }
         let Some(timestamp) = parse_ts_timestamp(&timestamp) else {
@@ -175,9 +186,14 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
         match first {
             None => first = Some(timestamp),
             Some(first) => {
-                return (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-                    .contains(&(timestamp.as_millis() - first.as_millis()))
-                    .then_some(first);
+                let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
+                    .contains(&(timestamp.as_millis() - first.as_millis()));
+                // A late first request can also produce a dense pair.
+                let starts_at_fork = session_start.is_none_or(|start| {
+                    first.as_millis().abs_diff(start.as_millis())
+                        <= CODEX_REWRITTEN_BURST_PAUSE_MS as u64
+                });
+                return (is_dense && starts_at_fork).then_some(first);
             }
         }
     }

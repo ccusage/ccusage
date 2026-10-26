@@ -2337,6 +2337,99 @@ mod tests {
     }
 
     #[test]
+    fn skips_missing_parent_replay_when_duplicate_snapshot_is_suppressed() {
+        fn token_count(timestamp: &str, input: u64, total_input: u64) -> String {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": input,
+                            "output_tokens": 1,
+                            "total_tokens": input + 1,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": total_input,
+                            "output_tokens": 1,
+                            "total_tokens": total_input + 1,
+                        },
+                        "model": "gpt-5.5",
+                    },
+                },
+            })
+            .to_string()
+        }
+
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                json!({
+                    "type": "session_meta",
+                    "payload": {"id": "child", "forked_from_id": "missing-parent"},
+                })
+                .to_string(),
+                // The replay repeats a snapshot, which must not end the burst.
+                token_count("2026-07-10T08:00:00.100Z", 100, 100),
+                token_count("2026-07-10T08:00:00.200Z", 100, 100),
+                // The child's own turn, after a real pause.
+                token_count("2026-07-10T08:00:08.000Z", 50, 50),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 50);
+    }
+
+    #[test]
+    fn skips_missing_parent_duplicate_only_replay_at_known_session_start() {
+        let token_count = |timestamp: &str, input_tokens: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": 1,
+                            "total_tokens": input_tokens + 1,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": 1,
+                            "total_tokens": input_tokens + 1,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        };
+
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                replay_metadata(
+                    "2026-07-10T08:00:00.000Z",
+                    "child",
+                    Some("missing-parent"),
+                ),
+                token_count("2026-07-10T08:00:00.100Z", 100),
+                token_count("2026-07-10T08:00:00.200Z", 100),
+                token_count("2026-07-10T08:00:08.000Z", 50),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 50);
+    }
+
+    #[test]
     fn skips_missing_parent_replay_with_duplicate_snapshots_and_advancing_usage() {
         fn token_count(timestamp: &str, input: u64, total_input: u64) -> String {
             json!({
