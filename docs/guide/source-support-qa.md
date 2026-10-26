@@ -17,6 +17,16 @@ A source is a good fit when its local files include most of the following:
 
 Local transcript text alone is not enough. A transcript can be useful for debugging, but it does not reveal tokenizer behavior, hidden system context, cached input, tool-call overhead, or provider-side accounting.
 
+## Sources Included Automatically
+
+::: details Oh My Pi (OMP)
+Oh My Pi writes usage in the Pi session format. Unified reports discover its default sessions automatically and include the data as agent `omp`, with raw model names prefixed by `[omp] `. There is no `ccusage omp` command; use a unified report such as `ccusage daily`. The focused `ccusage pi ...` command remains specific to pi-agent. Existing `pi.stores[]` entries are still supported, including an explicit store named `omp`; that explicit entry suppresses automatic OMP discovery.
+
+The default root is `~/.omp/agent/sessions`. `PI_CONFIG_DIR` selects its config root; `PI_CODING_AGENT_DIR` adds another agent root while default, profile, and migrated `$XDG_DATA_HOME/omp` roots remain discoverable on Linux and macOS. See [Pi-agent and Oh My Pi](/guide/pi/) for path rules.
+
+The adapter reads local JSONL session files only, including billable top-level `model_usage` entries. It handles the title slot before the session header, the `activeLeafId` branch pointer, and `parentSession` references stored as opaque IDs or paths. Compaction `tokensBefore` is metadata rather than billable usage. SQLite or Redis-backed session storage and compressed `.jsonl.gz` archives are outside the supported input format. See [Pi-agent and Oh My Pi](/guide/pi/) and the [Oh My Pi session format reference](https://github.com/can1357/oh-my-pi/blob/e0996aad2cf487c82a7ba00f46172600fde48528/docs/session.md).
+:::
+
 ## Unsupported Sources Investigated
 
 ::: details Why is Devin CLI not supported?

@@ -14,8 +14,10 @@ use crate::{
 
 #[doc(hidden)]
 pub use loader::load_entries_for_store_path;
-pub use loader::{load_entries, load_entries_for_store_paths};
-pub use paths::{named_store_paths, paths as default_paths};
+pub use loader::{
+    load_entries, load_entries_for_store_paths, load_entries_for_store_paths_excluding,
+};
+pub use paths::{named_store_paths, omp_default_paths, paths as default_paths};
 pub use report::{report_from_rows, summarize_entries};
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {

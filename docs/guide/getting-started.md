@@ -171,6 +171,7 @@ If ccusage shows no data, check:
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`
    - Hermes Agent: `${HERMES_HOME:-~/.hermes}/state.db`
    - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}`
+   - Oh My Pi: `~/.omp/agent/sessions` by default; see [Pi / Oh My Pi](/guide/pi/) for environment overrides, profiles, and XDG paths
    - Goose: standard Goose data roots or `GOOSE_PATH_ROOT`
    - Kilo: `${KILO_DATA_DIR:-~/.local/share/kilo}`
    - Kimi: `${KIMI_DATA_DIR:-~/.kimi}` (also scans `~/.kimi-code`)

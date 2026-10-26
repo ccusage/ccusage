@@ -1,6 +1,8 @@
-# pi-agent Data Source (Beta)
+# Pi-Agent and Oh My Pi Data Sources
 
 ccusage can read [pi-agent](https://github.com/badlogic/pi-mono) usage data as one of its supported local data sources. pi-agent is an alternative Claude coding (agent) CLI from [shittycodingagent.ai](https://shittycodingagent.ai).
+
+ccusage also discovers Oh My Pi sessions automatically for unified reports. They appear as agent `omp`, with raw model names prefixed by `[omp] ` (for example, `[omp] claude-opus-4-1`). There is no separate `ccusage omp` command; `ccusage pi ...` remains focused on the default pi-agent store.
 
 ## What is Pi-Agent?
 
@@ -20,15 +22,20 @@ pnpx ccusage pi --help
 
 ## Data Source
 
-The CLI reads usage data from pi-agent:
+The focused `ccusage pi ...` command reads pi-agent data. Unified reports also discover Oh My Pi sessions:
 
-| Source   | Default path            | Override                      |
-| -------- | ----------------------- | ----------------------------- |
-| pi-agent | `~/.pi/agent/sessions/` | `PI_AGENT_DIR` or `--pi-path` |
+| Source                     | Default path             | Override                                 |
+| -------------------------- | ------------------------ | ---------------------------------------- |
+| pi-agent                   | `~/.pi/agent/sessions/`  | `PI_AGENT_DIR` or `--pi-path`            |
+| Oh My Pi (unified reports) | `~/.omp/agent/sessions/` | `PI_CONFIG_DIR` or `PI_CODING_AGENT_DIR` |
 
 Both `PI_AGENT_DIR` and `--pi-path` can be one sessions directory or a comma-separated list of sessions directories.
 
-Tools built on the pi session format can also be declared as named stores in the config file for unified reports:
+Oh My Pi discovery uses the default config root `~/.omp`. `PI_CONFIG_DIR` defaults to `.omp` and is joined under `$HOME`; a leading slash in its value does not make it absolute. Unified reports check the existing `agent/sessions/` directory under that config root. `PI_CODING_AGENT_DIR` adds another root, with `sessions/` appended; relative values resolve from the current working directory.
+
+Unified reports also check existing profile session roots under `<config-root>/profiles/<name>/agent/sessions/`. On Linux and macOS, if `$XDG_DATA_HOME/omp` exists, ccusage also checks its `sessions/` directory and existing `profiles/<name>/sessions/` directories as migrated OMP data. These default and XDG roots are still checked when `PI_CODING_AGENT_DIR` is set. Profile names found under either root are included whether or not that profile is currently active.
+
+Oh My Pi is included automatically when ccusage finds its session directories. You do not need to configure a named store for the default location. Existing `pi.stores[]` entries remain supported; an explicit `omp` entry is useful for compatibility with existing setups or to select an alternate OMP root:
 
 ```json
 {
@@ -44,7 +51,13 @@ Tools built on the pi session format can also be declared as named stores in the
 }
 ```
 
-Named stores are loaded in addition to the default `pi` agent when running `ccusage daily`, `ccusage monthly`, `ccusage weekly`, or `ccusage session`. The example above appears as agent `omp` in unified report metadata and prefixes model labels with `[omp]` followed by a space. A named store path can also be a comma-separated list of sessions directories; missing paths are treated as empty, while paths that overlap the default `pi` store or another named store — including one path nested inside another — are rejected to avoid double-counting. It does not add a `ccusage omp` command; use `ccusage pi ...` for the default pi-agent store.
+An explicit `pi.stores[]` entry named `omp` suppresses automatic OMP discovery and uses the configured path instead. Other explicit stores and the default Pi source take precedence when their paths overlap the automatically discovered OMP path, preventing duplicate usage. Named store paths can be comma-separated lists of sessions directories; missing paths are treated as empty, while paths configured to overlap the default `pi` store or another explicit named store — including nested paths — are rejected. Explicit stores are loaded in unified reports (`ccusage daily`, `monthly`, `weekly`, or `session`) alongside the default `pi` agent.
+
+### OMP Session Format and Scope
+
+ccusage reads Oh My Pi's local JSONL session files. Supported format details include the fixed title slot that can precede the session header, billable top-level `model_usage` entries, the `activeLeafId` branch pointer, and `parentSession` references stored as opaque IDs or paths. When a session records both provider and model, ccusage uses the pair for provider-specific pricing when a matching price is available. See the [Oh My Pi session format reference](https://github.com/can1357/oh-my-pi/blob/e0996aad2cf487c82a7ba00f46172600fde48528/docs/session.md).
+
+The `tokensBefore` value in a `compaction` entry describes context before compaction; it is metadata, not billable usage, and is not added to report totals. ccusage reads local `.jsonl` files only. SQLite or Redis-backed session storage and compressed `.jsonl.gz` archives are outside the supported input format.
 
 For custom Pi models, add a [`pricingOverrides` entry](/guide/config-files#pricing-overrides) keyed by the model label, such as `[pi] my-custom-model` or `[omp] my-custom-model` for a named store. In the default `auto` mode, an explicit override calculates cost from tokens even when Pi recorded a zero cost. Use `--mode display` to show Pi's recorded cost instead.
 

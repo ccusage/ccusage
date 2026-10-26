@@ -224,7 +224,7 @@ Use data source namespaces to set defaults and report overrides. Supported names
 		"stores": [
 			{
 				"name": "omp",
-				"path": "~/.omp/agent/sessions"
+				"path": "/path/to/omp/sessions"
 			}
 		],
 		"defaults": {
@@ -289,9 +289,11 @@ ccusage zcode daily
 
 Source-specific settings are also applied when running unified reports such as `ccusage daily`. Each source uses the same merged options as its focused command: global `defaults`, `commands.<report>`, `commands."<source>:<report>"`, `<source>.defaults`, and `<source>.commands.<report>`, with command-line flags taking precedence for every source. Set `offline` and `pricingOverrides` globally to share them across sources, or in a source section to specialize them. Set `claude.commands.daily.project` to filter Claude rows in unified daily reports and their sections. Unified weekly reports use the unified command's `startOfWeek` for every source and for `--last` calculation; source-level `startOfWeek` values are ignored. Each source groups dates with its resolved timezone before rows are combined, so sources with different timezones can place the same event on adjacent calendar dates.
 
+Unified reports automatically include detected Oh My Pi sessions as agent `omp`; no `pi.stores` entry is needed. An explicit `pi.stores[]` entry named `omp` suppresses automatic discovery and uses its configured path instead, as in the alternate-root example above.
+
 Use `pi.stores` for additional pi-format session stores, such as tools or forks that write sessions outside `~/.pi/agent/sessions`. Named stores are additive to the default `pi` agent in unified reports, use their own agent name in JSON and tables, and prefix models with `[name]` followed by a space. Store names must match `^[a-z][a-z0-9_-]{0,31}$`, must be unique, and cannot use a built-in agent name. Each store path can be one sessions directory or a comma-separated list; `~` is expanded for store paths, nonexistent paths are treated as empty, and resolved paths that overlap the default `pi` store or another named store — including one path nested inside another — are rejected. They do not create focused commands such as `ccusage omp daily`; `PI_AGENT_DIR`, `--pi-path`, and `pi.defaults.piPath` still affect only the default `pi` agent.
 
-Named stores use the unified report's options and pricing overrides; `pi.defaults` and `pi.commands` apply only to the default `pi` source.
+Auto-discovered Oh My Pi sessions and named stores use the unified report's options and pricing overrides; `pi.defaults` and `pi.commands` apply only to the default `pi` source.
 
 For a source-focused command, or each source within a unified report, options are applied in this order:
 

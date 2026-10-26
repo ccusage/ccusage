@@ -38,8 +38,12 @@ pub(super) fn load_rows(
     start_of_week: WeekDay,
 ) -> Result<AllLoadResult> {
     let source_shared = shared_by_source(sources, shared);
+    let pi_path = sources
+        .get("pi")
+        .and_then(|source| source.pi_path.as_deref());
+    let resolved_pi_stores = resolve_pi_store_paths(&shared.pi_stores, pi_path)?;
     let (pricing, unified_pricing) =
-        load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
+        load_pricing(shared, &source_shared, !resolved_pi_stores.is_empty());
     let load_kind = load_kind_for_report(kind);
     let loaded = load_base_rows(
         load_kind,
@@ -48,6 +52,7 @@ pub(super) fn load_rows(
         &source_shared,
         &pricing,
         unified_pricing.as_deref(),
+        &resolved_pi_stores,
     )?;
     Ok(AllLoadResult {
         rows: finish_rows(kind, loaded.rows, shared, start_of_week),
@@ -62,8 +67,12 @@ pub(super) fn load_sections(
     start_of_week: WeekDay,
 ) -> Result<AllSectionsLoadResult> {
     let source_shared = shared_by_source(sources, shared);
+    let pi_path = sources
+        .get("pi")
+        .and_then(|source| source.pi_path.as_deref());
+    let resolved_pi_stores = resolve_pi_store_paths(&shared.pi_stores, pi_path)?;
     let (pricing, unified_pricing) =
-        load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
+        load_pricing(shared, &source_shared, !resolved_pi_stores.is_empty());
     let daily_base = needs_daily_family(kinds)
         .then(|| {
             load_base_rows(
@@ -73,6 +82,7 @@ pub(super) fn load_sections(
                 &source_shared,
                 &pricing,
                 unified_pricing.as_deref(),
+                &resolved_pi_stores,
             )
         })
         .transpose()?;
@@ -85,6 +95,7 @@ pub(super) fn load_sections(
                 &source_shared,
                 &pricing,
                 unified_pricing.as_deref(),
+                &resolved_pi_stores,
             )
         })
         .transpose()?;
@@ -221,6 +232,7 @@ fn load_base_rows(
     source_shared: &BTreeMap<&'static str, SharedArgs>,
     pricing: &BTreeMap<&'static str, Arc<PricingMap>>,
     unified_pricing: Option<&PricingMap>,
+    resolved_pi_stores: &[ResolvedNamedPiStore],
 ) -> Result<AllLoadResult> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
@@ -512,14 +524,15 @@ fn load_base_rows(
             }),
         },
     ];
-    let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores, pi_path)?;
-    for store in named_pi_stores {
+    for store in resolved_pi_stores {
         let agent = leak_agent_name(&store.name);
-        let paths = store.paths;
+        let paths = store.paths.clone();
+        let excluded_paths = store.excluded_paths.clone();
+        let is_auto_omp = store.is_auto_omp;
         let index = specs.len();
         let loader_shared_ref = &loader_shared;
         let pricing_ref =
-            unified_pricing.expect("unified pricing is loaded when named pi stores are configured");
+            unified_pricing.expect("unified pricing is loaded for resolved pi stores");
         specs.push(AgentLoadSpec {
             index,
             agent,
@@ -528,6 +541,8 @@ fn load_base_rows(
                 load_named_pi_store_rows_from_paths(
                     agent,
                     paths,
+                    excluded_paths,
+                    is_auto_omp,
                     load_kind,
                     loader_shared_ref,
                     pricing_ref,
@@ -660,9 +675,11 @@ fn leak_agent_name(name: &str) -> &'static str {
 struct ResolvedNamedPiStore {
     name: String,
     paths: Vec<PathBuf>,
+    excluded_paths: Vec<PathBuf>,
+    is_auto_omp: bool,
 }
 
-fn resolve_named_pi_store_paths(
+fn resolve_pi_store_paths(
     stores: &[NamedPiStore],
     default_pi_path: Option<&str>,
 ) -> Result<Vec<ResolvedNamedPiStore>> {
@@ -700,8 +717,37 @@ fn resolve_named_pi_store_paths(
         resolved.push(ResolvedNamedPiStore {
             name: store.name.clone(),
             paths,
+            excluded_paths: Vec::new(),
+            is_auto_omp: false,
         });
     }
+
+    if !stores.iter().any(|store| store.name == "omp") {
+        let mut paths = Vec::new();
+        let mut excluded_paths = BTreeSet::new();
+        for path in pi::omp_default_paths()? {
+            let key = path_key(&path);
+            if owners.keys().any(|owned| key.starts_with(owned)) {
+                continue;
+            }
+            excluded_paths.extend(
+                owners
+                    .keys()
+                    .filter(|owned| owned.starts_with(&key))
+                    .cloned(),
+            );
+            paths.push(path);
+        }
+        if !paths.is_empty() {
+            resolved.push(ResolvedNamedPiStore {
+                name: "omp".to_string(),
+                paths,
+                excluded_paths: excluded_paths.into_iter().collect(),
+                is_auto_omp: true,
+            });
+        }
+    }
+
     Ok(resolved)
 }
 
@@ -771,11 +817,23 @@ fn load_named_pi_store_rows(
 fn load_named_pi_store_rows_from_paths(
     agent: &'static str,
     store_paths: Vec<PathBuf>,
+    excluded_paths: Vec<PathBuf>,
+    is_auto_omp: bool,
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let entries = pi::load_entries_for_store_paths(shared, store_paths, agent, Some(pricing))?;
+    let entries = if is_auto_omp {
+        pi::load_entries_for_store_paths_excluding(
+            shared,
+            store_paths,
+            agent,
+            &excluded_paths,
+            Some(pricing),
+        )?
+    } else {
+        pi::load_entries_for_store_paths(shared, store_paths, agent, Some(pricing))?
+    };
     filtered_pi_format_agent_rows(agent, kind, shared, entries, true)
 }
 
@@ -1251,6 +1309,12 @@ mod tests {
             ("GROK_HOME", None),
             ("ZCODE_HOME", None),
             ("ANTIGRAVITY_DATA_DIR", None),
+            ("PI_CONFIG_DIR", None),
+            ("PI_CODING_AGENT_DIR", None),
+            ("OMP_PROFILE", None),
+            ("PI_PROFILE", None),
+            ("XDG_STATE_HOME", None),
+            ("XDG_CACHE_HOME", None),
             (
                 "XDG_CONFIG_HOME",
                 Some(fixture.path("empty-xdg-config").into_os_string()),
@@ -1990,6 +2054,329 @@ mod tests {
         assert_eq!(result.rows[0].models_used, vec!["[omp] gpt-5"]);
         assert_eq!(result.rows[0].input_tokens, 30);
         assert_eq!(result.rows[0].output_tokens, 40);
+    }
+
+    #[test]
+    fn load_rows_includes_default_omp_store_without_config() {
+        let fixture = fs_fixture!({
+            ".omp/agent/sessions/project-a/agent_omp-default.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+
+        assert!(result.detected_agents.contains(&"omp"));
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].metadata_agents, Some(vec!["omp"]));
+        assert_eq!(result.rows[0].input_tokens, 30);
+        assert_eq!(result.rows[0].output_tokens, 40);
+    }
+
+    #[test]
+    fn explicit_omp_store_overrides_the_default_omp_store() {
+        let fixture = fs_fixture!({
+            ".omp/agent/sessions/project-a/agent_default-omp.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":300,"output":400}}}"#,
+            "explicit-omp/project-a/agent_explicit-omp.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            pi_stores: vec![NamedPiStore {
+                name: "omp".to_string(),
+                path: fixture.path("explicit-omp").to_string_lossy().into_owned(),
+            }],
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Session,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+        let omp_rows = result
+            .rows
+            .iter()
+            .filter(|row| row.agent == "omp")
+            .collect::<Vec<_>>();
+
+        assert_eq!(omp_rows.len(), 1);
+        assert_eq!(omp_rows[0].period, "explicit-omp");
+        assert_eq!(omp_rows[0].input_tokens, 30);
+        assert_eq!(omp_rows[0].output_tokens, 40);
+    }
+
+    #[test]
+    fn named_pi_store_owns_the_default_omp_path_for_its_label() {
+        let fixture = fs_fixture!({
+            ".omp/agent/sessions/project-a/agent_omp-custom.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            pi_stores: vec![NamedPiStore {
+                name: "alternate".to_string(),
+                path: fixture
+                    .path(".omp/agent/sessions")
+                    .to_string_lossy()
+                    .into_owned(),
+            }],
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+
+        assert!(result.detected_agents.contains(&"alternate"));
+        assert!(!result.detected_agents.contains(&"omp"));
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].metadata_agents, Some(vec!["alternate"]));
+        assert_eq!(result.rows[0].input_tokens, 30);
+    }
+
+    #[test]
+    fn named_pi_store_ancestor_owns_the_default_omp_path() {
+        let fixture = fs_fixture!({
+            ".omp/agent/sessions/project-a/agent_omp-ancestor.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            pi_stores: vec![NamedPiStore {
+                name: "alternate".to_string(),
+                path: fixture.path(".omp/agent").to_string_lossy().into_owned(),
+            }],
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+
+        assert!(result.detected_agents.contains(&"alternate"));
+        assert!(!result.detected_agents.contains(&"omp"));
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].metadata_agents, Some(vec!["alternate"]));
+        assert_eq!(result.rows[0].input_tokens, 30);
+    }
+
+    #[test]
+    fn named_pi_store_nested_under_omp_root_keeps_sibling_projects_once() {
+        let fixture = fs_fixture!({
+            ".omp/agent/sessions/project-a/agent_omp-descendant.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+            ".omp/agent/sessions/project-b/agent_omp-sibling.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":50,"output":60}}}"#,
+        });
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let project_a = fixture.path(".omp/agent/sessions/project-a");
+        #[cfg(unix)]
+        let project_a = {
+            let link = fixture.path("project-a-alias");
+            std::os::unix::fs::symlink(&project_a, &link).unwrap();
+            link
+        };
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            pi_stores: vec![NamedPiStore {
+                name: "alternate".to_string(),
+                path: project_a.to_string_lossy().into_owned(),
+            }],
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+
+        assert!(result.detected_agents.contains(&"alternate"));
+        assert!(result.detected_agents.contains(&"omp"));
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(
+            result.rows[0].metadata_agents,
+            Some(vec!["alternate", "omp"])
+        );
+        assert_eq!(result.rows[0].input_tokens, 80);
+        assert_eq!(result.rows[0].output_tokens, 100);
+        assert_eq!(result.rows[0].total_tokens, 180);
+        assert!(
+            result.rows[0]
+                .models_used
+                .contains(&"[alternate] gpt-5".to_string())
+        );
+        assert!(
+            result.rows[0]
+                .models_used
+                .contains(&"[omp] gpt-5".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn named_pi_store_symlink_owns_the_default_omp_path() {
+        let fixture = fs_fixture!({
+            ".omp/agent/sessions/project-a/agent_omp-symlink.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let link = fixture.path("omp-sessions-link");
+        std::os::unix::fs::symlink(fixture.path(".omp/agent/sessions"), &link).unwrap();
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            pi_stores: vec![NamedPiStore {
+                name: "alternate".to_string(),
+                path: link.to_string_lossy().into_owned(),
+            }],
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+
+        assert!(result.detected_agents.contains(&"alternate"));
+        assert!(!result.detected_agents.contains(&"omp"));
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].metadata_agents, Some(vec!["alternate"]));
+        assert_eq!(result.rows[0].input_tokens, 30);
+    }
+
+    #[test]
+    fn source_pi_path_owns_an_overlapping_default_omp_path() {
+        let fixture = fs_fixture!({
+            ".omp/agent/sessions/project-a/agent_shared-root.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let sources = BTreeMap::from([(
+            "pi".to_string(),
+            SourceArgs {
+                shared: shared.clone(),
+                pi_path: Some(
+                    fixture
+                        .path(".omp/agent/sessions")
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                ..SourceArgs::default()
+            },
+        )]);
+
+        let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
+
+        assert!(result.detected_agents.contains(&"pi"));
+        assert!(!result.detected_agents.contains(&"omp"));
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].metadata_agents, Some(vec!["pi"]));
+        assert_eq!(result.rows[0].input_tokens, 30);
+    }
+
+    #[test]
+    fn missing_default_omp_root_is_clean_empty() {
+        let fixture = fs_fixture!({});
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let shared = SharedArgs {
+            json: true,
+            offline: true,
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+
+        assert!(!result.detected_agents.contains(&"omp"));
+        assert!(result.rows.is_empty());
+    }
+
+    #[test]
+    fn load_sections_includes_default_omp_store() {
+        let fixture = fs_fixture!({
+            ".omp/agent/sessions/project-a/agent_omp-sections.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+        });
+        let _environment = isolated_source_environment_with_pi_agent_dir(&fixture, "empty-default");
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let kinds = [AgentReportKind::Daily, AgentReportKind::Session];
+
+        let result = load_sections(&kinds, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let daily = &result.sections[0].1;
+        let sessions = &result.sections[1].1;
+
+        assert!(
+            result
+                .detected_agents_for(AgentReportKind::Daily)
+                .contains(&"omp")
+        );
+        assert!(
+            result
+                .detected_agents_for(AgentReportKind::Session)
+                .contains(&"omp")
+        );
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].metadata_agents, Some(vec!["omp"]));
+        assert_eq!(daily[0].input_tokens, 30);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].agent, "omp");
+        assert_eq!(sessions[0].period, "omp-sections");
     }
 
     #[test]

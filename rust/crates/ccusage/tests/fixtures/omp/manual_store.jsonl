@@ -1,0 +1,2 @@
+{"type":"session","version":3,"id":"019c0000-0000-7000-8000-000000000005","timestamp":"2026-02-02T12:00:00.000Z","cwd":"{{WORKSPACE}}","title":"Configured OMP session"}
+{"type":"message","id":"e0000001","parentId":null,"timestamp":"2026-02-02T12:00:10.000Z","message":{"role":"assistant","api":"openai-responses","provider":"openai","model":"manual-model","usage":{"input":10,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":11,"cost":{"total":0}},"stopReason":"stop","timestamp":1770033610000}}

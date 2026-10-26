@@ -32,6 +32,15 @@ struct PiLine {
     parent_session: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    provider: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    api: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    role: Option<String>,
+    usage: Option<PiUsage>,
     message: Option<PiMessage>,
 }
 
@@ -48,6 +57,21 @@ struct PiEntryLink {
         deserialize_with = "jsonl::non_empty_string"
     )]
     parent_id: Option<String>,
+    #[serde(
+        default,
+        rename = "activeLeafId",
+        deserialize_with = "deserialize_present_json_value"
+    )]
+    active_leaf_id: Option<serde_json::Value>,
+}
+
+fn deserialize_present_json_value<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde_json::Value::deserialize(deserializer).map(Some)
 }
 
 /// The pi `message` block carried by assistant records.
@@ -57,6 +81,10 @@ struct PiMessage {
     role: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    provider: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    api: Option<String>,
     usage: Option<PiUsage>,
 }
 
@@ -96,6 +124,7 @@ struct PiCost {
 
 #[derive(Debug, Clone)]
 pub(crate) struct PiSessionHeader {
+    pub(crate) session_id: Option<String>,
     pub(crate) parent_session: Option<PathBuf>,
     pub(crate) parent_session_is_malformed: bool,
     pub(crate) timestamp: Option<crate::TimestampMs>,
@@ -105,6 +134,9 @@ pub(crate) struct PiSessionHeader {
 struct PiUsageSignature {
     timestamp: crate::TimestampMs,
     model: Option<String>,
+    provider: Option<String>,
+    api: Option<String>,
+    role: Option<String>,
     input_tokens: u64,
     output_tokens: u64,
     cache_creation_input_tokens: u64,
@@ -132,28 +164,71 @@ pub(crate) struct PiSessionData {
 }
 
 impl PiSessionData {
+    pub(crate) fn entry_ids_for_store(&self, store_name: &str) -> Vec<String> {
+        let mut id_counts = HashMap::<&str, usize>::new();
+        for usage in &self.usage {
+            if let Some(id) = usage.entry_id.as_deref() {
+                *id_counts.entry(id).or_default() += 1;
+            }
+        }
+
+        self.entries
+            .iter()
+            .zip(&self.usage)
+            .map(|(entry, usage)| {
+                let stable_id = usage
+                    .entry_id
+                    .as_deref()
+                    .filter(|id| id_counts.get(id).is_some_and(|count| *count == 1));
+                stable_id.map_or_else(
+                    || entry_id_for_store(store_name, entry),
+                    |id| {
+                        [
+                            store_name,
+                            entry.project.as_ref(),
+                            entry.session_id.as_ref(),
+                            "record",
+                            id,
+                            usage.signature.provider.as_deref().unwrap_or_default(),
+                            usage.signature.api.as_deref().unwrap_or_default(),
+                        ]
+                        .join(":")
+                    },
+                )
+            })
+            .collect()
+    }
+
     pub(crate) fn matching_replay_prefix(
         &self,
         child: &Self,
         fork_timestamp: crate::TimestampMs,
     ) -> Option<usize> {
-        if matches!(&child.replay_usage_path, PiReplayUsagePath::Invalid) {
+        if matches!(&child.replay_usage_path, PiReplayUsagePath::Invalid)
+            || matches!(
+                &child.replay_usage_path,
+                PiReplayUsagePath::Active(indices) if indices.is_empty()
+            )
+        {
             return None;
         }
 
-        match &self.replay_usage_path {
-            PiReplayUsagePath::Linear => Some(matching_replay_prefix(
+        let active_prefix = match &self.replay_usage_path {
+            PiReplayUsagePath::Linear => matching_replay_prefix(
                 child.usage.iter().map(|usage| &usage.signature),
                 self.usage.iter().map(|usage| &usage.signature),
                 fork_timestamp,
-            )),
-            PiReplayUsagePath::Active(indices) => Some(matching_replay_prefix(
+            ),
+            PiReplayUsagePath::Active(indices) => matching_replay_prefix(
                 child.usage.iter().map(|usage| &usage.signature),
                 indices.iter().map(|&index| &self.usage[index].signature),
                 fork_timestamp,
-            )),
-            PiReplayUsagePath::Invalid => None,
-        }
+            ),
+            PiReplayUsagePath::Invalid => return None,
+        };
+        let copied_physical_prefix =
+            matching_replay_record_id_prefix(child.usage.iter(), self.usage.iter(), fork_timestamp);
+        Some(active_prefix.max(copied_physical_prefix))
     }
 }
 
@@ -218,6 +293,7 @@ enum PiStoreContext<'a> {
 struct PiCostInput<'a> {
     raw_model: Option<&'a str>,
     display_model: Option<&'a str>,
+    provider_model: Option<&'a str>,
     usage: TokenUsageRaw,
     display_cost: Option<f64>,
     timestamp: crate::TimestampMs,
@@ -244,6 +320,7 @@ impl<'a> PiStoreContext<'a> {
         match self {
             Self::Default => {
                 let model = override_model
+                    .or(input.provider_model)
                     .or_else(|| {
                         input.display_model.filter(|model| {
                             pricing.is_some_and(|pricing| pricing.find_exact(model).is_some())
@@ -260,42 +337,26 @@ impl<'a> PiStoreContext<'a> {
                     pricing,
                 )
             }
-            Self::Named { .. } => calculate_store_cost(
-                input.raw_model,
-                input.display_model,
-                input.usage,
-                source_cost,
-                input.timestamp,
-                mode,
-                pricing,
-            ),
+            Self::Named { .. } => calculate_store_cost(input, source_cost, mode, pricing),
         }
     }
 
     fn missing_pricing_model(
         self,
-        raw_model: Option<&str>,
-        display_model: Option<&str>,
-        usage: TokenUsageRaw,
-        display_cost: Option<f64>,
+        input: PiCostInput<'_>,
         mode: CostMode,
         pricing: Option<&PricingMap>,
     ) -> Option<String> {
-        let override_model = pricing_override_model(raw_model, display_model, pricing);
-        let source_cost = source_cost_for_mode(display_cost, mode, override_model.is_some());
+        let override_model = pricing_override_model(input.raw_model, input.display_model, pricing);
+        let source_cost = source_cost_for_mode(input.display_cost, mode, override_model.is_some());
         match self {
             Self::Default => {
-                let model = override_model.or(display_model);
-                missing_pricing_model_for_usage(model, usage, source_cost, mode, pricing)
+                let model = override_model
+                    .or(input.provider_model)
+                    .or(input.display_model);
+                missing_pricing_model_for_usage(model, input.usage, source_cost, mode, pricing)
             }
-            Self::Named { .. } => missing_store_pricing_model(
-                raw_model,
-                display_model,
-                usage,
-                source_cost,
-                mode,
-                pricing,
-            ),
+            Self::Named { .. } => missing_store_pricing_model(input, source_cost, mode, pricing),
         }
     }
 }
@@ -311,14 +372,13 @@ fn read_session_file_data_with_context(
     let project = context.project(path);
     let session_id = extract_session_id(path);
     let header = parse_session_header(&content);
-    // Usable pi lines carry token counts under a `usage` key nested in a
-    // `message` object, so require both substrings before JSON parsing.
-    let prefilter = LinePrefilter::all(&[br#""usage""#, br#""message""#]);
+    let prefilter = LinePrefilter::all(&[br#""usage""#]);
     let mut entries = Vec::new();
     let mut usage_records = Vec::new();
 
     for record in jsonl::records::<PiLine>(&content, Some(&prefilter)) {
-        if !is_pi_message_usage(&record) {
+        let model_usage = record.r#type.as_deref() == Some("model_usage");
+        if !model_usage && !is_pi_message_usage(&record) {
             continue;
         }
         let Some(timestamp_text) = record.timestamp.clone() else {
@@ -327,10 +387,13 @@ fn read_session_file_data_with_context(
         let Some(timestamp) = crate::parse_ts_timestamp(&timestamp_text) else {
             continue;
         };
-        let Some(message) = record.message.as_ref() else {
-            continue;
+        let message = record.message.as_ref();
+        let usage_value = if model_usage {
+            record.usage.as_ref()
+        } else {
+            message.and_then(|message| message.usage.as_ref())
         };
-        let Some(usage_value) = message.usage.as_ref() else {
+        let Some(usage_value) = usage_value else {
             continue;
         };
         let input = usage_value.input;
@@ -350,26 +413,44 @@ fn read_session_file_data_with_context(
         if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
             continue;
         }
-        let raw_model = message.model.clone();
+        let raw_model = if model_usage {
+            record.model.clone()
+        } else {
+            message.and_then(|message| message.model.clone())
+        };
+        let provider = record
+            .provider
+            .as_deref()
+            .or_else(|| message.and_then(|message| message.provider.as_deref()));
+        let api = record
+            .api
+            .as_deref()
+            .or_else(|| message.and_then(|message| message.api.as_deref()));
+        let role = record
+            .role
+            .as_deref()
+            .or_else(|| message.and_then(|message| message.role.as_deref()));
+        let provider_model = provider_qualified_model(provider, raw_model.as_deref(), pricing);
         let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
         let model = raw_model
             .as_ref()
             .map(|model| format!("[{}] {model}", context.store_name()));
-        let cost = context.cost(
-            PiCostInput {
-                raw_model: raw_model.as_deref(),
-                display_model: model.as_deref(),
-                usage,
-                display_cost,
-                timestamp,
-            },
-            mode,
-            pricing,
-        );
+        let cost_input = PiCostInput {
+            raw_model: raw_model.as_deref(),
+            display_model: model.as_deref(),
+            provider_model: provider_model.as_deref(),
+            usage,
+            display_cost,
+            timestamp,
+        };
+        let cost = context.cost(cost_input, mode, pricing);
         usage_records.push(PiUsageRecord {
             signature: PiUsageSignature {
                 timestamp,
                 model: raw_model.clone(),
+                provider: provider.map(str::to_owned),
+                api: api.map(str::to_owned),
+                role: role.map(str::to_owned),
                 input_tokens: usage.input_tokens,
                 output_tokens: usage.output_tokens,
                 cache_creation_input_tokens: usage.cache_creation_input_tokens,
@@ -380,14 +461,7 @@ fn read_session_file_data_with_context(
             },
             entry_id: record.id.clone(),
         });
-        let missing_pricing_model = context.missing_pricing_model(
-            raw_model.as_deref(),
-            model.as_deref(),
-            usage,
-            display_cost,
-            mode,
-            pricing,
-        );
+        let missing_pricing_model = context.missing_pricing_model(cost_input, mode, pricing);
         let stored_cost = pi_stored_cost(
             raw_model.as_deref(),
             model.as_deref(),
@@ -445,13 +519,29 @@ fn matching_replay_prefix<'a>(
         .count()
 }
 
+fn matching_replay_record_id_prefix<'a>(
+    child_usage: impl Iterator<Item = &'a PiUsageRecord>,
+    parent_usage: impl Iterator<Item = &'a PiUsageRecord>,
+    fork_timestamp: crate::TimestampMs,
+) -> usize {
+    child_usage
+        .zip(parent_usage.take_while(|usage| usage.signature.timestamp <= fork_timestamp))
+        .take_while(|(child, parent)| {
+            child.entry_id.as_ref().is_some_and(|id| {
+                parent.entry_id.as_ref() == Some(id) && child.signature == parent.signature
+            })
+        })
+        .count()
+}
+
 fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePath {
-    let links = jsonl::records::<PiEntryLink>(content, None)
+    let links = jsonl::records::<PiEntryLink>(content_after_title_slot(content), None)
         .filter(|link| link.r#type.as_deref() != Some("session"))
         .collect::<Vec<_>>();
+    let active_leaf_override = links.last().and_then(|link| link.active_leaf_id.clone());
     if links
         .iter()
-        .all(|link| link.id.is_none() && link.parent_id.is_none())
+        .all(|link| link.id.is_none() && link.parent_id.is_none() && link.active_leaf_id.is_none())
     {
         // Version 1 sessions predate entry links, so their physical order is
         // the only available linear history.
@@ -470,7 +560,7 @@ fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePa
         }
         leaf_id = Some(id);
     }
-    let Some(mut entry_id) = leaf_id else {
+    let Some(leaf_id) = leaf_id else {
         return PiReplayUsagePath::Linear;
     };
     if parents_by_id
@@ -479,6 +569,15 @@ fn replay_usage_path(content: &[u8], usage: &[PiUsageRecord]) -> PiReplayUsagePa
         .any(|parent| !parents_by_id.contains_key(parent))
         || has_cyclic_entry_links(&parents_by_id)
     {
+        return PiReplayUsagePath::Invalid;
+    }
+    let mut entry_id = match active_leaf_override {
+        None => leaf_id,
+        Some(serde_json::Value::Null) => return PiReplayUsagePath::Active(Vec::new()),
+        Some(serde_json::Value::String(id)) if !id.is_empty() => id,
+        Some(_) => return PiReplayUsagePath::Invalid,
+    };
+    if !parents_by_id.contains_key(&entry_id) {
         return PiReplayUsagePath::Invalid;
     }
 
@@ -548,10 +647,12 @@ fn replay_billed_cost_bits(mode: CostMode, cost: f64) -> Option<u64> {
 }
 
 fn parse_session_header(content: &[u8]) -> Option<PiSessionHeader> {
+    let content = content_after_title_slot(content);
     let first_line = content.split(|byte| *byte == b'\n').next()?;
     let value = serde_json::from_slice::<serde_json::Value>(first_line).ok()?;
     let header = serde_json::from_value::<PiLine>(value.clone()).ok()?;
     (header.r#type.as_deref() == Some("session")).then(|| PiSessionHeader {
+        session_id: header.id,
         parent_session: header.parent_session.map(PathBuf::from),
         parent_session_is_malformed: value.get("parentSession").is_some_and(|parent| {
             !parent
@@ -563,6 +664,42 @@ fn parse_session_header(content: &[u8]) -> Option<PiSessionHeader> {
             .as_deref()
             .and_then(crate::parse_ts_timestamp),
     })
+}
+
+fn content_after_title_slot(content: &[u8]) -> &[u8] {
+    let Some(newline) = content.iter().position(|byte| *byte == b'\n') else {
+        return content;
+    };
+    let first_line = &content[..newline];
+    if newline + 1 != 256 {
+        return content;
+    }
+    let Ok(slot) = serde_json::from_slice::<serde_json::Value>(first_line) else {
+        return content;
+    };
+    let is_title_slot = slot.get("type").and_then(serde_json::Value::as_str) == Some("title")
+        && slot.get("v").and_then(serde_json::Value::as_u64) == Some(1)
+        && slot
+            .get("title")
+            .and_then(serde_json::Value::as_str)
+            .is_some()
+        && slot
+            .get("updatedAt")
+            .and_then(serde_json::Value::as_str)
+            .and_then(crate::parse_ts_timestamp)
+            .is_some()
+        && slot
+            .get("pad")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|pad| pad.bytes().all(|byte| byte == b' '))
+        && slot
+            .get("source")
+            .is_none_or(|source| matches!(source.as_str(), Some("auto" | "user")));
+    if is_title_slot {
+        &content[newline + 1..]
+    } else {
+        content
+    }
 }
 
 fn is_pi_message_usage(record: &PiLine) -> bool {
@@ -611,27 +748,23 @@ fn extract_project_for_store(path: &Path, store_root: &Path) -> String {
     extract_project(path)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn entry_id(entry: &LoadedEntry) -> String {
     entry_id_for_store("pi", entry)
 }
 
 fn calculate_store_cost(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    usage: TokenUsageRaw,
+    input: PiCostInput<'_>,
     display_cost: Option<f64>,
-    timestamp: crate::TimestampMs,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> f64 {
     match mode {
         CostMode::Display => display_cost.unwrap_or(0.0),
-        CostMode::Auto => display_cost.unwrap_or_else(|| {
-            calculate_store_cost_from_tokens(raw_model, display_model, usage, timestamp, pricing)
-        }),
-        CostMode::Calculate => {
-            calculate_store_cost_from_tokens(raw_model, display_model, usage, timestamp, pricing)
+        CostMode::Auto => {
+            display_cost.unwrap_or_else(|| calculate_store_cost_from_tokens(input, pricing))
         }
+        CostMode::Calculate => calculate_store_cost_from_tokens(input, pricing),
     }
 }
 
@@ -669,23 +802,15 @@ fn source_cost_for_mode(
     }
 }
 
-fn calculate_store_cost_from_tokens(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    usage: TokenUsageRaw,
-    timestamp: crate::TimestampMs,
-    pricing: Option<&PricingMap>,
-) -> f64 {
-    let Some(pricing) = store_pricing_at(raw_model, display_model, timestamp, pricing) else {
+fn calculate_store_cost_from_tokens(input: PiCostInput<'_>, pricing: Option<&PricingMap>) -> f64 {
+    let Some(pricing) = store_pricing_at(input, pricing) else {
         return 0.0;
     };
-    calculate_cost_from_pricing(usage, pricing)
+    calculate_cost_from_pricing(input.usage, pricing)
 }
 
 fn missing_store_pricing_model(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    usage: TokenUsageRaw,
+    input: PiCostInput<'_>,
     display_cost: Option<f64>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
@@ -693,38 +818,61 @@ fn missing_store_pricing_model(
     if mode == CostMode::Display || (mode == CostMode::Auto && display_cost.is_some()) {
         return None;
     }
-    if crate::total_usage_tokens(usage) == 0 {
+    if crate::total_usage_tokens(input.usage) == 0 {
         return None;
     }
-    let raw_model = raw_model?;
-    store_pricing(Some(raw_model), display_model, pricing)
+    let raw_model = input.raw_model?;
+    store_pricing(input, pricing)
         .is_none()
         .then(|| crate::model_aliases::resolve_model_name(raw_model).into_owned())
 }
 
-fn store_pricing(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Option<Pricing> {
+fn store_pricing(input: PiCostInput<'_>, pricing: Option<&PricingMap>) -> Option<Pricing> {
     let pricing = pricing?;
-    pricing_override_model(raw_model, display_model, Some(pricing))
+    pricing_override_model(input.raw_model, input.display_model, Some(pricing))
         .and_then(|model| pricing.find(model))
-        .or_else(|| display_model.and_then(|model| pricing.find_exact(model)))
-        .or_else(|| raw_model.and_then(|model| pricing.find(model)))
+        .or_else(|| {
+            input
+                .provider_model
+                .and_then(|model| pricing.find_exact(model))
+        })
+        .or_else(|| {
+            input
+                .display_model
+                .and_then(|model| pricing.find_exact(model))
+        })
+        .or_else(|| input.raw_model.and_then(|model| pricing.find(model)))
 }
 
-fn store_pricing_at(
-    raw_model: Option<&str>,
-    display_model: Option<&str>,
-    timestamp: crate::TimestampMs,
-    pricing: Option<&PricingMap>,
-) -> Option<Pricing> {
+fn store_pricing_at(input: PiCostInput<'_>, pricing: Option<&PricingMap>) -> Option<Pricing> {
     let pricing = pricing?;
-    pricing_override_model(raw_model, display_model, Some(pricing))
-        .and_then(|model| pricing.find_at(model, timestamp))
-        .or_else(|| display_model.and_then(|model| pricing.find_exact(model)))
-        .or_else(|| raw_model.and_then(|model| pricing.find_at(model, timestamp)))
+    pricing_override_model(input.raw_model, input.display_model, Some(pricing))
+        .and_then(|model| pricing.find_at(model, input.timestamp))
+        .or_else(|| {
+            input
+                .provider_model
+                .and_then(|model| pricing.find_at(model, input.timestamp))
+        })
+        .or_else(|| {
+            input
+                .display_model
+                .and_then(|model| pricing.find_exact(model))
+        })
+        .or_else(|| {
+            input
+                .raw_model
+                .and_then(|model| pricing.find_at(model, input.timestamp))
+        })
+}
+
+fn provider_qualified_model(
+    provider: Option<&str>,
+    raw_model: Option<&str>,
+    pricing: Option<&PricingMap>,
+) -> Option<String> {
+    let (provider, raw_model, pricing) = (provider?, raw_model?, pricing?);
+    let candidate = format!("{provider}/{raw_model}");
+    pricing.find_exact(&candidate).map(|_| candidate)
 }
 
 pub(crate) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> String {
@@ -880,6 +1028,33 @@ mod tests {
     }
 
     #[test]
+    fn reads_top_level_omp_model_usage_without_counting_tokens_before() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"model_usage","timestamp":"2026-01-02T00:00:00.000Z","id":"usage-1","parentId":null,"model":"tiny-model","provider":"openai","api":"openai-responses","role":"tiny","tokensBefore":900000,"usage":{"input":100,"output":25,"cacheRead":30,"cacheWrite":4,"totalTokens":159,"cost":{"total":0.75}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+
+        let entries = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Display,
+            None,
+            "omp",
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[omp] tiny-model"));
+        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 25);
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 30);
+        assert_eq!(entries[0].data.message.usage.cache_creation_input_tokens, 4);
+        assert_eq!(entries[0].extra_total_tokens, 0);
+        assert_eq!(entries[0].cost, 0.75);
+    }
+
+    #[test]
     fn sets_missing_pricing_model_when_model_not_in_pricing() {
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"unknown-model-xyz","usage":{"input":100,"output":200}}}"#,
@@ -999,6 +1174,72 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].cost, 0.018000000000000002);
         assert_eq!(entries[0].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn prefers_exact_provider_pricing_for_nested_assistant_metadata() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"shared-model","provider":"provider-a","api":"api-a","usage":{"input":1000,"output":2000}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "shared-model": {
+                    "input_cost_per_token": 0.001,
+                    "output_cost_per_token": 0.001
+                },
+                "provider-a/shared-model": {
+                    "input_cost_per_token": 0.002,
+                    "output_cost_per_token": 0.003
+                }
+            }"#,
+        );
+
+        let entries = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+            "omp",
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[omp] shared-model"));
+        assert_eq!(entries[0].cost, 8.0);
+        assert_eq!(entries[0].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn named_store_override_precedes_provider_qualified_pricing() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"shared-model","provider":"provider-a","api":"api-a","usage":{"input":1000,"output":2000}}}"#,
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let mut pricing = pricing_with_override("[omp] shared-model");
+        pricing.load_json(
+            r#"{
+                "provider-a/shared-model": {
+                    "input_cost_per_token": 0.02,
+                    "output_cost_per_token": 0.03
+                }
+            }"#,
+        );
+
+        let entries = read_session_file_for_store(
+            &file,
+            &fixture.path("sessions"),
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+            "omp",
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].cost, 5.0);
     }
 
     #[test]
@@ -1155,6 +1396,7 @@ mod tests {
                         PiStoreContext::Default => "[pi] test-model",
                         PiStoreContext::Named { .. } => "[omp] test-model",
                     }),
+                    provider_model: None,
                     usage,
                     display_cost: Some(f64::NAN),
                     timestamp: crate::TimestampMs::UNIX_EPOCH,
@@ -1171,6 +1413,7 @@ mod tests {
                         PiStoreContext::Default => "[pi] test-model",
                         PiStoreContext::Named { .. } => "[omp] test-model",
                     }),
+                    provider_model: None,
                     usage,
                     display_cost: Some(f64::INFINITY),
                     timestamp: crate::TimestampMs::UNIX_EPOCH,
@@ -1187,6 +1430,7 @@ mod tests {
                         PiStoreContext::Default => "[pi] test-model",
                         PiStoreContext::Named { .. } => "[omp] test-model",
                     }),
+                    provider_model: None,
                     usage,
                     display_cost: Some(f64::NEG_INFINITY),
                     timestamp: crate::TimestampMs::UNIX_EPOCH,

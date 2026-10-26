@@ -80,7 +80,7 @@
 		},
 		{
 			"flags": "--all",
-			"description": "Accepted for compatibility; all detected supported agents are included by default",
+			"description": "All detected supported agents, including Oh My Pi, are included automatically; this flag is retained for compatibility",
 			"default": "false"
 		},
 		{

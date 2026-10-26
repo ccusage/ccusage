@@ -1,0 +1,2 @@
+{"type":"session","id":"pi-only","timestamp":"2026-02-02T09:00:00.000Z","cwd":"{{WORKSPACE}}"}
+{"type":"message","timestamp":"2026-02-02T09:01:00.000Z","message":{"role":"assistant","model":"pi-only-model","usage":{"input":40,"output":2}}}

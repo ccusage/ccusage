@@ -237,6 +237,12 @@ fn run_cli_output(fixture: &Fixture, args: &[&str]) -> Output {
         .env("NO_COLOR", "1")
         .env("COLUMNS", "240")
         .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("PI_AGENT_DIR")
+        .env_remove("PI_CONFIG_DIR")
+        .env_remove("PI_CODING_AGENT_DIR")
+        .env_remove("OMP_PROFILE")
+        .env_remove("PI_PROFILE")
+        .env_remove("XDG_DATA_HOME")
         .output()
         .expect("ccusage CLI should run")
 }

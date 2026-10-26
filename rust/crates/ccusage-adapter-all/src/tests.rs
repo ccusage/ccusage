@@ -1128,6 +1128,10 @@ fn isolated_agent_env(
         "CODEBUFF_DATA_DIR",
         "HERMES_HOME",
         "PI_AGENT_DIR",
+        "PI_CONFIG_DIR",
+        "PI_CODING_AGENT_DIR",
+        "OMP_PROFILE",
+        "PI_PROFILE",
         "GOOSE_PATH_ROOT",
         "OPENCLAW_DIR",
         "KILO_DATA_DIR",
@@ -1150,6 +1154,8 @@ fn isolated_agent_env(
     ));
     vars.push(("XDG_CONFIG_HOME", Some(xdg_config)));
     vars.push(("XDG_DATA_HOME", Some(xdg_data)));
+    vars.push(("XDG_STATE_HOME", None));
+    vars.push(("XDG_CACHE_HOME", None));
     vars.push((source_key, Some(source_value)));
     EnvVarsGuard::set_many(vars)
 }

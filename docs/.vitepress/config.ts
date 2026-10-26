@@ -75,7 +75,7 @@ export default defineConfig({
 						{ text: 'Droid', link: '/guide/droid/' },
 						{ text: 'Codebuff', link: '/guide/codebuff/' },
 						{ text: 'Hermes Agent', link: '/guide/hermes/' },
-						{ text: 'pi-agent', link: '/guide/pi/' },
+						{ text: 'Pi / Oh My Pi', link: '/guide/pi/' },
 						{ text: 'Goose', link: '/guide/goose/' },
 						{ text: 'Kilo', link: '/guide/kilo/' },
 						{ text: 'Qwen', link: '/guide/qwen/' },
