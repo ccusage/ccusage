@@ -2,6 +2,7 @@
 	"exact": {
 		"gpt-6-astra": 0.5,
 		"gpt-6.1-sol": 0.5,
+		"gpt-6.1-terra": 0.5,
 		"gpt-6-luna": 0.5,
 		"gpt-6-sol": 0.5,
 		"gpt-5.6-sol": 0.5,
