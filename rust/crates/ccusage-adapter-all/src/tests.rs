@@ -978,10 +978,10 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
 }
 
 #[test]
-fn muse_issue_1694_fixture_aggregates_in_unified_display_mode() {
+fn muse_complete_synthetic_fixture_aggregates_in_unified_display_mode() {
     let fixture = fs_fixture!({
-        "muse/sessions/2026/09/07/issue-1694/session.jsonl": include_str!(
-            "../../../adapters/muse/fixtures/issue-1694-model-completed.jsonl"
+        "muse/sessions/2026/09/07/synthetic/session.jsonl": include_str!(
+            "../../../adapters/muse/fixtures/report-synthetic-completions.jsonl"
         ),
     });
     let _env = isolated_agent_env(
@@ -1003,30 +1003,54 @@ fn muse_issue_1694_fixture_aggregates_in_unified_display_mode() {
     .unwrap();
 
     assert_eq!(result.detected_agents, vec!["muse"]);
-    assert_eq!(result.rows.len(), 1);
-    let row = &result.rows[0];
-    assert_eq!(row.agent, "all");
-    let muse_row = &row.agent_breakdowns.as_ref().unwrap()[0];
-    assert_eq!(muse_row.agent, "muse");
+    assert_eq!(result.rows.len(), 2);
+    let september = &result.rows[0];
+    let october = &result.rows[1];
+    assert_eq!(september.agent, "all");
+    assert_eq!(october.agent, "all");
+    let september_muse = &september.agent_breakdowns.as_ref().unwrap()[0];
+    let october_muse = &october.agent_breakdowns.as_ref().unwrap()[0];
+    assert_eq!(september_muse.agent, "muse");
     assert_eq!(
-        muse_row.models_used,
-        vec!["muse-spark-1.3-contributor".to_string()]
+        september_muse.models_used,
+        vec!["muse-spark-1.2".to_string()]
     );
-    assert_eq!(muse_row.input_tokens, 610);
-    assert_eq!(muse_row.cache_read_tokens, 27_121);
-    assert_eq!(muse_row.output_tokens, 20);
-    assert_eq!(muse_row.total_tokens, 27_751);
-    assert_eq!(muse_row.total_cost, 0.0);
-    assert_eq!(row.total_tokens, 27_751);
-    assert_eq!(row.total_cost, 0.0);
+    assert_eq!(september_muse.input_tokens, 75);
+    assert_eq!(september_muse.cache_read_tokens, 25);
+    assert_eq!(september_muse.output_tokens, 10);
+    assert_eq!(september_muse.total_tokens, 110);
+    assert_eq!(september_muse.total_cost, 0.0);
+    assert_eq!(september.total_tokens, 110);
+    assert_eq!(september.total_cost, 0.0);
+    assert_eq!(october_muse.agent, "muse");
+    assert_eq!(
+        october_muse.models_used,
+        vec!["muse-spark-1.2-contributor".to_string()]
+    );
+    assert_eq!(october_muse.input_tokens, 35);
+    assert_eq!(october_muse.cache_read_tokens, 5);
+    assert_eq!(october_muse.output_tokens, 8);
+    assert_eq!(october_muse.total_tokens, 48);
+    assert_eq!(october_muse.total_cost, 0.0);
+    assert_eq!(october.total_tokens, 48);
+    assert_eq!(october.total_cost, 0.0);
 
     let report = report_json_with_agents(&result.rows, AgentReportKind::Daily, true);
+    assert_eq!(report["daily"].as_array().unwrap().len(), 2);
     assert_eq!(report["daily"][0]["agent"], "all");
     assert_eq!(report["daily"][0]["agents"][0]["agent"], "muse");
+    let models = report["daily"][0]["agents"][0]["modelBreakdowns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|model| model["modelName"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(models, ["muse-spark-1.2"]);
     assert_eq!(
-        report["daily"][0]["agents"][0]["modelBreakdowns"][0]["modelName"],
-        "muse-spark-1.3-contributor"
+        report["daily"][1]["agents"][0]["modelBreakdowns"][0]["modelName"],
+        "muse-spark-1.2-contributor"
     );
+    assert_eq!(report["totals"]["totalTokens"], 158);
     assert_eq!(report["totals"]["totalCost"], 0.0);
 
     let table = table_snapshot(
@@ -1038,6 +1062,8 @@ fn muse_issue_1694_fixture_aggregates_in_unified_display_mode() {
     assert_eq!(table["rows"][0]["cells"][8], "$0.00");
     assert_eq!(table["rows"][1]["cells"][1], "- Muse Code");
     assert_eq!(table["rows"][1]["cells"][8], "$0.00");
+    assert_eq!(table["rows"][2]["cells"][1], "All");
+    assert_eq!(table["rows"][3]["cells"][1], "- Muse Code");
 }
 
 #[test]

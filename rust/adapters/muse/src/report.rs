@@ -91,8 +91,8 @@ mod tests {
     #[test]
     fn fixture_reports_snapshot_daily_monthly_and_session_json_and_rendered_tables() {
         let fixture = fs_fixture!({
-            "muse/sessions/2026/09/07/observed-session/session.jsonl": include_str!(
-                "../fixtures/issue-1694-model-completed.jsonl"
+            "muse/sessions/2026/09/07/strict-synthetic-session/session.jsonl": include_str!(
+                "../fixtures/strict-eligibility-synthetic.jsonl"
             ),
             "muse/sessions/2026/09/08/synthetic-session/session.jsonl": include_str!(
                 "../fixtures/report-synthetic-completions.jsonl"
@@ -116,6 +116,7 @@ mod tests {
                 assert_eq!(report["totals"]["inputTokens"], 720);
                 assert_eq!(report["totals"]["outputTokens"], 38);
                 assert_eq!(report["totals"]["cacheReadTokens"], 27_151);
+                assert_eq!(report["totals"]["totalTokens"], 27_909);
             }
             if name == "monthly" {
                 assert_eq!(report["monthly"].as_array().unwrap().len(), 2);

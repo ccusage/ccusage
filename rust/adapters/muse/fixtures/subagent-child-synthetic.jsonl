@@ -1,1 +1,1 @@
-{"recorded_at":1000000,"stream":{"id":"shared-stream"},"id":"shared-record","payload_type":"runtime.session","payload":{"event":{"kind":"model_completed","model":"muse-spark-1.2","usage":{"input_tokens":10,"output_tokens":2,"cache_read_tokens":2}}}}
+{"recorded_at":1000000,"stream":{"id":"child-stream"},"id":"shared-record","payload_type":"runtime.session","payload":{"event":{"kind":"model_completed","model":"muse-spark-1.2","provider":"meta","usage":{"input_tokens":10,"output_tokens":2,"cache_read_tokens":2,"cache_write_tokens":0}}}}

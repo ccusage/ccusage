@@ -28,13 +28,13 @@ expression: "serde_json::Value::Object(reports)"
         "totalTokens": 27751
       },
       {
-        "cacheCreationTokens": 5,
+        "cacheCreationTokens": 0,
         "cacheReadTokens": 25,
         "date": "2026-09-08",
         "inputTokens": 75,
         "modelBreakdowns": [
           {
-            "cacheCreationTokens": 5,
+            "cacheCreationTokens": 0,
             "cacheReadTokens": 25,
             "cost": 0.0,
             "inputTokens": 75,
@@ -47,16 +47,16 @@ expression: "serde_json::Value::Object(reports)"
         ],
         "outputTokens": 10,
         "totalCost": 0.0,
-        "totalTokens": 115
+        "totalTokens": 110
       },
       {
-        "cacheCreationTokens": 2,
+        "cacheCreationTokens": 0,
         "cacheReadTokens": 5,
         "date": "2026-10-01",
         "inputTokens": 35,
         "modelBreakdowns": [
           {
-            "cacheCreationTokens": 2,
+            "cacheCreationTokens": 0,
             "cacheReadTokens": 5,
             "cost": 0.0,
             "inputTokens": 35,
@@ -69,22 +69,22 @@ expression: "serde_json::Value::Object(reports)"
         ],
         "outputTokens": 8,
         "totalCost": 0.0,
-        "totalTokens": 50
+        "totalTokens": 48
       }
     ],
     "totals": {
-      "cacheCreationTokens": 7,
+      "cacheCreationTokens": 0,
       "cacheReadTokens": 27151,
       "inputTokens": 720,
       "outputTokens": 38,
       "totalCost": 0.0,
-      "totalTokens": 27916
+      "totalTokens": 27909
     }
   },
   "monthly": {
     "monthly": [
       {
-        "cacheCreationTokens": 5,
+        "cacheCreationTokens": 0,
         "cacheReadTokens": 27146,
         "inputTokens": 685,
         "modelBreakdowns": [
@@ -97,7 +97,7 @@ expression: "serde_json::Value::Object(reports)"
             "outputTokens": 20
           },
           {
-            "cacheCreationTokens": 5,
+            "cacheCreationTokens": 0,
             "cacheReadTokens": 25,
             "cost": 0.0,
             "inputTokens": 75,
@@ -112,15 +112,15 @@ expression: "serde_json::Value::Object(reports)"
         "month": "2026-09",
         "outputTokens": 30,
         "totalCost": 0.0,
-        "totalTokens": 27866
+        "totalTokens": 27861
       },
       {
-        "cacheCreationTokens": 2,
+        "cacheCreationTokens": 0,
         "cacheReadTokens": 5,
         "inputTokens": 35,
         "modelBreakdowns": [
           {
-            "cacheCreationTokens": 2,
+            "cacheCreationTokens": 0,
             "cacheReadTokens": 5,
             "cost": 0.0,
             "inputTokens": 35,
@@ -134,16 +134,16 @@ expression: "serde_json::Value::Object(reports)"
         "month": "2026-10",
         "outputTokens": 8,
         "totalCost": 0.0,
-        "totalTokens": 50
+        "totalTokens": 48
       }
     ],
     "totals": {
-      "cacheCreationTokens": 7,
+      "cacheCreationTokens": 0,
       "cacheReadTokens": 27151,
       "inputTokens": 720,
       "outputTokens": 38,
       "totalCost": 0.0,
-      "totalTokens": 27916
+      "totalTokens": 27909
     }
   },
   "session": {
@@ -166,17 +166,17 @@ expression: "serde_json::Value::Object(reports)"
           "muse-spark-1.3-contributor"
         ],
         "outputTokens": 20,
-        "sessionId": "observed-session",
+        "sessionId": "strict-synthetic-session",
         "totalCost": 0.0,
         "totalTokens": 27751
       },
       {
-        "cacheCreationTokens": 7,
+        "cacheCreationTokens": 0,
         "cacheReadTokens": 30,
         "inputTokens": 110,
         "modelBreakdowns": [
           {
-            "cacheCreationTokens": 5,
+            "cacheCreationTokens": 0,
             "cacheReadTokens": 25,
             "cost": 0.0,
             "inputTokens": 75,
@@ -184,7 +184,7 @@ expression: "serde_json::Value::Object(reports)"
             "outputTokens": 10
           },
           {
-            "cacheCreationTokens": 2,
+            "cacheCreationTokens": 0,
             "cacheReadTokens": 5,
             "cost": 0.0,
             "inputTokens": 35,
@@ -199,16 +199,16 @@ expression: "serde_json::Value::Object(reports)"
         "outputTokens": 18,
         "sessionId": "synthetic-session",
         "totalCost": 0.0,
-        "totalTokens": 165
+        "totalTokens": 158
       }
     ],
     "totals": {
-      "cacheCreationTokens": 7,
+      "cacheCreationTokens": 0,
       "cacheReadTokens": 27151,
       "inputTokens": 720,
       "outputTokens": 38,
       "totalCost": 0.0,
-      "totalTokens": 27916
+      "totalTokens": 27909
     }
   }
 }
