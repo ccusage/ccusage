@@ -38,7 +38,7 @@ jobs:
           ref: main
           fetch-depth: 0
       - id: tagpr
-        uses: Songmu/tagpr@1fcd7292d1fe8ea9a8313eef46b8d80b7a15d227 # v1.21.3
+        uses: Songmu/tagpr@e1250d6c84e4425db82b5e90549d62dfe23e9ebe # v1.21.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
