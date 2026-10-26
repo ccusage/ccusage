@@ -95,6 +95,12 @@ struct CodexSessionUsageState {
     compaction_usage: CodexCompactionUsageState,
 }
 
+struct CodexTokenCountUsage {
+    total_usage: Option<CodexRawUsage>,
+    cumulative_advanced: bool,
+    delta: Option<CodexRawUsage>,
+}
+
 /// Tracks how far a forked session's leading events still match the history it
 /// replayed from its parent.
 enum CodexReplayState<'a> {
@@ -134,6 +140,7 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
     };
     let mut line = Vec::new();
     let mut first: Option<TimestampMs> = None;
+    let mut previous_totals = None;
 
     loop {
         line.clear();
@@ -155,15 +162,14 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
             .then_some(payload.info.as_ref())
             .flatten()
         });
-        if info
-            .is_none_or(|info| info.last_token_usage.is_none() && info.total_token_usage.is_none())
-        {
+        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
+            continue;
+        };
+        let usage = codex_token_count_usage(info, &mut previous_totals);
+        if !usage.delta.as_ref().is_some_and(has_codex_token_usage) {
             continue;
         }
-        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref())
-            .as_deref()
-            .and_then(parse_ts_timestamp)
-        else {
+        let Some(timestamp) = parse_ts_timestamp(&timestamp) else {
             continue;
         };
         match first {
@@ -480,30 +486,15 @@ fn visit_codex_session_entry(
         return Ok(());
     }
     let info = payload.info.as_ref();
-    let total_usage = info.and_then(|info| info.total_token_usage.as_ref().copied());
-    let cumulative_advanced = total_usage
-        .as_ref()
-        .is_none_or(|total_usage| previous_totals.as_ref() != Some(total_usage));
-    let raw_usage = info
-        .and_then(|info| info.last_token_usage.as_ref().copied())
-        .filter(|_| cumulative_advanced)
-        .or_else(|| {
-            total_usage
-                .as_ref()
-                .map(|usage| subtract_codex_raw_usage(usage, previous_totals.as_ref()))
-        });
-    if let Some(total_usage) = total_usage {
-        *previous_totals = Some(total_usage);
-    }
-    let Some(raw_usage) = raw_usage.map(normalize_codex_raw_usage) else {
+    let CodexTokenCountUsage {
+        total_usage,
+        cumulative_advanced,
+        delta,
+    } = codex_token_count_usage(info, previous_totals);
+    let Some(raw_usage) = delta else {
         return Ok(());
     };
-    if raw_usage.input_tokens == 0
-        && raw_usage.cached_input_tokens == 0
-        && raw_usage.cache_creation_tokens == 0
-        && raw_usage.output_tokens == 0
-        && raw_usage.reasoning_output_tokens == 0
-    {
+    if !has_codex_token_usage(&raw_usage) {
         return Ok(());
     }
 
@@ -1305,6 +1296,40 @@ fn subtract_codex_raw_usage(
             .total_tokens
             .saturating_sub(previous.map_or(0, |usage| usage.total_tokens)),
     })
+}
+
+fn codex_token_count_usage(
+    info: Option<&CodexInfo<'_>>,
+    previous_totals: &mut Option<CodexRawUsage>,
+) -> CodexTokenCountUsage {
+    let total_usage = info.and_then(|info| info.total_token_usage.as_ref().copied());
+    let cumulative_advanced = total_usage
+        .as_ref()
+        .is_none_or(|total_usage| previous_totals.as_ref() != Some(total_usage));
+    let raw_usage = info
+        .and_then(|info| info.last_token_usage.as_ref().copied())
+        .filter(|_| cumulative_advanced)
+        .or_else(|| {
+            total_usage
+                .as_ref()
+                .map(|usage| subtract_codex_raw_usage(usage, previous_totals.as_ref()))
+        });
+    if let Some(total_usage) = total_usage {
+        *previous_totals = Some(total_usage);
+    }
+    CodexTokenCountUsage {
+        total_usage,
+        cumulative_advanced,
+        delta: raw_usage.map(normalize_codex_raw_usage),
+    }
+}
+
+fn has_codex_token_usage(usage: &CodexRawUsage) -> bool {
+    usage.input_tokens != 0
+        || usage.cached_input_tokens != 0
+        || usage.cache_creation_tokens != 0
+        || usage.output_tokens != 0
+        || usage.reasoning_output_tokens != 0
 }
 
 fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
