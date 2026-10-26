@@ -45,42 +45,14 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
     },
     {
       "cells": [
-        "2026-10-31",
-        "All",
-        "",
-        "200",
-        "40",
-        "30",
-        "20",
-        "290",
-        "$0.00"
-      ],
-      "kind": "row"
-    },
-    {
-      "cells": [
-        "",
-        "- Cline",
-        "- opus-4",
-        "200",
-        "40",
-        "30",
-        "20",
-        "290",
-        "$0.00"
-      ],
-      "kind": "agent-breakdown"
-    },
-    {
-      "cells": [
         "2026-11-01",
         "All",
         "",
-        "180",
-        "41",
-        "22",
-        "50",
-        "293",
+        "155",
+        "31",
+        "20",
+        "45",
+        "251",
         "$0.00"
       ],
       "kind": "row"
@@ -89,12 +61,12 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
       "cells": [
         "",
         "- Cline",
-        "- sonnet-4\n- unknown",
-        "180",
-        "41",
-        "22",
-        "50",
-        "293",
+        "- sonnet-4",
+        "155",
+        "31",
+        "20",
+        "45",
+        "251",
         "$0.00"
       ],
       "kind": "agent-breakdown"
@@ -104,11 +76,11 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "Total",
         "",
         "",
-        "480",
-        "101",
-        "62",
-        "75",
-        "718",
+        "255",
+        "51",
+        "30",
+        "50",
+        "386",
         "$0.00"
       ],
       "kind": "total"

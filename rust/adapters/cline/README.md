@@ -26,28 +26,37 @@ example `CLINE_DATA_DIR="$HOME/.cline,/path/to/editor/globalStorage/saoudrizwan.
 
 ## Usage data
 
-Extension usage comes from `say` events named `api_req_started`,
-`deleted_api_reqs`, and `subagent_usage`, with counters encoded in the event's
-JSON `text`. Request events use their `modelInfo` when present; otherwise the
-adapter uses the latest timestamped `task_metadata.json` `model_usage` entry at
-or before the request. It does not assign a task-wide model from
-`api_conversation_history.json`, since that can misattribute requests after a
-model change. Aggregate deletion and subagent events are retained without
-speculative model attribution and use the roll-up event timestamp for dating.
+Extension usage comes only from completed `say` events named
+`api_req_started`. The event must have its own valid integer millisecond `ts`,
+`modelInfo.modelId`, and a JSON string in `text` with all four unsigned integer
+counters: `tokensIn`, `tokensOut`, `cacheReads`, and `cacheWrites`. An explicit
+`partial: true` flag, a missing/blank/`unknown` model ID, an incomplete or
+malformed counter set, an all-zero usage record, or a counter total that
+overflows is skipped. Individual zero counters are valid. `deleted_api_reqs`
+and `subagent_usage` are aggregate records and are ignored. `task_metadata.json`
+and `api_conversation_history.json` never supply model attribution, and a cost
+field cannot make an otherwise incomplete record eligible.
 
-CLI usage comes from assistant messages with `modelInfo` and `metrics`. The CLI
-`inputTokens` counter includes cached tokens, so the adapter subtracts
-`cacheReadTokens` and `cacheWriteTokens` (clamped at zero) before reporting
-input tokens. Extension `tokensIn` is already separate from its cache counters.
-Task-format records use `task:<id>` session IDs and CLI transcript records use
-`cli:<id>` so matching IDs from different formats do not collide.
+CLI usage comes only from assistant messages with a valid timestamp, a
+nonblank/non-`unknown` `modelInfo.id`, and all four unsigned integer metrics:
+`inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`. The
+timestamp must be the message's integer-millisecond `ts` or, when `ts` is
+absent, a timezone-qualified RFC 3339 `timestamp` with whole seconds or exactly
+three fractional digits. An invalid present `ts` is not replaced by
+`timestamp`. CLI `inputTokens` includes cached tokens, so the
+adapter subtracts both cache counters using checked arithmetic; it skips
+inconsistent or overflowing totals instead of clamping. All-zero usage is
+skipped even when a cost is present. Extension `tokensIn` is already separate
+from its cache counters. Task-format records use `task:<id>` session IDs and
+CLI transcript records use `cli:<id>` so matching IDs from different formats
+do not collide.
 
 The shared cost mode controls cost output: `auto` prefers a reported cost and
 calculates from historical pricing when no cost was recorded; `display` uses a
 reported cost without calculating one; `calculate` ignores recorded cost and
-uses pricing. A reported zero is preserved. Unknown models remain labeled
-`unknown`, and reports flag unpriced usage rather than assigning a guessed
-model.
+uses pricing. A reported zero is preserved. Valid custom model IDs remain
+labeled with their actual ID; reports flag them when pricing is unavailable
+rather than assigning a guessed model.
 
 ## Adapter surface
 

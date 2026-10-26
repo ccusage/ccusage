@@ -6,24 +6,15 @@ expression: "report_json(&result.rows, kind)"
   "monthly": [
     {
       "agent": "all",
-      "cacheCreationTokens": 40,
-      "cacheReadTokens": 25,
-      "inputTokens": 300,
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "inputTokens": 100,
       "metadata": {
         "agents": [
           "cline"
         ]
       },
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 30,
-          "cacheReadTokens": 20,
-          "cost": 0.002,
-          "inputTokens": 200,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 40,
-          "storedCost": 0.002
-        },
         {
           "cacheCreationTokens": 10,
           "cacheReadTokens": 5,
@@ -35,19 +26,18 @@ expression: "report_json(&result.rows, kind)"
         }
       ],
       "modelsUsed": [
-        "claude-opus-4-20250514",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 60,
+      "outputTokens": 20,
       "period": "2026-10",
-      "totalCost": 0.003,
-      "totalTokens": 425
+      "totalCost": 0.001,
+      "totalTokens": 135
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 22,
-      "cacheReadTokens": 50,
-      "inputTokens": 180,
+      "cacheCreationTokens": 20,
+      "cacheReadTokens": 45,
+      "inputTokens": 155,
       "metadata": {
         "agents": [
           "cline"
@@ -62,36 +52,23 @@ expression: "report_json(&result.rows, kind)"
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 31,
           "storedCost": 0.0002
-        },
-        {
-          "cacheCreationTokens": 2,
-          "cacheReadTokens": 5,
-          "cost": 0.0,
-          "inputTokens": 25,
-          "missingPricing": true,
-          "modelName": "unknown",
-          "outputTokens": 10
         }
       ],
       "modelsUsed": [
-        "claude-sonnet-4-20250514",
-        "unknown"
+        "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 41,
+      "outputTokens": 31,
       "period": "2026-11",
       "totalCost": 0.0002,
-      "totalTokens": 293
+      "totalTokens": 251
     }
   ],
   "totals": {
-    "cacheCreationTokens": 62,
-    "cacheReadTokens": 75,
-    "inputTokens": 480,
-    "outputTokens": 101,
-    "totalCost": 0.0032,
-    "totalTokens": 718,
-    "unpricedModels": [
-      "unknown"
-    ]
+    "cacheCreationTokens": 30,
+    "cacheReadTokens": 50,
+    "inputTokens": 255,
+    "outputTokens": 51,
+    "totalCost": 0.0012000000000000001,
+    "totalTokens": 386
   }
 }

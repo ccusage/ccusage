@@ -9,7 +9,7 @@ use super::paths::discover_files;
 
 pub(super) struct EntryInput {
     pub timestamp: crate::TimestampMs,
-    pub model: Option<String>,
+    pub model: String,
     pub provider: Option<String>,
     pub usage: crate::TokenUsageRaw,
     pub reported_cost: Option<f64>,
@@ -91,22 +91,20 @@ pub(super) fn loaded_entry(
         }
         super::paths::SourceKind::Cli => format!("cli:{}", source.session_id),
     };
-    let provider_model = model
+    let provider_model = provider
         .as_deref()
-        .zip(provider.as_deref())
-        .filter(|(model, _)| !model.contains('/'))
-        .map(|(model, provider)| format!("{provider}/{model}"));
-    let model_for_pricing = model
-        .as_deref()
-        .filter(|model| pricing.find(model).is_some())
-        .or_else(|| {
-            provider_model
-                .as_deref()
-                .filter(|model| pricing.find(model).is_some())
-        })
-        .or(model.as_deref());
+        .filter(|_| !model.contains('/'))
+        .map(|provider| format!("{provider}/{model}"));
+    let model_for_pricing = if pricing.find(&model).is_some() {
+        model.as_str()
+    } else {
+        provider_model
+            .as_deref()
+            .filter(|model| pricing.find(model).is_some())
+            .unwrap_or(model.as_str())
+    };
     let cost = calculate_cost_for_usage_at(
-        model_for_pricing,
+        Some(model_for_pricing),
         usage,
         reported_cost,
         Some(timestamp),
@@ -118,25 +116,22 @@ pub(super) fn loaded_entry(
         || total_usage_tokens(usage) == 0
     {
         None
-    } else if let Some(model) = model.as_deref() {
-        let candidates = std::iter::once(model.to_string()).chain(provider_model);
+    } else {
+        let candidates = std::iter::once(model.clone()).chain(provider_model);
         missing_pricing_model_for_candidates(
-            model,
+            &model,
             candidates,
             total_usage_tokens(usage),
             Some(pricing),
         )
-    } else {
-        Some("unknown".to_string())
     };
-    let display_model = model.clone().unwrap_or_else(|| "unknown".to_string());
     let data = UsageEntry {
         session_id: Some(session_id.clone()),
         timestamp: timestamp_text,
         version: None,
         message: UsageMessage {
             usage,
-            model: model.clone(),
+            model: Some(model.clone()),
             id: request_id.clone(),
         },
         cost_usd: reported_cost,
@@ -153,7 +148,7 @@ pub(super) fn loaded_entry(
         project_path: Arc::from("Cline"),
         cost,
         credits: None,
-        model: Some(display_model),
+        model: Some(model),
         usage_limit_reset_time: None,
         missing_pricing_model,
         extra_total_tokens: 0,
@@ -232,22 +227,15 @@ mod tests {
 
         assert_eq!(
             entries.len(),
-            6,
-            "partial API requests are not usage records"
+            4,
+            "only fully attributable requests with complete usage are records"
         );
         assert_eq!(
             entries
                 .iter()
                 .map(|entry| entry.date.as_str())
                 .collect::<Vec<_>>(),
-            [
-                "2026-10-01",
-                "2026-10-31",
-                "2026-11-01",
-                "2026-11-01",
-                "2026-11-01",
-                "2026-11-01"
-            ]
+            ["2026-10-01", "2026-11-01", "2026-11-01", "2026-11-01"]
         );
         assert_eq!(
             entries
@@ -256,10 +244,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 "task:session-a",
-                "task:session-a",
                 "cli:session-a",
                 "cli:session-a",
-                "task:session-a",
                 "task:session-a"
             ]
         );
@@ -267,25 +253,29 @@ mod tests {
             entries[0].model.as_deref(),
             Some("claude-sonnet-4-20250514")
         );
-        assert_eq!(entries[1].model.as_deref(), Some("claude-opus-4-20250514"));
-        assert_eq!(entries[1].data.message.usage.cache_read_input_tokens, 20);
+        assert_eq!(
+            entries[1].model.as_deref(),
+            Some("claude-sonnet-4-20250514")
+        );
+        assert_eq!(entries[1].data.message.usage.cache_read_input_tokens, 25);
         assert_eq!(
             entries[1].data.message.usage.cache_creation_input_tokens,
-            30
+            10
         );
-        assert_eq!(entries[2].data.message.id.as_deref(), Some("assistant-1"));
-        assert_eq!(entries[2].data.message.usage.input_tokens, 65);
-        assert_eq!(entries[2].data.cost_usd, Some(0.0));
-        assert_eq!(entries[2].stored_cost, Some(0.0));
-        assert_eq!(entries[3].data.message.id.as_deref(), Some("assistant-2"));
-        assert_eq!(entries[3].data.message.usage.input_tokens, 90);
-        assert_eq!(entries[3].data.message.usage.output_tokens, 16);
-        assert_eq!(entries[3].data.cost_usd, Some(0.0002));
-        assert_eq!(entries[4].data.message.usage.input_tokens, 8);
-        assert_eq!(entries[4].data.message.usage.output_tokens, 4);
-        assert_eq!(entries[4].model.as_deref(), Some("unknown"));
-        assert_eq!(entries[4].missing_pricing_model.as_deref(), Some("unknown"));
-        assert_eq!(entries[5].model.as_deref(), Some("unknown"));
-        assert_eq!(entries[5].missing_pricing_model.as_deref(), Some("unknown"));
+        assert_eq!(entries[1].data.message.id.as_deref(), Some("assistant-1"));
+        assert_eq!(entries[1].data.message.usage.input_tokens, 65);
+        assert_eq!(entries[1].data.cost_usd, Some(0.0));
+        assert_eq!(entries[1].stored_cost, Some(0.0));
+        assert_eq!(entries[2].data.message.id.as_deref(), Some("assistant-2"));
+        assert_eq!(entries[2].data.message.usage.input_tokens, 90);
+        assert_eq!(entries[2].data.message.usage.output_tokens, 16);
+        assert_eq!(entries[2].data.cost_usd, Some(0.0002));
+        assert_eq!(entries[3].data.message.usage.input_tokens, 8);
+        assert_eq!(entries[3].data.message.usage.output_tokens, 4);
+        assert_eq!(entries[3].model.as_deref(), Some("vendor/legacy-model"));
+        assert_eq!(
+            entries[3].missing_pricing_model.as_deref(),
+            Some("vendor/legacy-model")
+        );
     }
 }

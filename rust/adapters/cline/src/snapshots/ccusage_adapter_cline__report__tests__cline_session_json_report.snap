@@ -61,12 +61,12 @@ expression: "report_from_rows(&sessions, AgentReportKind::Session)"
           "cost": 0.0,
           "inputTokens": 12,
           "missingPricing": true,
-          "modelName": "unknown",
+          "modelName": "vendor/custom-model",
           "outputTokens": 3
         }
       ],
       "modelsUsed": [
-        "unknown"
+        "vendor/custom-model"
       ],
       "outputTokens": 3,
       "sessionId": "task:task-b",
@@ -82,7 +82,7 @@ expression: "report_from_rows(&sessions, AgentReportKind::Session)"
     "totalCost": 0.003,
     "totalTokens": 227,
     "unpricedModels": [
-      "unknown"
+      "vendor/custom-model"
     ]
   }
 }

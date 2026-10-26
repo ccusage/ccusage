@@ -993,6 +993,10 @@ fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
             "../../../adapters/cline/tests/fixtures/cli/session.messages.json"
         ),
     });
+    let _ = fixture.write_file(
+        "cline/data/sessions/rejected-cache/rejected-cache.messages.json",
+        r#"{"version":1,"sessionId":"rejected-cache","messages":[{"role":"assistant","ts":1793491260000,"id":"cache-exceeds-input-session","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":5,"outputTokens":2,"cacheReadTokens":4,"cacheWriteTokens":2,"cost":0.5}}]}"#,
+    );
     let _env = isolated_agent_env(
         &fixture,
         "CLINE_DATA_DIR",
@@ -1014,6 +1018,7 @@ fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
             !result.rows.is_empty(),
             "{kind:?} should include Cline rows"
         );
+        assert_cline_unified_result_contains_only_accepted_requests(&result.rows, kind);
         if kind == AgentReportKind::Session {
             assert!(result.rows.iter().all(|row| row.agent == "cline"));
             assert!(result.rows.iter().all(|row| row.metadata_agents.is_none()));
@@ -1041,6 +1046,66 @@ fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
             .unwrap()
         );
     }
+}
+
+fn assert_cline_unified_result_contains_only_accepted_requests(
+    rows: &[AllRow],
+    kind: AgentReportKind,
+) {
+    for (actual, expected, label) in [
+        (
+            rows.iter().map(|row| row.input_tokens).sum::<u64>(),
+            255,
+            "input tokens",
+        ),
+        (
+            rows.iter().map(|row| row.output_tokens).sum::<u64>(),
+            51,
+            "output tokens",
+        ),
+        (
+            rows.iter()
+                .map(|row| row.cache_creation_tokens)
+                .sum::<u64>(),
+            30,
+            "cache creation tokens",
+        ),
+        (
+            rows.iter().map(|row| row.cache_read_tokens).sum::<u64>(),
+            50,
+            "cache read tokens",
+        ),
+        (
+            rows.iter().map(|row| row.total_tokens).sum::<u64>(),
+            386,
+            "total tokens",
+        ),
+    ] {
+        assert_eq!(actual, expected, "{kind:?} {label}");
+    }
+    let total_cost = rows.iter().map(|row| row.total_cost).sum::<f64>();
+    assert!((total_cost - 0.0012).abs() < 1e-12, "{kind:?} cost");
+
+    let mut periods = rows
+        .iter()
+        .map(|row| row.period.as_str())
+        .collect::<Vec<_>>();
+    periods.sort_unstable();
+    let expected_periods: &[&str] = match kind {
+        AgentReportKind::Daily => &["2026-10-01", "2026-11-01"],
+        AgentReportKind::Weekly => &["2026-09-28", "2026-10-26"],
+        AgentReportKind::Monthly => &["2026-10", "2026-11"],
+        AgentReportKind::Session => &["cli:session-a", "task:session-a"],
+    };
+    assert_eq!(periods, expected_periods.to_vec(), "{kind:?} periods");
+
+    let mut models = rows
+        .iter()
+        .flat_map(|row| row.models_used.iter().map(String::as_str))
+        .collect::<Vec<_>>();
+    models.sort_unstable();
+    models.dedup();
+    assert_eq!(models, ["claude-sonnet-4-20250514"], "{kind:?} models");
 }
 
 #[test]

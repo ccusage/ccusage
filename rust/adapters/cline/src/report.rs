@@ -141,7 +141,7 @@ mod tests {
             entry(
                 "task:task-b",
                 "2026-11-02T12:00:00Z",
-                "unknown",
+                "vendor/custom-model",
                 TokenUsageRaw {
                     input_tokens: 12,
                     output_tokens: 3,
@@ -149,7 +149,7 @@ mod tests {
                 },
                 0.0,
                 None,
-                Some("unknown"),
+                Some("vendor/custom-model"),
             ),
         ]
         .into()

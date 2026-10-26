@@ -11,7 +11,7 @@ expression: "report_from_rows(&weekly, AgentReportKind::Weekly)"
     "totalCost": 0.003,
     "totalTokens": 227,
     "unpricedModels": [
-      "unknown"
+      "vendor/custom-model"
     ]
   },
   "weekly": [
@@ -59,12 +59,12 @@ expression: "report_from_rows(&weekly, AgentReportKind::Weekly)"
           "cost": 0.0,
           "inputTokens": 12,
           "missingPricing": true,
-          "modelName": "unknown",
+          "modelName": "vendor/custom-model",
           "outputTokens": 3
         }
       ],
       "modelsUsed": [
-        "unknown"
+        "vendor/custom-model"
       ],
       "outputTokens": 3,
       "totalCost": 0.0,

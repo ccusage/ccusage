@@ -23,9 +23,44 @@
 		"text": "{\"request\":\"waiting for response\"}"
 	},
 	{
+		"ts": 1793491200000,
+		"type": "say",
+		"say": "api_req_started",
+		"partial": true,
+		"modelInfo": {
+			"modelId": "claude-sonnet-4-20250514",
+			"providerId": "anthropic",
+			"mode": "act"
+		},
+		"text": "{\"tokensIn\":500,\"tokensOut\":50,\"cacheReads\":10,\"cacheWrites\":10,\"cost\":0.004}"
+	},
+	{
+		"ts": 1793491230000,
+		"type": "say",
+		"say": "api_req_started",
+		"modelInfo": { "modelId": "UNKNOWN" },
+		"text": "{\"tokensIn\":500,\"tokensOut\":50,\"cacheReads\":10,\"cacheWrites\":10,\"cost\":0.004}"
+	},
+	{
 		"ts": 1793491560000,
 		"type": "say",
 		"say": "subagent_usage",
+		"modelInfo": {
+			"modelId": "claude-sonnet-4-20250514",
+			"providerId": "anthropic",
+			"mode": "act"
+		},
 		"text": "{\"source\":\"subagents\",\"tokensIn\":25,\"tokensOut\":10,\"cacheReads\":5,\"cacheWrites\":2}"
+	},
+	{
+		"ts": 1793491620000,
+		"type": "say",
+		"say": "deleted_api_reqs",
+		"modelInfo": {
+			"modelId": "claude-sonnet-4-20250514",
+			"providerId": "anthropic",
+			"mode": "act"
+		},
+		"text": "{\"tokensIn\":15,\"tokensOut\":5,\"cacheReads\":1,\"cacheWrites\":2,\"cost\":0.01}"
 	}
 ]

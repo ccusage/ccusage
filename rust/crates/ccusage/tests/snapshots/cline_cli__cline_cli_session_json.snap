@@ -28,19 +28,10 @@ expression: report
       "totalTokens": 251
     },
     {
-      "cacheCreationTokens": 42,
-      "cacheReadTokens": 30,
-      "inputTokens": 325,
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "inputTokens": 100,
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 30,
-          "cacheReadTokens": 20,
-          "cost": 0.002,
-          "inputTokens": 200,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 40,
-          "storedCost": 0.002
-        },
         {
           "cacheCreationTokens": 10,
           "cacheReadTokens": 5,
@@ -49,37 +40,23 @@ expression: report
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 20,
           "storedCost": 0.001
-        },
-        {
-          "cacheCreationTokens": 2,
-          "cacheReadTokens": 5,
-          "cost": 0.0,
-          "inputTokens": 25,
-          "missingPricing": true,
-          "modelName": "unknown",
-          "outputTokens": 10
         }
       ],
       "modelsUsed": [
-        "claude-sonnet-4-20250514",
-        "claude-opus-4-20250514",
-        "unknown"
+        "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 70,
+      "outputTokens": 20,
       "sessionId": "task:session-a",
-      "totalCost": 0.003,
-      "totalTokens": 467
+      "totalCost": 0.001,
+      "totalTokens": 135
     }
   ],
   "totals": {
-    "cacheCreationTokens": 62,
-    "cacheReadTokens": 75,
-    "inputTokens": 480,
-    "outputTokens": 101,
-    "totalCost": 0.0032,
-    "totalTokens": 718,
-    "unpricedModels": [
-      "unknown"
-    ]
+    "cacheCreationTokens": 30,
+    "cacheReadTokens": 50,
+    "inputTokens": 255,
+    "outputTokens": 51,
+    "totalCost": 0.0012,
+    "totalTokens": 386
   }
 }

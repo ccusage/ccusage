@@ -47,13 +47,13 @@ expression: "report_from_rows(&monthly, AgentReportKind::Monthly)"
           "cost": 0.0,
           "inputTokens": 12,
           "missingPricing": true,
-          "modelName": "unknown",
+          "modelName": "vendor/custom-model",
           "outputTokens": 3
         }
       ],
       "modelsUsed": [
         "claude-opus-4-20250514",
-        "unknown"
+        "vendor/custom-model"
       ],
       "month": "2026-11",
       "outputTokens": 15,
@@ -69,7 +69,7 @@ expression: "report_from_rows(&monthly, AgentReportKind::Monthly)"
     "totalCost": 0.003,
     "totalTokens": 227,
     "unpricedModels": [
-      "unknown"
+      "vendor/custom-model"
     ]
   }
 }

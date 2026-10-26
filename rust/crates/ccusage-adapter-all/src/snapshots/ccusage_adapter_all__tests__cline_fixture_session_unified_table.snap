@@ -19,12 +19,12 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
       "cells": [
         "task:session-a",
         "Cline",
-        "- opus-4\n- sonnet-4\n- unknown",
-        "325",
-        "70",
-        "42",
-        "30",
-        "467",
+        "- sonnet-4",
+        "100",
+        "20",
+        "10",
+        "5",
+        "135",
         "$0.00"
       ],
       "kind": "row"
@@ -48,11 +48,11 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "Total",
         "",
         "",
-        "480",
-        "101",
-        "62",
-        "75",
-        "718",
+        "255",
+        "51",
+        "30",
+        "50",
+        "386",
         "$0.00"
       ],
       "kind": "total"
