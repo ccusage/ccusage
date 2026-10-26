@@ -67,7 +67,7 @@ rustls-webpki = { version = "0.103.16", default-features = false, features = ["r
 schemars = "0.8"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-smallvec = "1.16.3"
+smallvec = "1.16.4"
 sqlite = { version = "0.37.4", default-features = false, features = ["bundled", "linkage"] }
 terminal_size = "0.4.4"
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
