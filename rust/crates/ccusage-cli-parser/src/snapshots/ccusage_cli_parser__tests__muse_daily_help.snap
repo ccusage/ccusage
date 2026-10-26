@@ -1,0 +1,24 @@
+---
+source: crates/ccusage-cli-parser/src/tests.rs
+expression: "help_text_for_args(&[\"ccusage\".to_string(), \"muse\".to_string(),\n\"daily\".to_string(),])"
+---
+Show Muse Code usage grouped by date
+
+USAGE:
+  ccusage muse daily <OPTIONS>
+
+OPTIONS:
+  -j, --json                           Output in JSON format (default: false)
+  -s, --since <since>                  Filter from date (YYYY-MM-DD or YYYYMMDD)
+  -u, --until <until>                  Filter until date (inclusive)
+  -z, --timezone <timezone>            Timezone for date grouping (IANA)
+  -O, --offline                        Use cached pricing data instead of fetching from LiteLLM (default: false)
+  --no-offline                         Negatable of -O, --offline
+  --compact                            Force compact table layout for narrow terminals (default: false)
+  --no-cost                            Hide cost information in table and JSON output (default: false)
+  --color                              Enable colored output. FORCE_COLOR=1 has the same effect. (default: auto)
+  --no-color                           Disable colored output. NO_COLOR=1 has the same effect. (default: auto)
+  --config <config>                    Path to configuration file (default: auto-discovery)
+  -h, --help                           Display this help message
+  -v, --version                        Display this version
+  --last <last>                        Show only the most recent N periods of the report (1 is today, this week, or this month)

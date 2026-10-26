@@ -6,27 +6,28 @@ ccusage supports several environment variables for configuration and customizati
 
 ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; `COPILOT_HOME` and `GROK_HOME` accept a single root, while `COPILOT_OTEL_FILE_EXPORTER_PATH` points at one explicit JSONL export file:
 
-| Variable                          | Agent          | Default                                              |
-| --------------------------------- | -------------- | ---------------------------------------------------- |
-| `CLAUDE_CONFIG_DIR`               | Claude Code    | `~/.config/claude` and `~/.claude`                   |
-| `CODEX_HOME`                      | Codex          | `~/.codex`                                           |
-| `OPENCODE_DATA_DIR`               | OpenCode       | `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`      |
-| `AMP_DATA_DIR`                    | Amp            | `~/.local/share/amp`                                 |
-| `DROID_SESSIONS_DIR`              | Droid          | `~/.factory/sessions`                                |
-| `CODEBUFF_DATA_DIR`               | Codebuff       | `~/.config/manicode`                                 |
-| `HERMES_HOME`                     | Hermes Agent   | `~/.hermes`                                          |
-| `PI_AGENT_DIR`                    | pi-agent       | `~/.pi/agent/sessions`                               |
-| `GOOSE_PATH_ROOT`                 | Goose          | Standard Goose data roots                            |
-| `OPENCLAW_DIR`                    | OpenClaw       | `~/.openclaw`                                        |
-| `KILO_DATA_DIR`                   | Kilo           | `~/.local/share/kilo`                                |
-| `KIMI_DATA_DIR`                   | Kimi           | `~/.kimi`, `~/.kimi-code`                            |
-| `QWEN_DATA_DIR`                   | Qwen           | `~/.qwen`                                            |
-| `COPILOT_HOME`                    | Copilot CLI    | `~/.copilot`                                         |
-| `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file                               |
-| `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                                      |
-| `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity` |
-| `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                            |
-| `ZCODE_HOME`                      | ZCode          | `~/.zcode`                                           |
+| Variable                          | Agent          | Default                                                                   |
+| --------------------------------- | -------------- | ------------------------------------------------------------------------- |
+| `CLAUDE_CONFIG_DIR`               | Claude Code    | `~/.config/claude` and `~/.claude`                                        |
+| `CODEX_HOME`                      | Codex          | `~/.codex`                                                                |
+| `OPENCODE_DATA_DIR`               | OpenCode       | `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`                           |
+| `AMP_DATA_DIR`                    | Amp            | `~/.local/share/amp`                                                      |
+| `DROID_SESSIONS_DIR`              | Droid          | `~/.factory/sessions`                                                     |
+| `CODEBUFF_DATA_DIR`               | Codebuff       | `~/.config/manicode`                                                      |
+| `HERMES_HOME`                     | Hermes Agent   | `~/.hermes`                                                               |
+| `PI_AGENT_DIR`                    | pi-agent       | `~/.pi/agent/sessions`                                                    |
+| `GOOSE_PATH_ROOT`                 | Goose          | Standard Goose data roots                                                 |
+| `OPENCLAW_DIR`                    | OpenClaw       | `~/.openclaw`                                                             |
+| `KILO_DATA_DIR`                   | Kilo           | `~/.local/share/kilo`                                                     |
+| `KIMI_DATA_DIR`                   | Kimi           | `~/.kimi`, `~/.kimi-code`                                                 |
+| `MUSE_DATA_DIR`                   | Muse Code      | `${XDG_DATA_HOME:-$HOME/.local/share}/muse` (`sessions/` below each root) |
+| `QWEN_DATA_DIR`                   | Qwen           | `~/.qwen`                                                                 |
+| `COPILOT_HOME`                    | Copilot CLI    | `~/.copilot`                                                              |
+| `COPILOT_OTEL_FILE_EXPORTER_PATH` | Copilot CLI    | Explicit `.jsonl` file                                                    |
+| `GEMINI_DATA_DIR`                 | Gemini CLI     | `~/.gemini/tmp`                                                           |
+| `ANTIGRAVITY_DATA_DIR`            | Antigravity    | `~/.gemini/antigravity*` and `~/.config/antigravity`                      |
+| `GROK_HOME`                       | Grok Build CLI | `~/.grok`                                                                 |
+| `ZCODE_HOME`                      | ZCode          | `~/.zcode`                                                                |
 
 Example:
 
@@ -42,6 +43,7 @@ export GOOSE_PATH_ROOT="/path/to/goose,/archive/goose"
 export OPENCLAW_DIR="/path/to/openclaw,/archive/openclaw"
 export KILO_DATA_DIR="/path/to/kilo,/archive/kilo"
 export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
+export MUSE_DATA_DIR="/path/to/muse,/archive/muse"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
 export COPILOT_HOME="/path/to/copilot"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"

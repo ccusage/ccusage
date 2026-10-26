@@ -36,6 +36,7 @@ source in its own `ccusage-adapter-*` crate.
 - `ccusage-adapter-hermes`
 - `ccusage-adapter-kilo`
 - `ccusage-adapter-kimi`
+- `ccusage-adapter-muse`
 - `ccusage-adapter-openclaw`
 - `ccusage-adapter-opencode`
 - `ccusage-adapter-pi`

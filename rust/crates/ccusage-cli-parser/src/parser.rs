@@ -339,6 +339,13 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::Kimi,
         ),
+        "muse" => parse_basic_agent_command(
+            parser,
+            shared,
+            "muse",
+            STANDARD_AGENT_REPORTS,
+            Command::Muse,
+        ),
         "qwen" => parse_basic_agent_command(
             parser,
             shared,
@@ -832,6 +839,7 @@ fn is_command(arg: &str) -> bool {
             | "gemini"
             | "antigravity"
             | "kimi"
+            | "muse"
             | "qwen"
             | "grok"
             | "zcode"
@@ -993,6 +1001,7 @@ fn is_agent_command(command: &str) -> bool {
             | "gemini"
             | "antigravity"
             | "kimi"
+            | "muse"
             | "qwen"
             | "openclaw"
             | "grok"
@@ -1009,7 +1018,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
+        | "gemini" | "antigravity" | "kimi" | "muse" | "qwen" | "openclaw" | "grok" | "zcode" => {
             matches!(report, "daily" | "monthly" | "session")
         }
         _ => false,
@@ -1032,6 +1041,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "gemini" => "Gemini CLI",
         "antigravity" => "Antigravity",
         "kimi" => "Kimi",
+        "muse" => "Muse Code",
         "qwen" => "Qwen",
         "openclaw" => "OpenClaw",
         "grok" => "Grok",
@@ -1119,6 +1129,7 @@ fn report_shared<'a>(
             | Command::Gemini(args)
             | Command::Antigravity(args)
             | Command::Kimi(args)
+            | Command::Muse(args)
             | Command::Qwen(args)
             | Command::OpenClaw(args)
             | Command::Grok(args)

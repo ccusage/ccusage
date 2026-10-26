@@ -1139,6 +1139,11 @@ mod tests {
                         "json": true
                     }
                 },
+                "muse": {
+                    "defaults": {
+                        "offline": true
+                    }
+                },
                 "openclaw": {
                     "defaults": {
                         "offline": true
@@ -1152,6 +1157,7 @@ mod tests {
 
         assert!(config.for_source("pi").is_some());
         assert!(config.for_source("openclaw").is_some());
+        assert!(config.for_source("muse").is_some());
         assert!(config.for_source("codex").is_none());
 
         let focused = context(
@@ -1168,6 +1174,34 @@ mod tests {
         );
 
         assert!(focused.for_source("codex").is_none());
+    }
+
+    #[test]
+    fn muse_source_view_reads_source_and_report_options() {
+        let config = context(
+            json!({
+                "muse": {
+                    "defaults": {
+                        "offline": true
+                    }
+                },
+                "commands": {
+                    "muse:daily": {
+                        "timezone": "Europe/London"
+                    }
+                }
+            }),
+            "daily",
+            None,
+            "daily",
+        );
+        let muse = config.for_source("muse").expect("muse sections");
+        let mut shared = SharedArgs::with_defaults();
+
+        muse.apply_shared(&mut shared);
+
+        assert!(shared.offline);
+        assert_eq!(shared.timezone.as_deref(), Some("Europe/London"));
     }
 
     #[test]

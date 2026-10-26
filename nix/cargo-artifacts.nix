@@ -63,6 +63,7 @@ let
     "hermes"
     "kilo"
     "kimi"
+    "muse"
     "openclaw"
     "opencode"
     "pi"

@@ -978,6 +978,69 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
 }
 
 #[test]
+fn muse_issue_1694_fixture_aggregates_in_unified_display_mode() {
+    let fixture = fs_fixture!({
+        "muse/sessions/2026/09/07/issue-1694/session.jsonl": include_str!(
+            "../../../adapters/muse/fixtures/issue-1694-model-completed.jsonl"
+        ),
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "MUSE_DATA_DIR",
+        fixture.path("muse").into_os_string(),
+    );
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        ..fixture_shared("20260101", "20991231")
+    };
+
+    let result = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+
+    assert_eq!(result.detected_agents, vec!["muse"]);
+    assert_eq!(result.rows.len(), 1);
+    let row = &result.rows[0];
+    assert_eq!(row.agent, "all");
+    let muse_row = &row.agent_breakdowns.as_ref().unwrap()[0];
+    assert_eq!(muse_row.agent, "muse");
+    assert_eq!(
+        muse_row.models_used,
+        vec!["muse-spark-1.3-contributor".to_string()]
+    );
+    assert_eq!(muse_row.input_tokens, 610);
+    assert_eq!(muse_row.cache_read_tokens, 27_121);
+    assert_eq!(muse_row.output_tokens, 20);
+    assert_eq!(muse_row.total_tokens, 27_751);
+    assert_eq!(muse_row.total_cost, 0.0);
+    assert_eq!(row.total_tokens, 27_751);
+    assert_eq!(row.total_cost, 0.0);
+
+    let report = report_json_with_agents(&result.rows, AgentReportKind::Daily, true);
+    assert_eq!(report["daily"][0]["agent"], "all");
+    assert_eq!(report["daily"][0]["agents"][0]["agent"], "muse");
+    assert_eq!(
+        report["daily"][0]["agents"][0]["modelBreakdowns"][0]["modelName"],
+        "muse-spark-1.3-contributor"
+    );
+    assert_eq!(report["totals"]["totalCost"], 0.0);
+
+    let table = table_snapshot(
+        &result.rows,
+        AgentReportKind::Daily,
+        &result.detected_agents,
+    );
+    assert_eq!(table["rows"][0]["cells"][1], "All");
+    assert_eq!(table["rows"][0]["cells"][8], "$0.00");
+    assert_eq!(table["rows"][1]["cells"][1], "- Muse Code");
+    assert_eq!(table["rows"][1]["cells"][8], "$0.00");
+}
+
+#[test]
 fn unified_report_omits_zcode_without_usage_database() {
     let fixture = fs_fixture!({});
     let _env = isolated_agent_env(
@@ -1131,6 +1194,7 @@ fn isolated_agent_env(
         "GOOSE_PATH_ROOT",
         "OPENCLAW_DIR",
         "KILO_DATA_DIR",
+        "MUSE_DATA_DIR",
         "COPILOT_OTEL_FILE_EXPORTER_PATH",
         "GEMINI_DATA_DIR",
         "KIMI_DATA_DIR",

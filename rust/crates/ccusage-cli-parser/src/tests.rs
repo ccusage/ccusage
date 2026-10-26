@@ -204,6 +204,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Gemini(args)) => agent_command_snapshot("gemini", args),
         Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
+        Some(Command::Muse(args)) => agent_command_snapshot("muse", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
@@ -807,7 +808,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode",
+        "copilot", "gemini", "kimi", "muse", "qwen", "openclaw", "grok", "zcode",
     ];
 
     for agent in agents {
@@ -1014,6 +1015,14 @@ fn snapshots_root_and_contextual_help_text() {
         "statusline_help",
         help_text_for_args(&["ccusage".to_string(), "statusline".to_string()])
     );
+    insta::assert_snapshot!(
+        "muse_daily_help",
+        help_text_for_args(&[
+            "ccusage".to_string(),
+            "muse".to_string(),
+            "daily".to_string(),
+        ])
+    );
 }
 
 #[test]
@@ -1022,6 +1031,10 @@ fn snapshots_representative_cli_parse_shapes() {
         json!({
             "case": "default all-agent daily",
             "cli": cli_snapshot(parse(&["ccusage"])),
+        }),
+        json!({
+            "case": "muse session",
+            "cli": cli_snapshot(parse(&["ccusage", "muse", "session", "--json"])),
         }),
         json!({
             "case": "root daily with shared flags",
@@ -1526,6 +1539,28 @@ fn parses_kimi_session_options() {
     };
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
+}
+
+#[test]
+fn parses_muse_standard_reports() {
+    for (report, expected_kind) in [
+        ("daily", AgentReportKind::Daily),
+        ("monthly", AgentReportKind::Monthly),
+        ("session", AgentReportKind::Session),
+    ] {
+        let cli = parse(&["ccusage", "muse", report, "--json"]);
+        let Some(Command::Muse(args)) = cli.command else {
+            panic!("expected muse command for {report}");
+        };
+
+        assert_eq!(args.kind, expected_kind, "{report}");
+        assert!(args.shared.json, "{report}");
+    }
+
+    assert_eq!(
+        parse_error(&["ccusage", "muse", "weekly"]),
+        "The \"weekly\" report is not available for Muse Code usage.\nUse \"ccusage muse daily\" for Muse Code usage reports."
+    );
 }
 
 #[test]

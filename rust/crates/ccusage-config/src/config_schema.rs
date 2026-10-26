@@ -50,6 +50,8 @@ pub struct CcusageConfig {
     pub antigravity: Option<AntigravityConfig>,
     /// Kimi configuration.
     pub kimi: Option<KimiConfig>,
+    /// Muse Code configuration.
+    pub muse: Option<MuseConfig>,
     /// Qwen configuration.
     pub qwen: Option<QwenConfig>,
     /// Grok Build CLI configuration.
@@ -305,6 +307,21 @@ pub struct KimiConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KimiCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MuseConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<MuseCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MuseCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
@@ -1154,6 +1171,7 @@ mod tests {
         assert!(schema_property(&schema, &["gemini", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["antigravity", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["kimi", "defaults", "openClawPath"]).is_none());
+        assert!(schema_property(&schema, &["muse", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["qwen", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["grok", "defaults", "grokPath"]).is_none());
         assert!(schema_property(&schema, &["openclaw", "defaults", "grokPath"]).is_none());
@@ -1205,6 +1223,7 @@ mod tests {
                 "hermes",
                 "kilo",
                 "kimi",
+                "muse",
                 "opencode",
                 "openclaw",
                 "pi",
@@ -1348,6 +1367,13 @@ mod tests {
                 "commands": {
                     "session": {
                         "json": true
+                    }
+                }
+            },
+            "muse": {
+                "commands": {
+                    "daily": {
+                        "offline": true
                     }
                 }
             },

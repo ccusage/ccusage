@@ -109,6 +109,7 @@ fn run_cli<const N: usize>(fixture: &Fixture, args: [&str; N]) -> String {
         .env_remove("COPILOT_OTEL_FILE_EXPORTER_PATH")
         .env_remove("GEMINI_DATA_DIR")
         .env_remove("KIMI_DATA_DIR")
+        .env_remove("MUSE_DATA_DIR")
         .env_remove("QWEN_DATA_DIR")
         .env_remove("GROK_HOME")
         .output()

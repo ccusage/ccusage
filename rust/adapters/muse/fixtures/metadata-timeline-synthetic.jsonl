@@ -1,0 +1,8 @@
+{"recorded_at":1000000,"stream":{"id":"stream-a"},"id":"before-metadata","payload_type":"runtime.session","payload":{"event":{"kind":"model_completed","usage":{"input_tokens":4,"output_tokens":2}}}}
+{"payload_type":"runtime.session.metadata","payload":{"record":{"workspace_root":"/workspace/initial","model_id":"muse-spark-1.2","provider_id":"openrouter"}}}
+{"recorded_at":2000000,"stream":{"id":"stream-a"},"id":"event-model-primary","payload_type":"runtime.session","payload":{"event":{"kind":"model_completed","model":"muse-spark-1.2","usage":{"input_tokens":4,"output_tokens":2}}}}
+{"payload_type":"runtime.session.metadata","payload":{"record":{"workspace_root":"/workspace/switched","model_id":"muse-spark-1.2-contributor","provider_id":"meta"}}}
+{"recorded_at":3000000,"stream":{"id":"stream-a"},"id":"metadata-model-mismatch","payload_type":"runtime.session","payload":{"event":{"kind":"model_completed","model":"muse-spark-1.2","usage":{"input_tokens":4,"output_tokens":2}}}}
+{"recorded_at":4000000,"stream":{"id":"stream-a"},"id":"metadata-model-fallback","payload_type":"runtime.session","payload":{"event":{"kind":"model_completed","usage":{"input_tokens":4,"output_tokens":2}}}}
+{"payload_type":"runtime.session.metadata","payload":{"record":{"workspace_root":"/workspace/reset","model_id":"muse-spark-1.2","provider_id":"unknown"}}}
+{"recorded_at":5000000,"stream":{"id":"stream-a"},"id":"metadata-provider-reset","payload_type":"runtime.session","payload":{"event":{"kind":"model_completed","usage":{"input_tokens":4,"output_tokens":2}}}}

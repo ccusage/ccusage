@@ -47,6 +47,7 @@ fn command_shared(command: &Command) -> &SharedArgs {
         | Command::Gemini(args)
         | Command::Antigravity(args)
         | Command::Kimi(args)
+        | Command::Muse(args)
         | Command::Qwen(args)
         | Command::OpenClaw(args)
         | Command::Grok(args)

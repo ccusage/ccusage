@@ -12,7 +12,7 @@ use crate::{
     SessionAccumulator, UsageSummary,
     adapter::{
         amp, antigravity, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
-        kilo, kimi, openclaw, opencode, pi, qwen, zcode,
+        kilo, kimi, muse, openclaw, opencode, pi, qwen, zcode,
     },
     cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -476,12 +476,27 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 15,
             agent: BUILT_IN_AGENT_NAMES[15],
-            progress_agent: crate::progress::UsageLoadAgent("Qwen"),
-            load: Box::new(|| load_qwen_rows(load_kind, &source_shared["qwen"])),
+            progress_agent: crate::progress::UsageLoadAgent("Muse Code"),
+            load: Box::new(|| {
+                load_priced_summary_agent_rows(
+                    "muse",
+                    load_kind,
+                    &source_shared["muse"],
+                    &pricing["muse"],
+                    muse::load_entries,
+                    muse::summarize_entries,
+                )
+            }),
         },
         AgentLoadSpec {
             index: 16,
             agent: BUILT_IN_AGENT_NAMES[16],
+            progress_agent: crate::progress::UsageLoadAgent("Qwen"),
+            load: Box::new(|| load_qwen_rows(load_kind, &source_shared["qwen"])),
+        },
+        AgentLoadSpec {
+            index: 17,
+            agent: BUILT_IN_AGENT_NAMES[17],
             progress_agent: crate::progress::UsageLoadAgent("Grok"),
             load: Box::new(|| {
                 let shared = &source_shared["grok"];
@@ -497,8 +512,8 @@ fn load_base_rows(
             }),
         },
         AgentLoadSpec {
-            index: 17,
-            agent: BUILT_IN_AGENT_NAMES[17],
+            index: 18,
+            agent: BUILT_IN_AGENT_NAMES[18],
             progress_agent: crate::progress::UsageLoadAgent("ZCode"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
@@ -1243,6 +1258,7 @@ mod tests {
                 Some(fixture.path("openclaw-home").into_os_string()),
             ),
             ("KILO_DATA_DIR", None),
+            ("MUSE_DATA_DIR", None),
             ("COPILOT_OTEL_FILE_EXPORTER_PATH", None),
             ("COPILOT_HOME", None),
             ("GEMINI_DATA_DIR", None),

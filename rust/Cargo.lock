@@ -134,6 +134,7 @@ dependencies = [
  "ccusage-adapter-hermes",
  "ccusage-adapter-kilo",
  "ccusage-adapter-kimi",
+ "ccusage-adapter-muse",
  "ccusage-adapter-openclaw",
  "ccusage-adapter-opencode",
  "ccusage-adapter-pi",
@@ -175,6 +176,7 @@ dependencies = [
  "ccusage-adapter-hermes",
  "ccusage-adapter-kilo",
  "ccusage-adapter-kimi",
+ "ccusage-adapter-muse",
  "ccusage-adapter-openclaw",
  "ccusage-adapter-opencode",
  "ccusage-adapter-pi",
@@ -360,6 +362,19 @@ dependencies = [
  "ccusage-adapter-common",
  "ccusage-core",
  "ccusage-test-support",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-muse"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
  "jiff",
  "serde",
  "serde_json",

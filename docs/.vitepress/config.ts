@@ -83,6 +83,7 @@ export default defineConfig({
 						{ text: 'Gemini CLI', link: '/guide/gemini/' },
 						{ text: 'Antigravity', link: '/guide/antigravity/' },
 						{ text: 'Kimi', link: '/guide/kimi/' },
+						{ text: 'Muse Code', link: '/guide/muse' },
 						{ text: 'OpenClaw', link: '/guide/openclaw/' },
 						{ text: 'Grok Build CLI', link: '/guide/grok/' },
 						{ text: 'ZCode', link: '/guide/zcode/' },

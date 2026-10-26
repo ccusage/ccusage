@@ -226,6 +226,39 @@ mod tests {
     }
 
     #[test]
+    fn resolves_muse_source_options_for_unified_reports() {
+        let unified = unified_with_config(
+            &["daily"],
+            r#"{
+                "muse": {
+                    "defaults": {
+                        "offline": true
+                    },
+                    "commands": {
+                        "daily": {
+                            "since": "20260401",
+                            "timezone": "Europe/London"
+                        }
+                    }
+                }
+            }"#,
+        );
+
+        assert_eq!(
+            unified
+                .sources
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["muse"]
+        );
+        let muse = &unified.sources["muse"];
+        assert!(muse.shared.offline);
+        assert_eq!(muse.shared.since.as_deref(), Some("20260401"));
+        assert_eq!(muse.shared.timezone.as_deref(), Some("Europe/London"));
+    }
+
+    #[test]
     fn applies_global_agent_defaults_to_relevant_unified_sources_for_each_report() {
         let cases = [
             ("bare default", &[][..], AgentReportKind::Daily),

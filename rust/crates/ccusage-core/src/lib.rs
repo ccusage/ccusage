@@ -72,6 +72,7 @@ pub const BUILT_IN_AGENT_NAMES: &[&str] = &[
     "gemini",
     "antigravity",
     "kimi",
+    "muse",
     "qwen",
     "grok",
     "zcode",

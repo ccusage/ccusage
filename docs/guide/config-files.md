@@ -180,7 +180,7 @@ Override shared defaults for specific unified reports and legacy Claude commands
 
 ### Source-Specific Configuration
 
-Use data source namespaces to set defaults and report overrides. Supported namespaces are `claude`, `codex`, `opencode`, `amp`, `droid`, `codebuff`, `hermes`, `pi`, `goose`, `openclaw`, `kilo`, `kimi`, `qwen`, `copilot`, `gemini`, `antigravity`, `grok`, and `zcode`.
+Use data source namespaces to set defaults and report overrides. Supported namespaces are `claude`, `codex`, `opencode`, `amp`, `droid`, `codebuff`, `hermes`, `pi`, `goose`, `openclaw`, `kilo`, `kimi`, `muse`, `qwen`, `copilot`, `gemini`, `antigravity`, `grok`, and `zcode`.
 
 ```json
 {
@@ -246,6 +246,11 @@ Use data source namespaces to set defaults and report overrides. Supported names
 			"offline": true
 		}
 	},
+	"muse": {
+		"defaults": {
+			"offline": true
+		}
+	},
 	"qwen": {
 		"defaults": {
 			"offline": true
@@ -280,6 +285,7 @@ ccusage pi daily
 ccusage openclaw daily
 ccusage kilo daily
 ccusage kimi daily
+ccusage muse daily
 ccusage qwen daily
 ccusage copilot monthly
 ccusage gemini daily
