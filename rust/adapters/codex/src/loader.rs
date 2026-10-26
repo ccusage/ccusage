@@ -1986,6 +1986,211 @@ mod tests {
     }
 
     #[test]
+    fn counts_first_response_when_missing_parent_history_begins_after_fork() {
+        let fixture = fs_fixture!({
+            "child.jsonl": r#"{"timestamp":"2026-01-05T15:00:00.000Z","type":"session_meta","payload":{"id":"child","source":{"subagent":{"thread_spawn":{"parent_thread_id":"missing-parent"}}}}}
+{"timestamp":"2026-01-05T15:00:01.000Z","type":"turn_context","payload":{"model":"gpt-5","model_name":null,"metadata":null}}
+{"timestamp":"2026-01-05T15:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":1010},"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":1010}}}}
+{"timestamp":"2026-01-05T15:00:02.150Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":1010},"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":1010}}}}"#,
+        });
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+        assert_eq!(events[0].input_tokens, 1_000);
+        assert_eq!(events[0].cached_input_tokens, 400);
+        assert_eq!(events[0].output_tokens, 10);
+        assert_eq!(events[0].reasoning_output_tokens, 0);
+        assert_eq!(events[0].total_tokens, 1_010);
+    }
+
+    #[test]
+    fn counts_spawned_responses_once_across_duplicate_snapshot_controls() {
+        fn token_count(
+            timestamp: &str,
+            last: (u64, u64, u64, u64),
+            total: (u64, u64, u64, u64),
+        ) -> String {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": last.0,
+                            "cached_input_tokens": last.1,
+                            "output_tokens": last.2,
+                            "total_tokens": last.3,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": total.0,
+                            "cached_input_tokens": total.1,
+                            "output_tokens": total.2,
+                            "total_tokens": total.3,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        }
+
+        let first_response = (1_000, 400, 10, 1_010);
+        let second_response = (2_000, 800, 20, 2_020);
+        let scenarios = [
+            (
+                "single missing-parent response",
+                vec![(
+                    "child.jsonl",
+                    [
+                        replay_metadata(
+                            "2026-01-05T15:00:00.000Z",
+                            "child",
+                            Some("missing-parent"),
+                        ),
+                        token_count("2026-01-05T15:00:02.000Z", first_response, first_response),
+                    ]
+                    .join("\n"),
+                )],
+                vec![("child".to_string(), 1_000, 1_010)],
+            ),
+            (
+                "CLI duplicate snapshot",
+                vec![(
+                    "cli.jsonl",
+                    [
+                        json!({
+                            "timestamp": "2026-01-05T15:00:00.000Z",
+                            "type": "session_meta",
+                            "payload": {"id": "cli", "source": "cli"},
+                        })
+                        .to_string(),
+                        token_count("2026-01-05T15:00:02.000Z", first_response, first_response),
+                        token_count("2026-01-05T15:00:02.150Z", first_response, first_response),
+                    ]
+                    .join("\n"),
+                )],
+                vec![("cli".to_string(), 1_000, 1_010)],
+            ),
+            (
+                "missing-parent duplicate after two seconds",
+                vec![(
+                    "child.jsonl",
+                    [
+                        replay_metadata(
+                            "2026-01-05T15:00:00.000Z",
+                            "child",
+                            Some("missing-parent"),
+                        ),
+                        token_count("2026-01-05T15:00:02.000Z", first_response, first_response),
+                        token_count("2026-01-05T15:00:04.000Z", first_response, first_response),
+                    ]
+                    .join("\n"),
+                )],
+                vec![("child".to_string(), 1_000, 1_010)],
+            ),
+            (
+                "present parent with unrelated history",
+                vec![
+                    (
+                        "parent.jsonl",
+                        [
+                            replay_metadata("2026-01-05T14:00:00.000Z", "parent", None),
+                            replay_token_count("2026-01-05T14:01:00.000Z", 50),
+                        ]
+                        .join("\n"),
+                    ),
+                    (
+                        "child.jsonl",
+                        [
+                            replay_metadata("2026-01-05T15:00:00.000Z", "child", Some("parent")),
+                            token_count("2026-01-05T15:00:02.000Z", first_response, first_response),
+                            token_count("2026-01-05T15:00:02.150Z", first_response, first_response),
+                        ]
+                        .join("\n"),
+                    ),
+                ],
+                vec![
+                    ("child".to_string(), 1_000, 1_010),
+                    ("parent".to_string(), 50, 51),
+                ],
+            ),
+            (
+                "new response after two seconds totals 3030",
+                vec![(
+                    "child.jsonl",
+                    [
+                        replay_metadata(
+                            "2026-01-05T15:00:00.000Z",
+                            "child",
+                            Some("missing-parent"),
+                        ),
+                        token_count("2026-01-05T15:00:02.000Z", first_response, first_response),
+                        token_count("2026-01-05T15:00:02.150Z", first_response, first_response),
+                        token_count(
+                            "2026-01-05T15:00:04.150Z",
+                            second_response,
+                            (3_000, 1_200, 30, 3_030),
+                        ),
+                    ]
+                    .join("\n"),
+                )],
+                vec![
+                    ("child".to_string(), 1_000, 1_010),
+                    ("child".to_string(), 2_000, 2_020),
+                ],
+            ),
+            (
+                "repeated second response stays counted once",
+                vec![(
+                    "child.jsonl",
+                    [
+                        replay_metadata(
+                            "2026-01-05T15:00:00.000Z",
+                            "child",
+                            Some("missing-parent"),
+                        ),
+                        token_count("2026-01-05T15:00:02.000Z", first_response, first_response),
+                        token_count("2026-01-05T15:00:02.150Z", first_response, first_response),
+                        token_count(
+                            "2026-01-05T15:00:04.150Z",
+                            second_response,
+                            (3_000, 1_200, 30, 3_030),
+                        ),
+                        token_count(
+                            "2026-01-05T15:00:04.300Z",
+                            second_response,
+                            (3_000, 1_200, 30, 3_030),
+                        ),
+                    ]
+                    .join("\n"),
+                )],
+                vec![
+                    ("child".to_string(), 1_000, 1_010),
+                    ("child".to_string(), 2_000, 2_020),
+                ],
+            ),
+        ];
+
+        for (name, files, expected) in scenarios {
+            let fixture = fs_fixture!({});
+            for (path, contents) in files {
+                let _ = fixture.write_file(path, contents);
+            }
+            let mut events = load_codex_events_from_directory(fixture.root(), true)
+                .unwrap()
+                .into_iter()
+                .map(|event| (event.session_id, event.input_tokens, event.total_tokens))
+                .collect::<Vec<_>>();
+            events.sort_unstable();
+            let mut expected = expected;
+            expected.sort_unstable();
+
+            assert_eq!(events, expected, "scenario: {name}");
+        }
+    }
+
+    #[test]
     fn skips_a_rewritten_burst_that_straddles_a_second_boundary() {
         let fixture = fs_fixture!({
             // Codex writes the replayed history in a few milliseconds, so the
@@ -2167,6 +2372,146 @@ mod tests {
                 // The replay repeats a snapshot, which must not end the burst.
                 token_count("2026-07-10T08:00:00.100Z", 100, 100),
                 token_count("2026-07-10T08:00:00.200Z", 100, 100),
+                // The child's own turn, after a real pause.
+                token_count("2026-07-10T08:00:08.000Z", 50, 50),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 50);
+    }
+
+    #[test]
+    fn skips_missing_parent_duplicate_only_replay_at_known_session_start() {
+        let token_count = |timestamp: &str, input_tokens: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": 1,
+                            "total_tokens": input_tokens + 1,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": 1,
+                            "total_tokens": input_tokens + 1,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        };
+
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                replay_metadata(
+                    "2026-07-10T08:00:00.000Z",
+                    "child",
+                    Some("missing-parent"),
+                ),
+                token_count("2026-07-10T08:00:00.100Z", 100),
+                token_count("2026-07-10T08:00:00.200Z", 100),
+                token_count("2026-07-10T08:00:08.000Z", 50),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 50);
+    }
+
+    #[test]
+    fn keeps_first_child_response_after_zero_usage_initialization() {
+        let token_count = |timestamp: &str, input_tokens: u64, output_tokens: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": input_tokens + output_tokens,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": input_tokens + output_tokens,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        };
+
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                replay_metadata(
+                    "2026-07-10T08:00:00.000Z",
+                    "child",
+                    Some("missing-parent"),
+                ),
+                token_count("2026-07-10T08:00:00.100Z", 0, 0),
+                token_count("2026-07-10T08:00:00.200Z", 0, 0),
+                token_count("2026-07-10T08:00:00.500Z", 50, 1),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 50);
+        assert_eq!(events[0].output_tokens, 1);
+    }
+
+    #[test]
+    fn skips_missing_parent_replay_with_duplicate_snapshots_and_advancing_usage() {
+        fn token_count(timestamp: &str, input: u64, total_input: u64) -> String {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": input,
+                            "output_tokens": 1,
+                            "total_tokens": input + 1,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": total_input,
+                            "output_tokens": 1,
+                            "total_tokens": total_input + 1,
+                        },
+                        "model": "gpt-5.5",
+                    },
+                },
+            })
+            .to_string()
+        }
+
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                json!({
+                    "type": "session_meta",
+                    "payload": {"id": "child", "forked_from_id": "missing-parent"},
+                })
+                .to_string(),
+                // The replay repeats a snapshot, which must not end the burst.
+                token_count("2026-07-10T08:00:00.100Z", 100, 100),
+                token_count("2026-07-10T08:00:00.200Z", 100, 100),
+                token_count("2026-07-10T08:00:00.300Z", 200, 300),
                 // The child's own turn, after a real pause.
                 token_count("2026-07-10T08:00:08.000Z", 50, 50),
             ]

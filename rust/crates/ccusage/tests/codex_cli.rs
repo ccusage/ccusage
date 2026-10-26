@@ -118,6 +118,75 @@ fn reports_compressed_codex_rollouts_alongside_plain_ones() {
     assert_eq!(session["totalTokens"], 325);
 }
 
+#[test]
+fn reports_issue_1970_subagent_usage_in_daily_and_session_commands() {
+    let fixture = issue_1970_codex_fixture();
+
+    let daily_json = run_cli(
+        &fixture,
+        &[
+            "codex", "daily", "--since", "20260101", "--until", "20260131", "--json",
+        ],
+    );
+    let daily: Value = serde_json::from_str(&daily_json).unwrap();
+    assert_eq!(daily["totals"]["totalTokens"], 1010);
+    let daily_row = daily["daily"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["date"] == "2026-01-05")
+        .expect("issue 1970 daily row should exist");
+    assert_eq!(daily_row["totalTokens"], 1010);
+
+    let session_json = run_cli(
+        &fixture,
+        &[
+            "codex", "session", "--since", "20260101", "--until", "20260131", "--json",
+        ],
+    );
+    let session: Value = serde_json::from_str(&session_json).unwrap();
+    assert_eq!(session["totals"]["totalTokens"], 1010);
+    let session_row = session["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["sessionFile"] == "child")
+        .expect("issue 1970 session row should exist");
+    assert_eq!(session_row["totalTokens"], 1010);
+
+    insta::assert_snapshot!(
+        "issue_1970_daily_table",
+        format!(
+            "Daily\n{}",
+            run_cli(
+                &fixture,
+                &[
+                    "codex", "daily", "--since", "20260101", "--until", "20260131",
+                ],
+            ),
+        )
+    );
+    insta::assert_snapshot!(
+        "issue_1970_session_table",
+        format!(
+            "Session\n{}",
+            run_cli(
+                &fixture,
+                &[
+                    "codex", "session", "--since", "20260101", "--until", "20260131",
+                ],
+            ),
+        )
+    );
+}
+
+fn issue_1970_codex_fixture() -> Fixture {
+    fs_fixture!({
+        "codex/sessions/2026/01/05/child.jsonl":
+            include_str!("fixtures/codex/issue_1970.jsonl"),
+    })
+}
+
 fn codex_fixture() -> Fixture {
     fs_fixture!({
         "codex/sessions/2026/09/19/rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-860b875930f0.jsonl": usage("2026-09-19T23:22:40.000Z", 100, 50),
