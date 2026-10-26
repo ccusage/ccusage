@@ -749,7 +749,7 @@ fn extract_project_for_store(path: &Path, store_root: &Path) -> String {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn entry_id(entry: &LoadedEntry) -> String {
+fn entry_id(entry: &LoadedEntry) -> String {
     entry_id_for_store("pi", entry)
 }
 
@@ -875,7 +875,7 @@ fn provider_qualified_model(
     pricing.find_exact(&candidate).map(|_| candidate)
 }
 
-pub(crate) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> String {
+fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> String {
     [
         store_name,
         entry.project.as_ref(),
