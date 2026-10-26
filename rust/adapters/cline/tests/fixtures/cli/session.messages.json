@@ -1,0 +1,43 @@
+{
+	"version": 1,
+	"sessionId": "session-a",
+	"messages": [
+		{
+			"role": "user",
+			"timestamp": "2026-11-01T00:00:00Z",
+			"content": "hello"
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491260000,
+			"id": "assistant-1",
+			"modelInfo": {
+				"id": "claude-sonnet-4-20250514",
+				"provider": "anthropic"
+			},
+			"metrics": {
+				"inputTokens": 100,
+				"outputTokens": 15,
+				"cacheReadTokens": 25,
+				"cacheWriteTokens": 10,
+				"cost": 0
+			}
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491260000,
+			"id": "assistant-2",
+			"modelInfo": {
+				"id": "claude-sonnet-4-20250514",
+				"provider": "anthropic"
+			},
+			"metrics": {
+				"inputTokens": 120,
+				"outputTokens": 16,
+				"cacheReadTokens": 20,
+				"cacheWriteTokens": 10,
+				"cost": 0.0002
+			}
+		}
+	]
+}

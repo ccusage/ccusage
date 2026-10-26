@@ -1,0 +1,31 @@
+[
+	{
+		"ts": 1790856000000,
+		"type": "say",
+		"say": "api_req_started",
+		"modelInfo": {
+			"modelId": "claude-sonnet-4-20250514",
+			"providerId": "anthropic",
+			"mode": "act"
+		},
+		"text": "{\"tokensIn\":100,\"tokensOut\":20,\"cacheReads\":5,\"cacheWrites\":10,\"cost\":0.001}"
+	},
+	{
+		"ts": 1793491140000,
+		"type": "say",
+		"say": "api_req_started",
+		"text": "{\"tokensIn\":200,\"tokensOut\":40,\"cacheReads\":20,\"cacheWrites\":30,\"cost\":0.002}"
+	},
+	{
+		"ts": 1793491170000,
+		"type": "say",
+		"say": "api_req_started",
+		"text": "{\"request\":\"waiting for response\"}"
+	},
+	{
+		"ts": 1793491560000,
+		"type": "say",
+		"say": "subagent_usage",
+		"text": "{\"source\":\"subagents\",\"tokensIn\":25,\"tokensOut\":10,\"cacheReads\":5,\"cacheWrites\":2}"
+	}
+]

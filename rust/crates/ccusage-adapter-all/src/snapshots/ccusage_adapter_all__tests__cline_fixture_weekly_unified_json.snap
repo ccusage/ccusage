@@ -1,0 +1,97 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "report_json(&result.rows, kind)"
+---
+{
+  "totals": {
+    "cacheCreationTokens": 62,
+    "cacheReadTokens": 75,
+    "inputTokens": 480,
+    "outputTokens": 101,
+    "totalCost": 0.0032,
+    "totalTokens": 718,
+    "unpricedModels": [
+      "unknown"
+    ]
+  },
+  "weekly": [
+    {
+      "agent": "all",
+      "cacheCreationTokens": 10,
+      "cacheReadTokens": 5,
+      "inputTokens": 100,
+      "metadata": {
+        "agents": [
+          "cline"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 10,
+          "cacheReadTokens": 5,
+          "cost": 0.001,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 20,
+          "storedCost": 0.001
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 20,
+      "period": "2026-09-28",
+      "totalCost": 0.001,
+      "totalTokens": 135
+    },
+    {
+      "agent": "all",
+      "cacheCreationTokens": 52,
+      "cacheReadTokens": 70,
+      "inputTokens": 380,
+      "metadata": {
+        "agents": [
+          "cline"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.002,
+          "inputTokens": 200,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 40,
+          "storedCost": 0.002
+        },
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 45,
+          "cost": 0.0002,
+          "inputTokens": 155,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 31,
+          "storedCost": 0.0002
+        },
+        {
+          "cacheCreationTokens": 2,
+          "cacheReadTokens": 5,
+          "cost": 0.0,
+          "inputTokens": 25,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514",
+        "unknown"
+      ],
+      "outputTokens": 81,
+      "period": "2026-10-26",
+      "totalCost": 0.0022,
+      "totalTokens": 583
+    }
+  ]
+}

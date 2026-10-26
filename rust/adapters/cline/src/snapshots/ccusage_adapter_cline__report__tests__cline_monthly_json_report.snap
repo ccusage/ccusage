@@ -1,0 +1,75 @@
+---
+source: adapters/cline/src/report.rs
+expression: "report_from_rows(&monthly, AgentReportKind::Monthly)"
+---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 15,
+      "cacheReadTokens": 10,
+      "inputTokens": 100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.002,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 25,
+          "storedCost": 0.002
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "month": "2026-10",
+      "outputTokens": 25,
+      "totalCost": 0.002,
+      "totalTokens": 150
+    },
+    {
+      "cacheCreationTokens": 5,
+      "cacheReadTokens": 5,
+      "inputTokens": 52,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 5,
+          "cacheReadTokens": 5,
+          "cost": 0.001,
+          "inputTokens": 40,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 12,
+          "storedCost": 0.001
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 12,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 3
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "unknown"
+      ],
+      "month": "2026-11",
+      "outputTokens": 15,
+      "totalCost": 0.001,
+      "totalTokens": 77
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 20,
+    "cacheReadTokens": 15,
+    "inputTokens": 152,
+    "outputTokens": 40,
+    "totalCost": 0.003,
+    "totalTokens": 227,
+    "unpricedModels": [
+      "unknown"
+    ]
+  }
+}

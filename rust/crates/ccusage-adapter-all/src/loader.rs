@@ -11,8 +11,8 @@ use crate::{
     BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result,
     SessionAccumulator, UsageSummary,
     adapter::{
-        amp, antigravity, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
-        kilo, kimi, openclaw, opencode, pi, qwen, zcode,
+        amp, antigravity, claude, cline, codebuff, codex, copilot, droid, gemini, goose, grok,
+        hermes, kilo, kimi, openclaw, opencode, pi, qwen, zcode,
     },
     cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -508,6 +508,21 @@ fn load_base_rows(
                     &pricing["zcode"],
                     zcode::load_entries,
                     zcode::summarize_entries,
+                )
+            }),
+        },
+        AgentLoadSpec {
+            index: 18,
+            agent: BUILT_IN_AGENT_NAMES[18],
+            progress_agent: crate::progress::UsageLoadAgent("Cline"),
+            load: Box::new(|| {
+                load_priced_summary_agent_rows(
+                    "cline",
+                    load_kind,
+                    &source_shared["cline"],
+                    &pricing["cline"],
+                    cline::load_entries,
+                    cline::summarize_entries,
                 )
             }),
         },
@@ -1251,6 +1266,7 @@ mod tests {
             ("GROK_HOME", None),
             ("ZCODE_HOME", None),
             ("ANTIGRAVITY_DATA_DIR", None),
+            ("CLINE_DATA_DIR", None),
             (
                 "XDG_CONFIG_HOME",
                 Some(fixture.path("empty-xdg-config").into_os_string()),

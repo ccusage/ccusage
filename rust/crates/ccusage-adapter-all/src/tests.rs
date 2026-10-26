@@ -978,6 +978,72 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
 }
 
 #[test]
+fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
+    let fixture = fs_fixture!({
+        "cline/tasks/session-a/ui_messages.json": include_str!(
+            "../../../adapters/cline/tests/fixtures/extension/ui_messages.json"
+        ),
+        "cline/tasks/session-a/task_metadata.json": include_str!(
+            "../../../adapters/cline/tests/fixtures/extension/task_metadata.json"
+        ),
+        "cline/tasks/session-a/api_conversation_history.json": include_str!(
+            "../../../adapters/cline/tests/fixtures/extension/api_conversation_history.json"
+        ),
+        "cline/data/sessions/session-a/session-a.messages.json": include_str!(
+            "../../../adapters/cline/tests/fixtures/cli/session.messages.json"
+        ),
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "CLINE_DATA_DIR",
+        fixture.path("cline").into_os_string(),
+    );
+    let mut shared = fixture_shared("20261001", "20261101");
+    shared.mode = CostMode::Auto;
+
+    for kind in [
+        AgentReportKind::Daily,
+        AgentReportKind::Weekly,
+        AgentReportKind::Monthly,
+        AgentReportKind::Session,
+    ] {
+        let result = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+
+        assert_eq!(result.detected_agents, ["cline"]);
+        assert!(
+            !result.rows.is_empty(),
+            "{kind:?} should include Cline rows"
+        );
+        if kind == AgentReportKind::Session {
+            assert!(result.rows.iter().all(|row| row.agent == "cline"));
+            assert!(result.rows.iter().all(|row| row.metadata_agents.is_none()));
+        } else {
+            assert!(result.rows.iter().all(|row| row.agent == "all"));
+            assert!(
+                result
+                    .rows
+                    .iter()
+                    .all(|row| row.metadata_agents.as_deref() == Some(["cline"].as_slice()))
+            );
+        }
+
+        insta::assert_json_snapshot!(
+            format!("cline_fixture_{kind:?}_unified_json").to_lowercase(),
+            report_json(&result.rows, kind)
+        );
+        insta::assert_snapshot!(
+            format!("cline_fixture_{kind:?}_unified_table").to_lowercase(),
+            serde_json::to_string_pretty(&table_snapshot(
+                &result.rows,
+                kind,
+                &result.detected_agents,
+            ))
+            .unwrap()
+        );
+    }
+}
+
+#[test]
 fn unified_report_omits_zcode_without_usage_database() {
     let fixture = fs_fixture!({});
     let _env = isolated_agent_env(
@@ -1138,6 +1204,7 @@ fn isolated_agent_env(
         "GROK_HOME",
         "ZCODE_HOME",
         "ANTIGRAVITY_DATA_DIR",
+        "CLINE_DATA_DIR",
         "COPILOT_HOME",
     ]
     .into_iter()

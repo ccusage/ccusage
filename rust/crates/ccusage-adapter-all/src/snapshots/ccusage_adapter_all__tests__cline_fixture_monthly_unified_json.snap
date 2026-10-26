@@ -1,0 +1,97 @@
+---
+source: crates/ccusage-adapter-all/src/tests.rs
+expression: "report_json(&result.rows, kind)"
+---
+{
+  "monthly": [
+    {
+      "agent": "all",
+      "cacheCreationTokens": 40,
+      "cacheReadTokens": 25,
+      "inputTokens": 300,
+      "metadata": {
+        "agents": [
+          "cline"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 20,
+          "cost": 0.002,
+          "inputTokens": 200,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 40,
+          "storedCost": 0.002
+        },
+        {
+          "cacheCreationTokens": 10,
+          "cacheReadTokens": 5,
+          "cost": 0.001,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 20,
+          "storedCost": 0.001
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 60,
+      "period": "2026-10",
+      "totalCost": 0.003,
+      "totalTokens": 425
+    },
+    {
+      "agent": "all",
+      "cacheCreationTokens": 22,
+      "cacheReadTokens": 50,
+      "inputTokens": 180,
+      "metadata": {
+        "agents": [
+          "cline"
+        ]
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 45,
+          "cost": 0.0002,
+          "inputTokens": 155,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 31,
+          "storedCost": 0.0002
+        },
+        {
+          "cacheCreationTokens": 2,
+          "cacheReadTokens": 5,
+          "cost": 0.0,
+          "inputTokens": 25,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "unknown"
+      ],
+      "outputTokens": 41,
+      "period": "2026-11",
+      "totalCost": 0.0002,
+      "totalTokens": 293
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 62,
+    "cacheReadTokens": 75,
+    "inputTokens": 480,
+    "outputTokens": 101,
+    "totalCost": 0.0032,
+    "totalTokens": 718,
+    "unpricedModels": [
+      "unknown"
+    ]
+  }
+}
