@@ -1,7 +1,7 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import type { FromSchema } from 'json-schema-to-ts';
-import { z } from 'zod';
+import * as z from 'zod';
 import type { JSONSchema } from 'zod/v4/core';
 
 import type { Env } from '../env.ts';

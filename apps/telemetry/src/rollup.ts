@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as z from 'zod';
 
 /** Analytics Engine table that `PINGS` writes to; see `cloudflare.config.ts`. */
 const DATASET = 'ccusage_telemetry';
