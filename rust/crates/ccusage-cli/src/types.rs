@@ -24,6 +24,7 @@ pub enum Command {
     Gemini(AgentCommandArgs),
     Antigravity(AgentCommandArgs),
     Kimi(AgentCommandArgs),
+    Dsh(AgentCommandArgs),
     Qwen(AgentCommandArgs),
     OpenClaw(AgentCommandArgs),
     Grok(AgentCommandArgs),
@@ -219,6 +220,13 @@ pub const STANDARD_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
 ];
 
 pub const OPENCODE_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
+    ("daily", AgentReportKind::Daily),
+    ("weekly", AgentReportKind::Weekly),
+    ("monthly", AgentReportKind::Monthly),
+    ("session", AgentReportKind::Session),
+];
+
+pub const DSH_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
     ("daily", AgentReportKind::Daily),
     ("weekly", AgentReportKind::Weekly),
     ("monthly", AgentReportKind::Monthly),

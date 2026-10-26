@@ -64,6 +64,10 @@
 				"description": "Show Droid usage commands"
 			},
 			{
+				"name": "dsh",
+				"description": "Show DSH usage commands"
+			},
+			{
 				"name": "codebuff",
 				"description": "Show Codebuff usage commands"
 			},
@@ -377,6 +381,53 @@
 			"path": ["droid", "session"],
 			"description": "Show Droid usage grouped by session",
 			"usage": "ccusage droid session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["dsh"],
+			"description": "Usage reports for DSH.",
+			"usage": "ccusage dsh <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show DSH usage grouped by date"
+				},
+				{
+					"name": "weekly",
+					"description": "Show DSH usage grouped by week"
+				},
+				{
+					"name": "monthly",
+					"description": "Show DSH usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show DSH usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["dsh", "daily"],
+			"description": "Show DSH usage grouped by date",
+			"usage": "ccusage dsh daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["dsh", "weekly"],
+			"description": "Show DSH usage grouped by week",
+			"usage": "ccusage dsh weekly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["dsh", "monthly"],
+			"description": "Show DSH usage grouped by month",
+			"usage": "ccusage dsh monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["dsh", "session"],
+			"description": "Show DSH usage grouped by session",
+			"usage": "ccusage dsh session <OPTIONS>",
 			"options": "agent_options"
 		},
 		{

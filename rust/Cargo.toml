@@ -25,6 +25,7 @@ ccusage-adapter-codex = { path = "adapters/codex" }
 ccusage-adapter-common = { path = "adapters/common" }
 ccusage-adapter-copilot = { path = "adapters/copilot" }
 ccusage-adapter-droid = { path = "adapters/droid" }
+ccusage-adapter-dsh = { path = "adapters/dsh" }
 ccusage-adapter-gemini = { path = "adapters/gemini" }
 ccusage-adapter-goose = { path = "adapters/goose" }
 ccusage-adapter-grok = { path = "adapters/grok" }

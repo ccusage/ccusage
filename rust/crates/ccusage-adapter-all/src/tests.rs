@@ -863,6 +863,72 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
 }
 
 #[test]
+fn dsh_fixture_is_aggregated_in_daily_weekly_monthly_and_session_reports() {
+    let fixture = fs_fixture!({
+        "dsh/sessions/workspace/session-a/session.v4.jsonl": [
+            r#"{"type":"session","id":"session-a","cwd":"/workspace/api","version":4}"#,
+            r#"{"type":"assistant/message","time":4070995200000,"data":{"message":{"id":"message-a","source":{"provider":"deepseek","model":"deepseek-v4.1-flash"}},"usage":{"inputTokens":100,"outputTokens":50,"cacheReadTokens":25,"cacheWriteTokens":5,"totalTokens":180}}}"#,
+        ]
+        .join("\n"),
+    });
+    let _env = isolated_agent_env(&fixture, "DSH_HOME", fixture.path("dsh").into_os_string());
+    let shared = fixture_shared("20990101", "20990131");
+
+    let daily = load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    assert_eq!(daily.detected_agents, vec!["dsh"]);
+    assert_eq!(daily.rows.len(), 1);
+    assert_eq!(daily.rows[0].period, "2099-01-02");
+    assert_eq!(daily.rows[0].input_tokens, 100);
+    assert_eq!(daily.rows[0].output_tokens, 50);
+    assert_eq!(daily.rows[0].cache_creation_tokens, 5);
+    assert_eq!(daily.rows[0].cache_read_tokens, 25);
+    assert_eq!(daily.rows[0].total_tokens, 180);
+
+    let weekly = load_rows(
+        AgentReportKind::Weekly,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    assert_eq!(weekly.rows.len(), 1);
+    assert_eq!(weekly.rows[0].total_tokens, 180);
+
+    let monthly = load_rows(
+        AgentReportKind::Monthly,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    assert_eq!(monthly.rows.len(), 1);
+    assert_eq!(monthly.rows[0].period, "2099-01");
+    assert_eq!(monthly.rows[0].total_tokens, 180);
+    assert_eq!(monthly.detected_agents, vec!["dsh"]);
+
+    let session = load_rows(
+        AgentReportKind::Session,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    assert_eq!(session.rows.len(), 1);
+    assert_eq!(session.rows[0].period, "session-a");
+    assert_eq!(session.rows[0].agent, "dsh");
+    assert_eq!(
+        all_table_row(&session.rows[0], false, false, false)[1],
+        "DSH"
+    );
+}
+
+#[test]
 fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
     let fixture = fs_fixture!({});
     let _ = fixture.create_dir_all("zcode/cli/db");
@@ -1125,6 +1191,7 @@ fn isolated_agent_env(
         "OPENCODE_DATA_DIR",
         "AMP_DATA_DIR",
         "DROID_SESSIONS_DIR",
+        "DSH_HOME",
         "CODEBUFF_DATA_DIR",
         "HERMES_HOME",
         "PI_AGENT_DIR",

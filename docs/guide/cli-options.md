@@ -40,11 +40,12 @@ ccusage monthly --last 1
 # The last seven days, and the last three months
 ccusage daily --last 7
 ccusage monthly --last 3
+ccusage dsh weekly --last 1
 ```
 
 The count is inclusive of the current period, so `--last 2` on a daily report covers yesterday and today. Weeks start on the same day the report buckets by: Monday by default and Sunday for `ccusage claude weekly`, unless `commands.weekly.startOfWeek` in a [configuration file](/guide/config-files) or `--start-of-week` on `ccusage weekly` or `ccusage claude weekly` sets another day, with the flag taking precedence.
 
-`--last` works on every daily, weekly, and monthly report, including the per-agent ones such as `ccusage codex daily --last 1`. It is not available on `session`, `blocks`, or `statusline`, which have no calendar period, and it cannot be combined with `--since`, `--until`, or `--sections`.
+`--last` works on every daily, weekly, and monthly report, including per-agent reports such as `ccusage codex daily --last 1` and `ccusage dsh weekly --last 1`. It is not available on `session`, `blocks`, or `statusline`, which have no calendar period, and it cannot be combined with `--since`, `--until`, or `--sections`.
 
 ### Output Format
 

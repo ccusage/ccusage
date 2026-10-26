@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage-cli/src/tests.rs
+source: crates/ccusage-cli-parser/src/tests.rs
 expression: help_text()
 ---
 USAGE:
@@ -18,6 +18,7 @@ COMMANDS:
   opencode                   Show OpenCode token usage commands
   amp                        Show Amp token usage commands
   droid                      Show Droid usage commands
+  dsh                        Show DSH usage commands
   codebuff                   Show Codebuff usage commands
   hermes                     Show Hermes usage commands
   pi                         Show pi-agent usage commands
@@ -44,6 +45,7 @@ For more info, run any command with the `--help` flag:
   ccusage opencode --help
   ccusage amp --help
   ccusage droid --help
+  ccusage dsh --help
   ccusage codebuff --help
   ccusage hermes --help
   ccusage pi --help

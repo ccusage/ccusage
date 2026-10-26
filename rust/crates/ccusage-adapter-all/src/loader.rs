@@ -11,8 +11,8 @@ use crate::{
     BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result,
     SessionAccumulator, UsageSummary,
     adapter::{
-        amp, antigravity, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
-        kilo, kimi, openclaw, opencode, pi, qwen, zcode,
+        amp, antigravity, claude, codebuff, codex, copilot, droid, dsh, gemini, goose, grok,
+        hermes, kilo, kimi, openclaw, opencode, pi, qwen, zcode,
     },
     cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -508,6 +508,21 @@ fn load_base_rows(
                     &pricing["zcode"],
                     zcode::load_entries,
                     zcode::summarize_entries,
+                )
+            }),
+        },
+        AgentLoadSpec {
+            index: 18,
+            agent: BUILT_IN_AGENT_NAMES[18],
+            progress_agent: crate::progress::UsageLoadAgent("DSH"),
+            load: Box::new(|| {
+                load_priced_summary_agent_rows(
+                    "dsh",
+                    load_kind,
+                    &source_shared["dsh"],
+                    &pricing["dsh"],
+                    dsh::load_entries,
+                    dsh::summarize_entries,
                 )
             }),
         },
@@ -1231,6 +1246,7 @@ mod tests {
             ("OPENCODE_DATA_DIR", None),
             ("AMP_DATA_DIR", None),
             ("DROID_SESSIONS_DIR", None),
+            ("DSH_HOME", None),
             ("CODEBUFF_DATA_DIR", None),
             ("HERMES_HOME", None),
             (

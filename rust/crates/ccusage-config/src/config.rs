@@ -1143,6 +1143,11 @@ mod tests {
                     "defaults": {
                         "offline": true
                     }
+                },
+                "dsh": {
+                    "defaults": {
+                        "offline": true
+                    }
                 }
             }),
             "daily",
@@ -1152,6 +1157,10 @@ mod tests {
 
         assert!(config.for_source("pi").is_some());
         assert!(config.for_source("openclaw").is_some());
+        let dsh = config.for_source("dsh").expect("DSH sections");
+        let mut dsh_shared = SharedArgs::with_defaults();
+        dsh.apply_shared(&mut dsh_shared);
+        assert!(dsh_shared.offline);
         assert!(config.for_source("codex").is_none());
 
         let focused = context(

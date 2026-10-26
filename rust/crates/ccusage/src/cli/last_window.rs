@@ -39,6 +39,7 @@ fn window_target(cli: &mut Cli) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)
             | Command::OpenCode(args)
             | Command::Amp(args)
             | Command::Droid(args)
+            | Command::Dsh(args)
             | Command::Codebuff(args)
             | Command::Hermes(args)
             | Command::Pi(args)
@@ -112,7 +113,9 @@ mod tests {
         };
         resolve(&mut cli).unwrap();
         match cli.command {
-            Some(Command::All(args)) | Some(Command::Codex(args)) => args.shared.since,
+            Some(Command::All(args)) | Some(Command::Codex(args)) | Some(Command::Dsh(args)) => {
+                args.shared.since
+            }
             Some(Command::Weekly(args)) => args.shared.since,
             Some(Command::Monthly(shared)) => shared.since,
             _ => panic!("unexpected command"),
@@ -141,6 +144,17 @@ mod tests {
         assert_eq!(
             monthly,
             last_periods_since(PeriodUnit::Month, 1, &today, WeekDay::Monday)
+        );
+    }
+
+    #[test]
+    fn resolves_dsh_weekly_last_window() {
+        let since = resolved_since(Command::Dsh(agent_command(AgentReportKind::Weekly, 1)));
+
+        let today = format_date(utc_now(), Some("UTC"));
+        assert_eq!(
+            since,
+            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Monday)
         );
     }
 

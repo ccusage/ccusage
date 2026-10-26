@@ -602,6 +602,7 @@ fn agent_label(agent: &str) -> &str {
         "opencode" => "OpenCode",
         "amp" => "Amp",
         "droid" => "Droid",
+        "dsh" => "DSH",
         "codebuff" => "Codebuff",
         "hermes" => "Hermes",
         "pi" => "pi-agent",

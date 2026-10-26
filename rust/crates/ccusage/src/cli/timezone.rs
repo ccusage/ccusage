@@ -38,6 +38,7 @@ fn command_shared(command: &Command) -> &SharedArgs {
         | Command::OpenCode(args)
         | Command::Amp(args)
         | Command::Droid(args)
+        | Command::Dsh(args)
         | Command::Codebuff(args)
         | Command::Hermes(args)
         | Command::Pi(args)
@@ -92,6 +93,7 @@ mod tests {
             &["claude", "daily", "--timezone", "Not/AZone"],
             &["claude", "session", "--timezone", "Not/AZone"],
             &["codex", "monthly", "--timezone", "Not/AZone"],
+            &["dsh", "weekly", "--timezone", "Not/AZone"],
             &["blocks", "--timezone", "Not/AZone"],
             &["--timezone", "Not/AZone", "statusline"],
             &["statusline", "--timezone", "Not/AZone"],

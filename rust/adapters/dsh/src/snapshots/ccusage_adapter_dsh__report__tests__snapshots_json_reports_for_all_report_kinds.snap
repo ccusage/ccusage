@@ -1,0 +1,186 @@
+---
+source: adapters/dsh/src/report.rs
+expression: "serde_json::json!({\n    \"daily\": report(AgentReportKind::Daily), \"weekly\":\n    report(AgentReportKind::Weekly), \"monthly\":\n    report(AgentReportKind::Monthly), \"sessions\":\n    report(AgentReportKind::Session),\n})"
+---
+{
+  "daily": {
+    "daily": [
+      {
+        "cacheCreationTokens": 5,
+        "cacheReadTokens": 25,
+        "date": "2026-10-26",
+        "inputTokens": 130,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 5,
+            "cacheReadTokens": 25,
+            "cost": 0.54,
+            "inputTokens": 130,
+            "modelName": "deepseek-v4.1-flash",
+            "outputTokens": 70
+          }
+        ],
+        "modelsUsed": [
+          "deepseek-v4.1-flash"
+        ],
+        "outputTokens": 70,
+        "totalCost": 0.54,
+        "totalTokens": 230
+      },
+      {
+        "cacheCreationTokens": 0,
+        "cacheReadTokens": 10,
+        "date": "2026-10-27",
+        "inputTokens": 80,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 0,
+            "cacheReadTokens": 10,
+            "cost": 0.24,
+            "inputTokens": 80,
+            "modelName": "deepseek-v4.1-flash",
+            "outputTokens": 40
+          }
+        ],
+        "modelsUsed": [
+          "deepseek-v4.1-flash"
+        ],
+        "outputTokens": 40,
+        "totalCost": 0.24,
+        "totalTokens": 130
+      }
+    ],
+    "totals": {
+      "cacheCreationTokens": 5,
+      "cacheReadTokens": 35,
+      "inputTokens": 210,
+      "outputTokens": 110,
+      "totalCost": 0.78,
+      "totalTokens": 360
+    }
+  },
+  "monthly": {
+    "monthly": [
+      {
+        "cacheCreationTokens": 5,
+        "cacheReadTokens": 35,
+        "inputTokens": 210,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 5,
+            "cacheReadTokens": 35,
+            "cost": 0.78,
+            "inputTokens": 210,
+            "modelName": "deepseek-v4.1-flash",
+            "outputTokens": 110
+          }
+        ],
+        "modelsUsed": [
+          "deepseek-v4.1-flash"
+        ],
+        "month": "2026-10",
+        "outputTokens": 110,
+        "totalCost": 0.78,
+        "totalTokens": 360
+      }
+    ],
+    "totals": {
+      "cacheCreationTokens": 5,
+      "cacheReadTokens": 35,
+      "inputTokens": 210,
+      "outputTokens": 110,
+      "totalCost": 0.78,
+      "totalTokens": 360
+    }
+  },
+  "sessions": {
+    "sessions": [
+      {
+        "cacheCreationTokens": 5,
+        "cacheReadTokens": 25,
+        "inputTokens": 130,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 5,
+            "cacheReadTokens": 25,
+            "cost": 0.54,
+            "inputTokens": 130,
+            "modelName": "deepseek-v4.1-flash",
+            "outputTokens": 70
+          }
+        ],
+        "modelsUsed": [
+          "deepseek-v4.1-flash"
+        ],
+        "outputTokens": 70,
+        "sessionId": "session-a",
+        "totalCost": 0.54,
+        "totalTokens": 230
+      },
+      {
+        "cacheCreationTokens": 0,
+        "cacheReadTokens": 10,
+        "inputTokens": 80,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 0,
+            "cacheReadTokens": 10,
+            "cost": 0.24,
+            "inputTokens": 80,
+            "modelName": "deepseek-v4.1-flash",
+            "outputTokens": 40
+          }
+        ],
+        "modelsUsed": [
+          "deepseek-v4.1-flash"
+        ],
+        "outputTokens": 40,
+        "sessionId": "session-b",
+        "totalCost": 0.24,
+        "totalTokens": 130
+      }
+    ],
+    "totals": {
+      "cacheCreationTokens": 5,
+      "cacheReadTokens": 35,
+      "inputTokens": 210,
+      "outputTokens": 110,
+      "totalCost": 0.78,
+      "totalTokens": 360
+    }
+  },
+  "weekly": {
+    "totals": {
+      "cacheCreationTokens": 5,
+      "cacheReadTokens": 35,
+      "inputTokens": 210,
+      "outputTokens": 110,
+      "totalCost": 0.78,
+      "totalTokens": 360
+    },
+    "weekly": [
+      {
+        "cacheCreationTokens": 5,
+        "cacheReadTokens": 35,
+        "inputTokens": 210,
+        "modelBreakdowns": [
+          {
+            "cacheCreationTokens": 5,
+            "cacheReadTokens": 35,
+            "cost": 0.78,
+            "inputTokens": 210,
+            "modelName": "deepseek-v4.1-flash",
+            "outputTokens": 110
+          }
+        ],
+        "modelsUsed": [
+          "deepseek-v4.1-flash"
+        ],
+        "outputTokens": 110,
+        "totalCost": 0.78,
+        "totalTokens": 360,
+        "week": "2026-10-26"
+      }
+    ]
+  }
+}

@@ -36,7 +36,7 @@ Every section uses the options resolved for the invoked command. For example, `c
 
 ## How Unified Views Work
 
-ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode. The same daily, weekly, monthly, and session views can run in two modes:
+ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, DSH, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode. The same daily, weekly, monthly, and session views can run in two modes:
 
 | Mode    | Command example        | What it shows                           |
 | ------- | ---------------------- | --------------------------------------- |
@@ -55,6 +55,7 @@ Unified tables include an **Agent** column so you can compare sources in one vie
 | OpenCode       | `opencode`    | `ccusage opencode weekly`   |
 | Amp            | `amp`         | `ccusage amp session`       |
 | Droid          | `droid`       | `ccusage droid daily`       |
+| DSH            | `dsh`         | `ccusage dsh daily`         |
 | Codebuff       | `codebuff`    | `ccusage codebuff daily`    |
 | Hermes Agent   | `hermes`      | `ccusage hermes daily`      |
 | pi-agent       | `pi`          | `ccusage pi monthly`        |

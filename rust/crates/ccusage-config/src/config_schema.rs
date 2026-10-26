@@ -30,6 +30,8 @@ pub struct CcusageConfig {
     pub amp: Option<AmpConfig>,
     /// Droid configuration.
     pub droid: Option<DroidConfig>,
+    /// DSH configuration.
+    pub dsh: Option<DshConfig>,
     /// Codebuff configuration.
     pub codebuff: Option<CodebuffConfig>,
     /// Hermes Agent configuration.
@@ -144,6 +146,22 @@ pub struct DroidConfig {
 #[serde(rename_all = "camelCase")]
 pub struct DroidCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DshConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<DshCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DshCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -1135,6 +1153,8 @@ mod tests {
         assert_schema_properties(&schema, &["grok", "defaults"], &shared);
         assert_schema_properties(&schema, &["antigravity", "defaults"], &shared);
         assert_schema_properties(&schema, &["zcode", "defaults"], &shared);
+        assert_schema_properties(&schema, &["dsh", "defaults"], &shared);
+        assert_schema_properties(&schema, &["dsh", "commands", "weekly"], &shared);
     }
 
     #[test]
@@ -1157,6 +1177,7 @@ mod tests {
         assert!(schema_property(&schema, &["qwen", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["grok", "defaults", "grokPath"]).is_none());
         assert!(schema_property(&schema, &["openclaw", "defaults", "grokPath"]).is_none());
+        assert!(schema_property(&schema, &["dsh", "defaults", "dshHome"]).is_none());
     }
 
     #[test]
@@ -1198,6 +1219,7 @@ mod tests {
                 "copilot",
                 "defaults",
                 "droid",
+                "dsh",
                 "gemini",
                 "antigravity",
                 "goose",
@@ -1492,6 +1514,7 @@ mod tests {
             "piDefaults": schema_node(&schema, &["pi", "defaults"]),
             "openclawDefaults": schema_node(&schema, &["openclaw", "defaults"]),
             "grokDefaults": schema_node(&schema, &["grok", "defaults"]),
+            "dshDefaults": schema_node(&schema, &["dsh", "defaults"]),
             "zcodeDefaults": schema_node(&schema, &["zcode", "defaults"]),
         }));
     }

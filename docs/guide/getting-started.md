@@ -168,6 +168,7 @@ If ccusage shows no data, check:
    - OpenCode: `${OPENCODE_DATA_DIR-${XDG_DATA_HOME:-$HOME/.local/share}/opencode}` (the fallback applies only when `OPENCODE_DATA_DIR` is unset)
    - Amp: `${AMP_DATA_DIR:-~/.local/share/amp}`
    - Droid: `${DROID_SESSIONS_DIR:-~/.factory/sessions}`
+   - DSH: `${DSH_HOME:-~/.dsh}`
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`
    - Hermes Agent: `${HERMES_HOME:-~/.hermes}/state.db`
    - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}`

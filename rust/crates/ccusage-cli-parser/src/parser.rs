@@ -4,9 +4,9 @@ use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DATE_BOUND_FORMATS, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS,
-    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    CostSource, DATE_BOUND_FORMATS, DSH_AGENT_REPORTS, DailyArgs, OPENCODE_AGENT_REPORTS,
+    STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate,
+    WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 use crate::Cli;
@@ -282,6 +282,7 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::Droid,
         ),
+        "dsh" => parse_basic_agent_command(parser, shared, "dsh", DSH_AGENT_REPORTS, Command::Dsh),
         "codebuff" => parse_basic_agent_command(
             parser,
             shared,
@@ -822,6 +823,7 @@ fn is_command(arg: &str) -> bool {
             | "opencode"
             | "amp"
             | "droid"
+            | "dsh"
             | "codebuff"
             | "hermes"
             | "pi"
@@ -984,6 +986,7 @@ fn is_agent_command(command: &str) -> bool {
             | "opencode"
             | "amp"
             | "droid"
+            | "dsh"
             | "codebuff"
             | "hermes"
             | "pi"
@@ -1008,6 +1011,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         ),
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
+        "dsh" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
         | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
             matches!(report, "daily" | "monthly" | "session")
@@ -1023,6 +1027,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "opencode" => "OpenCode",
         "amp" => "Amp",
         "droid" => "Droid",
+        "dsh" => "DSH",
         "codebuff" => "Codebuff",
         "hermes" => "Hermes",
         "pi" => "pi-agent",
@@ -1119,6 +1124,7 @@ fn report_shared<'a>(
             | Command::Gemini(args)
             | Command::Antigravity(args)
             | Command::Kimi(args)
+            | Command::Dsh(args)
             | Command::Qwen(args)
             | Command::OpenClaw(args)
             | Command::Grok(args)

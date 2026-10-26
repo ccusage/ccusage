@@ -204,6 +204,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Gemini(args)) => agent_command_snapshot("gemini", args),
         Some(Command::Antigravity(args)) => agent_command_snapshot("antigravity", args),
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
+        Some(Command::Dsh(args)) => agent_command_snapshot("dsh", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
@@ -807,13 +808,23 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode",
+        "copilot", "gemini", "kimi", "dsh", "qwen", "openclaw", "grok", "zcode",
     ];
 
     for agent in agents {
         assert!(help.contains(&format!("\n  {agent} ")));
         assert!(!help.contains(&format!("\n  {agent} daily")));
     }
+}
+
+#[test]
+fn parses_dsh_weekly_reports() {
+    let cli = parse(&["ccusage", "dsh", "weekly", "--json"]);
+    let Some(Command::Dsh(args)) = cli.command else {
+        panic!("expected DSH command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert!(args.shared.json);
 }
 
 #[test]
@@ -1011,6 +1022,10 @@ fn snapshots_root_and_contextual_help_text() {
         ])
     );
     insta::assert_snapshot!(
+        "dsh_agent_help",
+        help_text_for_args(&["ccusage".to_string(), "dsh".to_string()])
+    );
+    insta::assert_snapshot!(
         "statusline_help",
         help_text_for_args(&["ccusage".to_string(), "statusline".to_string()])
     );
@@ -1087,6 +1102,10 @@ fn snapshots_representative_cli_parse_shapes() {
         json!({
             "case": "opencode weekly",
             "cli": cli_snapshot(parse(&["ccusage", "opencode", "weekly", "--json"])),
+        }),
+        json!({
+            "case": "dsh weekly",
+            "cli": cli_snapshot(parse(&["ccusage", "dsh", "weekly", "--json"])),
         }),
         json!({
             "case": "pi session path",
