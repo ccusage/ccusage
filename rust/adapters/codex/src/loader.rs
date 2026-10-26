@@ -2430,6 +2430,52 @@ mod tests {
     }
 
     #[test]
+    fn keeps_first_child_response_after_zero_usage_initialization() {
+        let token_count = |timestamp: &str, input_tokens: u64, output_tokens: u64| {
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": input_tokens + output_tokens,
+                        },
+                        "total_token_usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": input_tokens + output_tokens,
+                        },
+                    },
+                },
+            })
+            .to_string()
+        };
+
+        let fixture = fs_fixture!({
+            "child.jsonl": [
+                replay_metadata(
+                    "2026-07-10T08:00:00.000Z",
+                    "child",
+                    Some("missing-parent"),
+                ),
+                token_count("2026-07-10T08:00:00.100Z", 0, 0),
+                token_count("2026-07-10T08:00:00.200Z", 0, 0),
+                token_count("2026-07-10T08:00:00.500Z", 50, 1),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 50);
+        assert_eq!(events[0].output_tokens, 1);
+    }
+
+    #[test]
     fn skips_missing_parent_replay_with_duplicate_snapshots_and_advancing_usage() {
         fn token_count(timestamp: &str, input: u64, total_input: u64) -> String {
             json!({

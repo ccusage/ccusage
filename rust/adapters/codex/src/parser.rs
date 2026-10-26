@@ -175,9 +175,15 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
         let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
             continue;
         };
-        if info
-            .is_none_or(|info| info.last_token_usage.is_none() && info.total_token_usage.is_none())
-        {
+        if !info.is_some_and(|info| {
+            info.last_token_usage
+                .as_ref()
+                .or(info.total_token_usage.as_ref())
+                .copied()
+                .map(normalize_codex_raw_usage)
+                .as_ref()
+                .is_some_and(has_codex_token_usage)
+        }) {
             continue;
         }
         let Some(timestamp) = parse_ts_timestamp(&timestamp) else {
