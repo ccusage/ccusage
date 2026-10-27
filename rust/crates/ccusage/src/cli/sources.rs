@@ -119,7 +119,8 @@ fn unified_shared(cli: Cli) -> SharedArgs {
 #[cfg(test)]
 mod tests {
     use ccusage_cli::{AgentReportKind, CodexSpeed, CostMode, WeekDay};
-    use ccusage_core::{PeriodUnit, format_date, last_periods_since, utc_now};
+    use ccusage_core::utc_now;
+    use ccusage_report::{PeriodUnit, format_date, last_periods_since};
     use ccusage_test_support::fs_fixture;
 
     use super::*;

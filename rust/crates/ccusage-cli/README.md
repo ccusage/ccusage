@@ -1,7 +1,10 @@
 # ccusage-cli
 
 The plain argument types the runtime shares: `SharedArgs`, the per-command
-argument structs, and the enums the reports switch on.
+argument structs, the enums the reports switch on, and the few constants and
+helpers (`BUILT_IN_AGENT_NAMES`, `DEFAULT_SESSION_DURATION_HOURS`,
+`home::home_dir`) that `ccusage-config` and `ccusage-cli-parser` need without
+depending on `ccusage-core`.
 
 This crate deliberately has no dependencies, no build script, and no embedded
 assets. `ccusage-core` and all 17 adapters depend on it, so anything heavier
@@ -10,6 +13,9 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 
 ## Public surface
 
+- `BUILT_IN_AGENT_NAMES`
+- `DEFAULT_SESSION_DURATION_HOURS`
+- `home::home_dir`
 - `types::AgentCommandArgs`
 - `types::AgentReportKind`
 - `types::BlocksArgs`

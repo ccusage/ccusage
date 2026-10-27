@@ -45,6 +45,7 @@ source in its own `ccusage-adapter-*` crate.
 - `ccusage-cli-parser`
 - `ccusage-config`
 - `ccusage-core`
+- `ccusage-report`
 - `ccusage-pricing-snapshots`
 - `ring`
 - `rustls`

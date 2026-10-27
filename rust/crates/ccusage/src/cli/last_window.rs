@@ -1,5 +1,6 @@
 use ccusage_cli::{AgentCommandArgs, AgentReportKind, Command, SharedArgs, WeekDay};
-use ccusage_core::{PeriodUnit, format_date, last_periods_since, utc_now};
+use ccusage_core::utc_now;
+use ccusage_report::{PeriodUnit, format_date, last_periods_since};
 
 use super::Cli;
 

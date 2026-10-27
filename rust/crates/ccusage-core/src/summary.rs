@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     LoadedEntry, ModelBreakdown, Result, TimestampMs, TokenCounts, UsageSummary,
-    cli::{SharedArgs, SortOrder, WeekDay},
+    cli::{SortOrder, WeekDay},
     cli_error,
     fast::{FxHashMap, FxHashSet},
     format_naive_date, format_rfc3339_millis, parse_iso_date,
@@ -290,22 +290,6 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
     summary
 }
 
-pub fn filter_and_sort_summaries<F>(rows: &mut Vec<UsageSummary>, shared: &SharedArgs, date_fn: F)
-where
-    F: Fn(&UsageSummary) -> &str,
-{
-    if shared.since.is_some() || shared.until.is_some() {
-        rows.retain(|row| {
-            crate::date_within_range(
-                date_fn(row),
-                shared.since.as_deref(),
-                shared.until.as_deref(),
-            )
-        });
-    }
-    sort_summaries(rows, &shared.order, date_fn);
-}
-
 pub fn sort_summaries<F>(rows: &mut [UsageSummary], order: &SortOrder, date_fn: F)
 where
     F: Fn(&UsageSummary) -> &str,
@@ -337,11 +321,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{
-        ModelBreakdown, TokenUsageRaw, UsageEntry, UsageMessage,
-        cli::{SharedArgs, SortOrder, normalize_date_bound},
-        format_rfc3339_millis,
-    };
+    use crate::{ModelBreakdown, TokenUsageRaw, UsageEntry, UsageMessage, format_rfc3339_millis};
 
     #[test]
     fn snapshots_summarize_by_key_aggregates_counts_costs_and_breakdowns() {
@@ -497,89 +477,6 @@ mod tests {
             "weekly": weekly,
             "monthly": monthly,
         }));
-    }
-
-    #[test]
-    fn snapshots_filter_and_sort_summaries_since_until_inclusive() {
-        let mut rows = vec![
-            summary_row(SummaryFixture {
-                date: Some("2026-01-01"),
-                model: "before",
-                cost: 0.125,
-                input_tokens: 1,
-            }),
-            summary_row(SummaryFixture {
-                date: Some("2026-01-02"),
-                model: "start-boundary",
-                cost: 0.25,
-                input_tokens: 2,
-            }),
-            summary_row(SummaryFixture {
-                date: Some("2026-01-10"),
-                model: "end-boundary",
-                cost: 0.5,
-                input_tokens: 10,
-            }),
-            summary_row(SummaryFixture {
-                date: Some("2026-01-11"),
-                model: "after",
-                cost: 1.0,
-                input_tokens: 11,
-            }),
-        ];
-        let shared = SharedArgs {
-            since: Some("20260102".to_string()),
-            until: Some("20260110".to_string()),
-            order: SortOrder::Desc,
-            ..SharedArgs::default()
-        };
-
-        filter_and_sort_summaries(&mut rows, &shared, |row| row.date.as_deref().unwrap_or(""));
-
-        insta::assert_json_snapshot!(rows);
-    }
-
-    #[test]
-    fn filter_and_sort_summaries_treats_dashed_and_compact_bounds_equally() {
-        fn filtered_models(since: &str) -> Vec<String> {
-            let mut rows = vec![
-                summary_row(SummaryFixture {
-                    date: Some("2026-01-24"),
-                    model: "before",
-                    cost: 0.125,
-                    input_tokens: 1,
-                }),
-                summary_row(SummaryFixture {
-                    date: Some("2026-04-22"),
-                    model: "on-boundary",
-                    cost: 0.25,
-                    input_tokens: 2,
-                }),
-                summary_row(SummaryFixture {
-                    date: Some("2026-04-23"),
-                    model: "after",
-                    cost: 0.5,
-                    input_tokens: 3,
-                }),
-            ];
-            let shared = SharedArgs {
-                since: normalize_date_bound(since),
-                order: SortOrder::Asc,
-                ..SharedArgs::default()
-            };
-
-            filter_and_sort_summaries(&mut rows, &shared, |row| row.date.as_deref().unwrap_or(""));
-
-            rows.into_iter()
-                .map(|row| row.models_used.into_iter().next().unwrap())
-                .collect()
-        }
-
-        let dashed = filtered_models("2026-04-22");
-        let compact = filtered_models("20260422");
-
-        assert_eq!(dashed, compact);
-        assert_eq!(dashed, vec!["on-boundary", "after"]);
     }
 
     #[test]

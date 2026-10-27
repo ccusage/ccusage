@@ -20,7 +20,6 @@ assert how a parsed command line and a config file combine.
 ## Depends on
 
 - `ccusage-cli`
-- `ccusage-core`
 - `schemars`
 - `serde`
 - `serde_json`

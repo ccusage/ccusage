@@ -18,7 +18,7 @@ pub struct UtcParts {
     pub hour: u32,
     pub minute: u32,
     pub second: u32,
-    millisecond: u32,
+    pub millisecond: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,7 +59,7 @@ impl TimestampMs {
         Self(self.0.div_euclid(MILLIS_PER_HOUR) * MILLIS_PER_HOUR)
     }
 
-    fn utc_parts(self) -> UtcParts {
+    pub fn utc_parts(self) -> UtcParts {
         let seconds = self.0.div_euclid(MILLIS_PER_SECOND);
         let millisecond = self.0.rem_euclid(MILLIS_PER_SECOND) as u32;
         let days = seconds.div_euclid(86_400);
@@ -290,24 +290,12 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
     (year as i32, month as u32, day as u32)
 }
 
-/// `--timezone` and a config `timezone` are checked with this before use, so an
-/// unknown name is rejected up front instead of silently falling back to the
-/// local zone, which can group usage under the wrong date. `local` is the
-/// documented way to ask for the system timezone and keeps that fallback.
-pub fn is_valid_timezone(value: &str) -> bool {
-    matches!(value, "local" | "UTC") || JiffTimeZone::get(value).is_ok()
-}
-
 pub fn parse_tz(timezone: Option<&str>) -> Option<JiffTimeZone> {
     match timezone? {
         "local" => None,
         "UTC" => Some(JiffTimeZone::UTC),
         value => JiffTimeZone::get(value).ok(),
     }
-}
-
-pub fn format_date(timestamp: TimestampMs, timezone: Option<&str>) -> String {
-    format_date_tz(timestamp, parse_tz(timezone).as_ref())
 }
 
 pub fn format_date_tz(timestamp: TimestampMs, timezone: Option<&JiffTimeZone>) -> String {
@@ -336,23 +324,6 @@ fn format_date_parts(year: i32, month: u32, day: u32) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-#[doc(hidden)]
-pub fn format_utc_minute(timestamp: TimestampMs) -> String {
-    let parts = timestamp.utc_parts();
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}",
-        parts.year, parts.month, parts.day, parts.hour, parts.minute
-    )
-}
-
-pub fn format_utc_second(timestamp: TimestampMs) -> String {
-    let parts = timestamp.utc_parts();
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second
-    )
-}
-
 pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
     let parts = timestamp.utc_parts();
     format!(
@@ -367,36 +338,10 @@ pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
     )
 }
 
-pub fn local_parts(timestamp: TimestampMs) -> UtcParts {
-    let Ok(timestamp) = JiffTimestamp::from_millisecond(timestamp.as_millis()) else {
-        return timestamp.utc_parts();
-    };
-    let zoned = timestamp.to_zoned(JiffTimeZone::system());
-    UtcParts {
-        year: i32::from(zoned.year()),
-        month: u32::from(zoned.month() as u8),
-        day: u32::from(zoned.day() as u8),
-        hour: u32::from(zoned.hour() as u8),
-        minute: u32::from(zoned.minute() as u8),
-        second: u32::from(zoned.second() as u8),
-        millisecond: 0,
-    }
-}
-
-pub fn hour_12(hour: u32) -> u32 {
-    let hour = hour % 12;
-    if hour == 0 { 12 } else { hour }
-}
-
-pub fn am_pm(hour: u32) -> &'static str {
-    if hour < 12 { "AM" } else { "PM" }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, is_valid_timezone,
-        parse_compact_date, parse_tz,
+        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date, parse_tz,
     };
 
     // 2026-01-02 00:00:00 UTC
@@ -404,9 +349,6 @@ mod tests {
 
     #[test]
     fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {
-        assert!(is_valid_timezone("UTC"));
-        assert!(is_valid_timezone("local"));
-        assert!(!is_valid_timezone("Not/AZone"));
         assert!(parse_tz(Some("UTC")).is_some());
         assert!(parse_tz(Some("local")).is_none());
     }

@@ -41,6 +41,7 @@ ccusage-cli-parser = { path = "crates/ccusage-cli-parser" }
 ccusage-config = { path = "crates/ccusage-config" }
 ccusage-core = { path = "crates/ccusage-core" }
 ccusage-pricing-snapshots = { path = "crates/ccusage-pricing-snapshots" }
+ccusage-report = { path = "crates/ccusage-report" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }
 ccusage-test-support = { path = "crates/ccusage-test-support" }
 assert_fs = "1.1.4"

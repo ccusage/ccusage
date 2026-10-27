@@ -4,8 +4,6 @@ pub mod agent_report;
 pub mod cost;
 pub mod date_utils;
 pub mod fast;
-pub mod home;
-pub mod last_window;
 pub mod logger;
 pub mod model_aliases;
 pub mod output;
@@ -21,6 +19,10 @@ pub mod cli {
     pub use ccusage_cli::*;
 }
 
+// Defined in ccusage-cli so the config and parser crates can use them without
+// depending on this crate; re-exported so existing callers keep one import path.
+pub use ccusage_cli::{BUILT_IN_AGENT_NAMES, DEFAULT_SESSION_DURATION_HOURS, home};
+
 pub use agent_report::{agent_summary_json, first_column, summary_period};
 pub use cost::{
     calculate_cost, calculate_cost_for_usage_at, calculate_cost_from_pricing,
@@ -28,21 +30,19 @@ pub use cost::{
     missing_pricing_model_for_usage, stored_cost_for_mode,
 };
 pub use date_utils::*;
-pub use last_window::{PeriodUnit, last_periods_since};
 pub use logger::{debug_log, log_level};
 pub use output::{
     UsageTableOptions, attach_unpriced_models, format_currency, format_models_multiline,
-    format_number, group_project_output, json_float, print_json_or_jq,
-    print_missing_pricing_warnings, print_missing_pricing_warnings_for_models, print_usage_table,
-    print_usage_table_with_options, sanitize_terminal_text, session_summary_json,
-    should_use_compact_layout, summary_json, totals_json, unpriced_models, wants_json,
+    format_number, json_float, print_json_or_jq, print_missing_pricing_warnings,
+    print_missing_pricing_warnings_for_models, print_usage_table, print_usage_table_with_options,
+    sanitize_terminal_text, should_use_compact_layout, totals_json, unpriced_models, wants_json,
 };
 pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
 pub(crate) use project_names::parse_project_aliases;
 pub(crate) use project_names::short_model_name;
 pub use project_names::{format_breakdown_model_label, format_project_name};
 pub use summary::{
-    BucketKind, SessionAccumulator, filter_and_sort_summaries, sort_summaries, summarize_by_key,
+    BucketKind, SessionAccumulator, sort_summaries, summarize_by_key,
     summarize_summaries_by_bucket, week_start,
 };
 pub use types::*;
@@ -52,30 +52,8 @@ pub use utils::{
 
 pub use ccusage_terminal::{Align, Color, SimpleTable, TerminalStyle, terminal_width};
 
-pub const DEFAULT_SESSION_DURATION_HOURS: f64 = 5.0;
 pub const DEFAULT_RECENT_DAYS: i64 = 3;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;
-
-pub const BUILT_IN_AGENT_NAMES: &[&str] = &[
-    "claude",
-    "codex",
-    "opencode",
-    "amp",
-    "droid",
-    "codebuff",
-    "hermes",
-    "pi",
-    "goose",
-    "openclaw",
-    "kilo",
-    "copilot",
-    "gemini",
-    "antigravity",
-    "kimi",
-    "qwen",
-    "grok",
-    "zcode",
-];
 
 pub type Result<T> = std::result::Result<T, CliError>;
 

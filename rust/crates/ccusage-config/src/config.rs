@@ -253,7 +253,7 @@ fn validate_named_pi_store_name(name: &str) -> std::result::Result<(), NamedPiSt
 
 fn reserved_named_pi_store_names() -> Vec<&'static str> {
     std::iter::once("all")
-        .chain(ccusage_core::BUILT_IN_AGENT_NAMES.iter().copied())
+        .chain(ccusage_cli::BUILT_IN_AGENT_NAMES.iter().copied())
         .collect()
 }
 
@@ -313,7 +313,7 @@ fn claude_config_dirs() -> Vec<PathBuf> {
             .map(PathBuf::from)
             .collect();
     }
-    ccusage_core::home::home_dir()
+    ccusage_cli::home::home_dir()
         .map(|home| vec![home.join(".config").join("claude"), home.join(".claude")])
         .unwrap_or_default()
 }
@@ -429,7 +429,7 @@ fn option_takes_value(arg: &str) -> bool {
 }
 
 fn is_agent_command(command: &str) -> bool {
-    ccusage_core::BUILT_IN_AGENT_NAMES.contains(&command)
+    ccusage_cli::BUILT_IN_AGENT_NAMES.contains(&command)
 }
 
 fn is_report_command(command: &str) -> bool {
@@ -807,11 +807,11 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+    use ccusage_cli::DEFAULT_SESSION_DURATION_HOURS;
     use ccusage_cli::{
         BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
         WeekDay, WeeklyArgs,
     };
-    use ccusage_core::DEFAULT_SESSION_DURATION_HOURS;
     use ccusage_test_support::fs_fixture;
 
     #[test]
@@ -1398,7 +1398,7 @@ mod tests {
             .into_iter()
             .collect::<BTreeSet<_>>();
         let expected = std::iter::once("all")
-            .chain(ccusage_core::BUILT_IN_AGENT_NAMES.iter().copied())
+            .chain(ccusage_cli::BUILT_IN_AGENT_NAMES.iter().copied())
             .collect::<BTreeSet<_>>();
 
         assert_eq!(reserved, expected);

@@ -14,6 +14,7 @@ pub(crate) use blocks::{
 #[cfg(test)]
 pub(crate) use ccusage_adapter_common::chunk_file_indexes_by_size;
 pub(crate) use ccusage_core::*;
+pub(crate) use ccusage_report::*;
 use cli::Command;
 #[cfg(test)]
 use pricing::PricingMap;
