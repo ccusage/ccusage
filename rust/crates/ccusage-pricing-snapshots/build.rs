@@ -3,8 +3,6 @@ use std::{env, fs, path::PathBuf};
 use serde_json::{Map, Value};
 
 const FLAKE_LOCK_JSON: &str = "../../../flake.lock";
-#[cfg(feature = "fetch-litellm-pricing")]
-const LITELLM_PRICING_JSON: &str = "model_prices_and_context_window.json";
 const OUT_PRICING_JSON: &str = "litellm-pricing.json.deflate";
 const MODELS_DEV_PRICING_JSON: &str = "src/models-dev-pricing.json";
 const OUT_MODELS_DEV_PRICING_JSON: &str = "models-dev-pricing.json.deflate";
@@ -126,13 +124,7 @@ fn litellm_pricing_url() -> std::io::Result<String> {
                 "flake.lock is missing nodes.litellm.locked",
             )
         })?;
-    let owner = required_flake_lock_string_field(locked, "owner")?;
-    let repo = required_flake_lock_string_field(locked, "repo")?;
-    let rev = required_flake_lock_string_field(locked, "rev")?;
-
-    Ok(format!(
-        "https://raw.githubusercontent.com/{owner}/{repo}/{rev}/{LITELLM_PRICING_JSON}"
-    ))
+    required_flake_lock_string_field(locked, "url")
 }
 
 #[cfg(feature = "fetch-litellm-pricing")]

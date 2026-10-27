@@ -45,7 +45,7 @@ let
     strictDeps = true;
     doCheck = false;
     cargoExtraArgs = "-p ccusage --bin ccusage";
-    CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}/model_prices_and_context_window.json";
+    CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}";
     CCUSAGE_VERSION = version;
     RUSTFLAGS =
       # Splitting the runtime into per-adapter crates makes each crate

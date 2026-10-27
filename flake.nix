@@ -22,8 +22,10 @@
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Only the pricing JSON is needed; a file input avoids unpacking the 2.7 GB
+    # repository. The commit lives in the URL, so update-litellm-lock.nu rewrites it.
     litellm = {
-      url = "github:BerriAI/litellm";
+      url = "file+https://raw.githubusercontent.com/BerriAI/litellm/aa33b052d2292c9fcdc3d34523a968f1b41d0bd4/model_prices_and_context_window.json";
       flake = false;
     };
     models-dev = {

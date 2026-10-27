@@ -5,27 +5,38 @@ use ./pricing-lock.nu report
 
 # Bump the pinned LiteLLM input and report whether it moved the pricing JSON that
 # the build embeds, so the workflow can skip validating lock-only churn.
+#
+# The input is a single-file URL (not the 2.7 GB repository), and that URL embeds
+# the commit, so `nix flake update` alone cannot move it: rewrite the commit in
+# flake.nix first, then let Nix re-lock the new narHash.
 def main [] {
     let before = (locked-pricing)
+    let rev = (
+        ^git ls-remote https://github.com/BerriAI/litellm refs/heads/main
+        | split row "\t"
+        | first
+    )
+    open --raw flake.nix
+    | str replace --regex 'BerriAI/litellm/[0-9a-f]{40}/' $"BerriAI/litellm/($rev)/"
+    | save --force flake.nix
     ^nix flake update litellm
 
     let changed = match ((locked-pricing) == $before) {
         false => true
         true => {
             print 'LiteLLM pricing JSON is unchanged; dropping the lock-only bump.'
-            ^git checkout -- flake.lock
+            ^git checkout -- flake.nix flake.lock
             false
         }
     }
 
     report {
         changed: $changed
-        paths: [flake.lock]
+        paths: [flake.nix flake.lock]
     }
 }
 
-# Fetch model_prices_and_context_window.json at the revision flake.lock pins.
+# Fetch the pricing JSON from the URL flake.lock pins.
 def locked-pricing []: nothing -> record {
-    let rev = open --raw flake.lock | from json | get nodes.litellm.locked.rev
-    http get $"https://raw.githubusercontent.com/BerriAI/litellm/($rev)/model_prices_and_context_window.json"
+    http get (open --raw flake.lock | from json | get nodes.litellm.locked.url)
 }
