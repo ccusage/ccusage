@@ -518,6 +518,33 @@ jobs:
           fi
           echo "CCUSAGE_PREVIEW_URL=$preview_url" >> "$GITHUB_ENV"
 
+      # Pricing snapshot commits are pushed to main with GITHUB_TOKEN, which
+      # triggers no CI, so they never get a preview package and the benchmark
+      # would wait out its whole package timeout for one. They do not change
+      # code, so walk back over them to the nearest commit that has a package.
+      # Any other commit without one (e.g. its CI is still running) stops the
+      # walk and keeps the real base, which is then waited for as before.
+      - name: Resolve base preview package
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git fetch --quiet --no-tags --depth=50 origin "$BASE_SHA"
+          base="$BASE_SHA"
+          for sha in $(git rev-list --first-parent -n 50 "$BASE_SHA"); do
+            if curl --fail --head --location --silent --output /dev/null \
+              "https://pkg.pr.new/$REPOSITORY/ccusage@$sha"; then
+              base="$sha"
+              break
+            fi
+            if git diff --name-only "$sha^" "$sha" \
+              | grep -qvE '^(flake\.(lock|nix)|rust/crates/ccusage-pricing-snapshots/src/[^/]+\.json)$'; then
+              break
+            fi
+          done
+          echo "Comparing against base package ${base}"
+          echo "BASE_PACKAGE_SHA=$base" >> "$GITHUB_ENV"
+
       - name: Generate large ccusage fixture
         run: |
           just generate-large-fixture \
@@ -528,8 +555,8 @@ jobs:
       - name: Compare performance
         run: |
           apps/ccusage/scripts/compare-pr-performance.bb \
-            --base-package-url "https://pkg.pr.new/${{ github.repository }}/ccusage@${{ github.event.pull_request.base.sha }}" \
-            --base-sha "${{ github.event.pull_request.base.sha }}" \
+            --base-package-url "https://pkg.pr.new/${{ github.repository }}/ccusage@$BASE_PACKAGE_SHA" \
+            --base-sha "$BASE_PACKAGE_SHA" \
             --head-dir . \
             --head-package-url "$CCUSAGE_PREVIEW_URL" \
             ${{ matrix.head-runtime-arg }} \
