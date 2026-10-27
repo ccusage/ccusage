@@ -54,7 +54,9 @@ in
     // profileEnv
     // {
       pnameSuffix = "-test-deps";
-      doCheck = true;
+      # The build command already compiles the test binaries; crane's check
+      # phase would only add another `cargo test --no-run` for the ccusage bin.
+      doCheck = false;
       buildPhaseCargoCommand = ''
         cargoWithProfile check --workspace --all-targets
         cargoWithProfile test --workspace --no-run
