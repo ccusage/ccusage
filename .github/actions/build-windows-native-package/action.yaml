@@ -5,8 +5,11 @@ inputs:
     description: Native package architecture
     required: true
   binary:
-    description: Path to the built ccusage binary
-    required: true
+    description: >
+      Ignored. The build output lives under CARGO_TARGET_DIR on the Dev Drive,
+      so the binary is staged from there; the input remains only so callers
+      that still pass it keep working.
+    required: false
   save-cargo-cache:
     description: >
       Whether this job may persist the Cargo cache. Saves additionally require a
@@ -16,6 +19,22 @@ inputs:
 runs:
   using: composite
   steps:
+    # Defender scans every file written to the system volume, which makes the
+    # many small files of the toolchain, the cache extraction, and the build
+    # output the slowest part of this job. A Dev Drive (ReFS with Defender in
+    # performance mode, or a VHDX fallback) avoids that cost, so CARGO_HOME,
+    # RUSTUP_HOME, and the target directory all live on it. Forward slashes keep
+    # the values valid for both bash and cargo.
+    - name: Set up Dev Drive
+      uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+      with:
+        drive-size: 12GB
+        drive-format: ReFS
+        env-mapping: |
+          CARGO_HOME,{{ DEV_DRIVE }}/.cargo
+          RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
+          CARGO_TARGET_DIR,{{ DEV_DRIVE }}/target
+
     # rust-toolchain.toml also lists clippy, rustfmt, and llvm-tools for local
     # development, which rustup would otherwise download on the first cargo call
     # (~50 MB of the ~150 MB of xz archives). The release build only needs the
@@ -42,8 +61,8 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
-          ~/.cargo/registry
-          rust/target
+          ${{ env.CARGO_HOME }}/registry
+          ${{ env.CARGO_TARGET_DIR }}
         key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}
         restore-keys: |
           cargo-${{ runner.os }}-${{ runner.arch }}-
@@ -60,10 +79,9 @@ runs:
       shell: bash
       env:
         ARCH: ${{ inputs.arch }}
-        BINARY: ${{ inputs.binary }}
       run: |
         mkdir -p "packages/ccusage-win32-$ARCH/bin"
-        cp "$BINARY" "packages/ccusage-win32-$ARCH/bin/ccusage.exe"
+        cp "$CARGO_TARGET_DIR/release/ccusage.exe" "packages/ccusage-win32-$ARCH/bin/ccusage.exe"
 
     - name: Archive native package binary
       shell: bash
@@ -78,8 +96,9 @@ runs:
         if-no-files-found: error
 
     # Workspace crates rebuild on every run (see the restore step), so their
-    # outputs, about a quarter of rust/target, would only slow every restore.
-    # Every workspace crate name starts with ccusage and no dependency's does.
+    # outputs, about a quarter of the target directory, would only slow every
+    # restore. Every workspace crate name starts with ccusage and no
+    # dependency's does.
     - name: Drop workspace outputs from the Cargo cache
       id: cargo-cache-prune
       if: >-
@@ -90,7 +109,7 @@ runs:
         && github.event_name != 'pull_request_target'
       shell: bash
       run: |
-        cd rust/target/release
+        cd "$CARGO_TARGET_DIR/release"
         rm -rf ccusage* deps/*ccusage* .fingerprint/ccusage* build/ccusage*
 
     - name: Save Cargo cache
@@ -98,6 +117,6 @@ runs:
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
-          ~/.cargo/registry
-          rust/target
+          ${{ env.CARGO_HOME }}/registry
+          ${{ env.CARGO_TARGET_DIR }}
         key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
