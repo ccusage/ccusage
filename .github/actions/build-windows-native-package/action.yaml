@@ -5,11 +5,8 @@ inputs:
     description: Native package architecture
     required: true
   binary:
-    description: >
-      Ignored. The binary is staged from CARGO_TARGET_DIR (the Dev Drive on
-      x64, rust/target otherwise); the input remains only so callers that
-      still pass it keep working.
-    required: false
+    description: Path to the built ccusage binary
+    required: true
   save-cargo-cache:
     description: >
       Whether this job may persist the Cargo cache. Saves additionally require a
@@ -19,25 +16,29 @@ inputs:
 runs:
   using: composite
   steps:
-    # Defender scans every file written to the system volume, which makes the
-    # many small files of the toolchain, the cache extraction, and the build
-    # output the slowest part of this job. A Dev Drive (ReFS with Defender in
-    # performance mode, or a VHDX fallback) avoids that cost, so CARGO_HOME,
-    # RUSTUP_HOME, and the target directory all live on it. Forward slashes keep
-    # the values valid for both bash and cargo.
-    #
-    # Only on x64: the action needs the Hyper-V VHD cmdlets, which the arm64
-    # runner is not known to have, so that leg keeps the default locations.
-    - name: Set up Dev Drive
-      if: runner.arch == 'X64'
-      uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
-      with:
-        drive-size: 12GB
-        drive-format: ReFS
-        env-mapping: |
-          CARGO_HOME,{{ DEV_DRIVE }}/.cargo
-          RUSTUP_HOME,{{ DEV_DRIVE }}/.rustup
-          CARGO_TARGET_DIR,{{ DEV_DRIVE }}/target
+    # Defender scans every file written, which makes the toolchain install,
+    # the cache extraction, and the build output slow on Windows. A Dev Drive
+    # would avoid that, but Blacksmith's Windows image lacks the Hyper-V
+    # cmdlets to create one, so exclude those directories instead. Images
+    # without Defender just skip this.
+    - name: Exclude build directories from Defender
+      shell: pwsh
+      run: |
+        if (-not (Get-Command Add-MpPreference -ErrorAction SilentlyContinue)) {
+          Write-Host 'Defender cmdlets are unavailable; skipping'
+          exit 0
+        }
+        $paths = @(
+          (Join-Path $env:USERPROFILE '.cargo'),
+          (Join-Path $env:USERPROFILE '.rustup'),
+          $env:GITHUB_WORKSPACE
+        )
+        try {
+          Add-MpPreference -ExclusionPath $paths -ErrorAction Stop
+          Write-Host "Excluded from Defender: $($paths -join ', ')"
+        } catch {
+          Write-Host "::warning::Could not add Defender exclusions: $_"
+        }
 
     # rust-toolchain.toml also lists clippy, rustfmt, and llvm-tools for local
     # development, which rustup would otherwise download on the first cargo call
@@ -65,8 +66,8 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
-          ${{ env.CARGO_HOME || '~/.cargo' }}/registry
-          ${{ env.CARGO_TARGET_DIR || 'rust/target' }}
+          ~/.cargo/registry
+          rust/target
         key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}
         restore-keys: |
           cargo-${{ runner.os }}-${{ runner.arch }}-
@@ -83,9 +84,10 @@ runs:
       shell: bash
       env:
         ARCH: ${{ inputs.arch }}
+        BINARY: ${{ inputs.binary }}
       run: |
         mkdir -p "packages/ccusage-win32-$ARCH/bin"
-        cp "${CARGO_TARGET_DIR:-rust/target}/release/ccusage.exe" "packages/ccusage-win32-$ARCH/bin/ccusage.exe"
+        cp "$BINARY" "packages/ccusage-win32-$ARCH/bin/ccusage.exe"
 
     - name: Archive native package binary
       shell: bash
@@ -100,9 +102,8 @@ runs:
         if-no-files-found: error
 
     # Workspace crates rebuild on every run (see the restore step), so their
-    # outputs, about a quarter of the target directory, would only slow every
-    # restore. Every workspace crate name starts with ccusage and no
-    # dependency's does.
+    # outputs, about a quarter of rust/target, would only slow every restore.
+    # Every workspace crate name starts with ccusage and no dependency's does.
     - name: Drop workspace outputs from the Cargo cache
       id: cargo-cache-prune
       if: >-
@@ -113,7 +114,7 @@ runs:
         && github.event_name != 'pull_request_target'
       shell: bash
       run: |
-        cd "${CARGO_TARGET_DIR:-rust/target}/release"
+        cd rust/target/release
         rm -rf ccusage* deps/*ccusage* .fingerprint/ccusage* build/ccusage*
 
     - name: Save Cargo cache
@@ -121,6 +122,6 @@ runs:
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
-          ${{ env.CARGO_HOME || '~/.cargo' }}/registry
-          ${{ env.CARGO_TARGET_DIR || 'rust/target' }}
+          ~/.cargo/registry
+          rust/target
         key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
