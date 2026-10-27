@@ -52,6 +52,10 @@ in
           };
           crossDepsOnlyArgs = config.packages.ccusage.passthru.depsOnlyArgs // {
             cargoExtraArgs = "-p ccusage --bin ccusage --target ${target}";
+            # Clippy and hawk use the host layer, so this target only needs the
+            # build output; Crane's default `cargo check` pass would add a
+            # second, unused compile of every dependency.
+            buildPhaseCargoCommand = "cargoWithProfile build -p ccusage --bin ccusage --target ${target}";
             buildInputs = crossBuildInputs;
           };
           crossDependencyArtifacts = crossCraneLib.buildDepsOnly crossDepsOnlyArgs;
