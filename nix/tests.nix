@@ -2,7 +2,8 @@
 # `cargoArtifacts` cache (warm on the per-job Blacksmith sticky disk) instead of
 # recompiling into an uncached `rust/target` on every CI run. Built by the CI
 # test job via `nix build .#ccusage-tests`; the derivation succeeds only when
-# `cargo test --workspace` passes.
+# `cargo test --workspace` passes. It runs in the dev profile on a dedicated
+# dependency layer (nix/test-artifacts.nix) rather than recompiling in release.
 { inputs, lib, ... }:
 let
   root = ./..;
@@ -21,17 +22,27 @@ in
       };
       rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
       craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
-      inherit (config.packages.ccusage.passthru) cargoArtifacts commonArgs;
+      inherit (config.packages.ccusage.passthru) commonArgs depsOnlyArgs;
+      testArtifacts = import ./test-artifacts.nix {
+        inherit craneLib depsOnlyArgs;
+        cargoHawk = config.packages.cargo-hawk;
+      };
       testSrc = import ./rust-src.nix { inherit lib root; };
     in
     {
       packages.ccusage-tests = craneLib.cargoTest (
         commonArgs
+        // testArtifacts.consumerArgs
         // {
           src = testSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
-          inherit cargoArtifacts;
+          # Dev-profile layer holding dev-dependencies and the test feature
+          # set; the release layers would leave all of that to compile here.
+          inherit (testArtifacts) cargoArtifacts;
+          # Exposed so CI can root the layer on the sticky disk, like the
+          # release layers, instead of letting GC drop it between runs.
+          passthru = { inherit (testArtifacts) cargoArtifacts hawkArtifacts; };
           # commonArgs disables checks for the release build; re-enable here so
           # cargoTest actually runs the test suite rather than skipping it.
           doCheck = true;

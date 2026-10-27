@@ -17,11 +17,16 @@ in
       rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
       craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       inherit (config.packages.ccusage.passthru)
-        cargoArtifacts
         workspaceArtifacts
         commonArgs
+        depsOnlyArgs
         version
         ;
+      testArtifacts = import ./test-artifacts.nix {
+        inherit craneLib depsOnlyArgs;
+        cargoHawk = config.packages.cargo-hawk;
+      };
+      inherit (testArtifacts) cargoArtifacts;
       rustSrc = import ./rust-src.nix { inherit lib root; };
       repoSrc = lib.cleanSourceWith {
         name = "source";
@@ -40,6 +45,7 @@ in
       };
       ccusage-clippy = craneLib.cargoClippy (
         commonArgs
+        // testArtifacts.consumerArgs
         // {
           src = rustSrc;
           sourceRoot = "source/rust";
@@ -51,18 +57,21 @@ in
       );
       # hawk belongs here rather than in treefmt: it analyses the whole workspace as a
       # closed world instead of a file at a time, and narrowing a visibility is a
-      # semantic change, not formatting. It reuses the same cargo artifacts as clippy,
+      # semantic change, not formatting. It reuses the same dev-profile test artifacts as clippy,
       # so the cost is its own analysis rather than another workspace build.
       ccusage-hawk = craneLib.mkCargoDerivation (
         commonArgs
+        // testArtifacts.consumerArgs
         // {
           pname = "ccusage-hawk";
           src = rustSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
-          inherit cargoArtifacts;
+          cargoArtifacts = testArtifacts.hawkArtifacts;
           nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ config.packages.cargo-hawk ];
-          buildPhaseCargoCommand = "cargo hawk check --manifest-path Cargo.toml -D warnings";
+          buildPhaseCargoCommand = ''
+            cargo hawk check --manifest-path Cargo.toml --target-dir "''${CARGO_TARGET_DIR:-target}" -D warnings
+          '';
         }
       );
       ccusage-fmt = craneLib.cargoFmt {
