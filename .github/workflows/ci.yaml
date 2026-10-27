@@ -138,7 +138,9 @@ jobs:
   # local git hooks never run). Both are existing flake checks, so this reuses
   # their exact behavior instead of re-specifying flags here. The heavy test job
   # re-runs them inside `nix flake check`; that is intentional duplication so the
-  # gate can fail fast before any build/test work starts.
+  # gate can still fail the run early. Build and test jobs start alongside it
+  # instead of waiting on it: it takes ~45s and sat on the critical path ahead
+  # of the slowest build, and `ci-gate` still requires it to pass.
   preflight:
     name: security & lint preflight
     runs-on: blacksmith-32vcpu-ubuntu-2404
@@ -155,7 +157,7 @@ jobs:
         run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt
 
   test:
-    needs: [changes, tirith-scan, preflight]
+    needs: [changes, tirith-scan]
     if: needs.changes.outputs.code-changed == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -199,7 +201,7 @@ jobs:
             --out-link /nix/var/nix/gcroots/ci/ccusage-hawk-deps
 
   build-native-packages:
-    needs: [changes, tirith-scan, preflight]
+    needs: [changes, tirith-scan]
     if: needs.changes.outputs.code-changed == 'true'
     name: ${{ matrix.name }}
     permissions:
@@ -259,8 +261,11 @@ jobs:
           binary: ${{ matrix.binary }}
 
   npm-publish-dry-run-and-upload-pkg-pr-now:
+    # preflight gates the publish rather than the builds: a leaked secret must
+    # never reach pkg.pr.new, and it finishes long before the builds do.
     needs:
       - changes
+      - preflight
       - build-native-packages
     if: needs.changes.outputs.code-changed == 'true'
     permissions:
