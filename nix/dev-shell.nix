@@ -73,6 +73,7 @@ in
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
             pkgs.apple-sdk_15
+            pkgs.llvmPackages.lld
           ]
           ++ config.pre-commit.settings.enabledPackages;
 
@@ -83,6 +84,23 @@ in
               *) export RUSTFLAGS="''${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=mold" ;;
             esac
           fi
+          # A test run relinks every test binary downstream of an edit, and
+          # lld's Mach-O port links them faster than the cctools ld64 the Nix
+          # clang wrapper defaults to, the same reason Linux uses mold above.
+          if [ "$(uname -s)" = "Darwin" ]; then
+            case " ''${RUSTFLAGS:-} " in
+              *" -C link-arg=-fuse-ld=lld "*) ;;
+              *) export RUSTFLAGS="''${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=lld" ;;
+            esac
+          fi
+
+          # Every worktree starts with an empty rust/target, so without a shared
+          # cache each one recompiles all dependencies, C build scripts included
+          # (cc-rs routes those through sccache too). Cached dependencies cut a
+          # fresh worktree's `cargo test --no-run` by about a quarter; workspace
+          # crates are incremental, so sccache passes them straight to rustc.
+          # An existing RUSTC_WRAPPER, even an empty one, wins as an opt-out.
+          export RUSTC_WRAPPER="''${RUSTC_WRAPPER-${lib.getExe pkgs.sccache}}"
 
           # Install whenever a lockfile is newer than the last `just install`, so
           # a `git pull` that bumps dependencies does not leave a stale tree. The
