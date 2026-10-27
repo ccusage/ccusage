@@ -16,30 +16,6 @@ inputs:
 runs:
   using: composite
   steps:
-    # Defender scans every file written, which makes the toolchain install,
-    # the cache extraction, and the build output slow on Windows. A Dev Drive
-    # would avoid that, but Blacksmith's Windows image lacks the Hyper-V
-    # cmdlets to create one, so exclude those directories instead. Images
-    # without Defender just skip this.
-    - name: Exclude build directories from Defender
-      shell: pwsh
-      run: |
-        if (-not (Get-Command Add-MpPreference -ErrorAction SilentlyContinue)) {
-          Write-Host 'Defender cmdlets are unavailable; skipping'
-          exit 0
-        }
-        $paths = @(
-          (Join-Path $env:USERPROFILE '.cargo'),
-          (Join-Path $env:USERPROFILE '.rustup'),
-          $env:GITHUB_WORKSPACE
-        )
-        try {
-          Add-MpPreference -ExclusionPath $paths -ErrorAction Stop
-          Write-Host "Excluded from Defender: $($paths -join ', ')"
-        } catch {
-          Write-Host "::warning::Could not add Defender exclusions: $_"
-        }
-
     # rust-toolchain.toml also lists clippy, rustfmt, and llvm-tools for local
     # development, which rustup would otherwise download on the first cargo call
     # (~50 MB of the ~150 MB of xz archives). The release build only needs the
