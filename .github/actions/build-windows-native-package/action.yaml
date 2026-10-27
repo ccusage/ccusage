@@ -6,9 +6,9 @@ inputs:
     required: true
   binary:
     description: >
-      Ignored. The build output lives under CARGO_TARGET_DIR on the Dev Drive,
-      so the binary is staged from there; the input remains only so callers
-      that still pass it keep working.
+      Ignored. The binary is staged from CARGO_TARGET_DIR (the Dev Drive on
+      x64, rust/target otherwise); the input remains only so callers that
+      still pass it keep working.
     required: false
   save-cargo-cache:
     description: >
@@ -25,7 +25,11 @@ runs:
     # performance mode, or a VHDX fallback) avoids that cost, so CARGO_HOME,
     # RUSTUP_HOME, and the target directory all live on it. Forward slashes keep
     # the values valid for both bash and cargo.
+    #
+    # Only on x64: the action needs the Hyper-V VHD cmdlets, which the arm64
+    # runner is not known to have, so that leg keeps the default locations.
     - name: Set up Dev Drive
+      if: runner.arch == 'X64'
       uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
       with:
         drive-size: 12GB
@@ -61,8 +65,8 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
-          ${{ env.CARGO_HOME }}/registry
-          ${{ env.CARGO_TARGET_DIR }}
+          ${{ env.CARGO_HOME || '~/.cargo' }}/registry
+          ${{ env.CARGO_TARGET_DIR || 'rust/target' }}
         key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}
         restore-keys: |
           cargo-${{ runner.os }}-${{ runner.arch }}-
@@ -81,7 +85,7 @@ runs:
         ARCH: ${{ inputs.arch }}
       run: |
         mkdir -p "packages/ccusage-win32-$ARCH/bin"
-        cp "$CARGO_TARGET_DIR/release/ccusage.exe" "packages/ccusage-win32-$ARCH/bin/ccusage.exe"
+        cp "${CARGO_TARGET_DIR:-rust/target}/release/ccusage.exe" "packages/ccusage-win32-$ARCH/bin/ccusage.exe"
 
     - name: Archive native package binary
       shell: bash
@@ -109,7 +113,7 @@ runs:
         && github.event_name != 'pull_request_target'
       shell: bash
       run: |
-        cd "$CARGO_TARGET_DIR/release"
+        cd "${CARGO_TARGET_DIR:-rust/target}/release"
         rm -rf ccusage* deps/*ccusage* .fingerprint/ccusage* build/ccusage*
 
     - name: Save Cargo cache
@@ -117,6 +121,6 @@ runs:
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
-          ${{ env.CARGO_HOME }}/registry
-          ${{ env.CARGO_TARGET_DIR }}
+          ${{ env.CARGO_HOME || '~/.cargo' }}/registry
+          ${{ env.CARGO_TARGET_DIR || 'rust/target' }}
         key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
