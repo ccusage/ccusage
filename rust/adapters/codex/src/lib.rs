@@ -837,6 +837,37 @@ mod tests {
     }
 
     #[test]
+    fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+            ("private-sol", "gpt-6.1-sol"),
+            ("gpt-6.1-terra", "gpt-6.1-sol"),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        let usage = CodexModelUsage {
+            input_tokens: 1_200,
+            cached_input_tokens: 200,
+            output_tokens: 50,
+            total_tokens: 1_250,
+            recorded_ultrafast_usage: CodexUsageBucket {
+                input_tokens: 1_200,
+                cached_input_tokens: 200,
+                output_tokens: 50,
+                ..CodexUsageBucket::default()
+            },
+            ..CodexModelUsage::default()
+        };
+
+        let private_sol =
+            calculate_codex_model_cost("private-sol", &usage, &pricing, CodexSpeed::Auto);
+        let terra = calculate_codex_model_cost("gpt-6.1-terra", &usage, &pricing, CodexSpeed::Auto);
+        let standard_terra =
+            calculate_codex_model_cost("gpt-6.1-terra", &usage, &pricing, CodexSpeed::Standard);
+
+        assert!((private_sol - 0.01512).abs() < 1e-12, "{private_sol}");
+        assert!((terra - standard_terra).abs() < f64::EPSILON, "{terra}");
+    }
+
+    #[test]
     fn prices_rollout_service_tiers_across_loading_and_report_modes() {
         for (model, expected_costs) in [
             ("gpt-test", [45e-6, 40e-6, 55e-6, 20e-6]),

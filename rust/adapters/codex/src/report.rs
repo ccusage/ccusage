@@ -187,7 +187,6 @@ pub fn calculate_codex_model_cost(
     speed: impl Into<CodexSpeedPolicy>,
 ) -> f64 {
     let speed = speed.into();
-    let ultrafast_multiplier = crate::ultrafast_multiplier(model);
     if !usage.timestamped_usage.is_empty() {
         return usage
             .timestamped_usage
@@ -198,7 +197,6 @@ pub fn calculate_codex_model_cost(
                 Some(calculate_codex_usage_cost(
                     *timestamped_usage,
                     &pricing,
-                    ultrafast_multiplier,
                     speed,
                 ))
             })
@@ -217,7 +215,6 @@ pub fn calculate_codex_model_cost(
             recorded_ultrafast_usage: usage.recorded_ultrafast_usage,
         },
         &pricing,
-        ultrafast_multiplier,
         speed,
     )
 }
@@ -225,7 +222,6 @@ pub fn calculate_codex_model_cost(
 fn calculate_codex_usage_cost(
     usage: CodexTimestampedUsage,
     pricing: &crate::Pricing,
-    ultrafast_multiplier: f64,
     speed: CodexSpeedPolicy,
 ) -> f64 {
     let CodexTimestampedUsage {
@@ -278,7 +274,8 @@ fn calculate_codex_usage_cost(
     standard_cost
         + calculate_codex_bucket_cost(&flex_usage, pricing) * (pricing.flex_multiplier - 1.0)
         + calculate_codex_bucket_cost(&fast_usage, pricing) * (pricing.fast_multiplier - 1.0)
-        + calculate_codex_bucket_cost(&ultrafast_usage, pricing) * (ultrafast_multiplier - 1.0)
+        + calculate_codex_bucket_cost(&ultrafast_usage, pricing)
+            * (pricing.ultrafast_multiplier - 1.0)
 }
 
 fn model_usage_bucket(usage: &CodexModelUsage) -> CodexUsageBucket {
