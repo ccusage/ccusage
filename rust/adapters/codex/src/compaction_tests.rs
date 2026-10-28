@@ -245,6 +245,7 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
         (Some(Fast), Ultrafast, Ultrafast),
         (Some(Ultrafast), Flex, Ultrafast),
         (Some(Ultrafast), Standard, Standard),
+        (Some(Standard), Ultrafast, Standard),
     ] {
         let first = CodexTokenUsageEvent {
             service_tier: first_tier,
@@ -259,13 +260,32 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
             aggregate_events(&[first, duplicate], AgentReportKind::Session, Some("UTC")).unwrap();
         assert_eq!(groups.len(), 1);
         let usage = &groups["first"].models["gpt-5"];
-        let recorded = match merged_tier {
-            Standard => usage.recorded_standard_usage,
-            Fast => usage.recorded_fast_usage,
-            Flex => usage.recorded_flex_usage,
-            Ultrafast => usage.recorded_ultrafast_usage,
+        let recorded = [
+            (Standard, usage.recorded_standard_usage),
+            (Fast, usage.recorded_fast_usage),
+            (Flex, usage.recorded_flex_usage),
+            (Ultrafast, usage.recorded_ultrafast_usage),
+        ];
+        let input_tokens = |tier| {
+            recorded
+                .iter()
+                .filter(|(recorded_tier, _)| *recorded_tier == tier)
+                .map(|(_, bucket)| bucket.input_tokens)
+                .sum::<u64>()
         };
-        assert_eq!(recorded.input_tokens, 300, "{first_tier:?} + {copy_tier:?}");
+        assert_eq!(
+            input_tokens(merged_tier),
+            300,
+            "{first_tier:?} + {copy_tier:?}"
+        );
+        assert_eq!(
+            recorded
+                .iter()
+                .map(|(_, bucket)| bucket.input_tokens)
+                .sum::<u64>(),
+            300,
+            "{first_tier:?} + {copy_tier:?}"
+        );
         assert_eq!(usage.input_tokens, 300);
     }
 }
