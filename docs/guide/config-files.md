@@ -456,6 +456,8 @@ All fields are optional. Unspecified fields keep existing values. Without a pric
 - `fastMultiplier` applies when Codex usage uses Fast pricing.
 - `flexMultiplier` applies when Codex usage uses Flex pricing.
 
+The Ultrafast multiplier comes only from published rates and cannot be set in `pricingOverrides`; there is no `ultrafastMultiplier` field.
+
 ### Overrides vs Offline Mode
 
 `--offline` and `pricingOverrides` are independent:
