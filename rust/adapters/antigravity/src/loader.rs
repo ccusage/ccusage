@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz};
 
 use super::{
     parser::{AntigravityUsageEvent, event_to_loaded, merge_usage_event, parse_sqlite_file},
@@ -21,15 +21,15 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
     let database_paths = conversation_db_paths()?;
     let mut parsed_events = Vec::new();
     for database_path in database_paths {
-        match parse_sqlite_file(&database_path)? {
-            Some(events) => parsed_events.extend(events),
-            None => debug_log(
-                shared,
-                format!(
-                    "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
-                    database_path.display()
-                ),
+        match parse_sqlite_file(&database_path) {
+            Ok(Some(events)) => parsed_events.extend(events),
+            Ok(None) => eprintln!(
+                "WARN  Skipping uninitialised Antigravity database '{}': empty SQLite snapshot",
+                database_path.display()
             ),
+            Err(error) => {
+                eprintln!("WARN  Skipping unreadable Antigravity database: {error}")
+            }
         }
     }
     let mut events = deduplicate_events(parsed_events);
@@ -841,7 +841,7 @@ mod tests {
     }
 
     #[test]
-    fn still_propagates_errors_for_nonempty_databases_alongside_empty_ones() {
+    fn skips_malformed_database_alongside_empty_databases() {
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/empty.db", "");
         create_database(
@@ -855,13 +855,13 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
+        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
 
-        assert!(error.to_string().contains("parse Antigravity metadata"));
+        assert!(entries.is_empty());
     }
 
     #[test]
-    fn propagates_database_open_and_query_errors() {
+    fn skips_database_open_and_query_errors() {
         let fixture = Fixture::new();
         let not_a_database = fixture.write_file("conversations/not-a-db.db", "not sqlite");
         let _guard = EnvVarsGuard::set_many([(
@@ -869,15 +869,21 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
-        let message = error.to_string();
+        let error = parse_sqlite_file(&not_a_database).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(not_a_database.to_string_lossy().as_ref())
+        );
+        assert!(error.to_string().contains("inspect") || error.to_string().contains("database"));
 
-        assert!(message.contains(not_a_database.to_string_lossy().as_ref()));
-        assert!(message.contains("open") || message.contains("database"));
+        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
+
+        assert!(entries.is_empty());
     }
 
     #[test]
-    fn propagates_missing_generation_table_errors() {
+    fn skips_database_missing_generation_table() {
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/missing-table.db");
         let _ = fixture.create_dir_all("conversations");
@@ -890,13 +896,16 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
-
+        let error = parse_sqlite_file(&db_path).unwrap_err();
         assert!(error.to_string().contains("gen_metadata"));
+
+        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
+
+        assert!(entries.is_empty());
     }
 
     #[test]
-    fn propagates_present_optional_table_schema_errors() {
+    fn skips_database_with_invalid_optional_table_schema() {
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/bad-steps.db");
         let _ = fixture.create_dir_all("conversations");
@@ -932,13 +941,16 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
-
+        let error = parse_sqlite_file(&db_path).unwrap_err();
         assert!(error.to_string().contains("steps"));
+
+        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
+
+        assert!(entries.is_empty());
     }
 
     #[test]
-    fn propagates_malformed_metadata_errors() {
+    fn skips_database_with_malformed_metadata() {
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/malformed.db"),
@@ -951,8 +963,11 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
-
+        let error = parse_sqlite_file(&fixture.path("conversations/malformed.db")).unwrap_err();
         assert!(error.to_string().contains("parse Antigravity metadata"));
+
+        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
+
+        assert!(entries.is_empty());
     }
 }
