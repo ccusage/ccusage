@@ -44,9 +44,10 @@ ANTIGRAVITY_DATA_DIR="$HOME/.gemini/antigravity-cli,/backup/antigravity" \
 Only `.db` files are read. ccusage opens them read-only and reads the
 `gen_metadata` rows in ascending `idx` order. When present, the real `steps`
 schema contributes step and retry usage, and `trajectory_metadata_blob` supplies
-the timestamp fallback. Empty or unreadable databases are skipped with a warning
-that names the file. A database contributes usage only after its full read
-succeeds, and other readable databases remain in the report.
+the timestamp fallback. Empty databases are skipped silently (use `--debug` to
+list them), and unreadable databases are skipped with a warning that names the
+file. A database contributes usage only after its full read succeeds, and other
+readable databases remain in the report.
 
 ## What Gets Calculated
 
@@ -96,8 +97,7 @@ databases must contain the `gen_metadata` table.
 :::
 
 ::: details A database warning is shown
-ccusage skips empty or unreadable databases and excludes all usage from that
-file. Check the filename in the warning and ensure the database is readable and
+ccusage skips unreadable databases and excludes all usage from that file. Check the filename in the warning and ensure the database is readable and
 has the expected `gen_metadata (idx, data)` schema. Other readable databases
 remain in the report.
 :::

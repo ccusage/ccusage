@@ -26,10 +26,10 @@ The adapter reads `.db` files below these default roots:
 root may contain a `conversations/` child or be the conversation directory
 itself. Databases are opened read-only and must provide the `gen_metadata`
 table. When present, the real `steps` schema contributes step and retry usage,
-and `trajectory_metadata_blob` supplies the timestamp fallback. Empty or
-unreadable databases are skipped with a filename warning, and a database only
-contributes usage when its full read succeeds. Other readable databases remain
-available to the report.
+and `trajectory_metadata_blob` supplies the timestamp fallback. Empty
+databases are skipped silently (logged with `--debug`), and unreadable databases
+are skipped with a filename warning. A database only contributes usage when its
+full read succeeds. Other readable databases remain available to the report.
 
 ## Public surface
 
