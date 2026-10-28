@@ -16,6 +16,8 @@ use crate::{
 
 const FAST_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("fast-multiplier-overrides.json");
 const FLEX_MULTIPLIER_OVERRIDES_JSON: &str = include_str!("flex-multiplier-overrides.json");
+const ULTRAFAST_MULTIPLIER_OVERRIDES_JSON: &str =
+    include_str!("ultrafast-multiplier-overrides.json");
 
 /// The pricing snapshots the binary embeds, minified and deflated - the
 /// models.dev one alone would otherwise add a quarter megabyte of JSON - and
@@ -1016,6 +1018,16 @@ impl SpeedMultiplierOverrides {
                     })
             })
     }
+}
+
+/// Returns the Ultrafast multiplier on Standard rates that OpenAI publishes for
+/// `model`, or `1.0` when it publishes none, so such usage keeps Standard pricing.
+pub fn ultrafast_multiplier(model: &str) -> f64 {
+    static OVERRIDES: OnceLock<SpeedMultiplierOverrides> = OnceLock::new();
+    OVERRIDES
+        .get_or_init(|| SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON))
+        .multiplier_for(model)
+        .unwrap_or(1.0)
 }
 
 impl PricingMap {

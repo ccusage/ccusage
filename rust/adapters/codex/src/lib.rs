@@ -768,6 +768,75 @@ mod tests {
     }
 
     #[test]
+    fn prices_recorded_ultrafast_usage_at_published_rates() {
+        let pricing = PricingMap::load_embedded();
+        let ultrafast = |usage: CodexUsageBucket| CodexModelUsage {
+            input_tokens: usage.input_tokens,
+            cached_input_tokens: usage.cached_input_tokens,
+            output_tokens: usage.output_tokens,
+            total_tokens: usage.input_tokens + usage.output_tokens,
+            long_context_input_tokens: usage.long_context_input_tokens,
+            long_context_cached_input_tokens: usage.long_context_cached_input_tokens,
+            long_context_output_tokens: usage.long_context_output_tokens,
+            recorded_ultrafast_usage: usage,
+            ..CodexModelUsage::default()
+        };
+        let short = ultrafast(CodexUsageBucket {
+            input_tokens: 1_200,
+            cached_input_tokens: 200,
+            output_tokens: 50,
+            ..CodexUsageBucket::default()
+        });
+        let long = ultrafast(CodexUsageBucket {
+            input_tokens: 300_000,
+            cached_input_tokens: 250_000,
+            output_tokens: 1_000,
+            long_context_input_tokens: 300_000,
+            long_context_cached_input_tokens: 250_000,
+            long_context_output_tokens: 1_000,
+            ..CodexUsageBucket::default()
+        });
+
+        // Expected costs use OpenAI's published Ultrafast USD per 1M tokens.
+        for (model, short_cost, long_cost) in [
+            ("gpt-6.1-sol", 0.01512, 1.59),
+            ("gpt-6-astra", 0.0762, 9.45),
+        ] {
+            for (usage, expected) in [(&short, short_cost), (&long, long_cost)] {
+                let cost = calculate_codex_model_cost(model, usage, &pricing, CodexSpeed::Auto);
+                assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
+            }
+        }
+    }
+
+    #[test]
+    fn keeps_standard_pricing_for_ultrafast_without_a_published_rate() {
+        let pricing = PricingMap::load_embedded();
+        let usage = CodexModelUsage {
+            input_tokens: 1_200,
+            cached_input_tokens: 200,
+            output_tokens: 50,
+            total_tokens: 1_250,
+            recorded_ultrafast_usage: CodexUsageBucket {
+                input_tokens: 1_200,
+                cached_input_tokens: 200,
+                output_tokens: 50,
+                ..CodexUsageBucket::default()
+            },
+            ..CodexModelUsage::default()
+        };
+
+        for model in ["gpt-6-sol", "gpt-6.1-terra", "gpt-6-luna"] {
+            let standard =
+                calculate_codex_model_cost(model, &usage, &pricing, CodexSpeed::Standard);
+            let auto = calculate_codex_model_cost(model, &usage, &pricing, CodexSpeed::Auto);
+
+            assert!(standard > 0.0, "{model} has embedded pricing");
+            assert!((auto - standard).abs() < f64::EPSILON, "{model}");
+        }
+    }
+
+    #[test]
     fn prices_rollout_service_tiers_across_loading_and_report_modes() {
         for (model, expected_costs) in [
             ("gpt-test", [45e-6, 40e-6, 55e-6, 20e-6]),

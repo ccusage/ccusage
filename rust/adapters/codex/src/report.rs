@@ -187,6 +187,7 @@ pub fn calculate_codex_model_cost(
     speed: impl Into<CodexSpeedPolicy>,
 ) -> f64 {
     let speed = speed.into();
+    let ultrafast_multiplier = crate::ultrafast_multiplier(model);
     if !usage.timestamped_usage.is_empty() {
         return usage
             .timestamped_usage
@@ -194,9 +195,10 @@ pub fn calculate_codex_model_cost(
             .filter_map(|(timestamp, timestamped_usage)| {
                 let pricing =
                     pricing.find_at(model, crate::TimestampMs::from_millis(*timestamp))?;
-                Some(calculate_codex_timestamped_cost(
-                    timestamped_usage,
+                Some(calculate_codex_usage_cost(
+                    *timestamped_usage,
                     &pricing,
+                    ultrafast_multiplier,
                     speed,
                 ))
             })
@@ -207,71 +209,76 @@ pub fn calculate_codex_model_cost(
         return 0.0;
     };
     calculate_codex_usage_cost(
-        model_usage_bucket(usage),
-        usage.recorded_standard_usage,
-        usage.recorded_flex_usage,
-        usage.recorded_fast_usage,
+        CodexTimestampedUsage {
+            usage: model_usage_bucket(usage),
+            recorded_standard_usage: usage.recorded_standard_usage,
+            recorded_fast_usage: usage.recorded_fast_usage,
+            recorded_flex_usage: usage.recorded_flex_usage,
+            recorded_ultrafast_usage: usage.recorded_ultrafast_usage,
+        },
         &pricing,
-        speed,
-    )
-}
-
-fn calculate_codex_timestamped_cost(
-    usage: &CodexTimestampedUsage,
-    pricing: &crate::Pricing,
-    speed: CodexSpeedPolicy,
-) -> f64 {
-    calculate_codex_usage_cost(
-        usage.usage,
-        usage.recorded_standard_usage,
-        usage.recorded_flex_usage,
-        usage.recorded_fast_usage,
-        pricing,
+        ultrafast_multiplier,
         speed,
     )
 }
 
 fn calculate_codex_usage_cost(
-    total_usage: CodexUsageBucket,
-    recorded_standard_usage: CodexUsageBucket,
-    recorded_flex_usage: CodexUsageBucket,
-    recorded_fast_usage: CodexUsageBucket,
+    usage: CodexTimestampedUsage,
     pricing: &crate::Pricing,
+    ultrafast_multiplier: f64,
     speed: CodexSpeedPolicy,
 ) -> f64 {
+    let CodexTimestampedUsage {
+        usage: total_usage,
+        recorded_standard_usage,
+        recorded_fast_usage,
+        recorded_flex_usage,
+        recorded_ultrafast_usage,
+    } = usage;
     let standard_cost = calculate_codex_bucket_cost(&total_usage, pricing);
     let unclassified_usage = subtract_codex_usage_bucket(
         total_usage,
         add_codex_usage_buckets(
             recorded_standard_usage,
-            add_codex_usage_buckets(recorded_flex_usage, recorded_fast_usage),
+            add_codex_usage_buckets(
+                recorded_flex_usage,
+                add_codex_usage_buckets(recorded_fast_usage, recorded_ultrafast_usage),
+            ),
         ),
     );
-    let (flex_usage, fast_usage) = match speed {
+    let empty = CodexUsageBucket::default();
+    let (flex_usage, fast_usage, ultrafast_usage) = match speed {
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => {
             return standard_cost;
         }
-        CodexSpeedPolicy::Forced(CodexServiceTier::Flex) => {
-            (total_usage, CodexUsageBucket::default())
-        }
-        CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => {
-            (CodexUsageBucket::default(), total_usage)
-        }
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard) => {
-            (recorded_flex_usage, recorded_fast_usage)
-        }
+        CodexSpeedPolicy::Forced(CodexServiceTier::Flex) => (total_usage, empty, empty),
+        CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => (empty, total_usage, empty),
+        CodexSpeedPolicy::Forced(CodexServiceTier::Ultrafast) => (empty, empty, total_usage),
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard) => (
+            recorded_flex_usage,
+            recorded_fast_usage,
+            recorded_ultrafast_usage,
+        ),
         CodexSpeedPolicy::Auto(CodexServiceTier::Flex) => (
             add_codex_usage_buckets(recorded_flex_usage, unclassified_usage),
             recorded_fast_usage,
+            recorded_ultrafast_usage,
         ),
         CodexSpeedPolicy::Auto(CodexServiceTier::Fast) => (
             recorded_flex_usage,
             add_codex_usage_buckets(recorded_fast_usage, unclassified_usage),
+            recorded_ultrafast_usage,
+        ),
+        CodexSpeedPolicy::Auto(CodexServiceTier::Ultrafast) => (
+            recorded_flex_usage,
+            recorded_fast_usage,
+            add_codex_usage_buckets(recorded_ultrafast_usage, unclassified_usage),
         ),
     };
     standard_cost
         + calculate_codex_bucket_cost(&flex_usage, pricing) * (pricing.flex_multiplier - 1.0)
         + calculate_codex_bucket_cost(&fast_usage, pricing) * (pricing.fast_multiplier - 1.0)
+        + calculate_codex_bucket_cost(&ultrafast_usage, pricing) * (ultrafast_multiplier - 1.0)
 }
 
 fn model_usage_bucket(usage: &CodexModelUsage) -> CodexUsageBucket {

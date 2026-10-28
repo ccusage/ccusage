@@ -88,6 +88,7 @@ let
     lib.optionals (lib.elem "ccusage-core" names) [
       (rustRoot + /crates/ccusage-core/src/fast-multiplier-overrides.json)
       (rustRoot + /crates/ccusage-core/src/flex-multiplier-overrides.json)
+      (rustRoot + /crates/ccusage-core/src/ultrafast-multiplier-overrides.json)
     ]
     ++ lib.optionals (lib.elem "ccusage-adapter-codex" names) [
       (rustRoot + /adapters/codex/src/codex-auto-review-fallbacks.json)
