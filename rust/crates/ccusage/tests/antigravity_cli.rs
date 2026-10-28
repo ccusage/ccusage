@@ -67,6 +67,7 @@ fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports(
         ],
     );
     let _ = fixture.write_file("antigravity/conversations/not-a-database.db", "not sqlite");
+    let _ = fixture.write_file("antigravity/conversations/empty.db", "");
 
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
         .env_clear()
@@ -108,5 +109,9 @@ fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports(
     assert!(
         stderr.contains("not-a-database.db"),
         "expected the skipped database filename in stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("empty.db"),
+        "empty databases should only be logged in debug mode: {stderr}"
     );
 }

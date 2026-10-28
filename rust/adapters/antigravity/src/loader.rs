@@ -1,43 +1,73 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
 
 use super::{
     parser::{AntigravityUsageEvent, event_to_loaded, merge_usage_event, parse_sqlite_file},
     paths::conversation_db_paths,
 };
 
+#[derive(Debug, PartialEq)]
+enum SkippedDatabase {
+    Uninitialized(PathBuf),
+    Unreadable { path: PathBuf, error: String },
+}
+
 /// Loads Antigravity generation metadata from all discovered conversation databases.
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
+    let (entries, skipped) = crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("Antigravity"),
         shared.json,
         || load_entries_inner(shared, pricing),
-    )
+    )?;
+    skipped
+        .iter()
+        .for_each(|database| report_skipped_database(shared, database));
+    Ok(entries)
 }
 
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let timezone = parse_tz(shared.timezone.as_deref());
-    let database_paths = conversation_db_paths()?;
-    let mut parsed_events = Vec::new();
-    for database_path in database_paths {
-        match parse_sqlite_file(&database_path) {
-            Ok(Some(events)) => parsed_events.extend(events),
-            Ok(None) => eprintln!(
-                "WARN  Skipping uninitialised Antigravity database '{}': empty SQLite snapshot",
-                database_path.display()
+fn report_skipped_database(shared: &SharedArgs, database: &SkippedDatabase) {
+    match database {
+        SkippedDatabase::Uninitialized(path) => debug_log(
+            shared,
+            format!(
+                "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
+                path.display()
             ),
-            Err(error) => {
-                eprintln!("WARN  Skipping unreadable Antigravity database: {error}")
-            }
-        }
+        ),
+        SkippedDatabase::Unreadable { path, error } => eprintln!(
+            "WARN  Skipping unreadable Antigravity database '{}': {error}",
+            path.display()
+        ),
     }
+}
+
+fn load_entries_inner(
+    shared: &SharedArgs,
+    pricing: &PricingMap,
+) -> Result<(Vec<LoadedEntry>, Vec<SkippedDatabase>)> {
+    let timezone = parse_tz(shared.timezone.as_deref());
+    let (parsed_events, skipped) = conversation_db_paths()?.into_iter().fold(
+        (Vec::new(), Vec::new()),
+        |(mut events, mut skipped), database_path| {
+            match parse_sqlite_file(&database_path) {
+                Ok(Some(parsed)) => events.extend(parsed),
+                Ok(None) => skipped.push(SkippedDatabase::Uninitialized(database_path)),
+                Err(error) => skipped.push(SkippedDatabase::Unreadable {
+                    path: database_path,
+                    error: error.to_string(),
+                }),
+            }
+            (events, skipped)
+        },
+    );
     let mut events = deduplicate_events(parsed_events);
     events.sort_by_key(|event| event.timestamp);
-    Ok(events
+    let entries = events
         .into_iter()
         .map(|event| event_to_loaded(event, timezone.as_ref(), shared.mode, pricing))
-        .collect())
+        .collect();
+    Ok((entries, skipped))
 }
 
 fn deduplicate_events(
@@ -855,9 +885,20 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let entries = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap();
+        let (entries, skipped) =
+            load_entries_inner(&shared(true), &PricingMap::load_embedded()).unwrap();
 
         assert!(entries.is_empty());
+        assert_eq!(skipped.len(), 2);
+        assert!(skipped.contains(&SkippedDatabase::Uninitialized(
+            fixture.path("conversations/empty.db")
+        )));
+        assert!(skipped.iter().any(|database| matches!(
+            database,
+            SkippedDatabase::Unreadable { path, error }
+                if *path == fixture.path("conversations/malformed.db")
+                    && error.contains("parse Antigravity metadata")
+        )));
     }
 
     #[test]
