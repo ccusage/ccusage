@@ -1921,6 +1921,10 @@ impl PricingMap {
             SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON);
         let flex_multiplier_overrides =
             SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON);
+        let mut overrides: Vec<_> = overrides.into_iter().collect();
+        let keys: FxHashSet<&str> = overrides.iter().map(|(model, _)| model.as_str()).collect();
+        overrides
+            .sort_by_cached_key(|(model, _)| override_dependency_depth(model, &keys, keys.len()));
         for (model, override_value) in overrides {
             self.apply_override(
                 model,
@@ -2977,6 +2981,25 @@ fn model_without_date_suffix(model: &str) -> &str {
 }
 
 /// Maps model aliases to canonical pricing keys before fuzzy matching.
+/// How many other overridden models an override's base entry is built from,
+/// so a target is overridden before any alias of it. Cycles stop after
+/// `remaining` steps and tie, keeping their key order.
+fn override_dependency_depth(model: &str, keys: &FxHashSet<&str>, remaining: usize) -> usize {
+    let resolved = crate::model_aliases::resolve_model_name(model);
+    let dependency = [
+        pricing_alias(model),
+        Some(resolved.as_ref()),
+        pricing_alias(resolved.as_ref()),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|name| *name != model && keys.contains(name));
+    match dependency {
+        Some(name) if remaining > 0 => 1 + override_dependency_depth(name, keys, remaining - 1),
+        _ => 0,
+    }
+}
+
 fn pricing_alias(model: &str) -> Option<&'static str> {
     match model {
         "gpt-reserve" => Some("gpt-5.6-luna"),
@@ -5729,25 +5752,16 @@ mod tests {
             ("private-sol", "gpt-6.1-sol"),
             ("private-dated-sol", "gpt-6.1-sol-2026-09-24"),
         ]);
-        let dated = "gpt-6.1-sol-2026-09-24".to_string();
-        let aliased = "private-sol".to_string();
-        let aliased_dated = "private-dated-sol".to_string();
         let override_value = ccusage_cli::PricingOverride {
             input_cost_per_token: Some(3e-6),
             ..Default::default()
         };
-        let pricing = PricingMap::load_with_overrides(
-            true,
-            false,
-            [
-                (&dated, &override_value),
-                (&aliased, &override_value),
-                (&aliased_dated, &override_value),
-            ],
-        );
-        let sol = pricing.find("gpt-6.1-sol").unwrap();
+        let sol = PricingMap::load_embedded().find("gpt-6.1-sol").unwrap();
 
-        for model in [&dated, &aliased_dated] {
+        // Each map holds one override, so no other override creates an exact entry to inherit from.
+        for model in ["gpt-6.1-sol-2026-09-24", "private-dated-sol", "private-sol"] {
+            let key = model.to_string();
+            let pricing = PricingMap::load_with_overrides(true, false, [(&key, &override_value)]);
             let overridden = pricing.find(model).unwrap();
             assert_eq!(overridden.input, 3e-6, "{model}");
             assert_eq!(overridden.fast_multiplier, 2.0, "{model}");
@@ -5755,10 +5769,42 @@ mod tests {
             assert_eq!(overridden.flex_multiplier, 0.5, "{model}");
         }
 
-        let aliased = pricing.find(&aliased).unwrap();
-        assert_eq!(aliased.input, 3e-6);
+        let key = "private-sol".to_string();
+        let aliased = PricingMap::load_with_overrides(true, false, [(&key, &override_value)])
+            .find(&key)
+            .unwrap();
         assert_eq!(aliased.output, sol.output);
-        assert_eq!(aliased.ultrafast_multiplier, 6.0);
+    }
+
+    #[test]
+    fn applies_target_overrides_before_aliases_that_sort_first() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+            ("a-private-sol", "gpt-6.1-sol"),
+            ("cycle-a", "cycle-b"),
+            ("cycle-b", "cycle-a"),
+        ]);
+        let target_override = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(3e-6),
+            output_cost_per_token: Some(7e-6),
+            ..Default::default()
+        };
+        let alias_override = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(5e-6),
+            ..Default::default()
+        };
+        let overrides = std::collections::BTreeMap::from([
+            ("a-private-sol".to_string(), alias_override.clone()),
+            ("gpt-6.1-sol".to_string(), target_override),
+            ("cycle-a".to_string(), alias_override.clone()),
+            ("cycle-b".to_string(), alias_override),
+        ]);
+        let pricing = PricingMap::load_with_overrides(true, false, &overrides);
+
+        let alias = pricing.find("a-private-sol").unwrap();
+        assert_eq!(alias.input, 5e-6);
+        assert_eq!(alias.output, 7e-6);
+        assert_eq!(pricing.find("cycle-a").unwrap().input, 5e-6);
+        assert_eq!(pricing.find("cycle-b").unwrap().input, 5e-6);
     }
 
     #[test]
