@@ -1915,10 +1915,22 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
+        let fast_multiplier_overrides =
+            SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON);
         let ultrafast_multiplier_overrides =
             SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON);
+        let flex_multiplier_overrides =
+            SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON);
         for (model, override_value) in overrides {
-            self.apply_override(model, override_value, &ultrafast_multiplier_overrides);
+            self.apply_override(
+                model,
+                override_value,
+                (
+                    &fast_multiplier_overrides,
+                    &ultrafast_multiplier_overrides,
+                    &flex_multiplier_overrides,
+                ),
+            );
         }
         self.clear_find_cache();
     }
@@ -1927,8 +1939,14 @@ impl PricingMap {
         &mut self,
         model: &str,
         override_value: &PricingOverride,
-        ultrafast_multiplier_overrides: &SpeedMultiplierOverrides,
+        multiplier_overrides: (
+            &SpeedMultiplierOverrides,
+            &SpeedMultiplierOverrides,
+            &SpeedMultiplierOverrides,
+        ),
     ) {
+        let (fast_multiplier_overrides, ultrafast_multiplier_overrides, flex_multiplier_overrides) =
+            multiplier_overrides;
         self.user_overrides
             .insert(model.to_string(), override_value.clone());
         let entry = |name: &str| {
@@ -1940,11 +1958,19 @@ impl PricingMap {
         let resolved_model = crate::model_aliases::resolve_model_name(model);
         let base = entry(model)
             .or_else(|| entry(resolved_model.as_ref()))
-            .unwrap_or_else(|| Pricing {
-                ultrafast_multiplier: ultrafast_multiplier_overrides
-                    .multiplier_for(model)
-                    .unwrap_or(1.0),
-                ..Pricing::empty()
+            .unwrap_or_else(|| {
+                let published = |overrides: &SpeedMultiplierOverrides| {
+                    overrides
+                        .multiplier_for(model)
+                        .or_else(|| overrides.multiplier_for(resolved_model.as_ref()))
+                        .unwrap_or(1.0)
+                };
+                Pricing {
+                    fast_multiplier: published(fast_multiplier_overrides),
+                    ultrafast_multiplier: published(ultrafast_multiplier_overrides),
+                    flex_multiplier: published(flex_multiplier_overrides),
+                    ..Pricing::empty()
+                }
             });
 
         let new_input = override_value.input_cost_per_token.unwrap_or(base.input);
@@ -5698,11 +5724,14 @@ mod tests {
     }
 
     #[test]
-    fn keeps_published_ultrafast_multiplier_for_user_price_overrides() {
-        let _aliases =
-            crate::model_aliases::set_model_aliases_for_tests([("private-sol", "gpt-6.1-sol")]);
+    fn keeps_published_speed_multipliers_for_user_price_overrides() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+            ("private-sol", "gpt-6.1-sol"),
+            ("private-dated-sol", "gpt-6.1-sol-2026-09-24"),
+        ]);
         let dated = "gpt-6.1-sol-2026-09-24".to_string();
         let aliased = "private-sol".to_string();
+        let aliased_dated = "private-dated-sol".to_string();
         let override_value = ccusage_cli::PricingOverride {
             input_cost_per_token: Some(3e-6),
             ..Default::default()
@@ -5710,13 +5739,21 @@ mod tests {
         let pricing = PricingMap::load_with_overrides(
             true,
             false,
-            [(&dated, &override_value), (&aliased, &override_value)],
+            [
+                (&dated, &override_value),
+                (&aliased, &override_value),
+                (&aliased_dated, &override_value),
+            ],
         );
         let sol = pricing.find("gpt-6.1-sol").unwrap();
 
-        let dated = pricing.find(&dated).unwrap();
-        assert_eq!(dated.input, 3e-6);
-        assert_eq!(dated.ultrafast_multiplier, 6.0);
+        for model in [&dated, &aliased_dated] {
+            let overridden = pricing.find(model).unwrap();
+            assert_eq!(overridden.input, 3e-6, "{model}");
+            assert_eq!(overridden.fast_multiplier, 2.0, "{model}");
+            assert_eq!(overridden.ultrafast_multiplier, 6.0, "{model}");
+            assert_eq!(overridden.flex_multiplier, 0.5, "{model}");
+        }
 
         let aliased = pricing.find(&aliased).unwrap();
         assert_eq!(aliased.input, 3e-6);
