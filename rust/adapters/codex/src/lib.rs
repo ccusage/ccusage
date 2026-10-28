@@ -870,8 +870,15 @@ mod tests {
     #[test]
     fn prices_rollout_service_tiers_across_loading_and_report_modes() {
         for (model, expected_costs) in [
-            ("gpt-test", [45e-6, 40e-6, 55e-6, 20e-6]),
-            ("deepseek-v4-flash", [9.9e-6, 8.8e-6, 12.1e-6, 4.4e-6]),
+            ("gpt-test", [55e-6, 50e-6, 65e-6, 25e-6, 50e-6, 100e-6]),
+            (
+                "deepseek-v4-flash",
+                [12.1e-6, 11e-6, 14.3e-6, 5.5e-6, 11e-6, 22e-6],
+            ),
+            (
+                "gpt-6.1-sol",
+                [105e-6, 100e-6, 115e-6, 25e-6, 50e-6, 100e-6],
+            ),
         ] {
             let rollout = |second: u8, tier: &str| {
                 let timestamp = format!("2026-08-16T17:00:{second:02}.000Z");
@@ -909,6 +916,7 @@ mod tests {
                 "sessions/flex.jsonl": rollout(2, "flex"),
                 "sessions/fast.jsonl": rollout(3, "priority"),
                 "sessions/unclassified.jsonl": rollout(4, "unknown"),
+                "sessions/ultrafast.jsonl": rollout(5, "ultrafast"),
             });
             let mut pricing = PricingMap::default();
             pricing.load_json(
@@ -954,10 +962,18 @@ mod tests {
                             CodexSpeedPolicy::Forced(CodexServiceTier::Flex),
                             expected_costs[3],
                         ),
+                        (
+                            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+                            expected_costs[4],
+                        ),
+                        (
+                            CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
+                            expected_costs[5],
+                        ),
                     ] {
                         let report =
                             report_from_groups(&groups, kind, &pricing, speed, CostMode::Calculate);
-                        assert_eq!(report["totals"]["totalTokens"], 40);
+                        assert_eq!(report["totals"]["totalTokens"], 50);
                         let actual = report["totals"]["costUSD"].as_f64().unwrap();
                         assert!(
                             (actual - expected).abs() < 1e-12,
