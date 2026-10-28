@@ -52,6 +52,7 @@ pub(super) fn load_rows(
     Ok(AllLoadResult {
         rows: finish_rows(kind, loaded.rows, shared, start_of_week),
         detected_agents: loaded.detected_agents,
+        warnings: loaded.warnings,
     })
 }
 
@@ -114,10 +115,22 @@ pub(super) fn load_sections(
         sections.push((*kind, rows));
     }
 
+    let warnings = daily_base
+        .iter()
+        .chain(&session_base)
+        .flat_map(|base| &base.warnings)
+        .fold(Vec::new(), |mut warnings, warning| {
+            if !warnings.contains(warning) {
+                warnings.push(warning.clone());
+            }
+            warnings
+        });
+
     Ok(AllSectionsLoadResult {
         sections,
         daily_detected_agents,
         session_detected_agents,
+        warnings,
     })
 }
 
@@ -448,14 +461,17 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[13],
             progress_agent: crate::progress::UsageLoadAgent("Antigravity"),
             load: Box::new(|| {
-                load_priced_summary_agent_rows(
+                let shared = &source_shared["antigravity"];
+                let (entries, warnings) =
+                    antigravity::load_entries_with_warnings(shared, &pricing["antigravity"])?;
+                let rows = load_summary_agent_rows(
                     "antigravity",
                     load_kind,
-                    &source_shared["antigravity"],
-                    &pricing["antigravity"],
-                    antigravity::load_entries,
+                    shared,
+                    || Ok(entries),
                     antigravity::summarize_entries,
-                )
+                )?;
+                Ok(AgentRows { warnings, ..rows })
             }),
         },
         AgentLoadSpec {
@@ -538,7 +554,9 @@ fn load_base_rows(
     let loaded = load_agent_rows_parallel(specs, &mut progress)?;
     let mut detected_agents = Vec::new();
     let mut rows = Vec::new();
+    let mut warnings = Vec::new();
     for loaded in loaded {
+        warnings.extend(loaded.agent_rows.warnings.iter().cloned());
         append_agent_rows(
             &mut rows,
             &mut detected_agents,
@@ -549,6 +567,7 @@ fn load_base_rows(
     Ok(AllLoadResult {
         rows,
         detected_agents,
+        warnings,
     })
 }
 
@@ -731,6 +750,7 @@ fn load_summary_agent_rows(
     Ok(AgentRows {
         rows: summary_rows(agent, summaries, false),
         detected,
+        warnings: Vec::new(),
     })
 }
 
@@ -753,6 +773,7 @@ fn load_pi_format_agent_rows(
     Ok(AgentRows {
         rows: summary_rows(agent, summaries, true),
         detected,
+        warnings: Vec::new(),
     })
 }
 
@@ -792,6 +813,7 @@ fn filtered_pi_format_agent_rows(
     Ok(AgentRows {
         rows: summary_rows(agent, summaries, include_project_path),
         detected,
+        warnings: Vec::new(),
     })
 }
 
@@ -808,6 +830,7 @@ fn load_claude_rows(
         return Ok(AgentRows {
             rows: summary_rows("claude", summaries, false),
             detected,
+            warnings: Vec::new(),
         });
     }
 
@@ -819,6 +842,7 @@ fn load_claude_rows(
     Ok(AgentRows {
         rows: summary_rows("claude", summaries, false),
         detected,
+        warnings: Vec::new(),
     })
 }
 
@@ -849,6 +873,7 @@ fn load_codex_rows(
                 .map(|(period, group)| codex_group_row(period, group, pricing, speed, shared.mode))
                 .collect(),
             detected,
+            warnings: Vec::new(),
         });
     }
 
@@ -862,6 +887,7 @@ fn load_codex_rows(
             .map(|(period, group)| codex_group_row(period, group, pricing, speed, shared.mode))
             .collect(),
         detected,
+        warnings: Vec::new(),
     })
 }
 
@@ -891,6 +917,7 @@ fn load_qwen_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRow
         return Ok(AgentRows {
             rows: summary_rows("qwen", summaries, false),
             detected,
+            warnings: Vec::new(),
         });
     }
     filter_loaded_entries_by_date(&mut entries, shared);
@@ -898,6 +925,7 @@ fn load_qwen_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRow
     Ok(AgentRows {
         rows: summary_rows("qwen", summaries, false),
         detected,
+        warnings: Vec::new(),
     })
 }
 

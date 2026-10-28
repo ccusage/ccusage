@@ -39,6 +39,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
             model_breakdowns: Vec::new(),
         }],
         detected: true,
+        warnings: Vec::new(),
     }
 }
 
@@ -1655,4 +1656,42 @@ fn full_table_columns_include_cache_and_total_token_metrics() {
         ]
     );
     assert_eq!(headers.len(), aligns.len());
+}
+
+#[test]
+fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
+    let fixture = fs_fixture!({
+        "antigravity/conversations/not-a-database.db": "not sqlite",
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "ANTIGRAVITY_DATA_DIR",
+        fixture.path("antigravity").into_os_string(),
+    );
+    let shared = fixture_shared("20250615", "20250615");
+    let expected = vec![format!(
+        "WARN  Skipping unreadable Antigravity database '{}': Failed to inspect Antigravity database: file is not a database (code 26)",
+        fixture
+            .path("antigravity/conversations/not-a-database.db")
+            .display()
+    )];
+
+    let rows = loader::load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+    let sections = loader::load_sections(
+        &[AgentReportKind::Daily, AgentReportKind::Session],
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+
+    assert!(rows.rows.is_empty());
+    assert_eq!(rows.warnings, expected);
+    assert_eq!(sections.warnings, expected);
 }

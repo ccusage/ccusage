@@ -11,7 +11,8 @@ use crate::{
     wants_json,
 };
 
-pub use loader::load_entries;
+pub(crate) use loader::load_entries;
+pub use loader::load_entries_with_warnings;
 pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 

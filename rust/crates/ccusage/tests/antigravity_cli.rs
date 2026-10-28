@@ -49,8 +49,7 @@ fn create_database(path: &Path, rows: &[&[u8]]) {
     }
 }
 
-#[test]
-fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports() {
+fn corrupt_antigravity_fixture() -> Fixture {
     let fixture = Fixture::new();
     let root = fixture.path("antigravity");
     let conversations = root.join("conversations");
@@ -68,23 +67,27 @@ fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports(
     );
     let _ = fixture.write_file("antigravity/conversations/not-a-database.db", "not sqlite");
     let _ = fixture.write_file("antigravity/conversations/empty.db", "");
+    fixture
+}
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
+fn run_ccusage(fixture: &Fixture, args: &[&str]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
         .env_clear()
         .env("HOME", fixture.path("home"))
         .env("USERPROFILE", fixture.path("userprofile"))
         .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("ANTIGRAVITY_DATA_DIR", &root)
-        .args([
-            "antigravity",
-            "session",
-            "--json",
-            "--offline",
-            "--timezone",
-            "UTC",
-        ])
+        .env("ANTIGRAVITY_DATA_DIR", fixture.path("antigravity"))
+        .args(args)
+        .args(["--json", "--offline", "--timezone", "UTC"])
         .output()
-        .expect("failed to run ccusage");
+        .expect("failed to run ccusage")
+}
+
+#[test]
+fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports() {
+    let fixture = corrupt_antigravity_fixture();
+
+    let output = run_ccusage(&fixture, &["antigravity", "session"]);
 
     assert!(
         output.status.success(),
@@ -114,4 +117,27 @@ fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports(
         !stderr.contains("empty.db"),
         "empty databases should only be logged in debug mode: {stderr}"
     );
+}
+
+#[test]
+fn unified_report_warns_once_per_skipped_antigravity_database() {
+    let fixture = corrupt_antigravity_fixture();
+
+    let output = run_ccusage(&fixture, &["session"]);
+
+    assert!(
+        output.status.success(),
+        "ccusage failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).expect("CLI stdout was not JSON");
+    assert_eq!(report["session"].as_array().unwrap().len(), 1);
+    assert_eq!(report["session"][0]["agent"], "antigravity");
+    assert_eq!(report["session"][0]["inputTokens"], 10);
+
+    let stderr = String::from_utf8(output.stderr).expect("CLI stderr was not UTF-8");
+    assert_eq!(stderr.matches("WARN  ").count(), 2, "{stderr}");
+    assert_eq!(stderr.matches("partial.db").count(), 1, "{stderr}");
+    assert_eq!(stderr.matches("not-a-database.db").count(), 1, "{stderr}");
+    assert!(!stderr.contains("empty.db"), "{stderr}");
 }
