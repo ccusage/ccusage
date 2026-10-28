@@ -22,6 +22,8 @@ pub struct CcusageConfig {
     pub commands: Option<RootCommandsConfig>,
     /// Claude Code configuration.
     pub claude: Option<ClaudeConfig>,
+    /// Cline configuration.
+    pub cline: Option<ClineConfig>,
     /// Codex configuration.
     pub codex: Option<CodexConfig>,
     /// OpenCode configuration.
@@ -159,6 +161,22 @@ pub struct CodebuffConfig {
 #[serde(rename_all = "camelCase")]
 pub struct CodebuffCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClineConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<ClineCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClineCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -1135,6 +1153,8 @@ mod tests {
         assert_schema_properties(&schema, &["grok", "defaults"], &shared);
         assert_schema_properties(&schema, &["antigravity", "defaults"], &shared);
         assert_schema_properties(&schema, &["zcode", "defaults"], &shared);
+        assert_schema_properties(&schema, &["cline", "defaults"], &shared);
+        assert_schema_properties(&schema, &["cline", "commands", "weekly"], &shared);
     }
 
     #[test]
@@ -1154,6 +1174,7 @@ mod tests {
         assert!(schema_property(&schema, &["gemini", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["antigravity", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["kimi", "defaults", "openClawPath"]).is_none());
+        assert!(schema_property(&schema, &["cline", "commands", "weekly"]).is_some());
         assert!(schema_property(&schema, &["qwen", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["grok", "defaults", "grokPath"]).is_none());
         assert!(schema_property(&schema, &["openclaw", "defaults", "grokPath"]).is_none());
@@ -1192,6 +1213,7 @@ mod tests {
                 "$schema",
                 "amp",
                 "claude",
+                "cline",
                 "codebuff",
                 "codex",
                 "commands",
@@ -1357,6 +1379,13 @@ mod tests {
                         "json": true
                     }
                 }
+            },
+            "cline": {
+                "commands": {
+                    "weekly": {
+                        "json": true
+                    }
+                }
             }
         });
 
@@ -1493,6 +1522,7 @@ mod tests {
             "openclawDefaults": schema_node(&schema, &["openclaw", "defaults"]),
             "grokDefaults": schema_node(&schema, &["grok", "defaults"]),
             "zcodeDefaults": schema_node(&schema, &["zcode", "defaults"]),
+            "clineWeekly": schema_node(&schema, &["cline", "commands", "weekly"]),
         }));
     }
 

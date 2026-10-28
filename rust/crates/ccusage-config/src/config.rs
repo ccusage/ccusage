@@ -1128,6 +1128,79 @@ mod tests {
     }
 
     #[test]
+    fn cline_weekly_config_matches_focused_and_unified_source_views() {
+        let value = json!({
+            "defaults": {
+                "mode": "auto",
+                "since": "20260101",
+                "pricingOverrides": {
+                    "cline-model": {
+                        "inputCostPerToken": 0.000001
+                    }
+                }
+            },
+            "commands": {
+                "weekly": {
+                    "mode": "display"
+                },
+                "cline:weekly": {
+                    "pricingOverrides": {
+                        "cline-model": {
+                            "inputCostPerToken": 0.000002
+                        }
+                    }
+                }
+            },
+            "cline": {
+                "defaults": {
+                    "mode": "display",
+                    "offline": true,
+                    "since": "20260301",
+                    "pricingOverrides": {
+                        "cline-model": {
+                            "outputCostPerToken": 0.00002
+                        }
+                    }
+                },
+                "commands": {
+                    "weekly": {
+                        "mode": "calculate",
+                        "json": true,
+                        "timezone": "UTC",
+                        "pricingOverrides": {
+                            "cline-model": {
+                                "inputCostPerToken": 0.000003
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let unified = context(value.clone(), "weekly", None, "weekly");
+        let focused = context(value, "cline weekly", Some("cline"), "weekly");
+        let unified_source = unified.for_source("cline").expect("cline config");
+
+        for config in [&focused, &unified_source] {
+            let mut shared = SharedArgs::default();
+            apply_config_to_shared(&mut shared, config);
+
+            assert_eq!(shared.mode, CostMode::Calculate);
+            assert_eq!(shared.since.as_deref(), Some("20260301"));
+            assert!(shared.offline);
+            assert!(shared.json);
+            assert_eq!(shared.timezone.as_deref(), Some("UTC"));
+            assert_eq!(
+                shared.pricing_overrides["cline-model"].input_cost_per_token,
+                Some(0.000003)
+            );
+            assert_eq!(
+                shared.pricing_overrides["cline-model"].output_cost_per_token,
+                Some(0.00002)
+            );
+        }
+    }
+
+    #[test]
     fn source_view_exists_only_for_agents_the_config_addresses() {
         let config = context(
             json!({
@@ -1143,6 +1216,13 @@ mod tests {
                     "defaults": {
                         "offline": true
                     }
+                },
+                "cline": {
+                    "commands": {
+                        "weekly": {
+                            "json": true
+                        }
+                    }
                 }
             }),
             "daily",
@@ -1152,6 +1232,7 @@ mod tests {
 
         assert!(config.for_source("pi").is_some());
         assert!(config.for_source("openclaw").is_some());
+        assert!(config.for_source("cline").is_some());
         assert!(config.for_source("codex").is_none());
 
         let focused = context(

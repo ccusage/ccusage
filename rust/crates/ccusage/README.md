@@ -25,6 +25,7 @@ source in its own `ccusage-adapter-*` crate.
 - `ccusage-adapter-all`
 - `ccusage-adapter-amp`
 - `ccusage-adapter-claude`
+- `ccusage-adapter-cline`
 - `ccusage-adapter-codebuff`
 - `ccusage-adapter-codex`
 - `ccusage-adapter-common`

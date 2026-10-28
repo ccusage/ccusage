@@ -237,6 +237,7 @@ fn run_cli_output(fixture: &Fixture, args: &[&str]) -> Output {
         .env("NO_COLOR", "1")
         .env("COLUMNS", "240")
         .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("CLINE_DATA_DIR")
         .output()
         .expect("ccusage CLI should run")
 }

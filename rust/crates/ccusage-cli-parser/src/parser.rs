@@ -5,8 +5,8 @@ use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
     CostSource, DATE_BOUND_FORMATS, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS,
-    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    STANDARD_WEEKLY_AGENT_REPORTS, SessionArgs, SharedArgs, SortOrder, StatuslineArgs,
+    VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 use crate::Cli;
@@ -360,6 +360,13 @@ fn parse_command(
             "zcode",
             STANDARD_AGENT_REPORTS,
             Command::ZCode,
+        ),
+        "cline" => parse_basic_agent_command(
+            parser,
+            shared,
+            "cline",
+            STANDARD_WEEKLY_AGENT_REPORTS,
+            Command::Cline,
         ),
         _ => Err(format!("Unknown command '{command}'")),
     }
@@ -835,6 +842,7 @@ fn is_command(arg: &str) -> bool {
             | "qwen"
             | "grok"
             | "zcode"
+            | "cline"
     )
 }
 
@@ -997,6 +1005,7 @@ fn is_agent_command(command: &str) -> bool {
             | "openclaw"
             | "grok"
             | "zcode"
+            | "cline"
     )
 }
 
@@ -1008,6 +1017,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
         ),
         "codex" => matches!(report, "daily" | "monthly" | "session"),
         "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
+        "cline" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
         | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
             matches!(report, "daily" | "monthly" | "session")
@@ -1036,6 +1046,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "openclaw" => "OpenClaw",
         "grok" => "Grok",
         "zcode" => "ZCode",
+        "cline" => "Cline",
         _ => unreachable!("agent is prevalidated"),
     }
 }
@@ -1122,7 +1133,8 @@ fn report_shared<'a>(
             | Command::Qwen(args)
             | Command::OpenClaw(args)
             | Command::Grok(args)
-            | Command::ZCode(args),
+            | Command::ZCode(args)
+            | Command::Cline(args),
         ) => (&args.shared, args.kind != AgentReportKind::Session),
     }
 }

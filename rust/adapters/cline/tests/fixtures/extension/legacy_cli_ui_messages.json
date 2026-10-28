@@ -1,0 +1,16 @@
+[
+	{
+		"ts": 1793491300000,
+		"type": "say",
+		"say": "api_req_started",
+		"modelInfo": { "modelId": "vendor/legacy-model", "providerId": "vendor" },
+		"text": "{\"tokensIn\":8,\"tokensOut\":4,\"cacheReads\":0,\"cacheWrites\":0}"
+	},
+	{
+		"ts": 1793491360000,
+		"type": "say",
+		"say": "api_req_started",
+		"modelInfo": { "modelId": "vendor/legacy-model" },
+		"text": "{\"tokensIn\":3,\"tokensOut\":2,\"cacheReads\":0}"
+	}
+]

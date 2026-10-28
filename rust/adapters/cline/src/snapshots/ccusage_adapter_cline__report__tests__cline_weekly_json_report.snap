@@ -1,0 +1,75 @@
+---
+source: adapters/cline/src/report.rs
+expression: "report_from_rows(&weekly, AgentReportKind::Weekly)"
+---
+{
+  "totals": {
+    "cacheCreationTokens": 20,
+    "cacheReadTokens": 15,
+    "inputTokens": 152,
+    "outputTokens": 40,
+    "totalCost": 0.003,
+    "totalTokens": 227,
+    "unpricedModels": [
+      "vendor/custom-model"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 20,
+      "cacheReadTokens": 15,
+      "inputTokens": 140,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 10,
+          "cost": 0.002,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 25,
+          "storedCost": 0.002
+        },
+        {
+          "cacheCreationTokens": 5,
+          "cacheReadTokens": 5,
+          "cost": 0.001,
+          "inputTokens": 40,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 12,
+          "storedCost": 0.001
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 37,
+      "totalCost": 0.003,
+      "totalTokens": 212,
+      "week": "2026-10-26"
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 12,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 12,
+          "missingPricing": true,
+          "modelName": "vendor/custom-model",
+          "outputTokens": 3
+        }
+      ],
+      "modelsUsed": [
+        "vendor/custom-model"
+      ],
+      "outputTokens": 3,
+      "totalCost": 0.0,
+      "totalTokens": 15,
+      "week": "2026-11-02"
+    }
+  ]
+}
