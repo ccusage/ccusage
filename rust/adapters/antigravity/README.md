@@ -33,7 +33,9 @@ full read succeeds. Other readable databases remain available to the report.
 
 ## Public surface
 
-- `loader::load_entries`
+- `loader::load_entries_with_warnings`: returns entries and skipped-database
+  warnings without printing them; callers print the warnings after their
+  progress output stops
 - `report::summarize_entries`
 - `run`
 
