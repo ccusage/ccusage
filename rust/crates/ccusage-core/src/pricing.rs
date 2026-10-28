@@ -1923,8 +1923,7 @@ impl PricingMap {
             SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON);
         let mut overrides: Vec<_> = overrides.into_iter().collect();
         let keys: FxHashSet<&str> = overrides.iter().map(|(model, _)| model.as_str()).collect();
-        overrides
-            .sort_by_cached_key(|(model, _)| override_dependency_depth(model, &keys, keys.len()));
+        overrides.sort_by_cached_key(|(model, _)| override_application_order(model, &keys));
         for (model, override_value) in overrides {
             self.apply_override(
                 model,
@@ -2980,26 +2979,37 @@ fn model_without_date_suffix(model: &str) -> &str {
     model
 }
 
-/// Maps model aliases to canonical pricing keys before fuzzy matching.
-/// How many other overridden models an override's base entry is built from,
-/// so a target is overridden before any alias of it. Cycles stop after
-/// `remaining` steps and tie, keeping their key order.
-fn override_dependency_depth(model: &str, keys: &FxHashSet<&str>, remaining: usize) -> usize {
+/// Sorts an override after the overridden models its base entry is built
+/// from. A chain that loops sorts after every acyclic one, by how many links
+/// lead into the loop, so an alias pointing into a cycle follows the cycle.
+fn override_application_order(model: &str, keys: &FxHashSet<&str>) -> (bool, usize) {
+    // A chain longer than the number of keys must revisit one of them.
+    let chain: Vec<String> = std::iter::successors(Some(model.to_string()), |name| {
+        override_dependency(name, keys)
+    })
+    .take(keys.len() + 1)
+    .collect();
+    let occurrences = |name: &String| chain.iter().filter(|other| *other == name).count();
+    chain
+        .iter()
+        .position(|name| occurrences(name) > 1)
+        .map_or((false, chain.len() - 1), |cycle_entry| (true, cycle_entry))
+}
+
+fn override_dependency(model: &str, keys: &FxHashSet<&str>) -> Option<String> {
     let resolved = crate::model_aliases::resolve_model_name(model);
-    let dependency = [
+    [
         pricing_alias(model),
         Some(resolved.as_ref()),
         pricing_alias(resolved.as_ref()),
     ]
     .into_iter()
     .flatten()
-    .find(|name| *name != model && keys.contains(name));
-    match dependency {
-        Some(name) if remaining > 0 => 1 + override_dependency_depth(name, keys, remaining - 1),
-        _ => 0,
-    }
+    .find(|name| *name != model && keys.contains(name))
+    .map(str::to_string)
 }
 
+/// Maps model aliases to canonical pricing keys before fuzzy matching.
 fn pricing_alias(model: &str) -> Option<&'static str> {
     match model {
         "gpt-reserve" => Some("gpt-5.6-luna"),
@@ -5782,6 +5792,7 @@ mod tests {
             ("a-private-sol", "gpt-6.1-sol"),
             ("cycle-a", "cycle-b"),
             ("cycle-b", "cycle-a"),
+            ("a-into-cycle", "cycle-a"),
         ]);
         let target_override = ccusage_cli::PricingOverride {
             input_cost_per_token: Some(3e-6),
@@ -5792,19 +5803,28 @@ mod tests {
             input_cost_per_token: Some(5e-6),
             ..Default::default()
         };
+        let cycle_override = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(4e-6),
+            output_cost_per_token: Some(9e-6),
+            ..Default::default()
+        };
         let overrides = std::collections::BTreeMap::from([
             ("a-private-sol".to_string(), alias_override.clone()),
             ("gpt-6.1-sol".to_string(), target_override),
-            ("cycle-a".to_string(), alias_override.clone()),
-            ("cycle-b".to_string(), alias_override),
+            ("cycle-a".to_string(), cycle_override.clone()),
+            ("cycle-b".to_string(), cycle_override),
+            ("a-into-cycle".to_string(), alias_override),
         ]);
         let pricing = PricingMap::load_with_overrides(true, false, &overrides);
 
         let alias = pricing.find("a-private-sol").unwrap();
         assert_eq!(alias.input, 5e-6);
         assert_eq!(alias.output, 7e-6);
-        assert_eq!(pricing.find("cycle-a").unwrap().input, 5e-6);
-        assert_eq!(pricing.find("cycle-b").unwrap().input, 5e-6);
+        assert_eq!(pricing.find("cycle-a").unwrap().input, 4e-6);
+        assert_eq!(pricing.find("cycle-b").unwrap().input, 4e-6);
+        let into_cycle = pricing.find("a-into-cycle").unwrap();
+        assert_eq!(into_cycle.input, 5e-6);
+        assert_eq!(into_cycle.output, 9e-6);
     }
 
     #[test]
