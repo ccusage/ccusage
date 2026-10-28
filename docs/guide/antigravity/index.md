@@ -97,9 +97,10 @@ databases must contain the `gen_metadata` table.
 :::
 
 ::: details A database warning is shown
-ccusage skips unreadable databases and excludes all usage from that file. Check the filename in the warning and ensure the database is readable and
-has the expected `gen_metadata (idx, data)` schema. Other readable databases
-remain in the report.
+ccusage skips unreadable databases and excludes all usage from that file.
+Check the filename in the warning and ensure the database is readable and has
+the expected `gen_metadata (idx, data)` schema. Other readable databases remain
+in the report. Set `LOG_LEVEL=0` to silence these warnings.
 :::
 
 ::: details Costs show as zero
