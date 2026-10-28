@@ -1024,9 +1024,21 @@ impl SpeedMultiplierOverrides {
 /// `model`, or `1.0` when it publishes none, so such usage keeps Standard pricing.
 pub fn ultrafast_multiplier(model: &str) -> f64 {
     static OVERRIDES: OnceLock<SpeedMultiplierOverrides> = OnceLock::new();
-    OVERRIDES
-        .get_or_init(|| SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON))
+    let overrides = OVERRIDES.get_or_init(|| {
+        let mut overrides = SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON);
+        // Match separator variants such as `gpt-6-1-sol` the way Standard pricing keys do.
+        let normalized: Vec<_> = overrides
+            .exact
+            .iter()
+            .map(|(key, multiplier)| (normalized_pricing_key(key).into_owned(), *multiplier))
+            .collect();
+        overrides.exact.extend(normalized);
+        overrides
+    });
+    let resolved = crate::model_aliases::resolve_model_name(model);
+    overrides
         .multiplier_for(model)
+        .or_else(|| overrides.multiplier_for(&normalized_pricing_key(&resolved)))
         .unwrap_or(1.0)
 }
 
@@ -5564,6 +5576,21 @@ mod tests {
                 expected,
                 "{model}"
             );
+        }
+    }
+
+    #[test]
+    fn resolves_ultrafast_multiplier_through_standard_model_identity() {
+        for (model, expected) in [
+            ("gpt-6.1-sol", 6.0),
+            ("gpt-6-1-sol", 6.0),
+            ("openai/gpt-6-1-sol", 6.0),
+            ("gpt-6-1-sol-2026-09-24", 6.0),
+            ("gpt-6-astra", 6.0),
+            ("gpt-6-1-terra", 1.0),
+            ("gpt-6-sol", 1.0),
+        ] {
+            assert_eq!(super::ultrafast_multiplier(model), expected, "{model}");
         }
     }
 

@@ -31,14 +31,14 @@ pub const fn merge_codex_service_tiers(
         (Some(CodexServiceTier::Standard), _) | (_, Some(CodexServiceTier::Standard)) => {
             Some(CodexServiceTier::Standard)
         }
+        (Some(CodexServiceTier::Ultrafast), _) | (_, Some(CodexServiceTier::Ultrafast)) => {
+            Some(CodexServiceTier::Ultrafast)
+        }
         (Some(CodexServiceTier::Fast), _) | (_, Some(CodexServiceTier::Fast)) => {
             Some(CodexServiceTier::Fast)
         }
         (Some(CodexServiceTier::Flex), _) | (_, Some(CodexServiceTier::Flex)) => {
             Some(CodexServiceTier::Flex)
-        }
-        (Some(CodexServiceTier::Ultrafast), _) | (_, Some(CodexServiceTier::Ultrafast)) => {
-            Some(CodexServiceTier::Ultrafast)
         }
         (None, None) => None,
     }
@@ -547,6 +547,27 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merged_ultrafast_copies_beat_fast_and_flex_but_not_standard() {
+        use CodexServiceTier::{Fast, Flex, Standard, Ultrafast};
+
+        for (other, expected) in [
+            (None, Ultrafast),
+            (Some(Fast), Ultrafast),
+            (Some(Flex), Ultrafast),
+            (Some(Standard), Standard),
+        ] {
+            assert_eq!(
+                merge_codex_service_tiers(Some(Ultrafast), other),
+                Some(expected)
+            );
+            assert_eq!(
+                merge_codex_service_tiers(other, Some(Ultrafast)),
+                Some(expected)
+            );
+        }
+    }
 
     #[test]
     fn derives_total_tokens_without_double_counting_reasoning() {
