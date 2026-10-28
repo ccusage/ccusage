@@ -1140,6 +1140,7 @@ fn isolated_agent_env(
         "ZCODE_HOME",
         "ANTIGRAVITY_DATA_DIR",
         "COPILOT_HOME",
+        "LOG_LEVEL",
     ]
     .into_iter()
     .map(|key| (key, None::<OsString>))
