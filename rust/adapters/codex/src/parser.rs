@@ -667,6 +667,7 @@ fn codex_service_tier(value: &str) -> Option<CodexServiceTier> {
         "default" | "standard" => Some(CodexServiceTier::Standard),
         "fast" | "priority" => Some(CodexServiceTier::Fast),
         "flex" => Some(CodexServiceTier::Flex),
+        "ultrafast" => Some(CodexServiceTier::Ultrafast),
         _ => None,
     }
 }
@@ -1376,6 +1377,7 @@ mod tests {
             ("priority", Some(CodexServiceTier::Fast)),
             ("fast", Some(CodexServiceTier::Fast)),
             ("flex", Some(CodexServiceTier::Flex)),
+            ("ultrafast", Some(CodexServiceTier::Ultrafast)),
             ("", None),
         ] {
             assert_eq!(

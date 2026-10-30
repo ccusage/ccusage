@@ -36,6 +36,7 @@ Relevant speed-setting event in Codex CLI 0.144.0 and later:
 - `payload.type === "thread_settings_applied"`
 - `payload.thread_settings.service_tier === "priority"` (or legacy `"fast"`) selects Fast.
 - `payload.thread_settings.service_tier === "flex"` selects Flex.
+- `payload.thread_settings.service_tier === "ultrafast"` selects Ultrafast.
 - `payload.thread_settings.service_tier === "default"` selects Standard. Codex Desktop spells the same tier `"standard"`; both appear in the same CLI version, so this is a value mapping and not a version split.
 - Token usage inherits the latest recognized setting in the rollout. A settings event without a `service_tier` key leaves the previous tier in place (auto-review threads emit these); a tier that is present but unrecognized clears it so a stale value is not inherited.
 - `thread_settings_applied` is not emitted per turn, so short rollouts carry no tier at all and stay unclassified for report policy to resolve.

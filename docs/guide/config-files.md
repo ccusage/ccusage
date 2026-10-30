@@ -443,10 +443,11 @@ Keys in `pricingOverrides` should match the model label reported by ccusage, inc
 
 To find the exact name, run `ccusage <agent> daily --json` and look at the `model` field in the per-row breakdown.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
+If a key has no pricing entry of its own but is a model alias, unspecified fields come from the alias target's entry.
 
 ### Supported Fields
 
-All fields are optional. Unspecified fields keep existing values. Without a pricing entry, token rates default to `0.0` and speed multipliers to `1.0`.
+All fields are optional. Unspecified fields keep existing values. Without a pricing entry, token rates default to `0.0`, and speed multipliers use the published Fast, Flex, or Ultrafast rate for that model name or its alias target, or `1.0` if none is published.
 
 - `inputCostPerToken`, `outputCostPerToken` — base per-token rates
 - `cacheCreationInputTokenCost`, `cacheReadInputTokenCost` — cache pricing
@@ -454,6 +455,8 @@ All fields are optional. Unspecified fields keep existing values. Without a pric
 - `maxInputTokens` — context window limit (used by the Claude statusline hook)
 - `fastMultiplier` applies when Codex usage uses Fast pricing.
 - `flexMultiplier` applies when Codex usage uses Flex pricing.
+
+The Ultrafast multiplier comes only from published rates and cannot be set in `pricingOverrides`; there is no `ultrafastMultiplier` field.
 
 ### Overrides vs Offline Mode
 

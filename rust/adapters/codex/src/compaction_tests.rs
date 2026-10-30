@@ -8,7 +8,11 @@ use crate::{
     load_codex_events_from_directory,
     parser::visit_codex_session_file,
     report::report_from_groups,
-    types::CodexRawUsage,
+    types::{
+        CodexRawUsage,
+        CodexServiceTier::{Fast, Flex, Standard, Ultrafast},
+        CodexTokenUsageEvent,
+    },
 };
 
 fn compaction_log(timestamp: &str, model: &str, input_tokens: u64) -> String {
@@ -232,21 +236,58 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
     let fixture = fs_fixture!({
         "first.jsonl": compaction_log("2026-09-01T00:00:01Z", "gpt-5", 300),
     });
-    let first = load_codex_events_from_directory(fixture.root(), true)
+    let loaded = load_codex_events_from_directory(fixture.root(), true)
         .unwrap()
         .remove(0);
-    let mut duplicate = first.clone();
-    duplicate.session_id = "copied-session".into();
-    duplicate.service_tier = Some(crate::CodexServiceTier::Fast);
-    let groups =
-        aggregate_events(&[first, duplicate], AgentReportKind::Session, Some("UTC")).unwrap();
-    assert_eq!(groups.len(), 1);
-    assert_eq!(
-        groups["first"].models["gpt-5"]
-            .recorded_fast_usage
-            .input_tokens,
-        300
-    );
+    for (first_tier, copy_tier, merged_tier) in [
+        (None, Fast, Fast),
+        (None, Ultrafast, Ultrafast),
+        (Some(Fast), Ultrafast, Ultrafast),
+        (Some(Ultrafast), Flex, Ultrafast),
+        (Some(Ultrafast), Standard, Standard),
+        (Some(Standard), Ultrafast, Standard),
+    ] {
+        let first = CodexTokenUsageEvent {
+            service_tier: first_tier,
+            ..loaded.clone()
+        };
+        let duplicate = CodexTokenUsageEvent {
+            session_id: "copied-session".into(),
+            service_tier: Some(copy_tier),
+            ..loaded.clone()
+        };
+        let groups =
+            aggregate_events(&[first, duplicate], AgentReportKind::Session, Some("UTC")).unwrap();
+        assert_eq!(groups.len(), 1);
+        let usage = &groups["first"].models["gpt-5"];
+        let recorded = [
+            (Standard, usage.recorded_standard_usage),
+            (Fast, usage.recorded_fast_usage),
+            (Flex, usage.recorded_flex_usage),
+            (Ultrafast, usage.recorded_ultrafast_usage),
+        ];
+        let input_tokens = |tier| {
+            recorded
+                .iter()
+                .filter(|(recorded_tier, _)| *recorded_tier == tier)
+                .map(|(_, bucket)| bucket.input_tokens)
+                .sum::<u64>()
+        };
+        assert_eq!(
+            input_tokens(merged_tier),
+            300,
+            "{first_tier:?} + {copy_tier:?}"
+        );
+        assert_eq!(
+            recorded
+                .iter()
+                .map(|(_, bucket)| bucket.input_tokens)
+                .sum::<u64>(),
+            300,
+            "{first_tier:?} + {copy_tier:?}"
+        );
+        assert_eq!(usage.input_tokens, 300);
+    }
 }
 
 #[test]

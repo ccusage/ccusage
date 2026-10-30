@@ -768,10 +768,117 @@ mod tests {
     }
 
     #[test]
+    fn prices_recorded_ultrafast_usage_at_published_rates() {
+        let pricing = PricingMap::load_embedded();
+        let ultrafast = |usage: CodexUsageBucket| CodexModelUsage {
+            input_tokens: usage.input_tokens,
+            cached_input_tokens: usage.cached_input_tokens,
+            output_tokens: usage.output_tokens,
+            total_tokens: usage.input_tokens + usage.output_tokens,
+            long_context_input_tokens: usage.long_context_input_tokens,
+            long_context_cached_input_tokens: usage.long_context_cached_input_tokens,
+            long_context_output_tokens: usage.long_context_output_tokens,
+            recorded_ultrafast_usage: usage,
+            ..CodexModelUsage::default()
+        };
+        let short = ultrafast(CodexUsageBucket {
+            input_tokens: 1_200,
+            cached_input_tokens: 200,
+            output_tokens: 50,
+            ..CodexUsageBucket::default()
+        });
+        let long = ultrafast(CodexUsageBucket {
+            input_tokens: 300_000,
+            cached_input_tokens: 250_000,
+            output_tokens: 1_000,
+            long_context_input_tokens: 300_000,
+            long_context_cached_input_tokens: 250_000,
+            long_context_output_tokens: 1_000,
+            ..CodexUsageBucket::default()
+        });
+
+        // Expected costs use OpenAI's published Ultrafast USD per 1M tokens.
+        for (model, short_cost, long_cost) in [
+            ("gpt-6.1-sol", 0.01512, 1.59),
+            ("gpt-6-astra", 0.0762, 9.45),
+        ] {
+            for (usage, expected) in [(&short, short_cost), (&long, long_cost)] {
+                let cost = calculate_codex_model_cost(model, usage, &pricing, CodexSpeed::Auto);
+                assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
+            }
+        }
+    }
+
+    #[test]
+    fn keeps_standard_pricing_for_ultrafast_without_a_published_rate() {
+        let pricing = PricingMap::load_embedded();
+        let usage = CodexModelUsage {
+            input_tokens: 1_200,
+            cached_input_tokens: 200,
+            output_tokens: 50,
+            total_tokens: 1_250,
+            recorded_ultrafast_usage: CodexUsageBucket {
+                input_tokens: 1_200,
+                cached_input_tokens: 200,
+                output_tokens: 50,
+                ..CodexUsageBucket::default()
+            },
+            ..CodexModelUsage::default()
+        };
+
+        for model in ["gpt-6-sol", "gpt-6.1-terra", "gpt-6-luna"] {
+            let standard =
+                calculate_codex_model_cost(model, &usage, &pricing, CodexSpeed::Standard);
+            let auto = calculate_codex_model_cost(model, &usage, &pricing, CodexSpeed::Auto);
+
+            assert!(standard > 0.0, "{model} has embedded pricing");
+            assert!((auto - standard).abs() < f64::EPSILON, "{model}");
+        }
+    }
+
+    #[test]
+    fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+            ("private-sol", "gpt-6.1-sol"),
+            ("gpt-6.1-terra", "gpt-6.1-sol"),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        let usage = CodexModelUsage {
+            input_tokens: 1_200,
+            cached_input_tokens: 200,
+            output_tokens: 50,
+            total_tokens: 1_250,
+            recorded_ultrafast_usage: CodexUsageBucket {
+                input_tokens: 1_200,
+                cached_input_tokens: 200,
+                output_tokens: 50,
+                ..CodexUsageBucket::default()
+            },
+            ..CodexModelUsage::default()
+        };
+
+        let private_sol =
+            calculate_codex_model_cost("private-sol", &usage, &pricing, CodexSpeed::Auto);
+        let terra = calculate_codex_model_cost("gpt-6.1-terra", &usage, &pricing, CodexSpeed::Auto);
+        let standard_terra =
+            calculate_codex_model_cost("gpt-6.1-terra", &usage, &pricing, CodexSpeed::Standard);
+
+        assert!((private_sol - 0.01512).abs() < 1e-12, "{private_sol}");
+        assert!((terra - standard_terra).abs() < f64::EPSILON, "{terra}");
+    }
+
+    #[test]
     fn prices_rollout_service_tiers_across_loading_and_report_modes() {
         for (model, expected_costs) in [
-            ("gpt-test", [45e-6, 40e-6, 55e-6, 20e-6]),
-            ("deepseek-v4-flash", [9.9e-6, 8.8e-6, 12.1e-6, 4.4e-6]),
+            ("gpt-test", [55e-6, 50e-6, 65e-6, 25e-6, 50e-6, 100e-6]),
+            (
+                "deepseek-v4-flash",
+                [12.1e-6, 11e-6, 14.3e-6, 5.5e-6, 11e-6, 22e-6],
+            ),
+            (
+                "gpt-6.1-sol",
+                [105e-6, 100e-6, 115e-6, 25e-6, 50e-6, 100e-6],
+            ),
         ] {
             let rollout = |second: u8, tier: &str| {
                 let timestamp = format!("2026-08-16T17:00:{second:02}.000Z");
@@ -809,6 +916,7 @@ mod tests {
                 "sessions/flex.jsonl": rollout(2, "flex"),
                 "sessions/fast.jsonl": rollout(3, "priority"),
                 "sessions/unclassified.jsonl": rollout(4, "unknown"),
+                "sessions/ultrafast.jsonl": rollout(5, "ultrafast"),
             });
             let mut pricing = PricingMap::default();
             pricing.load_json(
@@ -854,10 +962,18 @@ mod tests {
                             CodexSpeedPolicy::Forced(CodexServiceTier::Flex),
                             expected_costs[3],
                         ),
+                        (
+                            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+                            expected_costs[4],
+                        ),
+                        (
+                            CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
+                            expected_costs[5],
+                        ),
                     ] {
                         let report =
                             report_from_groups(&groups, kind, &pricing, speed, CostMode::Calculate);
-                        assert_eq!(report["totals"]["totalTokens"], 40);
+                        assert_eq!(report["totals"]["totalTokens"], 50);
                         let actual = report["totals"]["costUSD"].as_f64().unwrap();
                         assert!(
                             (actual - expected).abs() < 1e-12,
