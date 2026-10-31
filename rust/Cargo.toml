@@ -72,7 +72,7 @@ smallvec = "1.16.4"
 sqlite = { version = "0.37.4", default-features = false, features = ["bundled", "linkage"] }
 terminal_size = "0.4.4"
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
-unicode-width = "0.2.2"
+unicode-width = "0.2.3"
 ureq = { version = "3.5.0", default-features = false, features = [
 	"gzip",
 	"rustls-no-provider",
