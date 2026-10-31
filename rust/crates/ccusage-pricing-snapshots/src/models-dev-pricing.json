@@ -11297,6 +11297,17 @@
 			"context": 1048576
 		}
 	},
+	"deepseek-v4-pro-fast": {
+		"cost": {
+			"cache_read": 0.16,
+			"input": 1.91,
+			"output": 3.83
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"deepseek-v4-pro-ga-260813": {
 		"cost": {
 			"cache_read": 0.04453,
@@ -16306,9 +16317,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.015,
-			"input": 0.03,
-			"output": 0.09
+			"cache_read": 0.005,
+			"input": 0.01,
+			"output": 0.03
 		},
 		"limit": {
 			"context": 262144
@@ -21539,7 +21550,7 @@
 			"output": 0.6
 		},
 		"limit": {
-			"context": 256000
+			"context": 262144
 		}
 	},
 	"mistral-small-4-119b": {
@@ -29255,7 +29266,7 @@
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 1000000
+			"context": 983616
 		}
 	},
 	"qwen3-8b": {
@@ -36091,8 +36102,8 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.028,
-			"input": 0.0429,
-			"output": 0.1677
+			"input": 0.0462,
+			"output": 0.1432
 		},
 		"limit": {
 			"context": 1048576
@@ -36157,7 +36168,7 @@
 		"cost": {
 			"cache_read": 0.16,
 			"input": 0.1634,
-			"output": 10.5539
+			"output": 10.1489
 		},
 		"exactOnly": true,
 		"limit": {
@@ -36336,9 +36347,9 @@
 	},
 	"~z-ai/glm-flash-latest": {
 		"cost": {
-			"cache_read": 0.0197,
-			"input": 0.0197,
-			"output": 0.1324
+			"cache_read": 0.0216,
+			"input": 0.0216,
+			"output": 0.1238
 		},
 		"exactOnly": true,
 		"limit": {
