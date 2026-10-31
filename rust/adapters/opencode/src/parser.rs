@@ -115,6 +115,38 @@ struct OpenCodeV2Message {
     cost: Option<f64>,
 }
 
+/// Content parts of a v2 row backed by a native agent, such as the Claude Agent
+/// provider, which records the Claude Code session it ran in on each part.
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeNativeRefs {
+    #[serde(default)]
+    content: Vec<OpenCodeNativePart>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeNativePart {
+    #[serde(default)]
+    native: Option<OpenCodeNativeRef>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeNativeRef {
+    #[serde(rename = "sessionID", default)]
+    session_id: Option<String>,
+}
+
+/// Returns the native agent session a v2 message row was produced in, if any.
+pub(crate) fn native_session_id(data: &str) -> Option<String> {
+    if !data.contains(r#""native":"#) {
+        return None;
+    }
+    serde_json::from_str::<OpenCodeNativeRefs>(data)
+        .ok()?
+        .content
+        .into_iter()
+        .find_map(|part| part.native?.session_id.filter(|id| !id.is_empty()))
+}
+
 impl OpenCodeV2Message {
     fn into_legacy_message(self, id: String, session_id: String, created: i64) -> OpenCodeMessage {
         let model_id = self

@@ -8,7 +8,7 @@ mod parser;
 mod paths;
 mod report;
 
-pub use loader::load_entries;
+pub use loader::{load_entries, load_entries_excluding_native_sessions};
 pub use report::{report_json, summarize_entries};
 
 use crate::{

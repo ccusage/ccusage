@@ -16,6 +16,8 @@ SQLite databases are the primary source. Legacy JSON messages under `storage/mes
 
 OpenCode v2 forks copy the parent's `session_message` rows with new ids but the same `seq`. When `session_v2.fork_session_id` and `fork_boundary` resolve against the parent's rows, fork rows at or below the last copied `seq` (the boundary for `through`, the parent's last row before it for `before`) are skipped as inherited history. The fork's `session_v2` counters start at zero and hold only fork-local usage, so they remain a valid session fallback. Unresolvable boundaries and pre-`seq` schemas keep every row.
 
+The Claude Agent provider (`claude-agent`) runs Claude Code, which also writes its own transcript. Its v2 rows record that Claude Code session as `content[].native.sessionID`. Unified reports drop rows whose native session has a Claude transcript on disk, so the Claude source counts that usage once, priced by the resolved model ID rather than the `opus`/`sonnet` alias OpenCode stores. `ccusage opencode` keeps every row.
+
 Token mapping:
 
 - `inputTokens` <- `tokens.input`

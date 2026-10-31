@@ -104,6 +104,18 @@ pub fn load_daily_summaries_with_detection(
     })
 }
 
+/// Session IDs of every Claude Code transcript on disk, as the loaders name
+/// them, so other sources that wrap Claude Code can skip usage counted here.
+pub fn session_ids(project_filter: Option<&str>) -> std::collections::HashSet<String> {
+    let Ok(paths) = claude_paths() else {
+        return std::collections::HashSet::new();
+    };
+    usage_files(&paths, project_filter)
+        .iter()
+        .map(|file| extract_session_parts(file).0)
+        .collect()
+}
+
 fn load_entries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,

@@ -778,6 +778,65 @@ fn multi_section_claude_fixture_matches_standalone_sections_for_daily_and_sessio
 }
 
 #[test]
+fn unified_reports_count_claude_agent_sessions_once() {
+    let fixture = fs_fixture!({
+        "claude/projects/project-a/claude-native-a.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"claude-native-a","requestId":"req-a","costUSD":1.0,"message":{"id":"msg-a","model":"claude-opus-4-20250514","usage":{"input_tokens":100,"output_tokens":70}}}"#,
+    });
+    let _ = fixture.create_dir_all("opencode");
+    let db = sqlite::open(fixture.path("opencode/opencode.db")).unwrap();
+    db.execute(
+        "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT)",
+    )
+    .unwrap();
+    let agent_row = |native: &str, input: u64| {
+        format!(
+            r#"{{"time":{{"created":4070995200000}},"model":{{"id":"opus","providerID":"claude-agent"}},"content":[{{"type":"text","text":"hi","native":{{"sessionID":"{native}","messageID":"m"}}}}],"tokens":{{"input":{input},"output":50}},"cost":0}}"#
+        )
+    };
+    for (id, session, data) in [
+        ("m-dup", "ses-agent", agent_row("claude-native-a", 100)),
+        ("m-no-log", "ses-agent-old", agent_row("claude-native-missing", 7)),
+        (
+            "m-api",
+            "ses-api",
+            r#"{"time":{"created":4070995200000},"model":{"id":"claude-opus-4-20250514","providerID":"anthropic"},"content":[],"tokens":{"input":20,"output":5},"cost":0.5}"#.to_string(),
+        ),
+    ] {
+        let mut statement = db
+            .prepare("INSERT INTO session_message VALUES (?1, ?2, 'assistant', 1, 4070995200000, ?3)")
+            .unwrap();
+        statement.bind((1, id)).unwrap();
+        statement.bind((2, session)).unwrap();
+        statement.bind((3, data.as_str())).unwrap();
+        statement.next().unwrap();
+    }
+    drop(db);
+    let _env = isolated_agents_env(
+        &fixture,
+        [
+            (
+                "OPENCODE_DATA_DIR",
+                fixture.path("opencode").into_os_string(),
+            ),
+            ("CLAUDE_CONFIG_DIR", fixture.path("claude").into_os_string()),
+        ],
+    );
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        ..fixture_shared("20990101", "20990103")
+    };
+
+    for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+        let result = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let totals = &report_json(&result.rows, kind)["totals"];
+
+        assert_eq!(totals["inputTokens"], 127, "{kind:?}");
+        assert_eq!(totals["totalCost"], 1.5, "{kind:?}");
+        assert_eq!(result.detected_agents, ["claude", "opencode"], "{kind:?}");
+    }
+}
+
+#[test]
 fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     let fixture = fs_fixture!({
         "custom/pi/sessions/project-a/agent_in-range.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":1000,"output":500}}}"#,
@@ -1115,6 +1174,13 @@ fn isolated_agent_env(
     source_key: &'static str,
     source_value: OsString,
 ) -> EnvVarsGuard {
+    isolated_agents_env(fixture, [(source_key, source_value)])
+}
+
+fn isolated_agents_env(
+    fixture: &ccusage_test_support::Fixture,
+    sources: impl IntoIterator<Item = (&'static str, OsString)>,
+) -> EnvVarsGuard {
     let _ = fixture.create_dir_all("empty-xdg-config");
     let _ = fixture.create_dir_all("empty-xdg-data");
     let home = fixture.path("empty-home").into_os_string();
@@ -1152,7 +1218,7 @@ fn isolated_agent_env(
     ));
     vars.push(("XDG_CONFIG_HOME", Some(xdg_config)));
     vars.push(("XDG_DATA_HOME", Some(xdg_data)));
-    vars.push((source_key, Some(source_value)));
+    vars.extend(sources.into_iter().map(|(key, value)| (key, Some(value))));
     EnvVarsGuard::set_many(vars)
 }
 
