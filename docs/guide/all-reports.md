@@ -46,6 +46,8 @@ ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid,
 
 Unified tables include an **Agent** column so you can compare sources in one view. Focused views remove that comparison layer and show the selected source in more detail where applicable.
 
+When one tool runs another, usage can be logged by both. OpenCode's Claude Agent provider is one example: unified views count those sessions once, under Claude. See [OpenCode](./opencode/#claude-agent-provider).
+
 ## Supported Sources
 
 | Source         | Namespace     | Example focused view        |
