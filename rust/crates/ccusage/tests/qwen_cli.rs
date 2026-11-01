@@ -57,6 +57,7 @@ fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
         .env("USERPROFILE", fixture.path("userprofile"))
         .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
         .env("QWEN_DATA_DIR", fixture.path("qwen"))
+        .envs(std::env::var_os("TZDIR").map(|zoneinfo| ("TZDIR", zoneinfo)))
         .env("NO_COLOR", "1")
         .env("COLUMNS", "240")
         .args(args)
