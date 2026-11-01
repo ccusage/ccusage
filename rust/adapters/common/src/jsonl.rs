@@ -14,7 +14,15 @@
 //!    `serde_json::from_slice`, so unused fields are skipped instead of being
 //!    materialized into an intermediate `Value` tree.
 
-use serde::{Deserialize, Deserializer, de::DeserializeOwned};
+use std::{fmt, marker::PhantomData};
+
+use serde::{
+    Deserialize, Deserializer,
+    de::{
+        self, DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor,
+        value::MapAccessDeserializer,
+    },
+};
 
 use ccusage_core::fast::{LinePrefilter, byte_lines};
 
@@ -201,13 +209,159 @@ where
     Ok(ccusage_core::non_empty_json_string(value.as_ref()))
 }
 
+macro_rules! skip_scalars {
+    ($empty:expr) => {
+        fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self::Value, E> {
+            Ok($empty)
+        }
+        fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self::Value, E> {
+            Ok($empty)
+        }
+        fn visit_u64<E: de::Error>(self, _: u64) -> Result<Self::Value, E> {
+            Ok($empty)
+        }
+        fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
+            Ok($empty)
+        }
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok($empty)
+        }
+    };
+}
+
+/// A JSON object read as `T`, or `None` for any other value, which is skipped
+/// without being built, unlike [`lenient_object`]. A failure inside the object
+/// cannot be recovered, so every field of `T` must be lenient too, such as
+/// [`LenientObject`], [`LenientString`], or [`LenientSeq`] with
+/// `#[serde(default)]`.
+pub struct LenientObject<T>(pub Option<T>);
+
+impl<T> Default for LenientObject<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientObject<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ObjectVisitor<T>(PhantomData<T>);
+
+        impl<'de, T: Deserialize<'de>> Visitor<'de> for ObjectVisitor<T> {
+            type Value = LenientObject<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("any JSON value")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                T::deserialize(MapAccessDeserializer::new(map))
+                    .map(|value| LenientObject(Some(value)))
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+                IgnoredAny.visit_seq(seq).map(|_| LenientObject(None))
+            }
+
+            fn visit_str<E: de::Error>(self, _: &str) -> Result<Self::Value, E> {
+                Ok(LenientObject(None))
+            }
+
+            skip_scalars!(LenientObject(None));
+        }
+
+        deserializer.deserialize_any(ObjectVisitor(PhantomData))
+    }
+}
+
+/// A JSON string, or `None` for any other value, which is skipped without
+/// being built. Never fails, so it is safe inside a [`LenientObject`].
+#[derive(Default)]
+pub struct LenientString(pub Option<String>);
+
+impl<'de> Deserialize<'de> for LenientString {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct StringVisitor;
+
+        impl<'de> Visitor<'de> for StringVisitor {
+            type Value = LenientString;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("any JSON value")
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(LenientString(Some(value.to_owned())))
+            }
+
+            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(LenientString(Some(value)))
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                IgnoredAny.visit_map(map).map(|_| LenientString(None))
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+                IgnoredAny.visit_seq(seq).map(|_| LenientString(None))
+            }
+
+            skip_scalars!(LenientString(None));
+        }
+
+        deserializer.deserialize_any(StringVisitor)
+    }
+}
+
+/// A JSON array read as `T` elements, or empty for any other value, which is
+/// skipped without being built. Elements must be lenient for one malformed
+/// element not to fail the whole array.
+pub struct LenientSeq<T>(pub Vec<T>);
+
+impl<T> Default for LenientSeq<T> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientSeq<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SeqVisitor<T>(PhantomData<T>);
+
+        impl<'de, T: Deserialize<'de>> Visitor<'de> for SeqVisitor<T> {
+            type Value = LenientSeq<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("any JSON value")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                std::iter::from_fn(|| seq.next_element().transpose())
+                    .collect::<Result<_, _>>()
+                    .map(LenientSeq)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                IgnoredAny.visit_map(map).map(|_| LenientSeq(Vec::new()))
+            }
+
+            fn visit_str<E: de::Error>(self, _: &str) -> Result<Self::Value, E> {
+                Ok(LenientSeq(Vec::new()))
+            }
+
+            skip_scalars!(LenientSeq(Vec::new()));
+        }
+
+        deserializer.deserialize_any(SeqVisitor(PhantomData))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
 
     use super::{
-        lenient_array, lenient_f64, lenient_i64, lenient_object, lenient_u64, lenient_vec,
-        non_empty_string, records,
+        LenientObject, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
+        lenient_object, lenient_u64, lenient_vec, non_empty_string, records,
     };
     use ccusage_core::fast::LinePrefilter;
 
@@ -253,6 +407,58 @@ mod tests {
                 .collect::<Vec<_>>(),
             [1, 2]
         );
+    }
+
+    #[test]
+    fn lenient_wrappers_skip_values_of_another_shape() {
+        #[derive(Deserialize)]
+        struct Part {
+            #[serde(default)]
+            name: LenientString,
+            #[serde(default)]
+            child: LenientObject<Child>,
+        }
+
+        #[derive(Deserialize)]
+        struct Child {
+            #[serde(default)]
+            id: LenientString,
+        }
+
+        #[derive(Deserialize)]
+        struct Parts {
+            #[serde(default)]
+            parts: LenientSeq<LenientObject<Part>>,
+        }
+
+        let parse = |raw: &str| {
+            serde_json::from_str::<Parts>(raw)
+                .unwrap()
+                .parts
+                .0
+                .into_iter()
+                .map(|part| {
+                    part.0
+                        .map(|part| (part.name.0, part.child.0.and_then(|child| child.id.0)))
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            parse(
+                r#"{"parts":[{"name":"a","child":{"id":"x"}},"junk",{"name":{"o":1},"child":[1]},{"name":["n"],"child":{"id":{"o":[2]}}},7,null]}"#
+            ),
+            [
+                Some((Some("a".to_string()), Some("x".to_string()))),
+                None,
+                Some((None, None)),
+                Some((None, None)),
+                None,
+                None,
+            ]
+        );
+        assert!(parse(r#"{"parts":{"a":[1]}}"#).is_empty());
+        assert!(parse(r#"{"parts":"x"}"#).is_empty());
     }
 
     #[test]

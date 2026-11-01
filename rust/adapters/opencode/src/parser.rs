@@ -1,13 +1,7 @@
-use std::{fmt, marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde::{
-    Deserialize, Deserializer,
-    de::{
-        self, IgnoredAny, MapAccess, SeqAccess, Visitor,
-        value::{MapAccessDeserializer, StrDeserializer},
-    },
-};
+use serde::Deserialize;
 
 use crate::{
     LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, apply_total_token_fallback,
@@ -121,131 +115,26 @@ struct OpenCodeV2Message {
     cost: Option<f64>,
 }
 
-/// Reads only `content[].native.sessionID`. Derived structs skip every other
-/// field, such as message text, without building it, and the lenient wrappers
-/// turn a part or field of another shape into nothing, so one malformed part
-/// cannot unlink the row.
+/// Reads only `content[].native.sessionID`. Every other field, such as message
+/// text, is skipped without being built, and a part, `native`, or `sessionID`
+/// of another shape reads as absent, so one malformed part cannot unlink the
+/// row.
 #[derive(Deserialize)]
 struct OpenCodeNativeLinks {
     #[serde(default)]
-    content: LenientSeq<Lenient<OpenCodeContentPart>>,
+    content: jsonl::LenientSeq<jsonl::LenientObject<OpenCodeContentPart>>,
 }
 
 #[derive(Deserialize)]
 struct OpenCodeContentPart {
     #[serde(default)]
-    native: Lenient<OpenCodeNativeReference>,
+    native: jsonl::LenientObject<OpenCodeNativeReference>,
 }
 
 #[derive(Deserialize)]
 struct OpenCodeNativeReference {
     #[serde(rename = "sessionID", default)]
-    session_id: Lenient<String>,
-}
-
-macro_rules! skip_scalars {
-    ($empty:expr) => {
-        fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self::Value, E> {
-            Ok($empty)
-        }
-        fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self::Value, E> {
-            Ok($empty)
-        }
-        fn visit_u64<E: de::Error>(self, _: u64) -> Result<Self::Value, E> {
-            Ok($empty)
-        }
-        fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
-            Ok($empty)
-        }
-        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok($empty)
-        }
-    };
-}
-
-/// An object or string read as `T`, or `None` for a value of another shape,
-/// which is skipped without being built. A failure inside an object cannot be
-/// recovered, so `T`'s own fields must be lenient too.
-struct Lenient<T>(Option<T>);
-
-impl<T> Default for Lenient<T> {
-    fn default() -> Self {
-        Self(None)
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Lenient<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct LenientVisitor<T>(PhantomData<T>);
-
-        impl<'de, T: Deserialize<'de>> Visitor<'de> for LenientVisitor<T> {
-            type Value = Lenient<T>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("any JSON value")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
-                T::deserialize(MapAccessDeserializer::new(map)).map(|value| Lenient(Some(value)))
-            }
-
-            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-                Ok(Lenient(
-                    T::deserialize(StrDeserializer::<E>::new(value)).ok(),
-                ))
-            }
-
-            fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
-                IgnoredAny.visit_seq(seq).map(|_| Lenient(None))
-            }
-
-            skip_scalars!(Lenient(None));
-        }
-
-        deserializer.deserialize_any(LenientVisitor(PhantomData))
-    }
-}
-
-/// An array read as `T` elements, or empty for a value of another shape, which
-/// is skipped without being built.
-struct LenientSeq<T>(Vec<T>);
-
-impl<T> Default for LenientSeq<T> {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientSeq<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct LenientSeqVisitor<T>(PhantomData<T>);
-
-        impl<'de, T: Deserialize<'de>> Visitor<'de> for LenientSeqVisitor<T> {
-            type Value = LenientSeq<T>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("any JSON value")
-            }
-
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                std::iter::from_fn(|| seq.next_element().transpose())
-                    .collect::<Result<_, _>>()
-                    .map(LenientSeq)
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
-                IgnoredAny.visit_map(map).map(|_| LenientSeq(Vec::new()))
-            }
-
-            fn visit_str<E: de::Error>(self, _: &str) -> Result<Self::Value, E> {
-                Ok(LenientSeq(Vec::new()))
-            }
-
-            skip_scalars!(LenientSeq(Vec::new()));
-        }
-
-        deserializer.deserialize_any(LenientSeqVisitor(PhantomData))
-    }
+    session_id: jsonl::LenientString,
 }
 
 /// The Claude Code session a `claude-agent` row ran in, which names the
@@ -664,6 +553,8 @@ mod tests {
         for content in [
             r#"[{"native":{"sessionID":"s"}},"junk"]"#,
             r#"[{"native":5},{"native":{"sessionID":7}},[1,{"a":2}],null,{"native":{"sessionID":"s"}}]"#,
+            r#"[{"native":{"sessionID":{"x":1}}},{"native":{"sessionID":["y"]}},{"native":{"sessionID":"s"}}]"#,
+            r#"[{"native":{"sessionID":"s"}},{"native":{"sessionID":{"x":1}}},{"native":{"sessionID":["y"]}}]"#,
         ] {
             assert_eq!(
                 v2_native_session(&format!(
