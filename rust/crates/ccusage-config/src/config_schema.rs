@@ -781,6 +781,7 @@ pub fn generate_config_schema_json() -> String {
     add_schema_defaults(&mut schema);
     inline_schema_references(&mut schema);
     wrap_root_schema(&mut schema);
+    add_agent_command_keys(&mut schema);
     let mut json = tab_indent_json(&serde_json::to_string_pretty(&schema).unwrap());
     json.push('\n');
     json
@@ -1042,6 +1043,45 @@ fn wrap_root_schema(schema: &mut Value) {
         Value::String("#/definitions/ccusage-config".to_string()),
     );
     root.insert("definitions".to_string(), Value::Object(definitions));
+}
+
+/// `commands."<agent> <report>"` and `commands."<agent>:<report>"` take the
+/// options of `<agent>.commands.<report>`. They point at that schema instead of
+/// inlining it, which would add a copy of every agent report schema per form.
+fn add_agent_command_keys(schema: &mut Value) {
+    let Some(config) = schema.pointer("/definitions/ccusage-config/properties") else {
+        return;
+    };
+    let keys = config
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(agent, agent_schema)| {
+            agent_schema
+                .pointer("/properties/commands/properties")
+                .and_then(Value::as_object)
+                .map(|reports| (agent, reports))
+        })
+        .flat_map(|(agent, reports)| {
+            reports.keys().flat_map(move |report| {
+                let reference = json!({
+                    "$ref": format!(
+                        "#/definitions/ccusage-config/properties/{agent}/properties/commands/properties/{report}"
+                    )
+                });
+                [
+                    (format!("{agent} {report}"), reference.clone()),
+                    (format!("{agent}:{report}"), reference),
+                ]
+            })
+        })
+        .collect::<Vec<_>>();
+    if let Some(commands) = schema
+        .pointer_mut("/definitions/ccusage-config/properties/commands/properties")
+        .and_then(Value::as_object_mut)
+    {
+        commands.extend(keys);
+    }
 }
 
 #[cfg(test)]
@@ -1364,6 +1404,31 @@ mod tests {
     }
 
     #[test]
+    fn schema_allows_agent_command_keys_with_the_agent_report_options() {
+        let schema = generated_schema();
+        let config = serde_json::json!({
+            "commands": {
+                "daily": { "since": "20260101" },
+                "codex daily": { "speed": "fast" },
+                "codex:monthly": { "speed": "standard" },
+                "claude blocks": { "tokenLimit": "500000" },
+                "claude:statusline": { "refreshInterval": 3 }
+            }
+        });
+
+        assert_value_keys_allowed_by_schema(&config, &schema, &schema);
+        for key in ["codex weekly", "codex:blocks", "unknown daily"] {
+            assert!(
+                schema
+                    .pointer("/definitions/ccusage-config/properties/commands/properties")
+                    .and_then(|commands| commands.get(key))
+                    .is_none(),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
     fn schema_allows_repository_example_config() {
         let schema = generated_schema();
         let config =
@@ -1613,8 +1678,7 @@ mod tests {
         let Some(reference) = schema.get("$ref").and_then(Value::as_str) else {
             return schema;
         };
-        let definition = reference.strip_prefix("#/definitions/").unwrap();
-        &root["definitions"][definition]
+        root.pointer(reference.strip_prefix('#').unwrap()).unwrap()
     }
 
     fn merge_all_of(schema: &Value, root: &Value) -> Value {

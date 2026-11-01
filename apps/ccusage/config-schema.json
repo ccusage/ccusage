@@ -4039,6 +4039,42 @@
 					"description": "Command-specific configuration for all-agent reports.",
 					"markdownDescription": "Command-specific configuration for all-agent reports.",
 					"properties": {
+						"amp daily": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/daily"
+						},
+						"amp monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/monthly"
+						},
+						"amp session": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/session"
+						},
+						"amp:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/daily"
+						},
+						"amp:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/monthly"
+						},
+						"amp:session": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/session"
+						},
+						"antigravity daily": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/daily"
+						},
+						"antigravity monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/monthly"
+						},
+						"antigravity session": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/session"
+						},
+						"antigravity:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/daily"
+						},
+						"antigravity:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/monthly"
+						},
+						"antigravity:session": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/session"
+						},
 						"blocks": {
 							"additionalProperties": false,
 							"properties": {
@@ -4217,6 +4253,96 @@
 							},
 							"type": "object"
 						},
+						"claude blocks": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/blocks"
+						},
+						"claude daily": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/daily"
+						},
+						"claude monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/monthly"
+						},
+						"claude session": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/session"
+						},
+						"claude statusline": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/statusline"
+						},
+						"claude weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/weekly"
+						},
+						"claude:blocks": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/blocks"
+						},
+						"claude:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/daily"
+						},
+						"claude:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/monthly"
+						},
+						"claude:session": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/session"
+						},
+						"claude:statusline": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/statusline"
+						},
+						"claude:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/weekly"
+						},
+						"codebuff daily": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/daily"
+						},
+						"codebuff monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/monthly"
+						},
+						"codebuff session": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/session"
+						},
+						"codebuff:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/daily"
+						},
+						"codebuff:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/monthly"
+						},
+						"codebuff:session": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/session"
+						},
+						"codex daily": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/daily"
+						},
+						"codex monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/monthly"
+						},
+						"codex session": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/session"
+						},
+						"codex:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/daily"
+						},
+						"codex:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/monthly"
+						},
+						"codex:session": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/session"
+						},
+						"copilot daily": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/daily"
+						},
+						"copilot monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/monthly"
+						},
+						"copilot session": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/session"
+						},
+						"copilot:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/daily"
+						},
+						"copilot:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/monthly"
+						},
+						"copilot:session": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/session"
+						},
 						"daily": {
 							"additionalProperties": false,
 							"properties": {
@@ -4388,6 +4514,132 @@
 							},
 							"type": "object"
 						},
+						"droid daily": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/daily"
+						},
+						"droid monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/monthly"
+						},
+						"droid session": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/session"
+						},
+						"droid:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/daily"
+						},
+						"droid:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/monthly"
+						},
+						"droid:session": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/session"
+						},
+						"gemini daily": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/daily"
+						},
+						"gemini monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/monthly"
+						},
+						"gemini session": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/session"
+						},
+						"gemini:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/daily"
+						},
+						"gemini:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/monthly"
+						},
+						"gemini:session": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/session"
+						},
+						"goose daily": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/daily"
+						},
+						"goose monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/monthly"
+						},
+						"goose session": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/session"
+						},
+						"goose:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/daily"
+						},
+						"goose:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/monthly"
+						},
+						"goose:session": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/session"
+						},
+						"grok daily": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/daily"
+						},
+						"grok monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/monthly"
+						},
+						"grok session": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/session"
+						},
+						"grok:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/daily"
+						},
+						"grok:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/monthly"
+						},
+						"grok:session": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/session"
+						},
+						"hermes daily": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/daily"
+						},
+						"hermes monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/monthly"
+						},
+						"hermes session": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/session"
+						},
+						"hermes:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/daily"
+						},
+						"hermes:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/monthly"
+						},
+						"hermes:session": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/session"
+						},
+						"kilo daily": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/daily"
+						},
+						"kilo monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/monthly"
+						},
+						"kilo session": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/session"
+						},
+						"kilo:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/daily"
+						},
+						"kilo:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/monthly"
+						},
+						"kilo:session": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/session"
+						},
+						"kimi daily": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/daily"
+						},
+						"kimi monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/monthly"
+						},
+						"kimi session": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/session"
+						},
+						"kimi:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/daily"
+						},
+						"kimi:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/monthly"
+						},
+						"kimi:session": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/session"
+						},
 						"monthly": {
 							"additionalProperties": false,
 							"properties": {
@@ -4557,6 +4809,84 @@
 								}
 							},
 							"type": "object"
+						},
+						"openclaw daily": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/daily"
+						},
+						"openclaw monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/monthly"
+						},
+						"openclaw session": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/session"
+						},
+						"openclaw:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/daily"
+						},
+						"openclaw:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/monthly"
+						},
+						"openclaw:session": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/session"
+						},
+						"opencode daily": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/daily"
+						},
+						"opencode monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/monthly"
+						},
+						"opencode session": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/session"
+						},
+						"opencode weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/weekly"
+						},
+						"opencode:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/daily"
+						},
+						"opencode:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/monthly"
+						},
+						"opencode:session": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/session"
+						},
+						"opencode:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/weekly"
+						},
+						"pi daily": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/daily"
+						},
+						"pi monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/monthly"
+						},
+						"pi session": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/session"
+						},
+						"pi:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/daily"
+						},
+						"pi:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/monthly"
+						},
+						"pi:session": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/session"
+						},
+						"qwen daily": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/daily"
+						},
+						"qwen monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/monthly"
+						},
+						"qwen session": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/session"
+						},
+						"qwen:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/daily"
+						},
+						"qwen:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/monthly"
+						},
+						"qwen:session": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/session"
 						},
 						"session": {
 							"additionalProperties": false,
@@ -5041,6 +5371,24 @@
 								}
 							},
 							"type": "object"
+						},
+						"zcode daily": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/daily"
+						},
+						"zcode monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/monthly"
+						},
+						"zcode session": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/session"
+						},
+						"zcode:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/daily"
+						},
+						"zcode:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/monthly"
+						},
+						"zcode:session": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/session"
 						}
 					},
 					"type": "object"
