@@ -24,21 +24,54 @@ pub fn load_entries(shared: &SharedArgs, report_kind: AgentReportKind) -> Result
     crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("OpenCode"),
         shared.json,
-        || load_entries_inner(shared, allow_aggregate_fallback),
+        || load_entries_inner(shared, allow_aggregate_fallback, None),
+    )
+}
+
+/// Loads OpenCode entries for a unified report, skipping `claude-agent` rows
+/// whose Claude Code transcript is on disk.
+///
+/// The `claude-agent` provider runs Claude Code under the hood, so each of its
+/// turns is stored twice: once in OpenCode's database and once in Claude
+/// Code's own transcript. `claude_transcripts` holds the transcript session
+/// ids (file stems under the Claude projects directories); rows whose
+/// `content[].native.sessionID` is in that set are skipped so the Claude side
+/// counts the usage once. Focused `ccusage opencode` reports keep every row,
+/// so they use [`load_entries`] instead.
+///
+/// A skipped session still counts as covered: its session id joins the
+/// message sessions, so the cumulative `session_v2` aggregate cannot bring
+/// the skipped usage back. When the transcript is gone, the OpenCode rows are
+/// counted instead and no usage disappears.
+pub fn load_entries_for_unified(
+    shared: &SharedArgs,
+    report_kind: AgentReportKind,
+    claude_transcripts: &HashSet<String>,
+) -> Result<Vec<LoadedEntry>> {
+    let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
+    crate::progress::track_usage_load(
+        crate::progress::UsageLoadAgent("OpenCode"),
+        shared.json,
+        || load_entries_inner(shared, allow_aggregate_fallback, Some(claude_transcripts)),
     )
 }
 
 fn load_entries_inner(
     shared: &SharedArgs,
     allow_aggregate_fallback: bool,
+    claude_transcripts: Option<&HashSet<String>>,
 ) -> Result<Vec<LoadedEntry>> {
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut message_sessions = HashSet::new();
     let mut aggregate_entries = Vec::new();
     for path in paths()? {
-        let directory_entries =
-            load_entries_from_directory_parts(&path, shared, allow_aggregate_fallback)?;
+        let directory_entries = load_entries_from_directory_parts(
+            &path,
+            shared,
+            allow_aggregate_fallback,
+            claude_transcripts,
+        )?;
         for entry in directory_entries.message_entries {
             message_sessions.insert(entry.session_id.to_string());
             if let Some(id) = entry_id(&entry)
@@ -48,6 +81,10 @@ fn load_entries_inner(
             }
             entries.push(entry);
         }
+        // Skipped sessions stay covered across directories: an aggregate for
+        // the same session in an archive root must not bring back usage whose
+        // rows were skipped from the live directory.
+        message_sessions.extend(directory_entries.skipped_sessions);
         aggregate_entries.extend(directory_entries.aggregate_entries);
     }
     append_aggregate_entries(
@@ -65,7 +102,7 @@ fn load_entries_from_directory(
     opencode_dir: &Path,
     shared: &SharedArgs,
 ) -> Result<Vec<LoadedEntry>> {
-    let directory_entries = load_entries_from_directory_parts(opencode_dir, shared, false)?;
+    let directory_entries = load_entries_from_directory_parts(opencode_dir, shared, false, None)?;
     let message_sessions = message_session_ids(&directory_entries.message_entries);
     let mut seen = entry_ids(&directory_entries.message_entries);
     let mut entries = directory_entries.message_entries;
@@ -89,6 +126,7 @@ fn load_entries_from_directory_for_report(
         opencode_dir,
         shared,
         report_kind == AgentReportKind::Session,
+        None,
     )?;
     let message_sessions = message_session_ids(&directory_entries.message_entries);
     let mut seen = entry_ids(&directory_entries.message_entries);
@@ -107,6 +145,7 @@ fn load_entries_from_directory_parts(
     opencode_dir: &Path,
     shared: &SharedArgs,
     allow_aggregate_fallback: bool,
+    claude_transcripts: Option<&HashSet<String>>,
 ) -> Result<DirectoryLoadResult> {
     let pricing = if shared.mode == CostMode::Display {
         None
@@ -122,16 +161,19 @@ fn load_entries_from_directory_parts(
     let mut message_entries = Vec::new();
     let mut seen = HashSet::new();
     let mut aggregate_entries = Vec::new();
+    let mut skipped_sessions = HashSet::new();
     if let Some(db_path) = db_path(opencode_dir) {
-        let database_entries = load_entries_from_database(
-            &db_path,
-            tz.as_ref(),
-            shared.mode,
-            pricing.as_ref(),
-            shared,
+        let context = DatabaseLoadContext {
+            tz: tz.as_ref(),
+            mode: shared.mode,
+            pricing: pricing.as_ref(),
             window,
+            shared,
+            db_path: &db_path,
             allow_aggregate_fallback,
-        );
+            claude_transcripts,
+        };
+        let database_entries = load_entries_from_database(&context);
         for entry in database_entries.message_entries {
             if let Some(id) = entry_id(&entry)
                 && !seen.insert(id.to_string())
@@ -140,6 +182,7 @@ fn load_entries_from_directory_parts(
             }
             message_entries.push(entry);
         }
+        skipped_sessions = database_entries.skipped_sessions;
         aggregate_entries = database_entries.aggregate_entries;
     }
 
@@ -186,6 +229,7 @@ fn load_entries_from_directory_parts(
     Ok(DirectoryLoadResult {
         message_entries,
         aggregate_entries,
+        skipped_sessions,
     })
 }
 
@@ -261,29 +305,38 @@ struct DatabaseLoadContext<'a> {
     window: DateWindow,
     shared: &'a SharedArgs,
     db_path: &'a Path,
+    allow_aggregate_fallback: bool,
+    claude_transcripts: Option<&'a HashSet<String>>,
 }
 
 #[derive(Default)]
 struct DatabaseLoadResult {
     message_entries: Vec<LoadedEntry>,
     aggregate_entries: Vec<LoadedEntry>,
+    /// Sessions whose rows the unified `claude-agent` transcript skip dropped.
+    /// They still count as covered, so the aggregate fallback — here and in
+    /// data directories scanned later — cannot bring the skipped usage back.
+    skipped_sessions: HashSet<String>,
 }
 
 #[derive(Default)]
 struct DirectoryLoadResult {
     message_entries: Vec<LoadedEntry>,
     aggregate_entries: Vec<LoadedEntry>,
+    skipped_sessions: HashSet<String>,
 }
 
-fn load_entries_from_database(
-    db_path: &Path,
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    shared: &SharedArgs,
-    window: DateWindow,
-    allow_aggregate_fallback: bool,
-) -> DatabaseLoadResult {
+fn load_entries_from_database(context: &DatabaseLoadContext<'_>) -> DatabaseLoadResult {
+    let DatabaseLoadContext {
+        tz,
+        mode,
+        pricing,
+        window,
+        shared,
+        db_path,
+        allow_aggregate_fallback,
+        claude_transcripts,
+    } = *context;
     let Ok(connection) =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
     else {
@@ -297,6 +350,7 @@ fn load_entries_from_database(
 
     let mut seen_message_ids = HashSet::new();
     let mut message_sessions = HashSet::new();
+    let mut skipped_sessions = HashSet::new();
     let fork_copies = fork_copy_cutoffs(&connection);
 
     if table_exists(&connection, "message") {
@@ -439,11 +493,27 @@ fn load_entries_from_database(
                         {
                             continue;
                         }
-                        let Some(entry) = session_message_value_to_entry(
+                        let Some((entry, native_session_ids)) = session_message_value_to_entry(
                             &data, id, session_id, created, tz, mode, pricing,
                         ) else {
                             continue;
                         };
+                        // Unified reports skip `claude-agent` rows whose Claude
+                        // Code transcript is on disk, since the Claude side
+                        // counts the same turn. Any linked transcript counts:
+                        // every native id names the same underlying session.
+                        // The session still counts as covered so the aggregate
+                        // fallback below cannot bring the usage back; without
+                        // a transcript the rows stay.
+                        if claude_transcripts.is_some_and(|transcripts| {
+                            native_session_ids
+                                .iter()
+                                .any(|native| transcripts.contains(native))
+                        }) {
+                            message_sessions.insert(entry.session_id.to_string());
+                            skipped_sessions.insert(entry.session_id.to_string());
+                            continue;
+                        }
                         let session_key = entry.session_id.to_string();
                         v2_entries += 1;
                         message_sessions.insert(session_key);
@@ -485,16 +555,8 @@ fn load_entries_from_database(
         if has_session_messages && table_exists(&connection, "session") {
             aggregate_tables.push("session");
         }
-        let aggregate_context = DatabaseLoadContext {
-            tz,
-            mode,
-            pricing,
-            window,
-            shared,
-            db_path,
-        };
         for table in aggregate_tables {
-            for entry in load_session_aggregate_entries(&connection, table, &aggregate_context) {
+            for entry in load_session_aggregate_entries(&connection, table, context) {
                 if message_sessions.contains(entry.session_id.as_ref()) {
                     continue;
                 }
@@ -506,6 +568,7 @@ fn load_entries_from_database(
     DatabaseLoadResult {
         message_entries,
         aggregate_entries,
+        skipped_sessions,
     }
 }
 
@@ -1132,7 +1195,8 @@ mod tests {
     use std::{ffi::OsString, path::Path};
 
     use super::{
-        load_entries, load_entries_from_directory, load_entries_from_directory_for_report,
+        load_entries, load_entries_for_unified, load_entries_from_directory,
+        load_entries_from_directory_for_report,
     };
     use crate::cli::{AgentReportKind, CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
@@ -1542,6 +1606,165 @@ mod tests {
         assert_eq!(entries[0].session_id.as_ref(), "legacy-session");
         assert_eq!(entries[0].data.message.usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
+    }
+
+    fn claude_agent_payload(native_session: &str) -> String {
+        format!(
+            r#"{{"model":{{"id":"opus","providerID":"claude-agent"}},"time":{{"created":1767312000000}},"tokens":{{"input":100,"output":10}},"cost":0.01,"content":[{{"type":"text","native":{{"sessionID":"{native_session}"}}}}]}}"#,
+        )
+    }
+
+    fn unified_shared() -> SharedArgs {
+        SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        }
+    }
+
+    fn load_unified_entries(
+        opencode_dir: &Path,
+        claude_transcripts: &std::collections::HashSet<String>,
+    ) -> Vec<crate::LoadedEntry> {
+        // `load_entries_for_unified` reads from `OPENCODE_DATA_DIR`, so point
+        // it at the fixture directory in isolation.
+        let _guard = EnvVarsGuard::set_many([(
+            "OPENCODE_DATA_DIR",
+            Some(opencode_dir.as_os_str().to_os_string()),
+        )]);
+        load_entries_for_unified(
+            &unified_shared(),
+            AgentReportKind::Daily,
+            claude_transcripts,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn unified_load_skips_claude_agent_rows_with_a_transcript_on_disk() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_db_session_message(
+            &db_path,
+            "msg-duplicate",
+            "agent-session",
+            "assistant",
+            1_767_312_000_000,
+            &claude_agent_payload("claude-session-1"),
+            true,
+        );
+        insert_db_session_message(
+            &db_path,
+            "msg-kept",
+            "other-session",
+            "assistant",
+            1_767_312_000_001,
+            r#"{"model":{"id":"gpt-test","providerID":"openai"},"time":{"created":1767312000000},"tokens":{"input":50,"output":5},"cost":0.02}"#,
+            true,
+        );
+
+        let transcripts = std::collections::HashSet::from(["claude-session-1".to_string()]);
+        let entries = load_unified_entries(fixture.root(), &transcripts);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-kept"));
+    }
+
+    #[test]
+    fn unified_load_keeps_claude_agent_rows_without_a_transcript() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_db_session_message(
+            &db_path,
+            "msg-orphan",
+            "agent-session",
+            "assistant",
+            1_767_312_000_000,
+            &claude_agent_payload("pruned-session"),
+            true,
+        );
+
+        let entries = load_unified_entries(fixture.root(), &std::collections::HashSet::new());
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-orphan"));
+    }
+
+    #[test]
+    fn unified_load_suppresses_the_session_aggregate_for_skipped_sessions() {
+        let live = fs_fixture!({});
+        let live_db = live.path("opencode.db");
+        create_db_session_message_table(&live_db, true);
+        insert_db_session_message(
+            &live_db,
+            "msg-duplicate",
+            "agent-session",
+            "assistant",
+            1_767_312_000_000,
+            &claude_agent_payload("claude-session-1"),
+            true,
+        );
+        // An archive root holding only the cumulative aggregate for the same
+        // session: without cross-directory coverage the aggregate would bring
+        // the skipped usage back.
+        let archive = fs_fixture!({});
+        let archive_db = archive.path("opencode.db");
+        create_db_session_aggregate_table(&archive_db, "session_v2");
+        insert_db_session_aggregate(
+            &archive_db,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "agent-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"opus","providerID":"claude-agent"}"#,
+                cost: 9.99,
+                input_tokens: 9_999,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+
+        // Session reports allow the aggregate fallback, so without the skip
+        // the aggregate would stand in for the skipped rows.
+        let _guard = EnvVarsGuard::set_many([(
+            "OPENCODE_DATA_DIR",
+            Some(OsString::from(format!(
+                "{},{}",
+                live.root().display(),
+                archive.root().display()
+            ))),
+        )]);
+        let transcripts = std::collections::HashSet::from(["claude-session-1".to_string()]);
+        let entries =
+            load_entries_for_unified(&unified_shared(), AgentReportKind::Session, &transcripts)
+                .unwrap();
+
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn focused_load_keeps_claude_agent_rows() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_db_session_message(
+            &db_path,
+            "msg-duplicate",
+            "agent-session",
+            "assistant",
+            1_767_312_000_000,
+            &claude_agent_payload("claude-session-1"),
+            true,
+        );
+
+        let entries = load_entries_from_directory(fixture.root(), &unified_shared()).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-duplicate"));
     }
 
     fn assistant_payload(input: u64, output: u64, cost: f64) -> String {

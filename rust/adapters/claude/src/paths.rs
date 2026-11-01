@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     env, fs,
     io::{BufRead as _, BufReader},
     path::{Path, PathBuf},
@@ -76,6 +77,61 @@ pub fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathB
     }
     files.sort_by_cached_key(|path| path.to_string_lossy().into_owned());
     files
+}
+
+/// Session ids of the Claude Code transcripts on disk.
+///
+/// Only modern transcripts — `<config>/projects/<project>/<session>.jsonl`,
+/// whose file stem is the session id — are reported. Anything nested deeper
+/// (subagent transcripts, legacy flat `agent-*.jsonl` copies) is left out so
+/// callers matching against these ids fail open and keep the usage instead of
+/// dropping it on a guess.
+///
+/// OpenCode's `claude-agent` provider runs Claude Code under the hood, so
+/// unified reports use this set to skip the OpenCode copy of a turn when its
+/// `content[].native.sessionID` has a transcript here. An unreadable config
+/// directory yields an empty set, which keeps every OpenCode row.
+///
+/// The set mirrors transcript files on disk, not the `--since` window the
+/// Claude loader applies: a transcript pruned from the Claude load by file
+/// mtime holds no entries inside the window, so an OpenCode row dated inside
+/// the window cannot duplicate it — unless the two sources contradict each
+/// other, in which case the OpenCode copy is skipped on the transcript's
+/// existence alone.
+pub fn transcript_session_ids(project_filter: Option<&str>) -> HashSet<String> {
+    let Ok(paths) = claude_paths() else {
+        return HashSet::new();
+    };
+    usage_files(&paths, project_filter)
+        .iter()
+        .filter_map(|path| transcript_session_id(path))
+        .collect()
+}
+
+/// The session id of one modern transcript file, or `None` for anything not
+/// stored as `<config>/projects/<project>/<session>.jsonl`.
+///
+/// Legacy flat `agent-*.jsonl` copies live directly under the project
+/// directory too, but their stems are agent ids, not session ids, so they are
+/// left out: matching them could only drop usage on a guess. A non-UTF-8 path
+/// is left out as well, since a dropped component could collapse a nested
+/// path into this shape.
+fn transcript_session_id(path: &Path) -> Option<String> {
+    let parts = path
+        .components()
+        .map(|component| component.as_os_str().to_str())
+        .collect::<Option<Vec<_>>>()?;
+    let projects_index = parts.iter().position(|part| *part == "projects")?;
+    let Some([_, file_name]) = parts.as_slice().get(projects_index + 1..) else {
+        return None;
+    };
+    if file_name.starts_with("agent-") {
+        return None;
+    }
+    file_name
+        .strip_suffix(".jsonl")
+        .filter(|session_id| !session_id.is_empty())
+        .map(str::to_string)
 }
 
 /// Margin subtracted from the `--since` lower bound before comparing it with
@@ -338,9 +394,9 @@ mod tests {
         time::{Duration, UNIX_EPOCH},
     };
 
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
-    use super::split_files_before_since;
+    use super::{split_files_before_since, transcript_session_ids};
     use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs, parse_ts_timestamp};
 
     fn set_file_modified(path: &Path, timestamp: TimestampMs) {
@@ -551,5 +607,35 @@ mod tests {
             super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
             Some("parent")
         );
+    }
+
+    #[test]
+    fn reports_session_ids_of_modern_transcripts_on_disk() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": "{}",
+            "projects/project-b/session-b.jsonl": "{}",
+            "projects/project-a/session-a/subagents/worker.jsonl": "{}",
+            "projects/project-a/agent-1234.jsonl": "{}",
+        });
+        let _guard = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+
+        let mut sessions = transcript_session_ids(None).into_iter().collect::<Vec<_>>();
+        sessions.sort_unstable();
+
+        assert_eq!(sessions, ["session-a", "session-b"]);
+    }
+
+    #[test]
+    fn reports_no_session_ids_from_an_empty_config_directory() {
+        let fixture = fs_fixture!({});
+        let _guard = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+
+        assert!(transcript_session_ids(None).is_empty());
     }
 }

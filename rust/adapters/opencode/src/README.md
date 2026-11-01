@@ -24,3 +24,8 @@ Token mapping:
 - `cacheCreationInputTokens` <- `tokens.cache.write`
 
 Messages may include a pre-calculated `cost` field in USD.
+
+`claude-agent` rows carry the Claude Code transcript's session id in
+`content[].native.sessionID`. Unified reports skip those rows when the
+transcript is on disk so the turn is counted once; `ccusage opencode` keeps
+every row.

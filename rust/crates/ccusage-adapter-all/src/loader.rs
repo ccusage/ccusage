@@ -286,11 +286,17 @@ fn load_base_rows(
             progress_agent: crate::progress::UsageLoadAgent("OpenCode"),
             load: Box::new(|| {
                 let shared = &source_shared["opencode"];
+                // OpenCode's `claude-agent` provider runs Claude Code under
+                // the hood, so each of its turns is stored twice: in
+                // OpenCode's database and in Claude Code's own transcript.
+                // Skip the OpenCode copy when the transcript is on disk so
+                // unified reports count the turn once, on the Claude side.
+                let claude_transcripts = claude::transcript_session_ids(claude_project);
                 let mut rows = load_summary_agent_rows(
                     "opencode",
                     load_kind,
                     shared,
-                    || opencode::load_entries(shared, load_kind),
+                    || opencode::load_entries_for_unified(shared, load_kind, &claude_transcripts),
                     opencode::summarize_entries,
                 )?;
                 // The OpenCode loader narrows to the date window as it reads, so

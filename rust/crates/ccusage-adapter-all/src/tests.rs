@@ -1696,3 +1696,126 @@ fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
     assert_eq!(rows.warnings, expected);
     assert_eq!(sections.warnings, expected);
 }
+
+fn isolated_claude_opencode_env(fixture: &ccusage_test_support::Fixture) -> EnvVarsGuard {
+    let _ = fixture.create_dir_all("empty-xdg-config");
+    let _ = fixture.create_dir_all("empty-xdg-data");
+    let home = fixture.path("empty-home").into_os_string();
+    let mut vars = [
+        "CODEX_HOME",
+        "AMP_DATA_DIR",
+        "DROID_SESSIONS_DIR",
+        "CODEBUFF_DATA_DIR",
+        "HERMES_HOME",
+        "PI_AGENT_DIR",
+        "GOOSE_PATH_ROOT",
+        "OPENCLAW_DIR",
+        "KILO_DATA_DIR",
+        "COPILOT_OTEL_FILE_EXPORTER_PATH",
+        "GEMINI_DATA_DIR",
+        "KIMI_DATA_DIR",
+        "QWEN_DATA_DIR",
+        "GROK_HOME",
+        "ZCODE_HOME",
+        "ANTIGRAVITY_DATA_DIR",
+        "COPILOT_HOME",
+        "LOG_LEVEL",
+    ]
+    .into_iter()
+    .map(|key| (key, None::<OsString>))
+    .collect::<Vec<_>>();
+    vars.push(("HOME", Some(home)));
+    vars.push((
+        "USERPROFILE",
+        Some(fixture.path("empty-userprofile").into_os_string()),
+    ));
+    vars.push((
+        "XDG_CONFIG_HOME",
+        Some(fixture.path("empty-xdg-config").into_os_string()),
+    ));
+    vars.push((
+        "XDG_DATA_HOME",
+        Some(fixture.path("empty-xdg-data").into_os_string()),
+    ));
+    vars.push((
+        "CLAUDE_CONFIG_DIR",
+        Some(fixture.path("claude-config").into_os_string()),
+    ));
+    vars.push((
+        "OPENCODE_DATA_DIR",
+        Some(fixture.path("opencode").into_os_string()),
+    ));
+    EnvVarsGuard::set_many(vars)
+}
+
+fn create_unified_opencode_db(path: &Path) {
+    let db = sqlite::open(path).unwrap();
+    db.execute(
+        "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER NOT NULL DEFAULT 0, time_created INTEGER, data TEXT)",
+    )
+    .unwrap();
+    for (id, session_id, data) in [
+        (
+            "msg-duplicate",
+            "agent-session",
+            r#"{"model":{"id":"opus","providerID":"claude-agent"},"time":{"created":1767312000000},"tokens":{"input":100,"output":10},"cost":0.5,"content":[{"type":"text","native":{"sessionID":"duplicate-session"}}]}"#,
+        ),
+        (
+            "msg-kept",
+            "other-session",
+            r#"{"model":{"id":"gpt-test","providerID":"openai"},"time":{"created":1767312000000},"tokens":{"input":50,"output":5},"cost":0.25}"#,
+        ),
+    ] {
+        let mut statement = db
+            .prepare(
+                "INSERT INTO session_message (id, session_id, type, time_created, data) \
+                 VALUES (?1, ?2, 'assistant', 1767312000000, ?3)",
+            )
+            .unwrap();
+        statement.bind((1, id)).unwrap();
+        statement.bind((2, session_id)).unwrap();
+        statement.bind((3, data)).unwrap();
+        statement.next().unwrap();
+    }
+}
+
+#[test]
+fn unified_daily_counts_claude_agent_turns_once() {
+    let fixture = fs_fixture!({
+        "claude-config/projects/project-a/duplicate-session.jsonl": r#"{"timestamp":"2026-01-02T00:00:00.000Z","sessionId":"duplicate-session","costUSD":1.0,"message":{"id":"msg_1","model":"claude-opus-4-5","usage":{"input_tokens":100,"output_tokens":20}}}"#,
+    });
+    let _ = fixture.create_dir_all("opencode");
+    create_unified_opencode_db(&fixture.path("opencode/opencode.db"));
+    let _env = isolated_claude_opencode_env(&fixture);
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        ..fixture_shared("20260102", "20260102")
+    };
+
+    let result = loader::load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+
+    assert_eq!(result.rows.len(), 1);
+    assert_eq!(result.detected_agents, vec!["claude", "opencode"]);
+    // 100 input tokens from the Claude transcript plus 50 from the
+    // unrelated OpenCode row; the 100-token `claude-agent` copy is skipped.
+    assert_eq!(result.rows[0].input_tokens, 150);
+    assert_eq!(result.rows[0].output_tokens, 25);
+    // 1.0 from the Claude transcript plus 0.25 from the unrelated OpenCode
+    // row; the 0.5 `claude-agent` copy is skipped.
+    assert!((result.rows[0].total_cost - 1.25).abs() < f64::EPSILON);
+    let mut breakdowns = result.rows[0]
+        .agent_breakdowns
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|row| (row.agent, row.input_tokens))
+        .collect::<Vec<_>>();
+    breakdowns.sort_unstable();
+    assert_eq!(breakdowns, [("claude", 100), ("opencode", 50)]);
+}

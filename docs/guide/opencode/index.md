@@ -70,6 +70,10 @@ OpenCode supports subagent sessions. The session report displays:
 
 When OpenCode v2 forks a session, it copies the parent's history into the fork. ccusage counts only the usage the fork generates itself, so copied turns are not counted twice in session, daily, weekly, or monthly reports. If the fork's parent session or boundary message is no longer in the database, the fork keeps all of its rows.
 
+## Claude Agent Sessions in Unified Reports
+
+The `claude-agent` provider runs Claude Code under the hood, so each turn is stored twice: in OpenCode's database and in Claude Code's own transcript. Unified reports (`ccusage daily` and friends) skip the OpenCode copy when the transcript is on disk, counting the turn once on the Claude side — which also carries the resolved model id that OpenCode's `opus` alias lacks. `ccusage opencode` keeps every row, and when the transcript is gone (for example after `cleanupPeriodDays`) the OpenCode rows are counted instead, so no usage disappears.
+
 ## Environment Variables
 
 | Variable            | Description                                                                                |

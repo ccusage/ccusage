@@ -113,6 +113,30 @@ struct OpenCodeV2Message {
     time: Option<OpenCodeTime>,
     #[serde(default, deserialize_with = "jsonl::lenient_f64")]
     cost: Option<f64>,
+    #[serde(default, deserialize_with = "jsonl::lenient_vec")]
+    content: Vec<OpenCodeContentPart>,
+}
+
+/// A single entry of an OpenCode v2 message `content` array. Only the native
+/// session link ccusage consumes is declared; serde skips everything else.
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeContentPart {
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    native: Option<OpenCodeNativeReference>,
+}
+
+/// The `native` block of a content part, linking an OpenCode message back to
+/// the session of the underlying provider transcript. The `claude-agent`
+/// provider runs Claude Code under the hood, so its rows carry the Claude
+/// Code transcript's session id here.
+#[derive(Debug, Default, Deserialize)]
+struct OpenCodeNativeReference {
+    #[serde(
+        rename = "sessionID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    session_id: Option<String>,
 }
 
 impl OpenCodeV2Message {
@@ -139,6 +163,38 @@ impl OpenCodeV2Message {
             session_id: Some(session_id),
             cost: self.cost,
         }
+    }
+
+    /// The provider this message ran under, resolved the same way
+    /// [`into_legacy_message`](Self::into_legacy_message) resolves it.
+    fn provider(&self) -> Option<&str> {
+        self.model
+            .as_ref()
+            .and_then(|model| model.provider_id.as_deref())
+            .or(self.provider_id.as_deref())
+    }
+
+    /// Native session ids linked from the message `content` parts.
+    ///
+    /// Only `claude-agent` messages link back to a Claude Code transcript;
+    /// anything else yields no ids, so callers matching against transcript
+    /// session ids fail open and keep the usage.
+    fn native_session_ids(&self) -> Vec<String> {
+        if self.provider() != Some("claude-agent") {
+            return Vec::new();
+        }
+        let mut ids = Vec::new();
+        for part in &self.content {
+            if let Some(id) = part
+                .native
+                .as_ref()
+                .and_then(|native| native.session_id.clone())
+                && !ids.contains(&id)
+            {
+                ids.push(id);
+            }
+        }
+        ids
     }
 }
 
@@ -273,10 +329,16 @@ pub(crate) fn session_message_value_to_entry(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Option<LoadedEntry> {
+) -> Option<(LoadedEntry, Vec<String>)> {
     let value = serde_json::from_str::<OpenCodeV2Message>(data).ok()?;
+    // The `claude-agent` provider runs Claude Code under the hood, so its rows
+    // duplicate the Claude Code transcript linked here. Unified reports skip
+    // those rows when the transcript is on disk; the ids are returned alongside
+    // the entry so the loader can filter without a second parse.
+    let native_session_ids = value.native_session_ids();
     let value = value.into_legacy_message(id, session_id, created);
-    message_value_to_entry(&value, None, None, tz, mode, pricing)
+    let entry = message_value_to_entry(&value, None, None, tz, mode, pricing)?;
+    Some((entry, native_session_ids))
 }
 
 pub(crate) struct OpenCodeSessionAggregate {
@@ -451,7 +513,7 @@ mod tests {
 
     use super::{
         OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry,
-        open_code_model_candidates, session_value_to_entry,
+        open_code_model_candidates, session_message_value_to_entry, session_value_to_entry,
     };
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
 
@@ -777,5 +839,49 @@ mod tests {
 
         assert_eq!(entry.timestamp.as_millis(), created);
         assert_eq!(entry.cost, 0.14);
+    }
+
+    fn v2_entry(data: &str) -> Option<(LoadedEntry, Vec<String>)> {
+        session_message_value_to_entry(
+            data,
+            "msg-v2".to_string(),
+            "v2-session".to_string(),
+            1_767_312_000_000,
+            None,
+            CostMode::Display,
+            None,
+        )
+    }
+
+    #[test]
+    fn links_claude_agent_messages_to_their_native_sessions() {
+        let (entry, native_session_ids) = v2_entry(
+            r#"{"model":{"id":"opus","providerID":"claude-agent"},"time":{"created":1767312000000},"tokens":{"input":100,"output":10},"cost":0.01,"content":[{"type":"text","text":"hi","native":{"sessionID":"claude-session-1"}},{"type":"tool","native":{"sessionID":"claude-session-1"}}]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(native_session_ids, ["claude-session-1"]);
+        assert_eq!(entry.session_id.as_ref(), "v2-session");
+        assert_eq!(entry.data.message.usage.input_tokens, 100);
+    }
+
+    #[test]
+    fn ignores_native_sessions_from_other_providers() {
+        let (_, native_session_ids) = v2_entry(
+            r#"{"model":{"id":"gpt-test","providerID":"openai"},"time":{"created":1767312000000},"tokens":{"input":100},"content":[{"native":{"sessionID":"other-session"}}]}"#,
+        )
+        .unwrap();
+
+        assert!(native_session_ids.is_empty());
+    }
+
+    #[test]
+    fn ignores_messages_without_a_native_session_link() {
+        let (_, native_session_ids) = v2_entry(
+            r#"{"model":{"id":"opus","providerID":"claude-agent"},"time":{"created":1767312000000},"tokens":{"input":100},"content":[{"type":"text"}]}"#,
+        )
+        .unwrap();
+
+        assert!(native_session_ids.is_empty());
     }
 }
