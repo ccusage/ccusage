@@ -5741,14 +5741,25 @@ mod tests {
             ("private-sol", "gpt-6.1-sol"),
             ("gpt-6.1-terra", "gpt-6.1-sol"),
         ]);
-        let pricing = PricingMap::load_embedded();
+        // Whether the embedded LiteLLM snapshot has an exact Terra entry depends
+        // on the build environment, so the test supplies both entries itself.
+        let mut pricing = PricingMap::default();
+        let json = serde_json::json!({
+            "gpt-6.1-sol": {
+                "input_cost_per_token": 0.000002,
+                "output_cost_per_token": 0.00001,
+            },
+            "gpt-6.1-terra": {
+                "input_cost_per_token": 0.000001,
+                "output_cost_per_token": 0.000005,
+            },
+        })
+        .to_string();
+        assert_eq!(pricing.load_json(&json), 2);
 
         let private_sol = pricing.find("private-sol").unwrap();
         assert_eq!(private_sol.ultrafast_multiplier, 6.0);
-        assert_eq!(
-            private_sol.input,
-            pricing.find("gpt-6.1-sol").unwrap().input
-        );
+        assert_eq!(private_sol.input, 2e-6);
 
         // An exact Terra entry wins over the alias, so its rates and multiplier stay Terra's.
         let terra = pricing.find("gpt-6.1-terra").unwrap();
