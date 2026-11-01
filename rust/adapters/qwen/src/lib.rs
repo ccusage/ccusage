@@ -1,5 +1,6 @@
 use ccusage_adapter_common::{
-    collect_files_with_extension, filter_loaded_entries_by_date, read_files_parallel,
+    collect_files_with_extension, filter_loaded_entries_by_date,
+    filter_session_summaries_by_last_activity, read_files_parallel,
 };
 use ccusage_core::*;
 
@@ -10,7 +11,7 @@ mod report;
 
 use crate::{
     Result,
-    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
+    cli::{AgentCommandArgs, AgentReportKind},
     print_json_or_jq, print_usage_table, sort_summaries, wants_json,
 };
 
@@ -27,7 +28,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         summarize_entries(&entries, args.kind)?
     };
     if args.kind == AgentReportKind::Session {
-        filter_session_summaries(&mut rows, &args.shared);
+        filter_session_summaries_by_last_activity(&mut rows, &args.shared);
     }
     sort_summaries(&mut rows, &args.shared.order, |row| {
         ccusage_core::summary_period(row)
@@ -50,22 +51,6 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     Ok(())
 }
 
-fn filter_session_summaries(rows: &mut Vec<crate::UsageSummary>, shared: &SharedArgs) {
-    if shared.since.is_some() || shared.until.is_some() {
-        let since = shared.since.as_deref().map(|value| value.replace('-', ""));
-        let until = shared.until.as_deref().map(|value| value.replace('-', ""));
-        rows.retain(|row| {
-            let date = row
-                .last_activity
-                .as_deref()
-                .unwrap_or_default()
-                .replace('-', "");
-            since.as_ref().is_none_or(|bound| &date >= bound)
-                && until.as_ref().is_none_or(|bound| &date <= bound)
-        });
-    }
-}
-
 pub fn has_data() -> bool {
     paths::discover_chat_files().is_ok_and(|files| !files.is_empty())
 }
@@ -76,7 +61,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::UsageSummary;
     use crate::cli::{CostMode, SharedArgs};
 
     #[test]
@@ -143,48 +127,5 @@ mod tests {
                 "cost": 0.0
             }])
         );
-    }
-
-    #[test]
-    fn filters_session_summaries_with_iso_date_bounds() {
-        let mut rows = vec![
-            usage_summary("before", "2026-02-22"),
-            usage_summary("inside", "2026-02-23"),
-            usage_summary("after", "2026-02-24"),
-        ];
-        let shared = SharedArgs {
-            since: Some("2026-02-23".to_string()),
-            until: Some("2026-02-23".to_string()),
-            ..SharedArgs::default()
-        };
-
-        filter_session_summaries(&mut rows, &shared);
-
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].session_id.as_deref(), Some("inside"));
-    }
-
-    fn usage_summary(session_id: &str, last_activity: &str) -> UsageSummary {
-        UsageSummary {
-            date: None,
-            month: None,
-            week: None,
-            session_id: Some(session_id.to_string()),
-            project_path: None,
-            last_activity: Some(last_activity.to_string()),
-            first_activity: None,
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_creation_tokens: 0,
-            cache_read_tokens: 0,
-            extra_total_tokens: 0,
-            total_cost: 0.0,
-            credits: None,
-            message_count: None,
-            models_used: Vec::new(),
-            model_breakdowns: Vec::new(),
-            project: None,
-            versions: None,
-        }
     }
 }
