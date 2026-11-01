@@ -345,6 +345,16 @@ fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
             1.0,
         ),
     );
+    let _ = fixture.write_file(
+        "projects/project-a/session-d.jsonl",
+        usage_line(
+            "2026-09-12T00:30:00.000Z",
+            "session-d",
+            "msg-after",
+            "req-after",
+            2.0,
+        ),
+    );
 
     let output = run_ccusage(
         &fixture,
