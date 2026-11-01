@@ -529,6 +529,176 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -1055,6 +1225,176 @@
 									"type": "object"
 								},
 								"session": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
+								},
+								"weekly": {
 									"additionalProperties": false,
 									"properties": {
 										"all": {
@@ -3191,6 +3531,176 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -3864,6 +4374,169 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"speed": {
+											"default": "auto",
+											"description": "Codex speed normalization strategy.",
+											"enum": ["auto", "standard", "fast", "flex"],
+											"markdownDescription": "Codex speed normalization strategy.",
+											"type": "string"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -4039,6 +4712,54 @@
 					"description": "Command-specific configuration for all-agent reports.",
 					"markdownDescription": "Command-specific configuration for all-agent reports.",
 					"properties": {
+						"amp daily": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/daily"
+						},
+						"amp monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/monthly"
+						},
+						"amp session": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/session"
+						},
+						"amp weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/weekly"
+						},
+						"amp:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/daily"
+						},
+						"amp:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/monthly"
+						},
+						"amp:session": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/session"
+						},
+						"amp:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/amp/properties/commands/properties/weekly"
+						},
+						"antigravity daily": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/daily"
+						},
+						"antigravity monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/monthly"
+						},
+						"antigravity session": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/session"
+						},
+						"antigravity weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/weekly"
+						},
+						"antigravity:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/daily"
+						},
+						"antigravity:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/monthly"
+						},
+						"antigravity:session": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/session"
+						},
+						"antigravity:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/antigravity/properties/commands/properties/weekly"
+						},
 						"blocks": {
 							"additionalProperties": false,
 							"properties": {
@@ -4217,6 +4938,114 @@
 							},
 							"type": "object"
 						},
+						"claude blocks": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/blocks"
+						},
+						"claude daily": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/daily"
+						},
+						"claude monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/monthly"
+						},
+						"claude session": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/session"
+						},
+						"claude statusline": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/statusline"
+						},
+						"claude weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/weekly"
+						},
+						"claude:blocks": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/blocks"
+						},
+						"claude:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/daily"
+						},
+						"claude:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/monthly"
+						},
+						"claude:session": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/session"
+						},
+						"claude:statusline": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/statusline"
+						},
+						"claude:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/claude/properties/commands/properties/weekly"
+						},
+						"codebuff daily": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/daily"
+						},
+						"codebuff monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/monthly"
+						},
+						"codebuff session": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/session"
+						},
+						"codebuff weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/weekly"
+						},
+						"codebuff:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/daily"
+						},
+						"codebuff:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/monthly"
+						},
+						"codebuff:session": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/session"
+						},
+						"codebuff:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/codebuff/properties/commands/properties/weekly"
+						},
+						"codex daily": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/daily"
+						},
+						"codex monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/monthly"
+						},
+						"codex session": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/session"
+						},
+						"codex weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/weekly"
+						},
+						"codex:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/daily"
+						},
+						"codex:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/monthly"
+						},
+						"codex:session": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/session"
+						},
+						"codex:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/codex/properties/commands/properties/weekly"
+						},
+						"copilot daily": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/daily"
+						},
+						"copilot monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/monthly"
+						},
+						"copilot session": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/session"
+						},
+						"copilot weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/weekly"
+						},
+						"copilot:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/daily"
+						},
+						"copilot:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/monthly"
+						},
+						"copilot:session": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/session"
+						},
+						"copilot:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/copilot/properties/commands/properties/weekly"
+						},
 						"daily": {
 							"additionalProperties": false,
 							"properties": {
@@ -4388,6 +5217,174 @@
 							},
 							"type": "object"
 						},
+						"droid daily": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/daily"
+						},
+						"droid monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/monthly"
+						},
+						"droid session": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/session"
+						},
+						"droid weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/weekly"
+						},
+						"droid:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/daily"
+						},
+						"droid:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/monthly"
+						},
+						"droid:session": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/session"
+						},
+						"droid:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/droid/properties/commands/properties/weekly"
+						},
+						"gemini daily": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/daily"
+						},
+						"gemini monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/monthly"
+						},
+						"gemini session": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/session"
+						},
+						"gemini weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/weekly"
+						},
+						"gemini:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/daily"
+						},
+						"gemini:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/monthly"
+						},
+						"gemini:session": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/session"
+						},
+						"gemini:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/gemini/properties/commands/properties/weekly"
+						},
+						"goose daily": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/daily"
+						},
+						"goose monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/monthly"
+						},
+						"goose session": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/session"
+						},
+						"goose weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/weekly"
+						},
+						"goose:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/daily"
+						},
+						"goose:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/monthly"
+						},
+						"goose:session": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/session"
+						},
+						"goose:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/goose/properties/commands/properties/weekly"
+						},
+						"grok daily": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/daily"
+						},
+						"grok monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/monthly"
+						},
+						"grok session": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/session"
+						},
+						"grok weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/weekly"
+						},
+						"grok:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/daily"
+						},
+						"grok:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/monthly"
+						},
+						"grok:session": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/session"
+						},
+						"grok:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/grok/properties/commands/properties/weekly"
+						},
+						"hermes daily": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/daily"
+						},
+						"hermes monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/monthly"
+						},
+						"hermes session": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/session"
+						},
+						"hermes weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/weekly"
+						},
+						"hermes:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/daily"
+						},
+						"hermes:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/monthly"
+						},
+						"hermes:session": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/session"
+						},
+						"hermes:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/hermes/properties/commands/properties/weekly"
+						},
+						"kilo daily": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/daily"
+						},
+						"kilo monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/monthly"
+						},
+						"kilo session": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/session"
+						},
+						"kilo weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/weekly"
+						},
+						"kilo:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/daily"
+						},
+						"kilo:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/monthly"
+						},
+						"kilo:session": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/session"
+						},
+						"kilo:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/kilo/properties/commands/properties/weekly"
+						},
+						"kimi daily": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/daily"
+						},
+						"kimi monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/monthly"
+						},
+						"kimi session": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/session"
+						},
+						"kimi weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/weekly"
+						},
+						"kimi:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/daily"
+						},
+						"kimi:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/monthly"
+						},
+						"kimi:session": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/session"
+						},
+						"kimi:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/kimi/properties/commands/properties/weekly"
+						},
 						"monthly": {
 							"additionalProperties": false,
 							"properties": {
@@ -4557,6 +5554,102 @@
 								}
 							},
 							"type": "object"
+						},
+						"openclaw daily": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/daily"
+						},
+						"openclaw monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/monthly"
+						},
+						"openclaw session": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/session"
+						},
+						"openclaw weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/weekly"
+						},
+						"openclaw:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/daily"
+						},
+						"openclaw:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/monthly"
+						},
+						"openclaw:session": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/session"
+						},
+						"openclaw:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/openclaw/properties/commands/properties/weekly"
+						},
+						"opencode daily": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/daily"
+						},
+						"opencode monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/monthly"
+						},
+						"opencode session": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/session"
+						},
+						"opencode weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/weekly"
+						},
+						"opencode:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/daily"
+						},
+						"opencode:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/monthly"
+						},
+						"opencode:session": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/session"
+						},
+						"opencode:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/opencode/properties/commands/properties/weekly"
+						},
+						"pi daily": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/daily"
+						},
+						"pi monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/monthly"
+						},
+						"pi session": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/session"
+						},
+						"pi weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/weekly"
+						},
+						"pi:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/daily"
+						},
+						"pi:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/monthly"
+						},
+						"pi:session": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/session"
+						},
+						"pi:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/pi/properties/commands/properties/weekly"
+						},
+						"qwen daily": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/daily"
+						},
+						"qwen monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/monthly"
+						},
+						"qwen session": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/session"
+						},
+						"qwen weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/weekly"
+						},
+						"qwen:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/daily"
+						},
+						"qwen:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/monthly"
+						},
+						"qwen:session": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/session"
+						},
+						"qwen:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/qwen/properties/commands/properties/weekly"
 						},
 						"session": {
 							"additionalProperties": false,
@@ -5041,6 +6134,30 @@
 								}
 							},
 							"type": "object"
+						},
+						"zcode daily": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/daily"
+						},
+						"zcode monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/monthly"
+						},
+						"zcode session": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/session"
+						},
+						"zcode weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/weekly"
+						},
+						"zcode:daily": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/daily"
+						},
+						"zcode:monthly": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/monthly"
+						},
+						"zcode:session": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/session"
+						},
+						"zcode:weekly": {
+							"$ref": "#/definitions/ccusage-config/properties/zcode/properties/commands/properties/weekly"
 						}
 					},
 					"type": "object"
@@ -5394,6 +6511,176 @@
 									"type": "object"
 								},
 								"session": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
+								},
+								"weekly": {
 									"additionalProperties": false,
 									"properties": {
 										"all": {
@@ -6428,6 +7715,176 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -6954,6 +8411,176 @@
 									"type": "object"
 								},
 								"session": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
+								},
+								"weekly": {
 									"additionalProperties": false,
 									"properties": {
 										"all": {
@@ -7816,6 +9443,176 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -8342,6 +10139,176 @@
 									"type": "object"
 								},
 								"session": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
+								},
+								"weekly": {
 									"additionalProperties": false,
 									"properties": {
 										"all": {
@@ -9204,6 +11171,176 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -9730,6 +11867,176 @@
 									"type": "object"
 								},
 								"session": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
+								},
+								"weekly": {
 									"additionalProperties": false,
 									"properties": {
 										"all": {
@@ -10592,6 +12899,176 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -11100,6 +13577,167 @@
 									"type": "object"
 								},
 								"session": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"openClawPath": {
+											"description": "Path or comma-separated paths to OpenClaw data directories.",
+											"markdownDescription": "Path or comma-separated paths to OpenClaw data directories.",
+											"type": "string"
+										},
+										"order": {
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
+								},
+								"weekly": {
 									"additionalProperties": false,
 									"properties": {
 										"all": {
@@ -12781,6 +15419,167 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"piPath": {
+											"description": "Path or comma-separated paths to pi-agent sessions directories.",
+											"markdownDescription": "Path or comma-separated paths to pi-agent sessions directories.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -13489,6 +16288,176 @@
 										}
 									},
 									"type": "object"
+								},
+								"weekly": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
 								}
 							},
 							"type": "object"
@@ -14015,6 +16984,176 @@
 									"type": "object"
 								},
 								"session": {
+									"additionalProperties": false,
+									"properties": {
+										"all": {
+											"default": false,
+											"description": "Accepted for compatibility; all detected supported agents are included by default.",
+											"markdownDescription": "Accepted for compatibility; all detected supported agents are included by default.",
+											"type": "boolean"
+										},
+										"breakdown": {
+											"default": false,
+											"description": "Show per-model cost breakdown.",
+											"markdownDescription": "Show per-model cost breakdown.",
+											"type": "boolean"
+										},
+										"color": {
+											"default": false,
+											"description": "Enable colored output.",
+											"markdownDescription": "Enable colored output.",
+											"type": "boolean"
+										},
+										"compact": {
+											"default": false,
+											"description": "Force compact table layout for narrow terminals.",
+											"markdownDescription": "Force compact table layout for narrow terminals.",
+											"type": "boolean"
+										},
+										"debug": {
+											"default": false,
+											"description": "Show pricing mismatch information for debugging.",
+											"markdownDescription": "Show pricing mismatch information for debugging.",
+											"type": "boolean"
+										},
+										"debugSamples": {
+											"default": 5,
+											"description": "Number of sample discrepancies to show in debug output.",
+											"format": "uint",
+											"markdownDescription": "Number of sample discrepancies to show in debug output.",
+											"minimum": 0.0,
+											"type": "integer"
+										},
+										"jq": {
+											"description": "jq filter to apply to JSON output.",
+											"markdownDescription": "jq filter to apply to JSON output.",
+											"type": "string"
+										},
+										"json": {
+											"default": false,
+											"description": "Output in JSON format.",
+											"markdownDescription": "Output in JSON format.",
+											"type": "boolean"
+										},
+										"mode": {
+											"default": "auto",
+											"description": "Cost calculation mode.",
+											"enum": ["auto", "calculate", "display"],
+											"markdownDescription": "Cost calculation mode.",
+											"type": "string"
+										},
+										"noColor": {
+											"default": false,
+											"description": "Disable colored output.",
+											"markdownDescription": "Disable colored output.",
+											"type": "boolean"
+										},
+										"noCost": {
+											"default": false,
+											"description": "Hide cost information in table and JSON output.",
+											"markdownDescription": "Hide cost information in table and JSON output.",
+											"type": "boolean"
+										},
+										"noOffline": {
+											"default": false,
+											"description": "Disable cached pricing data where supported.",
+											"markdownDescription": "Disable cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"offline": {
+											"default": false,
+											"description": "Use cached pricing data where supported.",
+											"markdownDescription": "Use cached pricing data where supported.",
+											"type": "boolean"
+										},
+										"order": {
+											"default": "asc",
+											"description": "Sort order.",
+											"enum": ["desc", "asc"],
+											"markdownDescription": "Sort order.",
+											"type": "string"
+										},
+										"pricingOverrides": {
+											"additionalProperties": {
+												"additionalProperties": false,
+												"properties": {
+													"cacheCreationInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheCreationInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCost": {
+														"format": "double",
+														"type": "number"
+													},
+													"cacheReadInputTokenCostAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"fastMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"flexMultiplier": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"inputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													},
+													"maxInputTokens": {
+														"format": "uint64",
+														"minimum": 0.0,
+														"type": "integer"
+													},
+													"outputCostPerToken": {
+														"format": "double",
+														"type": "number"
+													},
+													"outputCostPerTokenAbove200kTokens": {
+														"format": "double",
+														"type": "number"
+													}
+												},
+												"type": "object"
+											},
+											"description": "Runtime pricing overrides keyed by raw model name.",
+											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
+											"type": "object"
+										},
+										"since": {
+											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
+											"type": "string"
+										},
+										"singleThread": {
+											"default": false,
+											"description": "Disable parallel file processing.",
+											"markdownDescription": "Disable parallel file processing.",
+											"type": "boolean"
+										},
+										"timezone": {
+											"description": "Timezone for date grouping (IANA).",
+											"markdownDescription": "Timezone for date grouping (IANA).",
+											"type": "string"
+										},
+										"until": {
+											"description": "Filter until date (inclusive).",
+											"markdownDescription": "Filter until date (inclusive).",
+											"type": "string"
+										}
+									},
+									"type": "object"
+								},
+								"weekly": {
 									"additionalProperties": false,
 									"properties": {
 										"all": {

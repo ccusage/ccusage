@@ -98,6 +98,7 @@ pub struct CodexConfig {
 #[serde(rename_all = "camelCase")]
 pub struct CodexCommandsConfig {
     pub daily: Option<CodexOptions>,
+    pub weekly: Option<CodexOptions>,
     pub monthly: Option<CodexOptions>,
     pub session: Option<CodexOptions>,
 }
@@ -129,6 +130,7 @@ pub struct AmpConfig {
 #[serde(rename_all = "camelCase")]
 pub struct AmpCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -144,6 +146,7 @@ pub struct DroidConfig {
 #[serde(rename_all = "camelCase")]
 pub struct DroidCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -159,6 +162,7 @@ pub struct CodebuffConfig {
 #[serde(rename_all = "camelCase")]
 pub struct CodebuffCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -174,6 +178,7 @@ pub struct HermesConfig {
 #[serde(rename_all = "camelCase")]
 pub struct HermesCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -201,6 +206,7 @@ pub struct PiStoreConfig {
 #[serde(rename_all = "camelCase")]
 pub struct PiCommandsConfig {
     pub daily: Option<PiOptions>,
+    pub weekly: Option<PiOptions>,
     pub monthly: Option<PiOptions>,
     pub session: Option<PiOptions>,
 }
@@ -216,6 +222,7 @@ pub struct GooseConfig {
 #[serde(rename_all = "camelCase")]
 pub struct GooseCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -231,6 +238,7 @@ pub struct OpenClawConfig {
 #[serde(rename_all = "camelCase")]
 pub struct OpenClawCommandsConfig {
     pub daily: Option<OpenClawOptions>,
+    pub weekly: Option<OpenClawOptions>,
     pub monthly: Option<OpenClawOptions>,
     pub session: Option<OpenClawOptions>,
 }
@@ -246,6 +254,7 @@ pub struct KiloConfig {
 #[serde(rename_all = "camelCase")]
 pub struct KiloCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -261,6 +270,7 @@ pub struct CopilotConfig {
 #[serde(rename_all = "camelCase")]
 pub struct CopilotCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -276,6 +286,7 @@ pub struct GeminiConfig {
 #[serde(rename_all = "camelCase")]
 pub struct GeminiCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -291,6 +302,7 @@ pub struct AntigravityConfig {
 #[serde(rename_all = "camelCase")]
 pub struct AntigravityCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -306,6 +318,7 @@ pub struct KimiConfig {
 #[serde(rename_all = "camelCase")]
 pub struct KimiCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -321,6 +334,7 @@ pub struct QwenConfig {
 #[serde(rename_all = "camelCase")]
 pub struct QwenCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -336,6 +350,7 @@ pub struct GrokConfig {
 #[serde(rename_all = "camelCase")]
 pub struct GrokCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -351,6 +366,7 @@ pub struct ZCodeConfig {
 #[serde(rename_all = "camelCase")]
 pub struct ZCodeCommandsConfig {
     pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
     pub session: Option<SharedOptions>,
 }
@@ -781,6 +797,7 @@ pub fn generate_config_schema_json() -> String {
     add_schema_defaults(&mut schema);
     inline_schema_references(&mut schema);
     wrap_root_schema(&mut schema);
+    add_agent_command_keys(&mut schema);
     let mut json = tab_indent_json(&serde_json::to_string_pretty(&schema).unwrap());
     json.push('\n');
     json
@@ -1042,6 +1059,45 @@ fn wrap_root_schema(schema: &mut Value) {
         Value::String("#/definitions/ccusage-config".to_string()),
     );
     root.insert("definitions".to_string(), Value::Object(definitions));
+}
+
+/// `commands."<agent> <report>"` and `commands."<agent>:<report>"` take the
+/// options of `<agent>.commands.<report>`. They point at that schema instead of
+/// inlining it, which would add a copy of every agent report schema per form.
+fn add_agent_command_keys(schema: &mut Value) {
+    let Some(config) = schema.pointer("/definitions/ccusage-config/properties") else {
+        return;
+    };
+    let keys = config
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(agent, agent_schema)| {
+            agent_schema
+                .pointer("/properties/commands/properties")
+                .and_then(Value::as_object)
+                .map(|reports| (agent, reports))
+        })
+        .flat_map(|(agent, reports)| {
+            reports.keys().flat_map(move |report| {
+                let reference = json!({
+                    "$ref": format!(
+                        "#/definitions/ccusage-config/properties/{agent}/properties/commands/properties/{report}"
+                    )
+                });
+                [
+                    (format!("{agent} {report}"), reference.clone()),
+                    (format!("{agent}:{report}"), reference),
+                ]
+            })
+        })
+        .collect::<Vec<_>>();
+    if let Some(commands) = schema
+        .pointer_mut("/definitions/ccusage-config/properties/commands/properties")
+        .and_then(Value::as_object_mut)
+    {
+        commands.extend(keys);
+    }
 }
 
 #[cfg(test)]
@@ -1364,6 +1420,39 @@ mod tests {
     }
 
     #[test]
+    fn schema_allows_agent_command_keys_with_the_agent_report_options() {
+        let schema = generated_schema();
+        let config = serde_json::json!({
+            "commands": {
+                "daily": { "since": "20260101" },
+                "codex daily": { "speed": "fast" },
+                "codex:monthly": { "speed": "standard" },
+                "codex weekly": { "speed": "fast" },
+                "codex:weekly": { "mode": "display" },
+                "claude blocks": { "tokenLimit": "500000" },
+                "claude:statusline": { "refreshInterval": 3 }
+            },
+            "codex": { "commands": { "weekly": { "speed": "fast" } } }
+        });
+        let commands = schema
+            .pointer("/definitions/ccusage-config/properties/commands/properties")
+            .unwrap();
+        let source_keys = ccusage_cli::BUILT_IN_AGENT_NAMES.iter().flat_map(|agent| {
+            ["daily", "weekly", "monthly", "session"]
+                .into_iter()
+                .flat_map(move |report| [format!("{agent} {report}"), format!("{agent}:{report}")])
+        });
+
+        assert_value_keys_allowed_by_schema(&config, &schema, &schema);
+        for key in source_keys {
+            assert!(commands.get(&key).is_some(), "{key}");
+        }
+        for key in ["codex:blocks", "amp statusline", "unknown daily"] {
+            assert!(commands.get(key).is_none(), "{key}");
+        }
+    }
+
+    #[test]
     fn schema_allows_repository_example_config() {
         let schema = generated_schema();
         let config =
@@ -1613,8 +1702,7 @@ mod tests {
         let Some(reference) = schema.get("$ref").and_then(Value::as_str) else {
             return schema;
         };
-        let definition = reference.strip_prefix("#/definitions/").unwrap();
-        &root["definitions"][definition]
+        root.pointer(reference.strip_prefix('#').unwrap()).unwrap()
     }
 
     fn merge_all_of(schema: &Value, root: &Value) -> Value {

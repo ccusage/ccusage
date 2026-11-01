@@ -811,7 +811,7 @@ mod tests {
 
     #[test]
     fn keeps_standard_pricing_for_ultrafast_without_a_published_rate() {
-        let pricing = PricingMap::load_embedded();
+        let pricing = ultrafast_test_pricing();
         let usage = CodexModelUsage {
             input_tokens: 1_200,
             cached_input_tokens: 200,
@@ -831,9 +831,34 @@ mod tests {
                 calculate_codex_model_cost(model, &usage, &pricing, CodexSpeed::Standard);
             let auto = calculate_codex_model_cost(model, &usage, &pricing, CodexSpeed::Auto);
 
-            assert!(standard > 0.0, "{model} has embedded pricing");
+            assert!(standard > 0.0, "{model} has pricing");
             assert!((auto - standard).abs() < f64::EPSILON, "{model}");
         }
+    }
+
+    /// Entries for every model the Ultrafast tests look up, so their outcome
+    /// does not depend on which LiteLLM snapshot the build embedded. Only
+    /// `gpt-6.1-sol` carries a published Ultrafast multiplier.
+    fn ultrafast_test_pricing() -> PricingMap {
+        let mut pricing = PricingMap::default();
+        let entry = |input: f64, output: f64| {
+            json!({
+                "input_cost_per_token": input,
+                "output_cost_per_token": output,
+                "cache_read_input_token_cost": input / 10.0,
+            })
+        };
+        let loaded = pricing.load_json(
+            &json!({
+                "gpt-6.1-sol": entry(2e-6, 10e-6),
+                "gpt-6.1-terra": entry(1e-6, 5e-6),
+                "gpt-6-sol": entry(1.5e-6, 7.5e-6),
+                "gpt-6-luna": entry(0.5e-6, 2.5e-6),
+            })
+            .to_string(),
+        );
+        assert_eq!(loaded, 4);
+        pricing
     }
 
     #[test]
@@ -842,7 +867,7 @@ mod tests {
             ("private-sol", "gpt-6.1-sol"),
             ("gpt-6.1-terra", "gpt-6.1-sol"),
         ]);
-        let pricing = PricingMap::load_embedded();
+        let pricing = ultrafast_test_pricing();
         let usage = CodexModelUsage {
             input_tokens: 1_200,
             cached_input_tokens: 200,
@@ -856,14 +881,27 @@ mod tests {
             },
             ..CodexModelUsage::default()
         };
+        let cost = |model: &str, speed: CodexSpeed| {
+            calculate_codex_model_cost(model, &usage, &pricing, speed)
+        };
 
-        let private_sol =
-            calculate_codex_model_cost("private-sol", &usage, &pricing, CodexSpeed::Auto);
-        let terra = calculate_codex_model_cost("gpt-6.1-terra", &usage, &pricing, CodexSpeed::Auto);
-        let standard_terra =
-            calculate_codex_model_cost("gpt-6.1-terra", &usage, &pricing, CodexSpeed::Standard);
+        // The alias resolves to Sol, so the Ultrafast cost is Sol's standard cost
+        // times its published multiplier.
+        let private_sol = cost("private-sol", CodexSpeed::Auto);
+        let standard_sol = cost("gpt-6.1-sol", CodexSpeed::Standard);
+        assert!(standard_sol > 0.0);
+        assert!(
+            (private_sol - standard_sol * 6.0).abs() < 1e-12,
+            "{private_sol}"
+        );
 
-        assert!((private_sol - 0.01512).abs() < 1e-12, "{private_sol}");
+        // An exact Terra entry wins over the alias and has no published rate.
+        let terra = cost("gpt-6.1-terra", CodexSpeed::Auto);
+        let standard_terra = cost("gpt-6.1-terra", CodexSpeed::Standard);
+        assert!(
+            (standard_terra - standard_sol / 2.0).abs() < 1e-12,
+            "{standard_terra}"
+        );
         assert!((terra - standard_terra).abs() < f64::EPSILON, "{terra}");
     }
 
