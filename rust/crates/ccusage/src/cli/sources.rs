@@ -11,11 +11,12 @@ use super::Cli;
 
 /// A unified report loads every source, and the config can address one source
 /// at a time through `<source>.defaults`, `<source>.commands.<report>`,
-/// `commands."<source> <report>"` and `commands.<source>:<report>`. Those sections sit under the command-line
-/// flags, as they do for `ccusage <source> <report>`, so each source's options
-/// come from parsing the same command line against that source's view of the
-/// config rather than from patching the unified options afterwards. A source
-/// the config does not address keeps the unified options.
+/// `commands."<source> <report>"` and `commands.<source>:<report>`. Those
+/// sections sit under the command-line flags, as they do for
+/// `ccusage <source> <report>`, so each source's options come from parsing the
+/// same command line against that source's view of the config rather than from
+/// patching the unified options afterwards. A source the config does not
+/// address keeps the unified options.
 pub(crate) fn resolve(
     unified: &mut AgentCommandArgs,
     args: &[OsString],

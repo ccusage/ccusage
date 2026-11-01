@@ -58,9 +58,9 @@ impl ConfigContext {
     /// that loads `agent` as one of its sources: `<agent>.defaults`,
     /// `<agent>.commands.<report>`, `commands."<agent> <report>"` and
     /// `commands.<agent>:<report>` join the layers the unified command already
-    /// applies. `None` when the file says
-    /// nothing about that agent, so the source keeps the unified options, and
-    /// for commands that already name an agent.
+    /// applies. `None` when the file says nothing about that agent, so the
+    /// source keeps the unified options, and for commands that already name an
+    /// agent.
     pub fn for_source(&self, agent: &str) -> Option<Self> {
         if self.command.agent.is_some() {
             return None;
@@ -1112,6 +1112,23 @@ mod tests {
                 assert_eq!(shared.mode, mode, "{name}");
                 assert_eq!(shared.since.as_deref(), Some("20260101"), "{name}");
             }
+        }
+    }
+
+    #[test]
+    fn space_form_section_overrides_the_generic_report_section_for_every_agent_command_shape() {
+        let raw = r#"{
+            "commands": {
+                "daily": { "mode": "display", "since": "20260101" },
+                "codex daily": { "mode": "calculate" }
+            }
+        }"#;
+        for command in [&["codex", "daily"][..], &["codex:daily"], &["codex"]] {
+            let config = config_context_for_command(raw, command);
+            let mut shared = SharedArgs::default();
+            config.apply_shared(&mut shared);
+            assert_eq!(shared.mode, CostMode::Calculate, "{command:?}");
+            assert_eq!(shared.since.as_deref(), Some("20260101"), "{command:?}");
         }
     }
 
