@@ -15,7 +15,8 @@ use crate::{
         kilo, kimi, openclaw, opencode, pi, qwen, zcode,
     },
     cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
-    date_within_range, filter_loaded_entries_by_date, format_date_tz, json_float, parse_tz,
+    date_within_range, filter_loaded_entries_by_date, filter_session_summaries_by_last_activity,
+    format_date_tz, json_float, parse_tz,
 };
 
 use super::{
@@ -862,7 +863,7 @@ fn load_claude_rows(
         let deduped = claude::load_deduped_entries(shared, project_filter)?;
         let detected = !deduped.entries.is_empty();
         let mut summaries = summarize_entry_sessions(&deduped.entries)?;
-        filter_session_summaries(&mut summaries, shared);
+        filter_session_summaries_by_last_activity(&mut summaries, shared);
         let counted_sessions = summaries
             .iter()
             .filter_map(|summary| summary.session_id.as_deref())
@@ -993,7 +994,7 @@ fn load_qwen_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRow
     let detected = !entries.is_empty() || qwen::has_data();
     if kind == AgentReportKind::Session {
         let mut summaries = qwen::summarize_entries(&entries, kind)?;
-        filter_session_summaries(&mut summaries, shared);
+        filter_session_summaries_by_last_activity(&mut summaries, shared);
         return Ok(AgentRows {
             rows: summary_rows("qwen", summaries, false),
             detected,
@@ -1029,20 +1030,6 @@ fn needs_daily_family(kinds: &[AgentReportKind]) -> bool {
 
 fn needs_session(kinds: &[AgentReportKind]) -> bool {
     kinds.contains(&AgentReportKind::Session)
-}
-
-fn filter_session_summaries(rows: &mut Vec<UsageSummary>, shared: &SharedArgs) {
-    if shared.since.is_some() || shared.until.is_some() {
-        rows.retain(|row| {
-            let date = row
-                .last_activity
-                .as_deref()
-                .unwrap_or_default()
-                .replace('-', "");
-            shared.since.as_ref().is_none_or(|since| &date >= since)
-                && shared.until.as_ref().is_none_or(|until| &date <= until)
-        });
-    }
 }
 
 fn summary_rows(
@@ -1782,6 +1769,43 @@ mod tests {
         );
         assert_eq!(
             usage_fingerprint(&pi_rows),
+            vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
+        );
+    }
+
+    #[test]
+    fn unified_claude_session_window_keeps_sessions_last_active_on_the_until_day() {
+        let fixture = fs_fixture!({
+            "claude-config/projects/project-a/until-day.jsonl": r#"{"timestamp":"2026-07-05T03:00:00.000Z","sessionId":"until-day","costUSD":0.01,"message":{"usage":{"input_tokens":10,"output_tokens":1},"model":"claude-sonnet-4-20250514","id":"msg-until"}}"#,
+            "claude-config/projects/project-a/after-day.jsonl": r#"{"timestamp":"2026-07-06T03:00:00.000Z","sessionId":"after-day","costUSD":0.02,"message":{"usage":{"input_tokens":20,"output_tokens":2},"model":"claude-sonnet-4-20250514","id":"msg-after"}}"#,
+        });
+        let _environment = isolated_source_environment(&fixture);
+        let shared = SharedArgs {
+            json: true,
+            mode: CostMode::Display,
+            offline: true,
+            timezone: Some("America/Boise".to_string()),
+            since: Some("20260704".to_string()),
+            until: Some("20260704".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Session,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+        let claude_rows = result
+            .rows
+            .iter()
+            .filter(|row| row.agent == "claude")
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            usage_fingerprint(&claude_rows),
             vec![("until-day".to_string(), 10, 1, 0, 0, 11)]
         );
     }

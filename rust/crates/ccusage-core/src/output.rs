@@ -3,12 +3,14 @@ use std::{
     io::{self, BufWriter, IsTerminal, Write},
 };
 
+use jiff::tz::TimeZone as JiffTimeZone;
 use serde_json::{Value, json};
 
 use crate::{
     Align, Color, ModelBreakdown, Result, SimpleTable, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
-    cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_project_name,
-    parse_project_aliases, print_box_title, short_model_name, terminal_width,
+    cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_date_tz,
+    format_project_name, parse_project_aliases, parse_ts_timestamp, parse_tz, print_box_title,
+    short_model_name, terminal_width,
 };
 
 pub fn wants_json(shared: &SharedArgs) -> bool {
@@ -180,6 +182,7 @@ pub fn print_usage_table_with_options(
         USAGE_COMPACT_WIDTH_THRESHOLD,
     );
     let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
+    let timezone = parse_tz(shared.timezone.as_deref());
     print_box_title(title, shared);
     let (mut headers, mut aligns) =
         usage_table_columns(first_column, compact, options.show_cache_creation);
@@ -242,8 +245,9 @@ pub fn print_usage_table_with_options(
             values.pop();
         }
         if include_last_activity {
-            values.push(truncate_rfc3339_to_date(
+            values.push(format_last_activity_date(
                 row.last_activity.as_deref().unwrap_or_default(),
+                timezone.as_ref(),
             ));
         }
         table.push(values);
@@ -518,14 +522,31 @@ pub fn strip_cost_json(value: &mut Value) {
     }
 }
 
-fn truncate_rfc3339_to_date(s: &str) -> String {
-    s.get(..10).unwrap_or(s).to_string()
+fn format_last_activity_date(value: &str, timezone: Option<&JiffTimeZone>) -> String {
+    parse_ts_timestamp(value).map_or_else(
+        || value.get(..10).unwrap_or(value).to_string(),
+        |timestamp| format_date_tz(timestamp, timezone),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ModelBreakdown;
+
+    #[test]
+    fn last_activity_column_shows_the_date_in_the_report_timezone() {
+        let timezone = parse_tz(Some("America/Los_Angeles"));
+
+        assert_eq!(
+            format_last_activity_date("2026-02-24T02:00:00.000Z", timezone.as_ref()),
+            "2026-02-23"
+        );
+        assert_eq!(
+            format_last_activity_date("2026-02-24", timezone.as_ref()),
+            "2026-02-24"
+        );
+    }
 
     #[test]
     fn narrow_non_tty_output_does_not_auto_compact() {

@@ -332,6 +332,49 @@ fn bounded_unified_sessions_keep_old_subagent_files() {
     assert_eq!(json["totals"]["totalCost"], 3.0, "{output}");
 }
 
+#[test]
+fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-c.jsonl",
+        usage_line(
+            "2026-09-11T23:30:00.000Z",
+            "session-c",
+            "msg-until",
+            "req-until",
+            1.0,
+        ),
+    );
+    let _ = fixture.write_file(
+        "projects/project-a/session-d.jsonl",
+        usage_line(
+            "2026-09-12T00:30:00.000Z",
+            "session-d",
+            "msg-after",
+            "req-after",
+            2.0,
+        ),
+    );
+
+    let output = run_ccusage(
+        &fixture,
+        &[
+            "session",
+            "--until",
+            "20260911",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--json",
+        ],
+        None,
+    );
+    let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
+}
+
 /// Writes a continuous chain of usage entries 4 hours apart, never idle long
 /// enough to reset a 5 hour block. Files pair entries so they straddle block
 /// boundaries: dropping whole early files re-anchors every later block.
