@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, mpsc},
     thread,
@@ -258,16 +258,16 @@ fn load_base_rows(
     let open_claw_path = sources
         .get("openclaw")
         .and_then(|source| source.open_claw_path.as_deref());
-    let (claude_session_days_sender, claude_session_days) = mpsc::sync_channel(1);
+    let (claude_counted_sender, claude_counted) = mpsc::sync_channel(1);
     let mut specs = vec![
         AgentLoadSpec {
             index: 0,
             agent: BUILT_IN_AGENT_NAMES[0],
             progress_agent: crate::progress::UsageLoadAgent("Claude"),
             load: Box::new(move || {
-                let (rows, session_days) =
+                let (rows, counted) =
                     load_claude_rows(load_kind, &source_shared["claude"], claude_project)?;
-                let _ = claude_session_days_sender.send(session_days);
+                let _ = claude_counted_sender.send(counted);
                 Ok(rows)
             }),
         },
@@ -299,10 +299,12 @@ fn load_base_rows(
                             opencode::load_entries_with_native_sessions(shared, load_kind)?;
                         // A failed or panicked Claude load drops the sender, so `recv`
                         // returns instead of blocking; the report then fails on that error.
-                        let claude_session_days = claude_session_days.recv().unwrap_or_default();
+                        let claude_counted = claude_counted
+                            .recv()
+                            .unwrap_or_else(|_| ClaudeCounted::Sessions(HashSet::new()));
                         Ok(without_turns_counted_by_claude(
                             entries,
-                            &claude_session_days,
+                            &claude_counted,
                             &source_shared["claude"],
                         ))
                     },
@@ -832,33 +834,47 @@ fn filtered_pi_format_agent_rows(
     })
 }
 
-/// Claude rows plus the session days they count.
+/// The Claude Code usage the Claude source counts, so a source that runs
+/// Claude Code, such as OpenCode's `claude-agent` provider, can skip its copy.
+enum ClaudeCounted {
+    /// Daily-family reports count usage on the day Claude logged it.
+    SessionDays(claude::SessionDays),
+    /// A session report counts a session whole, every day included.
+    Sessions(HashSet<Arc<str>>),
+}
+
+impl ClaudeCounted {
+    fn covers(&self, session: &Arc<str>, date: impl FnOnce() -> String) -> bool {
+        match self {
+            Self::SessionDays(days) => days.contains(&(Arc::clone(session), date())),
+            Self::Sessions(sessions) => sessions.contains(session),
+        }
+    }
+}
+
+/// Claude rows plus the usage they count.
 fn load_claude_rows(
     kind: AgentReportKind,
     shared: &SharedArgs,
     project_filter: Option<&str>,
-) -> Result<(AgentRows, claude::SessionDays)> {
+) -> Result<(AgentRows, ClaudeCounted)> {
     if kind == AgentReportKind::Session {
-        let entries = claude::load_entries(shared, project_filter)?;
-        let detected = !entries.is_empty();
-        let mut summaries = summarize_entry_sessions(&entries)?;
+        let deduped = claude::load_deduped_entries(shared, project_filter)?;
+        let detected = !deduped.entries.is_empty();
+        let mut summaries = summarize_entry_sessions(&deduped.entries)?;
         filter_session_summaries(&mut summaries, shared);
         let counted_sessions = summaries
             .iter()
             .filter_map(|summary| summary.session_id.as_deref())
             .collect::<BTreeSet<_>>();
-        let session_days = claude::session_days(
-            entries
-                .iter()
-                .filter(|entry| counted_sessions.contains(entry.session_id.as_ref())),
-        );
+        let sessions = deduped.main_thread_sessions(|session| counted_sessions.contains(session));
         return Ok((
             AgentRows {
                 rows: summary_rows("claude", summaries, false),
                 detected,
                 warnings: Vec::new(),
             },
-            session_days,
+            ClaudeCounted::Sessions(sessions),
         ));
     }
 
@@ -880,20 +896,20 @@ fn load_claude_rows(
             detected,
             warnings: Vec::new(),
         },
-        session_days,
+        ClaudeCounted::SessionDays(session_days),
     ))
 }
 
-/// Drops OpenCode `claude-agent` rows on the days the Claude source counted
-/// their Claude Code session, so each turn is counted once, priced by the
-/// resolved model the Claude transcript records. OpenCode stores only the
-/// usage of turns Claude Code also writes to that session's transcript, so a
-/// counted session day holds every turn of the OpenCode rows dated on it.
-/// A row is dated by its turn's start, so a turn whose calls Claude logs after
-/// midnight lands on a day Claude may not have counted and is kept.
+/// Drops OpenCode `claude-agent` rows whose Claude Code session the Claude
+/// source counted, so each turn is counted once, priced by the resolved model
+/// the Claude transcript records. OpenCode stores only the usage of turns
+/// Claude Code also writes to that session's transcript, so a counted session
+/// holds every turn of its OpenCode rows. Daily-family reports match per day,
+/// and a row is dated by its turn's start, so a turn whose calls Claude logs
+/// after midnight lands on a day Claude may not have counted and is kept.
 fn without_turns_counted_by_claude(
-    entries: Vec<(LoadedEntry, Option<Arc<str>>)>,
-    claude_session_days: &claude::SessionDays,
+    entries: Vec<opencode::LinkedEntry>,
+    claude_counted: &ClaudeCounted,
     claude_shared: &SharedArgs,
 ) -> Vec<LoadedEntry> {
     let claude_tz = parse_tz(claude_shared.timezone.as_deref());
@@ -901,10 +917,9 @@ fn without_turns_counted_by_claude(
         .into_iter()
         .filter(|(entry, native_session)| {
             native_session.as_ref().is_none_or(|session| {
-                !claude_session_days.contains(&(
-                    Arc::clone(session),
-                    format_date_tz(entry.timestamp, claude_tz.as_ref()),
-                ))
+                !claude_counted.covers(session, || {
+                    format_date_tz(entry.timestamp, claude_tz.as_ref())
+                })
             })
         })
         .map(|(entry, _)| entry)

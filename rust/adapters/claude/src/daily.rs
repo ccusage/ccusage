@@ -32,7 +32,7 @@ pub(super) fn load_daily_summaries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
-    session_days: impl FnOnce(&[DailyLoadedEntry]) -> SessionDays,
+    session_days: impl FnOnce(&DedupedDailyEntries) -> SessionDays,
 ) -> Result<DailySummaries> {
     let paths = claude_paths()?;
     let SinceFiles { kept, pruned } =
@@ -58,7 +58,7 @@ pub(super) fn load_daily_summaries_inner(
     let deduped =
         load_deduped_daily_entries(&kept, shared, project_filter, tz.as_ref(), pricing.as_ref());
     let session_days = session_days(&deduped);
-    let summaries = summarize_daily_entries(&deduped, group_by_project);
+    let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
     // exactly as an unbounded load would. The first file with an entry settles it.
     let detected = !summaries.is_empty()
@@ -75,10 +75,21 @@ pub(super) fn load_daily_summaries_inner(
     })
 }
 
-pub(super) fn session_days(entries: &[DailyLoadedEntry]) -> SessionDays {
+/// Deduplicated daily entries plus the copies dedup merged into them from
+/// other sessions, such as a resumed or forked transcript repeating a turn.
+pub(super) struct DedupedDailyEntries {
+    entries: Vec<DailyLoadedEntry>,
+    copies: Vec<DailyLoadedEntry>,
+}
+
+/// Counts a copy's session too: a tool wrapping Claude Code can link its row
+/// to the session it ran in even when dedup kept another session's copy.
+pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
     main_thread_session_days(
-        entries
+        deduped
+            .entries
             .iter()
+            .chain(&deduped.copies)
             .map(|entry| (&entry.session_id, entry.date.as_str(), entry.is_sidechain)),
     )
 }
@@ -89,9 +100,12 @@ fn load_deduped_daily_entries(
     project_filter: Option<&str>,
     tz: Option<&JiffTimeZone>,
     pricing: Option<&PricingMap>,
-) -> Vec<DailyLoadedEntry> {
+) -> DedupedDailyEntries {
     if files.is_empty() {
-        return Vec::new();
+        return DedupedDailyEntries {
+            entries: Vec::new(),
+            copies: Vec::new(),
+        };
     }
     let mode = shared.mode;
     let loaded_files = if shared.single_thread {
@@ -105,6 +119,7 @@ fn load_deduped_daily_entries(
 
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
     let mut deduped = Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
+    let mut copies = Vec::new();
     for loaded_file in loaded_files {
         for entry in loaded_file.entries {
             if let Some(filter) = project_filter
@@ -112,10 +127,18 @@ fn load_deduped_daily_entries(
             {
                 continue;
             }
-            push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+            if let Some((index, discarded)) =
+                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
+                && discarded.session_id != deduped[index].session_id
+            {
+                copies.push(discarded);
+            }
         }
     }
-    deduped
+    DedupedDailyEntries {
+        entries: deduped,
+        copies,
+    }
 }
 
 fn summarize_daily_entries(
@@ -467,7 +490,7 @@ fn push_deduped_daily_entry(
     entry: DailyLoadedEntry,
     deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
     deduped: &mut Vec<DailyLoadedEntry>,
-) {
+) -> Option<(usize, DailyLoadedEntry)> {
     let dedupe_lookup = entry.message_id.as_deref().map(|message_id| {
         let request_id = entry.request_id.as_deref();
         let exact_hash = usage_dedupe_hash(
@@ -532,7 +555,7 @@ fn push_deduped_daily_entry(
                 }
             }
         }
-        if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
+        let discarded = if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
             let previous = std::mem::replace(&mut deduped[index], entry);
             // The survivor is already indexed under its previous keys. Only register the keys
             // that changed, so repeated same-timestamp rewrites do not rescan large buckets.
@@ -557,8 +580,11 @@ fn push_deduped_daily_entry(
                     );
                 }
             }
-        }
-        return;
+            previous
+        } else {
+            entry
+        };
+        return Some((index, discarded));
     }
 
     let index = deduped.len();
@@ -582,6 +608,7 @@ fn push_deduped_daily_entry(
             }
         }
     }
+    None
 }
 
 fn daily_entry_exact_hash(entry: &DailyLoadedEntry) -> Option<u64> {

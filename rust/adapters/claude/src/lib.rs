@@ -50,9 +50,44 @@ type DedupeIndexVec = SmallVec<[DedupeIndex; 1]>;
 /// Use this when a report reads history before the `--since` window, such as
 /// billing blocks anchored on earlier entries or whole-session totals.
 pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result<Vec<LoadedEntry>> {
+    load_deduped_entries(shared, project_filter).map(|deduped| deduped.entries)
+}
+
+/// Loads every deduplicated Claude usage entry like [`load_entries`], keeping
+/// the sessions of the copies dedup merged into them.
+pub fn load_deduped_entries(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+) -> Result<DedupedEntries> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
         load_entries_inner(shared, project_filter, false)
     })
+}
+
+/// Deduplicated Claude entries plus the main-thread copies dedup merged into
+/// them from other sessions, such as a resumed or forked transcript repeating
+/// a turn.
+#[derive(Default)]
+pub struct DedupedEntries {
+    pub entries: Vec<LoadedEntry>,
+    /// `(session the usage is counted under, session of the copy)` pairs.
+    copies: Vec<(Arc<str>, Arc<str>)>,
+}
+
+impl DedupedEntries {
+    /// Sessions holding main-thread usage counted under a session `is_counted`
+    /// accepts, copies included, because a tool wrapping Claude Code links its
+    /// row to the session it ran in, which need not be the one dedup kept.
+    pub fn main_thread_sessions(&self, is_counted: impl Fn(&str) -> bool) -> HashSet<Arc<str>> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.data.is_sidechain != Some(true))
+            .map(|entry| (&entry.session_id, &entry.session_id))
+            .chain(self.copies.iter().map(|(counted, copy)| (counted, copy)))
+            .filter(|(counted, _)| is_counted(counted))
+            .map(|(_, session_id)| Arc::clone(session_id))
+            .collect()
+    }
 }
 
 /// Loads Claude usage entries for a report that keeps only entries dated
@@ -72,6 +107,7 @@ pub fn load_entries_since(
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
         load_entries_inner(shared, project_filter, true)
     })
+    .map(|deduped| deduped.entries)
 }
 
 /// Loads daily Claude summaries. Summaries dated before `since` may be
@@ -94,19 +130,8 @@ pub fn load_daily_summaries(
 /// copy of the turns this source counts.
 pub type SessionDays = HashSet<(Arc<str>, String)>;
 
-/// The session days of `entries`, leaving out sidechain (subagent) usage that
-/// a wrapping tool does not record.
-pub fn session_days<'a>(entries: impl IntoIterator<Item = &'a LoadedEntry>) -> SessionDays {
-    main_thread_session_days(entries.into_iter().map(|entry| {
-        (
-            &entry.session_id,
-            entry.date.as_str(),
-            entry.data.is_sidechain,
-        )
-    }))
-}
-
-/// Takes `(session ID, date, is_sidechain)` per entry and dedups the borrowed
+/// Takes `(session ID, date, is_sidechain)` per entry and leaves out sidechain
+/// (subagent) usage, which a wrapping tool does not record. Dedups the borrowed
 /// pairs before owning them, so the date is cloned once per session day.
 fn main_thread_session_days<'a>(
     entries: impl Iterator<Item = (&'a Arc<str>, &'a str, Option<bool>)>,
@@ -154,7 +179,7 @@ fn load_entries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     skip_files_before_since: bool,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<DedupedEntries> {
     let paths = claude_paths()?;
     debug_log(
         shared,
@@ -184,7 +209,7 @@ fn load_entries_inner(
         );
     }
     if files.is_empty() {
-        return Ok(Vec::new());
+        return Ok(DedupedEntries::default());
     }
 
     let pricing = if shared.mode == CostMode::Display {
@@ -216,6 +241,7 @@ fn load_entries_inner(
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
     let mut deduped: Vec<LoadedEntry> =
         Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
+    let mut copies = Vec::new();
     for loaded_file in loaded_files {
         for entry in loaded_file.entries {
             if let Some(filter) = project_filter
@@ -223,14 +249,27 @@ fn load_entries_inner(
             {
                 continue;
             }
-            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+            if let Some((index, discarded)) =
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
+                && discarded.session_id != deduped[index].session_id
+                && discarded.data.is_sidechain != Some(true)
+            {
+                copies.push((index, discarded.session_id));
+            }
         }
     }
     debug_log(
         shared,
         format!("Kept {} usage entries after deduplication", deduped.len()),
     );
-    Ok(deduped)
+    let copies = copies
+        .into_iter()
+        .map(|(index, session_id)| (Arc::clone(&deduped[index].session_id), session_id))
+        .collect();
+    Ok(DedupedEntries {
+        entries: deduped,
+        copies,
+    })
 }
 
 fn usage_token_total(data: &UsageEntry) -> u64 {
@@ -261,7 +300,7 @@ fn push_deduped_entry(
     entry: LoadedEntry,
     deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
     deduped: &mut Vec<LoadedEntry>,
-) {
+) -> Option<(usize, LoadedEntry)> {
     let dedupe_lookup = entry.data.message.id.as_deref().map(|message_id| {
         let request_id = entry.data.request_id.as_deref();
         let session_id = loaded_entry_session_id(&entry);
@@ -330,7 +369,7 @@ fn push_deduped_entry(
                 }
             }
         }
-        if should_replace_deduped_entry(&entry.data, &deduped[index].data) {
+        let discarded = if should_replace_deduped_entry(&entry.data, &deduped[index].data) {
             let previous = std::mem::replace(&mut deduped[index], entry);
             // The survivor is already indexed under its previous keys. Only register the keys
             // that changed, so repeated same-timestamp rewrites do not rescan large buckets.
@@ -359,8 +398,11 @@ fn push_deduped_entry(
                     );
                 }
             }
-        }
-        return;
+            previous
+        } else {
+            entry
+        };
+        return Some((index, discarded));
     }
 
     let index = deduped.len();
@@ -384,6 +426,7 @@ fn push_deduped_entry(
             }
         }
     }
+    None
 }
 
 /// Exact-match dedupe key shared by the entry and daily loaders.

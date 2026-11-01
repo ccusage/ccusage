@@ -20,17 +20,20 @@ use crate::{
     collect_files_with_extension, date_range_bounds_ms, debug_log, parse_tz, read_files_parallel,
 };
 
-pub fn load_entries(shared: &SharedArgs, report_kind: AgentReportKind) -> Result<Vec<LoadedEntry>> {
+pub(crate) fn load_entries(
+    shared: &SharedArgs,
+    report_kind: AgentReportKind,
+) -> Result<Vec<LoadedEntry>> {
     load_entries_with_native_sessions(shared, report_kind)
         .map(|entries| entries.into_iter().map(|(entry, _)| entry).collect())
 }
 
 /// An entry and the Claude Code session its `claude-agent` row ran in.
-type LinkedEntry = (LoadedEntry, Option<Arc<str>>);
+pub type LinkedEntry = (LoadedEntry, Option<Arc<str>>);
 
-/// Loads entries like [`load_entries`], each paired with the Claude Code
-/// session its `claude-agent` row ran in, so a unified report can skip the
-/// turns the Claude source already counts.
+/// Loads OpenCode usage entries, each paired with the Claude Code session its
+/// `claude-agent` row ran in, so a unified report can skip the turns the
+/// Claude source already counts.
 pub fn load_entries_with_native_sessions(
     shared: &SharedArgs,
     report_kind: AgentReportKind,
