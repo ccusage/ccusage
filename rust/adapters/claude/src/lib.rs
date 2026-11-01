@@ -75,17 +75,28 @@ pub struct DedupedEntries {
 }
 
 impl DedupedEntries {
-    /// Sessions holding main-thread usage counted under a session `is_counted`
-    /// accepts, copies included, because a tool wrapping Claude Code links its
-    /// row to the session it ran in, which need not be the one dedup kept.
+    /// Sessions whose main-thread usage is all counted when the sessions
+    /// `is_counted` accepts are reported. A session's copies count under the
+    /// session dedup kept, so a session is covered only when every session its
+    /// usage lives under is reported; a tool wrapping Claude Code links its row
+    /// to the session it ran in, which need not be the one dedup kept.
     pub fn main_thread_sessions(&self, is_counted: impl Fn(&str) -> bool) -> HashSet<Arc<str>> {
-        self.entries
+        let (counted, uncounted): (Vec<_>, Vec<_>) = self
+            .entries
             .iter()
             .filter(|entry| entry.data.is_sidechain != Some(true))
             .map(|entry| (&entry.session_id, &entry.session_id))
-            .chain(self.copies.iter().map(|(counted, copy)| (counted, copy)))
-            .filter(|(counted, _)| is_counted(counted))
-            .map(|(_, session_id)| Arc::clone(session_id))
+            .chain(self.copies.iter().map(|(survivor, copy)| (survivor, copy)))
+            .partition(|(survivor, _)| is_counted(survivor));
+        let uncounted = uncounted
+            .into_iter()
+            .map(|(_, session_id)| session_id)
+            .collect::<HashSet<_>>();
+        counted
+            .into_iter()
+            .map(|(_, session_id)| session_id)
+            .filter(|session_id| !uncounted.contains(session_id))
+            .map(Arc::clone)
             .collect()
     }
 }
@@ -264,6 +275,7 @@ fn load_entries_inner(
     );
     let copies = copies
         .into_iter()
+        .filter(|(index, _)| deduped[*index].data.is_sidechain != Some(true))
         .map(|(index, session_id)| (Arc::clone(&deduped[index].session_id), session_id))
         .collect();
     Ok(DedupedEntries {
@@ -1468,6 +1480,38 @@ mod tests {
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].data.message.usage.input_tokens, 200);
+    }
+
+    #[test]
+    fn returns_the_discarded_copy_from_another_session() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+            "projects/project-a/session-c/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-c","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":50,"output_tokens":1}}}"#,
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let discarded = ["a", "b", "c"].map(|session| {
+            let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
+            let entry = read_usage_file(&path, None, CostMode::Display, None)
+                .entries
+                .into_iter()
+                .next()
+                .unwrap();
+            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
+                .map(|(index, discarded)| (index, discarded.session_id.to_string()))
+        });
+
+        assert_eq!(
+            discarded,
+            [
+                None,
+                Some((0, "session-a".to_string())),
+                Some((0, "session-c".to_string())),
+            ]
+        );
+        assert_eq!(deduped[0].session_id.as_ref(), "session-b");
     }
 
     #[test]

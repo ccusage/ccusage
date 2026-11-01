@@ -1300,6 +1300,56 @@ fn unified_reports_match_claude_agent_rows_against_sessions_holding_deduplicated
 }
 
 #[test]
+fn unified_reports_keep_claude_agent_rows_of_a_session_the_claude_window_leaves_out() {
+    let fixture = fs_fixture!({});
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-a.jsonl",
+        claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
+    );
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-b.jsonl",
+        [
+            claude_usage_line("claude-native-b", "2099-01-02T00:00:00.000Z", "msg-a", 100),
+            claude_usage_line("claude-native-b", "2099-01-03T00:00:00.000Z", "msg-own", 7),
+            claude_usage_line("claude-native-b", "2099-01-05T00:00:00.000Z", "msg-late", 1),
+        ]
+        .join("\n"),
+    );
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[(
+            "m-own",
+            "ses-agent-b",
+            CLAUDE_AGENT_DAY_TWO,
+            claude_agent_row("claude-native-b", CLAUDE_AGENT_DAY_TWO, 7),
+        )],
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990101", "20990106");
+    let sources = std::collections::BTreeMap::from([(
+        "claude".to_string(),
+        SourceArgs {
+            shared: SharedArgs {
+                until: Some("20990103".to_string()),
+                ..shared.clone()
+            },
+            ..SourceArgs::default()
+        },
+    )]);
+
+    // The session report leaves out claude-native-b, whose activity runs past
+    // the Claude window, so the OpenCode copy of its own turn is the only count.
+    // The daily report counts that turn under Claude on 01-03 instead.
+    for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+        assert_eq!(
+            unified_totals(kind, &shared, &sources)["inputTokens"],
+            107,
+            "{kind:?}"
+        );
+    }
+}
+
+#[test]
 fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     let fixture = fs_fixture!({
         "custom/pi/sessions/project-a/agent_in-range.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":1000,"output":500}}}"#,

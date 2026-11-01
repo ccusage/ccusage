@@ -75,22 +75,32 @@ pub(super) fn load_daily_summaries_inner(
     })
 }
 
-/// Deduplicated daily entries plus the copies dedup merged into them from
-/// other sessions, such as a resumed or forked transcript repeating a turn.
+/// Deduplicated daily entries plus the sessions of main-thread copies dedup
+/// merged into them from other sessions, such as a resumed or forked
+/// transcript repeating a turn, as `(survivor index, copy session)` pairs.
 pub(super) struct DedupedDailyEntries {
     entries: Vec<DailyLoadedEntry>,
-    copies: Vec<DailyLoadedEntry>,
+    copies: Vec<(usize, Arc<str>)>,
 }
 
-/// Counts a copy's session too: a tool wrapping Claude Code can link its row
-/// to the session it ran in even when dedup kept another session's copy.
+/// Counts a copy's session on the day its survivor is counted: a tool wrapping
+/// Claude Code can link its row to the session it ran in even when dedup kept
+/// another session's copy.
 pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
     main_thread_session_days(
         deduped
             .entries
             .iter()
-            .chain(&deduped.copies)
-            .map(|entry| (&entry.session_id, entry.date.as_str(), entry.is_sidechain)),
+            .map(|entry| (&entry.session_id, entry))
+            .chain(
+                deduped
+                    .copies
+                    .iter()
+                    .map(|(index, session_id)| (session_id, &deduped.entries[*index])),
+            )
+            .map(|(session_id, survivor)| {
+                (session_id, survivor.date.as_str(), survivor.is_sidechain)
+            }),
     )
 }
 
@@ -130,8 +140,9 @@ fn load_deduped_daily_entries(
             if let Some((index, discarded)) =
                 push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
                 && discarded.session_id != deduped[index].session_id
+                && !is_sidechain_daily_entry(&discarded)
             {
-                copies.push(discarded);
+                copies.push((index, discarded.session_id));
             }
         }
     }
@@ -1137,6 +1148,38 @@ mod tests {
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].usage.input_tokens, 200);
+    }
+
+    #[test]
+    fn returns_the_discarded_daily_copy_from_another_session() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+            "projects/project-a/session-c/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-c","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":50,"output_tokens":1}}}"#,
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let discarded = ["a", "b", "c"].map(|session| {
+            let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
+            let entry = read_daily_usage_file(&path, None, CostMode::Display, None)
+                .entries
+                .into_iter()
+                .next()
+                .unwrap();
+            push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
+                .map(|(index, discarded)| (index, discarded.session_id.to_string()))
+        });
+
+        assert_eq!(
+            discarded,
+            [
+                None,
+                Some((0, "session-a".to_string())),
+                Some((0, "session-c".to_string())),
+            ]
+        );
+        assert_eq!(deduped[0].session_id.as_ref(), "session-b");
     }
 
     #[test]
