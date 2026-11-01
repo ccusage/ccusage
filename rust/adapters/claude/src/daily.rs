@@ -20,8 +20,8 @@ use crate::{
 };
 
 use super::{
-    DailySummaries, DedupeIndexVec, advisor_usages_from_line, chunk_file_indexes_by_size,
-    deserialize_usage_line, is_anthropic_message_id, is_semver_prefix,
+    DailySummaries, DedupeIndexVec, SessionDays, advisor_usages_from_line,
+    chunk_file_indexes_by_size, deserialize_usage_line, is_anthropic_message_id, is_semver_prefix,
     paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
     sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
@@ -31,6 +31,7 @@ pub(super) fn load_daily_summaries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
+    with_session_days: bool,
 ) -> Result<DailySummaries> {
     let paths = claude_paths()?;
     let SinceFiles { kept, pruned } =
@@ -39,6 +40,7 @@ pub(super) fn load_daily_summaries_inner(
         return Ok(DailySummaries {
             summaries: Vec::new(),
             detected: false,
+            session_days: SessionDays::default(),
         });
     }
 
@@ -52,14 +54,18 @@ pub(super) fn load_daily_summaries_inner(
         ))
     };
     let tz = parse_tz(shared.timezone.as_deref());
-    let summaries = summarize_daily_files(
-        &kept,
-        shared,
-        project_filter,
-        group_by_project,
-        tz.as_ref(),
-        pricing.as_ref(),
-    );
+    let deduped =
+        load_deduped_daily_entries(&kept, shared, project_filter, tz.as_ref(), pricing.as_ref());
+    let session_days = if with_session_days {
+        deduped
+            .iter()
+            .filter(|entry| !is_sidechain_daily_entry(entry))
+            .map(|entry| (Arc::clone(&entry.session_id), entry.date.clone()))
+            .collect()
+    } else {
+        SessionDays::default()
+    };
+    let summaries = summarize_daily_entries(&deduped, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
     // exactly as an unbounded load would. The first file with an entry settles it.
     let detected = !summaries.is_empty()
@@ -72,17 +78,17 @@ pub(super) fn load_daily_summaries_inner(
     Ok(DailySummaries {
         summaries,
         detected,
+        session_days,
     })
 }
 
-fn summarize_daily_files(
+fn load_deduped_daily_entries(
     files: &[PathBuf],
     shared: &SharedArgs,
     project_filter: Option<&str>,
-    group_by_project: bool,
     tz: Option<&JiffTimeZone>,
     pricing: Option<&PricingMap>,
-) -> Vec<UsageSummary> {
+) -> Vec<DailyLoadedEntry> {
     if files.is_empty() {
         return Vec::new();
     }
@@ -108,10 +114,16 @@ fn summarize_daily_files(
             push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
         }
     }
+    deduped
+}
 
+fn summarize_daily_entries(
+    deduped: &[DailyLoadedEntry],
+    group_by_project: bool,
+) -> Vec<UsageSummary> {
     if group_by_project {
         let mut groups = BTreeMap::<(String, Arc<str>), DailyAccumulator>::new();
-        for entry in &deduped {
+        for entry in deduped {
             groups
                 .entry((entry.date.clone(), Arc::clone(&entry.project)))
                 .or_default()
@@ -129,7 +141,7 @@ fn summarize_daily_files(
     }
 
     let mut groups = BTreeMap::<String, DailyAccumulator>::new();
-    for entry in &deduped {
+    for entry in deduped {
         groups
             .entry(entry.date.clone())
             .or_default()
@@ -677,9 +689,44 @@ impl DailyAccumulator {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DailyLoadedEntry, push_deduped_daily_entry, read_daily_usage_file};
-    use crate::{TimestampMs, TokenUsageRaw, cli::CostMode};
-    use ccusage_test_support::fs_fixture;
+    use super::{
+        DailyLoadedEntry, load_daily_summaries_inner, push_deduped_daily_entry,
+        read_daily_usage_file,
+    };
+    use crate::{
+        TimestampMs, TokenUsageRaw,
+        cli::{CostMode, SharedArgs},
+    };
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+
+    #[test]
+    fn collects_session_days_of_counted_main_thread_usage_only() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-empty.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-empty","type":"user","message":{"role":"user","content":"hi"}}"#,
+            "projects/project-a/session-sub/subagents/agent-1.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-sub","isSidechain":true,"requestId":"req-sub","message":{"id":"msg-sub","model":"claude-sonnet-4-20250514","usage":{"input_tokens":30,"output_tokens":1}}}"#,
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            single_thread: true,
+            ..SharedArgs::default()
+        };
+
+        let with_days = load_daily_summaries_inner(&shared, None, false, true).unwrap();
+        let without_days = load_daily_summaries_inner(&shared, None, false, false).unwrap();
+
+        assert_eq!(
+            with_days.session_days.into_iter().collect::<Vec<_>>(),
+            [(Arc::from("session-a"), "2026-01-02".to_string())]
+        );
+        assert!(without_days.session_days.is_empty());
+        assert_eq!(with_days.summaries[0].input_tokens, 130);
+    }
 
     #[test]
     fn keeps_parent_daily_usage_when_sidechain_replays_message_with_new_request_id() {

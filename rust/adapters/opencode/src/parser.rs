@@ -113,41 +113,47 @@ struct OpenCodeV2Message {
     time: Option<OpenCodeTime>,
     #[serde(default, deserialize_with = "jsonl::lenient_f64")]
     cost: Option<f64>,
+    #[serde(default, deserialize_with = "jsonl::lenient_vec")]
+    content: Vec<OpenCodeContentPart>,
 }
 
-/// Content parts of a v2 row backed by a native agent, such as the Claude Agent
-/// provider, which records the Claude Code session it ran in on each part.
-#[derive(Debug, Default, Deserialize)]
-struct OpenCodeNativeRefs {
-    #[serde(default)]
-    content: Vec<OpenCodeNativePart>,
+#[derive(Debug, Deserialize)]
+struct OpenCodeContentPart {
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    native: Option<OpenCodeNativeReference>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct OpenCodeNativePart {
-    #[serde(default)]
-    native: Option<OpenCodeNativeRef>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct OpenCodeNativeRef {
-    #[serde(rename = "sessionID", default)]
+#[derive(Debug, Deserialize)]
+struct OpenCodeNativeReference {
+    #[serde(
+        rename = "sessionID",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
     session_id: Option<String>,
 }
 
-/// Returns the native agent session a v2 message row was produced in, if any.
-pub(crate) fn native_session_id(data: &str) -> Option<String> {
-    if !data.contains(r#""native":"#) {
-        return None;
-    }
-    serde_json::from_str::<OpenCodeNativeRefs>(data)
-        .ok()?
-        .content
-        .into_iter()
-        .find_map(|part| part.native?.session_id.filter(|id| !id.is_empty()))
-}
-
 impl OpenCodeV2Message {
+    fn provider(&self) -> Option<&str> {
+        self.model
+            .as_ref()
+            .and_then(|model| model.provider_id.as_deref())
+            .or(self.provider_id.as_deref())
+    }
+
+    /// The Claude Code session a `claude-agent` row ran in, which names the
+    /// Claude transcript holding the same turns.
+    fn native_session_id(&self) -> Option<Arc<str>> {
+        (self.provider() == Some("claude-agent"))
+            .then(|| {
+                self.content
+                    .iter()
+                    .find_map(|part| part.native.as_ref()?.session_id.as_deref())
+            })
+            .flatten()
+            .map(Arc::from)
+    }
+
     fn into_legacy_message(self, id: String, session_id: String, created: i64) -> OpenCodeMessage {
         let model_id = self
             .model
@@ -305,10 +311,12 @@ pub(crate) fn session_message_value_to_entry(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Option<LoadedEntry> {
+) -> Option<(LoadedEntry, Option<Arc<str>>)> {
     let value = serde_json::from_str::<OpenCodeV2Message>(data).ok()?;
+    let native_session = value.native_session_id();
     let value = value.into_legacy_message(id, session_id, created);
     message_value_to_entry(&value, None, None, tz, mode, pricing)
+        .map(|entry| (entry, native_session))
 }
 
 pub(crate) struct OpenCodeSessionAggregate {
@@ -483,9 +491,55 @@ mod tests {
 
     use super::{
         OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry,
-        open_code_model_candidates, session_value_to_entry,
+        open_code_model_candidates, session_message_value_to_entry, session_value_to_entry,
     };
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
+
+    fn v2_native_session(data: &str) -> Option<String> {
+        session_message_value_to_entry(
+            data,
+            "msg-v2".to_string(),
+            "v2-session".to_string(),
+            1_767_312_000_000,
+            None,
+            CostMode::Display,
+            None,
+        )
+        .unwrap()
+        .1
+        .map(|session| session.to_string())
+    }
+
+    #[test]
+    fn links_claude_agent_rows_to_their_claude_session() {
+        assert_eq!(
+            v2_native_session(
+                r#"{"model":{"id":"opus","providerID":"claude-agent"},"tokens":{"input":100},"content":[{"type":"reasoning","text":"…"},{"type":"text","native":{"sessionID":"claude-session-1","messageID":"m"}}]}"#
+            )
+            .as_deref(),
+            Some("claude-session-1")
+        );
+    }
+
+    #[test]
+    fn ignores_native_links_from_other_providers() {
+        assert_eq!(
+            v2_native_session(
+                r#"{"model":{"id":"gpt-test","providerID":"openai"},"tokens":{"input":100},"content":[{"native":{"sessionID":"other-session"}}]}"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn leaves_claude_agent_rows_without_a_native_link_unlinked() {
+        assert_eq!(
+            v2_native_session(
+                r#"{"model":{"id":"opus","providerID":"claude-agent"},"tokens":{"input":100},"content":[{"type":"text","native":{"sessionID":""}},"not a part"]}"#
+            ),
+            None
+        );
+    }
 
     fn message(value: serde_json::Value) -> OpenCodeMessage {
         serde_json::from_value(value).unwrap()

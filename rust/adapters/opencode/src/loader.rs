@@ -2,13 +2,14 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry, native_session_id,
+        OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry,
         session_message_value_to_entry, session_value_to_entry,
     },
     paths::paths,
@@ -20,41 +21,37 @@ use crate::{
 };
 
 pub fn load_entries(shared: &SharedArgs, report_kind: AgentReportKind) -> Result<Vec<LoadedEntry>> {
-    load_entries_excluding_native_sessions(shared, report_kind, &HashSet::new())
+    load_entries_with_native_sessions(shared, report_kind)
+        .map(|entries| entries.into_iter().map(|(entry, _)| entry).collect())
 }
 
-/// Loads entries like [`load_entries`], minus v2 messages whose native agent
-/// session is in `excluded_native_sessions`, so a unified report can drop
-/// Claude Agent usage that the Claude source already counts.
-pub fn load_entries_excluding_native_sessions(
+/// Loads entries like [`load_entries`], each paired with the Claude Code
+/// session its `claude-agent` row ran in, so a unified report can skip the
+/// turns the Claude source already counts.
+pub fn load_entries_with_native_sessions(
     shared: &SharedArgs,
     report_kind: AgentReportKind,
-    excluded_native_sessions: &HashSet<String>,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<(LoadedEntry, Option<Arc<str>>)>> {
     let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
     crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("OpenCode"),
         shared.json,
-        || load_entries_inner(shared, allow_aggregate_fallback, excluded_native_sessions),
+        || load_entries_inner(shared, allow_aggregate_fallback),
     )
 }
 
 fn load_entries_inner(
     shared: &SharedArgs,
     allow_aggregate_fallback: bool,
-    excluded_native_sessions: &HashSet<String>,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<(LoadedEntry, Option<Arc<str>>)>> {
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut message_sessions = HashSet::new();
     let mut aggregate_entries = Vec::new();
+    let mut native_sessions = HashMap::new();
     for path in paths()? {
-        let directory_entries = load_entries_from_directory_parts(
-            &path,
-            shared,
-            allow_aggregate_fallback,
-            excluded_native_sessions,
-        )?;
+        let directory_entries =
+            load_entries_from_directory_parts(&path, shared, allow_aggregate_fallback)?;
         for entry in directory_entries.message_entries {
             message_sessions.insert(entry.session_id.to_string());
             if let Some(id) = entry_id(&entry)
@@ -65,6 +62,7 @@ fn load_entries_inner(
             entries.push(entry);
         }
         aggregate_entries.extend(directory_entries.aggregate_entries);
+        native_sessions.extend(directory_entries.native_sessions);
     }
     append_aggregate_entries(
         &mut entries,
@@ -73,7 +71,13 @@ fn load_entries_inner(
         aggregate_entries,
     );
     entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
+    Ok(entries
+        .into_iter()
+        .map(|entry| {
+            let native_session = entry_id(&entry).and_then(|id| native_sessions.get(id).cloned());
+            (entry, native_session)
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -81,12 +85,7 @@ fn load_entries_from_directory(
     opencode_dir: &Path,
     shared: &SharedArgs,
 ) -> Result<Vec<LoadedEntry>> {
-    load_entries_from_directory_excluding(
-        opencode_dir,
-        shared,
-        AgentReportKind::Daily,
-        &HashSet::new(),
-    )
+    load_entries_from_directory_for_report(opencode_dir, shared, AgentReportKind::Daily)
 }
 
 #[cfg(test)]
@@ -95,21 +94,10 @@ fn load_entries_from_directory_for_report(
     shared: &SharedArgs,
     report_kind: AgentReportKind,
 ) -> Result<Vec<LoadedEntry>> {
-    load_entries_from_directory_excluding(opencode_dir, shared, report_kind, &HashSet::new())
-}
-
-#[cfg(test)]
-fn load_entries_from_directory_excluding(
-    opencode_dir: &Path,
-    shared: &SharedArgs,
-    report_kind: AgentReportKind,
-    excluded_native_sessions: &HashSet<String>,
-) -> Result<Vec<LoadedEntry>> {
     let directory_entries = load_entries_from_directory_parts(
         opencode_dir,
         shared,
         report_kind == AgentReportKind::Session,
-        excluded_native_sessions,
     )?;
     let message_sessions = message_session_ids(&directory_entries.message_entries);
     let mut seen = entry_ids(&directory_entries.message_entries);
@@ -128,7 +116,6 @@ fn load_entries_from_directory_parts(
     opencode_dir: &Path,
     shared: &SharedArgs,
     allow_aggregate_fallback: bool,
-    excluded_native_sessions: &HashSet<String>,
 ) -> Result<DirectoryLoadResult> {
     let pricing = if shared.mode == CostMode::Display {
         None
@@ -144,19 +131,16 @@ fn load_entries_from_directory_parts(
     let mut message_entries = Vec::new();
     let mut seen = HashSet::new();
     let mut aggregate_entries = Vec::new();
+    let mut native_sessions = HashMap::new();
     if let Some(db_path) = db_path(opencode_dir) {
         let database_entries = load_entries_from_database(
             &db_path,
-            DatabaseLoadContext {
-                tz: tz.as_ref(),
-                mode: shared.mode,
-                pricing: pricing.as_ref(),
-                window,
-                shared,
-                db_path: &db_path,
-            },
+            tz.as_ref(),
+            shared.mode,
+            pricing.as_ref(),
+            shared,
+            window,
             allow_aggregate_fallback,
-            excluded_native_sessions,
         );
         for entry in database_entries.message_entries {
             if let Some(id) = entry_id(&entry)
@@ -167,6 +151,7 @@ fn load_entries_from_directory_parts(
             message_entries.push(entry);
         }
         aggregate_entries = database_entries.aggregate_entries;
+        native_sessions = database_entries.native_sessions;
     }
 
     let messages_dir = opencode_dir.join("storage").join("message");
@@ -212,6 +197,7 @@ fn load_entries_from_directory_parts(
     Ok(DirectoryLoadResult {
         message_entries,
         aggregate_entries,
+        native_sessions,
     })
 }
 
@@ -293,28 +279,25 @@ struct DatabaseLoadContext<'a> {
 struct DatabaseLoadResult {
     message_entries: Vec<LoadedEntry>,
     aggregate_entries: Vec<LoadedEntry>,
+    native_sessions: HashMap<String, Arc<str>>,
 }
 
 #[derive(Default)]
 struct DirectoryLoadResult {
     message_entries: Vec<LoadedEntry>,
     aggregate_entries: Vec<LoadedEntry>,
+    native_sessions: HashMap<String, Arc<str>>,
 }
 
 fn load_entries_from_database(
     db_path: &Path,
-    context: DatabaseLoadContext<'_>,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    shared: &SharedArgs,
+    window: DateWindow,
     allow_aggregate_fallback: bool,
-    excluded_native_sessions: &HashSet<String>,
 ) -> DatabaseLoadResult {
-    let DatabaseLoadContext {
-        tz,
-        mode,
-        pricing,
-        window,
-        shared,
-        ..
-    } = context;
     let Ok(connection) =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
     else {
@@ -325,6 +308,7 @@ fn load_entries_from_database(
         return DatabaseLoadResult::default();
     };
     let mut message_entries = Vec::new();
+    let mut native_sessions = HashMap::new();
 
     let mut seen_message_ids = HashSet::new();
     let mut message_sessions = HashSet::new();
@@ -470,20 +454,16 @@ fn load_entries_from_database(
                         {
                             continue;
                         }
-                        // The session still counts as covered, so its cumulative
-                        // aggregate cannot bring the excluded usage back.
-                        if !excluded_native_sessions.is_empty()
-                            && native_session_id(&data)
-                                .is_some_and(|native| excluded_native_sessions.contains(&native))
-                        {
-                            message_sessions.insert(session_id);
-                            continue;
-                        }
-                        let Some(entry) = session_message_value_to_entry(
+                        let Some((entry, native_session)) = session_message_value_to_entry(
                             &data, id, session_id, created, tz, mode, pricing,
                         ) else {
                             continue;
                         };
+                        if let Some(native_session) = native_session
+                            && let Some(id) = entry_id(&entry)
+                        {
+                            native_sessions.insert(id.to_string(), native_session);
+                        }
                         let session_key = entry.session_id.to_string();
                         v2_entries += 1;
                         message_sessions.insert(session_key);
@@ -546,6 +526,7 @@ fn load_entries_from_database(
     DatabaseLoadResult {
         message_entries,
         aggregate_entries,
+        native_sessions,
     }
 }
 
@@ -1169,11 +1150,11 @@ fn time_created_looks_like_millis(connection: &sqlite::Connection, table: &str) 
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, ffi::OsString, path::Path};
+    use std::{ffi::OsString, path::Path};
 
     use super::{
-        load_entries, load_entries_from_directory, load_entries_from_directory_excluding,
-        load_entries_from_directory_for_report,
+        load_entries, load_entries_from_directory, load_entries_from_directory_for_report,
+        load_entries_with_native_sessions,
     };
     use crate::cli::{AgentReportKind, CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
@@ -2265,73 +2246,76 @@ mod tests {
     }
 
     #[test]
-    fn excludes_native_sessions_and_their_session_aggregates() {
-        let fixture = fs_fixture!({});
-        let db_path = fixture.path("opencode.db");
-        create_db_session_message_table(&db_path, true);
-        let native_row = |native: &str| {
-            format!(
-                r#"{{"time":{{"created":1767312000000}},"model":{{"id":"opus","providerID":"claude-agent"}},"content":[{{"type":"reasoning","text":"…"}},{{"type":"tool","native":{{"sessionID":"{native}","messageID":"m"}}}}],"tokens":{{"input":100}},"cost":0}}"#
-            )
-        };
+    fn pairs_claude_agent_rows_with_their_claude_session_across_data_dirs() {
+        let live = fs_fixture!({});
+        let live_db = live.path("opencode.db");
+        create_db_session_message_table(&live_db, true);
         for (id, session_id, data) in [
-            ("counted-by-claude", "agent-session", native_row("claude-a")),
-            ("other-native", "other-session", native_row("claude-b")),
+            (
+                "agent",
+                "agent-session",
+                r#"{"time":{"created":1767312000000},"model":{"id":"opus","providerID":"claude-agent"},"content":[{"type":"tool","native":{"sessionID":"claude-a","messageID":"m"}}],"tokens":{"input":100},"cost":0}"#,
+            ),
             (
                 "plain",
                 "plain-session",
-                r#"{"time":{"created":1767312000000},"model":{"id":"gpt-test","providerID":"openai"},"content":[{"type":"text","text":"\"native\": not a part"}],"tokens":{"input":5},"cost":0}"#.to_string(),
+                r#"{"time":{"created":1767312000000},"model":{"id":"gpt-test","providerID":"openai"},"content":[{"type":"text","text":"\"native\": not a part"}],"tokens":{"input":5},"cost":0}"#,
             ),
         ] {
             insert_db_session_message(
-                &db_path,
+                &live_db,
                 id,
                 session_id,
                 "assistant",
                 1_767_312_000_000,
-                &data,
+                data,
                 true,
             );
         }
-        create_db_session_aggregate_table(&db_path, "session_v2");
+        let archive = fs_fixture!({});
+        let archive_db = archive.path("opencode.db");
+        create_db_session_aggregate_table(&archive_db, "session_v2");
         insert_db_session_aggregate(
-            &db_path,
+            &archive_db,
             "session_v2",
             &SessionAggregateFixture {
                 session_id: "agent-session",
                 time_created: 1_767_312_000_000,
                 model: r#"{"id":"opus","providerID":"claude-agent"}"#,
                 cost: 0.0,
-                input_tokens: 100,
+                input_tokens: 9_999,
                 output_tokens: 0,
                 cache_read_tokens: 0,
                 cache_write_tokens: 0,
                 reasoning_tokens: 0,
             },
         );
+        let _guard = EnvVarsGuard::set_many([(
+            "OPENCODE_DATA_DIR",
+            Some(OsString::from(format!(
+                "{},{}",
+                live.root().display(),
+                archive.root().display()
+            ))),
+        )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let excluded = HashSet::from(["claude-a".to_string()]);
 
-        for report_kind in [AgentReportKind::Daily, AgentReportKind::Session] {
-            let entries = load_entries_from_directory_excluding(
-                fixture.root(),
-                &shared,
-                report_kind,
-                &excluded,
-            )
-            .unwrap();
-            let ids: Vec<_> = entries
-                .iter()
-                .map(|entry| entry.data.message.id.as_deref().unwrap())
-                .collect();
-            assert_eq!(ids, ["other-native", "plain"], "{report_kind:?}");
-        }
-        let all = load_entries_from_directory(fixture.root(), &shared).unwrap();
-        assert_eq!(all.len(), 3);
+        let entries = load_entries_with_native_sessions(&shared, AgentReportKind::Session).unwrap();
+        let linked = entries
+            .iter()
+            .map(|(entry, native_session)| {
+                (
+                    entry.data.message.id.as_deref().unwrap(),
+                    native_session.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(linked, [("agent", Some("claude-a")), ("plain", None)]);
     }
 
     #[test]

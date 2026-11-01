@@ -5,6 +5,7 @@ mod daily;
 mod paths;
 
 use std::{
+    collections::HashSet,
     fs,
     hash::{Hash, Hasher},
     path::Path,
@@ -80,7 +81,25 @@ pub fn load_daily_summaries(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
-    Ok(load_daily_summaries_with_detection(shared, project_filter, group_by_project)?.summaries)
+    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
+        daily::load_daily_summaries_inner(shared, project_filter, group_by_project, false)
+    })
+    .map(|daily| daily.summaries)
+}
+
+/// Main-thread Claude usage as `(session ID, date)` pairs, so a source that
+/// runs Claude Code, such as OpenCode's `claude-agent` provider, can skip its
+/// copy of the turns this source counts.
+pub type SessionDays = HashSet<(Arc<str>, String)>;
+
+/// The session days of `entries`, leaving out sidechain (subagent) usage that
+/// a wrapping tool does not record.
+pub fn session_days<'a>(entries: impl IntoIterator<Item = &'a LoadedEntry>) -> SessionDays {
+    entries
+        .into_iter()
+        .filter(|entry| entry.data.is_sidechain != Some(true))
+        .map(|entry| (Arc::clone(&entry.session_id), entry.date.clone()))
+        .collect()
 }
 
 /// Daily Claude summaries plus whether any Claude usage exists at all.
@@ -90,30 +109,22 @@ pub struct DailySummaries {
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
     pub detected: bool,
+    /// Session days of the summarized main-thread entries, possibly missing
+    /// dates before `since`.
+    pub session_days: SessionDays,
 }
 
-/// Loads daily Claude summaries like [`load_daily_summaries`] and reports
-/// whether Claude usage was detected independently of the date window.
+/// Loads daily Claude summaries like [`load_daily_summaries`], reports
+/// whether Claude usage was detected independently of the date window, and
+/// collects the summarized session days.
 pub fn load_daily_summaries_with_detection(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<DailySummaries> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        daily::load_daily_summaries_inner(shared, project_filter, group_by_project)
+        daily::load_daily_summaries_inner(shared, project_filter, group_by_project, true)
     })
-}
-
-/// Session IDs of every Claude Code transcript on disk, as the loaders name
-/// them, so other sources that wrap Claude Code can skip usage counted here.
-pub fn session_ids(project_filter: Option<&str>) -> std::collections::HashSet<String> {
-    let Ok(paths) = claude_paths() else {
-        return std::collections::HashSet::new();
-    };
-    usage_files(&paths, project_filter)
-        .iter()
-        .map(|file| extract_session_parts(file).0)
-        .collect()
 }
 
 fn load_entries_inner(
