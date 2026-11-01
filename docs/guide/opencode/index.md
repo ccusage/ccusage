@@ -72,9 +72,14 @@ When OpenCode v2 forks a session, it copies the parent's history into the fork. 
 
 ## Claude Agent Provider
 
-The `claude-agent` provider runs Claude Code under the hood, so each turn is also saved in Claude Code's own logs. In unified reports such as `ccusage daily`, ccusage counts these turns once, from the Claude Code logs. OpenCode stores only a model alias such as `opus`, while Claude Code records the exact model, so its costs are accurate.
+The `claude-agent` provider runs Claude Code under the hood, so each turn is also saved in Claude Code's own logs. In unified reports such as `ccusage daily`, ccusage skips the OpenCode copy of turns the Claude source already counts, so they are priced from the Claude Code logs. OpenCode stores only a model alias such as `opus`, while Claude Code records the exact model, so its costs are accurate.
 
-An OpenCode `claude-agent` row is skipped only when the Claude source counted usage from the same Claude Code session on the same day in that report. Rows still count when the Claude Code log is gone, holds no usage for that day, holds only subagent usage, or falls outside the Claude source's date range. `ccusage opencode` always shows every `claude-agent` row.
+ccusage matches OpenCode rows to Claude usage by Claude Code session, not by individual turn:
+
+- **Daily, weekly, and monthly reports** skip an OpenCode `claude-agent` row when the Claude source counted usage from the same Claude Code session on the row's date, in the Claude source's timezone. Rows still count when the Claude Code log is gone, holds no usage for that day, holds only subagent usage, or falls outside the Claude source's date range.
+- **Session reports** skip every OpenCode `claude-agent` row whose Claude Code session the report includes, because the Claude session row holds all of that session's usage, including days outside the Claude source's date range.
+
+Because OpenCode dates a turn by when it started and Claude Code dates each model call, a turn that runs across midnight can be off in the daily family. It is counted twice when Claude has no usage from that session on the day the turn started. With `--until` on that day, the calls Claude logs after midnight are left out, even though OpenCode dates the whole turn on the earlier day. `ccusage opencode` always shows every `claude-agent` row.
 
 ## Environment Variables
 
