@@ -25,13 +25,16 @@ pub fn load_entries(shared: &SharedArgs, report_kind: AgentReportKind) -> Result
         .map(|entries| entries.into_iter().map(|(entry, _)| entry).collect())
 }
 
+/// An entry and the Claude Code session its `claude-agent` row ran in.
+type LinkedEntry = (LoadedEntry, Option<Arc<str>>);
+
 /// Loads entries like [`load_entries`], each paired with the Claude Code
 /// session its `claude-agent` row ran in, so a unified report can skip the
 /// turns the Claude source already counts.
 pub fn load_entries_with_native_sessions(
     shared: &SharedArgs,
     report_kind: AgentReportKind,
-) -> Result<Vec<(LoadedEntry, Option<Arc<str>>)>> {
+) -> Result<Vec<LinkedEntry>> {
     let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
     crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("OpenCode"),
@@ -43,26 +46,24 @@ pub fn load_entries_with_native_sessions(
 fn load_entries_inner(
     shared: &SharedArgs,
     allow_aggregate_fallback: bool,
-) -> Result<Vec<(LoadedEntry, Option<Arc<str>>)>> {
+) -> Result<Vec<LinkedEntry>> {
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut message_sessions = HashSet::new();
     let mut aggregate_entries = Vec::new();
-    let mut native_sessions = HashMap::new();
     for path in paths()? {
         let directory_entries =
             load_entries_from_directory_parts(&path, shared, allow_aggregate_fallback)?;
-        for entry in directory_entries.message_entries {
-            message_sessions.insert(entry.session_id.to_string());
-            if let Some(id) = entry_id(&entry)
+        for linked in directory_entries.message_entries {
+            message_sessions.insert(linked.0.session_id.to_string());
+            if let Some(id) = entry_id(&linked.0)
                 && !seen.insert(id.to_string())
             {
                 continue;
             }
-            entries.push(entry);
+            entries.push(linked);
         }
         aggregate_entries.extend(directory_entries.aggregate_entries);
-        native_sessions.extend(directory_entries.native_sessions);
     }
     append_aggregate_entries(
         &mut entries,
@@ -70,14 +71,8 @@ fn load_entries_inner(
         &message_sessions,
         aggregate_entries,
     );
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries
-        .into_iter()
-        .map(|entry| {
-            let native_session = entry_id(&entry).and_then(|id| native_sessions.get(id).cloned());
-            (entry, native_session)
-        })
-        .collect())
+    entries.sort_by_key(|(entry, _)| entry.timestamp);
+    Ok(entries)
 }
 
 #[cfg(test)]
@@ -108,8 +103,8 @@ fn load_entries_from_directory_for_report(
         &message_sessions,
         directory_entries.aggregate_entries,
     );
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
+    entries.sort_by_key(|(entry, _)| entry.timestamp);
+    Ok(entries.into_iter().map(|(entry, _)| entry).collect())
 }
 
 fn load_entries_from_directory_parts(
@@ -131,7 +126,6 @@ fn load_entries_from_directory_parts(
     let mut message_entries = Vec::new();
     let mut seen = HashSet::new();
     let mut aggregate_entries = Vec::new();
-    let mut native_sessions = HashMap::new();
     if let Some(db_path) = db_path(opencode_dir) {
         let database_entries = load_entries_from_database(
             &db_path,
@@ -142,16 +136,15 @@ fn load_entries_from_directory_parts(
             window,
             allow_aggregate_fallback,
         );
-        for entry in database_entries.message_entries {
-            if let Some(id) = entry_id(&entry)
+        for linked in database_entries.message_entries {
+            if let Some(id) = entry_id(&linked.0)
                 && !seen.insert(id.to_string())
             {
                 continue;
             }
-            message_entries.push(entry);
+            message_entries.push(linked);
         }
         aggregate_entries = database_entries.aggregate_entries;
-        native_sessions = database_entries.native_sessions;
     }
 
     let messages_dir = opencode_dir.join("storage").join("message");
@@ -191,13 +184,12 @@ fn load_entries_from_directory_parts(
         {
             continue;
         }
-        message_entries.push(entry);
+        message_entries.push((entry, None));
     }
 
     Ok(DirectoryLoadResult {
         message_entries,
         aggregate_entries,
-        native_sessions,
     })
 }
 
@@ -277,16 +269,14 @@ struct DatabaseLoadContext<'a> {
 
 #[derive(Default)]
 struct DatabaseLoadResult {
-    message_entries: Vec<LoadedEntry>,
-    aggregate_entries: Vec<LoadedEntry>,
-    native_sessions: HashMap<String, Arc<str>>,
+    message_entries: Vec<LinkedEntry>,
+    aggregate_entries: Vec<LinkedEntry>,
 }
 
 #[derive(Default)]
 struct DirectoryLoadResult {
-    message_entries: Vec<LoadedEntry>,
-    aggregate_entries: Vec<LoadedEntry>,
-    native_sessions: HashMap<String, Arc<str>>,
+    message_entries: Vec<LinkedEntry>,
+    aggregate_entries: Vec<LinkedEntry>,
 }
 
 fn load_entries_from_database(
@@ -308,7 +298,6 @@ fn load_entries_from_database(
         return DatabaseLoadResult::default();
     };
     let mut message_entries = Vec::new();
-    let mut native_sessions = HashMap::new();
 
     let mut seen_message_ids = HashSet::new();
     let mut message_sessions = HashSet::new();
@@ -374,7 +363,11 @@ fn load_entries_from_database(
                         ) {
                             let session_key = entry.session_id.to_string();
                             message_sessions.insert(session_key);
-                            push_unique_entry(&mut message_entries, &mut seen_message_ids, entry);
+                            push_unique_entry(
+                                &mut message_entries,
+                                &mut seen_message_ids,
+                                (entry, None),
+                            );
                         }
                     }
                     Ok(sqlite::State::Done) => break,
@@ -454,20 +447,15 @@ fn load_entries_from_database(
                         {
                             continue;
                         }
-                        let Some((entry, native_session)) = session_message_value_to_entry(
+                        let Some(linked) = session_message_value_to_entry(
                             &data, id, session_id, created, tz, mode, pricing,
                         ) else {
                             continue;
                         };
-                        if let Some(native_session) = native_session
-                            && let Some(id) = entry_id(&entry)
-                        {
-                            native_sessions.insert(id.to_string(), native_session);
-                        }
-                        let session_key = entry.session_id.to_string();
+                        let session_key = linked.0.session_id.to_string();
                         v2_entries += 1;
                         message_sessions.insert(session_key);
-                        push_unique_entry(&mut message_entries, &mut seen_message_ids, entry);
+                        push_unique_entry(&mut message_entries, &mut seen_message_ids, linked);
                     }
                     Ok(sqlite::State::Done) => break,
                     Err(_) => {
@@ -518,7 +506,7 @@ fn load_entries_from_database(
                 if message_sessions.contains(entry.session_id.as_ref()) {
                     continue;
                 }
-                push_unique_entry(&mut aggregate_entries, &mut seen_message_ids, entry);
+                push_unique_entry(&mut aggregate_entries, &mut seen_message_ids, (entry, None));
             }
         }
     }
@@ -526,7 +514,6 @@ fn load_entries_from_database(
     DatabaseLoadResult {
         message_entries,
         aggregate_entries,
-        native_sessions,
     }
 }
 
@@ -565,11 +552,11 @@ fn read_message_file(
 }
 
 fn push_unique_entry(
-    entries: &mut Vec<LoadedEntry>,
+    entries: &mut Vec<LinkedEntry>,
     seen_message_ids: &mut HashSet<String>,
-    entry: LoadedEntry,
+    entry: LinkedEntry,
 ) -> bool {
-    if let Some(id) = entry_id(&entry)
+    if let Some(id) = entry_id(&entry.0)
         && !seen_message_ids.insert(id.to_string())
     {
         return false;
@@ -579,38 +566,38 @@ fn push_unique_entry(
 }
 
 #[cfg(test)]
-fn entry_ids(entries: &[LoadedEntry]) -> HashSet<String> {
+fn entry_ids(entries: &[LinkedEntry]) -> HashSet<String> {
     entries
         .iter()
-        .filter_map(entry_id)
+        .filter_map(|(entry, _)| entry_id(entry))
         .map(str::to_string)
         .collect()
 }
 
 #[cfg(test)]
-fn message_session_ids(entries: &[LoadedEntry]) -> HashSet<String> {
+fn message_session_ids(entries: &[LinkedEntry]) -> HashSet<String> {
     entries
         .iter()
-        .map(|entry| entry.session_id.to_string())
+        .map(|(entry, _)| entry.session_id.to_string())
         .collect()
 }
 
 fn append_aggregate_entries(
-    entries: &mut Vec<LoadedEntry>,
+    entries: &mut Vec<LinkedEntry>,
     seen: &mut HashSet<String>,
     message_sessions: &HashSet<String>,
-    aggregate_entries: Vec<LoadedEntry>,
+    aggregate_entries: Vec<LinkedEntry>,
 ) {
-    for entry in aggregate_entries {
-        if message_sessions.contains(entry.session_id.as_ref()) {
+    for linked in aggregate_entries {
+        if message_sessions.contains(linked.0.session_id.as_ref()) {
             continue;
         }
-        if let Some(id) = entry_id(&entry)
+        if let Some(id) = entry_id(&linked.0)
             && !seen.insert(id.to_string())
         {
             continue;
         }
-        entries.push(entry);
+        entries.push(linked);
     }
 }
 

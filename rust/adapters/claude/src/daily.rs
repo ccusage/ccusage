@@ -22,6 +22,7 @@ use crate::{
 use super::{
     DailySummaries, DedupeIndexVec, SessionDays, advisor_usages_from_line,
     chunk_file_indexes_by_size, deserialize_usage_line, is_anthropic_message_id, is_semver_prefix,
+    main_thread_session_days,
     paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
     sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
@@ -31,7 +32,7 @@ pub(super) fn load_daily_summaries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
-    with_session_days: bool,
+    session_days: impl FnOnce(&[DailyLoadedEntry]) -> SessionDays,
 ) -> Result<DailySummaries> {
     let paths = claude_paths()?;
     let SinceFiles { kept, pruned } =
@@ -56,15 +57,7 @@ pub(super) fn load_daily_summaries_inner(
     let tz = parse_tz(shared.timezone.as_deref());
     let deduped =
         load_deduped_daily_entries(&kept, shared, project_filter, tz.as_ref(), pricing.as_ref());
-    let session_days = if with_session_days {
-        deduped
-            .iter()
-            .filter(|entry| !is_sidechain_daily_entry(entry))
-            .map(|entry| (Arc::clone(&entry.session_id), entry.date.clone()))
-            .collect()
-    } else {
-        SessionDays::default()
-    };
+    let session_days = session_days(&deduped);
     let summaries = summarize_daily_entries(&deduped, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
     // exactly as an unbounded load would. The first file with an entry settles it.
@@ -80,6 +73,14 @@ pub(super) fn load_daily_summaries_inner(
         detected,
         session_days,
     })
+}
+
+pub(super) fn session_days(entries: &[DailyLoadedEntry]) -> SessionDays {
+    main_thread_session_days(
+        entries
+            .iter()
+            .map(|entry| (&entry.session_id, entry.date.as_str(), entry.is_sidechain)),
+    )
 }
 
 fn load_deduped_daily_entries(
@@ -164,7 +165,7 @@ struct DailyLoadedFile {
 }
 
 #[derive(Debug)]
-struct DailyLoadedEntry {
+pub(super) struct DailyLoadedEntry {
     timestamp: TimestampMs,
     date: String,
     project: Arc<str>,
@@ -691,7 +692,7 @@ mod tests {
 
     use super::{
         DailyLoadedEntry, load_daily_summaries_inner, push_deduped_daily_entry,
-        read_daily_usage_file,
+        read_daily_usage_file, session_days,
     };
     use crate::{
         TimestampMs, TokenUsageRaw,
@@ -717,15 +718,13 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let with_days = load_daily_summaries_inner(&shared, None, false, true).unwrap();
-        let without_days = load_daily_summaries_inner(&shared, None, false, false).unwrap();
+        let daily = load_daily_summaries_inner(&shared, None, false, session_days).unwrap();
 
         assert_eq!(
-            with_days.session_days.into_iter().collect::<Vec<_>>(),
+            daily.session_days.into_iter().collect::<Vec<_>>(),
             [(Arc::from("session-a"), "2026-01-02".to_string())]
         );
-        assert!(without_days.session_days.is_empty());
-        assert_eq!(with_days.summaries[0].input_tokens, 130);
+        assert_eq!(daily.summaries[0].input_tokens, 130);
     }
 
     #[test]

@@ -82,7 +82,9 @@ pub fn load_daily_summaries(
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        daily::load_daily_summaries_inner(shared, project_filter, group_by_project, false)
+        daily::load_daily_summaries_inner(shared, project_filter, group_by_project, |_| {
+            SessionDays::default()
+        })
     })
     .map(|daily| daily.summaries)
 }
@@ -95,10 +97,26 @@ pub type SessionDays = HashSet<(Arc<str>, String)>;
 /// The session days of `entries`, leaving out sidechain (subagent) usage that
 /// a wrapping tool does not record.
 pub fn session_days<'a>(entries: impl IntoIterator<Item = &'a LoadedEntry>) -> SessionDays {
+    main_thread_session_days(entries.into_iter().map(|entry| {
+        (
+            &entry.session_id,
+            entry.date.as_str(),
+            entry.data.is_sidechain,
+        )
+    }))
+}
+
+/// Takes `(session ID, date, is_sidechain)` per entry and dedups the borrowed
+/// pairs before owning them, so the date is cloned once per session day.
+fn main_thread_session_days<'a>(
+    entries: impl Iterator<Item = (&'a Arc<str>, &'a str, Option<bool>)>,
+) -> SessionDays {
     entries
+        .filter(|(_, _, is_sidechain)| *is_sidechain != Some(true))
+        .map(|(session_id, date, _)| (session_id, date))
+        .collect::<HashSet<_>>()
         .into_iter()
-        .filter(|entry| entry.data.is_sidechain != Some(true))
-        .map(|entry| (Arc::clone(&entry.session_id), entry.date.clone()))
+        .map(|(session_id, date)| (Arc::clone(session_id), date.to_owned()))
         .collect()
 }
 
@@ -123,7 +141,12 @@ pub fn load_daily_summaries_with_detection(
     group_by_project: bool,
 ) -> Result<DailySummaries> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        daily::load_daily_summaries_inner(shared, project_filter, group_by_project, true)
+        daily::load_daily_summaries_inner(
+            shared,
+            project_filter,
+            group_by_project,
+            daily::session_days,
+        )
     })
 }
 

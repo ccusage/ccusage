@@ -297,7 +297,8 @@ fn load_base_rows(
                     || {
                         let entries =
                             opencode::load_entries_with_native_sessions(shared, load_kind)?;
-                        // A Claude load that failed sends nothing, which keeps every row.
+                        // A failed or panicked Claude load drops the sender, so `recv`
+                        // returns instead of blocking; the report then fails on that error.
                         let claude_session_days = claude_session_days.recv().unwrap_or_default();
                         Ok(without_turns_counted_by_claude(
                             entries,
@@ -864,12 +865,15 @@ fn load_claude_rows(
     let claude::DailySummaries {
         mut summaries,
         detected,
-        mut session_days,
+        session_days,
     } = claude::load_daily_summaries_with_detection(shared, project_filter, false)?;
     filter_daily_summaries_by_date(&mut summaries, shared);
-    session_days.retain(|(_, date)| {
-        date_within_range(date, shared.since.as_deref(), shared.until.as_deref())
-    });
+    let session_days = session_days
+        .into_iter()
+        .filter(|(_, date)| {
+            date_within_range(date, shared.since.as_deref(), shared.until.as_deref())
+        })
+        .collect();
     Ok((
         AgentRows {
             rows: summary_rows("claude", summaries, false),
@@ -885,6 +889,8 @@ fn load_claude_rows(
 /// resolved model the Claude transcript records. OpenCode stores only the
 /// usage of turns Claude Code also writes to that session's transcript, so a
 /// counted session day holds every turn of the OpenCode rows dated on it.
+/// A row is dated by its turn's start, so a turn whose calls Claude logs after
+/// midnight lands on a day Claude may not have counted and is kept.
 fn without_turns_counted_by_claude(
     entries: Vec<(LoadedEntry, Option<Arc<str>>)>,
     claude_session_days: &claude::SessionDays,
