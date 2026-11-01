@@ -75,27 +75,35 @@ pub struct DedupedEntries {
 }
 
 impl DedupedEntries {
-    /// Sessions whose main-thread usage is all counted when the sessions
-    /// `is_counted` accepts are reported. A session's copies count under the
-    /// session dedup kept, so a session is covered only when every session its
-    /// usage lives under is reported; a tool wrapping Claude Code links its row
-    /// to the session it ran in, which need not be the one dedup kept.
+    /// Sessions whose OpenCode-style wrapper rows the Claude source already
+    /// counts when it reports the sessions `is_counted` accepts. A session with
+    /// its own surviving main-thread usage is covered exactly when it is
+    /// reported, because its own turns count only under it. A session whose
+    /// usage dedup kept entirely under other sessions is covered only when
+    /// every one of those is reported. A wrapper links its row to the session
+    /// it ran in, which need not be the one dedup kept.
     pub fn main_thread_sessions(&self, is_counted: impl Fn(&str) -> bool) -> HashSet<Arc<str>> {
-        let (counted, uncounted): (Vec<_>, Vec<_>) = self
+        let own = self
             .entries
             .iter()
             .filter(|entry| entry.data.is_sidechain != Some(true))
-            .map(|entry| (&entry.session_id, &entry.session_id))
-            .chain(self.copies.iter().map(|(survivor, copy)| (survivor, copy)))
-            .partition(|(survivor, _)| is_counted(survivor));
-        let uncounted = uncounted
-            .into_iter()
-            .map(|(_, session_id)| session_id)
+            .map(|entry| &entry.session_id)
             .collect::<HashSet<_>>();
-        counted
-            .into_iter()
-            .map(|(_, session_id)| session_id)
-            .filter(|session_id| !uncounted.contains(session_id))
+        let held_by_uncounted = self
+            .copies
+            .iter()
+            .filter(|(survivor, _)| !is_counted(survivor))
+            .map(|(_, copy)| copy)
+            .collect::<HashSet<_>>();
+        own.iter()
+            .copied()
+            .filter(|session_id| is_counted(session_id))
+            .chain(
+                self.copies
+                    .iter()
+                    .map(|(_, copy)| copy)
+                    .filter(|copy| !own.contains(copy) && !held_by_uncounted.contains(copy)),
+            )
             .map(Arc::clone)
             .collect()
     }
