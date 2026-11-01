@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -19,7 +20,24 @@ use crate::{
     collect_files_with_extension, date_range_bounds_ms, debug_log, parse_tz, read_files_parallel,
 };
 
-pub fn load_entries(shared: &SharedArgs, report_kind: AgentReportKind) -> Result<Vec<LoadedEntry>> {
+pub(crate) fn load_entries(
+    shared: &SharedArgs,
+    report_kind: AgentReportKind,
+) -> Result<Vec<LoadedEntry>> {
+    load_entries_with_native_sessions(shared, report_kind)
+        .map(|entries| entries.into_iter().map(|(entry, _)| entry).collect())
+}
+
+/// An entry and the Claude Code session its `claude-agent` row ran in.
+pub type LinkedEntry = (LoadedEntry, Option<Arc<str>>);
+
+/// Loads OpenCode usage entries, each paired with the Claude Code session its
+/// `claude-agent` row ran in, so a unified report can skip the turns the
+/// Claude source already counts.
+pub fn load_entries_with_native_sessions(
+    shared: &SharedArgs,
+    report_kind: AgentReportKind,
+) -> Result<Vec<LinkedEntry>> {
     let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
     crate::progress::track_usage_load(
         crate::progress::UsageLoadAgent("OpenCode"),
@@ -31,7 +49,7 @@ pub fn load_entries(shared: &SharedArgs, report_kind: AgentReportKind) -> Result
 fn load_entries_inner(
     shared: &SharedArgs,
     allow_aggregate_fallback: bool,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<Vec<LinkedEntry>> {
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut message_sessions = HashSet::new();
@@ -39,14 +57,14 @@ fn load_entries_inner(
     for path in paths()? {
         let directory_entries =
             load_entries_from_directory_parts(&path, shared, allow_aggregate_fallback)?;
-        for entry in directory_entries.message_entries {
-            message_sessions.insert(entry.session_id.to_string());
-            if let Some(id) = entry_id(&entry)
+        for linked in directory_entries.message_entries {
+            message_sessions.insert(linked.0.session_id.to_string());
+            if let Some(id) = entry_id(&linked.0)
                 && !seen.insert(id.to_string())
             {
                 continue;
             }
-            entries.push(entry);
+            entries.push(linked);
         }
         aggregate_entries.extend(directory_entries.aggregate_entries);
     }
@@ -56,7 +74,7 @@ fn load_entries_inner(
         &message_sessions,
         aggregate_entries,
     );
-    entries.sort_by_key(|entry| entry.timestamp);
+    entries.sort_by_key(|(entry, _)| entry.timestamp);
     Ok(entries)
 }
 
@@ -65,18 +83,7 @@ fn load_entries_from_directory(
     opencode_dir: &Path,
     shared: &SharedArgs,
 ) -> Result<Vec<LoadedEntry>> {
-    let directory_entries = load_entries_from_directory_parts(opencode_dir, shared, false)?;
-    let message_sessions = message_session_ids(&directory_entries.message_entries);
-    let mut seen = entry_ids(&directory_entries.message_entries);
-    let mut entries = directory_entries.message_entries;
-    append_aggregate_entries(
-        &mut entries,
-        &mut seen,
-        &message_sessions,
-        directory_entries.aggregate_entries,
-    );
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
+    load_entries_from_directory_for_report(opencode_dir, shared, AgentReportKind::Daily)
 }
 
 #[cfg(test)]
@@ -99,8 +106,8 @@ fn load_entries_from_directory_for_report(
         &message_sessions,
         directory_entries.aggregate_entries,
     );
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
+    entries.sort_by_key(|(entry, _)| entry.timestamp);
+    Ok(entries.into_iter().map(|(entry, _)| entry).collect())
 }
 
 fn load_entries_from_directory_parts(
@@ -132,13 +139,13 @@ fn load_entries_from_directory_parts(
             window,
             allow_aggregate_fallback,
         );
-        for entry in database_entries.message_entries {
-            if let Some(id) = entry_id(&entry)
+        for linked in database_entries.message_entries {
+            if let Some(id) = entry_id(&linked.0)
                 && !seen.insert(id.to_string())
             {
                 continue;
             }
-            message_entries.push(entry);
+            message_entries.push(linked);
         }
         aggregate_entries = database_entries.aggregate_entries;
     }
@@ -180,7 +187,7 @@ fn load_entries_from_directory_parts(
         {
             continue;
         }
-        message_entries.push(entry);
+        message_entries.push((entry, None));
     }
 
     Ok(DirectoryLoadResult {
@@ -265,14 +272,14 @@ struct DatabaseLoadContext<'a> {
 
 #[derive(Default)]
 struct DatabaseLoadResult {
-    message_entries: Vec<LoadedEntry>,
-    aggregate_entries: Vec<LoadedEntry>,
+    message_entries: Vec<LinkedEntry>,
+    aggregate_entries: Vec<LinkedEntry>,
 }
 
 #[derive(Default)]
 struct DirectoryLoadResult {
-    message_entries: Vec<LoadedEntry>,
-    aggregate_entries: Vec<LoadedEntry>,
+    message_entries: Vec<LinkedEntry>,
+    aggregate_entries: Vec<LinkedEntry>,
 }
 
 fn load_entries_from_database(
@@ -359,7 +366,11 @@ fn load_entries_from_database(
                         ) {
                             let session_key = entry.session_id.to_string();
                             message_sessions.insert(session_key);
-                            push_unique_entry(&mut message_entries, &mut seen_message_ids, entry);
+                            push_unique_entry(
+                                &mut message_entries,
+                                &mut seen_message_ids,
+                                (entry, None),
+                            );
                         }
                     }
                     Ok(sqlite::State::Done) => break,
@@ -439,15 +450,15 @@ fn load_entries_from_database(
                         {
                             continue;
                         }
-                        let Some(entry) = session_message_value_to_entry(
+                        let Some(linked) = session_message_value_to_entry(
                             &data, id, session_id, created, tz, mode, pricing,
                         ) else {
                             continue;
                         };
-                        let session_key = entry.session_id.to_string();
+                        let session_key = linked.0.session_id.to_string();
                         v2_entries += 1;
                         message_sessions.insert(session_key);
-                        push_unique_entry(&mut message_entries, &mut seen_message_ids, entry);
+                        push_unique_entry(&mut message_entries, &mut seen_message_ids, linked);
                     }
                     Ok(sqlite::State::Done) => break,
                     Err(_) => {
@@ -498,7 +509,7 @@ fn load_entries_from_database(
                 if message_sessions.contains(entry.session_id.as_ref()) {
                     continue;
                 }
-                push_unique_entry(&mut aggregate_entries, &mut seen_message_ids, entry);
+                push_unique_entry(&mut aggregate_entries, &mut seen_message_ids, (entry, None));
             }
         }
     }
@@ -544,11 +555,11 @@ fn read_message_file(
 }
 
 fn push_unique_entry(
-    entries: &mut Vec<LoadedEntry>,
+    entries: &mut Vec<LinkedEntry>,
     seen_message_ids: &mut HashSet<String>,
-    entry: LoadedEntry,
+    entry: LinkedEntry,
 ) -> bool {
-    if let Some(id) = entry_id(&entry)
+    if let Some(id) = entry_id(&entry.0)
         && !seen_message_ids.insert(id.to_string())
     {
         return false;
@@ -558,38 +569,38 @@ fn push_unique_entry(
 }
 
 #[cfg(test)]
-fn entry_ids(entries: &[LoadedEntry]) -> HashSet<String> {
+fn entry_ids(entries: &[LinkedEntry]) -> HashSet<String> {
     entries
         .iter()
-        .filter_map(entry_id)
+        .filter_map(|(entry, _)| entry_id(entry))
         .map(str::to_string)
         .collect()
 }
 
 #[cfg(test)]
-fn message_session_ids(entries: &[LoadedEntry]) -> HashSet<String> {
+fn message_session_ids(entries: &[LinkedEntry]) -> HashSet<String> {
     entries
         .iter()
-        .map(|entry| entry.session_id.to_string())
+        .map(|(entry, _)| entry.session_id.to_string())
         .collect()
 }
 
 fn append_aggregate_entries(
-    entries: &mut Vec<LoadedEntry>,
+    entries: &mut Vec<LinkedEntry>,
     seen: &mut HashSet<String>,
     message_sessions: &HashSet<String>,
-    aggregate_entries: Vec<LoadedEntry>,
+    aggregate_entries: Vec<LinkedEntry>,
 ) {
-    for entry in aggregate_entries {
-        if message_sessions.contains(entry.session_id.as_ref()) {
+    for linked in aggregate_entries {
+        if message_sessions.contains(linked.0.session_id.as_ref()) {
             continue;
         }
-        if let Some(id) = entry_id(&entry)
+        if let Some(id) = entry_id(&linked.0)
             && !seen.insert(id.to_string())
         {
             continue;
         }
-        entries.push(entry);
+        entries.push(linked);
     }
 }
 
@@ -1133,6 +1144,7 @@ mod tests {
 
     use super::{
         load_entries, load_entries_from_directory, load_entries_from_directory_for_report,
+        load_entries_with_native_sessions,
     };
     use crate::cli::{AgentReportKind, CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
@@ -2221,6 +2233,79 @@ mod tests {
         assert!(session_entries.iter().any(|entry| {
             entry.data.message.id.as_deref() == Some("session:period-aggregate-session")
         }));
+    }
+
+    #[test]
+    fn pairs_claude_agent_rows_with_their_claude_session_across_data_dirs() {
+        let live = fs_fixture!({});
+        let live_db = live.path("opencode.db");
+        create_db_session_message_table(&live_db, true);
+        for (id, session_id, data) in [
+            (
+                "agent",
+                "agent-session",
+                r#"{"time":{"created":1767312000000},"model":{"id":"opus","providerID":"claude-agent"},"content":[{"type":"tool","native":{"sessionID":"claude-a","messageID":"m"}}],"tokens":{"input":100},"cost":0}"#,
+            ),
+            (
+                "plain",
+                "plain-session",
+                r#"{"time":{"created":1767312000000},"model":{"id":"gpt-test","providerID":"openai"},"content":[{"type":"text","text":"\"native\": not a part"}],"tokens":{"input":5},"cost":0}"#,
+            ),
+        ] {
+            insert_db_session_message(
+                &live_db,
+                id,
+                session_id,
+                "assistant",
+                1_767_312_000_000,
+                data,
+                true,
+            );
+        }
+        let archive = fs_fixture!({});
+        let archive_db = archive.path("opencode.db");
+        create_db_session_aggregate_table(&archive_db, "session_v2");
+        insert_db_session_aggregate(
+            &archive_db,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "agent-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"opus","providerID":"claude-agent"}"#,
+                cost: 0.0,
+                input_tokens: 9_999,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+        let _guard = EnvVarsGuard::set_many([(
+            "OPENCODE_DATA_DIR",
+            Some(OsString::from(format!(
+                "{},{}",
+                live.root().display(),
+                archive.root().display()
+            ))),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries_with_native_sessions(&shared, AgentReportKind::Session).unwrap();
+        let linked = entries
+            .iter()
+            .map(|(entry, native_session)| {
+                (
+                    entry.data.message.id.as_deref().unwrap(),
+                    native_session.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(linked, [("agent", Some("claude-a")), ("plain", None)]);
     }
 
     #[test]

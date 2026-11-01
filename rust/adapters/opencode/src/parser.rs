@@ -115,7 +115,54 @@ struct OpenCodeV2Message {
     cost: Option<f64>,
 }
 
+struct ContentField;
+impl jsonl::FieldName for ContentField {
+    const NAME: &'static str = "content";
+}
+
+struct NativeField;
+impl jsonl::FieldName for NativeField {
+    const NAME: &'static str = "native";
+}
+
+struct SessionIdField;
+impl jsonl::FieldName for SessionIdField {
+    const NAME: &'static str = "sessionID";
+}
+
+/// Reads only `content[].native.sessionID`. Every other field, such as message
+/// text, is skipped without being built, and a repeated field or a part,
+/// `native`, or `sessionID` of another shape reads as absent, so one malformed
+/// part cannot unlink the row.
+type OpenCodeNativeLinks = jsonl::FirstField<
+    ContentField,
+    jsonl::LenientSeq<
+        jsonl::FirstField<NativeField, jsonl::FirstField<SessionIdField, jsonl::LenientString>>,
+    >,
+>;
+
+/// The Claude Code session a `claude-agent` row ran in, which names the
+/// Claude transcript holding the same turns.
+fn native_session_id(data: &str) -> Option<Arc<str>> {
+    serde_json::from_str::<OpenCodeNativeLinks>(data)
+        .ok()?
+        .0?
+        .0
+        .into_iter()
+        .filter_map(|part| part.0?.0?.0)
+        .map(|session_id| session_id.trim().to_owned())
+        .find(|session_id| !session_id.is_empty())
+        .map(Arc::from)
+}
+
 impl OpenCodeV2Message {
+    fn provider(&self) -> Option<&str> {
+        self.model
+            .as_ref()
+            .and_then(|model| model.provider_id.as_deref())
+            .or(self.provider_id.as_deref())
+    }
+
     fn into_legacy_message(self, id: String, session_id: String, created: i64) -> OpenCodeMessage {
         let model_id = self
             .model
@@ -273,10 +320,14 @@ pub(crate) fn session_message_value_to_entry(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Option<LoadedEntry> {
+) -> Option<(LoadedEntry, Option<Arc<str>>)> {
     let value = serde_json::from_str::<OpenCodeV2Message>(data).ok()?;
+    let native_session = (value.provider() == Some("claude-agent"))
+        .then(|| native_session_id(data))
+        .flatten();
     let value = value.into_legacy_message(id, session_id, created);
     message_value_to_entry(&value, None, None, tz, mode, pricing)
+        .map(|entry| (entry, native_session))
 }
 
 pub(crate) struct OpenCodeSessionAggregate {
@@ -451,9 +502,88 @@ mod tests {
 
     use super::{
         OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry,
-        open_code_model_candidates, session_value_to_entry,
+        open_code_model_candidates, session_message_value_to_entry, session_value_to_entry,
     };
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
+
+    fn v2_native_session(data: &str) -> Option<String> {
+        session_message_value_to_entry(
+            data,
+            "msg-v2".to_string(),
+            "v2-session".to_string(),
+            1_767_312_000_000,
+            None,
+            CostMode::Display,
+            None,
+        )
+        .unwrap()
+        .1
+        .map(|session| session.to_string())
+    }
+
+    #[test]
+    fn links_claude_agent_rows_to_their_claude_session() {
+        assert_eq!(
+            v2_native_session(
+                r#"{"model":{"id":"opus","providerID":"claude-agent"},"tokens":{"input":100},"content":[{"type":"reasoning","text":"…"},{"type":"text","native":{"sessionID":"claude-session-1","messageID":"m"}}]}"#
+            )
+            .as_deref(),
+            Some("claude-session-1")
+        );
+    }
+
+    #[test]
+    fn ignores_native_links_from_other_providers() {
+        assert_eq!(
+            v2_native_session(
+                r#"{"model":{"id":"gpt-test","providerID":"openai"},"tokens":{"input":100},"content":[{"native":{"sessionID":"other-session"}}]}"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn leaves_claude_agent_rows_without_a_native_link_unlinked() {
+        assert_eq!(
+            v2_native_session(
+                r#"{"model":{"id":"opus","providerID":"claude-agent"},"tokens":{"input":100},"content":[{"type":"text","native":{"sessionID":""}},"not a part"]}"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn keeps_the_native_link_when_other_parts_are_malformed() {
+        for content in [
+            r#"[{"native":{"sessionID":"s"}},"junk"]"#,
+            r#"[{"native":5},{"native":{"sessionID":7}},[1,{"a":2}],null,{"native":{"sessionID":"s"}}]"#,
+            r#"[{"native":{"sessionID":{"x":1}}},{"native":{"sessionID":["y"]}},{"native":{"sessionID":"s"}}]"#,
+            r#"[{"native":{"sessionID":"s"}},{"native":{"sessionID":{"x":1}}},{"native":{"sessionID":["y"]}}]"#,
+            r#"[{"native":{"sessionID":"s","sessionID":"t"}}]"#,
+            r#"[{"native":{"sessionID":5,"sessionID":"s"}}]"#,
+            r#"[{"native":7,"native":{"sessionID":"s"},"native":{"sessionID":"t"}}]"#,
+        ] {
+            assert_eq!(
+                v2_native_session(&format!(
+                    r#"{{"model":{{"id":"opus","providerID":"claude-agent"}},"tokens":{{"input":100}},"content":{content}}}"#
+                ))
+                .as_deref(),
+                Some("s"),
+                "{content}"
+            );
+        }
+    }
+
+    #[test]
+    fn skips_blank_native_session_ids() {
+        assert_eq!(
+            v2_native_session(
+                r#"{"model":{"id":"opus","providerID":"claude-agent"},"tokens":{"input":100},"content":[{"type":"text","native":{"sessionID":" "}},{"type":"tool","native":{"sessionID":"claude-session-2","resultState":{"x":[1]}}}]}"#
+            )
+            .as_deref(),
+            Some("claude-session-2")
+        );
+    }
 
     fn message(value: serde_json::Value) -> OpenCodeMessage {
         serde_json::from_value(value).unwrap()
