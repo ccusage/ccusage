@@ -72,7 +72,9 @@ When OpenCode v2 forks a session, it copies the parent's history into the fork. 
 
 ## Claude Agent Provider
 
-The `claude-agent` provider runs Claude Code under the hood, so each turn is also saved in Claude Code's own logs. In unified reports such as `ccusage daily`, ccusage counts these turns once, from the Claude Code logs. OpenCode stores only a model alias such as `opus`, while Claude Code records the exact model, so its costs are accurate. These sessions appear under Claude in unified reports. If the Claude Code log for a session no longer exists, the OpenCode rows count instead. `ccusage opencode` always shows every `claude-agent` row.
+The `claude-agent` provider runs Claude Code under the hood, so each turn is also saved in Claude Code's own logs. In unified reports such as `ccusage daily`, ccusage counts these turns once, from the Claude Code logs. OpenCode stores only a model alias such as `opus`, while Claude Code records the exact model, so its costs are accurate.
+
+An OpenCode `claude-agent` row is skipped only when the Claude source counted usage from the same Claude Code session on the same day in that report. Rows still count when the Claude Code log is gone, holds no usage for that day, holds only subagent usage, or falls outside the Claude source's date range. `ccusage opencode` always shows every `claude-agent` row.
 
 ## Environment Variables
 
