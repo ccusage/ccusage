@@ -18,10 +18,7 @@ use std::{fmt, marker::PhantomData};
 
 use serde::{
     Deserialize, Deserializer,
-    de::{
-        self, DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor,
-        value::MapAccessDeserializer,
-    },
+    de::{self, DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor},
 };
 
 use ccusage_core::fast::{LinePrefilter, byte_lines};
@@ -229,54 +226,114 @@ macro_rules! skip_scalars {
     };
 }
 
-/// A JSON object read as `T`, or `None` for any other value, which is skipped
-/// without being built, unlike [`lenient_object`]. A failure inside the object
-/// cannot be recovered, so every field of `T` must be lenient too, such as
-/// [`LenientObject`], [`LenientString`], or [`LenientSeq`] with
-/// `#[serde(default)]`.
-pub struct LenientObject<T>(pub Option<T>);
+/// A lenient value that can tell whether it read anything usable.
+pub trait Present {
+    fn is_present(&self) -> bool;
+}
 
-impl<T> Default for LenientObject<T> {
+/// Names the object field a [`FirstField`] reads.
+pub trait FieldName {
+    const NAME: &'static str;
+}
+
+/// The first usable value of field `N::NAME` in a JSON object, or `None` for
+/// any other value. Unlike a derived struct, it tolerates a repeated field, and
+/// it skips every other field and any non-object without building it. `T` must
+/// be lenient too, such as [`LenientString`], [`LenientSeq`], or another
+/// `FirstField`, because a failure inside the object cannot be recovered.
+pub struct FirstField<N, T>(pub Option<T>, PhantomData<N>);
+
+impl<N, T> Default for FirstField<N, T> {
     fn default() -> Self {
-        Self(None)
+        Self(None, PhantomData)
     }
 }
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientObject<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct ObjectVisitor<T>(PhantomData<T>);
+impl<N, T: Present> Present for FirstField<N, T> {
+    fn is_present(&self) -> bool {
+        self.0.as_ref().is_some_and(Present::is_present)
+    }
+}
 
-        impl<'de, T: Deserialize<'de>> Visitor<'de> for ObjectVisitor<T> {
-            type Value = LenientObject<T>;
+struct IsField<N>(bool, PhantomData<N>);
+
+impl<'de, N: FieldName> Deserialize<'de> for IsField<N> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KeyVisitor<N>(PhantomData<N>);
+
+        impl<N: FieldName> Visitor<'_> for KeyVisitor<N> {
+            type Value = IsField<N>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("an object key")
+            }
+
+            fn visit_str<E: de::Error>(self, key: &str) -> Result<Self::Value, E> {
+                Ok(IsField(key == N::NAME, PhantomData))
+            }
+        }
+
+        deserializer.deserialize_str(KeyVisitor(PhantomData))
+    }
+}
+
+impl<'de, N: FieldName, T: Deserialize<'de> + Present> Deserialize<'de> for FirstField<N, T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct FieldVisitor<N, T>(PhantomData<(N, T)>);
+
+        impl<'de, N: FieldName, T: Deserialize<'de> + Present> Visitor<'de> for FieldVisitor<N, T> {
+            type Value = FirstField<N, T>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("any JSON value")
             }
 
-            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
-                T::deserialize(MapAccessDeserializer::new(map))
-                    .map(|value| LenientObject(Some(value)))
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                std::iter::from_fn(|| {
+                    map.next_key::<IsField<N>>()
+                        .and_then(|key| {
+                            key.map(|IsField(matches, _)| {
+                                if matches {
+                                    map.next_value::<T>().map(Some)
+                                } else {
+                                    map.next_value::<IgnoredAny>().map(|_| None)
+                                }
+                            })
+                            .transpose()
+                        })
+                        .transpose()
+                })
+                .try_fold(None, |found: Option<T>, value| {
+                    value.map(|value| found.or(value.filter(Present::is_present)))
+                })
+                .map(|found| FirstField(found, PhantomData))
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
-                IgnoredAny.visit_seq(seq).map(|_| LenientObject(None))
+                IgnoredAny.visit_seq(seq).map(|_| FirstField::default())
             }
 
             fn visit_str<E: de::Error>(self, _: &str) -> Result<Self::Value, E> {
-                Ok(LenientObject(None))
+                Ok(FirstField::default())
             }
 
-            skip_scalars!(LenientObject(None));
+            skip_scalars!(FirstField::default());
         }
 
-        deserializer.deserialize_any(ObjectVisitor(PhantomData))
+        deserializer.deserialize_any(FieldVisitor(PhantomData))
     }
 }
 
 /// A JSON string, or `None` for any other value, which is skipped without
-/// being built. Never fails, so it is safe inside a [`LenientObject`].
+/// being built. Never fails, so it is safe inside a [`FirstField`].
 #[derive(Default)]
 pub struct LenientString(pub Option<String>);
+
+impl Present for LenientString {
+    fn is_present(&self) -> bool {
+        self.0.is_some()
+    }
+}
 
 impl<'de> Deserialize<'de> for LenientString {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -316,6 +373,12 @@ impl<'de> Deserialize<'de> for LenientString {
 /// skipped without being built. Elements must be lenient for one malformed
 /// element not to fail the whole array.
 pub struct LenientSeq<T>(pub Vec<T>);
+
+impl<T> Present for LenientSeq<T> {
+    fn is_present(&self) -> bool {
+        !self.0.is_empty()
+    }
+}
 
 impl<T> Default for LenientSeq<T> {
     fn default() -> Self {
@@ -360,7 +423,7 @@ mod tests {
     use serde::Deserialize;
 
     use super::{
-        LenientObject, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
+        FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
         lenient_object, lenient_u64, lenient_vec, non_empty_string, records,
     };
     use ccusage_core::fast::LinePrefilter;
@@ -410,55 +473,55 @@ mod tests {
     }
 
     #[test]
-    fn lenient_wrappers_skip_values_of_another_shape() {
-        #[derive(Deserialize)]
-        struct Part {
-            #[serde(default)]
-            name: LenientString,
-            #[serde(default)]
-            child: LenientObject<Child>,
+    fn lenient_wrappers_skip_values_of_another_shape_and_repeated_fields() {
+        struct Id;
+        impl FieldName for Id {
+            const NAME: &'static str = "id";
         }
-
-        #[derive(Deserialize)]
-        struct Child {
-            #[serde(default)]
-            id: LenientString,
+        struct Child;
+        impl FieldName for Child {
+            const NAME: &'static str = "child";
         }
-
-        #[derive(Deserialize)]
-        struct Parts {
-            #[serde(default)]
-            parts: LenientSeq<LenientObject<Part>>,
+        struct Parts;
+        impl FieldName for Parts {
+            const NAME: &'static str = "parts";
         }
+        type ChildId = FirstField<Child, FirstField<Id, LenientString>>;
 
         let parse = |raw: &str| {
-            serde_json::from_str::<Parts>(raw)
+            serde_json::from_str::<FirstField<Parts, LenientSeq<ChildId>>>(raw)
                 .unwrap()
-                .parts
                 .0
-                .into_iter()
-                .map(|part| {
-                    part.0
-                        .map(|part| (part.name.0, part.child.0.and_then(|child| child.id.0)))
+                .map(|parts| {
+                    parts
+                        .0
+                        .into_iter()
+                        .map(|part| part.0.and_then(|child| child.0).and_then(|id| id.0))
+                        .collect::<Vec<_>>()
                 })
-                .collect::<Vec<_>>()
         };
 
         assert_eq!(
             parse(
-                r#"{"parts":[{"name":"a","child":{"id":"x"}},"junk",{"name":{"o":1},"child":[1]},{"name":["n"],"child":{"id":{"o":[2]}}},7,null]}"#
+                r#"{"parts":[{"child":{"id":"x"}},"junk",{"child":[1]},{"child":{"id":{"o":[2]}}},7,null,{"child":{"id":["n"],"id":"first","id":"second"},"child":{"id":"later"}},{"child":{"id":5},"child":{"id":"y"}}]}"#
             ),
-            [
-                Some((Some("a".to_string()), Some("x".to_string()))),
-                None,
-                Some((None, None)),
-                Some((None, None)),
+            Some(vec![
+                Some("x".to_string()),
                 None,
                 None,
-            ]
+                None,
+                None,
+                None,
+                Some("first".to_string()),
+                Some("y".to_string()),
+            ])
         );
-        assert!(parse(r#"{"parts":{"a":[1]}}"#).is_empty());
-        assert!(parse(r#"{"parts":"x"}"#).is_empty());
+        assert_eq!(
+            parse(r#"{"parts":"x","parts":[{"child":{"id":"z"}}]}"#),
+            Some(vec![Some("z".to_string())])
+        );
+        assert_eq!(parse(r#"{"parts":{"a":[1]}}"#), None);
+        assert_eq!(parse(r#"["parts"]"#), None);
     }
 
     #[test]
