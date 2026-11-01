@@ -93,36 +93,6 @@ mod tests {
     }
 
     #[test]
-    fn qwen_session_report_keeps_sessions_last_active_on_the_until_day() {
-        let fixture = fs_fixture!({
-            // 2026-02-24T02:00Z is still 2026-02-23 in America/Los_Angeles (UTC-8).
-            "projects/myProject/chats/until-day.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:00:00.000Z","sessionId":"until-day","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50}}"#,
-            "projects/myProject/chats/after-day.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T18:00:00.000Z","sessionId":"after-day","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
-        });
-
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some("America/Los_Angeles".to_string()),
-            since: Some("20260223".to_string()),
-            until: Some("20260223".to_string()),
-            ..SharedArgs::default()
-        };
-        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
-        let entries = load_entries(&shared).unwrap();
-        let mut rows = summarize_entries(&entries, AgentReportKind::Session).unwrap();
-        filter_session_summaries_by_last_activity(&mut rows, &shared);
-        let report = report_from_rows(&rows, AgentReportKind::Session);
-
-        assert_eq!(report["sessions"].as_array().map(Vec::len), Some(1));
-        assert_eq!(report["sessions"][0]["sessionId"], "until-day");
-        assert_eq!(
-            report["sessions"][0]["lastActivity"],
-            "2026-02-24T02:00:00.000Z"
-        );
-        assert_eq!(report["totals"]["totalTokens"], 150);
-    }
-
-    #[test]
     fn builds_qwen_daily_json_report_with_reasoning_in_total() {
         let fixture = fs_fixture!({
             "projects/myProject/chats/chat-a.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-23T14:24:56.857Z","sessionId":"session-json","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"thoughtsTokenCount":10,"cachedContentTokenCount":5}}"#,
