@@ -10,12 +10,13 @@ use ccusage_core::BUILT_IN_AGENT_NAMES;
 use super::Cli;
 
 /// A unified report loads every source, and the config can address one source
-/// at a time through `<source>.defaults`, `<source>.commands.<report>` and
-/// `commands.<source>:<report>`. Those sections sit under the command-line
-/// flags, as they do for `ccusage <source> <report>`, so each source's options
-/// come from parsing the same command line against that source's view of the
-/// config rather than from patching the unified options afterwards. A source
-/// the config does not address keeps the unified options.
+/// at a time through `<source>.defaults`, `<source>.commands.<report>`,
+/// `commands."<source> <report>"` and `commands.<source>:<report>`. Those
+/// sections sit under the command-line flags, as they do for
+/// `ccusage <source> <report>`, so each source's options come from parsing the
+/// same command line against that source's view of the config rather than from
+/// patching the unified options afterwards. A source the config does not
+/// address keeps the unified options.
 pub(crate) fn resolve(
     unified: &mut AgentCommandArgs,
     args: &[OsString],
@@ -448,6 +449,23 @@ mod tests {
         let config = r#"{
             "defaults": { "since": "20260101", "mode": "display" },
             "commands": {
+                "codex daily": { "since": "20260602", "mode": "calculate" }
+            }
+        }"#;
+        let unified = unified_with_config(&["daily"], config);
+
+        assert_eq!(unified.shared.since.as_deref(), Some("20260101"));
+        assert_eq!(unified.shared.mode, CostMode::Display);
+        let codex = &unified.sources["codex"];
+        assert_eq!(codex.shared.since.as_deref(), Some("20260602"));
+        assert_eq!(codex.shared.mode, CostMode::Calculate);
+    }
+
+    #[test]
+    fn applies_spaced_command_config_over_the_generic_report_section() {
+        let config = r#"{
+            "commands": {
+                "daily": { "since": "20260101", "mode": "display" },
                 "codex daily": { "since": "20260602", "mode": "calculate" }
             }
         }"#;
