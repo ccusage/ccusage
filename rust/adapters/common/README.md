@@ -13,6 +13,8 @@ layers.
   so output does not depend on worker scheduling, and `--single-thread` collapses
   to a plain sequential read.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
+- `filter_session_summaries_by_last_activity` — the same window applied to
+  session summaries by the local day of their last activity.
 - `jsonl` — the streaming JSONL parsing helpers.
 - `report::print_table_for_agent` — the usage table for adapters whose rows are
   plain `UsageSummary` values, parameterized by agent name.
@@ -24,6 +26,7 @@ layers.
 - `collect_files_with_extension`
 - `collect_files_matching`
 - `filter_loaded_entries_by_date`
+- `filter_session_summaries_by_last_activity`
 - `chunk_file_indexes_by_size`
 - `read_files_parallel`
 

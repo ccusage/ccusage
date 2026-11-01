@@ -253,6 +253,43 @@ mod tests {
     }
 
     #[test]
+    fn session_window_with_only_since_keeps_everything_from_that_day() {
+        let shared = SharedArgs {
+            since: Some("20260223".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_eq!(
+            filtered_session_ids(&shared),
+            ["start-of-day", "end-of-day", "after"]
+        );
+    }
+
+    #[test]
+    fn session_window_drops_rows_without_a_parseable_last_activity() {
+        let missing = UsageSummary {
+            last_activity: None,
+            ..session_summary("missing", "")
+        };
+        let unparsable = session_summary("unparsable", "2026-02-23");
+        for shared in [
+            SharedArgs {
+                since: Some("20260101".to_string()),
+                ..SharedArgs::default()
+            },
+            SharedArgs {
+                until: Some("20991231".to_string()),
+                ..SharedArgs::default()
+            },
+        ] {
+            let mut rows = vec![missing.clone(), unparsable.clone()];
+            filter_session_summaries_by_last_activity(&mut rows, &shared);
+            assert!(rows.is_empty(), "{:?}/{:?}", shared.since, shared.until);
+        }
+    }
+
+    #[test]
     fn collects_nested_files_accepted_by_the_predicate() {
         let fixture = Fixture::new();
         let kept = fixture.write_file("a/b/kept.jsonl", "");
