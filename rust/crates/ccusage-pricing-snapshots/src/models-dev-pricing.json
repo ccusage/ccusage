@@ -16304,9 +16304,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.012,
-			"input": 0.024,
-			"output": 0.073
+			"cache_read": 0.015,
+			"input": 0.03,
+			"output": 0.089
 		},
 		"limit": {
 			"context": 262144
@@ -20926,9 +20926,9 @@
 	},
 	"minimax/MiniMax-M3.1-Flash": {
 		"cost": {
-			"cache_read": 0.0075,
-			"input": 0.075,
-			"output": 0.3
+			"cache_read": 0.015,
+			"input": 0.15,
+			"output": 0.6
 		},
 		"limit": {
 			"context": 1048576
@@ -25964,6 +25964,16 @@
 			"context": 400000
 		}
 	},
+	"openai/gpt-5.2-chat": {
+		"cost": {
+			"cache_read": 0.175,
+			"input": 1.75,
+			"output": 14
+		},
+		"limit": {
+			"context": 128000
+		}
+	},
 	"openai/gpt-5.2-chat-latest": {
 		"cost": {
 			"cache_read": 0.175,
@@ -27520,22 +27530,12 @@
 	},
 	"poolside/laguna-s-2.1": {
 		"cost": {
-			"cache_read": 0.01,
-			"input": 0.1,
-			"output": 0.2
+			"cache_read": 0.009,
+			"input": 0.09,
+			"output": 0.18
 		},
 		"limit": {
-			"context": 1048576
-		}
-	},
-	"poolside/laguna-s-2.1:thinking": {
-		"cost": {
-			"cache_read": 0.01,
-			"input": 0.1,
-			"output": 0.2
-		},
-		"limit": {
-			"context": 1048576
+			"context": 1000000
 		}
 	},
 	"pqhaz/DeepSeek-V4.1-Flash-1017-heretic": {
