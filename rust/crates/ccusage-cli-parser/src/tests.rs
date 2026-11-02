@@ -1418,6 +1418,26 @@ fn parses_opencode_weekly_options() {
     };
     assert_eq!(args.kind, AgentReportKind::Weekly);
     assert!(args.shared.json);
+    assert!(!args.include_claude_agent);
+}
+
+#[test]
+fn parses_opencode_include_claude_agent_on_every_report() {
+    for report in [None, Some("daily"), Some("weekly"), Some("session")] {
+        let mut argv = vec!["ccusage", "opencode"];
+        argv.extend(report);
+        argv.extend(["--include-claude-agent", "--json"]);
+        let cli = parse(&argv);
+        let Some(Command::OpenCode(args)) = cli.command else {
+            panic!("expected opencode command");
+        };
+        assert!(args.include_claude_agent, "{report:?}");
+        assert!(args.shared.json, "{report:?}");
+    }
+    assert_eq!(
+        parse_error(&["ccusage", "amp", "--include-claude-agent"]),
+        "Unknown option '--include-claude-agent'"
+    );
 }
 
 #[test]

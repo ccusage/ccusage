@@ -75,6 +75,14 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     report::print_table(&result.rows, kind, &shared, &result.detected_agents)
 }
 
+/// Runs `ccusage opencode`, leaving Claude Agent turns to the Claude source
+/// unless `--include-claude-agent` keeps them.
+pub fn run_opencode(args: AgentCommandArgs) -> Result<()> {
+    let entries =
+        loader::load_opencode_entries(&args.shared, args.kind, args.include_claude_agent)?;
+    adapter::opencode::print_report(&args, entries)
+}
+
 fn print_warnings(warnings: &[String]) {
     warnings.iter().for_each(|warning| eprintln!("{warning}"));
 }

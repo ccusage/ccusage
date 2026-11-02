@@ -853,6 +853,34 @@ impl ClaudeCounted {
     }
 }
 
+/// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
+/// source counts are left to it unless `include_claude_agent` is set, so the
+/// focused reports add up to the unified one.
+pub(super) fn load_opencode_entries(
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    include_claude_agent: bool,
+) -> Result<Vec<LoadedEntry>> {
+    let entries = opencode::load_entries_with_native_sessions(shared, kind)?;
+    if include_claude_agent || entries.iter().all(|(_, session)| session.is_none()) {
+        return Ok(entries.into_iter().map(|(entry, _)| entry).collect());
+    }
+    let claude_shared = SharedArgs {
+        json: true,
+        ..shared.clone()
+    };
+    // Without a readable Claude source nothing counts these turns, so they stay.
+    let claude_counted = load_claude_rows(load_kind_for_report(kind), &claude_shared, None)
+        .map_or(ClaudeCounted::Sessions(HashSet::new()), |(_, counted)| {
+            counted
+        });
+    Ok(without_turns_counted_by_claude(
+        entries,
+        &claude_counted,
+        &claude_shared,
+    ))
+}
+
 /// Claude rows plus the usage they count.
 fn load_claude_rows(
     kind: AgentReportKind,
