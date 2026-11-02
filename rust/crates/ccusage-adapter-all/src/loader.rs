@@ -869,8 +869,9 @@ pub(super) fn load_opencode_entries(
         json: true,
         ..shared.clone()
     };
-    // Without a readable Claude source nothing counts these turns, so they stay.
-    let claude_counted = load_claude_rows(load_kind_for_report(kind), &claude_shared, None)
+    // Focused Claude reports, sessions included, count only in-window days, so match by
+    // session day. With no readable Claude source, nothing counts these turns and they stay.
+    let claude_counted = load_claude_rows(AgentReportKind::Daily, &claude_shared, None)
         .map_or(ClaudeCounted::Sessions(HashSet::new()), |(_, counted)| {
             counted
         });

@@ -960,6 +960,47 @@ fn focused_opencode_reports_leave_claude_agent_turns_to_claude() {
 }
 
 #[test]
+fn focused_opencode_session_skips_turns_of_a_claude_session_active_past_until() {
+    let fixture = fs_fixture!({});
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-a.jsonl",
+        [
+            claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
+            claude_usage_line("claude-native-a", "2099-01-03T00:00:00.000Z", "msg-b", 50),
+        ]
+        .join("\n"),
+    );
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[
+            (
+                "m-day-one",
+                "ses-agent",
+                CLAUDE_AGENT_DAY_ONE,
+                claude_agent_row("claude-native-a", CLAUDE_AGENT_DAY_ONE, 100),
+            ),
+            (
+                "m-day-two",
+                "ses-agent",
+                CLAUDE_AGENT_DAY_TWO,
+                claude_agent_row("claude-native-a", CLAUDE_AGENT_DAY_TWO, 50),
+            ),
+        ],
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990101", "20990102");
+    let mut claude_entries = adapter::claude::load_entries(&shared, None).unwrap();
+    filter_loaded_entries_by_date(&mut claude_entries, &shared);
+
+    // `ccusage claude session` counts the in-window day of the session, so OpenCode drops it.
+    assert_eq!(claude_entries.len(), 1);
+    for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+        assert_eq!(focused_opencode_input(&shared, kind, false), 0, "{kind:?}");
+        assert_eq!(focused_opencode_input(&shared, kind, true), 100, "{kind:?}");
+    }
+}
+
+#[test]
 fn focused_opencode_reports_keep_claude_agent_turns_without_a_claude_source() {
     let fixture = fs_fixture!({});
     write_claude_agent_fixture(&fixture);
