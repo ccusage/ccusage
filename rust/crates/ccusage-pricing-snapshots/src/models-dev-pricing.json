@@ -8987,17 +8987,17 @@
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 1800
+			"context": 65537
 		}
 	},
 	"cloudflare/clef-flash": {
 		"cost": {
-			"input": 0.09,
+			"input": 0.038,
 			"output": 0
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 1800
+			"context": 24576
 		}
 	},
 	"cloudflare/clef-omni": {
@@ -11858,8 +11858,8 @@
 	"deepseek/deepseek-v4.1-flash-1017": {
 		"cost": {
 			"cache_read": 0.006,
-			"cache_write": 0.3,
-			"input": 0.3,
+			"cache_write": 0.24,
+			"input": 0.24,
 			"output": 1.2
 		},
 		"limit": {
@@ -16304,9 +16304,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.015,
-			"input": 0.03,
-			"output": 0.089
+			"cache_read": 0.034,
+			"input": 0.068,
+			"output": 0.205
 		},
 		"limit": {
 			"context": 262144
@@ -19628,8 +19628,8 @@
 	},
 	"liquid/d1": {
 		"cost": {
-			"cache_read": 0.04,
-			"input": 0.04,
+			"cache_read": 0.02,
+			"input": 0.02,
 			"output": 0
 		},
 		"limit": {
@@ -22952,9 +22952,9 @@
 	},
 	"moonshotai/kimi-k2.6:thinking": {
 		"cost": {
-			"cache_read": 0.039,
-			"input": 0.39,
-			"output": 1.8
+			"cache_read": 0.0656,
+			"input": 0.3895,
+			"output": 1.64
 		},
 		"limit": {
 			"context": 262144
@@ -25964,16 +25964,6 @@
 			"context": 400000
 		}
 	},
-	"openai/gpt-5.2-chat": {
-		"cost": {
-			"cache_read": 0.175,
-			"input": 1.75,
-			"output": 14
-		},
-		"limit": {
-			"context": 128000
-		}
-	},
 	"openai/gpt-5.2-chat-latest": {
 		"cost": {
 			"cache_read": 0.175,
@@ -27061,9 +27051,8 @@
 	},
 	"openai/o3-mini-high": {
 		"cost": {
-			"cache_read": 0.55,
-			"input": 1.1,
-			"output": 4.4
+			"input": 0.99,
+			"output": 4
 		},
 		"limit": {
 			"context": 200000
@@ -27113,16 +27102,6 @@
 			"cache_read": 0.45,
 			"input": 1.8,
 			"output": 7.2
-		},
-		"limit": {
-			"context": 200000
-		}
-	},
-	"openai/o4-mini-high": {
-		"cost": {
-			"cache_read": 0.55,
-			"input": 1.1,
-			"output": 4.4
 		},
 		"limit": {
 			"context": 200000
@@ -31490,16 +31469,6 @@
 			"context": 5000000
 		}
 	},
-	"surogate/rune-26b-a4b": {
-		"cost": {
-			"cache_read": 0.008,
-			"input": 0.042,
-			"output": 0
-		},
-		"limit": {
-			"context": 262144
-		}
-	},
 	"swiss-ai/Apertus-v1.5-70B": {
 		"cost": {
 			"input": 0.87,
@@ -32363,17 +32332,6 @@
 			"input": 0.042,
 			"output": 0
 		},
-		"limit": {
-			"context": 32000
-		}
-	},
-	"typesafe/jev-latest": {
-		"cost": {
-			"cache_read": 0.021,
-			"input": 0.042,
-			"output": 0
-		},
-		"exactOnly": true,
 		"limit": {
 			"context": 32000
 		}
@@ -35649,7 +35607,7 @@
 			"cache_read": 0.14,
 			"cache_write": 0,
 			"input": 1.4,
-			"output": 2.64
+			"output": 3.96
 		},
 		"limit": {
 			"context": 1048576
@@ -35667,9 +35625,9 @@
 	},
 	"zai-org/GLM-5.3-Flash": {
 		"cost": {
-			"cache_read": 0.06,
+			"cache_read": 0.04,
 			"cache_write": 0,
-			"input": 0.19,
+			"input": 0.16,
 			"output": 0.6
 		},
 		"limit": {
