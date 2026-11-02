@@ -81,7 +81,7 @@ ccusage matches OpenCode rows to Claude usage by Claude Code session, not by ind
 
 Because OpenCode dates a turn by when it started and Claude Code dates each model call, a turn that runs across midnight can be off in the daily family. It is counted twice when Claude has no usage from that session on the day the turn started. With `--until` on that day, the calls Claude logs after midnight are left out, even though OpenCode dates the whole turn on the earlier day.
 
-`ccusage opencode` skips the same rows, so `ccusage claude` and `ccusage opencode` add up to `ccusage daily`, and tools that read each source separately count these turns once. These turns appear under Claude. Pass `--include-claude-agent` to show every `claude-agent` row in the OpenCode report:
+`ccusage opencode` skips the rows that `ccusage claude` counts, matched by Claude Code session and date in every report, session reports included. This way `ccusage claude` and `ccusage opencode` add up to `ccusage daily`, and tools that read each source separately count these turns once. These turns appear under Claude. Pass `--include-claude-agent` to show every `claude-agent` row in the OpenCode report:
 
 ```bash
 ccusage opencode daily --include-claude-agent
