@@ -16304,9 +16304,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.029,
-			"input": 0.058,
-			"output": 0.175
+			"cache_read": 0.012,
+			"input": 0.024,
+			"output": 0.073
 		},
 		"limit": {
 			"context": 262144
@@ -30046,9 +30046,9 @@
 	},
 	"reka-ai/glm-5.3-flash": {
 		"cost": {
-			"cache_read": 0.028,
-			"input": 0.18,
-			"output": 0.6
+			"cache_read": 0.027,
+			"input": 0.15,
+			"output": 0.5
 		},
 		"limit": {
 			"context": 1048576
@@ -35234,7 +35234,7 @@
 	"z-ai/glm-5.2:thinking": {
 		"cost": {
 			"cache_read": 0.069,
-			"input": 0.07,
+			"input": 0.078,
 			"output": 1.4
 		},
 		"limit": {
