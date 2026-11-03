@@ -16304,9 +16304,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.034,
-			"input": 0.068,
-			"output": 0.205
+			"cache_read": 0.018,
+			"input": 0.036,
+			"output": 0.108
 		},
 		"limit": {
 			"context": 262144
@@ -31077,6 +31077,15 @@
 			"context": 128000
 		}
 	},
+	"soob3123/GrayLine-Qwen3-8B": {
+		"cost": {
+			"input": 0.3,
+			"output": 0.3
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
 	"soob3123/Veiled-Calla-12B": {
 		"cost": {
 			"cache_read": 0.15,
@@ -36194,8 +36203,8 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.15,
-			"input": 0.151,
+			"cache_read": 0.16,
+			"input": 0.1605,
 			"output": 9.3388
 		},
 		"exactOnly": true,
