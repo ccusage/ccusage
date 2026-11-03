@@ -25,7 +25,7 @@
     # Only the pricing JSON is needed; a file input avoids unpacking the 2.7 GB
     # repository. The commit lives in the URL, so update-litellm-lock.nu rewrites it.
     litellm = {
-      url = "file+https://raw.githubusercontent.com/BerriAI/litellm/e63067a23bcbaa18d580545266f99e1ef466b722/model_prices_and_context_window.json";
+      url = "file+https://raw.githubusercontent.com/BerriAI/litellm/704e73d6fe27ed299b733d1c39e1ae7757c8fc5e/model_prices_and_context_window.json";
       flake = false;
     };
     models-dev = {
