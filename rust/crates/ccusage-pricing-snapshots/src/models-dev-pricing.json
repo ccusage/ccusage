@@ -35209,7 +35209,7 @@
 	"z-ai/glm-5.2:thinking": {
 		"cost": {
 			"cache_read": 0.069,
-			"input": 0.12,
+			"input": 0.134,
 			"output": 1.4
 		},
 		"limit": {
@@ -36103,9 +36103,9 @@
 	},
 	"~deepseek/deepseek-flash-latest": {
 		"cost": {
-			"cache_read": 0.00475,
-			"input": 0.0333,
-			"output": 0.475
+			"cache_read": 0.006,
+			"input": 0.035,
+			"output": 0.315
 		},
 		"exactOnly": true,
 		"limit": {
@@ -36192,7 +36192,7 @@
 		"cost": {
 			"cache_read": 0.16,
 			"input": 0.1634,
-			"output": 9.7439
+			"output": 10.1489
 		},
 		"exactOnly": true,
 		"limit": {
