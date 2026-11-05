@@ -1004,13 +1004,42 @@ fn focused_opencode_session_skips_turns_of_a_claude_session_active_past_until() 
 fn focused_opencode_reports_keep_claude_agent_turns_without_a_claude_source() {
     let fixture = fs_fixture!({});
     write_claude_agent_fixture(&fixture);
-    let _env = claude_opencode_env(&fixture, fixture.path("missing-claude").into_os_string());
+    let _env = isolated_agents_env(
+        &fixture,
+        [(
+            "OPENCODE_DATA_DIR",
+            fixture.path("opencode").into_os_string(),
+        )],
+    );
     let shared = claude_agent_shared("20990101", "20990103");
 
     for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
         assert_eq!(
             focused_opencode_input(&shared, kind, false),
             127,
+            "{kind:?}"
+        );
+    }
+}
+
+#[test]
+fn focused_opencode_reports_fail_like_unified_reports_on_claude_errors() {
+    let fixture = fs_fixture!({});
+    write_claude_agent_fixture(&fixture);
+    let _env = claude_opencode_env(&fixture, fixture.path("missing-claude").into_os_string());
+    let shared = claude_agent_shared("20990101", "20990103");
+
+    for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+        assert!(
+            loader::load_opencode_entries(&shared, kind, false).is_err(),
+            "{kind:?}"
+        );
+        assert!(
+            load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).is_err(),
+            "{kind:?}"
+        );
+        assert!(
+            loader::load_opencode_entries(&shared, kind, true).is_ok(),
             "{kind:?}"
         );
     }
