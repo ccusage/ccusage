@@ -393,6 +393,15 @@
 			"context": 32768
 		}
 	},
+	"EVA-UNIT-01/EVA-Qwen2.5-32B-v0.2": {
+		"cost": {
+			"input": 0.799,
+			"output": 0.799
+		},
+		"limit": {
+			"context": 16384
+		}
+	},
 	"EVA-UNIT-01/EVA-Qwen2.5-72B-v0.2": {
 		"cost": {
 			"cache_read": 0.3995,
@@ -9930,6 +9939,15 @@
 			"context": 1000000
 		}
 	},
+	"deepcogito/cogito-v1-preview-qwen-32B": {
+		"cost": {
+			"input": 1.8,
+			"output": 1.8
+		},
+		"limit": {
+			"context": 128000
+		}
+	},
 	"deepinfra/ByteDance/Seed-2.0-code": {
 		"cost": {
 			"cache_read": 0.1,
@@ -18448,6 +18466,15 @@
 	"huihui-ai/Llama-3.3-70B-Instruct-abliterated": {
 		"cost": {
 			"cache_read": 0.35,
+			"input": 0.7,
+			"output": 0.7
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
+	"huihui-ai/Qwen2.5-32B-Instruct-abliterated": {
+		"cost": {
 			"input": 0.7,
 			"output": 0.7
 		},
@@ -30985,6 +31012,16 @@
 			"context": 32768
 		}
 	},
+	"sicariussicariistuff/assistant-pepe-32b": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.1,
+			"output": 0.45
+		},
+		"limit": {
+			"context": 40960
+		}
+	},
 	"siliconflow/deepseek-r1-0528": {
 		"cost": {
 			"input": 0.5,
@@ -31117,6 +31154,24 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 128000
+		}
+	},
+	"soob3123/GrayLine-Qwen3-8B": {
+		"cost": {
+			"input": 0.3,
+			"output": 0.3
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
+	"soob3123/Veiled-Calla-12B": {
+		"cost": {
+			"input": 0.3,
+			"output": 0.3
+		},
+		"limit": {
+			"context": 32768
 		}
 	},
 	"soob3123/amoral-gemma3-27B-v2": {
