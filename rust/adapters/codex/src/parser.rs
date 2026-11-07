@@ -736,7 +736,9 @@ fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool, bool, bool) {
     let mut has_thread_settings_applied = false;
     let mut has_token_usage_record = false;
     let mut has_compacted = false;
-    while let Some(index) = TYPE_KEY_FINDER.find(&line[start..]) {
+    while start < line.len()
+        && let Some(index) = TYPE_KEY_FINDER.find(&line[start..])
+    {
         let key_start = start + index;
         let mut cursor = skip_json_whitespace(line, key_start + br#""type""#.len());
         if line.get(cursor) != Some(&b':') {

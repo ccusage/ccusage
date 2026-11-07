@@ -940,6 +940,31 @@ mod tests {
     }
 
     #[test]
+    fn skips_truncated_type_fields_without_losing_valid_usage() {
+        let usage_line = r#"{"timestamp":"2026-01-02T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"total_tokens":150}}}}"#;
+        for truncated in [
+            r#"{"type" :"#,
+            "{\"type\" : \t\r",
+            r#"{"type" : ""#,
+            r#"{"type":"event_msg","payload":{"type":"#,
+            r#"{"type":"event_msg","payload":{"type":""#,
+        ] {
+            let fixture = fs_fixture!({
+                "session.jsonl": [truncated, usage_line, truncated].join("\n"),
+            });
+
+            let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+            assert_eq!(events.len(), 1, "{truncated:?}");
+            assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+            assert_eq!(events[0].input_tokens, 100);
+            assert_eq!(events[0].cached_input_tokens, 10);
+            assert_eq!(events[0].output_tokens, 50);
+            assert_eq!(events[0].total_tokens, 150);
+        }
+    }
+
+    #[test]
     fn subtracts_cache_write_usage_from_cumulative_token_totals() {
         let fixture = fs_fixture!({
             "session.jsonl": [
