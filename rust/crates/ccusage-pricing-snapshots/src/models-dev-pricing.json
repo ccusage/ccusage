@@ -11424,9 +11424,9 @@
 	},
 	"deepseek/deepseek-latest": {
 		"cost": {
-			"cache_read": 0.022,
-			"input": 0.66,
-			"output": 1.98
+			"cache_read": 0.020958,
+			"input": 0.65868,
+			"output": 1.97604
 		},
 		"exactOnly": true,
 		"limit": {
@@ -11649,9 +11649,9 @@
 	},
 	"deepseek/deepseek-v4-flash-0731:thinking": {
 		"cost": {
-			"cache_read": 0.013,
-			"input": 0.05,
-			"output": 0.16
+			"cache_read": 0.001414,
+			"input": 0.04444,
+			"output": 0.13332
 		},
 		"limit": {
 			"context": 1048576
@@ -11731,9 +11731,9 @@
 	},
 	"deepseek/deepseek-v4-pro-0813:thinking": {
 		"cost": {
-			"cache_read": 0.022,
-			"input": 0.66,
-			"output": 1.98
+			"cache_read": 0.020958,
+			"input": 0.65868,
+			"output": 1.97604
 		},
 		"limit": {
 			"context": 1048576
@@ -16269,9 +16269,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.008,
-			"input": 0.015,
-			"output": 0.046
+			"cache_read": 0.016,
+			"input": 0.033,
+			"output": 0.098
 		},
 		"limit": {
 			"context": 262144
@@ -20935,9 +20935,9 @@
 	},
 	"minimax/MiniMax-M3.1-Flash": {
 		"cost": {
-			"cache_read": 0.015,
-			"input": 0.15,
-			"output": 0.6
+			"cache_read": 0.0075,
+			"input": 0.075,
+			"output": 0.3
 		},
 		"limit": {
 			"context": 1048576
@@ -34860,6 +34860,16 @@
 			"context": 1000000
 		}
 	},
+	"xtools-at/deepseek-v4-pro-qwen3.5-9b-uncensored-heretic": {
+		"cost": {
+			"cache_read": 0.14,
+			"input": 0.28,
+			"output": 0.28
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
 	"z-ai-glm-5-3": {
 		"cost": {
 			"cache_read": 0.325,
@@ -35290,9 +35300,9 @@
 	},
 	"z-ai/glm-5.2:thinking": {
 		"cost": {
-			"cache_read": 0.078,
-			"input": 0.42,
-			"output": 1.32
+			"cache_read": 0.0351,
+			"input": 0.189,
+			"output": 0.594
 		},
 		"limit": {
 			"context": 1048576
@@ -36208,7 +36218,7 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.035,
-			"input": 0.0553,
+			"input": 0.0434,
 			"output": 0.3
 		},
 		"limit": {
@@ -36272,9 +36282,9 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.15,
-			"input": 0.1548,
-			"output": 10.551
+			"cache_read": 0.18,
+			"input": 0.1824,
+			"output": 9.3388
 		},
 		"exactOnly": true,
 		"limit": {
@@ -36455,9 +36465,9 @@
 	},
 	"~z-ai/glm-flash-latest": {
 		"cost": {
-			"cache_read": 0.0285,
-			"input": 0.0285,
-			"output": 0.0923
+			"cache_read": 0.03,
+			"input": 0.0335,
+			"output": 0.083
 		},
 		"exactOnly": true,
 		"limit": {
