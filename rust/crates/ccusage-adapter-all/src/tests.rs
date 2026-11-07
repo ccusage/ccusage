@@ -1216,6 +1216,39 @@ fn unified_daily_drops_a_claude_agent_turn_whose_later_calls_fall_after_until() 
 }
 
 #[test]
+fn unified_session_counts_a_claude_agent_session_active_past_until_once() {
+    let fixture = fs_fixture!({});
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-a.jsonl",
+        [
+            claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
+            claude_usage_line("claude-native-a", "2099-01-03T00:00:00.000Z", "msg-b", 10),
+        ]
+        .join("\n"),
+    );
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[(
+            "m-dup",
+            "ses-agent",
+            CLAUDE_AGENT_DAY_ONE,
+            claude_agent_row("claude-native-a", CLAUDE_AGENT_DAY_ONE, 100),
+        )],
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990101", "20990102");
+
+    // The session runs past `--until`: Claude counts its day-one turn and OpenCode skips its copy.
+    for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+        assert_eq!(
+            unified_totals(kind, &shared, &NO_SOURCES)["inputTokens"],
+            100,
+            "{kind:?}"
+        );
+    }
+}
+
+#[test]
 fn unified_session_skips_claude_agent_rows_of_a_counted_session_before_the_claude_window() {
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(

@@ -70,57 +70,30 @@ pub fn load_deduped_entries(
 #[derive(Default)]
 pub struct DedupedEntries {
     pub entries: Vec<LoadedEntry>,
-    /// `(session row the usage is counted under, recorded session of the
-    /// copy)` pairs.
-    copies: Vec<(Arc<str>, Arc<str>)>,
+    /// `(survivor index, recorded session of the copy)` pairs.
+    copies: Vec<(usize, Arc<str>)>,
 }
 
 impl DedupedEntries {
-    /// Recorded session IDs whose wrapper rows the Claude source already
-    /// counts when it reports the session rows `is_counted` accepts. Session
-    /// rows are keyed by the transcript path while a wrapper such as OpenCode
-    /// links the session ID Claude Code recorded, so the two are kept apart. A
-    /// session with its own surviving main-thread usage is covered exactly when
-    /// the rows holding it are reported, because its own turns count only
-    /// there. A session whose usage dedup kept entirely under other sessions is
-    /// covered only when every one of those is reported.
-    pub fn main_thread_sessions(&self, is_counted: impl Fn(&str) -> bool) -> HashSet<Arc<str>> {
-        let (own_counted, own_uncounted): (Vec<_>, Vec<_>) = self
-            .entries
+    /// Main-thread days of the entries `is_counted` keeps, by recorded session ID. As in
+    /// the daily loader, a merged copy's session counts on the day its survivor does.
+    pub fn main_thread_session_days(
+        &self,
+        is_counted: impl Fn(&LoadedEntry) -> bool,
+    ) -> SessionDays {
+        self.entries
             .iter()
-            .filter(|entry| entry.data.is_sidechain != Some(true))
-            .map(|entry| {
-                (
-                    is_counted(&entry.session_id),
-                    loaded_entry_session_id(entry),
-                )
-            })
-            .partition(|(counted, _)| *counted);
-        let own_uncounted = own_uncounted
-            .into_iter()
-            .map(|(_, session_id)| session_id)
-            .collect::<HashSet<_>>();
-        let own = own_counted
-            .into_iter()
-            .map(|(_, session_id)| session_id)
-            .chain(own_uncounted.iter().copied())
-            .collect::<HashSet<_>>();
-        let held_by_uncounted = self
-            .copies
-            .iter()
-            .filter(|(survivor, _)| !is_counted(survivor))
-            .map(|(_, copy)| copy.as_ref())
-            .collect::<HashSet<_>>();
-        own.iter()
-            .copied()
-            .filter(|session_id| !own_uncounted.contains(session_id))
+            .map(|entry| (loaded_entry_session_id(entry), entry))
             .chain(
                 self.copies
                     .iter()
-                    .map(|(_, copy)| copy.as_ref())
-                    .filter(|copy| !own.contains(copy) && !held_by_uncounted.contains(copy)),
+                    .map(|(index, session_id)| (session_id.as_ref(), &self.entries[*index])),
             )
-            .map(Arc::from)
+            .filter(|(_, entry)| entry.data.is_sidechain != Some(true) && is_counted(entry))
+            .map(|(session_id, entry)| (session_id, entry.date.as_str()))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .map(|(session_id, date)| (Arc::from(session_id), date.to_owned()))
             .collect()
     }
 }
@@ -297,11 +270,6 @@ fn load_entries_inner(
         shared,
         format!("Kept {} usage entries after deduplication", deduped.len()),
     );
-    let copies = copies
-        .into_iter()
-        .filter(|(index, _)| deduped[*index].data.is_sidechain != Some(true))
-        .map(|(index, session_id)| (Arc::clone(&deduped[index].session_id), session_id))
-        .collect();
     Ok(DedupedEntries {
         entries: deduped,
         copies,

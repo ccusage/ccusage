@@ -284,7 +284,7 @@ fn bounded_reports_dedupe_sidechain_replays_of_parents_in_stale_files() {
 }
 
 #[test]
-fn bounded_unified_sessions_keep_old_subagent_files() {
+fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
     let fixture = Fixture::new();
     let parent = fixture.write_file(
         "projects/project-a/session-b.jsonl",
@@ -329,7 +329,53 @@ fn bounded_unified_sessions_keep_old_subagent_files() {
         str::to_string,
     );
     let json: serde_json::Value = serde_json::from_str(&output).unwrap();
-    assert_eq!(json["totals"]["totalCost"], 3.0, "{output}");
+    // Like `ccusage claude session`, the subagent's usage before `--since` is left out.
+    assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
+}
+
+#[test]
+fn unified_sessions_count_the_in_window_usage_of_a_session_active_past_until() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-e.jsonl",
+        [
+            usage_line(
+                "2026-09-11T23:30:00.000Z",
+                "session-e",
+                "msg-in-window",
+                "req-in-window",
+                1.0,
+            ),
+            usage_line(
+                "2026-09-12T00:30:00.000Z",
+                "session-e",
+                "msg-after-until",
+                "req-after-until",
+                2.0,
+            ),
+        ]
+        .join("\n"),
+    );
+    let report = |command: &[&str]| {
+        let mut args = command.to_vec();
+        args.extend([
+            "--since",
+            "20260911",
+            "--until",
+            "20260911",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--json",
+        ]);
+        let output = run_ccusage(&fixture, &args, None);
+        serde_json::from_str::<serde_json::Value>(&output).unwrap()["totals"]["totalCost"].clone()
+    };
+
+    assert_eq!(report(&["session"]), 1.0);
+    assert_eq!(report(&["claude", "session"]), 1.0);
 }
 
 #[test]
