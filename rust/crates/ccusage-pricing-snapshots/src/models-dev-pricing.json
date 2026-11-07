@@ -5796,36 +5796,6 @@
 			"context": 1050000
 		}
 	},
-	"azure-ai-foundry/grok-4-1-fast-reasoning": {
-		"cost": {
-			"input": 0.2,
-			"output": 0.5
-		},
-		"limit": {
-			"context": 128000
-		}
-	},
-	"azure-ai-foundry/grok-4-3": {
-		"cost": {
-			"cache_read": 0.2,
-			"input": 1.25,
-			"output": 2.5,
-			"tiers": [
-				{
-					"cache_read": 0.4,
-					"input": 2.5,
-					"output": 5,
-					"tier": {
-						"size": 200000,
-						"type": "context"
-					}
-				}
-			]
-		},
-		"limit": {
-			"context": 20000
-		}
-	},
 	"azure-anthropic/claude-fable-5": {
 		"cost": {
 			"cache_read": 1,
@@ -16289,9 +16259,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.023,
-			"input": 0.046,
-			"output": 0.137
+			"cache_read": 0.029,
+			"input": 0.058,
+			"output": 0.175
 		},
 		"limit": {
 			"context": 262144
@@ -19672,6 +19642,16 @@
 		},
 		"limit": {
 			"context": 128000
+		}
+	},
+	"liquid/lfm-3-1.7b": {
+		"cost": {
+			"cache_read": 0.02,
+			"input": 0.08,
+			"output": 0.2
+		},
+		"limit": {
+			"context": 262144
 		}
 	},
 	"liquid/lfm2.5-24b-a2b": {
@@ -36271,9 +36251,9 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.18,
-			"input": 0.1824,
-			"output": 9.3388
+			"cache_read": 0.15,
+			"input": 0.1539,
+			"output": 10.1489
 		},
 		"exactOnly": true,
 		"limit": {
