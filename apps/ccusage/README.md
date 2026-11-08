@@ -34,7 +34,7 @@
     </a>
     &nbsp;&nbsp;&nbsp;&nbsp;
     <a href="https://blacksmith.sh">
-        <img src="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/blacksmith.png" alt="Blacksmith" width="320">
+        <img src="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/blacksmith.png" alt="CI powered by Blacksmith" width="320">
     </a>
 </p>
 
