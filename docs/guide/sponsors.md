@@ -10,7 +10,7 @@ ccusage is sponsored by CodeRabbit and Blacksmith.
         </picture>
     </a>
     <a href="https://blacksmith.sh" style="display: block;">
-        <img src="/blacksmith.png" alt="Blacksmith" width="320">
+        <img src="/blacksmith.png" alt="CI powered by Blacksmith" width="320">
     </a>
 </div>
 
