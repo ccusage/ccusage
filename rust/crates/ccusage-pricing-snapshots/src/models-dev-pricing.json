@@ -16248,9 +16248,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.019,
-			"input": 0.038,
-			"output": 0.115
+			"cache_read": 0.026,
+			"input": 0.051,
+			"output": 0.153
 		},
 		"limit": {
 			"context": 262144
@@ -20903,9 +20903,9 @@
 	},
 	"minimax/MiniMax-M3.1-Flash": {
 		"cost": {
-			"cache_read": 0.015,
-			"input": 0.15,
-			"output": 0.6
+			"cache_read": 0.0075,
+			"input": 0.075,
+			"output": 0.3
 		},
 		"limit": {
 			"context": 1048576
@@ -34725,10 +34725,10 @@
 	},
 	"xiaomi/mimo-v2.5:thinking": {
 		"cost": {
-			"cache_read": 0.0028,
+			"cache_read": 0.0844,
 			"cache_write": 0,
-			"input": 0.413,
-			"output": 2.086
+			"input": 0.422,
+			"output": 2.11
 		},
 		"limit": {
 			"context": 1048576
