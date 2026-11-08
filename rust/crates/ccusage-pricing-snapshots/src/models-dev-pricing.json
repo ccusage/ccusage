@@ -16248,9 +16248,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.026,
-			"input": 0.051,
-			"output": 0.153
+			"cache_read": 0.0375,
+			"input": 0.0675,
+			"output": 0.225
 		},
 		"limit": {
 			"context": 262144
@@ -36207,7 +36207,7 @@
 		"cost": {
 			"cache_read": 0.035,
 			"input": 0.0434,
-			"output": 0.3
+			"output": 0.28
 		},
 		"limit": {
 			"context": 1048576
@@ -36270,9 +36270,9 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.16,
-			"input": 0.1605,
-			"output": 10.1583
+			"cache_read": 0.17,
+			"input": 0.17,
+			"output": 9.7533
 		},
 		"exactOnly": true,
 		"limit": {
