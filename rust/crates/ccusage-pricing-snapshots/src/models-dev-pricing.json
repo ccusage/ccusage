@@ -2247,32 +2247,21 @@
 			"context": 1048573
 		}
 	},
-	"accounts/fireworks/models/gpt-oss-120b": {
-		"cost": {
-			"cache_read": 0.015,
-			"input": 0.15,
-			"output": 0.6
-		},
-		"limit": {
-			"context": 131072
-		}
-	},
-	"accounts/fireworks/models/inkling": {
-		"cost": {
-			"cache_read": 0.17,
-			"input": 1,
-			"output": 4.05
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 1048576
-		}
-	},
 	"accounts/fireworks/models/kimi-k3": {
 		"cost": {
 			"cache_read": 0.3,
 			"input": 3,
 			"output": 15
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"accounts/fireworks/models/kimi-k3p1-pro": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 10
 		},
 		"limit": {
 			"context": 1048576
@@ -2307,26 +2296,6 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 1048576
-		}
-	},
-	"accounts/fireworks/models/nemotron-3-ultra-nvfp4": {
-		"cost": {
-			"cache_read": 0.12,
-			"input": 0.6,
-			"output": 2.4
-		},
-		"limit": {
-			"context": 262144
-		}
-	},
-	"accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b": {
-		"cost": {
-			"cache_read": 0.01,
-			"input": 0.05,
-			"output": 0.2
-		},
-		"limit": {
-			"context": 262144
 		}
 	},
 	"accounts/fireworks/models/qwen3p8-2p4t-a95b": {
@@ -2365,6 +2334,16 @@
 			"cache_read": 0.0042,
 			"input": 0.21,
 			"output": 0.84
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"accounts/fireworks/routers/deepseek-v4p1-flash-1017-ultrafast": {
+		"cost": {
+			"cache_read": 0.048,
+			"input": 2.4,
+			"output": 9.6
 		},
 		"limit": {
 			"context": 1000000
@@ -16269,9 +16248,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.016,
-			"input": 0.033,
-			"output": 0.098
+			"cache_read": 0.012,
+			"input": 0.024,
+			"output": 0.072
 		},
 		"limit": {
 			"context": 262144
@@ -23073,6 +23052,16 @@
 			"context": 1048576
 		}
 	},
+	"morph-kimik31": {
+		"cost": {
+			"cache_read": 0.29,
+			"input": 2.5,
+			"output": 14
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"morph-v3-fast": {
 		"cost": {
 			"input": 0.8,
@@ -27178,9 +27167,9 @@
 	},
 	"ornith-ai/ornith-1.5-122b": {
 		"cost": {
-			"cache_read": 0.02,
-			"input": 0.2,
-			"output": 0.8
+			"cache_read": 0.07,
+			"input": 0.26,
+			"output": 2.08
 		},
 		"limit": {
 			"context": 262144
@@ -32693,9 +32682,9 @@
 	},
 	"upstage/solar-pro4:thinking": {
 		"cost": {
-			"cache_read": 0.006,
-			"input": 0.03,
-			"output": 0.12
+			"cache_read": 0.03,
+			"input": 0.15,
+			"output": 0.6
 		},
 		"limit": {
 			"context": 524288
@@ -35844,6 +35833,16 @@
 			"context": 1000000
 		}
 	},
+	"zai-org/glm-5.3-flashX": {
+		"cost": {
+			"cache_read": 0.075,
+			"input": 0.37,
+			"output": 1.25
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"zai.glm-4.7": {
 		"cost": {
 			"input": 0.6,
@@ -36282,9 +36281,9 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.18,
-			"input": 0.1824,
-			"output": 9.3388
+			"cache_read": 0.15,
+			"input": 0.1567,
+			"output": 10.5448
 		},
 		"exactOnly": true,
 		"limit": {
