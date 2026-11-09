@@ -2366,7 +2366,7 @@ mod tests {
                     "payload": {"response_id": "resp_child", "usage": {"input_tokens": 300, "output_tokens": 1}},
                 })
                 .to_string(),
-                replay_token_count("2026-09-04T09:02:01.966Z", 300),
+                replay_token_count("2026-09-04T09:02:00.903Z", 300),
             ]
             .join("\n"),
         });
