@@ -4115,23 +4115,23 @@
 			"context": 1000000
 		}
 	},
+	"anthropic/claude-fable-5-2": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 10,
+			"input": 8,
+			"output": 40
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"anthropic/claude-fable-5.1": {
 		"cost": {
 			"cache_read": 0.25,
 			"cache_write": 12.5,
 			"input": 10,
 			"output": 50
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
-	"anthropic/claude-fable-5.2": {
-		"cost": {
-			"cache_read": 0.2,
-			"cache_write": 10,
-			"input": 8,
-			"output": 40
 		},
 		"limit": {
 			"context": 1000000
@@ -5516,6 +5516,17 @@
 			"cache_write": 12.5,
 			"input": 10,
 			"output": 50
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"aws-bedrock/claude-fable-5-2": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 10,
+			"input": 8,
+			"output": 40
 		},
 		"limit": {
 			"context": 1000000
@@ -30199,9 +30210,9 @@
 	},
 	"ricursiveai/ripple-65b-preview": {
 		"cost": {
-			"cache_read": 0.05,
-			"input": 0.2,
-			"output": 0.6
+			"cache_read": 0.025,
+			"input": 0.1,
+			"output": 0.3
 		},
 		"limit": {
 			"context": 1048576
@@ -36157,10 +36168,10 @@
 	},
 	"~anthropic/claude-fable-latest": {
 		"cost": {
-			"cache_read": 0.25,
-			"cache_write": 12.5,
-			"input": 10,
-			"output": 50
+			"cache_read": 0.2,
+			"cache_write": 10,
+			"input": 8,
+			"output": 40
 		},
 		"exactOnly": true,
 		"limit": {
@@ -36304,8 +36315,8 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.16,
-			"input": 0.1643,
+			"cache_read": 0.18,
+			"input": 0.1824,
 			"output": 9.3388
 		},
 		"exactOnly": true,
