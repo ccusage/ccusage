@@ -6,10 +6,11 @@ and produces the standard daily, weekly, monthly, and session reports.
 ## Data sources
 
 By default, the adapter searches `~/.cline` and Cline extension `globalStorage`
-directories for VS Code, VS Code Insiders, Cursor, Windsurf, and VSCodium. The
-extension storage locations follow each platform's normal config directory:
-`~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` (or `~/.config`)
-on Linux, and `%APPDATA%` on Windows.
+directories for VS Code, VS Code Insiders, Cursor, Windsurf, and VSCodium. For
+each editor it tries `~/Library/Application Support` (the macOS location),
+`$XDG_CONFIG_HOME` or `~/.config` (Linux), and `%APPDATA%` or
+`%USERPROFILE%\AppData\Roaming` (Windows). Every candidate is checked on every
+platform and roots that do not exist are skipped.
 
 It recognizes these layouts under each data root:
 

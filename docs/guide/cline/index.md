@@ -28,7 +28,7 @@ For the Cline editor extension, ccusage searches the standard `globalStorage` lo
 | Linux            | `${XDG_CONFIG_HOME:-$HOME/.config}/<editor>/User/globalStorage/saoudrizwan.claude-dev` |
 | Windows          | `%APPDATA%\<editor>\User\globalStorage\saoudrizwan.claude-dev`                         |
 
-On Windows, if `%APPDATA%` is unset, ccusage uses `%USERPROFILE%\AppData\Roaming`.
+ccusage checks every location in this table on every operating system and skips the ones that do not exist. On Windows, if `%APPDATA%` is unset, ccusage uses `%USERPROFILE%\AppData\Roaming`.
 
 Each extension task stores its messages at:
 
@@ -66,6 +66,8 @@ To read both extension and CLI data from custom locations, include both roots in
 | `ccusage cline weekly`  | Group usage by week          | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage cline monthly` | Group usage by month         | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage cline session` | Group usage by Cline session | [Session Usage](/guide/session-reports) |
+
+Session IDs carry a prefix for the format they came from: `task:<task-id>` for extension tasks and legacy CLI tasks, and `cli:<session-id>` for CLI session transcripts. The prefix keeps a task and a CLI session that share an ID as separate rows.
 
 ## Token and Cost Data
 
