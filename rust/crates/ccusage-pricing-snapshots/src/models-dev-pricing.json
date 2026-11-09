@@ -4859,16 +4859,6 @@
 			"context": 131072
 		}
 	},
-	"asi1-mini": {
-		"cost": {
-			"cache_read": 0.5,
-			"input": 1,
-			"output": 1
-		},
-		"limit": {
-			"context": 128000
-		}
-	},
 	"au.anthropic.claude-haiku-4-5-20251001-v1:0": {
 		"cost": {
 			"cache_read": 0.11,
@@ -11394,9 +11384,9 @@
 	},
 	"deepseek/deepseek-latest": {
 		"cost": {
-			"cache_read": 0.022,
-			"input": 0.66,
-			"output": 1.98
+			"cache_read": 0.020958,
+			"input": 0.65868,
+			"output": 1.97604
 		},
 		"exactOnly": true,
 		"limit": {
@@ -11701,9 +11691,9 @@
 	},
 	"deepseek/deepseek-v4-pro-0813:thinking": {
 		"cost": {
-			"cache_read": 0.022,
-			"input": 0.66,
-			"output": 1.98
+			"cache_read": 0.020958,
+			"input": 0.65868,
+			"output": 1.97604
 		},
 		"limit": {
 			"context": 1048576
@@ -16159,9 +16149,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.016,
-			"input": 0.033,
-			"output": 0.099
+			"cache_read": 0.03,
+			"input": 0.06,
+			"output": 0.18
 		},
 		"limit": {
 			"context": 262144
@@ -20863,15 +20853,6 @@
 			"context": 512000
 		}
 	},
-	"minimax/minimax-m1": {
-		"cost": {
-			"input": 0.55,
-			"output": 2.2
-		},
-		"limit": {
-			"context": 1000000
-		}
-	},
 	"minimax/minimax-m2": {
 		"cost": {
 			"cache_read": 0.03,
@@ -23026,6 +23007,17 @@
 		},
 		"limit": {
 			"context": 512
+		}
+	},
+	"muse-ember-1.0": {
+		"cost": {
+			"cache_read": 0.004,
+			"cache_write": 0,
+			"input": 0.1,
+			"output": 0.5
+		},
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"muse-glimmer-30b": {
@@ -34645,7 +34637,7 @@
 	},
 	"xiaomi/mimo-v2.5-pro": {
 		"cost": {
-			"cache_read": 0.004,
+			"cache_read": 0.0036,
 			"input": 0.435,
 			"output": 0.87,
 			"tiers": [
