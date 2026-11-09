@@ -101,6 +101,18 @@ struct CodexTokenCountUsage {
     delta: Option<CodexRawUsage>,
 }
 
+/// History a forked session replayed from its parent.
+#[derive(Clone, Copy)]
+pub(super) struct CodexForkReplay<'a> {
+    /// The parent's usage up to the fork; empty when the parent log is unavailable.
+    pub(super) prefix: &'a [CodexRawUsage],
+    /// Codex drops the parent's `token_usage_record` lines when it spawns a
+    /// subagent, so every record in such a child is a request the child sent
+    /// itself and nothing after it can be replayed history. A user fork copies
+    /// them with the rest of the parent's history, so they prove nothing there.
+    pub(super) ends_at_usage_record: bool,
+}
+
 /// Tracks how far a forked session's leading events still match the history it
 /// replayed from its parent.
 enum CodexReplayState<'a> {
@@ -205,24 +217,81 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
     }
 }
 
+struct CodexReplayFilter<'a> {
+    path: &'a Path,
+    state: CodexReplayState<'a>,
+    ends_at_usage_record: bool,
+}
+
+impl CodexReplayFilter<'_> {
+    fn observe_usage_record(&mut self) {
+        if self.ends_at_usage_record {
+            self.state = CodexReplayState::Done;
+        }
+    }
+
+    fn visit(
+        &mut self,
+        event: CodexTokenUsageEvent,
+        visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    ) -> Result<()> {
+        // Compaction requests have their own response identity. Comparing them
+        // with normal request totals could consume an unrelated replay entry;
+        // copied compactions are deduplicated by ID after parsing instead.
+        if event.response_id.is_some() {
+            return visit(event);
+        }
+        // Each arm either returns or advances the state toward `Done`, so this
+        // loop only re-runs to apply the event to the state it switched to.
+        loop {
+            match self.state {
+                CodexReplayState::MatchingParent { prefix, index } => {
+                    let usage = event.raw_usage();
+                    if prefix.get(index) == Some(&usage) {
+                        self.state = CodexReplayState::MatchingParent {
+                            prefix,
+                            index: index + 1,
+                        };
+                        return Ok(());
+                    }
+                    // Nothing matched, so the parent stream cannot anchor this
+                    // replay: the log is unavailable, or Codex rewrote the copied
+                    // history. Fall back to the rewritten burst instead.
+                    self.state = (index == 0)
+                        .then(|| detect_rewritten_burst(self.path))
+                        .flatten()
+                        .map_or(
+                            CodexReplayState::Done,
+                            CodexReplayState::SkippingRewrittenBurst,
+                        );
+                }
+                CodexReplayState::SkippingRewrittenBurst(previous) => {
+                    if let Some(timestamp) = parse_ts_timestamp(&event.timestamp)
+                        && (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
+                            .contains(&(timestamp.as_millis() - previous.as_millis()))
+                    {
+                        self.state = CodexReplayState::SkippingRewrittenBurst(timestamp);
+                        return Ok(());
+                    }
+                    self.state = CodexReplayState::Done;
+                }
+                CodexReplayState::Done => return visit(event),
+            }
+        }
+    }
+}
+
 /// Visits every usage event in a Codex session log.
 ///
-/// `replayed_prefix` carries the usage a forked session copied from its parent so
-/// it is not counted twice: `None` for sessions that are not forks, and an empty
-/// slice for forks whose parent log is unavailable.
+/// `fork_replay` carries the usage a forked session copied from its parent so it
+/// is not counted twice, and is `None` for sessions that are not forks.
 pub(super) fn visit_codex_session_file(
     sessions_dir: &Path,
     path: &Path,
-    replayed_prefix: Option<&[CodexRawUsage]>,
+    fork_replay: Option<CodexForkReplay<'_>>,
     visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    visit_codex_session_file_with_compaction_history(
-        sessions_dir,
-        path,
-        replayed_prefix,
-        None,
-        visit,
-    )
+    visit_codex_session_file_with_compaction_history(sessions_dir, path, fork_replay, None, visit)
 }
 
 /// Visits usage while optionally retaining matched compaction identities,
@@ -230,7 +299,7 @@ pub(super) fn visit_codex_session_file(
 pub(super) fn visit_codex_session_file_with_compaction_history(
     sessions_dir: &Path,
     path: &Path,
-    replayed_prefix: Option<&[CodexRawUsage]>,
+    fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
@@ -244,54 +313,16 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
         state.compaction_usage.recorded_usage_timestamps = Some(HashMap::new());
     }
     let fallback_timestamp = file_modified_timestamp(&opened_path);
-    let mut replay = match replayed_prefix {
-        Some(prefix) => CodexReplayState::MatchingParent { prefix, index: 0 },
-        None => CodexReplayState::Done,
-    };
-    let mut visit_filtered = |event: CodexTokenUsageEvent| {
-        // Compaction requests have their own response identity. Comparing them
-        // with normal request totals could consume an unrelated replay entry;
-        // copied compactions are deduplicated by ID after parsing instead.
-        if event.response_id.is_some() {
-            return visit(event);
-        }
-        // Each arm either returns or advances the state toward `Done`, so this
-        // loop only re-runs to apply the event to the state it switched to.
-        loop {
-            match replay {
-                CodexReplayState::MatchingParent { prefix, index } => {
-                    let usage = event.raw_usage();
-                    if prefix.get(index) == Some(&usage) {
-                        replay = CodexReplayState::MatchingParent {
-                            prefix,
-                            index: index + 1,
-                        };
-                        return Ok(());
-                    }
-                    // Nothing matched, so the parent stream cannot anchor this
-                    // replay: the log is unavailable, or Codex rewrote the copied
-                    // history. Fall back to the rewritten burst instead.
-                    replay = (index == 0)
-                        .then(|| detect_rewritten_burst(path))
-                        .flatten()
-                        .map_or(
-                            CodexReplayState::Done,
-                            CodexReplayState::SkippingRewrittenBurst,
-                        );
-                }
-                CodexReplayState::SkippingRewrittenBurst(previous) => {
-                    if let Some(timestamp) = parse_ts_timestamp(&event.timestamp)
-                        && (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-                            .contains(&(timestamp.as_millis() - previous.as_millis()))
-                    {
-                        replay = CodexReplayState::SkippingRewrittenBurst(timestamp);
-                        return Ok(());
-                    }
-                    replay = CodexReplayState::Done;
-                }
-                CodexReplayState::Done => return visit(event),
+    let mut replay = CodexReplayFilter {
+        path,
+        state: fork_replay.map_or(CodexReplayState::Done, |fork_replay| {
+            CodexReplayState::MatchingParent {
+                prefix: fork_replay.prefix,
+                index: 0,
             }
-        }
+        }),
+        ends_at_usage_record: fork_replay
+            .is_some_and(|fork_replay| fork_replay.ends_at_usage_record),
     };
 
     loop {
@@ -310,7 +341,12 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
                 let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
                     continue;
                 };
-                visit_codex_session_entry(&session_id, value, &mut state, &mut visit_filtered)?;
+                if value.entry_type.as_deref() == Some("token_usage_record") {
+                    replay.observe_usage_record();
+                }
+                visit_codex_session_entry(&session_id, value, &mut state, &mut |event| {
+                    replay.visit(event, &mut visit)
+                })?;
             }
             CodexLineKind::Headless => {
                 if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
@@ -320,7 +356,7 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
                         &fallback_timestamp,
                         &mut state.current_model,
                         &mut state.current_model_is_fallback,
-                        &mut visit_filtered,
+                        &mut |event| replay.visit(event, &mut visit),
                     )?;
                 } else {
                     add_codex_exec_event_from_value(
@@ -329,7 +365,7 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
                         &fallback_timestamp,
                         &mut state.current_model,
                         &mut state.current_model_is_fallback,
-                        &mut visit_filtered,
+                        &mut |event| replay.visit(event, &mut visit),
                     )?;
                 };
             }

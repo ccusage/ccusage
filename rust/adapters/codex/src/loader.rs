@@ -222,18 +222,13 @@ fn read_codex_session_file(
     replay_plan: &CodexReplayPlan,
 ) -> Vec<CodexTokenUsageEvent> {
     let mut events = Vec::new();
-    let _ = visit_codex_session_file(
-        sessions_dir,
-        path,
-        replay_plan.replay_prefix(path),
-        |event| {
-            if replay_plan.is_replayed_compaction(path, event.response_id.as_deref()) {
-                return Ok(());
-            }
-            events.push(event);
-            Ok(())
-        },
-    );
+    let _ = visit_codex_session_file(sessions_dir, path, replay_plan.fork_replay(path), |event| {
+        if replay_plan.is_replayed_compaction(path, event.response_id.as_deref()) {
+            return Ok(());
+        }
+        events.push(event);
+        Ok(())
+    });
     events
 }
 
@@ -288,7 +283,7 @@ mod tests {
     use super::*;
 
     use ccusage_test_support::fs_fixture;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use crate::paths::CodexUsageSource;
 
@@ -2232,6 +2227,112 @@ mod tests {
                 replay_token_count("2026-07-10T09:00:01.009Z", 400),
                 // The child's own first turn, after a real pause.
                 replay_token_count("2026-07-10T09:00:08.000Z", 500),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [("child".to_string(), 500)]
+        );
+    }
+
+    #[test]
+    fn counts_spawned_child_requests_stamped_with_the_fork_instant() {
+        let at_fork = "2026-11-01T09:42:09.923Z";
+        let usage = |input: u64, cached: u64, output: u64| {
+            json!({
+                "input_tokens": input,
+                "cached_input_tokens": cached,
+                "output_tokens": output,
+                "reasoning_output_tokens": 0,
+                "total_tokens": input + output,
+            })
+        };
+        let token_count = |last: Value, total: Value| {
+            json!({
+                "timestamp": at_fork,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": last, "total_token_usage": total},
+                },
+            })
+            .to_string()
+        };
+        let usage_record = |response_id: &str, usage: Value| {
+            json!({
+                "timestamp": at_fork,
+                "type": "token_usage_record",
+                "payload": {
+                    "response_id": response_id,
+                    "usage": usage,
+                },
+            })
+            .to_string()
+        };
+        let fixture = fs_fixture!({
+            // Every line carries the fork instant, so timestamps cannot separate
+            // the inherited baseline from the child's own requests.
+            "child.jsonl": [
+                json!({
+                    "timestamp": at_fork,
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "child",
+                        "forked_from_id": "missing-parent",
+                        "source": {"subagent": {"thread_spawn": {"parent_thread_id": "missing-parent"}}},
+                    },
+                })
+                .to_string(),
+                json!({"timestamp": at_fork, "type": "compacted", "payload": {"message": "", "replacement_history": []}}).to_string(),
+                json!({"timestamp": at_fork, "type": "turn_context", "payload": {"model": "gpt-5.2"}}).to_string(),
+                token_count(usage(990_000, 0, 10_000), usage(990_000, 0, 10_000)),
+                usage_record("resp_child_1", usage(10_000, 2_000, 100)),
+                token_count(
+                    usage(10_000, 2_000, 100),
+                    usage(1_000_000, 2_000, 10_100),
+                ),
+                usage_record("resp_child_2", usage(20_000, 3_000, 200)),
+                token_count(
+                    usage(20_000, 3_000, 200),
+                    usage(1_020_000, 5_000, 10_300),
+                ),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (
+                    event.input_tokens,
+                    event.cached_input_tokens,
+                    event.output_tokens
+                ))
+                .collect::<Vec<_>>(),
+            [(10_000, 2_000, 100), (20_000, 3_000, 200)]
+        );
+    }
+
+    #[test]
+    fn skips_usage_records_copied_into_a_rewritten_user_fork_burst() {
+        let fixture = fs_fixture!({
+            // A user fork copies the parent's usage records along with the rest
+            // of its history, so a record does not end the replay here.
+            "child.jsonl": [
+                replay_metadata("2026-11-01T09:00:00.000Z", "child", Some("missing-parent")),
+                replay_token_count("2026-11-01T09:00:00.100Z", 100),
+                json!({
+                    "timestamp": "2026-11-01T09:00:00.150Z",
+                    "type": "token_usage_record",
+                    "payload": {"response_id": "resp_parent", "usage": {"input_tokens": 200, "output_tokens": 1}},
+                })
+                .to_string(),
+                replay_token_count("2026-11-01T09:00:00.200Z", 200),
+                replay_token_count("2026-11-01T09:00:08.000Z", 500),
             ]
             .join("\n"),
         });

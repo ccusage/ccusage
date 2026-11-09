@@ -6,7 +6,7 @@ use crate::{
     aggregate::{aggregate_events, load_groups_from_directory},
     cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs},
     load_codex_events_from_directory,
-    parser::visit_codex_session_file,
+    parser::{CodexForkReplay, visit_codex_session_file},
     report::report_from_groups,
     types::{
         CodexRawUsage,
@@ -53,7 +53,10 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
     visit_codex_session_file(
         fixture.root(),
         &fixture.path("child.jsonl"),
-        Some(&prefix),
+        Some(CodexForkReplay {
+            prefix: &prefix,
+            ends_at_usage_record: false,
+        }),
         |event| {
             events.push(event);
             Ok(())

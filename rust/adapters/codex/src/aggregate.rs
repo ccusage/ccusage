@@ -246,7 +246,7 @@ fn aggregate_file(
     parser::visit_codex_session_file(
         run.sessions_dir,
         file,
-        run.replay_plan.replay_prefix(file),
+        run.replay_plan.fork_replay(file),
         |event| {
             if run
                 .replay_plan
@@ -296,7 +296,7 @@ fn aggregate_file_local(
     parser::visit_codex_session_file(
         run.sessions_dir,
         file,
-        run.replay_plan.replay_prefix(file),
+        run.replay_plan.fork_replay(file),
         |event| {
             if run
                 .replay_plan
