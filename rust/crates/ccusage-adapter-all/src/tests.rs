@@ -1369,6 +1369,52 @@ fn unified_daily_drops_a_claude_agent_turn_whose_later_calls_fall_after_until() 
 }
 
 #[test]
+fn unified_session_counts_a_claude_agent_session_active_past_until_once() {
+    let fixture = fs_fixture!({});
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-a.jsonl",
+        [
+            claude_usage_line("claude-native-a", "2099-01-02T00:00:00.000Z", "msg-a", 100),
+            claude_usage_line("claude-native-a", "2099-01-03T00:00:00.000Z", "msg-b", 10),
+        ]
+        .join("\n"),
+    );
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[(
+            "m-dup",
+            "ses-agent",
+            CLAUDE_AGENT_DAY_ONE,
+            claude_agent_row("claude-native-a", CLAUDE_AGENT_DAY_ONE, 100),
+        )],
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990101", "20990102");
+
+    // The session runs past `--until`: Claude counts its day-one turn and OpenCode skips its copy.
+    // Totals alone cannot tell which source kept the turn, so check where each row comes from.
+    // Daily rows merge sources and list them in metadata; session rows carry one agent each.
+    for (kind, period) in [
+        (AgentReportKind::Daily, "2099-01-02"),
+        (AgentReportKind::Session, "claude-native-a"),
+    ] {
+        let result = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+        let rows: Vec<_> = result
+            .rows
+            .iter()
+            .map(|row| {
+                let agents = row
+                    .metadata_agents
+                    .clone()
+                    .unwrap_or_else(|| vec![row.agent]);
+                (agents, row.period.as_str(), row.input_tokens)
+            })
+            .collect();
+        assert_eq!(rows, [(vec!["claude"], period, 100)], "{kind:?}");
+    }
+}
+
+#[test]
 fn unified_session_skips_claude_agent_rows_of_a_counted_session_before_the_claude_window() {
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
