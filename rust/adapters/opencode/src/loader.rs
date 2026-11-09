@@ -53,6 +53,7 @@ fn load_entries_inner(
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut message_sessions = HashSet::new();
+    let mut compaction_entries = Vec::new();
     let mut aggregate_entries = Vec::new();
     for path in paths()? {
         let directory_entries =
@@ -66,13 +67,15 @@ fn load_entries_inner(
             }
             entries.push(linked);
         }
+        compaction_entries.extend(directory_entries.compaction_entries);
         aggregate_entries.extend(directory_entries.aggregate_entries);
     }
-    append_aggregate_entries(
+    append_fallback_entries(
         &mut entries,
         &mut seen,
         &message_sessions,
         aggregate_entries,
+        compaction_entries,
     );
     entries.sort_by_key(|(entry, _)| entry.timestamp);
     Ok(entries)
@@ -100,11 +103,12 @@ fn load_entries_from_directory_for_report(
     let message_sessions = message_session_ids(&directory_entries.message_entries);
     let mut seen = entry_ids(&directory_entries.message_entries);
     let mut entries = directory_entries.message_entries;
-    append_aggregate_entries(
+    append_fallback_entries(
         &mut entries,
         &mut seen,
         &message_sessions,
         directory_entries.aggregate_entries,
+        directory_entries.compaction_entries,
     );
     entries.sort_by_key(|(entry, _)| entry.timestamp);
     Ok(entries.into_iter().map(|(entry, _)| entry).collect())
@@ -127,6 +131,7 @@ fn load_entries_from_directory_parts(
     let tz = parse_tz(shared.timezone.as_deref());
     let window = DateWindow::from_shared(shared, tz.as_ref());
     let mut message_entries = Vec::new();
+    let mut compaction_entries = Vec::new();
     let mut seen = HashSet::new();
     let mut aggregate_entries = Vec::new();
     if let Some(db_path) = db_path(opencode_dir) {
@@ -146,6 +151,14 @@ fn load_entries_from_directory_parts(
                 continue;
             }
             message_entries.push(linked);
+        }
+        for linked in database_entries.compaction_entries {
+            if let Some(id) = entry_id(&linked.0)
+                && !seen.insert(id.to_string())
+            {
+                continue;
+            }
+            compaction_entries.push(linked);
         }
         aggregate_entries = database_entries.aggregate_entries;
     }
@@ -192,6 +205,7 @@ fn load_entries_from_directory_parts(
 
     Ok(DirectoryLoadResult {
         message_entries,
+        compaction_entries,
         aggregate_entries,
     })
 }
@@ -273,12 +287,14 @@ struct DatabaseLoadContext<'a> {
 #[derive(Default)]
 struct DatabaseLoadResult {
     message_entries: Vec<LinkedEntry>,
+    compaction_entries: Vec<LinkedEntry>,
     aggregate_entries: Vec<LinkedEntry>,
 }
 
 #[derive(Default)]
 struct DirectoryLoadResult {
     message_entries: Vec<LinkedEntry>,
+    compaction_entries: Vec<LinkedEntry>,
     aggregate_entries: Vec<LinkedEntry>,
 }
 
@@ -301,6 +317,7 @@ fn load_entries_from_database(
         return DatabaseLoadResult::default();
     };
     let mut message_entries = Vec::new();
+    let mut compaction_entries = Vec::new();
 
     let mut seen_message_ids = HashSet::new();
     let mut message_sessions = HashSet::new();
@@ -428,9 +445,11 @@ fn load_entries_from_database(
                         };
                         // A compaction is a model request of its own, billed apart
                         // from assistant steps, so its usage counts too.
-                        if !matches!(message_type.as_str(), "assistant" | "compaction") {
-                            continue;
-                        }
+                        let is_compaction = match message_type.as_str() {
+                            "assistant" => false,
+                            "compaction" => true,
+                            _ => continue,
+                        };
                         let Ok(data) = statement.read::<String, _>(3) else {
                             continue;
                         };
@@ -457,9 +476,18 @@ fn load_entries_from_database(
                         ) else {
                             continue;
                         };
-                        let session_key = linked.0.session_id.to_string();
                         v2_entries += 1;
-                        message_sessions.insert(session_key);
+                        // The session counters already include compaction usage,
+                        // so a compaction row alone must not suppress them.
+                        if is_compaction {
+                            push_unique_entry(
+                                &mut compaction_entries,
+                                &mut seen_message_ids,
+                                linked,
+                            );
+                            continue;
+                        }
+                        message_sessions.insert(linked.0.session_id.to_string());
                         push_unique_entry(&mut message_entries, &mut seen_message_ids, linked);
                     }
                     Ok(sqlite::State::Done) => break,
@@ -518,6 +546,7 @@ fn load_entries_from_database(
 
     DatabaseLoadResult {
         message_entries,
+        compaction_entries,
         aggregate_entries,
     }
 }
@@ -587,14 +616,31 @@ fn message_session_ids(entries: &[LinkedEntry]) -> HashSet<String> {
         .collect()
 }
 
-fn append_aggregate_entries(
+/// Adds session aggregates for sessions without assistant or legacy message
+/// usage, then compaction rows for sessions no aggregate covered. A session
+/// aggregate already includes the session's compaction usage.
+fn append_fallback_entries(
     entries: &mut Vec<LinkedEntry>,
     seen: &mut HashSet<String>,
     message_sessions: &HashSet<String>,
     aggregate_entries: Vec<LinkedEntry>,
+    compaction_entries: Vec<LinkedEntry>,
 ) {
+    let mut aggregate_sessions = HashSet::new();
     for linked in aggregate_entries {
         if message_sessions.contains(linked.0.session_id.as_ref()) {
+            continue;
+        }
+        if let Some(id) = entry_id(&linked.0)
+            && !seen.insert(id.to_string())
+        {
+            continue;
+        }
+        aggregate_sessions.insert(linked.0.session_id.to_string());
+        entries.push(linked);
+    }
+    for linked in compaction_entries {
+        if aggregate_sessions.contains(linked.0.session_id.as_ref()) {
             continue;
         }
         if let Some(id) = entry_id(&linked.0)
@@ -1643,6 +1689,69 @@ mod tests {
         assert_eq!(total_tokens(&entries), 174);
         let cost: f64 = entries.iter().map(|entry| entry.cost).sum();
         assert!((cost - 0.03).abs() < 1e-9);
+    }
+
+    #[test]
+    fn prefers_session_aggregate_over_a_lone_v2_compaction_row() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        // The assistant rows are gone (for example after a revert), but the
+        // session counters still hold them alongside the compaction usage.
+        insert_db_session_message(
+            &db_path,
+            "msg-compaction",
+            "v2-session",
+            "compaction",
+            1_767_312_000_001,
+            COMPACTION_COMPLETED,
+            true,
+        );
+        create_db_session_aggregate_table(&db_path, "session");
+        insert_db_session_aggregate(
+            &db_path,
+            "session",
+            &SessionAggregateFixture {
+                session_id: "v2-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 0.03,
+                input_tokens: 110,
+                output_tokens: 22,
+                cache_read_tokens: 30,
+                cache_write_tokens: 5,
+                reasoning_tokens: 7,
+            },
+        );
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let session_entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &shared,
+            AgentReportKind::Session,
+        )
+        .unwrap();
+        assert_eq!(session_entries.len(), 1);
+        assert_ne!(
+            session_entries[0].data.message.id.as_deref(),
+            Some("msg-compaction")
+        );
+        assert_eq!(total_tokens(&session_entries), 174);
+        assert!((session_entries[0].cost - 0.03).abs() < 1e-9);
+
+        // Period reports never use cumulative session counters, so the
+        // compaction row is the only usage they can attribute.
+        let daily_entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        assert_eq!(daily_entries.len(), 1);
+        assert_eq!(
+            daily_entries[0].data.message.id.as_deref(),
+            Some("msg-compaction")
+        );
+        assert_eq!(total_tokens(&daily_entries), 162);
     }
 
     #[test]
