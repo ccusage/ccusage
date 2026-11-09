@@ -103,8 +103,12 @@
      :min (first sorted) :samples (count sorted)}))
 
 (defn measurement-from-hyperfine [result]
-  {:max (* 1000 (:max result)) :median (* 1000 (:median result))
-   :min (* 1000 (:min result)) :samples (count (:times result))})
+  (let [{:keys [unit] :as summary} (get-in result [:summary :time_wall_clock])]
+    (when-not (= "second" unit)
+      (fail! (str "Unexpected hyperfine wall-clock unit: " (pr-str unit))
+             {:kind :malformed-hyperfine :name (:name result) :unit unit}))
+    {:max (* 1000 (:max summary)) :median (* 1000 (:median summary))
+     :min (* 1000 (:min summary)) :samples (:count summary)}))
 
 (def safe-arg-pattern #"^[A-Za-z0-9_@%+=:,./-]+$")
 (defn command-text-arg [value]
