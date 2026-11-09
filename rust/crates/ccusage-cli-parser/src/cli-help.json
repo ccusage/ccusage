@@ -250,6 +250,13 @@
 			"description": "Path or comma-separated paths to pi-agent sessions directories"
 		}
 	],
+	"opencode_options": [
+		{
+			"flags": "--include-claude-agent",
+			"description": "Include Claude Agent provider turns that Claude Code transcripts already count",
+			"default": "false"
+		}
+	],
 	"openclaw_options": [
 		{
 			"flags": "--open-claw-path <open-claw-path>",

@@ -79,7 +79,15 @@ ccusage matches OpenCode rows to Claude usage by Claude Code session, not by ind
 - **Daily, weekly, and monthly reports** skip an OpenCode `claude-agent` row when the Claude source counted usage from the same Claude Code session on the row's date, in the Claude source's timezone. Rows still count when the Claude Code log is gone, holds no usage for that day, holds only subagent usage, or falls outside the Claude source's date range.
 - **Session reports** count only the usage of each Claude Code session inside the Claude source's date range. They skip an OpenCode `claude-agent` row when the Claude source counted main-thread usage from the same session in that range and the row's date is in the range too. Resumed and forked transcripts repeat earlier turns, and ccusage keeps one copy of each repeated turn; the session of a dropped copy counts on the day of the kept one, as in daily reports.
 
-Because OpenCode dates a turn by when it started and Claude Code dates each model call, a turn that runs across midnight can be off in the daily family. It is counted twice when Claude has no usage from that session on the day the turn started. With `--until` on that day, the calls Claude logs after midnight are left out, even though OpenCode dates the whole turn on the earlier day. `ccusage opencode` always shows every `claude-agent` row.
+Because OpenCode dates a turn by when it started and Claude Code dates each model call, a turn that runs across midnight can be off in the daily family. It is counted twice when Claude has no usage from that session on the day the turn started. With `--until` on that day, the calls Claude logs after midnight are left out, even though OpenCode dates the whole turn on the earlier day.
+
+`ccusage opencode` skips the rows that `ccusage claude` counts. Every `ccusage opencode` report, session reports included, matches them by Claude Code session and date, because `ccusage claude` counts only usage dated inside its date range. This way the totals of `ccusage claude` and `ccusage opencode` for the same range add up to the matching unified report, such as `ccusage daily`, and tools that read each source separately count these turns once. These turns appear under Claude. Pass `--include-claude-agent` to show every `claude-agent` row in the OpenCode report:
+
+```bash
+ccusage opencode daily --include-claude-agent
+```
+
+Those rows are priced from the `opus` alias, so their cost can differ from the Claude report.
 
 ## Environment Variables
 
