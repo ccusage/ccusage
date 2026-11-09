@@ -16227,9 +16227,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.018,
-			"input": 0.037,
-			"output": 0.11
+			"cache_read": 0.013,
+			"input": 0.027,
+			"output": 0.08
 		},
 		"limit": {
 			"context": 262144
@@ -23222,6 +23222,25 @@
 			"output": 0
 		},
 		"exactOnly": true,
+		"limit": {
+			"context": 262144
+		}
+	},
+	"nace-ai/drex-max-finance": {
+		"cost": {
+			"input": 0.03,
+			"output": 0
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 262144
+		}
+	},
+	"nace-ai/drex-max-v1.1": {
+		"cost": {
+			"input": 0.03,
+			"output": 0
+		},
 		"limit": {
 			"context": 262144
 		}
