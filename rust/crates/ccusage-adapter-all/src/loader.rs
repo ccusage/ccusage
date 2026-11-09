@@ -1389,6 +1389,7 @@ mod tests {
             ("ZCODE_HOME", None),
             ("ANTIGRAVITY_DATA_DIR", None),
             ("CLINE_DATA_DIR", None),
+            ("APPDATA", None),
             (
                 "XDG_CONFIG_HOME",
                 Some(fixture.path("empty-xdg-config").into_os_string()),
