@@ -11,6 +11,7 @@ use crate::{
 };
 
 use super::{
+    aggregate::CodexFileOccurrences,
     parser::visit_codex_session_file,
     paths,
     paths::{
@@ -26,9 +27,12 @@ pub fn load_codex_events_from_directory(
 ) -> Result<Vec<CodexTokenUsageEvent>> {
     let files = collect_codex_usage_files(sessions_dir);
     let replay_plan = CodexReplayPlan::new([(sessions_dir, files.as_slice())], single_thread);
-    let mut events =
-        read_codex_events_from_files(sessions_dir, &files, single_thread, &replay_plan);
-    dedupe_codex_events(&mut events);
+    let events = dedupe_codex_events(read_codex_events_from_files(
+        sessions_dir,
+        &files,
+        single_thread,
+        &replay_plan,
+    ));
     Ok(events)
 }
 
@@ -70,9 +74,12 @@ fn load_codex_events_from_sources_with_files(
         let files = collect_codex_usage_files(&source.dir);
         let replay_plan =
             CodexReplayPlan::new([(source.dir.as_path(), files.as_slice())], single_thread);
-        let mut events =
-            read_codex_events_from_files(&source.dir, &files, single_thread, &replay_plan);
-        dedupe_codex_events(&mut events);
+        let events = dedupe_codex_events(read_codex_events_from_files(
+            &source.dir,
+            &files,
+            single_thread,
+            &replay_plan,
+        ));
         return Ok((events, false));
     }
 
@@ -106,13 +113,16 @@ fn load_codex_events_from_sources_with_files(
             single_thread,
         )
     };
-    let mut events = Vec::new();
+    let mut events_by_file = Vec::new();
     for (group, files) in groups.into_iter().zip(files_by_group) {
-        let mut source_events =
-            read_codex_events_from_files(&group.dir, &files, single_thread, &replay_plan);
-        events.append(&mut source_events);
+        events_by_file.extend(read_codex_events_from_files(
+            &group.dir,
+            &files,
+            single_thread,
+            &replay_plan,
+        ));
     }
-    dedupe_codex_events(&mut events);
+    let events = dedupe_codex_events(events_by_file);
     let detected = if shared.is_some_and(has_date_bounds) {
         detected_before_filter
     } else {
@@ -136,9 +146,12 @@ fn load_codex_events_from_directory_with_shared(
     } else {
         CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
     };
-    let mut events =
-        read_codex_events_from_files(sessions_dir, &files, shared.single_thread, &replay_plan);
-    dedupe_codex_events(&mut events);
+    let events = dedupe_codex_events(read_codex_events_from_files(
+        sessions_dir,
+        &files,
+        shared.single_thread,
+        &replay_plan,
+    ));
     let detected = if has_date_bounds(shared) {
         !all_files.is_empty()
     } else {
@@ -152,11 +165,11 @@ fn read_codex_events_from_files(
     files: &[PathBuf],
     single_thread: bool,
     replay_plan: &CodexReplayPlan,
-) -> Vec<CodexTokenUsageEvent> {
+) -> Vec<Vec<CodexTokenUsageEvent>> {
     if single_thread {
         files
             .iter()
-            .flat_map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
+            .map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
             .collect()
     } else {
         read_codex_session_files_parallel(sessions_dir, files, replay_plan)
@@ -171,7 +184,7 @@ fn read_codex_session_files_parallel(
     sessions_dir: &Path,
     files: &[PathBuf],
     replay_plan: &CodexReplayPlan,
-) -> Vec<CodexTokenUsageEvent> {
+) -> Vec<Vec<CodexTokenUsageEvent>> {
     let worker_count = thread::available_parallelism()
         .map(usize::from)
         .unwrap_or(1)
@@ -179,7 +192,7 @@ fn read_codex_session_files_parallel(
     if worker_count <= 1 {
         return files
             .iter()
-            .flat_map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
+            .map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
             .collect();
     }
 
@@ -208,11 +221,7 @@ fn read_codex_session_files_parallel(
         {
             loaded_files[index] = Some(events);
         }
-        loaded_files
-            .into_iter()
-            .flatten()
-            .flatten()
-            .collect::<Vec<_>>()
+        loaded_files.into_iter().flatten().collect::<Vec<_>>()
     })
 }
 
@@ -232,51 +241,67 @@ fn read_codex_session_file(
     events
 }
 
-fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
+/// Drops usage that one rollout copied from another, keeping file order.
+///
+/// Identical events within one file are distinct requests, so each carries its
+/// ordinal among them in the key; only a copy in another file collides.
+fn dedupe_codex_events(
+    events_by_file: impl IntoIterator<Item = Vec<CodexTokenUsageEvent>>,
+) -> Vec<CodexTokenUsageEvent> {
     let mut indexes = FxHashMap::<_, usize>::default();
-    let mut deduped = Vec::<CodexTokenUsageEvent>::with_capacity(events.len());
-    for event in events.drain(..) {
-        let key = event.response_id.as_deref().map_or_else(
-            || {
-                CodexEventDeduplicationKey::Usage(
-                    CompactString::new(&event.timestamp),
-                    event.model.as_deref().map(CompactString::new),
-                    event.input_tokens,
-                    event.cached_input_tokens,
-                    event.cache_creation_tokens,
-                    event.output_tokens,
-                    event.reasoning_output_tokens,
-                    event.total_tokens,
-                )
-            },
-            |response_id| CodexEventDeduplicationKey::Response(CompactString::new(response_id)),
-        );
-        if let Some(index) = indexes.get(&key).copied() {
-            let retained = &mut deduped[index];
-            retained.service_tier =
-                merge_codex_service_tiers(retained.service_tier, event.service_tier);
-        } else {
-            indexes.insert(key, deduped.len());
-            deduped.push(event);
+    let mut deduped = Vec::<CodexTokenUsageEvent>::new();
+    for events in events_by_file {
+        let mut occurrences = CodexFileOccurrences::default();
+        for event in events {
+            let key = match event.response_id.as_deref() {
+                Some(response_id) => {
+                    CodexEventDeduplicationKey::Response(CompactString::new(response_id))
+                }
+                None => {
+                    let usage = CodexEventUsage(
+                        CompactString::new(&event.timestamp),
+                        event.model.as_deref().map(CompactString::new),
+                        event.input_tokens,
+                        event.cached_input_tokens,
+                        event.cache_creation_tokens,
+                        event.output_tokens,
+                        event.reasoning_output_tokens,
+                        event.total_tokens,
+                    );
+                    let occurrence = occurrences.next(&usage);
+                    CodexEventDeduplicationKey::Usage(usage, occurrence)
+                }
+            };
+            if let Some(index) = indexes.get(&key).copied() {
+                let retained: &mut CodexTokenUsageEvent = &mut deduped[index];
+                retained.service_tier =
+                    merge_codex_service_tiers(retained.service_tier, event.service_tier);
+            } else {
+                indexes.insert(key, deduped.len());
+                deduped.push(event);
+            }
         }
     }
-    *events = deduped;
+    deduped
 }
 
 #[derive(Hash, PartialEq, Eq)]
 enum CodexEventDeduplicationKey {
     Response(CompactString),
-    Usage(
-        CompactString,
-        Option<CompactString>,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-    ),
+    Usage(CodexEventUsage, u32),
 }
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct CodexEventUsage(
+    CompactString,
+    Option<CompactString>,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+);
 
 #[cfg(test)]
 mod tests {
@@ -545,9 +570,10 @@ mod tests {
 
     #[test]
     fn dedupes_matching_codex_usage_events_from_distinct_sessions() {
-        let mut events = vec![codex_event("session-a"), codex_event("session-b")];
-
-        dedupe_codex_events(&mut events);
+        let events = dedupe_codex_events([
+            vec![codex_event("session-a")],
+            vec![codex_event("session-b")],
+        ]);
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].session_id, "session-a");
@@ -561,8 +587,7 @@ mod tests {
         copied.response_id = Some("response-1".to_string());
         copied.model = Some("gpt-reserve".to_string());
 
-        let mut events = vec![first, copied];
-        dedupe_codex_events(&mut events);
+        let events = dedupe_codex_events([vec![first], vec![copied]]);
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].session_id, "session-a");
@@ -574,11 +599,11 @@ mod tests {
         let mut fast = codex_event("session-b");
         fast.service_tier = Some(crate::CodexServiceTier::Fast);
 
-        for mut events in [
-            vec![unclassified.clone(), fast.clone()],
-            vec![fast.clone(), unclassified.clone()],
+        for [first, second] in [
+            [unclassified.clone(), fast.clone()],
+            [fast.clone(), unclassified.clone()],
         ] {
-            dedupe_codex_events(&mut events);
+            let events = dedupe_codex_events([vec![first], vec![second]]);
 
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].service_tier, Some(crate::CodexServiceTier::Fast));
@@ -592,11 +617,11 @@ mod tests {
         let mut fast = codex_event("session-b");
         fast.service_tier = Some(crate::CodexServiceTier::Fast);
 
-        for mut events in [
-            vec![standard.clone(), fast.clone()],
-            vec![fast.clone(), standard.clone()],
+        for [first, second] in [
+            [standard.clone(), fast.clone()],
+            [fast.clone(), standard.clone()],
         ] {
-            dedupe_codex_events(&mut events);
+            let events = dedupe_codex_events([vec![first], vec![second]]);
 
             assert_eq!(events.len(), 1);
             assert_eq!(
