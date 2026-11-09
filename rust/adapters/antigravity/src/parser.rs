@@ -239,7 +239,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Option<Vec<AntigravityUsa
                     trajectory_timestamp,
                     fallback_timestamp,
                     session_id: &session_id,
-                    fallback_identities: &fallback_identities,
+                    fallback_identities: &[],
                 },
             );
         }
@@ -306,7 +306,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Option<Vec<AntigravityUsa
                     trajectory_timestamp,
                     fallback_timestamp,
                     session_id: &session_id,
-                    fallback_identities: &fallback_identities,
+                    fallback_identities: &[],
                 },
             );
         }
@@ -591,14 +591,7 @@ fn parse_generator_metadata(blob: &[u8]) -> ProtoResult<GeneratorMetadata> {
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    // `retry_infos[0]` mirrors the primary `usage` when only a single attempt
-    // was made. Emitting both would double-count unkeyed Gemini turns, so drop
-    // the mirror copy and let the primary carry the step fallback identity.
-    if let (Some(primary), [retry]) = (usage.as_ref(), retry_usages.as_slice())
-        && retry.is_mirror_of(primary)
-    {
-        retry_usages.clear();
-    }
+    drop_primary_mirror(usage.as_ref(), &mut retry_usages);
     let timestamp = field_bytes(&chat_model_fields, 9)
         .map(parse_generation_info_timestamp)
         .transpose()?
@@ -616,6 +609,16 @@ fn parse_generator_metadata(blob: &[u8]) -> ProtoResult<GeneratorMetadata> {
         timestamp,
         step_indices,
     })
+}
+
+// `retry_infos` lists every attempt, including the one already reported as the
+// primary `usage`, so exactly one entry may be its copy.
+fn drop_primary_mirror(primary: Option<&ModelUsage>, retries: &mut Vec<ModelUsage>) {
+    if let Some(primary) = primary
+        && let Some(position) = retries.iter().position(|retry| retry.is_mirror_of(primary))
+    {
+        retries.remove(position);
+    }
 }
 
 fn parse_step_indices(root: &[ProtoField<'_>]) -> Vec<i64> {
@@ -661,11 +664,7 @@ fn parse_step_metadata(blob: &[u8]) -> ProtoResult<StepMetadata> {
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    if let (Some(primary), [retry]) = (usage.as_ref(), retry_usages.as_slice())
-        && retry.is_mirror_of(primary)
-    {
-        retry_usages.clear();
-    }
+    drop_primary_mirror(usage.as_ref(), &mut retry_usages);
     let model_info = field_bytes(&fields, 24)
         .map(parse_model_info)
         .transpose()?

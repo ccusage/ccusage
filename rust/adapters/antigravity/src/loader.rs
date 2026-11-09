@@ -611,6 +611,61 @@ mod tests {
     }
 
     #[test]
+    fn keeps_unkeyed_failed_attempt_when_retries_mirror_primary() {
+        let fixture = Fixture::new();
+        let success = UsageFixture {
+            input_tokens: 100,
+            total_output_tokens: 50,
+            visible_output_tokens: 50,
+            ..UsageFixture::default()
+        };
+        let failed = UsageFixture {
+            input_tokens: 100,
+            total_output_tokens: 10,
+            visible_output_tokens: 10,
+            ..UsageFixture::default()
+        };
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                0,
+                metadata_blob_with_steps(
+                    Some("gemini-3-pro"),
+                    Some(success),
+                    Some((1_778_100_001, 0)),
+                    &[failed, success],
+                    &[1],
+                ),
+            )],
+            &[(
+                1,
+                step_metadata_blob(
+                    Some("gemini-3-pro"),
+                    Some(success),
+                    Some((1_778_100_000, 0)),
+                    &[],
+                    None,
+                ),
+            )],
+            &[],
+        );
+
+        let entries = load_from_fixture(&fixture, true);
+
+        let mut usages = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.data.message.usage.input_tokens,
+                    entry.data.message.usage.output_tokens,
+                )
+            })
+            .collect::<Vec<_>>();
+        usages.sort_unstable();
+        assert_eq!(usages, vec![(100, 10), (100, 50)]);
+    }
+
+    #[test]
     fn attributes_step_and_retry_usage_to_their_token_models() {
         let fixture = Fixture::new();
         let step_usage = UsageFixture {
