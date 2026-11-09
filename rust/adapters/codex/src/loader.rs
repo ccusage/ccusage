@@ -2343,6 +2343,45 @@ mod tests {
     }
 
     #[test]
+    fn keeps_own_usage_a_spawned_child_wrote_before_its_first_usage_record() {
+        let fixture = fs_fixture!({
+            // A Codex release that predates usage records started this child,
+            // and a later one resumed it. The turns before the first record are
+            // still the child's own, so a record must not start a skip.
+            "child.jsonl": [
+                json!({
+                    "timestamp": "2026-09-02T18:09:32.557Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "child",
+                        "source": {"subagent": {"thread_spawn": {"parent_thread_id": "missing-parent"}}},
+                    },
+                })
+                .to_string(),
+                replay_token_count("2026-09-02T18:09:57.815Z", 100),
+                replay_token_count("2026-09-02T18:10:21.182Z", 200),
+                json!({
+                    "timestamp": "2026-09-04T09:02:00.103Z",
+                    "type": "token_usage_record",
+                    "payload": {"response_id": "resp_child", "usage": {"input_tokens": 300, "output_tokens": 1}},
+                })
+                .to_string(),
+                replay_token_count("2026-09-04T09:02:01.966Z", 300),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [
+                ("child".to_string(), 100),
+                ("child".to_string(), 200),
+                ("child".to_string(), 300),
+            ]
+        );
+    }
+
+    #[test]
     fn skips_usage_records_copied_into_a_rewritten_user_fork_burst() {
         let fixture = fs_fixture!({
             // A user fork copies the parent's usage records along with the rest
