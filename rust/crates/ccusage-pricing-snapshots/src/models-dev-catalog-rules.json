@@ -117,6 +117,7 @@
 		"claude-3-haiku-20240307",
 		"claude-fable-5",
 		"claude-fable-5-1",
+		"claude-fable-5-2",
 		"claude-haiku-4-5",
 		"claude-haiku-4-5-20251001",
 		"claude-haiku-5-5",
@@ -712,6 +713,7 @@
 		"wizardlm-2-8x22b"
 	],
 	"authoredModes": {
+		"claude-fable-5-2": ["fast"],
 		"claude-opus-4-8": ["fast"],
 		"claude-opus-5": ["fast"],
 		"claude-opus-5-5": ["fast"],

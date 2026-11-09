@@ -4115,6 +4115,17 @@
 			"context": 1000000
 		}
 	},
+	"anthropic/claude-fable-5.2": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 10,
+			"input": 8,
+			"output": 40
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"anthropic/claude-fable-latest": {
 		"cost": {
 			"cache_read": 0.25,
@@ -7625,6 +7636,18 @@
 			"context": 1000000
 		}
 	},
+	"claude-fable-5-2": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 10,
+			"input": 8,
+			"output": 40
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"claude-fable-5.1@eu": {
 		"cost": {
 			"cache_read": 0.275,
@@ -9288,6 +9311,16 @@
 			"cache_read": 0.005,
 			"input": 0.15,
 			"output": 0.55
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"consensusprotocol/deepseek-v4.1-flash-uncensored": {
+		"cost": {
+			"cache_read": 0.005,
+			"input": 0.18,
+			"output": 0.65
 		},
 		"limit": {
 			"context": 1048576
@@ -11039,17 +11072,6 @@
 			"context": 1000000
 		}
 	},
-	"deepseek-v4-1-flash-uncensored": {
-		"cost": {
-			"cache_read": 0.00825,
-			"input": 0.33,
-			"output": 1.32
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 1000000
-		}
-	},
 	"deepseek-v4-flash": {
 		"cost": {
 			"cache_read": 0.003,
@@ -11287,6 +11309,17 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 1048560
+		}
+	},
+	"deepseek-v4.1-flash-uncensored": {
+		"cost": {
+			"cache_read": 0.005,
+			"input": 0.18,
+			"output": 0.65
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"deepseek-v4.1-flash:1017": {
@@ -16149,9 +16182,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.03,
-			"input": 0.06,
-			"output": 0.18
+			"cache_read": 0.018,
+			"input": 0.037,
+			"output": 0.11
 		},
 		"limit": {
 			"context": 262144
@@ -20383,6 +20416,18 @@
 			"context": 1310720
 		}
 	},
+	"meta/muse-ember": {
+		"cost": {
+			"cache_read": 0.004,
+			"cache_write": 0.125,
+			"input": 0.1,
+			"output": 0.5
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"meta/muse-glimmer-30b": {
 		"cost": {
 			"cache_read": 0.04232,
@@ -24323,7 +24368,7 @@
 		"cost": {
 			"cache_read": 0.02,
 			"input": 0.15,
-			"output": 0.5
+			"output": 0.47
 		},
 		"limit": {
 			"context": 1048576
@@ -28536,9 +28581,9 @@
 	},
 	"qwen/qwen3.5-27b:thinking": {
 		"cost": {
-			"cache_read": 0.135,
-			"input": 0.25,
-			"output": 2
+			"cache_read": 0.02,
+			"input": 0.2,
+			"output": 1.75
 		},
 		"limit": {
 			"context": 260096
@@ -36214,8 +36259,8 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.18,
-			"input": 0.1824,
+			"cache_read": 0.16,
+			"input": 0.1643,
 			"output": 9.3388
 		},
 		"exactOnly": true,
@@ -36342,7 +36387,7 @@
 	},
 	"~perplexity/pplx-decider-latest": {
 		"cost": {
-			"input": 0.019,
+			"input": 0.02,
 			"output": 0
 		},
 		"exactOnly": true,
