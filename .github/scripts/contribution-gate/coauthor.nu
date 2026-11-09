@@ -33,7 +33,9 @@ def find-implementation-pull-request [repo: string, branch: string, marker: stri
     for attempt in 0..($max_attempts - 1) {
         let pull_requests = implementation-pull-requests $repo $branch $marker
         if ($pull_requests | length) > 1 {
-            error make {msg: 'Found multiple implementation pull requests for this issue-gate run'}
+            error make {
+                msg: 'Found multiple implementation pull requests for this issue-gate run'
+            }
         }
         if ($pull_requests | length) == 1 {
             return ($pull_requests | get 0)
@@ -42,7 +44,9 @@ def find-implementation-pull-request [repo: string, branch: string, marker: stri
             sleep 5sec
         }
     }
-    error make {msg: 'Could not find the implementation pull request for this issue-gate run after retrying the GitHub API'}
+    error make {
+        msg: 'Could not find the implementation pull request for this issue-gate run after retrying the GitHub API'
+    }
 }
 
 def commit-attributions [repo: string, sha: string]: nothing -> list<record> {
@@ -116,7 +120,11 @@ def validate-commit [
         $expected_email
         $issue_author_id
     )
-    {sha: $commit.sha, trailer_ok: $validation.trailer_ok, author_ok: $validation.author_ok}
+    {
+        sha: $commit.sha
+        trailer_ok: $validation.trailer_ok
+        author_ok: $validation.author_ok
+    }
 }
 
 export def verify-coauthor []: nothing -> nothing {
@@ -129,7 +137,9 @@ export def verify-coauthor []: nothing -> nothing {
     let pull_request = find-implementation-pull-request $repo $branch $marker
     let commits = pull-request-commits $repo $pull_request.number
     if ($commits | is-empty) {
-        error make {msg: $"Implementation PR #($pull_request.number) has no commits to verify"}
+        error make {
+            msg: $"Implementation PR #($pull_request.number) has no commits to verify"
+        }
     }
     let validation = $commits | each {|commit|
         validate-commit $repo $commit $expected_trailer $expected_email $issue_author_id
@@ -139,7 +149,9 @@ export def verify-coauthor []: nothing -> nothing {
         let summary = $invalid
         | each {|result| $"($result.sha): trailer_ok=($result.trailer_ok), author_ok=($result.author_ok)"}
         | str join "\n"
-        error make {msg: $"Issue-author co-author verification failed for PR #($pull_request.number):\n($summary)"}
+        error make {
+            msg: $"Issue-author co-author verification failed for PR #($pull_request.number):\n($summary)"
+        }
     }
     print $"Verified issue-author attribution on PR #($pull_request.number) across ($commits | length) commits."
 }

@@ -188,7 +188,13 @@ export def upsert-comment [
             create-comment $repo $number $body $require_open_issue
         }
         $comment_id => {
-            patch-comment $repo $number $comment_id $body $require_open_issue
+            (patch-comment
+                $repo
+                $number
+                $comment_id
+                $body
+                $require_open_issue
+            )
         }
     }
 }

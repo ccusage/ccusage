@@ -37,25 +37,30 @@
       (when (seq samples)
         {:peak-rss-bytes (nth (vec (sort samples)) (quot (count samples) 2)) :samples (count samples)}))))
 
-(defn read-hyperfine-results [export-path expected]
+(defn read-hyperfine-results [export-path names]
   (let [data (try (json/parse-string (slurp export-path) true)
                   (catch Exception e (fail! (str "Malformed hyperfine output: " (ex-message e))
                                              {:kind :malformed-hyperfine :path (str export-path)})))
-        results (:results data)]
-    (when-not (= expected (count results))
-      (fail! (format "hyperfine reported %d results, expected %d" (count results) expected)
-             {:kind :malformed-hyperfine :expected expected :actual (count results)}))
-    results))
+        _ (when-not (= 2 (:schema_version data))
+            (fail! (str "Unsupported hyperfine JSON schema version: " (pr-str (:schema_version data)))
+                   {:kind :malformed-hyperfine :path (str export-path)}))
+        by-name (group-by :name (:results data))]
+    (mapv (fn [name]
+            (let [matches (get by-name name)]
+              (when-not (= 1 (count matches))
+                (fail! (format "hyperfine reported %d results named %s, expected 1" (count matches) name)
+                       {:kind :malformed-hyperfine :name name :actual (count matches)}))
+              (first matches)))
+          names)))
 
-(def hyperfine-common ["--shell" "none" "--style" "basic" "--output" "pipe" "--sort" "command"])
 (defn run-hyperfine [commands names runs warmup label]
   (let [dir (temp-dir "ccusage-hyperfine.") export (path dir "hyperfine.json")
         argv (vec (concat ["hyperfine" "--shell" "none" "--warmup" (str warmup) "--runs" (str runs)
-                           "--export-json" export "--style" "basic" "--output" "pipe" "--sort" "command"]
+                           "--export-json" export "--style" "basic" "--output" "pipe"]
                           (mapcat #(vector "--command-name" %) names) (map :text commands)))]
     (try
       (run-checked argv {} (str "hyperfine failed for " label))
-      (mapv measurement-from-hyperfine (read-hyperfine-results export (count commands)))
+      (mapv measurement-from-hyperfine (read-hyperfine-results export names))
       (finally (fs/delete-tree dir)))))
 
 (defn compare-command [command options]
