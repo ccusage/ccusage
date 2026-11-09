@@ -9,6 +9,9 @@ expression: "report_json(&result.rows, kind)"
       "cacheCreationTokens": 10,
       "cacheReadTokens": 5,
       "inputTokens": 100,
+      "metadata": {
+        "lastActivity": "2026-10-01T12:00:00.000Z"
+      },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 10,
@@ -33,6 +36,9 @@ expression: "report_json(&result.rows, kind)"
       "cacheCreationTokens": 20,
       "cacheReadTokens": 45,
       "inputTokens": 155,
+      "metadata": {
+        "lastActivity": "2026-11-01T00:01:00.000Z"
+      },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 20,

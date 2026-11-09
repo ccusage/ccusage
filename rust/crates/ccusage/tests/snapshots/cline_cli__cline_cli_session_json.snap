@@ -7,7 +7,9 @@ expression: report
     {
       "cacheCreationTokens": 20,
       "cacheReadTokens": 45,
+      "firstActivity": "2026-11-01T00:01:00.000Z",
       "inputTokens": 155,
+      "lastActivity": "2026-11-01T00:01:00.000Z",
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 20,
@@ -23,6 +25,7 @@ expression: report
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 31,
+      "projectPath": "Cline",
       "sessionId": "cli:session-a",
       "totalCost": 0.0002,
       "totalTokens": 251
@@ -30,7 +33,9 @@ expression: report
     {
       "cacheCreationTokens": 10,
       "cacheReadTokens": 5,
+      "firstActivity": "2026-10-01T12:00:00.000Z",
       "inputTokens": 100,
+      "lastActivity": "2026-10-01T12:00:00.000Z",
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 10,
@@ -46,6 +51,7 @@ expression: report
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 20,
+      "projectPath": "Cline",
       "sessionId": "task:session-a",
       "totalCost": 0.001,
       "totalTokens": 135

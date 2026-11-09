@@ -7,7 +7,9 @@ expression: "report_from_rows(&sessions, AgentReportKind::Session)"
     {
       "cacheCreationTokens": 5,
       "cacheReadTokens": 5,
+      "firstActivity": "2026-11-01T12:00:00.000Z",
       "inputTokens": 40,
+      "lastActivity": "2026-11-01T12:00:00.000Z",
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 5,
@@ -23,6 +25,7 @@ expression: "report_from_rows(&sessions, AgentReportKind::Session)"
         "claude-opus-4-20250514"
       ],
       "outputTokens": 12,
+      "projectPath": "Cline",
       "sessionId": "cli:task-a",
       "totalCost": 0.001,
       "totalTokens": 62
@@ -30,7 +33,9 @@ expression: "report_from_rows(&sessions, AgentReportKind::Session)"
     {
       "cacheCreationTokens": 15,
       "cacheReadTokens": 10,
+      "firstActivity": "2026-10-31T12:00:00.000Z",
       "inputTokens": 100,
+      "lastActivity": "2026-10-31T12:00:00.000Z",
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 15,
@@ -46,6 +51,7 @@ expression: "report_from_rows(&sessions, AgentReportKind::Session)"
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 25,
+      "projectPath": "Cline",
       "sessionId": "task:task-a",
       "totalCost": 0.002,
       "totalTokens": 150
@@ -53,7 +59,9 @@ expression: "report_from_rows(&sessions, AgentReportKind::Session)"
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
+      "firstActivity": "2026-11-02T12:00:00.000Z",
       "inputTokens": 12,
+      "lastActivity": "2026-11-02T12:00:00.000Z",
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -69,6 +77,7 @@ expression: "report_from_rows(&sessions, AgentReportKind::Session)"
         "vendor/custom-model"
       ],
       "outputTokens": 3,
+      "projectPath": "Cline",
       "sessionId": "task:task-b",
       "totalCost": 0.0,
       "totalTokens": 15

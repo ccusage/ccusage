@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
+
 use serde_json::{Value, json};
 
 use crate::{
-    BucketKind, LoadedEntry, Result, UsageSummary,
+    BucketKind, LoadedEntry, Result, SessionAccumulator, UsageSummary,
     cli::{AgentReportKind, WeekDay},
     summarize_by_key, summarize_summaries_by_bucket, totals_json,
 };
@@ -9,7 +11,7 @@ use crate::{
 pub fn report_from_rows(rows: &[UsageSummary], kind: AgentReportKind) -> Value {
     let rows_json = rows
         .iter()
-        .map(|row| ccusage_core::agent_summary_json(row, kind, false))
+        .map(|row| ccusage_core::agent_summary_json(row, kind, kind == AgentReportKind::Session))
         .collect::<Vec<_>>();
     json!({
         rows_key(kind): rows_json,
@@ -35,17 +37,19 @@ pub fn summarize_entries(
                 WeekDay::Sunday,
             ))
         }
-        AgentReportKind::Session => summarize_by_key(
-            entries,
-            |entry| entry.session_id.to_string(),
-            |session_id| (session_id.to_string(), None),
-        )
-        .map(|mut rows| {
-            for row in &mut rows {
-                row.session_id = row.date.take();
+        AgentReportKind::Session => {
+            let mut groups = BTreeMap::<String, SessionAccumulator>::new();
+            for entry in entries {
+                groups
+                    .entry(entry.session_id.to_string())
+                    .or_default()
+                    .add_entry(entry);
             }
-            rows
-        }),
+            groups
+                .into_values()
+                .map(SessionAccumulator::into_summary)
+                .collect()
+        }
         AgentReportKind::Weekly => {
             let daily = summarize_entries(entries, AgentReportKind::Daily)?;
             Ok(summarize_summaries_by_bucket(
@@ -104,6 +108,44 @@ mod tests {
             "cline_session_json_report",
             report_from_rows(&sessions, AgentReportKind::Session)
         );
+    }
+
+    #[test]
+    fn session_rows_carry_activity_bounds_and_project_path() {
+        let usage = TokenUsageRaw {
+            input_tokens: 10,
+            output_tokens: 2,
+            ..TokenUsageRaw::default()
+        };
+        let entries = [
+            entry(
+                "task:task-a",
+                "2026-11-01T12:00:00Z",
+                "claude-sonnet-4-20250514",
+                usage,
+                0.001,
+                Some(0.001),
+                None,
+            ),
+            entry(
+                "task:task-a",
+                "2026-10-31T09:30:00Z",
+                "claude-sonnet-4-20250514",
+                usage,
+                0.001,
+                Some(0.001),
+                None,
+            ),
+        ];
+
+        let sessions = summarize_entries(&entries, AgentReportKind::Session).unwrap();
+        let report = report_from_rows(&sessions, AgentReportKind::Session);
+        let session = &report["sessions"][0];
+
+        assert_eq!(session["sessionId"], "task:task-a");
+        assert_eq!(session["firstActivity"], "2026-10-31T09:30:00.000Z");
+        assert_eq!(session["lastActivity"], "2026-11-01T12:00:00.000Z");
+        assert_eq!(session["projectPath"], "Cline");
     }
 
     fn snapshot_entries() -> Vec<LoadedEntry> {
