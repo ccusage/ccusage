@@ -34,7 +34,10 @@
     </a>
     &nbsp;&nbsp;&nbsp;&nbsp;
     <a href="https://blacksmith.sh">
-        <img src="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/blacksmith.png" alt="CI powered by Blacksmith" width="320">
+        <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/blacksmith-logo-dark.svg">
+            <img src="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/blacksmith-logo.svg" alt="CI powered by Blacksmith" width="320">
+        </picture>
     </a>
 </p>
 
