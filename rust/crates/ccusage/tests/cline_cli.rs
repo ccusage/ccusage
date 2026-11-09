@@ -18,6 +18,25 @@ fn snapshots_cline_focused_json_and_table_reports_for_all_kinds() {
     }
 }
 
+#[test]
+fn table_reports_render_recorded_costs() {
+    let fixture = fs_fixture!({
+        "data/sessions/costly/costly.messages.json": r#"{"version":1,"sessionId":"costly","messages":[{"role":"assistant","ts":1793491260000,"id":"costly-1","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":1000,"outputTokens":200,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":1.25}},{"role":"assistant","ts":1793491320000,"id":"costly-2","modelInfo":{"id":"claude-sonnet-4-20250514","provider":"anthropic"},"metrics":{"inputTokens":500,"outputTokens":100,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":2.5}}]}"#,
+    });
+
+    for kind in ["daily", "weekly", "monthly", "session"] {
+        let table_output = run_cli(&fixture, kind, false);
+        let total_row = table_output
+            .lines()
+            .find(|line| line.starts_with("│ Total "))
+            .unwrap_or_else(|| panic!("{kind} table should have a Total row:\n{table_output}"));
+        assert!(
+            total_row.contains("$3.75"),
+            "{kind} Total row should render the recorded cost: {total_row}"
+        );
+    }
+}
+
 fn assert_only_accepted_requests_are_reported(report: &serde_json::Value, kind: &str) {
     let totals = &report["totals"];
     for (key, expected) in [
