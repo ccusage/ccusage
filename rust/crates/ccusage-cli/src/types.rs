@@ -180,6 +180,8 @@ pub struct AgentCommandArgs {
     pub pi_path: Option<String>,
     pub open_claw_path: Option<String>,
     pub codex_speed: CodexSpeed,
+    /// Keeps OpenCode `claude-agent` turns that the Claude source also counts.
+    pub include_claude_agent: bool,
     pub start_of_week: WeekDay,
     /// Per-source options of a unified report, keyed by agent name. A source
     /// without an entry loads with `shared`.

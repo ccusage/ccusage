@@ -66,7 +66,10 @@ Project history (Japanese): [how ccusage began](https://ryoppippi.com/blog/2025-
       </picture>
     </a>
     <a href="https://blacksmith.sh" target="_blank" style="display: block;">
-      <img src="/blacksmith.png" alt="CI powered by Blacksmith" style="display: block; width: min(320px, 80vw); height: auto;">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/blacksmith-logo-dark.svg">
+        <img src="/blacksmith-logo.svg" alt="CI powered by Blacksmith" style="display: block; width: min(320px, 80vw); height: auto;">
+      </picture>
     </a>
   </div>
 
