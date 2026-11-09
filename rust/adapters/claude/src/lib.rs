@@ -1045,13 +1045,14 @@ mod tests {
 
     use super::{
         deserialize_usage_line, extract_session_parts, has_unsupported_null_field,
-        paths::is_project_path_segment, push_deduped_entry, read_usage_file, usage_files,
+        load_deduped_entries, paths::is_project_path_segment, push_deduped_entry, read_usage_file,
+        usage_files,
     };
     use crate::{
         LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-        cli::CostMode,
+        cli::{CostMode, SharedArgs},
     };
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     #[test]
     fn limits_usage_file_discovery_to_requested_project() {
@@ -1504,6 +1505,54 @@ mod tests {
             ]
         );
         assert_eq!(deduped[0].session_id.as_ref(), "session-b");
+    }
+
+    #[test]
+    fn attributes_a_cross_session_copy_to_the_survivor_day() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+            "projects/project-a/session-b.jsonl": [
+                r#"{"timestamp":"2026-01-01T10:00:00.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+                r#"{"timestamp":"2026-01-03T10:00:00.000Z","sessionId":"session-b","requestId":"req-own","message":{"id":"msg-own","model":"claude-sonnet-4-20250514","usage":{"input_tokens":7,"output_tokens":1}}}"#,
+            ]
+            .join("\n"),
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            single_thread: true,
+            json: true,
+            ..SharedArgs::default()
+        };
+        let deduped = load_deduped_entries(&shared, None).unwrap();
+        let sorted_days = |is_counted: &dyn Fn(&LoadedEntry) -> bool| {
+            let mut days: Vec<_> = deduped
+                .main_thread_session_days(is_counted)
+                .into_iter()
+                .map(|(session, date)| (session.to_string(), date))
+                .collect();
+            days.sort();
+            days
+        };
+        let day = |session: &str, date: &str| (session.to_string(), date.to_string());
+
+        assert_eq!(deduped.entries.len(), 2);
+        assert_eq!(
+            sorted_days(&|_| true),
+            [
+                day("session-a", "2026-01-02"),
+                day("session-b", "2026-01-02"),
+                day("session-b", "2026-01-03"),
+            ]
+        );
+        assert_eq!(
+            sorted_days(&|entry| entry.date != "2026-01-02"),
+            [day("session-b", "2026-01-03")]
+        );
     }
 
     #[test]
