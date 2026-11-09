@@ -426,7 +426,9 @@ fn load_entries_from_database(
                         let Ok(message_type) = statement.read::<String, _>(2) else {
                             continue;
                         };
-                        if message_type != "assistant" {
+                        // A compaction is a model request of its own, billed apart
+                        // from assistant steps, so its usage counts too.
+                        if !matches!(message_type.as_str(), "assistant" | "compaction") {
                             continue;
                         }
                         let Ok(data) = statement.read::<String, _>(3) else {
@@ -619,7 +621,7 @@ fn table_exists(connection: &sqlite::Connection, table: &str) -> bool {
 /// Fork sessions whose leading `seq` range is a copy of the parent history.
 ///
 /// Returns the largest `seq` that is still copied history for each fork
-/// session, so the v2 row scan can drop inherited assistant usage while
+/// session, so the v2 row scan can drop inherited usage while
 /// keeping what the fork generated itself. `session_v2` carries the fork
 /// link (`fork_session_id`) plus the boundary message; `session_message`
 /// carries the `seq` the fork kept when it copied the parent's rows.
@@ -1554,6 +1556,130 @@ mod tests {
         assert_eq!(entries[0].session_id.as_ref(), "legacy-session");
         assert_eq!(entries[0].data.message.usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
+    }
+
+    const COMPACTION_COMPLETED: &str = r#"{"status":"completed","reason":"auto","summary":"s","model":{"id":"gpt-test","providerID":"openai"},"time":{"created":1767312000000},"tokens":{"input":100,"output":20,"reasoning":7,"cache":{"read":30,"write":5}},"cost":0.02}"#;
+
+    fn insert_assistant_and_compaction(db_path: &Path, session_id: &str, prefix: &str) {
+        insert_db_session_message(
+            db_path,
+            &format!("{prefix}-assistant"),
+            session_id,
+            "assistant",
+            1_767_312_000_000,
+            assistant_payload(10, 2, 0.01).as_str(),
+            true,
+        );
+        set_db_session_message_seq(db_path, &format!("{prefix}-assistant"), 0);
+        insert_db_session_message(
+            db_path,
+            &format!("{prefix}-compaction"),
+            session_id,
+            "compaction",
+            1_767_312_000_001,
+            COMPACTION_COMPLETED,
+            true,
+        );
+        set_db_session_message_seq(db_path, &format!("{prefix}-compaction"), 1);
+    }
+
+    fn total_tokens(entries: &[crate::LoadedEntry]) -> u64 {
+        entries
+            .iter()
+            .map(|entry| {
+                let usage = &entry.data.message.usage;
+                usage.input_tokens
+                    + usage.output_tokens
+                    + usage.cache_creation_input_tokens
+                    + usage.cache_read_input_tokens
+                    + entry.extra_total_tokens
+            })
+            .sum()
+    }
+
+    #[test]
+    fn counts_completed_v2_compaction_usage_alongside_assistant_usage() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_assistant_and_compaction(&db_path, "v2-session", "msg");
+        // A running compaction carries no usage and a failed one has no model,
+        // so neither can be attributed.
+        insert_db_session_message(
+            &db_path,
+            "msg-compaction-running",
+            "v2-session",
+            "compaction",
+            1_767_312_000_002,
+            r#"{"status":"running","reason":"auto","summary":"","time":{"created":1767312000000}}"#,
+            true,
+        );
+        insert_db_session_message(
+            &db_path,
+            "msg-compaction-failed",
+            "v2-session",
+            "compaction",
+            1_767_312_000_003,
+            r#"{"status":"failed","reason":"auto","error":{"type":"unknown","message":"x"},"time":{"created":1767312000000},"tokens":{"input":50,"output":0},"cost":0.5}"#,
+            true,
+        );
+
+        let entries = load_entries_from_directory(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap();
+
+        let mut ids: Vec<_> = entries
+            .iter()
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["msg-assistant", "msg-compaction"]);
+        assert_eq!(total_tokens(&entries), 174);
+        let cost: f64 = entries.iter().map(|entry| entry.cost).sum();
+        assert!((cost - 0.03).abs() < 1e-9);
+    }
+
+    #[test]
+    fn excludes_copied_v2_compaction_rows_from_forks() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_assistant_and_compaction(&db_path, "parent", "parent");
+        insert_assistant_and_compaction(&db_path, "fork", "fork-copy");
+        insert_db_session_message(
+            &db_path,
+            "fork-own",
+            "fork",
+            "assistant",
+            1_767_312_000_002,
+            assistant_payload(3, 1, 0.01).as_str(),
+            true,
+        );
+        set_db_session_message_seq(&db_path, "fork-own", 2);
+        create_db_session_aggregate_table_with_fork_columns(&db_path, "session_v2", true);
+        insert_db_session_fork(
+            &db_path,
+            "session_v2",
+            "fork",
+            "parent",
+            r#"{"type":"through","messageID":"parent-compaction"}"#,
+        );
+
+        let entries = fork_entries(&db_path);
+
+        assert_eq!(total_tokens(&entries), 178);
+        let fork_ids: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "fork")
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        assert_eq!(fork_ids, vec!["fork-own"]);
     }
 
     fn assistant_payload(input: u64, output: u64, cost: f64) -> String {
