@@ -47,6 +47,7 @@ impl RootAllOptions {
             pi_path: None,
             open_claw_path: None,
             codex_speed: CodexSpeed::Auto,
+            include_claude_agent: false,
             start_of_week: WeekDay::Monday,
             sources: BTreeMap::new(),
         }
@@ -265,13 +266,7 @@ fn parse_command(
         }
         "claude" => parse_claude_command(parser, shared, config, default_session_duration_hours),
         "codex" => parse_codex_command(parser, shared, config),
-        "opencode" => parse_basic_agent_command(
-            parser,
-            shared,
-            "opencode",
-            OPENCODE_AGENT_REPORTS,
-            Command::OpenCode,
-        ),
+        "opencode" => parse_opencode_command(parser, shared),
         "amp" => {
             parse_basic_agent_command(parser, shared, "amp", STANDARD_AGENT_REPORTS, Command::Amp)
         }
@@ -451,6 +446,7 @@ fn parse_all_command(
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
+        include_claude_agent: false,
         start_of_week,
         sources: BTreeMap::new(),
     }))
@@ -497,6 +493,7 @@ fn parse_top_level_session_command(
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
+        include_claude_agent: false,
         start_of_week: WeekDay::Monday,
         sources: BTreeMap::new(),
     }))
@@ -631,6 +628,27 @@ fn parse_basic_agent_command(
     Ok(command(agent_command_args(shared, kind)))
 }
 
+fn parse_opencode_command(
+    parser: &mut ArgParser,
+    mut shared: SharedArgs,
+) -> Result<Command, String> {
+    let kind = parse_agent_report_kind(parser, "opencode", OPENCODE_AGENT_REPORTS)?;
+    let mut include_claude_agent = false;
+    while parser.peek().is_some() {
+        if parse_shared_arg_for_command(parser, &mut shared)? {
+            continue;
+        }
+        match parser.next_flag()?.as_str() {
+            "--include-claude-agent" => include_claude_agent = true,
+            flag => return Err(format!("Unknown opencode option '{flag}'")),
+        }
+    }
+    Ok(Command::OpenCode(AgentCommandArgs {
+        include_claude_agent,
+        ..agent_command_args(shared, kind)
+    }))
+}
+
 fn parse_codex_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
@@ -661,6 +679,7 @@ fn parse_codex_command(
         pi_path: None,
         open_claw_path: None,
         codex_speed,
+        include_claude_agent: false,
         start_of_week: WeekDay::Monday,
         sources: BTreeMap::new(),
     }))
@@ -693,6 +712,7 @@ fn parse_pi_command(
         pi_path,
         open_claw_path: None,
         codex_speed,
+        include_claude_agent: false,
         start_of_week: WeekDay::Monday,
         sources: BTreeMap::new(),
     }))
@@ -725,6 +745,7 @@ fn parse_openclaw_command(
         pi_path: None,
         open_claw_path,
         codex_speed,
+        include_claude_agent: false,
         start_of_week: WeekDay::Monday,
         sources: BTreeMap::new(),
     }))
@@ -758,6 +779,7 @@ fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommand
         pi_path: None,
         open_claw_path: None,
         codex_speed: CodexSpeed::Auto,
+        include_claude_agent: false,
         start_of_week: WeekDay::Monday,
         sources: BTreeMap::new(),
     }

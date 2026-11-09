@@ -17,6 +17,7 @@ pub enum CodexServiceTier {
     Standard,
     Fast,
     Flex,
+    Ultrafast,
 }
 
 pub const fn merge_codex_service_tiers(
@@ -29,6 +30,9 @@ pub const fn merge_codex_service_tiers(
     match (current, incoming) {
         (Some(CodexServiceTier::Standard), _) | (_, Some(CodexServiceTier::Standard)) => {
             Some(CodexServiceTier::Standard)
+        }
+        (Some(CodexServiceTier::Ultrafast), _) | (_, Some(CodexServiceTier::Ultrafast)) => {
+            Some(CodexServiceTier::Ultrafast)
         }
         (Some(CodexServiceTier::Fast), _) | (_, Some(CodexServiceTier::Fast)) => {
             Some(CodexServiceTier::Fast)
@@ -87,6 +91,7 @@ pub struct CodexTimestampedUsage {
     pub(crate) recorded_standard_usage: CodexUsageBucket,
     pub(crate) recorded_fast_usage: CodexUsageBucket,
     pub(crate) recorded_flex_usage: CodexUsageBucket,
+    pub(crate) recorded_ultrafast_usage: CodexUsageBucket,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -109,6 +114,7 @@ pub struct CodexModelUsage {
     pub recorded_standard_usage: CodexUsageBucket,
     pub recorded_fast_usage: CodexUsageBucket,
     pub recorded_flex_usage: CodexUsageBucket,
+    pub recorded_ultrafast_usage: CodexUsageBucket,
     /// Exact event timestamps keep time-dependent pricing available after aggregation.
     pub timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub is_fallback: bool,
@@ -541,6 +547,27 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merged_ultrafast_copies_beat_fast_and_flex_but_not_standard() {
+        use CodexServiceTier::{Fast, Flex, Standard, Ultrafast};
+
+        for (other, expected) in [
+            (None, Ultrafast),
+            (Some(Fast), Ultrafast),
+            (Some(Flex), Ultrafast),
+            (Some(Standard), Standard),
+        ] {
+            assert_eq!(
+                merge_codex_service_tiers(Some(Ultrafast), other),
+                Some(expected)
+            );
+            assert_eq!(
+                merge_codex_service_tiers(other, Some(Ultrafast)),
+                Some(expected)
+            );
+        }
+    }
 
     #[test]
     fn derives_total_tokens_without_double_counting_reasoning() {

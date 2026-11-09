@@ -61,6 +61,10 @@ in
           # Share the same deps-only cache key, then add static target settings.
           staticDepsOnlyArgs = config.packages.ccusage.passthru.depsOnlyArgs // {
             cargoExtraArgs = "-p ccusage --bin ccusage --target ${linuxStaticTarget}";
+            # Clippy and hawk use the host layer, so this target only needs the
+            # build output; Crane's default `cargo check` pass would add a
+            # second, unused compile of every dependency.
+            buildPhaseCargoCommand = "cargoWithProfile build -p ccusage --bin ccusage --target ${linuxStaticTarget}";
             nativeBuildInputs = with staticPkgs; [
               mold
               pkg-config

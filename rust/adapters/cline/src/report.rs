@@ -166,7 +166,7 @@ mod tests {
     ) -> LoadedEntry {
         let timestamp = crate::parse_ts_timestamp(timestamp).expect("valid snapshot timestamp");
         let timestamp_text = crate::format_rfc3339_millis(timestamp);
-        let date = crate::format_date(timestamp, None);
+        let date = crate::format_date_tz(timestamp, None);
         LoadedEntry {
             data: UsageEntry {
                 session_id: Some(session_id.to_string()),

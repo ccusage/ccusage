@@ -27,6 +27,7 @@ let
       || lib.hasSuffix "/cli-commands.json" path
       || lib.hasSuffix "/fast-multiplier-overrides.json" path
       || lib.hasSuffix "/flex-multiplier-overrides.json" path
+      || lib.hasSuffix "/ultrafast-multiplier-overrides.json" path
       || lib.hasSuffix "/models-dev-pricing.json" path
       || lib.hasSuffix "/models-dev-catalog-rules.json" path
       || lib.hasSuffix "/codex-auto-review-fallbacks.json" path;
@@ -45,7 +46,7 @@ let
     strictDeps = true;
     doCheck = false;
     cargoExtraArgs = "-p ccusage --bin ccusage";
-    CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}/model_prices_and_context_window.json";
+    CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}";
     CCUSAGE_VERSION = version;
     RUSTFLAGS =
       # Splitting the runtime into per-adapter crates makes each crate

@@ -11,6 +11,8 @@
 		"claude_weekly_options": ["shared_claude_options", "weekly_options", "last_options"],
 		"codex_period_options": ["codex_options", "last_options"],
 		"codex_session_options": ["codex_options", "session_options"],
+		"opencode_period_options": ["agent_options", "opencode_options", "last_options"],
+		"opencode_session_options": ["agent_options", "opencode_options"],
 		"openclaw_combined_options": ["agent_options", "openclaw_options"],
 		"openclaw_period_options": ["agent_options", "openclaw_options", "last_options"],
 		"pi_combined_options": ["agent_options", "pi_options"],
@@ -289,25 +291,25 @@
 			"path": ["opencode", "daily"],
 			"description": "Show OpenCode token usage grouped by day",
 			"usage": "ccusage opencode daily <OPTIONS>",
-			"options": "agent_period_options"
+			"options": "opencode_period_options"
 		},
 		{
 			"path": ["opencode", "weekly"],
 			"description": "Show OpenCode token usage grouped by week",
 			"usage": "ccusage opencode weekly <OPTIONS>",
-			"options": "agent_period_options"
+			"options": "opencode_period_options"
 		},
 		{
 			"path": ["opencode", "monthly"],
 			"description": "Show OpenCode token usage grouped by month",
 			"usage": "ccusage opencode monthly <OPTIONS>",
-			"options": "agent_period_options"
+			"options": "opencode_period_options"
 		},
 		{
 			"path": ["opencode", "session"],
 			"description": "Show OpenCode token usage grouped by session",
 			"usage": "ccusage opencode session <OPTIONS>",
-			"options": "agent_options"
+			"options": "opencode_session_options"
 		},
 		{
 			"path": ["amp"],

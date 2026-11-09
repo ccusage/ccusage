@@ -20,8 +20,9 @@ use crate::{
 };
 
 use super::{
-    DailySummaries, DedupeIndexVec, advisor_usages_from_line, chunk_file_indexes_by_size,
-    deserialize_usage_line, is_anthropic_message_id, is_semver_prefix,
+    DailySummaries, DedupeIndexVec, SessionDays, advisor_usages_from_line,
+    chunk_file_indexes_by_size, deserialize_usage_line, is_anthropic_message_id, is_semver_prefix,
+    main_thread_session_days,
     paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
     sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
@@ -31,6 +32,7 @@ pub(super) fn load_daily_summaries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,
+    session_days: impl FnOnce(&DedupedDailyEntries) -> SessionDays,
 ) -> Result<DailySummaries> {
     let paths = claude_paths()?;
     let SinceFiles { kept, pruned } =
@@ -39,6 +41,7 @@ pub(super) fn load_daily_summaries_inner(
         return Ok(DailySummaries {
             summaries: Vec::new(),
             detected: false,
+            session_days: SessionDays::default(),
         });
     }
 
@@ -52,14 +55,10 @@ pub(super) fn load_daily_summaries_inner(
         ))
     };
     let tz = parse_tz(shared.timezone.as_deref());
-    let summaries = summarize_daily_files(
-        &kept,
-        shared,
-        project_filter,
-        group_by_project,
-        tz.as_ref(),
-        pricing.as_ref(),
-    );
+    let deduped =
+        load_deduped_daily_entries(&kept, shared, project_filter, tz.as_ref(), pricing.as_ref());
+    let session_days = session_days(&deduped);
+    let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
     // exactly as an unbounded load would. The first file with an entry settles it.
     let detected = !summaries.is_empty()
@@ -72,19 +71,51 @@ pub(super) fn load_daily_summaries_inner(
     Ok(DailySummaries {
         summaries,
         detected,
+        session_days,
     })
 }
 
-fn summarize_daily_files(
+/// Deduplicated daily entries plus the sessions of main-thread copies dedup
+/// merged into them from other sessions, such as a resumed or forked
+/// transcript repeating a turn, as `(survivor index, copy session)` pairs.
+pub(super) struct DedupedDailyEntries {
+    entries: Vec<DailyLoadedEntry>,
+    copies: Vec<(usize, Arc<str>)>,
+}
+
+/// Counts a copy's session on the day its survivor is counted: a tool wrapping
+/// Claude Code can link its row to the session it ran in even when dedup kept
+/// another session's copy.
+pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
+    main_thread_session_days(
+        deduped
+            .entries
+            .iter()
+            .map(|entry| (&entry.session_id, entry))
+            .chain(
+                deduped
+                    .copies
+                    .iter()
+                    .map(|(index, session_id)| (session_id, &deduped.entries[*index])),
+            )
+            .map(|(session_id, survivor)| {
+                (session_id, survivor.date.as_str(), survivor.is_sidechain)
+            }),
+    )
+}
+
+fn load_deduped_daily_entries(
     files: &[PathBuf],
     shared: &SharedArgs,
     project_filter: Option<&str>,
-    group_by_project: bool,
     tz: Option<&JiffTimeZone>,
     pricing: Option<&PricingMap>,
-) -> Vec<UsageSummary> {
+) -> DedupedDailyEntries {
     if files.is_empty() {
-        return Vec::new();
+        return DedupedDailyEntries {
+            entries: Vec::new(),
+            copies: Vec::new(),
+        };
     }
     let mode = shared.mode;
     let loaded_files = if shared.single_thread {
@@ -98,6 +129,7 @@ fn summarize_daily_files(
 
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
     let mut deduped = Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
+    let mut copies = Vec::new();
     for loaded_file in loaded_files {
         for entry in loaded_file.entries {
             if let Some(filter) = project_filter
@@ -105,13 +137,28 @@ fn summarize_daily_files(
             {
                 continue;
             }
-            push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
+            if let Some((index, discarded)) =
+                push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
+                && discarded.session_id != deduped[index].session_id
+                && !is_sidechain_daily_entry(&discarded)
+            {
+                copies.push((index, discarded.session_id));
+            }
         }
     }
+    DedupedDailyEntries {
+        entries: deduped,
+        copies,
+    }
+}
 
+fn summarize_daily_entries(
+    deduped: &[DailyLoadedEntry],
+    group_by_project: bool,
+) -> Vec<UsageSummary> {
     if group_by_project {
         let mut groups = BTreeMap::<(String, Arc<str>), DailyAccumulator>::new();
-        for entry in &deduped {
+        for entry in deduped {
             groups
                 .entry((entry.date.clone(), Arc::clone(&entry.project)))
                 .or_default()
@@ -129,7 +176,7 @@ fn summarize_daily_files(
     }
 
     let mut groups = BTreeMap::<String, DailyAccumulator>::new();
-    for entry in &deduped {
+    for entry in deduped {
         groups
             .entry(entry.date.clone())
             .or_default()
@@ -152,7 +199,7 @@ struct DailyLoadedFile {
 }
 
 #[derive(Debug)]
-struct DailyLoadedEntry {
+pub(super) struct DailyLoadedEntry {
     timestamp: TimestampMs,
     date: String,
     project: Arc<str>,
@@ -454,7 +501,7 @@ fn push_deduped_daily_entry(
     entry: DailyLoadedEntry,
     deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
     deduped: &mut Vec<DailyLoadedEntry>,
-) {
+) -> Option<(usize, DailyLoadedEntry)> {
     let dedupe_lookup = entry.message_id.as_deref().map(|message_id| {
         let request_id = entry.request_id.as_deref();
         let exact_hash = usage_dedupe_hash(
@@ -519,7 +566,7 @@ fn push_deduped_daily_entry(
                 }
             }
         }
-        if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
+        let discarded = if should_replace_deduped_daily_entry(&entry, &deduped[index]) {
             let previous = std::mem::replace(&mut deduped[index], entry);
             // The survivor is already indexed under its previous keys. Only register the keys
             // that changed, so repeated same-timestamp rewrites do not rescan large buckets.
@@ -544,8 +591,11 @@ fn push_deduped_daily_entry(
                     );
                 }
             }
-        }
-        return;
+            previous
+        } else {
+            entry
+        };
+        return Some((index, discarded));
     }
 
     let index = deduped.len();
@@ -569,6 +619,7 @@ fn push_deduped_daily_entry(
             }
         }
     }
+    None
 }
 
 fn daily_entry_exact_hash(entry: &DailyLoadedEntry) -> Option<u64> {
@@ -677,9 +728,42 @@ impl DailyAccumulator {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DailyLoadedEntry, push_deduped_daily_entry, read_daily_usage_file};
-    use crate::{TimestampMs, TokenUsageRaw, cli::CostMode};
-    use ccusage_test_support::fs_fixture;
+    use super::{
+        DailyLoadedEntry, load_daily_summaries_inner, push_deduped_daily_entry,
+        read_daily_usage_file, session_days,
+    };
+    use crate::{
+        TimestampMs, TokenUsageRaw,
+        cli::{CostMode, SharedArgs},
+    };
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+
+    #[test]
+    fn collects_session_days_of_counted_main_thread_usage_only() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-empty.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-empty","type":"user","message":{"role":"user","content":"hi"}}"#,
+            "projects/project-a/session-sub/subagents/agent-1.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-sub","isSidechain":true,"requestId":"req-sub","message":{"id":"msg-sub","model":"claude-sonnet-4-20250514","usage":{"input_tokens":30,"output_tokens":1}}}"#,
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            single_thread: true,
+            ..SharedArgs::default()
+        };
+
+        let daily = load_daily_summaries_inner(&shared, None, false, session_days).unwrap();
+
+        assert_eq!(
+            daily.session_days.into_iter().collect::<Vec<_>>(),
+            [(Arc::from("session-a"), "2026-01-02".to_string())]
+        );
+        assert_eq!(daily.summaries[0].input_tokens, 130);
+    }
 
     #[test]
     fn keeps_parent_daily_usage_when_sidechain_replays_message_with_new_request_id() {
@@ -1064,6 +1148,38 @@ mod tests {
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].usage.input_tokens, 200);
+    }
+
+    #[test]
+    fn returns_the_discarded_daily_copy_from_another_session() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            "projects/project-a/session-b/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+            "projects/project-a/session-c/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-c","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":50,"output_tokens":1}}}"#,
+        });
+        let mut deduped_indexes = Default::default();
+        let mut deduped = Vec::new();
+
+        let discarded = ["a", "b", "c"].map(|session| {
+            let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
+            let entry = read_daily_usage_file(&path, None, CostMode::Display, None)
+                .entries
+                .into_iter()
+                .next()
+                .unwrap();
+            push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
+                .map(|(index, discarded)| (index, discarded.session_id.to_string()))
+        });
+
+        assert_eq!(
+            discarded,
+            [
+                None,
+                Some((0, "session-a".to_string())),
+                Some((0, "session-c".to_string())),
+            ]
+        );
+        assert_eq!(deduped[0].session_id.as_ref(), "session-b");
     }
 
     #[test]

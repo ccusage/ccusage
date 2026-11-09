@@ -1,14 +1,16 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     io::{self, BufWriter, IsTerminal, Write},
 };
 
+use jiff::tz::TimeZone as JiffTimeZone;
 use serde_json::{Value, json};
 
 use crate::{
     Align, Color, ModelBreakdown, Result, SimpleTable, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
-    cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_project_name,
-    parse_project_aliases, print_box_title, short_model_name, terminal_width,
+    cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_date_tz,
+    format_project_name, parse_project_aliases, parse_ts_timestamp, parse_tz, print_box_title,
+    short_model_name, terminal_width,
 };
 
 pub fn wants_json(shared: &SharedArgs) -> bool {
@@ -22,58 +24,6 @@ pub fn should_use_compact_layout(
     compact_width_threshold: usize,
 ) -> bool {
     shared.compact || (is_stdout_tty && terminal_width < compact_width_threshold)
-}
-
-pub fn summary_json(row: &UsageSummary) -> Value {
-    let mut value = json!({
-        "inputTokens": row.input_tokens,
-        "outputTokens": row.output_tokens,
-        "cacheCreationTokens": row.cache_creation_tokens,
-        "cacheReadTokens": row.cache_read_tokens,
-        "totalTokens": row.total_tokens(),
-        "totalCost": row.total_cost,
-        "modelsUsed": row.models_used,
-        "modelBreakdowns": row.model_breakdowns,
-    });
-    if let Some(obj) = value.as_object_mut() {
-        if let Some(date) = &row.date {
-            obj.insert("date".to_string(), json!(date));
-        }
-        if let Some(month) = &row.month {
-            obj.insert("month".to_string(), json!(month));
-        }
-        if let Some(week) = &row.week {
-            obj.insert("week".to_string(), json!(week));
-        }
-        if let Some(project) = &row.project {
-            obj.insert("project".to_string(), json!(project));
-        }
-        if let Some(credits) = row.credits {
-            obj.insert("credits".to_string(), json!(credits));
-        }
-    }
-    value
-}
-
-pub fn session_summary_json(row: &UsageSummary) -> Value {
-    let mut value = json!({
-        "sessionId": row.session_id,
-        "inputTokens": row.input_tokens,
-        "outputTokens": row.output_tokens,
-        "cacheCreationTokens": row.cache_creation_tokens,
-        "cacheReadTokens": row.cache_read_tokens,
-        "totalTokens": row.total_tokens(),
-        "totalCost": row.total_cost,
-        "lastActivity": row.last_activity,
-        "firstActivity": row.first_activity,
-        "modelsUsed": row.models_used,
-        "modelBreakdowns": row.model_breakdowns,
-        "projectPath": row.project_path,
-    });
-    if let (Some(obj), Some(credits)) = (value.as_object_mut(), row.credits) {
-        obj.insert("credits".to_string(), json!(credits));
-    }
-    value
 }
 
 pub fn totals_json(rows: &[UsageSummary]) -> Value {
@@ -142,17 +92,6 @@ pub fn attach_unpriced_models(totals: &mut Value, models: Vec<String>) {
     if !models.is_empty() {
         totals["unpricedModels"] = json!(models);
     }
-}
-
-pub fn group_project_output(rows: &[UsageSummary]) -> Value {
-    let mut projects: BTreeMap<String, Vec<Value>> = BTreeMap::new();
-    for row in rows {
-        projects
-            .entry(row.project.clone().unwrap_or_else(|| "unknown".to_string()))
-            .or_default()
-            .push(summary_json(row));
-    }
-    json!(projects)
 }
 
 pub fn print_json_or_jq(mut value: Value, jq: Option<&str>, no_cost: bool) -> Result<()> {
@@ -243,6 +182,7 @@ pub fn print_usage_table_with_options(
         USAGE_COMPACT_WIDTH_THRESHOLD,
     );
     let include_last_activity = rows.iter().any(|row| row.last_activity.is_some());
+    let timezone = parse_tz(shared.timezone.as_deref());
     print_box_title(title, shared);
     let (mut headers, mut aligns) =
         usage_table_columns(first_column, compact, options.show_cache_creation);
@@ -305,8 +245,9 @@ pub fn print_usage_table_with_options(
             values.pop();
         }
         if include_last_activity {
-            values.push(truncate_rfc3339_to_date(
+            values.push(format_last_activity_date(
                 row.last_activity.as_deref().unwrap_or_default(),
+                timezone.as_ref(),
             ));
         }
         table.push(values);
@@ -581,14 +522,31 @@ pub fn strip_cost_json(value: &mut Value) {
     }
 }
 
-fn truncate_rfc3339_to_date(s: &str) -> String {
-    s.get(..10).unwrap_or(s).to_string()
+fn format_last_activity_date(value: &str, timezone: Option<&JiffTimeZone>) -> String {
+    parse_ts_timestamp(value).map_or_else(
+        || value.get(..10).unwrap_or(value).to_string(),
+        |timestamp| format_date_tz(timestamp, timezone),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ModelBreakdown;
+
+    #[test]
+    fn last_activity_column_shows_the_date_in_the_report_timezone() {
+        let timezone = parse_tz(Some("America/Los_Angeles"));
+
+        assert_eq!(
+            format_last_activity_date("2026-02-24T02:00:00.000Z", timezone.as_ref()),
+            "2026-02-23"
+        );
+        assert_eq!(
+            format_last_activity_date("2026-02-24", timezone.as_ref()),
+            "2026-02-24"
+        );
+    }
 
     #[test]
     fn narrow_non_tty_output_does_not_auto_compact() {
@@ -835,13 +793,6 @@ mod tests {
     }
 
     #[test]
-    fn snapshots_summary_json_with_optional_fields_and_model_breakdowns() {
-        let row = snapshot_summary("2026-01-02", Some("workspace/api"), Some(1.25));
-
-        insta::assert_json_snapshot!(summary_json(&row));
-    }
-
-    #[test]
     fn missing_pricing_warnings_deduplicate_models() {
         let mut row = snapshot_summary("2026-01-02", None, None);
         row.model_breakdowns[0].missing_pricing = true;
@@ -870,18 +821,6 @@ mod tests {
     }
 
     #[test]
-    fn snapshots_session_summary_json_with_present_and_missing_options() {
-        let mut row = snapshot_summary("session-a", None, None);
-        row.date = None;
-        row.session_id = Some("session-a".to_string());
-        row.project_path = Some("/Users/example/workspace/api".to_string());
-        row.last_activity = Some("2026-01-02T12:34:56.000Z".to_string());
-        row.first_activity = Some("2026-01-01T10:30:00.000Z".to_string());
-
-        insta::assert_json_snapshot!(session_summary_json(&row));
-    }
-
-    #[test]
     fn snapshots_totals_json_with_extra_tokens_credits_and_zero_credit_omission() {
         let mut first = snapshot_summary("2026-01-02", Some("workspace/api"), Some(1.25));
         first.extra_total_tokens = 17;
@@ -894,15 +833,6 @@ mod tests {
         second.total_cost = 0.0;
 
         insta::assert_json_snapshot!(totals_json(&[first, second]));
-    }
-
-    #[test]
-    fn snapshots_group_project_output_orders_named_projects_and_unknown_bucket() {
-        let named = snapshot_summary("2026-01-02", Some("workspace/api"), Some(1.25));
-        let unknown = snapshot_summary("2026-01-03", None, None);
-        let other = snapshot_summary("2026-01-04", Some("workspace/web"), None);
-
-        insta::assert_json_snapshot!(group_project_output(&[named, unknown, other]));
     }
 
     #[test]

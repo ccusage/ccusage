@@ -34,7 +34,10 @@
     </a>
     &nbsp;&nbsp;&nbsp;&nbsp;
     <a href="https://blacksmith.sh">
-        <img src="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/blacksmith.png" alt="Blacksmith" width="320">
+        <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/blacksmith-logo-dark.svg">
+            <img src="https://cdn.jsdelivr.net/gh/ccusage/ccusage@main/docs/public/blacksmith-logo.svg" alt="CI powered by Blacksmith" width="320">
+        </picture>
     </a>
 </p>
 
@@ -223,9 +226,9 @@ nix run github:ccusage/ccusage -- codex daily --offline
 nix build github:ccusage/ccusage
 ```
 
-Nix builds embed the LiteLLM pricing file from the locked `litellm` flake input, so sandboxed builds do not fetch pricing at build time. To update the locked pricing snapshot:
+Nix builds embed the LiteLLM pricing file from the locked `litellm` flake input (a single-file URL pinned to a LiteLLM commit), so sandboxed builds do not fetch pricing at build time. To update the locked pricing snapshot:
 
-Non-Nix Cargo builds read the same locked LiteLLM revision from `flake.lock` and fetch the pricing file from that revision at build time.
+Non-Nix Cargo builds read the same locked LiteLLM revision URL from `flake.lock` and fetch the pricing file from that revision at build time.
 
 ```bash
 just update-litellm-pricing

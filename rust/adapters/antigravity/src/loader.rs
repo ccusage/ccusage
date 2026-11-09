@@ -1,43 +1,86 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz};
 
 use super::{
     parser::{AntigravityUsageEvent, event_to_loaded, merge_usage_event, parse_sqlite_file},
     paths::conversation_db_paths,
 };
 
-/// Loads Antigravity generation metadata from all discovered conversation databases.
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("Antigravity"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
-    )
+#[derive(Debug, PartialEq)]
+enum SkippedDatabase {
+    Uninitialized(PathBuf),
+    Unreadable { path: PathBuf, error: String },
 }
 
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let timezone = parse_tz(shared.timezone.as_deref());
-    let database_paths = conversation_db_paths()?;
-    let mut parsed_events = Vec::new();
-    for database_path in database_paths {
-        match parse_sqlite_file(&database_path)? {
-            Some(events) => parsed_events.extend(events),
-            None => debug_log(
-                shared,
-                format!(
-                    "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
-                    database_path.display()
-                ),
-            ),
-        }
+/// Loads Antigravity generation metadata from all discovered conversation databases.
+pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
+    let (entries, warnings) = crate::progress::track_usage_load(
+        crate::progress::UsageLoadAgent("Antigravity"),
+        shared.json,
+        || load_entries_with_warnings(shared, pricing),
+    )?;
+    warnings.iter().for_each(|warning| eprintln!("{warning}"));
+    Ok(entries)
+}
+
+/// Loads Antigravity entries and returns the skipped-database messages instead
+/// of printing them, so callers can emit them once their progress output stops.
+pub fn load_entries_with_warnings(
+    shared: &SharedArgs,
+    pricing: &PricingMap,
+) -> Result<(Vec<LoadedEntry>, Vec<String>)> {
+    let (entries, skipped) = load_entries_inner(shared, pricing)?;
+    let warnings = skipped
+        .iter()
+        .filter_map(|database| skipped_database_message(shared, database))
+        .collect();
+    Ok((entries, warnings))
+}
+
+fn skipped_database_message(shared: &SharedArgs, database: &SkippedDatabase) -> Option<String> {
+    match database {
+        SkippedDatabase::Uninitialized(path) => shared.debug.then(|| {
+            format!(
+                "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
+                path.display()
+            )
+        }),
+        SkippedDatabase::Unreadable { path, error } => (crate::log_level() != Some(0)).then(|| {
+            format!(
+                "WARN  Skipping unreadable Antigravity database '{}': {error}",
+                path.display()
+            )
+        }),
     }
+}
+
+fn load_entries_inner(
+    shared: &SharedArgs,
+    pricing: &PricingMap,
+) -> Result<(Vec<LoadedEntry>, Vec<SkippedDatabase>)> {
+    let timezone = parse_tz(shared.timezone.as_deref());
+    let (parsed_events, skipped) = conversation_db_paths()?.into_iter().fold(
+        (Vec::new(), Vec::new()),
+        |(mut events, mut skipped), database_path| {
+            match parse_sqlite_file(&database_path) {
+                Ok(Some(parsed)) => events.extend(parsed),
+                Ok(None) => skipped.push(SkippedDatabase::Uninitialized(database_path)),
+                Err(error) => skipped.push(SkippedDatabase::Unreadable {
+                    path: database_path,
+                    error: error.to_string(),
+                }),
+            }
+            (events, skipped)
+        },
+    );
     let mut events = deduplicate_events(parsed_events);
     events.sort_by_key(|event| event.timestamp);
-    Ok(events
+    let entries = events
         .into_iter()
         .map(|event| event_to_loaded(event, timezone.as_ref(), shared.mode, pricing))
-        .collect())
+        .collect();
+    Ok((entries, skipped))
 }
 
 fn deduplicate_events(
@@ -105,6 +148,16 @@ mod tests {
             single_thread,
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
+        }
+    }
+
+    fn load_single_unreadable_database() -> (PathBuf, String) {
+        let (entries, skipped) =
+            load_entries_inner(&shared(true), &PricingMap::load_embedded()).unwrap();
+        assert!(entries.is_empty());
+        match <[SkippedDatabase; 1]>::try_from(skipped) {
+            Ok([SkippedDatabase::Unreadable { path, error }]) => (path, error),
+            other => panic!("expected one unreadable database, got {other:?}"),
         }
     }
 
@@ -841,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn still_propagates_errors_for_nonempty_databases_alongside_empty_ones() {
+    fn skips_malformed_database_alongside_empty_databases() {
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/empty.db", "");
         create_database(
@@ -855,13 +908,24 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
+        let (entries, skipped) =
+            load_entries_inner(&shared(true), &PricingMap::load_embedded()).unwrap();
 
-        assert!(error.to_string().contains("parse Antigravity metadata"));
+        assert!(entries.is_empty());
+        assert_eq!(skipped.len(), 2);
+        assert!(skipped.contains(&SkippedDatabase::Uninitialized(
+            fixture.path("conversations/empty.db")
+        )));
+        assert!(skipped.iter().any(|database| matches!(
+            database,
+            SkippedDatabase::Unreadable { path, error }
+                if *path == fixture.path("conversations/malformed.db")
+                    && error.contains("parse Antigravity metadata")
+        )));
     }
 
     #[test]
-    fn propagates_database_open_and_query_errors() {
+    fn skips_database_open_and_query_errors() {
         let fixture = Fixture::new();
         let not_a_database = fixture.write_file("conversations/not-a-db.db", "not sqlite");
         let _guard = EnvVarsGuard::set_many([(
@@ -869,15 +933,17 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
-        let message = error.to_string();
+        let (path, error) = load_single_unreadable_database();
 
-        assert!(message.contains(not_a_database.to_string_lossy().as_ref()));
-        assert!(message.contains("open") || message.contains("database"));
+        assert_eq!(path, not_a_database);
+        assert_eq!(
+            error,
+            "Failed to inspect Antigravity database: file is not a database (code 26)"
+        );
     }
 
     #[test]
-    fn propagates_missing_generation_table_errors() {
+    fn skips_database_missing_generation_table() {
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/missing-table.db");
         let _ = fixture.create_dir_all("conversations");
@@ -890,13 +956,14 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
+        let (path, error) = load_single_unreadable_database();
 
-        assert!(error.to_string().contains("gen_metadata"));
+        assert_eq!(path, db_path);
+        assert!(error.contains("gen_metadata"), "{error}");
     }
 
     #[test]
-    fn propagates_present_optional_table_schema_errors() {
+    fn skips_database_with_invalid_optional_table_schema() {
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/bad-steps.db");
         let _ = fixture.create_dir_all("conversations");
@@ -932,13 +999,14 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
+        let (path, error) = load_single_unreadable_database();
 
-        assert!(error.to_string().contains("steps"));
+        assert_eq!(path, db_path);
+        assert!(error.contains("steps"), "{error}");
     }
 
     #[test]
-    fn propagates_malformed_metadata_errors() {
+    fn skips_database_with_malformed_metadata() {
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/malformed.db"),
@@ -951,8 +1019,44 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let error = load_entries(&shared(true), &PricingMap::load_embedded()).unwrap_err();
+        let (path, error) = load_single_unreadable_database();
 
-        assert!(error.to_string().contains("parse Antigravity metadata"));
+        assert_eq!(path, fixture.path("conversations/malformed.db"));
+        assert!(
+            error.starts_with("Failed to parse Antigravity metadata row 1:"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn skipped_database_messages_name_the_path_once_and_respect_log_level() {
+        let path = PathBuf::from("/data/conversations/broken.db");
+        let unreadable = SkippedDatabase::Unreadable {
+            path: path.clone(),
+            error: "Failed to inspect Antigravity database: disk I/O error (code 10)".to_string(),
+        };
+        let uninitialized = SkippedDatabase::Uninitialized(path);
+        let debug = SharedArgs {
+            debug: true,
+            ..shared(true)
+        };
+
+        {
+            let _guard = EnvVarsGuard::set_many([("LOG_LEVEL", None::<OsString>)]);
+            assert_eq!(
+                skipped_database_message(&shared(true), &unreadable).as_deref(),
+                Some(
+                    "WARN  Skipping unreadable Antigravity database '/data/conversations/broken.db': Failed to inspect Antigravity database: disk I/O error (code 10)"
+                )
+            );
+            assert_eq!(
+                skipped_database_message(&shared(true), &uninitialized),
+                None
+            );
+            assert!(skipped_database_message(&debug, &uninitialized).is_some());
+        }
+
+        let _guard = EnvVarsGuard::set_many([("LOG_LEVEL", Some(OsString::from("0")))]);
+        assert_eq!(skipped_database_message(&shared(true), &unreadable), None);
     }
 }

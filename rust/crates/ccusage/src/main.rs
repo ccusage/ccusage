@@ -14,6 +14,7 @@ pub(crate) use blocks::{
 #[cfg(test)]
 pub(crate) use ccusage_adapter_common::chunk_file_indexes_by_size;
 pub(crate) use ccusage_core::*;
+pub(crate) use ccusage_report::*;
 use cli::Command;
 #[cfg(test)]
 use pricing::PricingMap;
@@ -38,7 +39,7 @@ fn main() -> Result<()> {
         Command::Blocks(args) => commands::run_blocks(args),
         Command::Statusline(args) => commands::run_statusline(args),
         Command::Codex(args) => adapter::codex::run(args),
-        Command::OpenCode(args) => adapter::opencode::run(args),
+        Command::OpenCode(args) => adapter::all::run_opencode(args),
         Command::Amp(args) => adapter::amp::run(args),
         Command::Droid(args) => adapter::droid::run(args),
         Command::Codebuff(args) => adapter::codebuff::run(args),

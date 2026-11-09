@@ -8,7 +8,7 @@ mod parser;
 mod paths;
 mod report;
 
-pub use loader::load_entries;
+pub use loader::{LinkedEntry, load_entries_with_native_sessions};
 pub use report::{report_json, summarize_entries};
 
 use crate::{
@@ -25,12 +25,20 @@ pub fn has_data() -> bool {
     paths::paths().is_ok_and(|paths| paths.iter().any(|path| loader::has_source(path)))
 }
 
+/// Runs the OpenCode report over every row, `claude-agent` turns included.
+/// The CLI goes through `ccusage_adapter_all::run_opencode`, which can drop
+/// the turns the Claude source already counts.
 pub fn run(args: AgentCommandArgs) -> Result<()> {
+    let entries = loader::load_entries(&args.shared, args.kind)?;
+    print_report(&args, entries)
+}
+
+/// Prints the OpenCode report for already loaded entries.
+pub fn print_report(args: &AgentCommandArgs, mut entries: Vec<LoadedEntry>) -> Result<()> {
     let kind = args.kind;
-    let shared = args.shared;
-    let mut entries = loader::load_entries(&shared, kind)?;
-    filter_loaded_entries_by_date(&mut entries, &shared);
-    if wants_json(&shared) {
+    let shared = &args.shared;
+    filter_loaded_entries_by_date(&mut entries, shared);
+    if wants_json(shared) {
         return print_json_or_jq(
             report_json(&entries, kind, &shared.order)?,
             shared.jq.as_deref(),
@@ -43,7 +51,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         "OpenCode Token Usage Report",
         first_column(kind),
         &rows,
-        &shared,
+        shared,
         false,
         None,
     )?;

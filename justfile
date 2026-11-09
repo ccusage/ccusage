@@ -83,7 +83,7 @@ gen-bun-nix:
 
 # Update the locked LiteLLM pricing snapshot and validate the result
 update-litellm-pricing:
-    nix flake update litellm
+    GITHUB_OUTPUT=/dev/null .github/scripts/update-litellm-lock.nu
     just check
 
 # Regenerate committed models.dev snapshots from the pinned input

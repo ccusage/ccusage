@@ -1,6 +1,6 @@
 use jiff::{Span, civil::Date as JiffDate};
 
-use crate::{cli::WeekDay, week_start};
+use ccusage_core::{cli::WeekDay, week_start};
 
 /// The calendar unit a report groups rows by, and therefore the unit `--last`
 /// counts.

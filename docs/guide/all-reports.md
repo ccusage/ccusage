@@ -46,6 +46,8 @@ ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid,
 
 Unified tables include an **Agent** column so you can compare sources in one view. Focused views remove that comparison layer and show the selected source in more detail where applicable.
 
+When one tool runs another, usage can be logged by both. OpenCode's Claude Agent provider is one example: unified views and `ccusage opencode` skip the OpenCode copy of turns that Claude Code's own log has, matching them by session and, in daily views, by day, so a turn that runs across midnight can still be counted twice or partly left out. See [OpenCode](./opencode/#claude-agent-provider).
+
 ## Supported Sources
 
 | Source         | Namespace     | Example focused view        |
@@ -78,6 +80,7 @@ Use a source namespace when you want source-specific options or when you are deb
 ccusage codex daily --speed fast
 ccusage claude daily --mode display
 ccusage opencode session --json
+ccusage opencode daily --include-claude-agent
 ccusage amp monthly --compact
 ccusage droid session
 ccusage codebuff daily

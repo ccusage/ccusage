@@ -1,5 +1,5 @@
 use ccusage_cli::{Command, SharedArgs};
-use ccusage_core::is_valid_timezone;
+use ccusage_report::is_valid_timezone;
 
 use super::Cli;
 

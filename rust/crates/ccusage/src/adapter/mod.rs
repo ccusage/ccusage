@@ -14,6 +14,7 @@ pub(crate) use ccusage_adapter_hermes as hermes;
 pub(crate) use ccusage_adapter_kilo as kilo;
 pub(crate) use ccusage_adapter_kimi as kimi;
 pub(crate) use ccusage_adapter_openclaw as openclaw;
+#[cfg(test)]
 pub(crate) use ccusage_adapter_opencode as opencode;
 pub(crate) use ccusage_adapter_pi as pi;
 pub(crate) use ccusage_adapter_qwen as qwen;

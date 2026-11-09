@@ -91,7 +91,7 @@ Sessions are displayed using the last two segments of their full identifier:
 - **Input/Output Tokens**: Total tokens exchanged in the conversation
 - **Cache Tokens**: Cache creation and read tokens for context efficiency
 - **Cost**: Estimated USD cost for the usage shown; without a date filter, the entire conversation
-- **Last Activity**: Date of the most recent message included in the report
+- **Last Activity**: Date of the most recent message included in the report, shown in the report timezone (`--timezone`); JSON output keeps the full RFC 3339 [`lastActivity`](/guide/json-output#session-reports-1) timestamp
 
 ### Sorting
 

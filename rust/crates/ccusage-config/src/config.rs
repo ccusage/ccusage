@@ -56,10 +56,11 @@ impl ConfigContext {
 
     /// The config as `ccusage <agent> <report>` reads it, for a unified report
     /// that loads `agent` as one of its sources: `<agent>.defaults`,
-    /// `<agent>.commands.<report>` and `commands.<agent>:<report>` join the
-    /// layers the unified command already applies. `None` when the file says
-    /// nothing about that agent, so the source keeps the unified options, and
-    /// for commands that already name an agent.
+    /// `<agent>.commands.<report>`, `commands."<agent> <report>"` and
+    /// `commands.<agent>:<report>` join the layers the unified command already
+    /// applies. `None` when the file says nothing about that agent, so the
+    /// source keeps the unified options, and for commands that already name an
+    /// agent.
     pub fn for_source(&self, agent: &str) -> Option<Self> {
         if self.command.agent.is_some() {
             return None;
@@ -126,45 +127,38 @@ impl ConfigContext {
     }
 
     fn option_maps(&self) -> Vec<&Map<String, Value>> {
-        let mut maps = Vec::new();
         let Some(root) = self.value.as_ref().and_then(Value::as_object) else {
-            return maps;
+            return Vec::new();
         };
-        if let Some(defaults) = object_at(root, "defaults") {
-            maps.push(defaults);
-        }
-        if let Some(commands) = object_at(root, "commands") {
-            if let Some(raw) = object_at(commands, &self.command.raw) {
-                maps.push(raw);
-            }
-            if self.command.agent.is_some() {
-                if let Some(report) = object_at(commands, &self.command.report) {
-                    maps.push(report);
-                }
-                if let Some(agent) = self.command.agent.as_deref() {
-                    let colon_name = format!("{agent}:{}", self.command.report);
-                    if let Some(agent_report) = object_at(commands, &colon_name) {
-                        maps.push(agent_report);
-                    }
-                }
-            }
-        }
-        if let Some(agent) = self
+        let report = self.command.report.as_str();
+        let command_keys = match self.command.agent.as_deref() {
+            Some(agent) => vec![
+                report.to_string(),
+                self.command.raw.clone(),
+                format!("{agent}:{report}"),
+            ],
+            None => vec![self.command.raw.clone()],
+        };
+        let commands = object_at(root, "commands");
+        let agent = self
             .command
             .agent
             .as_deref()
-            .and_then(|agent| object_at(root, agent))
-        {
-            if let Some(defaults) = object_at(agent, "defaults") {
-                maps.push(defaults);
-            }
-            if let Some(command) = object_at(agent, "commands")
-                .and_then(|commands| object_at(commands, &self.command.report))
-            {
-                maps.push(command);
-            }
-        }
-        maps
+            .and_then(|agent| object_at(root, agent));
+        object_at(root, "defaults")
+            .into_iter()
+            .chain(
+                command_keys
+                    .iter()
+                    .filter_map(|key| commands.and_then(|commands| object_at(commands, key))),
+            )
+            .chain(agent.and_then(|agent| object_at(agent, "defaults")))
+            .chain(
+                agent
+                    .and_then(|agent| object_at(agent, "commands"))
+                    .and_then(|commands| object_at(commands, report)),
+            )
+            .collect()
     }
 
     fn command_uses_named_pi_stores(&self) -> bool {
@@ -253,7 +247,7 @@ fn validate_named_pi_store_name(name: &str) -> std::result::Result<(), NamedPiSt
 
 fn reserved_named_pi_store_names() -> Vec<&'static str> {
     std::iter::once("all")
-        .chain(ccusage_core::BUILT_IN_AGENT_NAMES.iter().copied())
+        .chain(ccusage_cli::BUILT_IN_AGENT_NAMES.iter().copied())
         .collect()
 }
 
@@ -313,7 +307,7 @@ fn claude_config_dirs() -> Vec<PathBuf> {
             .map(PathBuf::from)
             .collect();
     }
-    ccusage_core::home::home_dir()
+    ccusage_cli::home::home_dir()
         .map(|home| vec![home.join(".config").join("claude"), home.join(".claude")])
         .unwrap_or_default()
 }
@@ -429,7 +423,7 @@ fn option_takes_value(arg: &str) -> bool {
 }
 
 fn is_agent_command(command: &str) -> bool {
-    ccusage_core::BUILT_IN_AGENT_NAMES.contains(&command)
+    ccusage_cli::BUILT_IN_AGENT_NAMES.contains(&command)
 }
 
 fn is_report_command(command: &str) -> bool {
@@ -807,11 +801,11 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+    use ccusage_cli::DEFAULT_SESSION_DURATION_HOURS;
     use ccusage_cli::{
         BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
         WeekDay, WeeklyArgs,
     };
-    use ccusage_core::DEFAULT_SESSION_DURATION_HOURS;
     use ccusage_test_support::fs_fixture;
 
     #[test]
@@ -1079,6 +1073,63 @@ mod tests {
 
         assert!(shared.offline);
         assert!(shared.json);
+    }
+
+    #[test]
+    fn agent_command_sections_override_the_generic_report_section() {
+        let generic = json!({ "mode": "display", "since": "20260101" });
+        let cases = [
+            (
+                "space form",
+                json!({ "daily": generic, "codex daily": { "mode": "calculate" } }),
+                CostMode::Calculate,
+            ),
+            (
+                "colon form",
+                json!({ "daily": generic, "codex:daily": { "mode": "calculate" } }),
+                CostMode::Calculate,
+            ),
+            (
+                "colon form over space form",
+                json!({
+                    "daily": generic,
+                    "codex daily": { "mode": "calculate" },
+                    "codex:daily": { "mode": "auto" }
+                }),
+                CostMode::Auto,
+            ),
+        ];
+        for (name, commands, mode) in cases {
+            let value = json!({ "commands": commands });
+            let focused = context(value.clone(), "codex daily", Some("codex"), "daily");
+            let source = context(value, "daily", None, "daily")
+                .for_source("codex")
+                .expect("codex sections");
+
+            for config in [focused, source] {
+                let mut shared = SharedArgs::default();
+                config.apply_shared(&mut shared);
+                assert_eq!(shared.mode, mode, "{name}");
+                assert_eq!(shared.since.as_deref(), Some("20260101"), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn space_form_section_overrides_the_generic_report_section_for_every_agent_command_shape() {
+        let raw = r#"{
+            "commands": {
+                "daily": { "mode": "display", "since": "20260101" },
+                "codex daily": { "mode": "calculate" }
+            }
+        }"#;
+        for command in [&["codex", "daily"][..], &["codex:daily"], &["codex"]] {
+            let config = config_context_for_command(raw, command);
+            let mut shared = SharedArgs::default();
+            config.apply_shared(&mut shared);
+            assert_eq!(shared.mode, CostMode::Calculate, "{command:?}");
+            assert_eq!(shared.since.as_deref(), Some("20260101"), "{command:?}");
+        }
     }
 
     #[test]
@@ -1479,7 +1530,7 @@ mod tests {
             .into_iter()
             .collect::<BTreeSet<_>>();
         let expected = std::iter::once("all")
-            .chain(ccusage_core::BUILT_IN_AGENT_NAMES.iter().copied())
+            .chain(ccusage_cli::BUILT_IN_AGENT_NAMES.iter().copied())
             .collect::<BTreeSet<_>>();
 
         assert_eq!(reserved, expected);

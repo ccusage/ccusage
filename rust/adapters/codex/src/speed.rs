@@ -105,6 +105,10 @@ mod tests {
             None
         );
         assert_eq!(
+            codex_config_service_tier(r#"service_tier = "ultrafast""#,),
+            None
+        );
+        assert_eq!(
             codex_config_service_tier(r#"service_tier = "standard""#,),
             Some(CodexServiceTier::Standard)
         );

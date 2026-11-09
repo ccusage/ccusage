@@ -125,7 +125,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tirith-sarif
-      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: results.sarif
           category: tirith
@@ -138,7 +138,9 @@ jobs:
   # local git hooks never run). Both are existing flake checks, so this reuses
   # their exact behavior instead of re-specifying flags here. The heavy test job
   # re-runs them inside `nix flake check`; that is intentional duplication so the
-  # gate can fail fast before any build/test work starts.
+  # gate can still fail the run early. Build and test jobs start alongside it
+  # instead of waiting on it: it takes ~45s and sat on the critical path ahead
+  # of the slowest build, and `ci-gate` still requires it to pass.
   preflight:
     name: security & lint preflight
     runs-on: blacksmith-32vcpu-ubuntu-2404
@@ -155,7 +157,7 @@ jobs:
         run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt
 
   test:
-    needs: [changes, tirith-scan, preflight]
+    needs: [changes, tirith-scan]
     if: needs.changes.outputs.code-changed == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -185,9 +187,21 @@ jobs:
             run: .github/scripts/contribution-gate.test.nu
           - name: Babashka performance harness test
             run: apps/ccusage/scripts/compare-pr-performance_test.clj
+      # The dev-profile test and hawk dependency layers are only reused if the
+      # sticky disk keeps them, and this job roots nothing else. Rooting them in
+      # the store's own gcroots protects them from the next trim (see
+      # build-linux-native-package); only main commits the disk, so PRs skip it.
+      - name: Root test dependency layers for the sticky disk
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          mkdir -p /nix/var/nix/gcroots/ci
+          nix build .#ccusage-tests.passthru.cargoArtifacts \
+            --out-link /nix/var/nix/gcroots/ci/ccusage-test-deps
+          nix build .#ccusage-tests.passthru.hawkArtifacts \
+            --out-link /nix/var/nix/gcroots/ci/ccusage-hawk-deps
 
   build-native-packages:
-    needs: [changes, tirith-scan, preflight]
+    needs: [changes, tirith-scan]
     if: needs.changes.outputs.code-changed == 'true'
     name: ${{ matrix.name }}
     permissions:
@@ -247,8 +261,11 @@ jobs:
           binary: ${{ matrix.binary }}
 
   npm-publish-dry-run-and-upload-pkg-pr-now:
+    # preflight gates the publish rather than the builds: a leaked secret must
+    # never reach pkg.pr.new, and it finishes long before the builds do.
     needs:
       - changes
+      - preflight
       - build-native-packages
     if: needs.changes.outputs.code-changed == 'true'
     permissions:
@@ -349,7 +366,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         if: matrix.runner == 'pnpm'
         with:
           version: latest
@@ -501,6 +518,33 @@ jobs:
           fi
           echo "CCUSAGE_PREVIEW_URL=$preview_url" >> "$GITHUB_ENV"
 
+      # Pricing snapshot commits are pushed to main with GITHUB_TOKEN, which
+      # triggers no CI, so they never get a preview package and the benchmark
+      # would wait out its whole package timeout for one. They do not change
+      # code, so walk back over them to the nearest commit that has a package.
+      # Any other commit without one (e.g. its CI is still running) stops the
+      # walk and keeps the real base, which is then waited for as before.
+      - name: Resolve base preview package
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git fetch --quiet --no-tags --depth=50 origin "$BASE_SHA"
+          base="$BASE_SHA"
+          for sha in $(git rev-list --first-parent -n 50 "$BASE_SHA"); do
+            if curl --fail --head --location --silent --output /dev/null \
+              "https://pkg.pr.new/$REPOSITORY/ccusage@$sha"; then
+              base="$sha"
+              break
+            fi
+            if git diff --name-only "$sha^" "$sha" \
+              | grep -qvE '^(flake\.(lock|nix)|rust/crates/ccusage-pricing-snapshots/src/[^/]+\.json)$'; then
+              break
+            fi
+          done
+          echo "Comparing against base package ${base}"
+          echo "BASE_PACKAGE_SHA=$base" >> "$GITHUB_ENV"
+
       - name: Generate large ccusage fixture
         run: |
           just generate-large-fixture \
@@ -511,8 +555,8 @@ jobs:
       - name: Compare performance
         run: |
           apps/ccusage/scripts/compare-pr-performance.bb \
-            --base-package-url "https://pkg.pr.new/${{ github.repository }}/ccusage@${{ github.event.pull_request.base.sha }}" \
-            --base-sha "${{ github.event.pull_request.base.sha }}" \
+            --base-package-url "https://pkg.pr.new/${{ github.repository }}/ccusage@$BASE_PACKAGE_SHA" \
+            --base-sha "$BASE_PACKAGE_SHA" \
             --head-dir . \
             --head-package-url "$CCUSAGE_PREVIEW_URL" \
             ${{ matrix.head-runtime-arg }} \
@@ -554,7 +598,7 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-slim
     steps:
-      - uses: Kesin11/actions-timeline@57fc93f20c6da7fbc14063c6d24a2a5627c799ad # v3.2.0
+      - uses: Kesin11/actions-timeline@460b1f8a750077029ad3589824d371b200e91dcf # v3.2.1
 
   # Single check for main's branch ruleset to require. Most jobs above are gated
   # on `changes` and are skipped on docs-only pull requests, so requiring them

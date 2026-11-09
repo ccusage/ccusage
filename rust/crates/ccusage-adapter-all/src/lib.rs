@@ -5,7 +5,9 @@ mod types;
 use ccusage_adapter_codex::CodexGroup;
 #[cfg(test)]
 use ccusage_adapter_codex::CodexModelUsage;
-use ccusage_adapter_common::filter_loaded_entries_by_date;
+use ccusage_adapter_common::{
+    filter_loaded_entries_by_date, filter_session_summaries_by_last_activity,
+};
 use ccusage_core::*;
 
 mod adapter {
@@ -45,6 +47,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     if let Some(sections) = args.sections {
         let sections = requested_sections(kind, sections);
         let result = loader::load_sections(&sections, &shared, &sources, start_of_week)?;
+        print_warnings(&result.warnings);
         if wants_json(&shared) {
             return report::print_sections_report_json(
                 &result.sections,
@@ -65,11 +68,24 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         return Ok(());
     }
     let result = loader::load_rows(kind, &shared, &sources, start_of_week)?;
+    print_warnings(&result.warnings);
     if wants_json(&shared) {
         let output = report::report_json_with_agents(&result.rows, kind, include_agents);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
     report::print_table(&result.rows, kind, &shared, &result.detected_agents)
+}
+
+/// Runs `ccusage opencode`, leaving Claude Agent turns to the Claude source
+/// unless `--include-claude-agent` keeps them.
+pub fn run_opencode(args: AgentCommandArgs) -> Result<()> {
+    let entries =
+        loader::load_opencode_entries(&args.shared, args.kind, args.include_claude_agent)?;
+    adapter::opencode::print_report(&args, entries)
+}
+
+fn print_warnings(warnings: &[String]) {
+    warnings.iter().for_each(|warning| eprintln!("{warning}"));
 }
 
 fn requested_sections(
