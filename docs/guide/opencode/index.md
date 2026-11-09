@@ -70,6 +70,12 @@ OpenCode supports subagent sessions. The session report displays:
 
 When OpenCode v2 forks a session, it copies the parent's history into the fork. ccusage counts only the usage the fork generates itself, so copied turns are not counted twice in session, daily, weekly, or monthly reports. If the fork's parent session or boundary message is no longer in the database, the fork keeps all of its rows.
 
+## Compaction Usage
+
+OpenCode v2 records each context compaction as its own message, with the tokens and cost of the compaction request itself. ccusage counts completed compactions alongside assistant turns in every report, using the compaction's recorded model, timestamp, and cost. Running compactions carry no usage yet, and failed compactions record no model to attribute their usage to, so neither is counted.
+
+A session report without a date range uses OpenCode's cumulative session totals for a session whose only remaining usage rows are compactions, such as after a revert removed its assistant turns. Those totals already include the compaction usage, so the compaction rows are not added on top.
+
 ## Claude Agent Provider
 
 The `claude-agent` provider runs Claude Code under the hood, so each turn is also saved in Claude Code's own logs. In [unified reports](/guide/all-reports) such as `ccusage daily`, ccusage skips the OpenCode copy of turns the Claude source already counts, so they are priced from the Claude Code logs. OpenCode stores only a model alias such as `opus`, while Claude Code records the exact model, so its costs are accurate.
