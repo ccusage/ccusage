@@ -221,14 +221,7 @@ pub const STANDARD_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
     ("session", AgentReportKind::Session),
 ];
 
-pub const OPENCODE_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
-    ("daily", AgentReportKind::Daily),
-    ("weekly", AgentReportKind::Weekly),
-    ("monthly", AgentReportKind::Monthly),
-    ("session", AgentReportKind::Session),
-];
-
-pub const STANDARD_WEEKLY_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
+pub const ALL_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
     ("daily", AgentReportKind::Daily),
     ("weekly", AgentReportKind::Weekly),
     ("monthly", AgentReportKind::Monthly),

@@ -18,6 +18,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `home::home_dir`
 - `types::AgentCommandArgs`
 - `types::AgentReportKind`
+- `types::ALL_AGENT_REPORTS`
 - `types::BlocksArgs`
 - `types::CliConfig`
 - `types::CodexSpeed`
@@ -28,7 +29,6 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `types::DailyArgs`
 - `types::NamedPiStore`
 - `types::NoConfig`
-- `types::OPENCODE_AGENT_REPORTS`
 - `types::PricingOverride`
 - `types::STANDARD_AGENT_REPORTS`
 - `types::SessionArgs`
