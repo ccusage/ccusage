@@ -9,8 +9,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry,
-        session_message_value_to_entry, session_value_to_entry,
+        OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind, SessionMessageRow,
+        message_value_to_entry, session_message_value_to_entry, session_value_to_entry,
     },
     paths::paths,
 };
@@ -443,12 +443,8 @@ fn load_entries_from_database(
                         let Ok(message_type) = statement.read::<String, _>(2) else {
                             continue;
                         };
-                        // A compaction is a model request of its own, billed apart
-                        // from assistant steps, so its usage counts too.
-                        let is_compaction = match message_type.as_str() {
-                            "assistant" => false,
-                            "compaction" => true,
-                            _ => continue,
+                        let Some(kind) = SessionMessageKind::from_row_type(&message_type) else {
+                            continue;
                         };
                         let Ok(data) = statement.read::<String, _>(3) else {
                             continue;
@@ -472,14 +468,23 @@ fn load_entries_from_database(
                             continue;
                         }
                         let Some(linked) = session_message_value_to_entry(
-                            &data, id, session_id, created, tz, mode, pricing,
+                            SessionMessageRow {
+                                kind,
+                                data: &data,
+                                id,
+                                session_id,
+                                created,
+                            },
+                            tz,
+                            mode,
+                            pricing,
                         ) else {
                             continue;
                         };
                         v2_entries += 1;
                         // The session counters already include compaction usage,
                         // so a compaction row alone must not suppress them.
-                        if is_compaction {
+                        if kind == SessionMessageKind::Compaction {
                             push_unique_entry(
                                 &mut compaction_entries,
                                 &mut seen_message_ids,
@@ -1669,6 +1674,30 @@ mod tests {
             r#"{"status":"failed","reason":"auto","error":{"type":"unknown","message":"x"},"time":{"created":1767312000000},"tokens":{"input":50,"output":0},"cost":0.5}"#,
             true,
         );
+        // Only the status keeps these out: each has a model and usage.
+        for (id, status) in [
+            ("msg-compaction-failed-with-model", "failed"),
+            ("msg-compaction-running-with-usage", "running"),
+            ("msg-compaction-without-status", ""),
+        ] {
+            let status = if status.is_empty() {
+                String::new()
+            } else {
+                format!(r#""status":"{status}","#)
+            };
+            insert_db_session_message(
+                &db_path,
+                id,
+                "v2-session",
+                "compaction",
+                1_767_312_000_004,
+                format!(
+                    r#"{{{status}"reason":"auto","model":{{"id":"gpt-test","providerID":"openai"}},"time":{{"created":1767312000000}},"tokens":{{"input":40,"output":4}},"cost":0.4}}"#
+                )
+                .as_str(),
+                true,
+            );
+        }
 
         let entries = load_entries_from_directory(
             fixture.root(),
