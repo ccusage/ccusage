@@ -55,6 +55,11 @@ test-node:
 generate-large-fixture output_dir codex_output_dir size_mib="1024":
     apps/ccusage/scripts/generate-large-fixture.ts --output-dir "{{output_dir}}" --codex-output-dir "{{codex_output_dir}}" --size-mib {{size_mib}}
 
+# Build git refs (or take binary paths) and compare their report performance; `--real` adds local logs
+[positional-arguments]
+bench-history *args:
+    apps/ccusage/scripts/bench-history.bb "$@"
+
 # Format the whole tree (Nix, Rust, JS/TS, workflows, typos) via treefmt
 fmt:
     nix fmt

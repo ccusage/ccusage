@@ -45,10 +45,14 @@ affect rendering — before believing a speedup.
 - Parallelism only when it improves end-to-end time on real fixture shapes.
 - Binary size when adding a dependency or feature (`rust-binary-size` skill).
 
-## Reproducing The CI Performance Comment
+## Comparing Refs And Reproducing The CI Comment
 
-`apps/ccusage/scripts/compare-pr-performance.bb --help` lists the options; the
-`compare-pr-performance.bb` step in `.github/workflows/ci.yaml` is the reference
-for a realistic argument set. Locally, point `--base-dir` at the main worktree
-and `--head-dir` at `$PWD`, and cut `--runs`/`--warmup` down to keep iteration
-fast.
+`just bench-history <ref|binary>...` builds each ref in release mode, runs every
+report command over the generated realistic fixture in interleaved rounds, and
+judges each ref against the previous one the same way the CI comment judges a
+PR against its merge base. Add `--real` to also measure the logs this
+environment points at. Judge by the CPU-time and peak-RSS ratios, not wall time.
+
+When a regression slips past the comparison, fix the fixture generator
+(`apps/ccusage/scripts/generate-large-fixture.ts`) so its lines carry the shape
+that triggered it; do not add a special-case benchmark.
