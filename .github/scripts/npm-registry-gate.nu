@@ -72,7 +72,9 @@ export def wait-for-npm-package-versions [
             | each {|package| $"($package.name)@($package.version)"}
             | str join ', '
         )
-        error make {msg: $"npm registry did not serve exact package versions within ($effective_timeout): ($versions)"}
+        error make {
+            msg: $"npm registry did not serve exact package versions within ($effective_timeout): ($versions)"
+        }
     }
 
     print 'All native package versions are available from npm.'

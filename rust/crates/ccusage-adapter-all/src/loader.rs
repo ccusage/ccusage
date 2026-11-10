@@ -840,17 +840,53 @@ fn filtered_pi_format_agent_rows(
 enum ClaudeCounted {
     /// Daily-family reports count usage on the day Claude logged it.
     SessionDays(claude::SessionDays),
-    /// A session report counts a session whole, every day included.
+    /// A session report counts every session with in-window usage.
     Sessions(HashSet<Arc<str>>),
 }
 
 impl ClaudeCounted {
-    fn covers(&self, session: &Arc<str>, date: impl FnOnce() -> String) -> bool {
+    fn covers(
+        &self,
+        session: &Arc<str>,
+        date: impl FnOnce() -> String,
+        claude: &SharedArgs,
+    ) -> bool {
         match self {
             Self::SessionDays(days) => days.contains(&(Arc::clone(session), date())),
-            Self::Sessions(sessions) => sessions.contains(session),
+            // Claude counts only the session's in-window days, so a row outside them stays.
+            Self::Sessions(sessions) => {
+                sessions.contains(session)
+                    && date_within_range(&date(), claude.since.as_deref(), claude.until.as_deref())
+            }
         }
     }
+}
+
+/// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
+/// source counts are left to it unless `include_claude_agent` is set, so the
+/// focused reports add up to the unified one.
+pub(super) fn load_opencode_entries(
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    include_claude_agent: bool,
+) -> Result<Vec<LoadedEntry>> {
+    let entries = opencode::load_entries_with_native_sessions(shared, kind)?;
+    if include_claude_agent || entries.iter().all(|(_, session)| session.is_none()) {
+        return Ok(entries.into_iter().map(|(entry, _)| entry).collect());
+    }
+    let claude_shared = SharedArgs {
+        json: true,
+        mode: CostMode::Display,
+        ..shared.clone()
+    };
+    // Focused Claude reports, sessions included, count only in-window days, so match by
+    // session day. Missing Claude directories load as no session days, so those turns stay.
+    let (_, claude_counted) = load_claude_rows(AgentReportKind::Daily, &claude_shared, None)?;
+    Ok(without_turns_counted_by_claude(
+        entries,
+        &claude_counted,
+        &claude_shared,
+    ))
 }
 
 /// Claude rows plus the usage they count.
@@ -860,15 +896,27 @@ fn load_claude_rows(
     project_filter: Option<&str>,
 ) -> Result<(AgentRows, ClaudeCounted)> {
     if kind == AgentReportKind::Session {
+        // Like `ccusage claude session`, a session counts only its in-window usage.
         let deduped = claude::load_deduped_entries(shared, project_filter)?;
         let detected = !deduped.entries.is_empty();
-        let mut summaries = summarize_entry_sessions(&deduped.entries)?;
-        filter_session_summaries_by_last_activity(&mut summaries, shared);
-        let counted_sessions = summaries
-            .iter()
-            .filter_map(|summary| summary.session_id.as_deref())
-            .collect::<BTreeSet<_>>();
-        let sessions = deduped.main_thread_sessions(|session| counted_sessions.contains(session));
+        let in_window = |entry: &LoadedEntry| {
+            date_within_range(
+                &entry.date,
+                shared.since.as_deref(),
+                shared.until.as_deref(),
+            )
+        };
+        let sessions = deduped
+            .main_thread_session_days(in_window)
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect();
+        let entries = deduped
+            .entries
+            .into_iter()
+            .filter(|entry| in_window(entry))
+            .collect::<Vec<_>>();
+        let summaries = summarize_entry_sessions(&entries)?;
         return Ok((
             AgentRows {
                 rows: summary_rows("claude", summaries, false),
@@ -918,9 +966,11 @@ fn without_turns_counted_by_claude(
         .into_iter()
         .filter(|(entry, native_session)| {
             native_session.as_ref().is_none_or(|session| {
-                !claude_counted.covers(session, || {
-                    format_date_tz(entry.timestamp, claude_tz.as_ref())
-                })
+                !claude_counted.covers(
+                    session,
+                    || format_date_tz(entry.timestamp, claude_tz.as_ref()),
+                    claude_shared,
+                )
             })
         })
         .map(|(entry, _)| entry)

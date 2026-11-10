@@ -7,7 +7,12 @@ def main [] {
     let body = (open --raw (required_env COMMENT_FILE))
     match (find_existing_comment $repository $pr_number $marker) {
         null => (create_comment $repository $pr_number $body)
-        $existing => (update_or_recreate_comment $repository $pr_number $existing.id $body)
+        $existing => ((update_or_recreate_comment
+            $repository
+            $pr_number
+            $existing.id
+            $body
+        ))
     }
 }
 def find_existing_comment [repository: string, pr_number: string, marker: string] {

@@ -147,7 +147,9 @@ export def retry-pull-request-lookup [lookup: closure, wait: closure, max_attemp
             return $outcome.pull_request
         }
         if $attempt == $max_attempts and $outcome.transient_error != null {
-            error make {msg: $"Pull request lookup still failed after retrying: ($outcome.transient_error)"}
+            error make {
+                msg: $"Pull request lookup still failed after retrying: ($outcome.transient_error)"
+            }
         }
         if $attempt < $max_attempts {
             do $wait $attempt | ignore
@@ -188,7 +190,9 @@ export def closing-pull-request-nodes [connection: record]: nothing -> list<reco
         error make {msg: 'GitHub returned invalid closing pull request pagination data'}
     }
     if $has_next_page {
-        error make {msg: 'Closing pull request lookup exceeded one page; refusing incomplete duplicate detection'}
+        error make {
+            msg: 'Closing pull request lookup exceeded one page; refusing incomplete duplicate detection'
+        }
     }
     let nodes = $connection | get --optional nodes
     if ($nodes | describe) !~ '^(list|table)' {
@@ -274,7 +278,9 @@ export def implementation-title [title: string]: nothing -> string {
         (($sanitized | str length) <= 240)
     ] | all {|condition| $condition }
     if not $valid {
-        error make {msg: 'The sanitized implementation title must be one non-empty line of at most 240 characters'}
+        error make {
+            msg: 'The sanitized implementation title must be one non-empty line of at most 240 characters'
+        }
     }
     $sanitized
 }
@@ -382,14 +388,18 @@ def git-complete [args: list<string>]: nothing -> record {
 def git-run [args: list<string>]: nothing -> nothing {
     let result = git-complete $args
     if $result.exit_code != 0 {
-        error make {msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"}
+        error make {
+            msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"
+        }
     }
 }
 
 def git-output [args: list<string>]: nothing -> string {
     let result = git-complete $args
     if $result.exit_code != 0 {
-        error make {msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"}
+        error make {
+            msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"
+        }
     }
     $result.stdout | str trim
 }
@@ -441,7 +451,9 @@ def discard-created-pull-request [repo: string, number: int, branch: string]: no
         {|| git-run [push origin --delete $branch] }
     )
     if ($errors | is-not-empty) {
-        error make {msg: $"Could not fully discard implementation PR #($number) on branch ($branch): ($errors | str join '; ')"}
+        error make {
+            msg: $"Could not fully discard implementation PR #($number) on branch ($branch): ($errors | str join '; ')"
+        }
     }
 }
 
@@ -457,7 +469,9 @@ def discard-unvalidated-publication [repo: string, branch: string]: nothing -> n
         {|| git-run [push origin --delete $branch] }
     )
     if ($errors | is-not-empty) {
-        error make {msg: $"Could not fully discard an unvalidated implementation publication on branch ($branch): ($errors | str join '; ')"}
+        error make {
+            msg: $"Could not fully discard an unvalidated implementation publication on branch ($branch): ($errors | str join '; ')"
+        }
     }
 }
 
@@ -506,7 +520,9 @@ def resolve-coauthor-attribution [username: string, user_id: int, user: record]:
     } else {
         let created_at = $user | get --optional created_at
         if ($created_at | describe) != 'string' {
-            error make {msg: $"Could not determine when GitHub account ($username) was created"}
+            error make {
+                msg: $"Could not determine when GitHub account ($username) was created"
+            }
         }
         let created_at = $created_at | into datetime
         let legacy_cutoff = '2017-07-18T00:00:00Z' | into datetime
@@ -526,7 +542,9 @@ def resolve-coauthor-attribution [username: string, user_id: int, user: record]:
 export def coauthor-email [username: string, user_id: int, user: record]: nothing -> string {
     let attribution = resolve-coauthor-attribution $username $user_id $user
     if ($attribution.email | is-empty) {
-        error make {msg: $"Could not resolve a GitHub email for legacy account ($username) without a public email"}
+        error make {
+            msg: $"Could not resolve a GitHub email for legacy account ($username) without a public email"
+        }
     }
     $attribution.email
 }
@@ -616,7 +634,9 @@ export def publish-implementation []: nothing -> nothing {
         error make {msg: 'The implementation patch is empty'}
     }
     if $staged.exit_code != 1 {
-        error make {msg: $"Could not inspect the staged implementation: ($staged.stderr | str trim)"}
+        error make {
+            msg: $"Could not inspect the staged implementation: ($staged.stderr | str trim)"
+        }
     }
 
     git-run [config user.name 'github-actions[bot]']
@@ -680,7 +700,9 @@ export def publish-implementation []: nothing -> nothing {
         }
     } catch {
         discard-created-pull-request $repo $pull_number $branch
-        error make {msg: 'Could not reconcile competing pull requests after publication; the workflow-created pull request was closed'}
+        error make {
+            msg: 'Could not reconcile competing pull requests after publication; the workflow-created pull request was closed'
+        }
     }
     let competing = $reconciliation.competing
     if $competing != null {

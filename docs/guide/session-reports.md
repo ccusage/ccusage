@@ -139,7 +139,7 @@ ccusage claude session --since 20260501 --until 20260516
 ccusage claude session --since $(date -d '7 days ago' +%Y%m%d)
 ```
 
-For `ccusage claude session`, date filters are applied before session totals are calculated, so token and cost totals represent only the entries inside the selected window. Both bounds are inclusive, and `--timezone` determines the local date used for filtering.
+For `ccusage claude session` and the Claude rows of `ccusage session`, date filters are applied before session totals are calculated, so token and cost totals represent only the entries inside the selected window. A session that continues past `--until` still shows its usage from inside the window. Both bounds are inclusive, and `--timezone` determines the local date used for filtering.
 
 ### Cost Calculation Modes
 

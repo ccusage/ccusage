@@ -9,8 +9,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        OpenCodeMessage, OpenCodeSessionAggregate, message_value_to_entry,
-        session_message_value_to_entry, session_value_to_entry,
+        OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind, SessionMessageRow,
+        message_value_to_entry, session_message_value_to_entry, session_value_to_entry,
     },
     paths::paths,
 };
@@ -53,6 +53,7 @@ fn load_entries_inner(
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut message_sessions = HashSet::new();
+    let mut compaction_entries = Vec::new();
     let mut aggregate_entries = Vec::new();
     for path in paths()? {
         let directory_entries =
@@ -66,13 +67,15 @@ fn load_entries_inner(
             }
             entries.push(linked);
         }
+        compaction_entries.extend(directory_entries.compaction_entries);
         aggregate_entries.extend(directory_entries.aggregate_entries);
     }
-    append_aggregate_entries(
+    append_fallback_entries(
         &mut entries,
         &mut seen,
         &message_sessions,
         aggregate_entries,
+        compaction_entries,
     );
     entries.sort_by_key(|(entry, _)| entry.timestamp);
     Ok(entries)
@@ -100,11 +103,12 @@ fn load_entries_from_directory_for_report(
     let message_sessions = message_session_ids(&directory_entries.message_entries);
     let mut seen = entry_ids(&directory_entries.message_entries);
     let mut entries = directory_entries.message_entries;
-    append_aggregate_entries(
+    append_fallback_entries(
         &mut entries,
         &mut seen,
         &message_sessions,
         directory_entries.aggregate_entries,
+        directory_entries.compaction_entries,
     );
     entries.sort_by_key(|(entry, _)| entry.timestamp);
     Ok(entries.into_iter().map(|(entry, _)| entry).collect())
@@ -127,6 +131,7 @@ fn load_entries_from_directory_parts(
     let tz = parse_tz(shared.timezone.as_deref());
     let window = DateWindow::from_shared(shared, tz.as_ref());
     let mut message_entries = Vec::new();
+    let mut compaction_entries = Vec::new();
     let mut seen = HashSet::new();
     let mut aggregate_entries = Vec::new();
     if let Some(db_path) = db_path(opencode_dir) {
@@ -146,6 +151,14 @@ fn load_entries_from_directory_parts(
                 continue;
             }
             message_entries.push(linked);
+        }
+        for linked in database_entries.compaction_entries {
+            if let Some(id) = entry_id(&linked.0)
+                && !seen.insert(id.to_string())
+            {
+                continue;
+            }
+            compaction_entries.push(linked);
         }
         aggregate_entries = database_entries.aggregate_entries;
     }
@@ -192,6 +205,7 @@ fn load_entries_from_directory_parts(
 
     Ok(DirectoryLoadResult {
         message_entries,
+        compaction_entries,
         aggregate_entries,
     })
 }
@@ -273,12 +287,14 @@ struct DatabaseLoadContext<'a> {
 #[derive(Default)]
 struct DatabaseLoadResult {
     message_entries: Vec<LinkedEntry>,
+    compaction_entries: Vec<LinkedEntry>,
     aggregate_entries: Vec<LinkedEntry>,
 }
 
 #[derive(Default)]
 struct DirectoryLoadResult {
     message_entries: Vec<LinkedEntry>,
+    compaction_entries: Vec<LinkedEntry>,
     aggregate_entries: Vec<LinkedEntry>,
 }
 
@@ -301,6 +317,7 @@ fn load_entries_from_database(
         return DatabaseLoadResult::default();
     };
     let mut message_entries = Vec::new();
+    let mut compaction_entries = Vec::new();
 
     let mut seen_message_ids = HashSet::new();
     let mut message_sessions = HashSet::new();
@@ -426,9 +443,9 @@ fn load_entries_from_database(
                         let Ok(message_type) = statement.read::<String, _>(2) else {
                             continue;
                         };
-                        if message_type != "assistant" {
+                        let Some(kind) = SessionMessageKind::from_row_type(&message_type) else {
                             continue;
-                        }
+                        };
                         let Ok(data) = statement.read::<String, _>(3) else {
                             continue;
                         };
@@ -451,13 +468,31 @@ fn load_entries_from_database(
                             continue;
                         }
                         let Some(linked) = session_message_value_to_entry(
-                            &data, id, session_id, created, tz, mode, pricing,
+                            SessionMessageRow {
+                                kind,
+                                data: &data,
+                                id,
+                                session_id,
+                                created,
+                            },
+                            tz,
+                            mode,
+                            pricing,
                         ) else {
                             continue;
                         };
-                        let session_key = linked.0.session_id.to_string();
                         v2_entries += 1;
-                        message_sessions.insert(session_key);
+                        // The session counters already include compaction usage,
+                        // so a compaction row alone must not suppress them.
+                        if kind == SessionMessageKind::Compaction {
+                            push_unique_entry(
+                                &mut compaction_entries,
+                                &mut seen_message_ids,
+                                linked,
+                            );
+                            continue;
+                        }
+                        message_sessions.insert(linked.0.session_id.to_string());
                         push_unique_entry(&mut message_entries, &mut seen_message_ids, linked);
                     }
                     Ok(sqlite::State::Done) => break,
@@ -516,6 +551,7 @@ fn load_entries_from_database(
 
     DatabaseLoadResult {
         message_entries,
+        compaction_entries,
         aggregate_entries,
     }
 }
@@ -585,14 +621,31 @@ fn message_session_ids(entries: &[LinkedEntry]) -> HashSet<String> {
         .collect()
 }
 
-fn append_aggregate_entries(
+/// Adds session aggregates for sessions without assistant or legacy message
+/// usage, then compaction rows for sessions no aggregate covered. A session
+/// aggregate already includes the session's compaction usage.
+fn append_fallback_entries(
     entries: &mut Vec<LinkedEntry>,
     seen: &mut HashSet<String>,
     message_sessions: &HashSet<String>,
     aggregate_entries: Vec<LinkedEntry>,
+    compaction_entries: Vec<LinkedEntry>,
 ) {
+    let mut aggregate_sessions = HashSet::new();
     for linked in aggregate_entries {
         if message_sessions.contains(linked.0.session_id.as_ref()) {
+            continue;
+        }
+        if let Some(id) = entry_id(&linked.0)
+            && !seen.insert(id.to_string())
+        {
+            continue;
+        }
+        aggregate_sessions.insert(linked.0.session_id.to_string());
+        entries.push(linked);
+    }
+    for linked in compaction_entries {
+        if aggregate_sessions.contains(linked.0.session_id.as_ref()) {
             continue;
         }
         if let Some(id) = entry_id(&linked.0)
@@ -619,7 +672,7 @@ fn table_exists(connection: &sqlite::Connection, table: &str) -> bool {
 /// Fork sessions whose leading `seq` range is a copy of the parent history.
 ///
 /// Returns the largest `seq` that is still copied history for each fork
-/// session, so the v2 row scan can drop inherited assistant usage while
+/// session, so the v2 row scan can drop inherited usage while
 /// keeping what the fork generated itself. `session_v2` carries the fork
 /// link (`fork_session_id`) plus the boundary message; `session_message`
 /// carries the `seq` the fork kept when it copied the parent's rows.
@@ -1554,6 +1607,217 @@ mod tests {
         assert_eq!(entries[0].session_id.as_ref(), "legacy-session");
         assert_eq!(entries[0].data.message.usage.input_tokens, 120);
         assert_eq!(entries[0].cost, 0.03);
+    }
+
+    const COMPACTION_COMPLETED: &str = r#"{"status":"completed","reason":"auto","summary":"s","model":{"id":"gpt-test","providerID":"openai"},"time":{"created":1767312000000},"tokens":{"input":100,"output":20,"reasoning":7,"cache":{"read":30,"write":5}},"cost":0.02}"#;
+
+    fn insert_assistant_and_compaction(db_path: &Path, session_id: &str, prefix: &str) {
+        insert_db_session_message(
+            db_path,
+            &format!("{prefix}-assistant"),
+            session_id,
+            "assistant",
+            1_767_312_000_000,
+            assistant_payload(10, 2, 0.01).as_str(),
+            true,
+        );
+        set_db_session_message_seq(db_path, &format!("{prefix}-assistant"), 0);
+        insert_db_session_message(
+            db_path,
+            &format!("{prefix}-compaction"),
+            session_id,
+            "compaction",
+            1_767_312_000_001,
+            COMPACTION_COMPLETED,
+            true,
+        );
+        set_db_session_message_seq(db_path, &format!("{prefix}-compaction"), 1);
+    }
+
+    fn total_tokens(entries: &[crate::LoadedEntry]) -> u64 {
+        entries
+            .iter()
+            .map(|entry| {
+                let usage = &entry.data.message.usage;
+                usage.input_tokens
+                    + usage.output_tokens
+                    + usage.cache_creation_input_tokens
+                    + usage.cache_read_input_tokens
+                    + entry.extra_total_tokens
+            })
+            .sum()
+    }
+
+    #[test]
+    fn counts_completed_v2_compaction_usage_alongside_assistant_usage() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_assistant_and_compaction(&db_path, "v2-session", "msg");
+        // A running compaction carries no usage and a failed one has no model,
+        // so neither can be attributed.
+        insert_db_session_message(
+            &db_path,
+            "msg-compaction-running",
+            "v2-session",
+            "compaction",
+            1_767_312_000_002,
+            r#"{"status":"running","reason":"auto","summary":"","time":{"created":1767312000000}}"#,
+            true,
+        );
+        insert_db_session_message(
+            &db_path,
+            "msg-compaction-failed",
+            "v2-session",
+            "compaction",
+            1_767_312_000_003,
+            r#"{"status":"failed","reason":"auto","error":{"type":"unknown","message":"x"},"time":{"created":1767312000000},"tokens":{"input":50,"output":0},"cost":0.5}"#,
+            true,
+        );
+        // Only the status keeps these out: each has a model and usage.
+        for (id, status) in [
+            ("msg-compaction-failed-with-model", "failed"),
+            ("msg-compaction-running-with-usage", "running"),
+            ("msg-compaction-without-status", ""),
+        ] {
+            let status = if status.is_empty() {
+                String::new()
+            } else {
+                format!(r#""status":"{status}","#)
+            };
+            insert_db_session_message(
+                &db_path,
+                id,
+                "v2-session",
+                "compaction",
+                1_767_312_000_004,
+                format!(
+                    r#"{{{status}"reason":"auto","model":{{"id":"gpt-test","providerID":"openai"}},"time":{{"created":1767312000000}},"tokens":{{"input":40,"output":4}},"cost":0.4}}"#
+                )
+                .as_str(),
+                true,
+            );
+        }
+
+        let entries = load_entries_from_directory(
+            fixture.root(),
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+        )
+        .unwrap();
+
+        let mut ids: Vec<_> = entries
+            .iter()
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["msg-assistant", "msg-compaction"]);
+        assert_eq!(total_tokens(&entries), 174);
+        let cost: f64 = entries.iter().map(|entry| entry.cost).sum();
+        assert!((cost - 0.03).abs() < 1e-9);
+    }
+
+    #[test]
+    fn prefers_session_aggregate_over_a_lone_v2_compaction_row() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        // The assistant rows are gone (for example after a revert), but the
+        // session counters still hold them alongside the compaction usage.
+        insert_db_session_message(
+            &db_path,
+            "msg-compaction",
+            "v2-session",
+            "compaction",
+            1_767_312_000_001,
+            COMPACTION_COMPLETED,
+            true,
+        );
+        create_db_session_aggregate_table(&db_path, "session");
+        insert_db_session_aggregate(
+            &db_path,
+            "session",
+            &SessionAggregateFixture {
+                session_id: "v2-session",
+                time_created: 1_767_312_000_000,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 0.03,
+                input_tokens: 110,
+                output_tokens: 22,
+                cache_read_tokens: 30,
+                cache_write_tokens: 5,
+                reasoning_tokens: 7,
+            },
+        );
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let session_entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &shared,
+            AgentReportKind::Session,
+        )
+        .unwrap();
+        assert_eq!(session_entries.len(), 1);
+        assert_ne!(
+            session_entries[0].data.message.id.as_deref(),
+            Some("msg-compaction")
+        );
+        assert_eq!(total_tokens(&session_entries), 174);
+        assert!((session_entries[0].cost - 0.03).abs() < 1e-9);
+
+        // Period reports never use cumulative session counters, so the
+        // compaction row is the only usage they can attribute.
+        let daily_entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        assert_eq!(daily_entries.len(), 1);
+        assert_eq!(
+            daily_entries[0].data.message.id.as_deref(),
+            Some("msg-compaction")
+        );
+        assert_eq!(total_tokens(&daily_entries), 162);
+    }
+
+    #[test]
+    fn excludes_copied_v2_compaction_rows_from_forks() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("opencode.db");
+        create_db_session_message_table(&db_path, true);
+        insert_assistant_and_compaction(&db_path, "parent", "parent");
+        insert_assistant_and_compaction(&db_path, "fork", "fork-copy");
+        insert_db_session_message(
+            &db_path,
+            "fork-own",
+            "fork",
+            "assistant",
+            1_767_312_000_002,
+            assistant_payload(3, 1, 0.01).as_str(),
+            true,
+        );
+        set_db_session_message_seq(&db_path, "fork-own", 2);
+        create_db_session_aggregate_table_with_fork_columns(&db_path, "session_v2", true);
+        insert_db_session_fork(
+            &db_path,
+            "session_v2",
+            "fork",
+            "parent",
+            r#"{"type":"through","messageID":"parent-compaction"}"#,
+        );
+
+        let entries = fork_entries(&db_path);
+
+        assert_eq!(total_tokens(&entries), 178);
+        let fork_ids: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.session_id.as_ref() == "fork")
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect();
+        assert_eq!(fork_ids, vec!["fork-own"]);
     }
 
     fn assistant_payload(input: u64, output: u64, cost: f64) -> String {

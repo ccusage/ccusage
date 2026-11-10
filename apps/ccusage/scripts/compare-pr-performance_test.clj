@@ -56,21 +56,62 @@
           {"CLAUDE_CONFIG_DIR" "/tmp/a" "CODEX_HOME" "/tmp/codex data"}
           ["node" "/tmp/ccusage" "claude" "daily" "--offline" "--json"]))))
 
-(deftest hyperfine-normalization
-  (is (= {:max 130.0 :median 110.0 :min 90.0 :samples 3}
-         (measurement-from-hyperfine
-          {:max 0.13 :median 0.11 :min 0.09 :times [0.09 0.11 0.13]}))))
+(defn hyperfine-result [name median]
+  {:command (str "sleep " median) :name name
+   :summary {:time_wall_clock {:unit "second" :count 3 :median median
+                               :min (- median 0.02) :max (+ median 0.02)}}})
 
-(deftest malformed-hyperfine-output
+(defn with-hyperfine-export [content f]
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-hyperfine-test."})
-        output (babashka.fs/path dir "hyperfine.json")]
+        output (path dir "hyperfine.json")]
     (try
-      (spit (str output) "not json")
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo
-                            #"Malformed hyperfine output"
-                            (read-hyperfine-results output 2)))
+      (spit output content)
+      (f output)
       (finally
         (babashka.fs/delete-tree dir)))))
+
+(defn hyperfine-export [results]
+  (cheshire.core/generate-string {:schema_version 2 :primary_metric "time_wall_clock" :results results}))
+
+(deftest hyperfine-normalization
+  (is (= {:max 130.0 :median 110.0 :min 90.0 :samples 3}
+         (measurement-from-hyperfine (hyperfine-result "base" 0.11))))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"unit"
+                        (measurement-from-hyperfine
+                         (assoc-in (hyperfine-result "base" 0.11) [:summary :time_wall_clock :unit] "millisecond")))))
+
+(deftest hyperfine-results-follow-requested-names
+  (with-hyperfine-export
+    (hyperfine-export [(hyperfine-result "PR" 0.2) (hyperfine-result "base" 0.1)])
+    (fn [output]
+      (is (= ["base" "PR"] (map :name (read-hyperfine-results output ["base" "PR"])))))))
+
+(deftest malformed-hyperfine-output
+  (with-hyperfine-export
+    "not json"
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"Malformed hyperfine output"
+                            (read-hyperfine-results output ["base" "PR"])))))
+  (with-hyperfine-export
+    (cheshire.core/generate-string {:results [{:mean 0.1 :times [0.1]}]})
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"schema version"
+                            (read-hyperfine-results output ["base"])))))
+  (with-hyperfine-export
+    (hyperfine-export [(hyperfine-result "base" 0.1) (hyperfine-result "base" 0.2)])
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"2 results named base"
+                            (read-hyperfine-results output ["base" "PR"])))))
+  (with-hyperfine-export
+    (hyperfine-export [(hyperfine-result "base" 0.1)])
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"0 results named PR"
+                            (read-hyperfine-results output ["base" "PR"]))))))
 
 (deftest measurement-summary
   (is (= {:max 9 :median 4 :min 1 :samples 4}

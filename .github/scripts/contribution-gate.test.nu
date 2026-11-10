@@ -230,7 +230,11 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
             'pullfrog/issue-42-run-999'
     ) null
 
-    let closing_pull_request = {number: 1209, state: OPEN, url: 'https://github.com/ccusage/ccusage/pull/1209'}
+    let closing_pull_request = {
+        number: 1209
+        state: OPEN
+        url: 'https://github.com/ccusage/ccusage/pull/1209'
+    }
     expect 'finds an open pull request that GitHub recognizes as closing the issue' (
         open-closing-pull-request [$closing_pull_request]
     ) {number: 1209, html_url: 'https://github.com/ccusage/ccusage/pull/1209'}
@@ -287,7 +291,11 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
 def test-implementation-result []: nothing -> nothing {
     expect 'accepts prepared PR metadata' (
         implementation-result '{"implementation":"prepared","title":"fix: count cache writes","body":"Fixes the missing cost.\n\nTests: focused adapter test."}'
-    ) {implementation: prepared, title: 'fix: count cache writes', body: "Fixes the missing cost.\n\nTests: focused adapter test."}
+    ) {
+        implementation: prepared
+        title: 'fix: count cache writes'
+        body: "Fixes the missing cost.\n\nTests: focused adapter test."
+    }
     expect 'accepts a declined implementation' (
         implementation-result '{"implementation":"none","title":"","body":""}'
     ) {implementation: none, title: '', body: ''}
@@ -541,7 +549,11 @@ def test-issue-context []: nothing -> nothing {
 }
 
 def test-issue-number []: nothing -> nothing {
-    expect 'parses a positive integer issue number' (parse-issue-number '42') 42
+    (expect
+        'parses a positive integer issue number'
+        (parse-issue-number '42')
+        42
+    )
 
     [
         '1.5'
@@ -616,7 +628,11 @@ def test-issue-triage-policy []: nothing -> nothing {
     )
 
     let core_bug = issue-verdict-record '{"kind":"bug","maintenance_fit":"maintainable","confidence":"high","decision":"keep_open","priority":"priority:high","implementation":"create_pr","reason":"Confirmed cost calculation regression with a focused fix."}' true
-    expect 'keeps a high-confidence core bug open' $core_bug.decision keep_open
+    (expect
+        'keeps a high-confidence core bug open'
+        $core_bug.decision
+        keep_open
+    )
     (expect
         'allows an important maintainable bug implementation'
         $core_bug.implementation
@@ -653,7 +669,11 @@ def test-issue-triage-policy []: nothing -> nothing {
     )
 
     let security = issue-verdict-record '{"kind":"security","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"The report may affect credential handling."}' true
-    expect 'never auto-closes a security report' $security.decision needs_human
+    (expect
+        'never auto-closes a security report'
+        $security.decision
+        needs_human
+    )
     (expect
         'marks a security report for review'
         $security.maintenance_fit
