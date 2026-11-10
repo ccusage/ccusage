@@ -7,6 +7,14 @@ on:
       - reopened
       - edited
       - synchronize
+  # Both jobs are required checks, so they must also report where there is no
+  # pull request title to judge, and pass there without validating: merge
+  # groups, whose pull requests were already judged, and release.yaml's dispatch
+  # for tagpr's release PR, whose pull_request runs wait for an approval and
+  # whose title comes from .github/tagpr-template.md.
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
 
 permissions:
   pull-requests: read
@@ -16,7 +24,19 @@ jobs:
     name: Validate PR title
     runs-on: ubuntu-slim
     steps:
-      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
+      - name: Skip outside pull requests
+        if: github.event_name != 'pull_request'
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] && [[ "$REF_NAME" != tagpr-from-* ]]; then
+            echo "::error::Only tagpr release branches skip the title check on dispatch."
+            exit 1
+          fi
+          echo "No pull request title to validate on ${EVENT}."
+      - if: github.event_name == 'pull_request'
+        uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -35,16 +55,31 @@ jobs:
     # Same exemptions as the job above, so the two title policies agree on which
     # pull requests they judge.
     if: >-
-      !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
-      && !contains(github.event.pull_request.labels.*.name, 'dependencies')
+      github.event_name != 'pull_request' || (
+        !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
+        && !contains(github.event.pull_request.labels.*.name, 'dependencies')
+      )
     steps:
-      - uses: hustcer/setup-nu@eacad52a4634c4f8d17a94916f93be6856861b9c # v3.29
+      - name: Skip outside pull requests
+        if: github.event_name != 'pull_request'
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] && [[ "$REF_NAME" != tagpr-from-* ]]; then
+            echo "::error::Only tagpr release branches skip the title check on dispatch."
+            exit 1
+          fi
+          echo "No pull request title to validate on ${EVENT}."
+      - if: github.event_name == 'pull_request'
+        uses: hustcer/setup-nu@eacad52a4634c4f8d17a94916f93be6856861b9c # v3.29
         with:
           # Matches the dev shell in flake.nix, so a title rejected here is
           # rejected the same way by the commit-msg hook.
           version: 0.114.1
 
       - name: Check title scope against the changed adapters
+        if: github.event_name == 'pull_request'
         shell: nu {0}
         env:
           GH_TOKEN: ${{ github.token }}
