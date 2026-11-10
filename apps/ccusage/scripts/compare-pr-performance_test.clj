@@ -144,7 +144,7 @@
                                  :fixture-stats {:bytes 1073741824 :files 10} :codex-fixture-stats {:bytes 1048576 :files 2}}
                                 [result] {:base 2048 :head 1024})]
     (is (.startsWith markdown "<!-- ccusage-perf-comment -->\n<!-- ccusage-perf-comment:2222222222222222 -->\n"))
-    (is (.contains markdown "PR: `222222222222` · Base: `111111111111`"))
+    (is (.contains markdown "PR: `222222222222` merged onto Base: `111111111111`"))
     (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
     (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
     (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))))

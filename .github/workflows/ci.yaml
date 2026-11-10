@@ -464,12 +464,17 @@ jobs:
       issues: write
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
+    # The PR side is the checked-out merge commit (`github.sha`), built on top
+    # of the base commit, so a branch behind its base is not credited with the
+    # base's newer commits. merge_group events provide the same pair.
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
-      - name: Checkout PR
+      - name: Checkout merge commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -486,9 +491,14 @@ jobs:
       - name: Install perf tooling
         run: nix profile install --inputs-from . nixpkgs#just
 
+      - name: Check that the build sits on the base commit
+        run: |
+          if ! git merge-base --is-ancestor "$BASE_SHA" HEAD; then
+            echo "::error::Base $BASE_SHA is not an ancestor of the checked-out commit $(git rev-parse HEAD)"
+            exit 1
+          fi
+
       - name: Build base and PR binaries
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           NIX_CONFIG="access-tokens =" nix build .#ccusage-static --out-link "$RUNNER_TEMP/ccusage-head"
           NIX_CONFIG="access-tokens =" nix build "git+file://$PWD?rev=$BASE_SHA#ccusage-static" \
@@ -502,9 +512,6 @@ jobs:
             1024
 
       - name: Compare performance
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           apps/ccusage/scripts/compare-pr-performance.bb \
             --base-bin "$RUNNER_TEMP/ccusage-base/bin/ccusage" \
@@ -521,7 +528,7 @@ jobs:
         run: cat "$RUNNER_TEMP/ccusage-perf-comment.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upsert PR comment
-        if: ${{ !github.event.pull_request.head.repo.fork }}
+        if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
         env:
           COMMENT_FILE: ${{ runner.temp }}/ccusage-perf-comment.md
           COMMENT_MARKER: <!-- ccusage-perf-comment:${{ github.event.pull_request.head.sha }} -->

@@ -70,7 +70,7 @@
                               (when head-sha [(str "<!-- " comment-marker ":" head-sha " -->")])
                               ["## ccusage performance comparison" ""]
                               (when head-sha [(str "PR: `" (format-sha head-sha) "`"
-                                                   (when base-sha (str " · Base: `" (format-sha base-sha) "`")))
+                                                   (when base-sha (str " merged onto Base: `" (format-sha base-sha) "`")))
                                               ""])
                               [(:text (overall-verdict results (:threshold context))) ""
                                (fixture-line context) "" (method-line context) ""
