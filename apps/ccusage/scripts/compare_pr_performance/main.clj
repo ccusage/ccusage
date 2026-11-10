@@ -7,8 +7,11 @@
      :base (variant-summary rounds "base") :head (variant-summary rounds "PR")
      :comparison (compare-variants rounds "base" "PR" (:threshold options))}))
 
-(defn github-warning! [verdict]
-  (when (and (:regression? verdict) (System/getenv "GITHUB_ACTIONS"))
+(defn github-warning!
+  "GitHub reads workflow commands only from stdout, so the annotation must not
+  go to stderr with the progress log."
+  [verdict github-actions?]
+  (when (and (:regression? verdict) github-actions?)
     (println (str "::warning title=ccusage performance::" (str/replace (:text verdict) "**" "")))))
 
 (defn -main [& argv]
@@ -28,5 +31,5 @@
                 report (render-report context results {:base (optional-file-size (:bin (first variants)))
                                                        :head (optional-file-size (:bin (second variants)))})]
             (write-output! (:output options) report)
-            (binding [*out* *err*] (github-warning! (overall-verdict results (:threshold options)))))
+            (github-warning! (overall-verdict results (:threshold options)) (some? (System/getenv "GITHUB_ACTIONS"))))
           (finally (fs/delete-tree empty-home)))))))

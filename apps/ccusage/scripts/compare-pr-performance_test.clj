@@ -129,6 +129,15 @@
     (is (.contains (:text (overall-verdict [(result :unchanged :unchanged)] 0.1)) "no significant change"))
     (is (not (:regression? (overall-verdict [(result :improvement :unchanged)] 0.1))))))
 
+(deftest github-warning-goes-to-stdout
+  (let [err (java.io.StringWriter.)
+        regression {:regression? true :text "**Verdict: ⚠️ possible regression** in `daily`"}
+        out (binding [*err* err] (with-out-str (github-warning! regression true)))]
+    (is (= "::warning title=ccusage performance::Verdict: ⚠️ possible regression in `daily`\n" out))
+    (is (= "" (str err))))
+  (is (= "" (with-out-str (github-warning! {:regression? true :text "x"} false))))
+  (is (= "" (with-out-str (github-warning! {:text "x"} true)))))
+
 (let [{:keys [fail error]} (apply run-tests ['compare-pr-performance-test])]
   (when (pos? (+ fail error))
     (System/exit 1)))
