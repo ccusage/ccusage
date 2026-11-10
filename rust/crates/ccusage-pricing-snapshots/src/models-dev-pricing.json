@@ -16314,9 +16314,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.016,
-			"input": 0.032,
-			"output": 0.097
+			"cache_read": 0.017,
+			"input": 0.033,
+			"output": 0.1
 		},
 		"limit": {
 			"context": 262144
@@ -36645,7 +36645,7 @@
 	},
 	"~perplexity/pplx-decider-latest": {
 		"cost": {
-			"input": 0.02,
+			"input": 0.019,
 			"output": 0
 		},
 		"exactOnly": true,
