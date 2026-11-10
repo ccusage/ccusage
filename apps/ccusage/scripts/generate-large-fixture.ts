@@ -79,6 +79,7 @@ type FixtureResult = {
 	fileCount: number;
 	lineCount: number;
 	totalBytes: number;
+	diskBytes: number;
 };
 
 type Options = {
@@ -849,7 +850,7 @@ function planCodexFile(directory: string, fileIndex: number): PlannedFile {
 async function writeFile(
 	file: PlannedFile,
 	targetSize: number,
-): Promise<{ bytes: number; lines: number }> {
+): Promise<{ bytes: number; diskBytes: number; lines: number }> {
 	await Bun.$`mkdir -p ${dirname(file.path)}`;
 	const chunks: string[] = [];
 	let bytes = 0;
@@ -865,8 +866,11 @@ async function writeFile(
 		lines += 1;
 	}
 	const content = chunks.join('');
-	await Bun.write(file.path, file.compressed ? Bun.zstdCompressSync(content) : content);
-	return { bytes, lines };
+	const diskBytes = await Bun.write(
+		file.path,
+		file.compressed ? Bun.zstdCompressSync(content) : content,
+	);
+	return { bytes, diskBytes, lines };
 }
 
 async function generateFixture(
@@ -882,6 +886,7 @@ async function generateFixture(
 	await Bun.$`rm -rf ${directory}`;
 
 	let totalBytes = 0;
+	let diskBytes = 0;
 	let lineCount = 0;
 	let previousSession: ClaudeSession | undefined;
 	for (let fileIndex = 0; fileIndex < fileSizeTargets.length; fileIndex += 1) {
@@ -899,17 +904,19 @@ async function generateFixture(
 		}
 		const written = await writeFile(file, targetSize);
 		totalBytes += written.bytes;
+		diskBytes += written.diskBytes;
 		lineCount += written.lines;
 	}
 
-	return { fileCount: fileSizeTargets.length, lineCount, totalBytes };
+	return { fileCount: fileSizeTargets.length, lineCount, totalBytes, diskBytes };
 }
 
 function printResult(name: string, outputDir: string, result: FixtureResult): void {
 	console.log(`Generated ${name} fixture ${outputDir}`);
 	console.log(`Files: ${result.fileCount}`);
 	console.log(`Rows: ${result.lineCount}`);
-	console.log(`Size: ${formatBytes(result.totalBytes)}`);
+	console.log(`Size on disk: ${formatBytes(result.diskBytes)}`);
+	console.log(`Uncompressed: ${formatBytes(result.totalBytes)}`);
 }
 
 async function main(): Promise<void> {
