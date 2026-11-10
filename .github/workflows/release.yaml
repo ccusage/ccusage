@@ -53,11 +53,14 @@ jobs:
     permissions:
       actions: write
     steps:
+      # Both workflows report checks main's ruleset requires.
       - name: Dispatch CI on the release branch
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ fromJSON(needs.tagpr.outputs.pull_request).head.ref }}
-        run: gh workflow run ci.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+        run: |
+          gh workflow run ci.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+          gh workflow run check-pr-title.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
 
   # The release jobs below run in this workflow instead of a tag-triggered one
   # because tags pushed with GITHUB_TOKEN do not trigger `on: push: tags`

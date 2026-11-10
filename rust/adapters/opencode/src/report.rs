@@ -173,6 +173,7 @@ mod tests {
                 output_tokens: 50,
                 cache_creation_tokens: 10,
                 cache_read_tokens: 5,
+                cache_creation_1h_tokens: None,
                 extra_total_tokens: 7,
                 cost: 0.25,
                 missing_pricing: false,

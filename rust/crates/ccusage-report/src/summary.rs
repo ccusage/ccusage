@@ -139,6 +139,7 @@ mod tests {
                 output_tokens: 10,
                 cache_creation_tokens: 1,
                 cache_read_tokens: 2,
+                cache_creation_1h_tokens: None,
                 extra_total_tokens: 3,
                 cost: fixture.cost,
                 missing_pricing: false,

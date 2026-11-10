@@ -2,12 +2,28 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # tagpr pushes its release branch with GITHUB_TOKEN, which starts no
+    # workflow, so release.yaml dispatches CI there instead. A person pushing to
+    # that branch does start one, and that run re-reports `ci gate` for the new
+    # head through the release status jobs below.
+    branches: [main, 'tagpr-from-*']
   pull_request:
+  # The merge queue's required `ci gate` must report on the queued commit.
+  merge_group:
+    types: [checks_requested]
   # Dispatched by release.yaml for tagpr's release PR.
   workflow_dispatch:
 
 permissions: read-all
+
+env:
+  # Only runs of main may persist the Nix stores and the Cargo cache: the
+  # sticky disks these jobs mount are the ones main and release builds read.
+  # Pull requests and merge groups mount them without committing, so their
+  # changes are discarded. This is decided here rather than only inside the
+  # local actions, so the gate sits next to the triggers. It cannot stop a
+  # queued commit that edits this file; review before queuing does that.
+  PERSIST_CACHES: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
   changes:
@@ -45,6 +61,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - name: Install tirith
         run: nix profile install .#tirith
       # One pass produces the SARIF report and sets the gate exit code. tirith's
@@ -153,6 +171,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - name: Secret scan and workflow lint
         run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt
 
@@ -171,6 +191,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - parallel:
           - name: Run nix flake check
             run: nix flake check --print-build-logs
@@ -205,7 +227,7 @@ jobs:
     if: needs.changes.outputs.code-changed == 'true'
     name: ${{ matrix.name }}
     permissions:
-      actions: write
+      actions: read
       contents: read
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -241,24 +263,31 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/build-linux-native-package
         if: matrix.platform == 'linux'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
-          nix-github-token: ${{ github.event_name != 'pull_request' }}
+          # Pull requests and merge groups build code not yet on main, so they
+          # get no token.
+          nix-github-token: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
           cache-scope: ${{ matrix.name }}
+          save-nix-cache: ${{ env.PERSIST_CACHES }}
       - uses: ./.github/actions/build-macos-nix-native-package
         if: matrix.platform == 'darwin'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
+          save-nix-cache: ${{ env.PERSIST_CACHES }}
       - uses: ./.github/actions/build-windows-native-package
         if: matrix.platform == 'win32'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
+          save-cargo-cache: ${{ env.PERSIST_CACHES }}
 
   npm-publish-dry-run-and-upload-pkg-pr-now:
     # preflight gates the publish rather than the builds: a leaked secret must
@@ -278,7 +307,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       # Packing only repackages the native binaries restored from the build
       # matrix below (no Rust build happens here), so the full `nix develop` dev
       # shell is unnecessary. The package checks bring Nu through their Nix
@@ -325,9 +358,11 @@ jobs:
           if-no-files-found: error
 
   ccusage-preview-e2e:
-    # Run on PRs and on pushes to the default branch. `push` only fires on main
-    # (see on.push.branches), so this validates the published preview package
-    # post-merge too, not just on PRs.
+    # Run on PRs, merge groups, and pushes to the default branch. `push` fires
+    # on main (see on.push.branches), so this validates the published preview
+    # package post-merge too, not just on PRs. Merge groups publish a
+    # preview of the queued commit, so the queue verifies the package built from
+    # the tree main will get.
     if: needs.changes.outputs.code-changed == 'true'
     name: e2e ${{ matrix.runner }} (${{ matrix.os }})
     needs:
@@ -486,7 +521,7 @@ jobs:
         with:
           disk-job: build-native-packages
           cache-scope: build-linux-x64
-          save: 'false'
+          save: ${{ env.PERSIST_CACHES }}
 
       - name: Install perf tooling
         run: nix profile install --inputs-from . nixpkgs#just
@@ -552,7 +587,7 @@ jobs:
 
       - uses: ./.github/actions/setup-nix-cache
         with:
-          save: 'false'
+          save: ${{ env.PERSIST_CACHES }}
 
       - name: Download comment
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -614,10 +649,12 @@ jobs:
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
 
-  # Dispatch runs aren't attached to the release PR; report via commit status.
+  # Check runs from a dispatch are not attached to the release PR, so they cannot
+  # satisfy main's required `ci gate`. A commit status on the same SHA is, so the
+  # gate result is reported again under that exact context.
   release-dispatch-status-pending:
     name: release dispatch status (pending)
-    if: github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'tagpr-from-')
+    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-')
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -629,7 +666,7 @@ jobs:
         run: |
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state=pending \
-            -f context='CI (release dispatch)' \
+            -f context='ci gate' \
             -f description='CI is running' \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
@@ -638,7 +675,7 @@ jobs:
     needs:
       - release-dispatch-status-pending
       - ci-gate
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'tagpr-from-') }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-') }}
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -658,6 +695,6 @@ jobs:
           fi
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$state" \
-            -f context='CI (release dispatch)' \
+            -f context='ci gate' \
             -f description="$description" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
