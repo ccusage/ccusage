@@ -3,7 +3,7 @@
    :codex-fixture-dir {:ref "DIR" :desc "Codex fixture; generated under the cache when omitted"}
    :size-mib {:coerce :long :default 1024 :ref "N" :desc "Size of each generated fixture"}
    :real {:coerce :boolean :desc "Also measure the logs this environment points at (default dirs, CLAUDE_CONFIG_DIR, CODEX_HOME)"}
-   :runs {:coerce :long :default 5 :ref "N"}
+   :runs {:coerce :long :default 5 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 1 :ref "N"}
    :threshold {:coerce :double :default 0.1 :ref "RATIO"}
    :commands {:ref "LIST" :desc "Comma-separated report commands"}
@@ -37,7 +37,7 @@
     (when-not (:help opts)
       (when (empty? args)
         (fail! "Pass at least one git ref or ccusage binary path" {:kind :invalid-cli}))
-      (assert-sample-options (assoc opts :runs (max 3 (:runs opts)))))
+      (assert-sample-options opts))
     (assoc opts :refs (vec args))))
 
 (defn history-help-text []

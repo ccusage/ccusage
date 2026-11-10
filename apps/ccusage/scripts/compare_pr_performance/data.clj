@@ -14,7 +14,7 @@
    :fixture-dir {:ref "DIR" :desc "Claude fixture (CLAUDE_CONFIG_DIR)"}
    :codex-fixture-dir {:ref "DIR" :desc "Codex fixture (CODEX_HOME)"}
    :output {:ref "FILE"}
-   :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds"}
+   :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 2 :ref "N" :desc "Interleaved warmup rounds"}
    :threshold {:coerce :double :default 0.1 :ref "RATIO" :desc "CPU-time and RSS change that counts as a regression"}
    :help {:alias :h :coerce :boolean}})

@@ -23,7 +23,11 @@
     (is (= ["v20.0.20" "main"] (:refs (parse-history-cli ["--real" "v20.0.20" "main"]))))
     (is (true? (:real (parse-history-cli ["--real" "main"]))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"at least one git ref"
-                          (parse-history-cli [])))))
+                          (parse-history-cli []))))
+  (testing "history rejects too few rounds instead of measuring them"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--runs must be at least 3"
+                          (parse-history-cli ["--runs" "2" "main"])))
+    (is (= 3 (:runs (parse-history-cli ["--runs" "3" "main"]))))))
 
 (deftest formatting
   (is (= "999ms" (format-duration 999)))
