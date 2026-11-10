@@ -716,7 +716,7 @@ if (projectData.projects) {
 
 JSON output is designed for programmatic consumption:
 
-- **Consistent structure**: All fields are always present (with 0 or empty values when not applicable)
+- **Consistent structure**: Token and cost fields are always present (with 0 or empty values when not applicable), except that `--no-cost` removes cost fields. A few `modelBreakdowns` keys appear only when they apply: [`missingPricing`](#unpriced-models), [`storedCost`](#stored-costs), and [`cacheCreation1hTokens`](#cache-write-ttl-split)
 - **Standard types**: Numbers for metrics, strings for identifiers, arrays for lists
 - **ISO timestamps**: Standardized date/time formats for reliable parsing
 - **Stable schema**: Field names and structures remain consistent across versions
