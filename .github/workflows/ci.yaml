@@ -208,7 +208,7 @@ jobs:
     if: needs.changes.outputs.code-changed == 'true'
     name: ${{ matrix.name }}
     permissions:
-      actions: write
+      actions: read
       contents: read
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -249,7 +249,9 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
-          nix-github-token: ${{ github.event_name != 'pull_request' }}
+          # Pull requests and merge groups build code not yet on main, so they
+          # get no token.
+          nix-github-token: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
           cache-scope: ${{ matrix.name }}
       - uses: ./.github/actions/build-macos-nix-native-package
         if: matrix.platform == 'darwin'
