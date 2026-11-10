@@ -1127,3 +1127,37 @@ fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split
         );
     }
 }
+
+#[test]
+fn breakdowns_keep_the_one_hour_split_from_an_otherwise_equal_duplicate() {
+    let unsplit = r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":400}}}"#;
+    let split = r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":300}}}}"#;
+
+    for lines in [[unsplit, split], [split, unsplit]] {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+
+        let mut costs = Vec::new();
+        for (report, pointer) in [("daily", "/daily/0"), ("session", "/sessions/0")] {
+            let args = [
+                "claude",
+                report,
+                "--json",
+                "--offline",
+                "--mode",
+                "calculate",
+                "--timezone",
+                "UTC",
+            ];
+            let json: serde_json::Value =
+                serde_json::from_str(&run_ccusage(&fixture, &args, None)).unwrap();
+            let row = json.pointer(pointer).unwrap();
+            let breakdown = &row["modelBreakdowns"][0];
+
+            assert_eq!(breakdown["cacheCreationTokens"], 400, "{args:?}: {row}");
+            assert_eq!(breakdown["cacheCreation1hTokens"], 300, "{args:?}: {row}");
+            costs.push(row["totalCost"].as_f64().unwrap());
+        }
+        assert_eq!(costs[0], costs[1], "daily and session cost: {costs:?}");
+    }
+}
