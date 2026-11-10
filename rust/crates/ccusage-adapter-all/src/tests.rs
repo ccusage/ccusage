@@ -2283,15 +2283,22 @@ fn aggregates_model_breakdowns_across_agents() {
                 metadata: None,
                 metadata_agents: Some(vec!["codex"]),
                 agent_breakdowns: None,
-                model_breakdowns: vec![ModelBreakdown {
-                    model_name: "gpt-5".to_string(),
-                    input_tokens: 10,
-                    output_tokens: 5,
-                    cache_creation_tokens: 0,
-                    cache_read_tokens: 2,
-                    cost: 0.03,
-                    ..ModelBreakdown::default()
-                }],
+                model_breakdowns: vec![
+                    ModelBreakdown {
+                        model_name: "gpt-5".to_string(),
+                        input_tokens: 10,
+                        output_tokens: 5,
+                        cache_creation_tokens: 0,
+                        cache_read_tokens: 2,
+                        cost: 0.03,
+                        ..ModelBreakdown::default()
+                    },
+                    ModelBreakdown {
+                        model_name: "gpt-5-mini".to_string(),
+                        input_tokens: 1,
+                        ..ModelBreakdown::default()
+                    },
+                ],
             },
             AllRow {
                 period: "2026-01-02".to_string(),
@@ -2313,6 +2320,7 @@ fn aggregates_model_breakdowns_across_agents() {
                         output_tokens: 3,
                         cache_creation_tokens: 1,
                         cache_read_tokens: 2,
+                        cache_creation_1h_tokens: Some(1),
                         cost: 0.01,
                         missing_pricing: true,
                         ..ModelBreakdown::default()
@@ -2326,6 +2334,11 @@ fn aggregates_model_breakdowns_across_agents() {
                         cost: 0.06,
                         ..ModelBreakdown::default()
                     },
+                    ModelBreakdown {
+                        model_name: "gpt-5-mini".to_string(),
+                        input_tokens: 2,
+                        ..ModelBreakdown::default()
+                    },
                 ],
             },
         ],
@@ -2334,7 +2347,7 @@ fn aggregates_model_breakdowns_across_agents() {
     );
 
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].model_breakdowns.len(), 2);
+    assert_eq!(rows[0].model_breakdowns.len(), 3);
     assert_eq!(
         rows[0].model_breakdowns[0].model_name,
         "claude-sonnet-4-20250514"
@@ -2347,6 +2360,13 @@ fn aggregates_model_breakdowns_across_agents() {
     assert_eq!(rows[0].model_breakdowns[1].cache_read_tokens, 4);
     assert_eq!(rows[0].model_breakdowns[1].cost, 0.04);
     assert!(rows[0].model_breakdowns[1].missing_pricing);
+    assert_eq!(
+        rows[0].model_breakdowns[1].cache_creation_1h_tokens,
+        Some(1)
+    );
+    assert_eq!(rows[0].model_breakdowns[2].model_name, "gpt-5-mini");
+    assert_eq!(rows[0].model_breakdowns[2].input_tokens, 3);
+    assert_eq!(rows[0].model_breakdowns[2].cache_creation_1h_tokens, None);
 }
 
 #[test]
