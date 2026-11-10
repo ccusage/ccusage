@@ -847,14 +847,19 @@ fn has_unsupported_null_field(line: &[u8]) -> bool {
     let Ok(root) = serde_json::from_slice::<serde_json::Value>(line) else {
         return false;
     };
-    has_unsupported_null_field_in_value(&root)
+    let unsupported = has_unsupported_null_field_in_value(&root);
+    assert!(
+        !unsupported || may_have_unsupported_null_field(line),
+        "the raw pre-check must not skip a line the value check rejects"
+    );
+    unsupported
 }
 
 /// Deserializes a transcript line while enforcing Claude's nullable-field contract.
-/// Lines containing `null` are parsed into a value once so structural validation and
-/// typed deserialization can share the same parse.
+/// Lines that may hold an unsupported `null` member are parsed into a value once so
+/// structural validation and typed deserialization can share the same parse.
 pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(line: &[u8]) -> Option<T> {
-    if memmem::find(line, b"null").is_none() {
+    if !may_have_unsupported_null_field(line) {
         return serde_json::from_slice(line).ok();
     }
     let root = serde_json::from_slice::<UniqueJsonValue>(line).ok()?.0;
@@ -862,6 +867,38 @@ pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(line: &[u8]) -> Option
         return None;
     }
     serde_json::from_value(root).ok()
+}
+
+/// Whether a `null` in `line` could be the value of a member that
+/// [`is_unsupported_nullable_field`] guards.
+///
+/// Claude Code writes always-null members such as `stop_sequence` and `container` on
+/// every assistant line, so the mere presence of `null` would send nearly every line
+/// through the value-tree check. A key holding an escape sequence counts as guarded,
+/// because its decoded name cannot be compared from the raw bytes; any other false
+/// positive only costs the slower validated parse.
+fn may_have_unsupported_null_field(line: &[u8]) -> bool {
+    memmem::find_iter(line, b"null").any(|null_start| {
+        let Some(before_value) = trim_json_whitespace_end(&line[..null_start]).strip_suffix(b":")
+        else {
+            return false;
+        };
+        let Some(before_closing_quote) = trim_json_whitespace_end(before_value).strip_suffix(b"\"")
+        else {
+            return false;
+        };
+        let key_start = memchr::memrchr(b'"', before_closing_quote).map_or(0, |index| index + 1);
+        let key = &before_closing_quote[key_start..];
+        key.contains(&b'\\') || is_unsupported_nullable_field(key)
+    })
+}
+
+fn trim_json_whitespace_end(bytes: &[u8]) -> &[u8] {
+    let end = bytes
+        .iter()
+        .rposition(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
+        .map_or(0, |index| index + 1);
+    &bytes[..end]
 }
 
 /// A JSON value parser that preserves typed Serde's rejection of duplicate members.
@@ -1077,7 +1114,8 @@ mod tests {
 
     use super::{
         deserialize_usage_line, extract_session_parts, has_unsupported_null_field,
-        paths::is_project_path_segment, push_deduped_entry, read_usage_file, usage_files,
+        may_have_unsupported_null_field, paths::is_project_path_segment, push_deduped_entry,
+        read_usage_file, usage_files,
     };
     use crate::{
         LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
@@ -1260,6 +1298,37 @@ mod tests {
         assert!(!has_unsupported_null_field(
             br#"{"message":{"model":"m","usage":{"input_tokens":,"iterations":[{"type":"message","model":null}]}}}"#
         ));
+    }
+
+    #[test]
+    fn null_precheck_skips_only_unguarded_members() {
+        assert!(!may_have_unsupported_null_field(
+            br#"{"message":{"model":"m","stop_sequence":null,"container":null,"content":"null","usage":{"input_tokens":1,"iterations":null}}}"#
+        ));
+        assert!(!may_have_unsupported_null_field(
+            br#"{"message":{"content":[null],"usage":{"input_tokens":1}}}"#
+        ));
+        assert!(may_have_unsupported_null_field(
+            br#"{"message":{"model" :
+null,"usage":{"input_tokens":1}}}"#
+        ));
+        assert!(may_have_unsupported_null_field(
+            br#"{"message":{"model":null,"usage":{"input_tokens":1}}}"#
+        ));
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":null,"usage":{"input_tokens":1}}}"#
+        ));
+        assert!(may_have_unsupported_null_field(
+            br#"{"message":{"content":"\"id\":null","usage":{"input_tokens":1}}}"#
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_members_on_lines_with_only_unguarded_nulls() {
+        assert!(deserialize_usage_line::<UsageEntry>(
+            br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","stop_sequence":null,"usage":{"input_tokens":2,"output_tokens":289}}}"#
+        )
+        .is_none());
     }
 
     #[test]
