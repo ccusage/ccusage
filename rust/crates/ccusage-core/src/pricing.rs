@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, OnceLock, RwLock},
     time::{Duration, Instant},
 };
 
@@ -472,7 +472,7 @@ pub struct PricingMap {
     builtin_context_limits: FxHashMap<String, u64>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
-    find_cache: OnceLock<Mutex<FxHashMap<String, Option<Pricing>>>>,
+    find_cache: OnceLock<RwLock<FxHashMap<String, Option<Pricing>>>>,
     /// Every entry key under its normalized spelling, mapped to the one key
     /// carrying that spelling, or `None` when several keys share it.
     ///
@@ -1463,8 +1463,8 @@ impl PricingMap {
         {
             let cache = self
                 .find_cache
-                .get_or_init(|| Mutex::new(FxHashMap::default()));
-            let guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+                .get_or_init(|| RwLock::new(FxHashMap::default()));
+            let guard = cache.read().unwrap_or_else(|error| error.into_inner());
             if let Some(&cached) = guard.get(model) {
                 return cached;
             }
@@ -1488,8 +1488,8 @@ impl PricingMap {
         // short-circuited.
         let cache = self
             .find_cache
-            .get_or_init(|| Mutex::new(FxHashMap::default()));
-        let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
+            .get_or_init(|| RwLock::new(FxHashMap::default()));
+        let mut guard = cache.write().unwrap_or_else(|error| error.into_inner());
         guard.insert(model.to_string(), result);
         result
     }
@@ -2065,9 +2065,11 @@ impl PricingMap {
     }
 
     fn clear_find_cache(&mut self) {
-        if let Some(cache) = self.find_cache.get() {
-            let mut guard = cache.lock().unwrap_or_else(|error| error.into_inner());
-            guard.clear();
+        if let Some(cache) = self.find_cache.get_mut() {
+            cache
+                .get_mut()
+                .unwrap_or_else(|error| error.into_inner())
+                .clear();
         }
         self.normalized_keys.take();
     }
