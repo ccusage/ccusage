@@ -41,6 +41,94 @@ fn session_id_deduplicates_repeated_message_usage() {
     assert_eq!(json["entries"].as_array().unwrap().len(), 1);
 }
 
+fn write_two_model_session(fixture: &Fixture) {
+    let messages = [
+        r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","costUSD":0.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+        r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","costUSD":1.5,"message":{"id":"message-b","model":"claude-opus-4-20250514","usage":{"input_tokens":30,"output_tokens":4,"cache_read_input_tokens":100}}}"#,
+    ];
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/chat.jsonl",
+        messages.join("\n"),
+    );
+    let _ = fixture.write_file(
+        "projects/project-b/session-b/chat.jsonl",
+        r#"{"timestamp":"2026-09-15T13:00:00.000Z","sessionId":"session-b","requestId":"request-c","costUSD":9.0,"message":{"id":"message-c","model":"claude-sonnet-4-20250514","usage":{"input_tokens":999,"output_tokens":999}}}"#,
+    );
+}
+
+#[test]
+fn session_id_json_includes_model_breakdowns() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+
+    let json: serde_json::Value = serde_json::from_str(&run_ccusage(
+        &fixture,
+        &[
+            "claude",
+            "session",
+            "--id",
+            "session-a",
+            "--json",
+            "--mode",
+            "display",
+            "--offline",
+        ],
+        None,
+    ))
+    .unwrap();
+
+    assert_eq!(
+        json["modelsUsed"],
+        serde_json::json!(["claude-sonnet-4-20250514", "claude-opus-4-20250514"])
+    );
+    let breakdowns = json["modelBreakdowns"].as_array().unwrap();
+    assert_eq!(breakdowns.len(), 2, "{json}");
+    assert_eq!(breakdowns[0]["modelName"], "claude-opus-4-20250514");
+    assert_eq!(breakdowns[0]["inputTokens"], 30);
+    assert_eq!(breakdowns[0]["outputTokens"], 4);
+    assert_eq!(breakdowns[0]["cacheReadTokens"], 100);
+    assert_eq!(breakdowns[0]["cost"], 1.5);
+    assert_eq!(breakdowns[1]["modelName"], "claude-sonnet-4-20250514");
+    assert_eq!(breakdowns[1]["inputTokens"], 10);
+    assert_eq!(breakdowns[1]["cost"], 0.25);
+}
+
+#[test]
+fn session_id_table_honors_breakdown() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
+        .env_clear()
+        .env("HOME", fixture.path("home"))
+        .env("USERPROFILE", fixture.path("userprofile"))
+        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
+        .env("CLAUDE_CONFIG_DIR", fixture.root())
+        .env("NO_COLOR", "1")
+        .env("COLUMNS", "200")
+        .args([
+            "claude",
+            "session",
+            "--id",
+            "session-a",
+            "--breakdown",
+            "--mode",
+            "display",
+            "--offline",
+            "--timezone",
+            "UTC",
+        ])
+        .output()
+        .expect("failed to run ccusage");
+    assert!(
+        output.status.success(),
+        "ccusage claude session --id --breakdown failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap());
+}
+
 fn set_file_modified(path: &std::path::Path, unix_seconds: u64) {
     let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_seconds);
     std::fs::File::options()
@@ -144,6 +232,43 @@ fn daily_since_totals_match_after_pruning_stale_files() {
     assert!(!table.contains("2026-09-01"), "{table}");
     assert!(!table.contains("2026-09-09"), "{table}");
     assert!(table.contains("$3.00"), "{table}");
+}
+
+#[test]
+fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/chat.jsonl",
+        [
+            r#"{"timestamp":"2026-09-11T12:00:00.000Z","sessionId":"session-a","requestId":"request-direct","costUSD":1.0,"message":{"id":"message-direct","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1,"output_tokens":2}},"data":{"message":{"timestamp":"2026-09-12T12:00:00.000Z","requestId":"request-shadow","costUSD":5.0,"message":{"id":"message-shadow","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":200}}}}}"#,
+            r#"{"type":"progress","sessionId":"session-a","data":{"message":{"timestamp":"2026-09-12T12:00:00.000Z","requestId":"request-wrapped","costUSD":2.0,"message":{"id":"message-wrapped","model":"claude-sonnet-4-20250514","usage":{"input_tokens":3,"output_tokens":4}}}}}"#,
+        ]
+        .join("\n"),
+    );
+
+    let output = run_bounded_daily(&fixture, &["--json"]);
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let days = json["daily"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|day| {
+            (
+                day["date"].as_str().unwrap().to_string(),
+                day["totalTokens"].as_u64().unwrap(),
+                day["totalCost"].as_f64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        days,
+        vec![
+            ("2026-09-11".to_string(), 3, 1.0),
+            ("2026-09-12".to_string(), 7, 2.0),
+        ]
+    );
+    assert_eq!(json["totals"]["totalTokens"], 10);
+    assert_eq!(json["totals"]["totalCost"], 3.0);
 }
 
 // 2026-09-12T12:00:00Z, later than every fixture entry below.
@@ -284,7 +409,7 @@ fn bounded_reports_dedupe_sidechain_replays_of_parents_in_stale_files() {
 }
 
 #[test]
-fn bounded_unified_sessions_keep_old_subagent_files() {
+fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
     let fixture = Fixture::new();
     let parent = fixture.write_file(
         "projects/project-a/session-b.jsonl",
@@ -329,7 +454,53 @@ fn bounded_unified_sessions_keep_old_subagent_files() {
         str::to_string,
     );
     let json: serde_json::Value = serde_json::from_str(&output).unwrap();
-    assert_eq!(json["totals"]["totalCost"], 3.0, "{output}");
+    // Like `ccusage claude session`, the subagent's usage before `--since` is left out.
+    assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
+}
+
+#[test]
+fn unified_sessions_count_the_in_window_usage_of_a_session_active_past_until() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-e.jsonl",
+        [
+            usage_line(
+                "2026-09-11T23:30:00.000Z",
+                "session-e",
+                "msg-in-window",
+                "req-in-window",
+                1.0,
+            ),
+            usage_line(
+                "2026-09-12T00:30:00.000Z",
+                "session-e",
+                "msg-after-until",
+                "req-after-until",
+                2.0,
+            ),
+        ]
+        .join("\n"),
+    );
+    let report = |command: &[&str]| {
+        let mut args = command.to_vec();
+        args.extend([
+            "--since",
+            "20260911",
+            "--until",
+            "20260911",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--json",
+        ]);
+        let output = run_ccusage(&fixture, &args, None);
+        serde_json::from_str::<serde_json::Value>(&output).unwrap()["totals"]["totalCost"].clone()
+    };
+
+    assert_eq!(report(&["session"]), 1.0);
+    assert_eq!(report(&["claude", "session"]), 1.0);
 }
 
 #[test]
@@ -830,6 +1001,10 @@ fn auto_mode_breakdowns_report_the_stored_part_of_cost() {
     let reports = [
         (&["claude", "daily"][..], "/daily/0/modelBreakdowns/0"),
         (&["claude", "session"][..], "/sessions/0/modelBreakdowns/0"),
+        (
+            &["claude", "session", "--id", "session-a"][..],
+            "/modelBreakdowns/0",
+        ),
         (&["claude", "monthly"][..], "/monthly/0/modelBreakdowns/0"),
         (
             &["daily", "--by-agent"][..],
@@ -859,5 +1034,130 @@ fn auto_mode_breakdowns_report_the_stored_part_of_cost() {
             .collect::<Vec<_>>();
         let stripped = breakdown(&args, pointer);
         assert!(stripped.get("storedCost").is_none(), "{args:?}: {stripped}");
+    }
+}
+
+#[test]
+fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split() {
+    let fixture = Fixture::new();
+    let lines = [
+        r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":300}}}}"#,
+        r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","message":{"id":"message-b","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":50}}}"#,
+        r#"{"timestamp":"2026-09-15T12:02:00.000Z","sessionId":"session-a","requestId":"request-c","message":{"id":"message-c","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":70}}}"#,
+        r#"{"timestamp":"2026-09-16T12:00:00.000Z","sessionId":"session-a","requestId":"request-d","message":{"id":"message-d","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":80}}}}"#,
+        r#"{"timestamp":"2026-09-16T12:01:00.000Z","sessionId":"session-a","requestId":"request-e","message":{"id":"message-e","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":30}}}"#,
+    ];
+    let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+
+    // Daily rows stop at 2026-09-15; weekly, monthly and session rows merge
+    // both days.
+    let first_day = (450, 300, 70);
+    let both_days = (550, 380, 100);
+    let reports = [
+        (
+            &["claude", "daily"][..],
+            "/daily/0/modelBreakdowns",
+            first_day,
+        ),
+        (
+            &["claude", "weekly"][..],
+            "/weekly/0/modelBreakdowns",
+            both_days,
+        ),
+        (
+            &["claude", "monthly"][..],
+            "/monthly/0/modelBreakdowns",
+            both_days,
+        ),
+        (
+            &["claude", "session"][..],
+            "/sessions/0/modelBreakdowns",
+            both_days,
+        ),
+        (&["daily"][..], "/daily/0/modelBreakdowns", first_day),
+        (&["weekly"][..], "/weekly/0/modelBreakdowns", both_days),
+        (&["monthly"][..], "/monthly/0/modelBreakdowns", both_days),
+        (&["session"][..], "/session/0/modelBreakdowns", both_days),
+        (
+            &["daily", "--by-agent"][..],
+            "/daily/0/agents/0/modelBreakdowns",
+            first_day,
+        ),
+    ];
+    for (args, pointer, (sonnet_cache, sonnet_1h, haiku_cache)) in reports {
+        let until: &[&str] = if pointer.starts_with("/daily") {
+            &["--until", "2026-09-15"]
+        } else {
+            &[]
+        };
+        let args = args
+            .iter()
+            .chain(&["--json", "--offline", "--timezone", "UTC"])
+            .chain(until)
+            .copied()
+            .collect::<Vec<_>>();
+        let json: serde_json::Value =
+            serde_json::from_str(&run_ccusage(&fixture, &args, None)).unwrap();
+        let breakdowns = json.pointer(pointer).unwrap().as_array().unwrap();
+        let model = |name: &str| {
+            breakdowns
+                .iter()
+                .find(|b| b["modelName"] == name)
+                .unwrap_or_else(|| panic!("{args:?}: no {name} in {breakdowns:?}"))
+        };
+
+        let sonnet = model("claude-sonnet-4-20250514");
+        assert_eq!(
+            sonnet["cacheCreationTokens"], sonnet_cache,
+            "{args:?}: {sonnet}"
+        );
+        assert_eq!(
+            sonnet["cacheCreation1hTokens"], sonnet_1h,
+            "{args:?}: {sonnet}"
+        );
+
+        let haiku = model("claude-haiku-4-5-20251001");
+        assert_eq!(
+            haiku["cacheCreationTokens"], haiku_cache,
+            "{args:?}: {haiku}"
+        );
+        assert!(
+            haiku.get("cacheCreation1hTokens").is_none(),
+            "{args:?}: {haiku}"
+        );
+    }
+}
+
+#[test]
+fn breakdowns_keep_the_one_hour_split_from_an_otherwise_equal_duplicate() {
+    let unsplit = r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":400}}}"#;
+    let split = r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":300}}}}"#;
+
+    for lines in [[unsplit, split], [split, unsplit]] {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+
+        let mut costs = Vec::new();
+        for (report, pointer) in [("daily", "/daily/0"), ("session", "/sessions/0")] {
+            let args = [
+                "claude",
+                report,
+                "--json",
+                "--offline",
+                "--mode",
+                "calculate",
+                "--timezone",
+                "UTC",
+            ];
+            let json: serde_json::Value =
+                serde_json::from_str(&run_ccusage(&fixture, &args, None)).unwrap();
+            let row = json.pointer(pointer).unwrap();
+            let breakdown = &row["modelBreakdowns"][0];
+
+            assert_eq!(breakdown["cacheCreationTokens"], 400, "{args:?}: {row}");
+            assert_eq!(breakdown["cacheCreation1hTokens"], 300, "{args:?}: {row}");
+            costs.push(row["totalCost"].as_f64().unwrap());
+        }
+        assert_eq!(costs[0], costs[1], "daily and session cost: {costs:?}");
     }
 }

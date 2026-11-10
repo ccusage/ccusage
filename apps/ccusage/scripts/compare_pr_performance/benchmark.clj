@@ -1,105 +1,83 @@
 (defn command-args [command] (remove str/blank? (str/split command #" ")))
-(defn benchmark-command [kind bin fixture-dir codex-fixture-dir command]
-  (let [argv (vec (concat (if (= kind :package) ["node" bin] [bin])
-                          (command-args command) ["--offline" "--json"]))
-        env (benchmark-env fixture-dir codex-fixture-dir)]
-    {:argv argv :env env :text (benchmark-command-text env argv)}))
-(defn head-command [{:keys [head-runtime head-bin-entry head-native-bin-entry head-dir
-                            fixture-dir codex-fixture-dir command]}]
-  (cond
-    (and (= head-runtime "package") head-bin-entry) (benchmark-command :package head-bin-entry fixture-dir codex-fixture-dir command)
-    (and (= head-runtime "rust") head-native-bin-entry) (benchmark-command :rust head-native-bin-entry fixture-dir codex-fixture-dir command)
-    (= head-runtime "rust") (benchmark-command :rust (rust-binary-entry head-dir) fixture-dir codex-fixture-dir command)
-    :else (benchmark-command :package (package-bin-entry head-dir) fixture-dir codex-fixture-dir command)))
+(defn command-argv [bin command] (vec (concat [bin] (command-args command) ["--offline" "--json"])))
 
-(defn parse-peak-rss [stderr]
-  (if-let [match (re-find #"Maximum resident set size \(kbytes\):\s*(\d+)" stderr)]
-    (* 1024 (parse-long (second match)))
-    (if-let [match (re-find #"(?m)^\s*(\d+)\s+maximum resident set size$" stderr)]
-      (parse-long (second match))
-      (fail! "Could not parse peak RSS from time output" {:kind :malformed-time-output}))))
-(defn timed-command [command]
-  (case (platform-name)
-    "linux" (into ["/usr/bin/time" "-v"] (:argv command))
-    "darwin" (into ["/usr/bin/time" "-l"] (:argv command))
-    nil))
-(defn measure-memory [command {:keys [runs label]}]
-  (when (pos? runs)
-    (let [samples (keep (fn [_]
-                          (if-let [argv (timed-command command)]
-                            (let [result (run-process argv {:env (:env command)})]
-                              (if (zero? (:exit result))
-                                (try (parse-peak-rss (:err result))
-                                     (catch Exception e (write-progress (str label " peak RSS skipped: " (ex-message e))) nil))
-                                (do (write-progress (format "%s peak RSS skipped after exit %d: %s" label (:exit result) (:err result))) nil)))
-                            (fail! (str "Peak RSS measurement is not supported on " (platform-name)) {:kind :unsupported-platform})))
-                        (range runs))]
-      (when (seq samples)
-        {:peak-rss-bytes (nth (vec (sort samples)) (quot (count samples) 2)) :samples (count samples)}))))
+(def metric-keys
+  {:wall :time_wall_clock :cpu :time_cpu :rss :memory_peak_resident :instructions :instructions})
 
-(defn read-hyperfine-results [export-path expected]
+(defn run-sample
+  "Normalizes one hyperfine run: times in milliseconds, RSS in bytes.
+  Instructions stay nil where the platform exposes no hardware counters."
+  [measurement]
+  (let [value (fn [k] (get-in measurement [(metric-keys k) :value]))
+        seconds (fn [k]
+                  (let [unit (get-in measurement [(metric-keys k) :unit])]
+                    (when-not (= "second" unit)
+                      (fail! (str "Unexpected hyperfine time unit: " (pr-str unit)) {:kind :malformed-hyperfine :metric k}))
+                    (* 1000.0 (value k))))]
+    {:wall (seconds :wall) :cpu (seconds :cpu) :rss (value :rss) :instructions (value :instructions)}))
+
+(defn read-hyperfine-runs
+  "Returns one sample per requested command name from a single-run hyperfine export."
+  [export-path names]
   (let [data (try (json/parse-string (slurp export-path) true)
                   (catch Exception e (fail! (str "Malformed hyperfine output: " (ex-message e))
-                                             {:kind :malformed-hyperfine :path (str export-path)})))
-        results (:results data)]
-    (when-not (= expected (count results))
-      (fail! (format "hyperfine reported %d results, expected %d" (count results) expected)
-             {:kind :malformed-hyperfine :expected expected :actual (count results)}))
-    results))
+                                            {:kind :malformed-hyperfine :path (str export-path)})))
+        _ (when-not (= 2 (:schema_version data))
+            (fail! (str "Unsupported hyperfine JSON schema version: " (pr-str (:schema_version data)))
+                   {:kind :malformed-hyperfine :path (str export-path)}))
+        by-name (group-by :name (:results data))]
+    (into {} (map (fn [name]
+                    (let [matches (get by-name name)]
+                      (when-not (= 1 (count matches))
+                        (fail! (format "hyperfine reported %d results named %s, expected 1" (count matches) name)
+                               {:kind :malformed-hyperfine :name name :actual (count matches)}))
+                      [name (run-sample (first (:measurements (first matches))))])))
+          names)))
 
-(def hyperfine-common ["--shell" "none" "--style" "basic" "--output" "pipe" "--sort" "command"])
-(defn run-hyperfine [commands names runs warmup label]
+(defn rotate [items n]
+  (let [k (mod n (count items))] (vec (concat (drop k items) (take k items)))))
+
+(defn hyperfine-round [variants command env label]
   (let [dir (temp-dir "ccusage-hyperfine.") export (path dir "hyperfine.json")
-        argv (vec (concat ["hyperfine" "--shell" "none" "--warmup" (str warmup) "--runs" (str runs)
-                           "--export-json" export "--style" "basic" "--output" "pipe" "--sort" "command"]
-                          (mapcat #(vector "--command-name" %) names) (map :text commands)))]
+        argv (vec (concat ["hyperfine" "--shell" "none" "--runs" "1" "--export-json" export
+                           "--style" "none" "--output" "pipe"]
+                          (mapcat #(vector "--command-name" (:label %)) variants)
+                          (map #(benchmark-command-text env (command-argv (:bin %) command)) variants)))]
     (try
       (run-checked argv {} (str "hyperfine failed for " label))
-      (mapv measurement-from-hyperfine (read-hyperfine-results export (count commands)))
+      (read-hyperfine-runs export (mapv :label variants))
       (finally (fs/delete-tree dir)))))
 
-(defn compare-command [command options]
-  (let [label (str (:title options) " / " command)
-        _ (write-progress (str label " started"))
-        base-command (benchmark-command :package (:base-bin-entry options) (:fixture-dir options) (:codex-fixture-dir options) command)
-        head-command* (head-command (assoc options :command command))
-        [base head] (run-hyperfine [base-command head-command*] ["base" "PR"] (:runs options) (:warmup options) label)
-        base-memory (measure-memory base-command {:runs (:memory-runs options) :label (str label " base")})
-        head-memory (measure-memory head-command* {:runs (:memory-runs options) :label (str label " PR")})]
-    (write-progress (format "%s done: base %s, PR %s" label (format-duration (:median base)) (format-duration (:median head))))
-    {:base base :base-memory base-memory :command command :head head :head-memory head-memory}))
+(defn measure-command
+  "Runs every variant once per round, rotating the order each round, so slow
+  drift on a shared runner hits all variants alike and per-round ratios pair up."
+  [variants command env {:keys [runs warmup title]}]
+  (let [label (str title " / " command)]
+    (write-progress (str label " started"))
+    (doseq [round (range warmup)]
+      (hyperfine-round (rotate variants round) command env label))
+    (let [rounds (mapv #(hyperfine-round (rotate variants %) command env label) (range runs))]
+      (write-progress (str label " done"))
+      {:command command :rounds rounds})))
 
-(defn compare-fixture [options]
-  (write-progress (str (:title options) " started"))
-  (let [section {:codex-fixture-dir (:codex-fixture-dir options)
-                 :codex-fixture-stats (when (:codex-fixture-dir options) (summarize-directory (:codex-fixture-dir options)))
-                 :description (:description options) :fixture-dir (:fixture-dir options)
-                 :fixture-stats (summarize-directory (:fixture-dir options))
-                 :memory-runs (:memory-runs options)
-                 :results (mapv #(compare-command % options) (:commands options))
-                 :runs (:runs options) :title (:title options) :warmup (:warmup options)}]
-    (write-progress (str (:title options) " finished")) section))
+(defn variant-summary [rounds label]
+  (let [samples (map #(get % label) rounds)
+        instructions (map :instructions samples)]
+    {:wall (summarize (map :wall samples)) :cpu (summarize (map :cpu samples))
+     :rss (summarize (map :rss samples))
+     :instructions (when (every? some? instructions) (summarize instructions))}))
 
-(defn runtime-diagnostic-section [options]
-  (let [workspace-bin (rust-binary-entry (:head-dir options))
-        variants (cond-> []
-                   (:head-bin-entry options) (conj {:label "Package wrapper" :kind :package :bin (:head-bin-entry options)})
-                   (:head-native-bin-entry options) (conj {:label "Installed native binary" :kind :rust :bin (:head-native-bin-entry options)})
-                   (optional-file-size workspace-bin) (conj {:label "Workspace release binary" :kind :rust :bin workspace-bin}))]
-    (when (>= (count variants) 2)
-      (write-progress (str (:title options) " started"))
-      (let [results (mapcat
-                     (fn [command]
-                       (let [label (str (:title options) " / runtime diagnostics (" command ")")
-                             _ (write-progress (str label " started"))
-                             commands (mapv #(benchmark-command (:kind %) (:bin %) (:fixture-dir options) (:codex-fixture-dir options) command) variants)
-                             measurements (run-hyperfine commands (mapv :label variants) (:runs options) (:warmup options) label)]
-                         (write-progress (str label " done: " (str/join ", " (map #(str (:label %1) " " (format-duration (:median %2))) variants measurements))))
-                         (mapv (fn [variant measurement] {:command command :label (:label variant) :measurement measurement}) variants measurements)))
-                     (:commands options))
-            section {:codex-fixture-dir (:codex-fixture-dir options)
-                     :codex-fixture-stats (when (:codex-fixture-dir options) (summarize-directory (:codex-fixture-dir options)))
-                     :description (:description options) :fixture-dir (:fixture-dir options)
-                     :fixture-stats (summarize-directory (:fixture-dir options))
-                     :results (vec results) :runs (:runs options) :title (:title options) :warmup (:warmup options)}]
-        (write-progress (str (:title options) " finished")) section))))
+(defn paired-ratios [rounds metric reference variant]
+  (mapv #(/ (double (get-in % [variant metric])) (get-in % [reference metric])) rounds))
+
+(defn compare-variants
+  "Compares variant against reference on CPU time and peak RSS; wall time is
+  reported but not judged because it swings with runner load."
+  [rounds reference variant threshold]
+  (let [cpu (paired-ratios rounds :cpu reference variant)
+        rss (paired-ratios rounds :rss reference variant)
+        instructions (when (every? #(and (get-in % [reference :instructions]) (get-in % [variant :instructions])) rounds)
+                       (paired-ratios rounds :instructions reference variant))]
+    {:cpu (assoc (summarize cpu) :verdict (classify-ratios cpu threshold))
+     :rss (assoc (summarize rss) :verdict (classify-ratios rss threshold))
+     :instructions (when instructions (summarize instructions))}))

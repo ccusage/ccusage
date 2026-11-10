@@ -11,6 +11,7 @@ use crate::{
 };
 
 use super::{
+    aggregate::CodexFileOccurrences,
     parser::visit_codex_session_file,
     paths,
     paths::{
@@ -26,9 +27,12 @@ pub fn load_codex_events_from_directory(
 ) -> Result<Vec<CodexTokenUsageEvent>> {
     let files = collect_codex_usage_files(sessions_dir);
     let replay_plan = CodexReplayPlan::new([(sessions_dir, files.as_slice())], single_thread);
-    let mut events =
-        read_codex_events_from_files(sessions_dir, &files, single_thread, &replay_plan);
-    dedupe_codex_events(&mut events);
+    let events = dedupe_codex_events(read_codex_events_from_files(
+        sessions_dir,
+        &files,
+        single_thread,
+        &replay_plan,
+    ));
     Ok(events)
 }
 
@@ -70,9 +74,12 @@ fn load_codex_events_from_sources_with_files(
         let files = collect_codex_usage_files(&source.dir);
         let replay_plan =
             CodexReplayPlan::new([(source.dir.as_path(), files.as_slice())], single_thread);
-        let mut events =
-            read_codex_events_from_files(&source.dir, &files, single_thread, &replay_plan);
-        dedupe_codex_events(&mut events);
+        let events = dedupe_codex_events(read_codex_events_from_files(
+            &source.dir,
+            &files,
+            single_thread,
+            &replay_plan,
+        ));
         return Ok((events, false));
     }
 
@@ -106,13 +113,16 @@ fn load_codex_events_from_sources_with_files(
             single_thread,
         )
     };
-    let mut events = Vec::new();
+    let mut events_by_file = Vec::new();
     for (group, files) in groups.into_iter().zip(files_by_group) {
-        let mut source_events =
-            read_codex_events_from_files(&group.dir, &files, single_thread, &replay_plan);
-        events.append(&mut source_events);
+        events_by_file.extend(read_codex_events_from_files(
+            &group.dir,
+            &files,
+            single_thread,
+            &replay_plan,
+        ));
     }
-    dedupe_codex_events(&mut events);
+    let events = dedupe_codex_events(events_by_file);
     let detected = if shared.is_some_and(has_date_bounds) {
         detected_before_filter
     } else {
@@ -136,9 +146,12 @@ fn load_codex_events_from_directory_with_shared(
     } else {
         CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
     };
-    let mut events =
-        read_codex_events_from_files(sessions_dir, &files, shared.single_thread, &replay_plan);
-    dedupe_codex_events(&mut events);
+    let events = dedupe_codex_events(read_codex_events_from_files(
+        sessions_dir,
+        &files,
+        shared.single_thread,
+        &replay_plan,
+    ));
     let detected = if has_date_bounds(shared) {
         !all_files.is_empty()
     } else {
@@ -152,11 +165,11 @@ fn read_codex_events_from_files(
     files: &[PathBuf],
     single_thread: bool,
     replay_plan: &CodexReplayPlan,
-) -> Vec<CodexTokenUsageEvent> {
+) -> Vec<Vec<CodexTokenUsageEvent>> {
     if single_thread {
         files
             .iter()
-            .flat_map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
+            .map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
             .collect()
     } else {
         read_codex_session_files_parallel(sessions_dir, files, replay_plan)
@@ -171,7 +184,7 @@ fn read_codex_session_files_parallel(
     sessions_dir: &Path,
     files: &[PathBuf],
     replay_plan: &CodexReplayPlan,
-) -> Vec<CodexTokenUsageEvent> {
+) -> Vec<Vec<CodexTokenUsageEvent>> {
     let worker_count = thread::available_parallelism()
         .map(usize::from)
         .unwrap_or(1)
@@ -179,7 +192,7 @@ fn read_codex_session_files_parallel(
     if worker_count <= 1 {
         return files
             .iter()
-            .flat_map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
+            .map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
             .collect();
     }
 
@@ -208,11 +221,7 @@ fn read_codex_session_files_parallel(
         {
             loaded_files[index] = Some(events);
         }
-        loaded_files
-            .into_iter()
-            .flatten()
-            .flatten()
-            .collect::<Vec<_>>()
+        loaded_files.into_iter().flatten().collect::<Vec<_>>()
     })
 }
 
@@ -222,73 +231,84 @@ fn read_codex_session_file(
     replay_plan: &CodexReplayPlan,
 ) -> Vec<CodexTokenUsageEvent> {
     let mut events = Vec::new();
-    let _ = visit_codex_session_file(
-        sessions_dir,
-        path,
-        replay_plan.replay_prefix(path),
-        |event| {
-            if replay_plan.is_replayed_compaction(path, event.response_id.as_deref()) {
-                return Ok(());
-            }
-            events.push(event);
-            Ok(())
-        },
-    );
+    let _ = visit_codex_session_file(sessions_dir, path, replay_plan.fork_replay(path), |event| {
+        if replay_plan.is_replayed_compaction(path, event.response_id.as_deref()) {
+            return Ok(());
+        }
+        events.push(event);
+        Ok(())
+    });
     events
 }
 
-fn dedupe_codex_events(events: &mut Vec<CodexTokenUsageEvent>) {
+/// Drops usage that one rollout copied from another, keeping file order.
+///
+/// Identical events within one file are distinct requests, so each carries its
+/// ordinal among them in the key; only a copy in another file collides.
+fn dedupe_codex_events(
+    events_by_file: impl IntoIterator<Item = Vec<CodexTokenUsageEvent>>,
+) -> Vec<CodexTokenUsageEvent> {
     let mut indexes = FxHashMap::<_, usize>::default();
-    let mut deduped = Vec::<CodexTokenUsageEvent>::with_capacity(events.len());
-    for event in events.drain(..) {
-        let key = event.response_id.as_deref().map_or_else(
-            || {
-                CodexEventDeduplicationKey::Usage(
-                    CompactString::new(&event.timestamp),
-                    event.model.as_deref().map(CompactString::new),
-                    event.input_tokens,
-                    event.cached_input_tokens,
-                    event.cache_creation_tokens,
-                    event.output_tokens,
-                    event.reasoning_output_tokens,
-                    event.total_tokens,
-                )
-            },
-            |response_id| CodexEventDeduplicationKey::Response(CompactString::new(response_id)),
-        );
-        if let Some(index) = indexes.get(&key).copied() {
-            let retained = &mut deduped[index];
-            retained.service_tier =
-                merge_codex_service_tiers(retained.service_tier, event.service_tier);
-        } else {
-            indexes.insert(key, deduped.len());
-            deduped.push(event);
+    let mut deduped = Vec::<CodexTokenUsageEvent>::new();
+    for events in events_by_file {
+        let mut occurrences = CodexFileOccurrences::default();
+        for event in events {
+            let key = match event.response_id.as_deref() {
+                Some(response_id) => {
+                    CodexEventDeduplicationKey::Response(CompactString::new(response_id))
+                }
+                None => {
+                    let usage = CodexEventUsage(
+                        CompactString::new(&event.timestamp),
+                        event.model.as_deref().map(CompactString::new),
+                        event.input_tokens,
+                        event.cached_input_tokens,
+                        event.cache_creation_tokens,
+                        event.output_tokens,
+                        event.reasoning_output_tokens,
+                        event.total_tokens,
+                    );
+                    let occurrence = occurrences.next(&usage);
+                    CodexEventDeduplicationKey::Usage(usage, occurrence)
+                }
+            };
+            if let Some(index) = indexes.get(&key).copied() {
+                let retained: &mut CodexTokenUsageEvent = &mut deduped[index];
+                retained.service_tier =
+                    merge_codex_service_tiers(retained.service_tier, event.service_tier);
+            } else {
+                indexes.insert(key, deduped.len());
+                deduped.push(event);
+            }
         }
     }
-    *events = deduped;
+    deduped
 }
 
 #[derive(Hash, PartialEq, Eq)]
 enum CodexEventDeduplicationKey {
     Response(CompactString),
-    Usage(
-        CompactString,
-        Option<CompactString>,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-    ),
+    Usage(CodexEventUsage, u32),
 }
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct CodexEventUsage(
+    CompactString,
+    Option<CompactString>,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+    u64,
+);
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use ccusage_test_support::fs_fixture;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use crate::paths::CodexUsageSource;
 
@@ -550,9 +570,10 @@ mod tests {
 
     #[test]
     fn dedupes_matching_codex_usage_events_from_distinct_sessions() {
-        let mut events = vec![codex_event("session-a"), codex_event("session-b")];
-
-        dedupe_codex_events(&mut events);
+        let events = dedupe_codex_events([
+            vec![codex_event("session-a")],
+            vec![codex_event("session-b")],
+        ]);
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].session_id, "session-a");
@@ -566,8 +587,7 @@ mod tests {
         copied.response_id = Some("response-1".to_string());
         copied.model = Some("gpt-reserve".to_string());
 
-        let mut events = vec![first, copied];
-        dedupe_codex_events(&mut events);
+        let events = dedupe_codex_events([vec![first], vec![copied]]);
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].session_id, "session-a");
@@ -579,11 +599,11 @@ mod tests {
         let mut fast = codex_event("session-b");
         fast.service_tier = Some(crate::CodexServiceTier::Fast);
 
-        for mut events in [
-            vec![unclassified.clone(), fast.clone()],
-            vec![fast.clone(), unclassified.clone()],
+        for [first, second] in [
+            [unclassified.clone(), fast.clone()],
+            [fast.clone(), unclassified.clone()],
         ] {
-            dedupe_codex_events(&mut events);
+            let events = dedupe_codex_events([vec![first], vec![second]]);
 
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].service_tier, Some(crate::CodexServiceTier::Fast));
@@ -597,11 +617,11 @@ mod tests {
         let mut fast = codex_event("session-b");
         fast.service_tier = Some(crate::CodexServiceTier::Fast);
 
-        for mut events in [
-            vec![standard.clone(), fast.clone()],
-            vec![fast.clone(), standard.clone()],
+        for [first, second] in [
+            [standard.clone(), fast.clone()],
+            [fast.clone(), standard.clone()],
         ] {
-            dedupe_codex_events(&mut events);
+            let events = dedupe_codex_events([vec![first], vec![second]]);
 
             assert_eq!(events.len(), 1);
             assert_eq!(
@@ -2232,6 +2252,151 @@ mod tests {
                 replay_token_count("2026-07-10T09:00:01.009Z", 400),
                 // The child's own first turn, after a real pause.
                 replay_token_count("2026-07-10T09:00:08.000Z", 500),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [("child".to_string(), 500)]
+        );
+    }
+
+    #[test]
+    fn counts_spawned_child_requests_stamped_with_the_fork_instant() {
+        let at_fork = "2026-11-01T09:42:09.923Z";
+        let usage = |input: u64, cached: u64, output: u64| {
+            json!({
+                "input_tokens": input,
+                "cached_input_tokens": cached,
+                "output_tokens": output,
+                "reasoning_output_tokens": 0,
+                "total_tokens": input + output,
+            })
+        };
+        let token_count = |last: Value, total: Value| {
+            json!({
+                "timestamp": at_fork,
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {"last_token_usage": last, "total_token_usage": total},
+                },
+            })
+            .to_string()
+        };
+        let usage_record = |response_id: &str, usage: Value| {
+            json!({
+                "timestamp": at_fork,
+                "type": "token_usage_record",
+                "payload": {
+                    "response_id": response_id,
+                    "usage": usage,
+                },
+            })
+            .to_string()
+        };
+        let fixture = fs_fixture!({
+            // Every line carries the fork instant, so timestamps cannot separate
+            // the inherited baseline from the child's own requests.
+            "child.jsonl": [
+                json!({
+                    "timestamp": at_fork,
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "child",
+                        "forked_from_id": "missing-parent",
+                        "source": {"subagent": {"thread_spawn": {"parent_thread_id": "missing-parent"}}},
+                    },
+                })
+                .to_string(),
+                json!({"timestamp": at_fork, "type": "compacted", "payload": {"message": "", "replacement_history": []}}).to_string(),
+                json!({"timestamp": at_fork, "type": "turn_context", "payload": {"model": "gpt-5.2"}}).to_string(),
+                token_count(usage(990_000, 0, 10_000), usage(990_000, 0, 10_000)),
+                usage_record("resp_child_1", usage(10_000, 2_000, 100)),
+                token_count(
+                    usage(10_000, 2_000, 100),
+                    usage(1_000_000, 2_000, 10_100),
+                ),
+                usage_record("resp_child_2", usage(20_000, 3_000, 200)),
+                token_count(
+                    usage(20_000, 3_000, 200),
+                    usage(1_020_000, 5_000, 10_300),
+                ),
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (
+                    event.input_tokens,
+                    event.cached_input_tokens,
+                    event.output_tokens
+                ))
+                .collect::<Vec<_>>(),
+            [(10_000, 2_000, 100), (20_000, 3_000, 200)]
+        );
+    }
+
+    #[test]
+    fn keeps_own_usage_a_spawned_child_wrote_before_its_first_usage_record() {
+        let fixture = fs_fixture!({
+            // A Codex release that predates usage records started this child,
+            // and a later one resumed it. The turns before the first record are
+            // still the child's own, so a record must not start a skip.
+            "child.jsonl": [
+                json!({
+                    "timestamp": "2026-09-02T18:09:32.557Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "child",
+                        "source": {"subagent": {"thread_spawn": {"parent_thread_id": "missing-parent"}}},
+                    },
+                })
+                .to_string(),
+                replay_token_count("2026-09-02T18:09:57.815Z", 100),
+                replay_token_count("2026-09-02T18:10:21.182Z", 200),
+                json!({
+                    "timestamp": "2026-09-04T09:02:00.103Z",
+                    "type": "token_usage_record",
+                    "payload": {"response_id": "resp_child", "usage": {"input_tokens": 300, "output_tokens": 1}},
+                })
+                .to_string(),
+                replay_token_count("2026-09-04T09:02:00.903Z", 300),
+            ]
+            .join("\n"),
+        });
+
+        assert_eq!(
+            replay_input_tokens_by_session(fixture.root()),
+            [
+                ("child".to_string(), 100),
+                ("child".to_string(), 200),
+                ("child".to_string(), 300),
+            ]
+        );
+    }
+
+    #[test]
+    fn skips_usage_records_copied_into_a_rewritten_user_fork_burst() {
+        let fixture = fs_fixture!({
+            // A user fork copies the parent's usage records along with the rest
+            // of its history, so a record does not end the replay here.
+            "child.jsonl": [
+                replay_metadata("2026-11-01T09:00:00.000Z", "child", Some("missing-parent")),
+                replay_token_count("2026-11-01T09:00:00.100Z", 100),
+                json!({
+                    "timestamp": "2026-11-01T09:00:00.150Z",
+                    "type": "token_usage_record",
+                    "payload": {"response_id": "resp_parent", "usage": {"input_tokens": 200, "output_tokens": 1}},
+                })
+                .to_string(),
+                replay_token_count("2026-11-01T09:00:00.200Z", 200),
+                replay_token_count("2026-11-01T09:00:08.000Z", 500),
             ]
             .join("\n"),
         });

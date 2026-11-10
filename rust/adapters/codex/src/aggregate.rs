@@ -39,6 +39,62 @@ struct CodexUsageKey {
     output_tokens: u64,
     reasoning_output_tokens: u64,
     total_tokens: u64,
+    occurrence: u32,
+}
+
+/// Numbers the identical usage events of one rollout file.
+///
+/// A rollout records each request once, so identical events in one file are
+/// distinct requests and get distinct ordinals. Usage copied into another file
+/// repeats the ordinals of the original, which is what lets the dedupe drop it.
+pub(super) struct CodexFileOccurrences<K>(FxHashMap<K, u32>);
+
+impl<K> Default for CodexFileOccurrences<K> {
+    fn default() -> Self {
+        Self(FxHashMap::default())
+    }
+}
+
+impl<K: Hash + Eq + Clone> CodexFileOccurrences<K> {
+    pub(super) fn next(&mut self, key: &K) -> u32 {
+        if let Some(count) = self.0.get_mut(key) {
+            let occurrence = *count;
+            *count += 1;
+            return occurrence;
+        }
+        self.0.insert(key.clone(), 1);
+        0
+    }
+}
+
+/// Where an event was read from: the file's position in the run, and the
+/// ordinals of the identical usage events seen in it so far.
+struct CodexEventProvenance {
+    file_index: usize,
+    occurrences: CodexFileOccurrences<CodexUsageKey>,
+}
+
+impl CodexEventProvenance {
+    fn new(file_index: usize) -> Self {
+        Self {
+            file_index,
+            occurrences: CodexFileOccurrences::default(),
+        }
+    }
+
+    fn event_key(
+        &mut self,
+        event: &CodexTokenUsageEvent,
+        timestamp: crate::TimestampMs,
+        model: &str,
+        kind: AgentReportKind,
+    ) -> CodexEventKey {
+        let mut key = codex_event_key(event, timestamp, model, kind);
+        if let CodexEventKey::Usage(usage) = &mut key {
+            usage.occurrence = self.occurrences.next(usage);
+        }
+        key
+    }
 }
 
 struct CodexDedupeRecord {
@@ -243,10 +299,11 @@ fn aggregate_file(
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
     let file = &run.files[file_index];
+    let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
     parser::visit_codex_session_file(
         run.sessions_dir,
         file,
-        run.replay_plan.replay_prefix(file),
+        run.replay_plan.fork_replay(file),
         |event| {
             if run
                 .replay_plan
@@ -261,7 +318,7 @@ fn aggregate_file(
                 run.shared,
                 seen,
                 groups,
-                run.file_offset + file_index,
+                &mut provenance,
             )
         },
     )
@@ -293,10 +350,11 @@ fn aggregate_file_local(
     aggregation: &mut CodexAggregation,
 ) -> Result<()> {
     let file = &run.files[file_index];
+    let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
     parser::visit_codex_session_file(
         run.sessions_dir,
         file,
-        run.replay_plan.replay_prefix(file),
+        run.replay_plan.fork_replay(file),
         |event| {
             if run
                 .replay_plan
@@ -310,7 +368,7 @@ fn aggregate_file_local(
                 timezone,
                 run.shared,
                 aggregation,
-                run.file_offset + file_index,
+                &mut provenance,
             )
         },
     )
@@ -323,7 +381,7 @@ fn add_event_to_groups(
     shared: &SharedArgs,
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
-    file_index: usize,
+    provenance: &mut CodexEventProvenance,
 ) -> Result<()> {
     let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
         return Ok(());
@@ -331,7 +389,7 @@ fn add_event_to_groups(
     let model = crate::model_aliases::resolve_model_name(model);
     let timestamp = parse_ts_timestamp(&event.timestamp)
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
-    if !insert_event_key(event, timestamp, model.as_ref(), kind, seen, file_index) {
+    if !insert_event_key(event, timestamp, model.as_ref(), kind, seen, provenance) {
         return Ok(());
     }
     add_deduped_event_to_groups(
@@ -351,7 +409,7 @@ fn add_event_to_groups_local(
     timezone: Option<&JiffTimeZone>,
     shared: &SharedArgs,
     aggregation: &mut CodexAggregation,
-    file_index: usize,
+    provenance: &mut CodexEventProvenance,
 ) -> Result<()> {
     let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
         return Ok(());
@@ -359,7 +417,7 @@ fn add_event_to_groups_local(
     let model = crate::model_aliases::resolve_model_name(model);
     let timestamp = parse_ts_timestamp(&event.timestamp)
         .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
-    let key = codex_event_key(event, timestamp, model.as_ref(), kind);
+    let key = provenance.event_key(event, timestamp, model.as_ref(), kind);
     if !insert_dedupe_record(
         &mut aggregation.seen,
         key,
@@ -367,7 +425,7 @@ fn add_event_to_groups_local(
         model.as_ref(),
         kind,
         timestamp,
-        file_index,
+        provenance.file_index,
     ) {
         return Ok(());
     }
@@ -697,9 +755,9 @@ fn insert_event_key(
     model: &str,
     kind: AgentReportKind,
     seen: &CodexDedupeShards,
-    file_index: usize,
+    provenance: &mut CodexEventProvenance,
 ) -> bool {
-    let key = codex_event_key(event, timestamp, model, kind);
+    let key = provenance.event_key(event, timestamp, model, kind);
     let mut hasher = FxHasher::default();
     key.hash(&mut hasher);
     let shard_index = hasher.finish() as usize % seen.len();
@@ -710,7 +768,7 @@ fn insert_event_key(
         model,
         kind,
         timestamp,
-        file_index,
+        provenance.file_index,
     )
 }
 
@@ -782,6 +840,7 @@ fn codex_event_key(
         output_tokens: event.output_tokens,
         reasoning_output_tokens: event.reasoning_output_tokens,
         total_tokens: event.total_tokens,
+        occurrence: 0,
     })
 }
 
@@ -986,7 +1045,7 @@ mod tests {
                 &shared,
                 &seen,
                 &mut groups,
-                file_index,
+                &mut CodexEventProvenance::new(file_index),
             )
             .unwrap();
         }
@@ -1862,6 +1921,131 @@ mod tests {
             assert_eq!(groups.len(), 2);
             assert_eq!(groups["2026-05-12"].input_tokens, 111);
             assert_eq!(groups["2026-05-13"].input_tokens, 222);
+        }
+    }
+
+    /// The rollout from #2046: a spawned subagent whose every line carries the
+    /// fork instant, with two requests of identical usage.
+    const IDENTICAL_REQUESTS_ROLLOUT: &str = r#"{"timestamp":"2026-11-01T09:42:09.923Z","type":"session_meta","payload":{"id":"01a1967c-0000-7000-8000-00000000000a","forked_from_id":"01a1967b-0000-7000-8000-000000000001","timestamp":"2026-11-01T09:42:09.923Z","originator":"codex_vscode","cli_version":"0.164.0-alpha.11.1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"01a1967b-0000-7000-8000-000000000001","depth":1}}},"model_provider":"openai"}}
+{"timestamp":"2026-11-01T09:42:09.923Z","type":"compacted","payload":{"message":"","replacement_history":[]}}
+{"timestamp":"2026-11-01T09:42:09.923Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
+{"timestamp":"2026-11-01T09:42:09.923Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":990000,"cached_input_tokens":0,"output_tokens":10000,"reasoning_output_tokens":0,"total_tokens":1000000},"last_token_usage":{"input_tokens":990000,"cached_input_tokens":0,"output_tokens":10000,"reasoning_output_tokens":0,"total_tokens":1000000}}}}
+{"timestamp":"2026-11-01T09:42:09.923Z","type":"token_usage_record","payload":{"response_id":"resp_child_1","usage":{"input_tokens":10000,"cached_input_tokens":2000,"output_tokens":100,"reasoning_output_tokens":0,"total_tokens":10100}}}
+{"timestamp":"2026-11-01T09:42:09.923Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":2000,"output_tokens":10100,"reasoning_output_tokens":0,"total_tokens":1010100},"last_token_usage":{"input_tokens":10000,"cached_input_tokens":2000,"output_tokens":100,"reasoning_output_tokens":0,"total_tokens":10100}}}}
+{"timestamp":"2026-11-01T09:42:09.923Z","type":"token_usage_record","payload":{"response_id":"resp_child_2","usage":{"input_tokens":10000,"cached_input_tokens":2000,"output_tokens":100,"reasoning_output_tokens":0,"total_tokens":10100}}}
+{"timestamp":"2026-11-01T09:42:09.923Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1010000,"cached_input_tokens":4000,"output_tokens":10200,"reasoning_output_tokens":0,"total_tokens":1020200},"last_token_usage":{"input_tokens":10000,"cached_input_tokens":2000,"output_tokens":100,"reasoning_output_tokens":0,"total_tokens":10100}}}}"#;
+
+    fn identical_request_line() -> String {
+        json!({
+            "timestamp": "2026-11-01T09:00:00.000Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": {
+                        "input_tokens": 1_000,
+                        "cached_input_tokens": 100,
+                        "output_tokens": 10,
+                        "total_tokens": 1_010,
+                    },
+                },
+            },
+        })
+        .to_string()
+    }
+
+    fn daily_input_tokens(sessions_dir: &Path, single_thread: bool) -> Vec<(String, u64)> {
+        let shared = SharedArgs {
+            single_thread,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        load_groups_from_directory(sessions_dir, &shared, AgentReportKind::Daily)
+            .unwrap()
+            .into_iter()
+            .map(|(period, group)| (period, group.input_tokens))
+            .collect()
+    }
+
+    #[test]
+    fn counts_identical_requests_within_one_rollout() {
+        let fixture = fs_fixture!({
+            "sessions/2026/11/01/rollout-2026-11-01T09-42-09-01a1967c-0000-7000-8000-00000000000a.jsonl":
+                IDENTICAL_REQUESTS_ROLLOUT,
+        });
+        let sessions = fixture.path("sessions");
+
+        for single_thread in [true, false] {
+            let events = crate::load_codex_events_from_directory(&sessions, single_thread)
+                .unwrap()
+                .into_iter()
+                .map(|event| {
+                    (
+                        event.input_tokens,
+                        event.cached_input_tokens,
+                        event.output_tokens,
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                events,
+                [(10_000, 2_000, 100), (10_000, 2_000, 100)],
+                "single_thread={single_thread}"
+            );
+
+            let shared = SharedArgs {
+                single_thread,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            };
+            let groups =
+                load_groups_from_directory(&sessions, &shared, AgentReportKind::Session).unwrap();
+            let totals = groups
+                .values()
+                .map(|group| {
+                    (
+                        group.input_tokens - group.cached_input_tokens,
+                        group.cached_input_tokens,
+                        group.output_tokens,
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                totals,
+                [(16_000, 4_000, 200)],
+                "single_thread={single_thread}"
+            );
+        }
+    }
+
+    #[test]
+    fn counts_each_copied_request_once_across_rollouts() {
+        let request = identical_request_line();
+        let both_requests = format!("{request}\n{request}");
+        let scenarios = [
+            ("copy of both requests", both_requests.clone()),
+            ("copy of the first request", request.clone()),
+        ];
+
+        for (name, copy) in scenarios {
+            let fixture = fs_fixture!({
+                "sessions/a-original.jsonl": &both_requests,
+                "sessions/b-copy.jsonl": &copy,
+            });
+            let sessions = fixture.path("sessions");
+
+            for single_thread in [true, false] {
+                let events =
+                    crate::load_codex_events_from_directory(&sessions, single_thread).unwrap();
+                assert_eq!(events.len(), 2, "{name}, single_thread={single_thread}");
+
+                assert_eq!(
+                    daily_input_tokens(&sessions, single_thread),
+                    [("2026-11-01".to_string(), 2_000)],
+                    "{name}, single_thread={single_thread}"
+                );
+            }
         }
     }
 }

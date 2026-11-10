@@ -248,6 +248,35 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
     }
 }
 
+#[test]
+fn reports_issue_2046_identical_fork_instant_requests_in_every_report_mode() {
+    let fixture = fs_fixture!({
+        "codex/sessions/2026/11/01/rollout-2026-11-01T09-42-09-01a1967c-0000-7000-8000-00000000000a.jsonl":
+            include_str!("fixtures/codex/issue_2046.jsonl"),
+    });
+
+    for (mode, rows) in [
+        ("daily", "daily"),
+        ("monthly", "monthly"),
+        ("session", "sessions"),
+    ] {
+        let report: Value =
+            serde_json::from_str(&run_cli(&fixture, &["codex", mode, "--json"])).unwrap();
+        let rows = report[rows].as_array().unwrap();
+        assert_eq!(rows.len(), 1, "{mode}");
+        for usage in [&rows[0], &report["totals"]] {
+            assert_eq!(usage["inputTokens"], 16_000, "{mode}");
+            assert_eq!(usage["cacheReadTokens"], 4_000, "{mode}");
+            assert_eq!(usage["outputTokens"], 200, "{mode}");
+        }
+
+        insta::assert_snapshot!(
+            format!("issue_2046_{mode}_table"),
+            run_cli(&fixture, &["codex", mode])
+        );
+    }
+}
+
 fn issue_1970_codex_fixture() -> Fixture {
     fs_fixture!({
         "codex/sessions/2026/01/05/child.jsonl":

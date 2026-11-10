@@ -167,17 +167,7 @@ fn merge_model_breakdowns(
             });
             i
         });
-        let b = &mut breakdowns[index];
-        b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-        b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-        b.cache_creation_tokens = b
-            .cache_creation_tokens
-            .saturating_add(item.cache_creation_tokens);
-        b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-        b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-        b.cost += item.cost;
-        b.missing_pricing |= item.missing_pricing;
-        b.add_stored_cost(item.stored_cost);
+        breakdowns[index].merge(&item);
     }
     breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
     breakdowns
@@ -196,17 +186,7 @@ fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
                 });
                 i
             });
-            let b = &mut breakdowns[index];
-            b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-            b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-            b.cache_creation_tokens = b
-                .cache_creation_tokens
-                .saturating_add(item.cache_creation_tokens);
-            b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-            b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-            b.cost += item.cost;
-            b.missing_pricing |= item.missing_pricing;
-            b.add_stored_cost(item.stored_cost);
+            breakdowns[index].merge(item);
         }
     }
     breakdowns

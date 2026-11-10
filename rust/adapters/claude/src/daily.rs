@@ -21,8 +21,8 @@ use crate::{
 
 use super::{
     DailySummaries, DedupeIndexVec, SessionDays, advisor_usages_from_line,
-    chunk_file_indexes_by_size, deserialize_usage_line, is_anthropic_message_id, is_semver_prefix,
-    main_thread_session_days,
+    carries_more_usage_detail, chunk_file_indexes_by_size, deserialize_usage_line,
+    is_anthropic_message_id, is_semver_prefix, main_thread_session_days,
     paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
     sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
@@ -227,28 +227,16 @@ struct DailyUsageEntry {
     is_sidechain: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum DailyUsageLine {
-    Direct(DailyUsageEntry),
-    AgentProgress(DailyAgentProgressEntry),
-}
-
-impl DailyUsageLine {
-    fn into_entry(self) -> DailyUsageEntry {
-        match self {
-            DailyUsageLine::Direct(entry) => entry,
-            DailyUsageLine::AgentProgress(entry) => DailyUsageEntry {
-                timestamp: entry.data.message.timestamp,
-                message: entry.data.message.message,
-                version: None,
-                session_id: entry.session_id,
-                cost_usd: entry.data.message.cost_usd,
-                request_id: entry.data.message.request_id,
-                is_sidechain: entry.data.message.is_sidechain,
-            },
-        }
-    }
+/// Parses a direct assistant line, falling back to the AgentProgress wrapper.
+///
+/// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
+/// use; the derive would first buffer every line, message content included, into an
+/// intermediate tree.
+fn deserialize_daily_usage_line(line: &[u8]) -> Option<DailyUsageEntry> {
+    deserialize_usage_line::<DailyUsageEntry>(line).or_else(|| {
+        deserialize_usage_line::<DailyAgentProgressEntry>(line)
+            .map(DailyAgentProgressEntry::into_entry)
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -256,6 +244,20 @@ struct DailyAgentProgressEntry {
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
     data: DailyAgentProgressData,
+}
+
+impl DailyAgentProgressEntry {
+    fn into_entry(self) -> DailyUsageEntry {
+        DailyUsageEntry {
+            timestamp: self.data.message.timestamp,
+            message: self.data.message.message,
+            version: None,
+            session_id: self.session_id,
+            cost_usd: self.data.message.cost_usd,
+            request_id: self.data.message.request_id,
+            is_sidechain: self.data.message.is_sidechain,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -352,10 +354,9 @@ fn read_daily_usage_file(
         if usage_marker.find(line).is_none() {
             continue;
         }
-        let Some(data) = deserialize_usage_line::<DailyUsageLine>(line) else {
+        let Some(data) = deserialize_daily_usage_line(line) else {
             continue;
         };
-        let data = data.into_entry();
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
             continue;
         };
@@ -651,7 +652,7 @@ fn should_replace_deduped_daily_entry(
     if candidate.cost != existing.cost {
         return candidate.cost > existing.cost;
     }
-    candidate.usage.speed.is_some() && existing.usage.speed.is_none()
+    carries_more_usage_detail(&candidate.usage, &existing.usage)
 }
 
 fn is_sidechain_daily_entry(entry: &DailyLoadedEntry) -> bool {
@@ -686,10 +687,7 @@ impl DailyAccumulator {
                 index
             };
             let breakdown = &mut self.breakdowns[index];
-            breakdown.input_tokens += entry.usage.input_tokens;
-            breakdown.output_tokens += entry.usage.output_tokens;
-            breakdown.cache_creation_tokens += entry.usage.cache_creation_token_count();
-            breakdown.cache_read_tokens += entry.usage.cache_read_input_tokens;
+            breakdown.add_usage(&entry.usage);
             breakdown.cost += entry.cost;
             if entry.missing_pricing_model.is_some() {
                 breakdown.missing_pricing = true;
@@ -902,14 +900,24 @@ mod tests {
 
     #[test]
     fn propagates_sidechain_metadata_from_agent_progress_lines() {
-        let data = serde_json::from_str::<super::DailyUsageLine>(
-            r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
+        let data = super::deserialize_daily_usage_line(
+            br#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
         )
-        .unwrap()
-        .into_entry();
+        .unwrap();
 
         assert_eq!(data.session_id.as_deref(), Some("session-a"));
         assert_eq!(data.is_sidechain, Some(true));
+    }
+
+    #[test]
+    fn prefers_the_direct_entry_over_an_agent_progress_wrapper() {
+        let data = super::deserialize_daily_usage_line(
+            br#"{"timestamp":"2026-03-29T08:00:00.000Z","requestId":"req-direct","message":{"usage":{"input_tokens":1,"output_tokens":2},"model":"direct-model","id":"msg-direct"},"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-wrapped","message":{"usage":{"input_tokens":3,"output_tokens":4},"model":"wrapped-model","id":"msg-wrapped"}}}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(data.request_id.as_deref(), Some("req-direct"));
+        assert_eq!(data.message.model.as_deref(), Some("direct-model"));
     }
 
     #[test]
@@ -982,6 +990,40 @@ mod tests {
                 .sum::<u64>(),
             30
         );
+    }
+
+    #[test]
+    fn keeps_the_cache_ttl_split_from_an_otherwise_equal_daily_duplicate() {
+        for lines in [
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+            ],
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+            ],
+        ] {
+            let fixture = fs_fixture!({
+                "projects/project-a/session-a.jsonl": lines.join("\n"),
+            });
+            let _env = EnvVarsGuard::set_many([(
+                "CLAUDE_CONFIG_DIR",
+                Some(fixture.root().as_os_str().to_os_string()),
+            )]);
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                single_thread: true,
+                ..SharedArgs::default()
+            };
+
+            let daily = load_daily_summaries_inner(&shared, None, false, session_days).unwrap();
+
+            let breakdown = &daily.summaries[0].model_breakdowns[0];
+            assert_eq!(breakdown.cache_creation_tokens, 100);
+            assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+        }
     }
 
     #[test]

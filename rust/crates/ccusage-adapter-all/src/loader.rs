@@ -855,15 +855,24 @@ fn filtered_pi_format_agent_rows(
 enum ClaudeCounted {
     /// Daily-family reports count usage on the day Claude logged it.
     SessionDays(claude::SessionDays),
-    /// A session report counts a session whole, every day included.
+    /// A session report counts every session with in-window usage.
     Sessions(HashSet<Arc<str>>),
 }
 
 impl ClaudeCounted {
-    fn covers(&self, session: &Arc<str>, date: impl FnOnce() -> String) -> bool {
+    fn covers(
+        &self,
+        session: &Arc<str>,
+        date: impl FnOnce() -> String,
+        claude: &SharedArgs,
+    ) -> bool {
         match self {
             Self::SessionDays(days) => days.contains(&(Arc::clone(session), date())),
-            Self::Sessions(sessions) => sessions.contains(session),
+            // Claude counts only the session's in-window days, so a row outside them stays.
+            Self::Sessions(sessions) => {
+                sessions.contains(session)
+                    && date_within_range(&date(), claude.since.as_deref(), claude.until.as_deref())
+            }
         }
     }
 }
@@ -902,15 +911,27 @@ fn load_claude_rows(
     project_filter: Option<&str>,
 ) -> Result<(AgentRows, ClaudeCounted)> {
     if kind == AgentReportKind::Session {
+        // Like `ccusage claude session`, a session counts only its in-window usage.
         let deduped = claude::load_deduped_entries(shared, project_filter)?;
         let detected = !deduped.entries.is_empty();
-        let mut summaries = summarize_entry_sessions(&deduped.entries)?;
-        filter_session_summaries_by_last_activity(&mut summaries, shared);
-        let counted_sessions = summaries
-            .iter()
-            .filter_map(|summary| summary.session_id.as_deref())
-            .collect::<BTreeSet<_>>();
-        let sessions = deduped.main_thread_sessions(|session| counted_sessions.contains(session));
+        let in_window = |entry: &LoadedEntry| {
+            date_within_range(
+                &entry.date,
+                shared.since.as_deref(),
+                shared.until.as_deref(),
+            )
+        };
+        let sessions = deduped
+            .main_thread_session_days(in_window)
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect();
+        let entries = deduped
+            .entries
+            .into_iter()
+            .filter(|entry| in_window(entry))
+            .collect::<Vec<_>>();
+        let summaries = summarize_entry_sessions(&entries)?;
         return Ok((
             AgentRows {
                 rows: summary_rows("claude", summaries, false),
@@ -960,9 +981,11 @@ fn without_turns_counted_by_claude(
         .into_iter()
         .filter(|(entry, native_session)| {
             native_session.as_ref().is_none_or(|session| {
-                !claude_counted.covers(session, || {
-                    format_date_tz(entry.timestamp, claude_tz.as_ref())
-                })
+                !claude_counted.covers(
+                    session,
+                    || format_date_tz(entry.timestamp, claude_tz.as_ref()),
+                    claude_shared,
+                )
             })
         })
         .map(|(entry, _)| entry)
@@ -1160,6 +1183,7 @@ where
                 output_tokens: usage.output_tokens,
                 cache_creation_tokens: usage.cache_creation_tokens,
                 cache_read_tokens: usage.cached_input_tokens,
+                cache_creation_1h_tokens: None,
                 extra_total_tokens: 0,
                 cost: codex::calculate_codex_model_cost(model, usage, pricing, speed),
                 missing_pricing: mode != CostMode::Display

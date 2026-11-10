@@ -38,7 +38,13 @@ in
             rustToolchain
             cargo-edit
             cargo-insta
-            cargo-llvm-cov
+            # nixpkgs' rustc bundles an LLVM 23 profiler runtime while being
+            # built against LLVM 21, so the instrumented binaries in this
+            # package's own test suite segfault at exit. The shell runs
+            # cargo-llvm-cov with rustToolchain, which is unaffected. Drop the
+            # override once https://github.com/NixOS/nixpkgs/pull/578990
+            # reaches the pinned nixpkgs (https://github.com/NixOS/nixpkgs/issues/576588).
+            (cargo-llvm-cov.overrideAttrs { doCheck = false; })
             pkg-config
             openssl
             config.treefmt.build.wrapper

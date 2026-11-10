@@ -15,10 +15,7 @@ use std::{
 use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 use rustc_hash::FxHasher;
-use serde::{
-    Deserialize,
-    de::{DeserializeOwned, Error as _, MapAccess, SeqAccess, Visitor},
-};
+use serde::{Deserialize, de::DeserializeOwned};
 use smallvec::SmallVec;
 
 use crate::{
@@ -70,57 +67,30 @@ pub fn load_deduped_entries(
 #[derive(Default)]
 pub struct DedupedEntries {
     pub entries: Vec<LoadedEntry>,
-    /// `(session row the usage is counted under, recorded session of the
-    /// copy)` pairs.
-    copies: Vec<(Arc<str>, Arc<str>)>,
+    /// `(survivor index, recorded session of the copy)` pairs.
+    copies: Vec<(usize, Arc<str>)>,
 }
 
 impl DedupedEntries {
-    /// Recorded session IDs whose wrapper rows the Claude source already
-    /// counts when it reports the session rows `is_counted` accepts. Session
-    /// rows are keyed by the transcript path while a wrapper such as OpenCode
-    /// links the session ID Claude Code recorded, so the two are kept apart. A
-    /// session with its own surviving main-thread usage is covered exactly when
-    /// the rows holding it are reported, because its own turns count only
-    /// there. A session whose usage dedup kept entirely under other sessions is
-    /// covered only when every one of those is reported.
-    pub fn main_thread_sessions(&self, is_counted: impl Fn(&str) -> bool) -> HashSet<Arc<str>> {
-        let (own_counted, own_uncounted): (Vec<_>, Vec<_>) = self
-            .entries
+    /// Main-thread days of the entries `is_counted` keeps, by recorded session ID. As in
+    /// the daily loader, a merged copy's session counts on the day its survivor does.
+    pub fn main_thread_session_days(
+        &self,
+        is_counted: impl Fn(&LoadedEntry) -> bool,
+    ) -> SessionDays {
+        self.entries
             .iter()
-            .filter(|entry| entry.data.is_sidechain != Some(true))
-            .map(|entry| {
-                (
-                    is_counted(&entry.session_id),
-                    loaded_entry_session_id(entry),
-                )
-            })
-            .partition(|(counted, _)| *counted);
-        let own_uncounted = own_uncounted
-            .into_iter()
-            .map(|(_, session_id)| session_id)
-            .collect::<HashSet<_>>();
-        let own = own_counted
-            .into_iter()
-            .map(|(_, session_id)| session_id)
-            .chain(own_uncounted.iter().copied())
-            .collect::<HashSet<_>>();
-        let held_by_uncounted = self
-            .copies
-            .iter()
-            .filter(|(survivor, _)| !is_counted(survivor))
-            .map(|(_, copy)| copy.as_ref())
-            .collect::<HashSet<_>>();
-        own.iter()
-            .copied()
-            .filter(|session_id| !own_uncounted.contains(session_id))
+            .map(|entry| (loaded_entry_session_id(entry), entry))
             .chain(
                 self.copies
                     .iter()
-                    .map(|(_, copy)| copy.as_ref())
-                    .filter(|copy| !own.contains(copy) && !held_by_uncounted.contains(copy)),
+                    .map(|(index, session_id)| (session_id.as_ref(), &self.entries[*index])),
             )
-            .map(Arc::from)
+            .filter(|(_, entry)| entry.data.is_sidechain != Some(true) && is_counted(entry))
+            .map(|(session_id, entry)| (session_id, entry.date.as_str()))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .map(|(session_id, date)| (Arc::from(session_id), date.to_owned()))
             .collect()
     }
 }
@@ -297,11 +267,6 @@ fn load_entries_inner(
         shared,
         format!("Kept {} usage entries after deduplication", deduped.len()),
     );
-    let copies = copies
-        .into_iter()
-        .filter(|(index, _)| deduped[*index].data.is_sidechain != Some(true))
-        .map(|(index, session_id)| (Arc::clone(&deduped[index].session_id), session_id))
-        .collect();
     Ok(DedupedEntries {
         entries: deduped,
         copies,
@@ -329,7 +294,23 @@ fn should_replace_deduped_entry(candidate: &UsageEntry, existing: &UsageEntry) -
         return candidate_total > existing_total;
     }
 
-    candidate.message.usage.speed.is_some() && existing.message.usage.speed.is_none()
+    carries_more_usage_detail(&candidate.message.usage, &existing.message.usage)
+}
+
+/// Breaks a tie between duplicates with equal token totals by keeping the copy
+/// that reports more of the request: the speed tier, with `Fast` above
+/// `Standard` because only `Fast` carries the fast-mode price multiplier, then
+/// the cache-write TTL split.
+fn carries_more_usage_detail(candidate: &TokenUsageRaw, existing: &TokenUsageRaw) -> bool {
+    let detail = |usage: &TokenUsageRaw| {
+        let speed_rank = match usage.speed {
+            None => 0,
+            Some(Speed::Standard) => 1,
+            Some(Speed::Fast) => 2,
+        };
+        (speed_rank, usage.cache_creation.is_some())
+    };
+    detail(candidate) > detail(existing)
 }
 
 fn push_deduped_entry(
@@ -847,115 +828,59 @@ fn has_unsupported_null_field(line: &[u8]) -> bool {
     let Ok(root) = serde_json::from_slice::<serde_json::Value>(line) else {
         return false;
     };
-    has_unsupported_null_field_in_value(&root)
+    let unsupported = has_unsupported_null_field_in_value(&root);
+    assert!(
+        !unsupported || may_have_unsupported_null_field(line),
+        "the raw pre-check must not skip a line the value check rejects"
+    );
+    unsupported
 }
 
 /// Deserializes a transcript line while enforcing Claude's nullable-field contract.
-/// Lines containing `null` are parsed into a value once so structural validation and
-/// typed deserialization can share the same parse.
+///
+/// Every other rejection, such as a duplicate known field, comes from the typed parse
+/// of the raw line, so a line is loaded or skipped the same way whether or not it
+/// also needed the null check.
 pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(line: &[u8]) -> Option<T> {
-    if memmem::find(line, b"null").is_none() {
-        return serde_json::from_slice(line).ok();
+    if may_have_unsupported_null_field(line) {
+        let root = serde_json::from_slice::<serde_json::Value>(line).ok()?;
+        if has_unsupported_null_field_in_value(&root) {
+            return None;
+        }
     }
-    let root = serde_json::from_slice::<UniqueJsonValue>(line).ok()?.0;
-    if has_unsupported_null_field_in_value(&root) {
-        return None;
-    }
-    serde_json::from_value(root).ok()
+    serde_json::from_slice(line).ok()
 }
 
-/// A JSON value parser that preserves typed Serde's rejection of duplicate members.
-/// Parsing through `serde_json::Value` normally keeps only the final duplicate, which could
-/// make a malformed transcript valid before the in-memory typed deserialization runs.
-struct UniqueJsonValue(serde_json::Value);
-
-impl<'de> Deserialize<'de> for UniqueJsonValue {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_any(UniqueJsonValueVisitor)
-    }
+/// Whether a `null` in `line` could be the value of a member that
+/// [`is_unsupported_nullable_field`] guards.
+///
+/// Claude Code writes always-null members such as `stop_sequence` and `container` on
+/// every assistant line, so the mere presence of `null` would send nearly every line
+/// through the value-tree check. A key holding an escape sequence counts as guarded,
+/// because its decoded name cannot be compared from the raw bytes; any other false
+/// positive only costs the slower validated parse.
+fn may_have_unsupported_null_field(line: &[u8]) -> bool {
+    memmem::find_iter(line, b"null").any(|null_start| {
+        let Some(before_value) = trim_json_whitespace_end(&line[..null_start]).strip_suffix(b":")
+        else {
+            return false;
+        };
+        let Some(before_closing_quote) = trim_json_whitespace_end(before_value).strip_suffix(b"\"")
+        else {
+            return false;
+        };
+        let key_start = memchr::memrchr(b'"', before_closing_quote).map_or(0, |index| index + 1);
+        let key = &before_closing_quote[key_start..];
+        key.contains(&b'\\') || is_unsupported_nullable_field(key)
+    })
 }
 
-struct UniqueJsonValueVisitor;
-
-impl<'de> Visitor<'de> for UniqueJsonValueVisitor {
-    type Value = UniqueJsonValue;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("a JSON value without duplicate object members")
-    }
-
-    fn visit_bool<E>(self, value: bool) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Bool(value)))
-    }
-
-    fn visit_i64<E>(self, value: i64) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Number(value.into())))
-    }
-
-    fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Number(value.into())))
-    }
-
-    fn visit_f64<E: serde::de::Error>(self, value: f64) -> std::result::Result<Self::Value, E> {
-        serde_json::Number::from_f64(value)
-            .map(serde_json::Value::Number)
-            .map(UniqueJsonValue)
-            .ok_or_else(|| E::custom("non-finite JSON number"))
-    }
-
-    fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::String(value.to_owned())))
-    }
-
-    fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::String(value)))
-    }
-
-    fn visit_none<E>(self) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Null))
-    }
-
-    fn visit_unit<E>(self) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Null))
-    }
-
-    fn visit_some<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        UniqueJsonValue::deserialize(deserializer)
-    }
-
-    fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        let mut values = Vec::new();
-        while let Some(value) = sequence.next_element::<UniqueJsonValue>()? {
-            values.push(value.0);
-        }
-        Ok(UniqueJsonValue(serde_json::Value::Array(values)))
-    }
-
-    fn visit_map<A>(self, mut object: A) -> std::result::Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        let mut fields = serde_json::Map::new();
-        while let Some(field) = object.next_key::<String>()? {
-            if fields.contains_key(&field) {
-                return Err(A::Error::custom(format!(
-                    "duplicate object member `{field}`"
-                )));
-            }
-            let value = object.next_value::<UniqueJsonValue>()?;
-            fields.insert(field, value.0);
-        }
-        Ok(UniqueJsonValue(serde_json::Value::Object(fields)))
-    }
+fn trim_json_whitespace_end(bytes: &[u8]) -> &[u8] {
+    let end = bytes
+        .iter()
+        .rposition(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
+        .map_or(0, |index| index + 1);
+    &bytes[..end]
 }
 
 fn has_unsupported_null_field_in_value(root: &serde_json::Value) -> bool {
@@ -1077,13 +1002,15 @@ mod tests {
 
     use super::{
         deserialize_usage_line, extract_session_parts, has_unsupported_null_field,
-        paths::is_project_path_segment, push_deduped_entry, read_usage_file, usage_files,
+        load_deduped_entries, may_have_unsupported_null_field, paths::is_project_path_segment,
+        push_deduped_entry, read_usage_file, usage_files,
     };
     use crate::{
-        LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-        cli::CostMode,
+        LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
+        UsageMessage,
+        cli::{CostMode, SharedArgs},
     };
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     #[test]
     fn limits_usage_file_discovery_to_requested_project() {
@@ -1263,6 +1190,61 @@ mod tests {
     }
 
     #[test]
+    fn null_precheck_skips_only_unguarded_members() {
+        assert!(!may_have_unsupported_null_field(
+            br#"{"message":{"model":"m","stop_sequence":null,"container":null,"content":"null","usage":{"input_tokens":1,"iterations":null}}}"#
+        ));
+        assert!(!may_have_unsupported_null_field(
+            br#"{"message":{"content":[null],"usage":{"input_tokens":1}}}"#
+        ));
+        assert!(may_have_unsupported_null_field(
+            br#"{"message":{"model" :
+null,"usage":{"input_tokens":1}}}"#
+        ));
+        assert!(may_have_unsupported_null_field(
+            br#"{"message":{"model":null,"usage":{"input_tokens":1}}}"#
+        ));
+        assert!(has_unsupported_null_field(
+            br#"{"message":{"model":null,"usage":{"input_tokens":1}}}"#
+        ));
+        assert!(may_have_unsupported_null_field(
+            br#"{"message":{"content":"\"id\":null","usage":{"input_tokens":1}}}"#
+        ));
+    }
+
+    /// Duplicate handling is the typed parse's alone, so it must not depend on whether
+    /// the line also carries an allowed or exempted `null`.
+    #[test]
+    fn handles_duplicate_members_the_same_with_or_without_nulls() {
+        for nulls in [
+            "",
+            r#","stop_sequence":null"#,
+            r#","iterations":[{"type":"message","model":null}]"#,
+        ] {
+            let (message_nulls, usage_nulls) = if nulls.contains("iterations") {
+                ("", nulls)
+            } else {
+                (nulls, "")
+            };
+            let duplicate_known = format!(
+                r#"{{"timestamp":"2026-09-12T04:38:42.296Z","message":{{"id":"msg_1","model":"first","model":"second"{message_nulls},"usage":{{"input_tokens":2,"output_tokens":1{usage_nulls}}}}}}}"#
+            );
+            let duplicate_unknown = format!(
+                r#"{{"timestamp":"2026-09-12T04:38:42.296Z","extra":1,"extra":2,"message":{{"id":"msg_1","model":"m"{message_nulls},"usage":{{"input_tokens":2,"output_tokens":1{usage_nulls}}}}}}}"#
+            );
+
+            assert!(
+                deserialize_usage_line::<UsageEntry>(duplicate_known.as_bytes()).is_none(),
+                "{duplicate_known}"
+            );
+            assert!(
+                deserialize_usage_line::<UsageEntry>(duplicate_unknown.as_bytes()).is_some(),
+                "{duplicate_unknown}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_duplicate_members_before_typed_deserialization() {
         assert!(deserialize_usage_line::<UsageEntry>(
             br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
@@ -1380,6 +1362,77 @@ mod tests {
                 .sum::<u64>(),
             275
         );
+    }
+
+    #[test]
+    fn keeps_the_cache_ttl_split_from_an_otherwise_equal_duplicate() {
+        for lines in [
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+            ],
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+            ],
+        ] {
+            let fixture = fs_fixture!({
+                "projects/project-a/session-a.jsonl": lines.join("\n"),
+            });
+            let _env = EnvVarsGuard::set_many([(
+                "CLAUDE_CONFIG_DIR",
+                Some(fixture.root().as_os_str().to_os_string()),
+            )]);
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread: true,
+                ..SharedArgs::default()
+            };
+
+            let deduped = load_deduped_entries(&shared, None).unwrap();
+
+            assert_eq!(deduped.entries.len(), 1);
+            let mut breakdown = ModelBreakdown::default();
+            breakdown.add_usage(&deduped.entries[0].data.message.usage);
+            assert_eq!(breakdown.cache_creation_tokens, 100);
+            assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+        }
+    }
+
+    #[test]
+    fn keeps_the_fast_tier_from_an_otherwise_equal_duplicate() {
+        for lines in [
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"standard","cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"fast"}}}"#,
+            ],
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"fast"}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"standard","cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+            ],
+        ] {
+            let fixture = fs_fixture!({
+                "projects/project-a/session-a.jsonl": lines.join("\n"),
+            });
+            let mut deduped_indexes = Default::default();
+            let mut deduped = Vec::new();
+
+            let loaded = read_usage_file(
+                &fixture.path("projects/project-a/session-a.jsonl"),
+                None,
+                CostMode::Display,
+                None,
+            );
+            for entry in loaded.entries {
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+            }
+
+            assert_eq!(deduped.len(), 1);
+            assert!(matches!(
+                deduped[0].data.message.usage.speed,
+                Some(Speed::Fast)
+            ));
+        }
     }
 
     #[test]
@@ -1536,6 +1589,54 @@ mod tests {
             ]
         );
         assert_eq!(deduped[0].session_id.as_ref(), "session-b");
+    }
+
+    #[test]
+    fn attributes_a_cross_session_copy_to_the_survivor_day() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":1}}}"#,
+            "projects/project-a/session-b.jsonl": [
+                r#"{"timestamp":"2026-01-01T10:00:00.000Z","sessionId":"session-b","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+                r#"{"timestamp":"2026-01-03T10:00:00.000Z","sessionId":"session-b","requestId":"req-own","message":{"id":"msg-own","model":"claude-sonnet-4-20250514","usage":{"input_tokens":7,"output_tokens":1}}}"#,
+            ]
+            .join("\n"),
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            single_thread: true,
+            json: true,
+            ..SharedArgs::default()
+        };
+        let deduped = load_deduped_entries(&shared, None).unwrap();
+        let sorted_days = |is_counted: &dyn Fn(&LoadedEntry) -> bool| {
+            let mut days: Vec<_> = deduped
+                .main_thread_session_days(is_counted)
+                .into_iter()
+                .map(|(session, date)| (session.to_string(), date))
+                .collect();
+            days.sort();
+            days
+        };
+        let day = |session: &str, date: &str| (session.to_string(), date.to_string());
+
+        assert_eq!(deduped.entries.len(), 2);
+        assert_eq!(
+            sorted_days(&|_| true),
+            [
+                day("session-a", "2026-01-02"),
+                day("session-b", "2026-01-02"),
+                day("session-b", "2026-01-03"),
+            ]
+        );
+        assert_eq!(
+            sorted_days(&|entry| entry.date != "2026-01-02"),
+            [day("session-b", "2026-01-03")]
+        );
     }
 
     #[test]

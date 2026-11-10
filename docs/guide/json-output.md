@@ -58,7 +58,7 @@ ccusage daily --json | jq '.totals.unpricedModels // []'
 
 Detection follows the [cost mode](/guide/cost-modes): an entry counts as unpriced only when ccusage had to calculate its cost from tokens and found no price. In `display` mode, or in `auto` mode for an entry that carries its own stored cost, nothing is looked up, so nothing is reported. A model can therefore appear in `unpricedModels` and still show a positive cost when some of its entries carried stored costs. An absent key means no unpriced usage was detected under the selected mode, not that every price is current.
 
-Covered: `daily`, `weekly`, `monthly`, and `session` reports for every agent, including `--instances`, `--sections`, and `--by-agent`. Focused `codex` reports set `missingPricing` on the affected entries of each period's `models` map. Not covered: `blocks` and `session --id`, which have no `totals` object.
+Covered: `daily`, `weekly`, `monthly`, and `session` reports for every agent, including `--instances`, `--sections`, and `--by-agent`. Focused `codex` reports set `missingPricing` on the affected entries of each period's `models` map. `blocks` and `session --id` have no `totals` object; Claude's `session --id` still marks unpriced entries of its `modelBreakdowns`.
 
 Update ccusage, or run without `--offline`, once the pricing source lists the model.
 
@@ -299,6 +299,22 @@ In `auto` [cost mode](/guide/cost-modes), an entry's `cost` can add together cos
 	"cacheReadTokens": 30,
 	"cost": 0.503084,
 	"storedCost": 0.5
+}
+```
+
+## Cache Write TTL Split
+
+[Claude Code](/guide/claude/) records whether each cache write used the 5-minute or the 1-hour cache TTL, and the two tiers are billed at different rates. Each `modelBreakdowns` entry where at least one record reported that split carries `cacheCreation1hTokens`, the part of `cacheCreationTokens` written with the 1-hour TTL; the rest of `cacheCreationTokens` is 5-minute writes plus writes from records that reported no split, which ccusage prices at the 5-minute rate when it calculates cost. Entries whose records never reported a split, including every other agent, omit the key.
+
+```json
+{
+	"modelName": "claude-sonnet-4-20250514",
+	"inputTokens": 1500,
+	"outputTokens": 100,
+	"cacheCreationTokens": 400,
+	"cacheCreation1hTokens": 300,
+	"cacheReadTokens": 30,
+	"cost": 0.008184
 }
 ```
 
@@ -700,7 +716,7 @@ if (projectData.projects) {
 
 JSON output is designed for programmatic consumption:
 
-- **Consistent structure**: All fields are always present (with 0 or empty values when not applicable)
+- **Consistent structure**: Token and cost fields are always present (with 0 or empty values when not applicable), except that `--no-cost` removes cost fields. A few `modelBreakdowns` keys appear only when they apply: [`missingPricing`](#unpriced-models), [`storedCost`](#stored-costs), and [`cacheCreation1hTokens`](#cache-write-ttl-split)
 - **Standard types**: Numbers for metrics, strings for identifiers, arrays for lists
 - **ISO timestamps**: Standardized date/time formats for reliable parsing
 - **Stable schema**: Field names and structures remain consistent across versions

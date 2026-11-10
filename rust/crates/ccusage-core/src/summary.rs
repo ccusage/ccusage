@@ -78,14 +78,7 @@ impl UsageAccumulator {
                 index
             };
             let breakdown = &mut self.breakdowns[index];
-            breakdown.input_tokens = breakdown.input_tokens.saturating_add(usage.input_tokens);
-            breakdown.output_tokens = breakdown.output_tokens.saturating_add(usage.output_tokens);
-            breakdown.cache_creation_tokens = breakdown
-                .cache_creation_tokens
-                .saturating_add(usage.cache_creation_token_count());
-            breakdown.cache_read_tokens = breakdown
-                .cache_read_tokens
-                .saturating_add(usage.cache_read_input_tokens);
+            breakdown.add_usage(&usage);
             breakdown.extra_total_tokens = breakdown
                 .extra_total_tokens
                 .saturating_add(entry.extra_total_tokens);
@@ -267,21 +260,7 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
                 });
                 index
             };
-            let breakdown = &mut summary.model_breakdowns[index];
-            breakdown.input_tokens = breakdown.input_tokens.saturating_add(item.input_tokens);
-            breakdown.output_tokens = breakdown.output_tokens.saturating_add(item.output_tokens);
-            breakdown.cache_creation_tokens = breakdown
-                .cache_creation_tokens
-                .saturating_add(item.cache_creation_tokens);
-            breakdown.cache_read_tokens = breakdown
-                .cache_read_tokens
-                .saturating_add(item.cache_read_tokens);
-            breakdown.extra_total_tokens = breakdown
-                .extra_total_tokens
-                .saturating_add(item.extra_total_tokens);
-            breakdown.cost += item.cost;
-            breakdown.missing_pricing |= item.missing_pricing;
-            breakdown.add_stored_cost(item.stored_cost);
+            summary.model_breakdowns[index].merge(item);
         }
     }
     summary
@@ -705,6 +684,7 @@ mod tests {
                 output_tokens: 10,
                 cache_creation_tokens: 1,
                 cache_read_tokens: 2,
+                cache_creation_1h_tokens: None,
                 extra_total_tokens: 3,
                 cost: fixture.cost,
                 missing_pricing: false,
