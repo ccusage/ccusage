@@ -26,7 +26,7 @@ export def wait-for-npm-package-versions [
     --poll-interval: duration
     --fetch-timeout-ms: int = 10000
 ]: nothing -> nothing {
-    let effective_timeout = $timeout | default 4min
+    let effective_timeout = $timeout | default 15min
     let effective_poll_interval = $poll_interval | default 10sec
     let deadline = (date now) + $effective_timeout
     let proportional_overhead = $effective_timeout / 10
