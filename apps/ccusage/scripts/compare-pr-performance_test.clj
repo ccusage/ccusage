@@ -124,7 +124,17 @@
     (hyperfine-export [(hyperfine-result "base" 0.1)])
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"0 results named PR"
-                            (read-hyperfine-runs output ["base" "PR"]))))))
+                            (read-hyperfine-runs output ["base" "PR"])))))
+  (with-hyperfine-export
+    (hyperfine-export [(hyperfine-result "base" 0.1) (hyperfine-result "base" 0.2)])
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"2 results named base"
+                            (read-hyperfine-runs output ["base"])))))
+  (with-hyperfine-export
+    (hyperfine-export [(assoc-in (hyperfine-result "base" 0.1) [:measurements 0 :time_cpu :unit] "millisecond")])
+    (fn [output]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unexpected hyperfine time unit"
+                            (read-hyperfine-runs output ["base"]))))))
 
 (deftest report-rendering
   (let [rounds [(round 1000 600) (round 1000 620) (round 1000 610)]
