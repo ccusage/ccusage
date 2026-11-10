@@ -28,8 +28,12 @@
                              "Peak RSS" (format-memory-size (get-in summary [:rss :median]))
                              "CPU vs prev" (if comparison (format-ratio-spread (:cpu comparison)) "-")
                              "RSS vs prev" (if comparison (format-ratio-spread (:rss comparison)) "-")
+                             "Instructions vs prev" (if (:instructions comparison) (format-ratio-spread (:instructions comparison)) "-")
                              "Verdict" (if comparison (comparison-verdict comparison) "-"))))
-              variants)]
+              variants)
+        rows (if (some #(not= "-" (get % "Instructions vs prev")) (rest rows))
+               rows
+               (map #(dissoc % "Instructions vs prev") rows))]
     (str "### `" command " --offline --json`\n\n" (table-md rows))))
 
 (defn parse-history-cli [argv]

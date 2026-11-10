@@ -135,7 +135,7 @@
                                 [result] {:base 2048 :head 1024})]
     (is (.startsWith markdown "<!-- ccusage-perf-comment -->\n<!-- ccusage-perf-comment:2222222222222222 -->\n"))
     (is (.contains markdown "PR: `222222222222` · Base: `111111111111`"))
-    (is (.contains markdown "**Verdict: ✅ faster** in `claude daily`"))
+    (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
     (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
     (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))))
 
@@ -143,7 +143,18 @@
   (let [result (fn [cpu rss] {:command "daily" :comparison {:cpu {:verdict cpu} :rss {:verdict rss}}})]
     (is (:regression? (overall-verdict [(result :unchanged :regression)] 0.1)))
     (is (.contains (:text (overall-verdict [(result :unchanged :unchanged)] 0.1)) "no significant change"))
-    (is (not (:regression? (overall-verdict [(result :improvement :unchanged)] 0.1))))))
+    (is (not (:regression? (overall-verdict [(result :improvement :unchanged)] 0.1))))
+    (testing "a memory-only improvement is reported"
+      (is (= "**Verdict: ✅ improved** in `daily` (less memory); nothing regressed beyond 10%."
+             (:text (overall-verdict [(result :unchanged :improvement)] 0.1)))))))
+
+(deftest history-instruction-columns
+  (let [with-instructions (fn [r n] (-> r (assoc-in ["base" :instructions] 100) (assoc-in ["PR" :instructions] n)))
+        variants [{:label "base"} {:label "PR"}]
+        rounds [(round 1000 1000) (round 1000 1000) (round 1000 1000)]]
+    (is (not (.contains (render-history-table {:command "daily" :rounds rounds} variants 0.1) "Instructions")))
+    (is (.contains (render-history-table {:command "daily" :rounds (mapv #(with-instructions % 50) rounds)} variants 0.1)
+                   "| Instructions vs prev |"))))
 
 (deftest github-warning-goes-to-stdout
   (let [err (java.io.StringWriter.)

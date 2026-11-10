@@ -20,16 +20,18 @@
       (seq parts) (str "✅ " (str/join ", " parts))
       :else "unchanged")))
 
+(defn- verdicts [result] [(get-in result [:comparison :cpu :verdict]) (get-in result [:comparison :rss :verdict])])
+
 (defn overall-verdict [results threshold]
   (let [percent (Math/round (* 100 threshold))
-        regressions (filter #(some #{:regression} [(get-in % [:comparison :cpu :verdict]) (get-in % [:comparison :rss :verdict])]) results)
-        improvements (filter #(= :improvement (get-in % [:comparison :cpu :verdict])) results)
-        commands (fn [rs] (str/join ", " (map #(str "`" (:command %) "`") rs)))]
+        regressions (filter #(some #{:regression} (verdicts %)) results)
+        improvements (filter #(some #{:improvement} (verdicts %)) results)
+        commands (fn [rs] (str/join ", " (map #(format "`%s` (%s)" (:command %) (str/replace (comparison-verdict (:comparison %)) #"^\S+ " "")) rs)))]
     (cond
       (seq regressions) {:regression? true
-                         :text (format "**Verdict: ⚠️ possible regression** in %s (CPU time or peak RSS above +%d%%, consistent across rounds)."
+                         :text (format "**Verdict: ⚠️ possible regression** in %s; CPU time or peak RSS above +%d%%, consistent across rounds."
                                        (commands regressions) percent)}
-      (seq improvements) {:text (format "**Verdict: ✅ faster** in %s; nothing regressed beyond %d%%." (commands improvements) percent)}
+      (seq improvements) {:text (format "**Verdict: ✅ improved** in %s; nothing regressed beyond %d%%." (commands improvements) percent)}
       :else {:text (format "**Verdict: no significant change** (every command within ±%d%% CPU time and peak RSS)." percent)})))
 
 (defn fixture-line [{:keys [fixture-stats codex-fixture-stats]}]
