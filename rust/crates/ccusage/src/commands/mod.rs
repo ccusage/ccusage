@@ -26,8 +26,8 @@ use crate::{
     format_remaining_time, format_rfc3339_millis, group_project_output, identify_session_blocks,
     load_daily_summaries, load_entries, load_entries_since, print_active_block_detail,
     print_blocks_table, print_json_or_jq, print_usage_table, session_summary_json, sort_blocks,
-    sort_summaries, summarize_by_key, summarize_summaries_by_bucket, summary_json,
-    total_usage_tokens, totals_json, utc_now, wants_json,
+    sort_summaries, summarize_by_key, summarize_summaries_by_bucket, summary_json, totals_json,
+    utc_now, wants_json,
 };
 
 pub(crate) fn run_daily(args: DailyArgs) -> Result<()> {
@@ -225,17 +225,20 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
         return Ok(());
     }
 
-    let total_cost = session_entries.iter().map(|entry| entry.cost).sum::<f64>();
-    let total_tokens = session_entries
-        .iter()
-        .map(|entry| total_usage_tokens(entry.data.message.usage))
-        .sum::<u64>();
+    let mut session = SessionAccumulator::default();
+    for entry in &session_entries {
+        session.add_entry(entry);
+    }
+    let mut summary = session.into_summary()?;
+    summary.session_id = Some(id.to_string());
 
     if wants_json(shared) {
         let output = json!({
             "sessionId": id,
-            "totalCost": total_cost,
-            "totalTokens": total_tokens,
+            "totalCost": summary.total_cost,
+            "totalTokens": summary.total_tokens(),
+            "modelsUsed": summary.models_used,
+            "modelBreakdowns": summary.model_breakdowns,
             "entries": session_entries.iter().map(|entry| json!({
                 "timestamp": entry.data.timestamp,
                 "inputTokens": entry.data.message.usage.input_tokens,
@@ -250,13 +253,14 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
         return Ok(());
     }
 
-    println!("Claude Code Session Usage - {id}");
-    if !shared.no_cost {
-        println!("Total Cost: {}", format_currency(total_cost));
-    }
-    println!("Total Tokens: {}", format_number(total_tokens));
-    println!("Total Entries: {}", session_entries.len());
-    Ok(())
+    print_usage_table(
+        &format!("Claude Code Session Usage - {id}"),
+        "Session",
+        &[summary],
+        shared,
+        false,
+        None,
+    )
 }
 
 pub(crate) fn run_blocks(args: BlocksArgs) -> Result<()> {

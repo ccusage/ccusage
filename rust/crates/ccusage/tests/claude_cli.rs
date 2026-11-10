@@ -41,6 +41,94 @@ fn session_id_deduplicates_repeated_message_usage() {
     assert_eq!(json["entries"].as_array().unwrap().len(), 1);
 }
 
+fn write_two_model_session(fixture: &Fixture) {
+    let messages = [
+        r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","costUSD":0.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
+        r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","costUSD":1.5,"message":{"id":"message-b","model":"claude-opus-4-20250514","usage":{"input_tokens":30,"output_tokens":4,"cache_read_input_tokens":100}}}"#,
+    ];
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/chat.jsonl",
+        messages.join("\n"),
+    );
+    let _ = fixture.write_file(
+        "projects/project-b/session-b/chat.jsonl",
+        r#"{"timestamp":"2026-09-15T13:00:00.000Z","sessionId":"session-b","requestId":"request-c","costUSD":9.0,"message":{"id":"message-c","model":"claude-sonnet-4-20250514","usage":{"input_tokens":999,"output_tokens":999}}}"#,
+    );
+}
+
+#[test]
+fn session_id_json_includes_model_breakdowns() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+
+    let json: serde_json::Value = serde_json::from_str(&run_ccusage(
+        &fixture,
+        &[
+            "claude",
+            "session",
+            "--id",
+            "session-a",
+            "--json",
+            "--mode",
+            "display",
+            "--offline",
+        ],
+        None,
+    ))
+    .unwrap();
+
+    assert_eq!(
+        json["modelsUsed"],
+        serde_json::json!(["claude-sonnet-4-20250514", "claude-opus-4-20250514"])
+    );
+    let breakdowns = json["modelBreakdowns"].as_array().unwrap();
+    assert_eq!(breakdowns.len(), 2, "{json}");
+    assert_eq!(breakdowns[0]["modelName"], "claude-opus-4-20250514");
+    assert_eq!(breakdowns[0]["inputTokens"], 30);
+    assert_eq!(breakdowns[0]["outputTokens"], 4);
+    assert_eq!(breakdowns[0]["cacheReadTokens"], 100);
+    assert_eq!(breakdowns[0]["cost"], 1.5);
+    assert_eq!(breakdowns[1]["modelName"], "claude-sonnet-4-20250514");
+    assert_eq!(breakdowns[1]["inputTokens"], 10);
+    assert_eq!(breakdowns[1]["cost"], 0.25);
+}
+
+#[test]
+fn session_id_table_honors_breakdown() {
+    let fixture = Fixture::new();
+    write_two_model_session(&fixture);
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
+        .env_clear()
+        .env("HOME", fixture.path("home"))
+        .env("USERPROFILE", fixture.path("userprofile"))
+        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
+        .env("CLAUDE_CONFIG_DIR", fixture.root())
+        .env("NO_COLOR", "1")
+        .env("COLUMNS", "200")
+        .args([
+            "claude",
+            "session",
+            "--id",
+            "session-a",
+            "--breakdown",
+            "--mode",
+            "display",
+            "--offline",
+            "--timezone",
+            "UTC",
+        ])
+        .output()
+        .expect("failed to run ccusage");
+    assert!(
+        output.status.success(),
+        "ccusage claude session --id --breakdown failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap());
+}
+
 fn set_file_modified(path: &std::path::Path, unix_seconds: u64) {
     let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix_seconds);
     std::fs::File::options()
@@ -144,6 +232,43 @@ fn daily_since_totals_match_after_pruning_stale_files() {
     assert!(!table.contains("2026-09-01"), "{table}");
     assert!(!table.contains("2026-09-09"), "{table}");
     assert!(table.contains("$3.00"), "{table}");
+}
+
+#[test]
+fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/chat.jsonl",
+        [
+            r#"{"timestamp":"2026-09-11T12:00:00.000Z","sessionId":"session-a","requestId":"request-direct","costUSD":1.0,"message":{"id":"message-direct","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1,"output_tokens":2}},"data":{"message":{"timestamp":"2026-09-12T12:00:00.000Z","requestId":"request-shadow","costUSD":5.0,"message":{"id":"message-shadow","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":200}}}}}"#,
+            r#"{"type":"progress","sessionId":"session-a","data":{"message":{"timestamp":"2026-09-12T12:00:00.000Z","requestId":"request-wrapped","costUSD":2.0,"message":{"id":"message-wrapped","model":"claude-sonnet-4-20250514","usage":{"input_tokens":3,"output_tokens":4}}}}}"#,
+        ]
+        .join("\n"),
+    );
+
+    let output = run_bounded_daily(&fixture, &["--json"]);
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let days = json["daily"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|day| {
+            (
+                day["date"].as_str().unwrap().to_string(),
+                day["totalTokens"].as_u64().unwrap(),
+                day["totalCost"].as_f64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        days,
+        vec![
+            ("2026-09-11".to_string(), 3, 1.0),
+            ("2026-09-12".to_string(), 7, 2.0),
+        ]
+    );
+    assert_eq!(json["totals"]["totalTokens"], 10);
+    assert_eq!(json["totals"]["totalCost"], 3.0);
 }
 
 // 2026-09-12T12:00:00Z, later than every fixture entry below.
@@ -876,6 +1001,10 @@ fn auto_mode_breakdowns_report_the_stored_part_of_cost() {
     let reports = [
         (&["claude", "daily"][..], "/daily/0/modelBreakdowns/0"),
         (&["claude", "session"][..], "/sessions/0/modelBreakdowns/0"),
+        (
+            &["claude", "session", "--id", "session-a"][..],
+            "/modelBreakdowns/0",
+        ),
         (&["claude", "monthly"][..], "/monthly/0/modelBreakdowns/0"),
         (
             &["daily", "--by-agent"][..],

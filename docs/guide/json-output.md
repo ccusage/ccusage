@@ -58,7 +58,7 @@ ccusage daily --json | jq '.totals.unpricedModels // []'
 
 Detection follows the [cost mode](/guide/cost-modes): an entry counts as unpriced only when ccusage had to calculate its cost from tokens and found no price. In `display` mode, or in `auto` mode for an entry that carries its own stored cost, nothing is looked up, so nothing is reported. A model can therefore appear in `unpricedModels` and still show a positive cost when some of its entries carried stored costs. An absent key means no unpriced usage was detected under the selected mode, not that every price is current.
 
-Covered: `daily`, `weekly`, `monthly`, and `session` reports for every agent, including `--instances`, `--sections`, and `--by-agent`. Focused `codex` reports set `missingPricing` on the affected entries of each period's `models` map. Not covered: `blocks` and `session --id`, which have no `totals` object.
+Covered: `daily`, `weekly`, `monthly`, and `session` reports for every agent, including `--instances`, `--sections`, and `--by-agent`. Focused `codex` reports set `missingPricing` on the affected entries of each period's `models` map. `blocks` and `session --id` have no `totals` object; Claude's `session --id` still marks unpriced entries of its `modelBreakdowns`.
 
 Update ccusage, or run without `--offline`, once the pricing source lists the model.
 
