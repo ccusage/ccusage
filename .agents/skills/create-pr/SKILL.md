@@ -16,7 +16,7 @@ A PR is one reviewable responsibility and may hold several atomic commits. A bra
 3. Request and handle AI review — `references/ai-review.md`, with the `gh` reply and thread-state calls in `references/gh-review.md`.
 4. Watch CI after opening and after every push with `gh pr checks`. Read the failing step logs and annotations rather than the summary, then use the `fix-ci` skill for the fix, and ask the bots for another pass if they do not rerun on their own.
 5. Merge only when the user explicitly asks and the conditions below hold: `gh pr merge <pr> --squash --delete-branch`. Squash is the repository's normal flow. When the PR fixes an issue someone else reported, add that reporter to the squash commit as `Co-authored-by`, using their noreply address `<id>+<login>@users.noreply.github.com` (`gh api users/<login> --jq .id`). Pass it with `--body-file`, which replaces the default squash body, so keep the trailers that body would have carried.
-6. After merging, reply on each linked issue and on any original contributor PR it superseded. For a branch offered without a PR, reply where it was offered. Say what landed and in which PR, and that it ships with the next release (tagpr releases later). Do this in particular when someone pinged or offered a branch and got no answer.
+6. After merging, reply on each linked issue and on any original contributor PR it superseded. For a branch offered without a PR, reply where it was offered. Say what landed and in which PR, and, when it changes the published package, that it ships with the next release. Do this in particular when someone pinged or offered a branch and got no answer.
 
 ## Ready means
 
