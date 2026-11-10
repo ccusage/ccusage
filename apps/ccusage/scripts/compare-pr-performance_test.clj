@@ -194,25 +194,41 @@
       (finally (babashka.fs/delete-tree dir)))))
 
 (deftest codex-fixture-compatibility
-  (let [modern? #(= "new" (:commit %))
-        old {:label "v20.0.30" :commit "old"}
-        new {:label "main" :commit "new"}
-        binary {:label "/bin/ccusage"}]
-    (testing "compressed coverage stays when every ref reads it"
-      (is (= {:layout "current"} (codex-compatibility modern? [new new] nil))))
-    (testing "an older ref or a bare binary switches the generated fixture to the legacy layout"
-      (let [result (codex-compatibility modern? [old new] nil)]
+  (let [archived-pr "#1230" zstd-pr "#1890"
+        ;; v20.0.5 predates both inputs, v20.0.30 reads archived sessions only.
+        support {"v20.0.5" #{} "v20.0.30" #{archived-pr} "main" #{archived-pr zstd-pr}}
+        reads? (fn [variant input-class] (contains? (get support (:label variant) #{}) (:pr input-class)))
+        v5 {:label "v20.0.5"} v30 {:label "v20.0.30"} main {:label "main"} binary {:label "/bin/ccusage"}
+        with-fixture (fn [files f]
+                       (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-codex-fixture."})]
+                         (try
+                           (doseq [file files]
+                             (babashka.fs/create-dirs (babashka.fs/parent (path dir file)))
+                             (spit (path dir file) ""))
+                           (f (str dir))
+                           (finally (babashka.fs/delete-tree dir)))))]
+    (testing "compressed coverage stays when every ref reads every input"
+      (is (= {:layout "current"} (codex-compatibility reads? [main main] nil))))
+    (testing "a ref that skips any input switches the generated fixture to the legacy layout"
+      (let [result (codex-compatibility reads? [v30 main] nil)]
         (is (= "legacy" (:layout result)))
-        (is (.contains (:note result) "`v20.0.30` cannot read")))
-      (is (= "legacy" (:layout (codex-compatibility modern? [binary new] nil)))))
-    (testing "a custom fixture with zstd rollouts warns when a ref cannot read them"
-      (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-codex-fixture."})]
-        (try
-          (is (nil? (codex-compatibility modern? [old new] (str dir))))
-          (spit (path dir "rollout.jsonl.zst") "")
-          (is (.contains (:warning (codex-compatibility modern? [old new] (str dir))) "⚠️ **Warning:** `v20.0.30` cannot read"))
-          (is (= {:layout "current"} (codex-compatibility modern? [new] (str dir))))
-          (finally (babashka.fs/delete-tree dir)))))))
+        (is (.contains (:note result) "`v20.0.30` cannot read zstd-compressed rollouts"))
+        (is (not (.contains (:note result) "archived sessions"))))
+      (is (.contains (:note (codex-compatibility reads? [v5 main] nil)) "`v20.0.5` cannot read archived sessions"))
+      (is (= "legacy" (:layout (codex-compatibility reads? [binary main] nil)))))
+    (testing "a custom fixture warns for each input class it contains that a ref skips"
+      (with-fixture ["sessions/2026/06/01/rollout-a.jsonl"]
+        #(is (nil? (codex-compatibility reads? [v5 main] %))))
+      (with-fixture ["archived_sessions/rollout-a.jsonl"]
+        (fn [dir]
+          (let [warning (:warning (codex-compatibility reads? [v5 main] dir))]
+            (is (.contains warning "`v20.0.5` cannot read archived sessions"))
+            (is (not (.contains warning "zstd"))))
+          (is (nil? (codex-compatibility reads? [v30 main] dir)))))
+      (with-fixture ["sessions/2026/06/01/rollout-a.jsonl.zst"]
+        #(is (.contains (:warning (codex-compatibility reads? [v30 main] %)) "`v20.0.30` cannot read zstd-compressed rollouts")))
+      (with-fixture ["archived_sessions/rollout-a.jsonl.zst"]
+        #(is (= {:layout "current"} (codex-compatibility reads? [main] %)))))))
 
 (let [{:keys [fail error]} (apply run-tests ['compare-pr-performance-test])]
   (when (pos? (+ fail error))

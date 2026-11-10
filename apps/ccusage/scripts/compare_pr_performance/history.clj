@@ -120,38 +120,52 @@
   (let [digest (java.security.MessageDigest/getInstance "SHA-256")]
     (format "%064x" (BigInteger. 1 (.digest digest (fs/read-all-bytes file))))))
 
-(def zstd-rollouts-commit
-  "fix(codex): read Zstandard-compressed rollouts (#1890). It came after
-  archived-session support, so a ref that contains it reads every Codex file
-  the current fixture layout writes."
-  "44a3aa84e84cbc1afa40dab3f2849e03e9a9b054")
+(def codex-input-classes
+  "Codex inputs that older releases skip, from the Codex loader's history
+  (`rust/adapters/codex/src/paths.rs` and `reader.rs`): each entry names the
+  commit that taught the reader that input. Claude discovery has scanned
+  `projects/` recursively throughout v20, and date-window skips (#1665,
+  #1794) do not apply to unbounded reports, so nothing else belongs here."
+  [{:name "archived sessions (`archived_sessions/`)" :pr "#1230"
+    :commit "a9b12c43ac608d308bb4a2c5f5673dc6b9e530c1"
+    :matches? #(str/includes? % "/archived_sessions/")}
+   {:name "zstd-compressed rollouts (`.jsonl.zst`)" :pr "#1890"
+    :commit "44a3aa84e84cbc1afa40dab3f2849e03e9a9b054"
+    :matches? #(str/ends-with? % ".zst")}])
 
-(defn reads-current-codex-layout?
-  "Binary paths cannot be checked, so only commits that contain the zstd
-  support count as able to read compressed and archived rollouts."
-  [repo {:keys [commit]}]
+(defn reads-input-class?
+  "A binary path cannot be checked, so only a commit that contains the
+  class's reader support counts as reading it."
+  [repo {:keys [commit]} input-class]
   (and (some? commit)
-       (zero? (:exit (run-process ["git" "merge-base" "--is-ancestor" zstd-rollouts-commit commit] {:dir repo})))))
+       (zero? (:exit (run-process ["git" "merge-base" "--is-ancestor" (:commit input-class) commit] {:dir repo})))))
+
+(defn- refs-text [variants] (str/join ", " (map #(str "`" (:label %) "`") variants)))
 
 (defn codex-compatibility
   "Picks the Codex layout every ref reads in full, and the report note that
   goes with it. A ref that skips part of the input would otherwise look
-  faster, or its successor slower, only because the input it read changed."
-  [reads-current-layout? variants fixture-codex-dir]
-  (let [legacy (map :label (remove reads-current-layout? variants))
-        refs (str/join ", " (map #(str "`" % "`") legacy))
-        zst? (fn [dir] (some #(str/ends-with? (str %) ".zst") (file-seq (fs/file dir))))]
+  faster, or its successor slower, only because the input it read changed.
+  `reads?` takes a variant and an input class."
+  [reads? variants fixture-codex-dir]
+  (let [skipped (keep (fn [input-class]
+                        (when-let [refs (seq (remove #(reads? % input-class) variants))]
+                          (assoc input-class :refs refs)))
+                      codex-input-classes)
+        describe (fn [classes] (str/join "; " (map #(format "%s cannot read %s (added in %s)" (refs-text (:refs %)) (:name %) (:pr %)) classes)))]
     (cond
-      (empty? legacy) {:layout "current"}
+      (empty? skipped) {:layout "current"}
       (nil? fixture-codex-dir)
       {:layout "legacy"
-       :note (str "Note: " refs " cannot read zstd-compressed or archived Codex rollouts (added in #1890 and #1230), "
-                  "so the Codex fixture uses the legacy layout: every rollout uncompressed under `sessions/`. "
-                  "Compressed-rollout coverage applies only when every ref includes #1890.")}
-      (zst? fixture-codex-dir)
-      {:warning (str "⚠️ **Warning:** " refs " cannot read the `.jsonl.zst` rollouts in the custom Codex fixture, "
-                     "so they read less input than newer refs and their Codex rows are not comparable. "
-                     "Pass an uncompressed Codex fixture, or omit both fixture options to get one.")})))
+       :note (str "Note: " (describe skipped) ". The Codex fixture therefore uses the legacy layout: every rollout "
+                  "uncompressed under `sessions/`, which every ref reads in full.")}
+      :else
+      (let [files (map str (filter fs/regular-file? (file-seq (fs/file fixture-codex-dir))))
+            present (filter (fn [input-class] (some (:matches? input-class) files)) skipped)]
+        (when (seq present)
+          {:warning (str "⚠️ **Warning:** the custom Codex fixture contains input some refs skip: " (describe present)
+                         ". Those refs read less input, so their Codex and unified rows are not comparable. "
+                         "Omit both fixture options to get a fixture every ref reads.")})))))
 
 (defn ensure-fixture!
   "Generates the fixture once per generator revision, size, and Codex layout."
@@ -185,7 +199,7 @@
             commands (if (:commands options) (mapv str/trim (str/split (:commands options) #",")) default-commands)
             variants (resolve-variants repo cache (:refs options))
             custom-codex (some-> (:codex-fixture-dir options) expand)
-            compatibility (codex-compatibility (partial reads-current-codex-layout? repo) variants custom-codex)
+            compatibility (codex-compatibility (partial reads-input-class? repo) variants custom-codex)
             fixture (if custom-codex
                       {:claude (expand (:fixture-dir options)) :codex custom-codex}
                       (ensure-fixture! repo cache (:size-mib options) (:layout compatibility)))
@@ -197,8 +211,12 @@
                 real (when (:real options)
                        (history-section "Local logs" variants (local-logs-env) commands options))
                 real-warning (when (and real (not= "current" (:layout compatibility)))
-                               (str "⚠️ **Warning:** refs before #1890 skip zstd-compressed and archived Codex rollouts "
-                                    "in local logs, so Codex and unified rows across that change compare different input.\n\n"))
+                               (str "⚠️ **Warning:** in local logs, "
+                                    (str/join "; " (keep (fn [input-class]
+                                                           (when-let [refs (seq (remove #(reads-input-class? repo % input-class) variants))]
+                                                             (format "%s skip %s" (refs-text refs) (:name input-class))))
+                                                         codex-input-classes))
+                                    ", so Codex and unified rows across those changes compare different input.\n\n"))
                 report (str "# ccusage performance history\n\n"
                             (some-> (or (:warning compatibility) (:note compatibility)) (str "\n\n"))
                             (format "%d interleaved rounds after %d warmup rounds; cells show median (min–max); ratios are this ref / previous ref per round. "
