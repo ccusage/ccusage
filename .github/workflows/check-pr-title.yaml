@@ -12,8 +12,11 @@ on:
   merge_group:
     types: [checks_requested]
   # release.yaml dispatches this for tagpr's release PR, whose pull_request runs
-  # wait for an approval; see release-pr-statuses.
+  # wait for an approval, and a person pushing to that branch starts it through
+  # `push`; see release-pr-statuses.
   workflow_dispatch:
+  push:
+    branches: ['tagpr-from-*']
 
 permissions:
   pull-requests: read
@@ -21,7 +24,7 @@ permissions:
 jobs:
   main:
     name: Validate PR title
-    if: github.event_name != 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-slim
     steps:
       - name: Skip on merge groups
@@ -152,7 +155,7 @@ jobs:
   # .github/tagpr-template.md, so there is nothing to validate.
   release-pr-statuses:
     name: Release PR title statuses
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -164,7 +167,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           if [[ "$REF_NAME" != tagpr-from-* ]]; then
-            echo "::error::Only tagpr release branches get title statuses on dispatch."
+            echo "::error::Only tagpr release branches get title statuses."
             exit 1
           fi
           for context in 'Validate PR title' 'Validate PR title scope'; do

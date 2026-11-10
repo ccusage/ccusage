@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # tagpr pushes its release branch with GITHUB_TOKEN, which starts no
+    # workflow, so release.yaml dispatches CI there instead. A person pushing to
+    # that branch does start one, and that run re-reports `ci gate` for the new
+    # head through the release status jobs below.
+    branches: [main, 'tagpr-from-*']
   pull_request:
   # The merge queue's required `ci gate` must report on the queued commit.
   merge_group:
@@ -354,9 +358,9 @@ jobs:
           if-no-files-found: error
 
   ccusage-preview-e2e:
-    # Run on PRs, merge groups, and pushes to the default branch. `push` only
-    # fires on main (see on.push.branches), so this validates the published
-    # preview package post-merge too, not just on PRs. Merge groups publish a
+    # Run on PRs, merge groups, and pushes to the default branch. `push` fires
+    # on main (see on.push.branches), so this validates the published preview
+    # package post-merge too, not just on PRs. Merge groups publish a
     # preview of the queued commit, so the queue verifies the package built from
     # the tree main will get.
     if: needs.changes.outputs.code-changed == 'true'
@@ -664,7 +668,7 @@ jobs:
   # gate result is reported again under that exact context.
   release-dispatch-status-pending:
     name: release dispatch status (pending)
-    if: github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'tagpr-from-')
+    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-')
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -685,7 +689,7 @@ jobs:
     needs:
       - release-dispatch-status-pending
       - ci-gate
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'tagpr-from-') }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-') }}
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
