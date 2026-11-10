@@ -47,6 +47,11 @@ impl TokenUsageRaw {
             self.cache_creation_input_tokens
         }
     }
+
+    /// `None` when the source did not report the cache-write TTL split.
+    fn cache_creation_1h_token_count(&self) -> Option<u64> {
+        self.cache_creation.map(|b| b.ephemeral_1h_input_tokens)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -103,6 +108,11 @@ pub struct ModelBreakdown {
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
+    /// Part of `cache_creation_tokens` written with the 1-hour cache TTL; the
+    /// rest was billed at the 5-minute rate. Absent when no entry reported the
+    /// split.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_creation_1h_tokens: Option<u64>,
     #[serde(skip_serializing)]
     pub extra_total_tokens: u64,
     pub cost: f64,
@@ -115,6 +125,44 @@ pub struct ModelBreakdown {
 }
 
 impl ModelBreakdown {
+    pub fn add_usage(&mut self, usage: &TokenUsageRaw) {
+        self.input_tokens = self.input_tokens.saturating_add(usage.input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(usage.output_tokens);
+        self.cache_creation_tokens = self
+            .cache_creation_tokens
+            .saturating_add(usage.cache_creation_token_count());
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(usage.cache_read_input_tokens);
+        self.add_cache_creation_1h_tokens(usage.cache_creation_1h_token_count());
+    }
+
+    /// Folds another breakdown of the same model into this one.
+    pub fn merge(&mut self, other: &Self) {
+        self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+        self.cache_creation_tokens = self
+            .cache_creation_tokens
+            .saturating_add(other.cache_creation_tokens);
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(other.cache_read_tokens);
+        self.add_cache_creation_1h_tokens(other.cache_creation_1h_tokens);
+        self.extra_total_tokens = self
+            .extra_total_tokens
+            .saturating_add(other.extra_total_tokens);
+        self.cost += other.cost;
+        self.missing_pricing |= other.missing_pricing;
+        self.add_stored_cost(other.stored_cost);
+    }
+
+    fn add_cache_creation_1h_tokens(&mut self, tokens: Option<u64>) {
+        if let Some(tokens) = tokens {
+            let total = self.cache_creation_1h_tokens.get_or_insert(0);
+            *total = total.saturating_add(tokens);
+        }
+    }
+
     pub fn add_stored_cost(&mut self, stored_cost: Option<f64>) {
         if let Some(stored_cost) = stored_cost {
             *self.stored_cost.get_or_insert(0.0) += stored_cost;

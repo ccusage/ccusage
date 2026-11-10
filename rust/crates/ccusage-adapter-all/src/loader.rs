@@ -1168,6 +1168,7 @@ where
                 output_tokens: usage.output_tokens,
                 cache_creation_tokens: usage.cache_creation_tokens,
                 cache_read_tokens: usage.cached_input_tokens,
+                cache_creation_1h_tokens: None,
                 extra_total_tokens: 0,
                 cost: codex::calculate_codex_model_cost(model, usage, pricing, speed),
                 missing_pricing: mode != CostMode::Display

@@ -907,3 +907,53 @@ fn auto_mode_breakdowns_report_the_stored_part_of_cost() {
         assert!(stripped.get("storedCost").is_none(), "{args:?}: {stripped}");
     }
 }
+
+#[test]
+fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split() {
+    let fixture = Fixture::new();
+    let lines = [
+        r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":300}}}}"#,
+        r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","message":{"id":"message-b","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":50}}}"#,
+        r#"{"timestamp":"2026-09-15T12:02:00.000Z","sessionId":"session-a","requestId":"request-c","message":{"id":"message-c","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":70}}}"#,
+    ];
+    let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+
+    let reports = [
+        (&["claude", "daily"][..], "/daily/0/modelBreakdowns"),
+        (&["claude", "weekly"][..], "/weekly/0/modelBreakdowns"),
+        (&["claude", "monthly"][..], "/monthly/0/modelBreakdowns"),
+        (&["claude", "session"][..], "/sessions/0/modelBreakdowns"),
+        (&["daily"][..], "/daily/0/modelBreakdowns"),
+        (
+            &["daily", "--by-agent"][..],
+            "/daily/0/agents/0/modelBreakdowns",
+        ),
+    ];
+    for (args, pointer) in reports {
+        let args = args
+            .iter()
+            .chain(&["--json", "--offline", "--timezone", "UTC"])
+            .copied()
+            .collect::<Vec<_>>();
+        let json: serde_json::Value =
+            serde_json::from_str(&run_ccusage(&fixture, &args, None)).unwrap();
+        let breakdowns = json.pointer(pointer).unwrap().as_array().unwrap();
+        let model = |name: &str| {
+            breakdowns
+                .iter()
+                .find(|b| b["modelName"] == name)
+                .unwrap_or_else(|| panic!("{args:?}: no {name} in {breakdowns:?}"))
+        };
+
+        let sonnet = model("claude-sonnet-4-20250514");
+        assert_eq!(sonnet["cacheCreationTokens"], 450, "{args:?}: {sonnet}");
+        assert_eq!(sonnet["cacheCreation1hTokens"], 300, "{args:?}: {sonnet}");
+
+        let haiku = model("claude-haiku-4-5-20251001");
+        assert_eq!(haiku["cacheCreationTokens"], 70, "{args:?}: {haiku}");
+        assert!(
+            haiku.get("cacheCreation1hTokens").is_none(),
+            "{args:?}: {haiku}"
+        );
+    }
+}
