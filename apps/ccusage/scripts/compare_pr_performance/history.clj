@@ -74,7 +74,9 @@
       (run-checked ["cargo" "build" "--manifest-path" (path worktree "rust" "Cargo.toml") "--release" "--bin" "ccusage"]
                    {:env {"CARGO_TARGET_DIR" (path cache "target")}} (str "cargo build " (format-sha commit)))
       (fs/create-dirs (fs/parent bin))
-      (fs/copy (path cache "target" "release" "ccusage") bin {:copy-attributes true}))
+      (let [partial (str bin ".partial")]
+        (fs/copy (path cache "target" "release" "ccusage") partial {:copy-attributes true :replace-existing true})
+        (fs/move partial bin {:atomic-move true :replace-existing true})))
     bin))
 
 (defn resolve-variants
