@@ -15,10 +15,7 @@ use std::{
 use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 use rustc_hash::FxHasher;
-use serde::{
-    Deserialize,
-    de::{DeserializeOwned, Error as _, MapAccess, SeqAccess, Visitor},
-};
+use serde::{Deserialize, de::DeserializeOwned};
 use smallvec::SmallVec;
 
 use crate::{
@@ -824,17 +821,18 @@ fn has_unsupported_null_field(line: &[u8]) -> bool {
 }
 
 /// Deserializes a transcript line while enforcing Claude's nullable-field contract.
-/// Lines that may hold an unsupported `null` member are parsed into a value once so
-/// structural validation and typed deserialization can share the same parse.
+///
+/// Every other rejection, such as a duplicate known field, comes from the typed parse
+/// of the raw line, so a line is loaded or skipped the same way whether or not it
+/// also needed the null check.
 pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(line: &[u8]) -> Option<T> {
-    if !may_have_unsupported_null_field(line) {
-        return serde_json::from_slice(line).ok();
+    if may_have_unsupported_null_field(line) {
+        let root = serde_json::from_slice::<serde_json::Value>(line).ok()?;
+        if has_unsupported_null_field_in_value(&root) {
+            return None;
+        }
     }
-    let root = serde_json::from_slice::<UniqueJsonValue>(line).ok()?.0;
-    if has_unsupported_null_field_in_value(&root) {
-        return None;
-    }
-    serde_json::from_value(root).ok()
+    serde_json::from_slice(line).ok()
 }
 
 /// Whether a `null` in `line` could be the value of a member that
@@ -867,100 +865,6 @@ fn trim_json_whitespace_end(bytes: &[u8]) -> &[u8] {
         .rposition(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
         .map_or(0, |index| index + 1);
     &bytes[..end]
-}
-
-/// A JSON value parser that preserves typed Serde's rejection of duplicate members.
-/// Parsing through `serde_json::Value` normally keeps only the final duplicate, which could
-/// make a malformed transcript valid before the in-memory typed deserialization runs.
-struct UniqueJsonValue(serde_json::Value);
-
-impl<'de> Deserialize<'de> for UniqueJsonValue {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_any(UniqueJsonValueVisitor)
-    }
-}
-
-struct UniqueJsonValueVisitor;
-
-impl<'de> Visitor<'de> for UniqueJsonValueVisitor {
-    type Value = UniqueJsonValue;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("a JSON value without duplicate object members")
-    }
-
-    fn visit_bool<E>(self, value: bool) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Bool(value)))
-    }
-
-    fn visit_i64<E>(self, value: i64) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Number(value.into())))
-    }
-
-    fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Number(value.into())))
-    }
-
-    fn visit_f64<E: serde::de::Error>(self, value: f64) -> std::result::Result<Self::Value, E> {
-        serde_json::Number::from_f64(value)
-            .map(serde_json::Value::Number)
-            .map(UniqueJsonValue)
-            .ok_or_else(|| E::custom("non-finite JSON number"))
-    }
-
-    fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::String(value.to_owned())))
-    }
-
-    fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::String(value)))
-    }
-
-    fn visit_none<E>(self) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Null))
-    }
-
-    fn visit_unit<E>(self) -> std::result::Result<Self::Value, E> {
-        Ok(UniqueJsonValue(serde_json::Value::Null))
-    }
-
-    fn visit_some<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        UniqueJsonValue::deserialize(deserializer)
-    }
-
-    fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        let mut values = Vec::new();
-        while let Some(value) = sequence.next_element::<UniqueJsonValue>()? {
-            values.push(value.0);
-        }
-        Ok(UniqueJsonValue(serde_json::Value::Array(values)))
-    }
-
-    fn visit_map<A>(self, mut object: A) -> std::result::Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        let mut fields = serde_json::Map::new();
-        while let Some(field) = object.next_key::<String>()? {
-            if fields.contains_key(&field) {
-                return Err(A::Error::custom(format!(
-                    "duplicate object member `{field}`"
-                )));
-            }
-            let value = object.next_value::<UniqueJsonValue>()?;
-            fields.insert(field, value.0);
-        }
-        Ok(UniqueJsonValue(serde_json::Value::Object(fields)))
-    }
 }
 
 fn has_unsupported_null_field_in_value(root: &serde_json::Value) -> bool {
@@ -1291,12 +1195,36 @@ null,"usage":{"input_tokens":1}}}"#
         ));
     }
 
+    /// Duplicate handling is the typed parse's alone, so it must not depend on whether
+    /// the line also carries an allowed or exempted `null`.
     #[test]
-    fn rejects_duplicate_members_on_lines_with_only_unguarded_nulls() {
-        assert!(deserialize_usage_line::<UsageEntry>(
-            br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","stop_sequence":null,"usage":{"input_tokens":2,"output_tokens":289}}}"#
-        )
-        .is_none());
+    fn handles_duplicate_members_the_same_with_or_without_nulls() {
+        for nulls in [
+            "",
+            r#","stop_sequence":null"#,
+            r#","iterations":[{"type":"message","model":null}]"#,
+        ] {
+            let (message_nulls, usage_nulls) = if nulls.contains("iterations") {
+                ("", nulls)
+            } else {
+                (nulls, "")
+            };
+            let duplicate_known = format!(
+                r#"{{"timestamp":"2026-09-12T04:38:42.296Z","message":{{"id":"msg_1","model":"first","model":"second"{message_nulls},"usage":{{"input_tokens":2,"output_tokens":1{usage_nulls}}}}}}}"#
+            );
+            let duplicate_unknown = format!(
+                r#"{{"timestamp":"2026-09-12T04:38:42.296Z","extra":1,"extra":2,"message":{{"id":"msg_1","model":"m"{message_nulls},"usage":{{"input_tokens":2,"output_tokens":1{usage_nulls}}}}}}}"#
+            );
+
+            assert!(
+                deserialize_usage_line::<UsageEntry>(duplicate_known.as_bytes()).is_none(),
+                "{duplicate_known}"
+            );
+            assert!(
+                deserialize_usage_line::<UsageEntry>(duplicate_unknown.as_bytes()).is_some(),
+                "{duplicate_unknown}"
+            );
+        }
     }
 
     #[test]
