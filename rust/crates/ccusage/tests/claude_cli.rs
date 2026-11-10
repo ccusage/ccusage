@@ -924,6 +924,9 @@ fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split
         (&["claude", "monthly"][..], "/monthly/0/modelBreakdowns"),
         (&["claude", "session"][..], "/sessions/0/modelBreakdowns"),
         (&["daily"][..], "/daily/0/modelBreakdowns"),
+        (&["weekly"][..], "/weekly/0/modelBreakdowns"),
+        (&["monthly"][..], "/monthly/0/modelBreakdowns"),
+        (&["session"][..], "/session/0/modelBreakdowns"),
         (
             &["daily", "--by-agent"][..],
             "/daily/0/agents/0/modelBreakdowns",
