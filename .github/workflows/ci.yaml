@@ -580,9 +580,13 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
-      - name: Checkout PR merge commit
+      # The write token must not reach code the PR edited, so the action and
+      # the upsert script come from the base commit; the downloaded report is
+      # only passed to the script as text.
+      - name: Checkout base commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - uses: ./.github/actions/setup-nix-cache
