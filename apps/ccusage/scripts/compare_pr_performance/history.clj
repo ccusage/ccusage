@@ -12,7 +12,7 @@
    :help {:alias :h :coerce :boolean}})
 
 (defn local-logs-env []
-  (array-map "COLUMNS" "200" "LOG_LEVEL" "0" "NO_COLOR" "1" "TZ" "UTC"))
+  {:clean? false :vars (array-map "COLUMNS" "200" "LOG_LEVEL" "0" "NO_COLOR" "1" "TZ" "UTC")})
 
 (defn render-history-table
   "One table per command: every ref against the previous one, judged like a PR."

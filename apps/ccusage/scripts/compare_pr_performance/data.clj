@@ -96,7 +96,11 @@
 (defn command-text-arg [value]
   (let [text (str value)]
     (if (re-matches safe-arg-pattern text) text (json/generate-string text))))
-(defn benchmark-command-text [env argv]
-  (->> (concat ["env"] (map (fn [[k v]] (str k "=" v)) env) argv)
+(defn benchmark-command-text
+  "Renders the command through `env`. With `clean?` it starts from an empty
+  environment, so no variable from the caller's shell (an agent's data-dir
+  override, for one) can point a fixture run at real logs."
+  [{:keys [vars clean?]} argv]
+  (->> (concat ["env"] (when clean? ["-i"]) (map (fn [[k v]] (str k "=" v)) vars) argv)
        (map command-text-arg)
        (str/join " ")))

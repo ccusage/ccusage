@@ -29,10 +29,9 @@
     {:bytes (reduce + 0 (map fs/size files)) :files (count files)}))
 
 (defn fixture-env
-  "Points every agent at the fixture. HOME moves to an empty directory so the
-  unified report cannot pick up agents that happen to have logs on this machine."
+  "Points Claude and Codex at the fixture and every other agent at an empty
+  HOME, in an otherwise empty environment."
   [fixture-dir codex-fixture-dir empty-home]
-  (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir "HOME" empty-home
-             "XDG_CONFIG_HOME" (path empty-home ".config") "XDG_DATA_HOME" (path empty-home ".local" "share")
-             "XDG_STATE_HOME" (path empty-home ".local" "state") "XDG_CACHE_HOME" (path empty-home ".cache")
-             "COLUMNS" "200" "LOG_LEVEL" "0" "NO_COLOR" "1" "TZ" "UTC"))
+  {:clean? true
+   :vars (array-map "CLAUDE_CONFIG_DIR" fixture-dir "CODEX_HOME" codex-fixture-dir "HOME" empty-home
+                    "COLUMNS" "200" "LOG_LEVEL" "0" "NO_COLOR" "1" "TZ" "UTC")})

@@ -39,8 +39,11 @@
 (deftest command-rendering
   (is (= "env CLAUDE_CONFIG_DIR=/tmp/a \"CODEX_HOME=/tmp/codex data\" /tmp/ccusage claude daily --offline --json"
          (benchmark-command-text
-          {"CLAUDE_CONFIG_DIR" "/tmp/a" "CODEX_HOME" "/tmp/codex data"}
-          (command-argv "/tmp/ccusage" "claude daily")))))
+          {:vars {"CLAUDE_CONFIG_DIR" "/tmp/a" "CODEX_HOME" "/tmp/codex data"}}
+          (command-argv "/tmp/ccusage" "claude daily"))))
+  (testing "fixture runs start from an empty environment"
+    (is (= "env -i CLAUDE_CONFIG_DIR=/f/c CODEX_HOME=/f/x HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
+           (benchmark-command-text (fixture-env "/f/c" "/f/x" "/e") (command-argv "/b" "daily"))))))
 
 (deftest statistics
   (is (= 4 (median [9 1 2 4 7])))
