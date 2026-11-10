@@ -16314,9 +16314,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.015,
-			"input": 0.029,
-			"output": 0.088
+			"cache_read": 0.016,
+			"input": 0.032,
+			"output": 0.097
 		},
 		"limit": {
 			"context": 262144
@@ -27749,9 +27749,9 @@
 	},
 	"prism": {
 		"cost": {
-			"cache_read": 0.32664,
-			"input": 3.2664,
-			"output": 16.332
+			"cache_read": 0.22,
+			"input": 2.2,
+			"output": 11
 		},
 		"exactOnly": true,
 		"limit": {
@@ -33885,6 +33885,39 @@
 		}
 	},
 	"vertex/gemini-4-argon@us": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 4,
+			"output": 20
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"vertex/gemini-4-carbon": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 4,
+			"output": 20
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"vertex/gemini-4-carbon@eu": {
+		"cost": {
+			"cache_read": 0.2,
+			"cache_write": 0.375,
+			"input": 4,
+			"output": 20
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"vertex/gemini-4-carbon@us": {
 		"cost": {
 			"cache_read": 0.2,
 			"cache_write": 0.375,
