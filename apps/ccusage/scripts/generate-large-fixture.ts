@@ -18,6 +18,7 @@ const SUBAGENT_FILE_EVERY = 4;
 const LEGACY_PROGRESS_FILE_EVERY = 6;
 const CODEX_PLAIN_RECENT_DAYS = 14;
 const CODEX_ARCHIVED_FILE_EVERY = 4;
+const CODEX_COMPACTION_CHANCE = 1 / 30;
 const REAL_WORLD_PROFILE_FILES = 3142;
 const REAL_WORLD_PROFILE_TOTAL_MIB = 1238.9718046188354;
 const REAL_WORLD_QUANTILES = [
@@ -629,6 +630,19 @@ function codexItemCompleted(session: CodexSession, turnId: string): Line {
 	});
 }
 
+function codexUsageRecord(session: CodexSession, turnId: string, usage: Line): Line {
+	return codexLine(session, 'token_usage_record', {
+		thread_id: session.sessionId,
+		turn_id: turnId,
+		session_id: session.sessionId,
+		root_turn_id: turnId,
+		response_id: `resp_${session.random.hex(32)}`,
+		usage,
+		turn_token_usage: usage,
+		thread_token_usage: session.total,
+	});
+}
+
 function* codexSessionLines(session: CodexSession): Generator<Line> {
 	const { random } = session;
 	yield codexLine(session, 'session_meta', {
@@ -693,6 +707,10 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 			});
 			const usage = codexUsage(random);
 			session.total = addUsage(session.total, usage);
+			// Codex writes the response's usage record before the token_count
+			// that advances the cumulative total, which is what lets the parser
+			// settle each record instead of keeping it pending.
+			yield codexUsageRecord(session, turnId, usage);
 			yield codexLine(session, 'event_msg', {
 				type: 'token_count',
 				info: {
@@ -713,16 +731,6 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 					rate_limit_reached_type: null,
 				},
 			});
-			yield codexLine(session, 'token_usage_record', {
-				thread_id: session.sessionId,
-				turn_id: turnId,
-				session_id: session.sessionId,
-				root_turn_id: turnId,
-				response_id: `resp_${random.hex(32)}`,
-				usage,
-				turn_token_usage: usage,
-				thread_token_usage: session.total,
-			});
 		}
 		yield codexLine(session, 'response_item', {
 			type: 'message',
@@ -730,6 +738,29 @@ function* codexSessionLines(session: CodexSession): Generator<Line> {
 			content: [{ type: 'output_text', text: text(random, around(random, 3000)) }],
 			phase: 'final',
 		});
+		if (random.chance(CODEX_COMPACTION_CHANCE)) {
+			// A remote compaction's usage is missing from the cumulative total,
+			// so its record stays pending until the marker naming it arrives.
+			const record = codexUsageRecord(session, turnId, codexUsage(random));
+			yield record;
+			const latest = record.payload as Line;
+			yield codexLine(session, 'compacted', {
+				message: '',
+				replacement_history: [
+					{
+						type: 'message',
+						role: 'user',
+						content: [{ type: 'input_text', text: text(random, around(random, 180_000)) }],
+					},
+				],
+				window_number: 2,
+				window_id: random.uuid(),
+				previous_window_id: random.uuid(),
+				first_window_id: random.uuid(),
+				compaction_response_id: latest.response_id,
+				latest_token_usage_record: latest,
+			});
+		}
 		if (random.chance(0.08)) {
 			yield codexLine(session, 'world_state', { snapshot: text(random, around(random, 26_000)) });
 		}
