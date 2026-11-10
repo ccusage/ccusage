@@ -915,27 +915,56 @@ fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split
         r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":300}}}}"#,
         r#"{"timestamp":"2026-09-15T12:01:00.000Z","sessionId":"session-a","requestId":"request-b","message":{"id":"message-b","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":50}}}"#,
         r#"{"timestamp":"2026-09-15T12:02:00.000Z","sessionId":"session-a","requestId":"request-c","message":{"id":"message-c","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":70}}}"#,
+        r#"{"timestamp":"2026-09-16T12:00:00.000Z","sessionId":"session-a","requestId":"request-d","message":{"id":"message-d","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":80}}}}"#,
+        r#"{"timestamp":"2026-09-16T12:01:00.000Z","sessionId":"session-a","requestId":"request-e","message":{"id":"message-e","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":30}}}"#,
     ];
     let _ = fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
 
+    // Daily rows stop at 2026-09-15; weekly, monthly and session rows merge
+    // both days.
+    let first_day = (450, 300, 70);
+    let both_days = (550, 380, 100);
     let reports = [
-        (&["claude", "daily"][..], "/daily/0/modelBreakdowns"),
-        (&["claude", "weekly"][..], "/weekly/0/modelBreakdowns"),
-        (&["claude", "monthly"][..], "/monthly/0/modelBreakdowns"),
-        (&["claude", "session"][..], "/sessions/0/modelBreakdowns"),
-        (&["daily"][..], "/daily/0/modelBreakdowns"),
-        (&["weekly"][..], "/weekly/0/modelBreakdowns"),
-        (&["monthly"][..], "/monthly/0/modelBreakdowns"),
-        (&["session"][..], "/session/0/modelBreakdowns"),
+        (
+            &["claude", "daily"][..],
+            "/daily/0/modelBreakdowns",
+            first_day,
+        ),
+        (
+            &["claude", "weekly"][..],
+            "/weekly/0/modelBreakdowns",
+            both_days,
+        ),
+        (
+            &["claude", "monthly"][..],
+            "/monthly/0/modelBreakdowns",
+            both_days,
+        ),
+        (
+            &["claude", "session"][..],
+            "/sessions/0/modelBreakdowns",
+            both_days,
+        ),
+        (&["daily"][..], "/daily/0/modelBreakdowns", first_day),
+        (&["weekly"][..], "/weekly/0/modelBreakdowns", both_days),
+        (&["monthly"][..], "/monthly/0/modelBreakdowns", both_days),
+        (&["session"][..], "/session/0/modelBreakdowns", both_days),
         (
             &["daily", "--by-agent"][..],
             "/daily/0/agents/0/modelBreakdowns",
+            first_day,
         ),
     ];
-    for (args, pointer) in reports {
+    for (args, pointer, (sonnet_cache, sonnet_1h, haiku_cache)) in reports {
+        let until: &[&str] = if pointer.starts_with("/daily") {
+            &["--until", "2026-09-15"]
+        } else {
+            &[]
+        };
         let args = args
             .iter()
             .chain(&["--json", "--offline", "--timezone", "UTC"])
+            .chain(until)
             .copied()
             .collect::<Vec<_>>();
         let json: serde_json::Value =
@@ -949,11 +978,20 @@ fn breakdowns_report_one_hour_cache_creation_tokens_only_for_models_with_a_split
         };
 
         let sonnet = model("claude-sonnet-4-20250514");
-        assert_eq!(sonnet["cacheCreationTokens"], 450, "{args:?}: {sonnet}");
-        assert_eq!(sonnet["cacheCreation1hTokens"], 300, "{args:?}: {sonnet}");
+        assert_eq!(
+            sonnet["cacheCreationTokens"], sonnet_cache,
+            "{args:?}: {sonnet}"
+        );
+        assert_eq!(
+            sonnet["cacheCreation1hTokens"], sonnet_1h,
+            "{args:?}: {sonnet}"
+        );
 
         let haiku = model("claude-haiku-4-5-20251001");
-        assert_eq!(haiku["cacheCreationTokens"], 70, "{args:?}: {haiku}");
+        assert_eq!(
+            haiku["cacheCreationTokens"], haiku_cache,
+            "{args:?}: {haiku}"
+        );
         assert!(
             haiku.get("cacheCreation1hTokens").is_none(),
             "{args:?}: {haiku}"
