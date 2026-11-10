@@ -466,10 +466,10 @@ jobs:
     timeout-minutes: 30
     # The PR side is the checked-out merge commit (`github.sha`), built on top
     # of the base commit, so a branch behind its base is not credited with the
-    # base's newer commits. merge_group events provide the same pair.
+    # base's newer commits.
     env:
-      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
     steps:
       - name: Checkout merge commit
