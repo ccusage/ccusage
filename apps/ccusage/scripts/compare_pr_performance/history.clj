@@ -120,18 +120,51 @@
   (let [digest (java.security.MessageDigest/getInstance "SHA-256")]
     (format "%064x" (BigInteger. 1 (.digest digest (fs/read-all-bytes file))))))
 
+(def zstd-rollouts-commit
+  "fix(codex): read Zstandard-compressed rollouts (#1890). It came after
+  archived-session support, so a ref that contains it reads every Codex file
+  the current fixture layout writes."
+  "44a3aa84e84cbc1afa40dab3f2849e03e9a9b054")
+
+(defn reads-current-codex-layout?
+  "Binary paths cannot be checked, so only commits that contain the zstd
+  support count as able to read compressed and archived rollouts."
+  [repo {:keys [commit]}]
+  (and (some? commit)
+       (zero? (:exit (run-process ["git" "merge-base" "--is-ancestor" zstd-rollouts-commit commit] {:dir repo})))))
+
+(defn codex-compatibility
+  "Picks the Codex layout every ref reads in full, and the report note that
+  goes with it. A ref that skips part of the input would otherwise look
+  faster, or its successor slower, only because the input it read changed."
+  [reads-current-layout? variants fixture-codex-dir]
+  (let [legacy (map :label (remove reads-current-layout? variants))
+        refs (str/join ", " (map #(str "`" % "`") legacy))
+        zst? (fn [dir] (some #(str/ends-with? (str %) ".zst") (file-seq (fs/file dir))))]
+    (cond
+      (empty? legacy) {:layout "current"}
+      (nil? fixture-codex-dir)
+      {:layout "legacy"
+       :note (str "Note: " refs " cannot read zstd-compressed or archived Codex rollouts (added in #1890 and #1230), "
+                  "so the Codex fixture uses the legacy layout: every rollout uncompressed under `sessions/`. "
+                  "Compressed-rollout coverage applies only when every ref includes #1890.")}
+      (zst? fixture-codex-dir)
+      {:warning (str "⚠️ **Warning:** " refs " cannot read the `.jsonl.zst` rollouts in the custom Codex fixture, "
+                     "so they read less input than newer refs and their Codex rows are not comparable. "
+                     "Pass an uncompressed Codex fixture, or omit both fixture options to get one.")})))
+
 (defn ensure-fixture!
-  "Generates the fixture once per generator revision and size."
-  [repo cache size-mib]
+  "Generates the fixture once per generator revision, size, and Codex layout."
+  [repo cache size-mib layout]
   (let [generator (path repo "apps" "ccusage" "scripts" "generate-large-fixture.ts")
-        dir (path cache "fixture" (str size-mib "-" (subs (file-sha256 generator) 0 12)))
+        dir (path cache "fixture" (str size-mib "-" layout "-" (subs (file-sha256 generator) 0 12)))
         claude (path dir "claude") codex (path dir "codex") done (path dir ".complete")]
     (with-file-lock (str dir ".lock")
       #(when-not (fs/exists? done)
          (fs/delete-tree dir)
          (write-progress (str "generating " size-mib " MiB fixtures in " dir))
          (run-checked [generator "--output-dir" claude "--codex-output-dir" codex
-                       "--size-mib" (str size-mib) "--codex-size-mib" (str size-mib)]
+                       "--size-mib" (str size-mib) "--codex-size-mib" (str size-mib) "--codex-layout" layout]
                       {:dir repo} "generate-large-fixture")
          (spit done "")))
     {:claude claude :codex codex}))
@@ -151,9 +184,11 @@
             cache (expand (or (:cache-dir options) (path repo "rust" "target" "bench-history")))
             commands (if (:commands options) (mapv str/trim (str/split (:commands options) #",")) default-commands)
             variants (resolve-variants repo cache (:refs options))
-            fixture (if (:fixture-dir options)
-                      {:claude (expand (:fixture-dir options)) :codex (expand (:codex-fixture-dir options))}
-                      (ensure-fixture! repo cache (:size-mib options)))
+            custom-codex (some-> (:codex-fixture-dir options) expand)
+            compatibility (codex-compatibility (partial reads-current-codex-layout? repo) variants custom-codex)
+            fixture (if custom-codex
+                      {:claude (expand (:fixture-dir options)) :codex custom-codex}
+                      (ensure-fixture! repo cache (:size-mib options) (:layout compatibility)))
             empty-home (temp-dir "ccusage-perf-home.")
             stats (fn [dir] (let [s (summarize-directory dir)] (format "%s, %d files" (format-data-size (:bytes s)) (:files s))))]
         (try
@@ -161,9 +196,13 @@
                                            variants (fixture-env (:claude fixture) (:codex fixture) (str empty-home)) commands options)
                 real (when (:real options)
                        (history-section "Local logs" variants (local-logs-env) commands options))
+                real-warning (when (and real (not= "current" (:layout compatibility)))
+                               (str "⚠️ **Warning:** refs before #1890 skip zstd-compressed and archived Codex rollouts "
+                                    "in local logs, so Codex and unified rows across that change compare different input.\n\n"))
                 report (str "# ccusage performance history\n\n"
+                            (some-> (or (:warning compatibility) (:note compatibility)) (str "\n\n"))
                             (format "%d interleaved rounds after %d warmup rounds; cells show median (min–max); ratios are this ref / previous ref per round. "
                                     (:runs options) (:warmup options))
-                            "\n\n" synthetic (when real (str "\n" real)))]
+                            "\n\n" synthetic (when real (str "\n" real-warning real)))]
             (write-output! (:output options) report))
           (finally (fs/delete-tree empty-home)))))))

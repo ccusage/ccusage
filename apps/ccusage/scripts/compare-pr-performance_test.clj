@@ -193,6 +193,27 @@
         (is (every? (fn [[[a x] [b y]]] (and (= "in" a) (= "out" b) (= x y))) (partition 2 events))))
       (finally (babashka.fs/delete-tree dir)))))
 
+(deftest codex-fixture-compatibility
+  (let [modern? #(= "new" (:commit %))
+        old {:label "v20.0.30" :commit "old"}
+        new {:label "main" :commit "new"}
+        binary {:label "/bin/ccusage"}]
+    (testing "compressed coverage stays when every ref reads it"
+      (is (= {:layout "current"} (codex-compatibility modern? [new new] nil))))
+    (testing "an older ref or a bare binary switches the generated fixture to the legacy layout"
+      (let [result (codex-compatibility modern? [old new] nil)]
+        (is (= "legacy" (:layout result)))
+        (is (.contains (:note result) "`v20.0.30` cannot read")))
+      (is (= "legacy" (:layout (codex-compatibility modern? [binary new] nil)))))
+    (testing "a custom fixture with zstd rollouts warns when a ref cannot read them"
+      (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-codex-fixture."})]
+        (try
+          (is (nil? (codex-compatibility modern? [old new] (str dir))))
+          (spit (path dir "rollout.jsonl.zst") "")
+          (is (.contains (:warning (codex-compatibility modern? [old new] (str dir))) "⚠️ **Warning:** `v20.0.30` cannot read"))
+          (is (= {:layout "current"} (codex-compatibility modern? [new] (str dir))))
+          (finally (babashka.fs/delete-tree dir)))))))
+
 (let [{:keys [fail error]} (apply run-tests ['compare-pr-performance-test])]
   (when (pos? (+ fail error))
     (System/exit 1)))

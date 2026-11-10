@@ -83,11 +83,14 @@ type FixtureResult = {
 	diskBytes: number;
 };
 
+type CodexLayout = 'current' | 'legacy';
+
 type Options = {
 	outputDir: string;
 	codexOutputDir?: string;
 	sizeMib: number;
 	codexSizeMib: number;
+	codexLayout: CodexLayout;
 };
 
 type Line = Record<string, unknown>;
@@ -111,7 +114,15 @@ function parseArguments(args: readonly string[]): Options {
 		if (!value || value.startsWith('--')) {
 			throw new Error(`${flag} requires a value`);
 		}
-		if (!['--output-dir', '--codex-output-dir', '--size-mib', '--codex-size-mib'].includes(flag)) {
+		if (
+			![
+				'--output-dir',
+				'--codex-output-dir',
+				'--size-mib',
+				'--codex-size-mib',
+				'--codex-layout',
+			].includes(flag)
+		) {
 			throw new Error(`Unknown option: ${flag}`);
 		}
 		values.set(flag, value);
@@ -122,6 +133,10 @@ function parseArguments(args: readonly string[]): Options {
 	if (!outputDir) {
 		throw new Error('--output-dir is required');
 	}
+	const codexLayout = values.get('--codex-layout') ?? 'current';
+	if (codexLayout !== 'current' && codexLayout !== 'legacy') {
+		throw new Error('--codex-layout must be current or legacy');
+	}
 
 	return {
 		outputDir,
@@ -131,6 +146,7 @@ function parseArguments(args: readonly string[]): Options {
 			values.get('--codex-size-mib') ?? '1024',
 			'--codex-size-mib',
 		),
+		codexLayout,
 	};
 }
 
@@ -842,7 +858,7 @@ function planClaudeFile(
 	};
 }
 
-function planCodexFile(directory: string, fileIndex: number): PlannedFile {
+function planCodexFile(directory: string, fileIndex: number, layout: CodexLayout): PlannedFile {
 	const random = new Random(500_000 + fileIndex);
 	const startMs = FIXTURE_START_MS + (fileIndex % FIXTURE_DAYS) * DAY_MS + random.int(DAY_MS / 2);
 	const start = new Date(startMs);
@@ -859,8 +875,11 @@ function planCodexFile(directory: string, fileIndex: number): PlannedFile {
 	const name = `rollout-${stamp}-${sessionId}.jsonl`;
 	const day = fileIndex % FIXTURE_DAYS;
 	// Codex compresses rollouts once they age and moves some to
-	// archived_sessions, so most real Codex bytes are read through zstd.
-	const compressed = day < FIXTURE_DAYS - CODEX_PLAIN_RECENT_DAYS;
+	// archived_sessions, so most real Codex bytes are read through zstd. The
+	// legacy layout keeps every rollout plain under sessions/, which ccusage
+	// releases before Zstandard (#1890) and archived-session (#1230) support
+	// read in full, so they can be compared on the same input.
+	const compressed = layout === 'current' && day < FIXTURE_DAYS - CODEX_PLAIN_RECENT_DAYS;
 	const archived = compressed && fileIndex % CODEX_ARCHIVED_FILE_EVERY === 0;
 	return {
 		path: archived
@@ -908,6 +927,7 @@ async function generateFixture(
 	outputDir: string,
 	sizeMib: number,
 	format: 'claude' | 'codex',
+	codexLayout: CodexLayout = 'current',
 ): Promise<FixtureResult> {
 	const directory = assertSafeDeletionTarget(
 		outputDir,
@@ -931,7 +951,7 @@ async function generateFixture(
 			file = planned.file;
 			previousSession = planned.session;
 		} else {
-			file = planCodexFile(directory, fileIndex);
+			file = planCodexFile(directory, fileIndex, codexLayout);
 		}
 		const written = await writeFile(file, targetSize);
 		totalBytes += written.bytes;
@@ -958,7 +978,12 @@ async function main(): Promise<void> {
 
 	if (options.codexOutputDir) {
 		const codexOutputDir = resolve(options.codexOutputDir);
-		const codexResult = await generateFixture(codexOutputDir, options.codexSizeMib, 'codex');
+		const codexResult = await generateFixture(
+			codexOutputDir,
+			options.codexSizeMib,
+			'codex',
+			options.codexLayout,
+		);
 		printResult('Codex', codexOutputDir, codexResult);
 	}
 }
