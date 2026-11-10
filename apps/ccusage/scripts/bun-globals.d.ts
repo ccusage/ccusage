@@ -1,15 +1,5 @@
-declare namespace Bun {
-	interface FileSink {
-		write(data: string): Promise<number>;
-		end(): Promise<void>;
-	}
-
-	interface BunFile {
-		writer(): FileSink;
-	}
-}
-
 declare const Bun: {
-	file(path: string): Bun.BunFile;
+	write(destination: string, data: string | Uint8Array): Promise<number>;
+	zstdCompressSync(data: string | Uint8Array): Uint8Array;
 	$(strings: TemplateStringsArray, ...values: readonly unknown[]): Promise<unknown>;
 };
