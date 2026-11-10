@@ -15,8 +15,7 @@ A PR is one reviewable responsibility and may hold several atomic commits. A bra
 2. Push and open the PR — `references/open-pr.md`. A squash merge writes the PR title as the commit subject on `main`, so CI holds the title to the same Conventional Commit scope rules the `commit` skill describes.
 3. Request and handle AI review — `references/ai-review.md`, with the `gh` reply and thread-state calls in `references/gh-review.md`.
 4. Watch CI after opening and after every push with `gh pr checks`. Read the failing step logs and annotations rather than the summary, then use the `fix-ci` skill for the fix, and ask the bots for another pass if they do not rerun on their own.
-5. Merge only when the user explicitly asks and the conditions below hold: `gh pr merge <pr> --squash --delete-branch`. Squash is the repository's normal flow. When the PR fixes an issue someone else reported, add that reporter to the squash commit as `Co-authored-by`, using their verified GitHub noreply address.
-6. After merging, reply on each linked issue and on any original contributor PR or branch it superseded. Say what landed, in which PR, and whether it has shipped. Do this in particular when someone pinged or offered a branch and got no answer.
+5. Merge only when the user explicitly asks and the conditions below hold: `gh pr merge <pr> --squash --delete-branch`. Squash is the repository's normal flow.
 
 ## Ready means
 
