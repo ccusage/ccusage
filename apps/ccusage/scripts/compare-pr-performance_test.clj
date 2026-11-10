@@ -175,6 +175,24 @@
   (is (= "" (with-out-str (github-warning! {:regression? true :text "x"} false))))
   (is (= "" (with-out-str (github-warning! {:text "x"} true)))))
 
+(deftest file-lock-serializes-processes
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-lock-test."})
+        log (path dir "events.log")
+        entry (path (.getParent (babashka.fs/file *file*)) "bench-history.bb")
+        script (str "(load-file " (pr-str entry) ")"
+                    " (let [id (first *command-line-args*)]"
+                    "  (with-file-lock " (pr-str (path dir "build.lock"))
+                    "   #(do (spit " (pr-str log) " (str \"in \" id \"\\n\") :append true) (Thread/sleep 300)"
+                    "        (spit " (pr-str log) " (str \"out \" id \"\\n\") :append true))))")
+        bb (str (babashka.fs/which "bb"))
+        run (fn [id] (babashka.process/process [bb "-e" script id]))]
+    (try
+      (run! deref (mapv run ["1" "2" "3"]))
+      (let [events (map #(clojure.string/split % #" ") (clojure.string/split-lines (slurp log)))]
+        (is (= 6 (count events)))
+        (is (every? (fn [[[a x] [b y]]] (and (= "in" a) (= "out" b) (= x y))) (partition 2 events))))
+      (finally (babashka.fs/delete-tree dir)))))
+
 (let [{:keys [fail error]} (apply run-tests ['compare-pr-performance-test])]
   (when (pos? (+ fail error))
     (System/exit 1)))

@@ -61,22 +61,41 @@
   (str/trim (:out (run-checked ["git" "rev-parse" "--verify" "--quiet" (str ref "^{commit}")] {:dir repo}
                                (str "Unknown git ref " ref)))))
 
+(import '[java.nio.channels FileChannel]
+        '[java.nio.file OpenOption StandardOpenOption])
+
+(defn with-file-lock
+  "Runs f while holding an exclusive lock on file, so runs sharing the cache
+  take turns instead of interleaving writes."
+  [file f]
+  (fs/create-dirs (fs/parent file))
+  (with-open [channel (FileChannel/open (fs/path file)
+                                        (into-array OpenOption [StandardOpenOption/CREATE StandardOpenOption/WRITE]))]
+    ;; Closing the channel at the end of with-open releases the lock.
+    (.lock channel)
+    (f)))
+
+(defn- build-commit-locked! [repo cache commit worktree bin]
+  (when-not (fs/exists? bin)
+    (when-not (fs/exists? worktree)
+      (run-checked ["git" "worktree" "add" "--detach" "--quiet" worktree commit] {:dir repo} "git worktree add"))
+    (run-checked ["git" "-C" worktree "checkout" "--detach" "--quiet" commit] {} "git checkout")
+    (write-progress (str "building " (format-sha commit)))
+    (run-checked ["cargo" "build" "--manifest-path" (path worktree "rust" "Cargo.toml") "--release" "--bin" "ccusage"]
+                 {:env {"CARGO_TARGET_DIR" (path cache "target")}} (str "cargo build " (format-sha commit)))
+    (fs/create-dirs (fs/parent bin))
+    (let [partial (str bin ".partial")]
+      (fs/copy (path cache "target" "release" "ccusage") partial {:copy-attributes true :replace-existing true})
+      (fs/move partial bin {:atomic-move true :replace-existing true}))))
+
 (defn build-commit!
   "Builds one commit into the cache, reusing a binary built earlier. A shared
-  target directory keeps dependency artifacts across refs."
+  target directory keeps dependency artifacts across refs, so building and
+  copying its binary out happen under one lock."
   [repo cache commit worktree]
   (let [bin (path cache "bin" commit "ccusage")]
     (when-not (fs/exists? bin)
-      (when-not (fs/exists? worktree)
-        (run-checked ["git" "worktree" "add" "--detach" "--quiet" worktree commit] {:dir repo} "git worktree add"))
-      (run-checked ["git" "-C" worktree "checkout" "--detach" "--quiet" commit] {} "git checkout")
-      (write-progress (str "building " (format-sha commit)))
-      (run-checked ["cargo" "build" "--manifest-path" (path worktree "rust" "Cargo.toml") "--release" "--bin" "ccusage"]
-                   {:env {"CARGO_TARGET_DIR" (path cache "target")}} (str "cargo build " (format-sha commit)))
-      (fs/create-dirs (fs/parent bin))
-      (let [partial (str bin ".partial")]
-        (fs/copy (path cache "target" "release" "ccusage") partial {:copy-attributes true :replace-existing true})
-        (fs/move partial bin {:atomic-move true :replace-existing true})))
+      (with-file-lock (path cache "build.lock") #(build-commit-locked! repo cache commit worktree bin)))
     bin))
 
 (defn resolve-variants
@@ -107,13 +126,14 @@
   (let [generator (path repo "apps" "ccusage" "scripts" "generate-large-fixture.ts")
         dir (path cache "fixture" (str size-mib "-" (subs (file-sha256 generator) 0 12)))
         claude (path dir "claude") codex (path dir "codex") done (path dir ".complete")]
-    (when-not (fs/exists? done)
-      (fs/delete-tree dir)
-      (write-progress (str "generating " size-mib " MiB fixtures in " dir))
-      (run-checked [generator "--output-dir" claude "--codex-output-dir" codex
-                    "--size-mib" (str size-mib) "--codex-size-mib" (str size-mib)]
-                   {:dir repo} "generate-large-fixture")
-      (spit done ""))
+    (with-file-lock (str dir ".lock")
+      #(when-not (fs/exists? done)
+         (fs/delete-tree dir)
+         (write-progress (str "generating " size-mib " MiB fixtures in " dir))
+         (run-checked [generator "--output-dir" claude "--codex-output-dir" codex
+                       "--size-mib" (str size-mib) "--codex-size-mib" (str size-mib)]
+                      {:dir repo} "generate-large-fixture")
+         (spit done "")))
     {:claude claude :codex codex}))
 
 (defn history-section [title variants env commands options]
