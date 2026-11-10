@@ -7,13 +7,12 @@ on:
       - reopened
       - edited
       - synchronize
-  # Both jobs are required checks, so they must also report where there is no
-  # pull request title to judge, and pass there without validating: merge
-  # groups, whose pull requests were already judged, and release.yaml's dispatch
-  # for tagpr's release PR, whose pull_request runs wait for an approval and
-  # whose title comes from .github/tagpr-template.md.
+  # Both jobs are required checks, so they also pass, without validating, on
+  # merge groups, whose pull requests were already judged.
   merge_group:
     types: [checks_requested]
+  # release.yaml dispatches this for tagpr's release PR, whose pull_request runs
+  # wait for an approval; see release-pr-statuses.
   workflow_dispatch:
 
 permissions:
@@ -22,19 +21,12 @@ permissions:
 jobs:
   main:
     name: Validate PR title
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-slim
     steps:
-      - name: Skip outside pull requests
-        if: github.event_name != 'pull_request'
-        env:
-          EVENT: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [ "$EVENT" = workflow_dispatch ] && [[ "$REF_NAME" != tagpr-from-* ]]; then
-            echo "::error::Only tagpr release branches skip the title check on dispatch."
-            exit 1
-          fi
-          echo "No pull request title to validate on ${EVENT}."
+      - name: Skip on merge groups
+        if: github.event_name == 'merge_group'
+        run: echo 'Merge groups are built from pull requests whose titles already passed.'
       - if: github.event_name == 'pull_request'
         uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
         env:
@@ -55,22 +47,15 @@ jobs:
     # Same exemptions as the job above, so the two title policies agree on which
     # pull requests they judge.
     if: >-
-      github.event_name != 'pull_request' || (
-        !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
+      github.event_name == 'merge_group' || (
+        github.event_name == 'pull_request'
+        && !contains(github.event.pull_request.labels.*.name, 'autorelease: pending')
         && !contains(github.event.pull_request.labels.*.name, 'dependencies')
       )
     steps:
-      - name: Skip outside pull requests
-        if: github.event_name != 'pull_request'
-        env:
-          EVENT: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [ "$EVENT" = workflow_dispatch ] && [[ "$REF_NAME" != tagpr-from-* ]]; then
-            echo "::error::Only tagpr release branches skip the title check on dispatch."
-            exit 1
-          fi
-          echo "No pull request title to validate on ${EVENT}."
+      - name: Skip on merge groups
+        if: github.event_name == 'merge_group'
+        run: echo 'Merge groups are built from pull requests whose titles already passed.'
       - if: github.event_name == 'pull_request'
         uses: hustcer/setup-nu@eacad52a4634c4f8d17a94916f93be6856861b9c # v3.29
         with:
@@ -160,3 +145,32 @@ jobs:
               _ => null
             }
           }
+
+  # Check runs from a dispatch are not attached to the release PR, so they cannot
+  # satisfy main's required title checks. Commit statuses on the same SHA are, so
+  # this posts both contexts. The release PR's title comes from
+  # .github/tagpr-template.md, so there is nothing to validate.
+  release-pr-statuses:
+    name: Release PR title statuses
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - name: Post title check statuses
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$REF_NAME" != tagpr-from-* ]]; then
+            echo "::error::Only tagpr release branches get title statuses on dispatch."
+            exit 1
+          fi
+          for context in 'Validate PR title' 'Validate PR title scope'; do
+            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state=success \
+              -f context="$context" \
+              -f description='Release PR title comes from the tagpr template' \
+              -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          done
