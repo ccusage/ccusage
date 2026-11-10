@@ -152,13 +152,16 @@ jobs:
   # Check runs from a dispatch are not attached to the release PR, so they cannot
   # satisfy main's required title checks. Commit statuses on the same SHA are, so
   # this posts both contexts. The release PR's title comes from
-  # .github/tagpr-template.md, so there is nothing to validate.
+  # .github/tagpr-template.md, so there is nothing to validate; the statuses are
+  # posted only when this SHA is the head of an open PR that tagpr opened from
+  # this branch.
   release-pr-statuses:
     name: Release PR title statuses
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
+      pull-requests: read
       statuses: write
     steps:
       - name: Post title check statuses
@@ -168,6 +171,13 @@ jobs:
         run: |
           if [[ "$REF_NAME" != tagpr-from-* ]]; then
             echo "::error::Only tagpr release branches get title statuses."
+            exit 1
+          fi
+          release_prs="$(gh api "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$REF_NAME" --method GET \
+            --jq "[.[] | select(.head.sha == \"$GITHUB_SHA\" and .user.login == \"github-actions[bot]\")] | length")"
+          if [ "$release_prs" -eq 0 ]; then
+            echo "::error::${GITHUB_SHA} is not the head of an open tagpr release PR from ${REF_NAME}."
             exit 1
           fi
           for context in 'Validate PR title' 'Validate PR title scope'; do
