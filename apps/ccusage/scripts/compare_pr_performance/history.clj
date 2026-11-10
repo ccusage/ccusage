@@ -1,6 +1,6 @@
 (def history-spec
-  {:fixture-dir {:ref "DIR" :desc "Claude fixture; generated under the cache when omitted"}
-   :codex-fixture-dir {:ref "DIR" :desc "Codex fixture; generated under the cache when omitted"}
+  {:fixture-dir {:ref "DIR" :desc "Claude fixture; pass with --codex-fixture-dir, or omit both to generate them"}
+   :codex-fixture-dir {:ref "DIR" :desc "Codex fixture; pass with --fixture-dir"}
    :size-mib {:coerce :long :default 1024 :ref "N" :desc "Size of each generated fixture"}
    :real {:coerce :boolean :desc "Also measure the logs this environment points at (default dirs, CLAUDE_CONFIG_DIR, CODEX_HOME)"}
    :runs {:coerce :long :default 5 :ref "N" :desc "Interleaved measured rounds; at least 3"}
@@ -37,6 +37,10 @@
     (when-not (:help opts)
       (when (empty? args)
         (fail! "Pass at least one git ref or ccusage binary path" {:kind :invalid-cli}))
+      (when-let [duplicates (seq (for [[ref n] (frequencies args) :when (> n 1)] ref))]
+        (fail! (str "Each ref or binary may appear once: " (str/join ", " duplicates)) {:kind :invalid-cli}))
+      (when (not= (some? (:fixture-dir opts)) (some? (:codex-fixture-dir opts)))
+        (fail! "Pass --fixture-dir and --codex-fixture-dir together" {:kind :invalid-cli}))
       (assert-sample-options opts))
     (assoc opts :refs (vec args))))
 
@@ -66,21 +70,26 @@
       (run-checked ["cargo" "build" "--manifest-path" (path worktree "rust" "Cargo.toml") "--release" "--bin" "ccusage"]
                    {:env {"CARGO_TARGET_DIR" (path cache "target")}} (str "cargo build " (format-sha commit)))
       (fs/create-dirs (fs/parent bin))
-      (fs/copy (path cache "target" "release" "ccusage") bin))
+      (fs/copy (path cache "target" "release" "ccusage") bin {:copy-attributes true}))
     bin))
 
-(defn resolve-variants [repo cache refs]
-  (let [worktree (path cache "src")]
+(defn resolve-variants
+  "Each run checks refs out into its own temporary worktree, so concurrent runs
+  sharing the cache cannot remove each other's checkout."
+  [repo cache refs]
+  (let [scratch (temp-dir "ccusage-bench-src.")
+        worktree (path scratch "src")]
     (try
       (mapv (fn [ref]
               (if (fs/regular-file? ref)
-                {:label (str (fs/file-name ref)) :bin (expand ref)}
+                {:label ref :bin (expand ref)}
                 (let [commit (resolve-commit repo ref)]
                   {:label ref :commit commit :bin (build-commit! repo cache commit worktree)})))
             refs)
       (finally
         (when (fs/exists? worktree)
-          (run-process ["git" "worktree" "remove" "--force" worktree] {:dir repo}))))))
+          (run-process ["git" "worktree" "remove" "--force" worktree] {:dir repo}))
+        (fs/delete-tree scratch)))))
 
 (defn file-sha256 [file]
   (let [digest (java.security.MessageDigest/getInstance "SHA-256")]
@@ -116,7 +125,7 @@
             commands (if (:commands options) (mapv str/trim (str/split (:commands options) #",")) default-commands)
             variants (resolve-variants repo cache (:refs options))
             fixture (if (:fixture-dir options)
-                      {:claude (expand (:fixture-dir options)) :codex (expand (or (:codex-fixture-dir options) (:fixture-dir options)))}
+                      {:claude (expand (:fixture-dir options)) :codex (expand (:codex-fixture-dir options))}
                       (ensure-fixture! repo cache (:size-mib options)))
             empty-home (temp-dir "ccusage-perf-home.")
             stats (fn [dir] (let [s (summarize-directory dir)] (format "%s, %d files" (format-data-size (:bytes s)) (:files s))))]

@@ -24,6 +24,15 @@
     (is (true? (:real (parse-history-cli ["--real" "main"]))))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"at least one git ref"
                           (parse-history-cli []))))
+  (testing "history labels stay unique"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"may appear once: main"
+                          (parse-history-cli ["main" "v20.0.20" "main"])))
+    (is (= ["/a/ccusage" "/b/ccusage"] (:refs (parse-history-cli ["/a/ccusage" "/b/ccusage"])))))
+  (testing "a custom Claude fixture needs its Codex fixture"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--fixture-dir and --codex-fixture-dir together"
+                          (parse-history-cli ["--fixture-dir" "c" "main"])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--fixture-dir and --codex-fixture-dir together"
+                          (parse-history-cli ["--codex-fixture-dir" "x" "main"]))))
   (testing "history rejects too few rounds instead of measuring them"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--runs must be at least 3"
                           (parse-history-cli ["--runs" "2" "main"])))
