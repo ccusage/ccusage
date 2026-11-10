@@ -1912,26 +1912,6 @@
 			"context": 128000
 		}
 	},
-	"TEE/qwen2.5-vl-72b-instruct": {
-		"cost": {
-			"cache_read": 0.35,
-			"input": 0.7,
-			"output": 0.7
-		},
-		"limit": {
-			"context": 65536
-		}
-	},
-	"TEE/qwen3.5-397b-a17b": {
-		"cost": {
-			"cache_read": 0.225,
-			"input": 0.55,
-			"output": 3.5
-		},
-		"limit": {
-			"context": 262144
-		}
-	},
 	"TEE/qwen3.6-27b": {
 		"cost": {
 			"cache_read": 0.03,
@@ -16283,9 +16263,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.022,
-			"input": 0.043,
-			"output": 0.13
+			"cache_read": 0.019,
+			"input": 0.037,
+			"output": 0.112
 		},
 		"limit": {
 			"context": 262144
@@ -23735,6 +23715,16 @@
 			"cache_read": 0.015,
 			"input": 0.075,
 			"output": 0.25
+		},
+		"limit": {
+			"context": 262144
+		}
+	},
+	"nex-agi/nex-n2.6": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.15,
+			"output": 0.5
 		},
 		"limit": {
 			"context": 262144
@@ -36422,9 +36412,9 @@
 	},
 	"~moonshotai/kimi-latest": {
 		"cost": {
-			"cache_read": 0.18,
-			"input": 0.1824,
-			"output": 9.3388
+			"cache_read": 0.16,
+			"input": 0.1624,
+			"output": 9.7471
 		},
 		"exactOnly": true,
 		"limit": {
