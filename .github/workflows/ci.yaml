@@ -244,6 +244,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/build-linux-native-package
         if: matrix.platform == 'linux'
         with:
@@ -283,6 +285,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
       # Packing only repackages the native binaries restored from the build
       # matrix below (no Rust build happens here), so the full `nix develop` dev
