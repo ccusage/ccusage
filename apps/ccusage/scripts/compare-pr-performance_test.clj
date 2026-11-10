@@ -5,7 +5,7 @@
   (:require [babashka.fs]
             [clojure.test :refer [deftest is run-tests testing]]))
 
-(load-file (str (.getParent (babashka.fs/file *file*)) "/compare-pr-performance.bb"))
+(load-file (str (.getParent (babashka.fs/file *file*)) "/bench-history.bb"))
 
 (def required-args ["--base-bin" "base" "--head-bin" "head" "--fixture-dir" "claude" "--codex-fixture-dir" "codex"])
 
@@ -18,7 +18,12 @@
                           (parse-cli (conj required-args "--runs" "2")))))
   (testing "missing binary"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--head-bin is required"
-                          (parse-cli ["--base-bin" "base" "--fixture-dir" "claude" "--codex-fixture-dir" "codex"])))))
+                          (parse-cli ["--base-bin" "base" "--fixture-dir" "claude" "--codex-fixture-dir" "codex"]))))
+  (testing "history takes refs as positional arguments"
+    (is (= ["v20.0.20" "main"] (:refs (parse-history-cli ["--real" "v20.0.20" "main"]))))
+    (is (true? (:real (parse-history-cli ["--real" "main"]))))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"at least one git ref"
+                          (parse-history-cli [])))))
 
 (deftest formatting
   (is (= "999ms" (format-duration 999)))
