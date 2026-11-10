@@ -298,10 +298,18 @@ fn should_replace_deduped_entry(candidate: &UsageEntry, existing: &UsageEntry) -
 }
 
 /// Breaks a tie between duplicates with equal token totals by keeping the copy
-/// that reports more of the request: the speed tier, then the cache-write TTL
-/// split.
+/// that reports more of the request: the speed tier, with `Fast` above
+/// `Standard` because only `Fast` carries the fast-mode price multiplier, then
+/// the cache-write TTL split.
 fn carries_more_usage_detail(candidate: &TokenUsageRaw, existing: &TokenUsageRaw) -> bool {
-    let detail = |usage: &TokenUsageRaw| (usage.speed.is_some(), usage.cache_creation.is_some());
+    let detail = |usage: &TokenUsageRaw| {
+        let speed_rank = match usage.speed {
+            None => 0,
+            Some(Speed::Standard) => 1,
+            Some(Speed::Fast) => 2,
+        };
+        (speed_rank, usage.cache_creation.is_some())
+    };
     detail(candidate) > detail(existing)
 }
 
@@ -998,7 +1006,7 @@ mod tests {
         push_deduped_entry, read_usage_file, usage_files,
     };
     use crate::{
-        LoadedEntry, ModelBreakdown, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry,
+        LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
         UsageMessage,
         cli::{CostMode, SharedArgs},
     };
@@ -1388,6 +1396,42 @@ null,"usage":{"input_tokens":1}}}"#
             breakdown.add_usage(&deduped.entries[0].data.message.usage);
             assert_eq!(breakdown.cache_creation_tokens, 100);
             assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+        }
+    }
+
+    #[test]
+    fn keeps_the_fast_tier_from_an_otherwise_equal_duplicate() {
+        for lines in [
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"standard","cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"fast"}}}"#,
+            ],
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"fast"}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"speed":"standard","cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+            ],
+        ] {
+            let fixture = fs_fixture!({
+                "projects/project-a/session-a.jsonl": lines.join("\n"),
+            });
+            let mut deduped_indexes = Default::default();
+            let mut deduped = Vec::new();
+
+            let loaded = read_usage_file(
+                &fixture.path("projects/project-a/session-a.jsonl"),
+                None,
+                CostMode::Display,
+                None,
+            );
+            for entry in loaded.entries {
+                push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+            }
+
+            assert_eq!(deduped.len(), 1);
+            assert!(matches!(
+                deduped[0].data.message.usage.speed,
+                Some(Speed::Fast)
+            ));
         }
     }
 
