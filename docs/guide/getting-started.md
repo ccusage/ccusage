@@ -49,6 +49,7 @@ ccusage codex daily
 ccusage opencode weekly
 ccusage amp session
 ccusage pi monthly
+ccusage cline daily
 ccusage kilo daily
 ccusage kimi daily
 ccusage qwen daily
@@ -101,6 +102,7 @@ Now that you have your first unified view, explore these features:
 4. **[Session Usage](/guide/session-reports)** - Analyze individual conversations
 5. **[Configuration](/guide/configuration)** - Customize ccusage behavior
 6. **[Claude Code](/guide/claude/)** - Claude Code-specific setup and features
+7. **[Cline](/guide/cline/)** - Cline extension and CLI data locations
 
 ## Common Use Cases
 
@@ -124,6 +126,7 @@ ccusage zcode daily
 ccusage claude daily --mode display
 ccusage codex daily --speed fast
 ccusage opencode weekly
+ccusage cline weekly
 ```
 
 ### Analyze Sessions
@@ -169,6 +172,7 @@ If ccusage shows no data, check:
    - Amp: `${AMP_DATA_DIR:-~/.local/share/amp}`
    - Droid: `${DROID_SESSIONS_DIR:-~/.factory/sessions}`
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`
+   - Cline: `~/.cline/data/sessions/` and editor `globalStorage/saoudrizwan.claude-dev/tasks/`
    - Hermes Agent: `${HERMES_HOME:-~/.hermes}/state.db`
    - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}`
    - Goose: standard Goose data roots or `GOOSE_PATH_ROOT`
@@ -192,6 +196,7 @@ export OPENCODE_DATA_DIR="/path/to/opencode"
 export AMP_DATA_DIR="/path/to/amp"
 export DROID_SESSIONS_DIR="/path/to/factory/sessions"
 export CODEBUFF_DATA_DIR="/path/to/manicode"
+export CLINE_DATA_DIR="/path/to/cline,/path/to/Code/User/globalStorage/saoudrizwan.claude-dev"
 export HERMES_HOME="/path/to/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions"
 export GOOSE_PATH_ROOT="/path/to/goose"
@@ -214,6 +219,7 @@ export OPENCODE_DATA_DIR="/path/to/opencode,/archive/opencode"
 export AMP_DATA_DIR="/path/to/amp,/archive/amp"
 export DROID_SESSIONS_DIR="/path/to/factory/sessions,/archive/factory/sessions"
 export CODEBUFF_DATA_DIR="/path/to/manicode,/archive/manicode"
+export CLINE_DATA_DIR="/path/to/cline,/archive/cline"
 export HERMES_HOME="/path/to/hermes,/archive/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions,/archive/pi/sessions"
 export GOOSE_PATH_ROOT="/path/to/goose,/archive/goose"

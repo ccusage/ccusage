@@ -1,0 +1,16 @@
+{
+	"model_usage": [
+		{
+			"ts": 1790726400000,
+			"model_id": "claude-sonnet-4-20250514",
+			"model_provider_id": "anthropic",
+			"mode": "act"
+		},
+		{
+			"ts": 1792022400000,
+			"model_id": "claude-opus-4-20250514",
+			"model_provider_id": "anthropic",
+			"mode": "act"
+		}
+	]
+}

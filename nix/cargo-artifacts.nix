@@ -53,6 +53,7 @@ let
     "amp"
     "antigravity"
     "claude"
+    "cline"
     "codebuff"
     "codex"
     "copilot"

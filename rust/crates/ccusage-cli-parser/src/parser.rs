@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
-    AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DATE_BOUND_FORMATS, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS,
+    ALL_AGENT_REPORTS, AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed,
+    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, STANDARD_AGENT_REPORTS,
     SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
     normalize_date_bound,
 };
@@ -356,6 +356,9 @@ fn parse_command(
             STANDARD_AGENT_REPORTS,
             Command::ZCode,
         ),
+        "cline" => {
+            parse_basic_agent_command(parser, shared, "cline", ALL_AGENT_REPORTS, Command::Cline)
+        }
         _ => Err(format!("Unknown command '{command}'")),
     }
 }
@@ -625,7 +628,7 @@ fn parse_opencode_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, "opencode", OPENCODE_AGENT_REPORTS)?;
+    let kind = parse_agent_report_kind(parser, "opencode", ALL_AGENT_REPORTS)?;
     let mut include_claude_agent = false;
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
@@ -857,6 +860,7 @@ fn is_command(arg: &str) -> bool {
             | "qwen"
             | "grok"
             | "zcode"
+            | "cline"
     )
 }
 
@@ -1019,6 +1023,7 @@ fn is_agent_command(command: &str) -> bool {
             | "openclaw"
             | "grok"
             | "zcode"
+            | "cline"
     )
 }
 
@@ -1029,7 +1034,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
             "daily" | "weekly" | "monthly" | "session" | "blocks" | "statusline"
         ),
         "codex" => matches!(report, "daily" | "monthly" | "session"),
-        "opencode" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
+        "opencode" | "cline" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
         | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
             matches!(report, "daily" | "monthly" | "session")
@@ -1058,6 +1063,7 @@ fn agent_display_name(agent: &str) -> &'static str {
         "openclaw" => "OpenClaw",
         "grok" => "Grok",
         "zcode" => "ZCode",
+        "cline" => "Cline",
         _ => unreachable!("agent is prevalidated"),
     }
 }
@@ -1144,7 +1150,8 @@ fn report_shared<'a>(
             | Command::Qwen(args)
             | Command::OpenClaw(args)
             | Command::Grok(args)
-            | Command::ZCode(args),
+            | Command::ZCode(args)
+            | Command::Cline(args),
         ) => (&args.shared, args.kind != AgentReportKind::Session),
     }
 }

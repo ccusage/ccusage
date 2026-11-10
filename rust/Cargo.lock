@@ -117,6 +117,7 @@ dependencies = [
  "ccusage-adapter-amp",
  "ccusage-adapter-antigravity",
  "ccusage-adapter-claude",
+ "ccusage-adapter-cline",
  "ccusage-adapter-codebuff",
  "ccusage-adapter-codex",
  "ccusage-adapter-common",
@@ -159,6 +160,7 @@ dependencies = [
  "ccusage-adapter-amp",
  "ccusage-adapter-antigravity",
  "ccusage-adapter-claude",
+ "ccusage-adapter-cline",
  "ccusage-adapter-codebuff",
  "ccusage-adapter-codex",
  "ccusage-adapter-common",
@@ -222,6 +224,18 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+]
+
+[[package]]
+name = "ccusage-adapter-cline"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
+ "jiff",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,0 +1,6 @@
+[
+	{
+		"role": "assistant",
+		"content": "<model>gpt-4o</model> historical conversation text"
+	}
+]

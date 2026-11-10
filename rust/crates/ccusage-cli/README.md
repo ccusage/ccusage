@@ -7,7 +7,7 @@ helpers (`BUILT_IN_AGENT_NAMES`, `DEFAULT_SESSION_DURATION_HOURS`,
 depending on `ccusage-core`.
 
 This crate deliberately has no dependencies, no build script, and no embedded
-assets. `ccusage-core` and all 17 adapters depend on it, so anything heavier
+assets. `ccusage-core` and every adapter depend on it, so anything heavier
 would sit on every crate's critical path — that is why the parser, the help
 renderer, and the help JSON live in `ccusage-cli-parser` instead.
 
@@ -18,6 +18,7 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `home::home_dir`
 - `types::AgentCommandArgs`
 - `types::AgentReportKind`
+- `types::ALL_AGENT_REPORTS`
 - `types::BlocksArgs`
 - `types::CliConfig`
 - `types::CodexSpeed`
@@ -28,7 +29,6 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `types::DailyArgs`
 - `types::NamedPiStore`
 - `types::NoConfig`
-- `types::OPENCODE_AGENT_REPORTS`
 - `types::PricingOverride`
 - `types::STANDARD_AGENT_REPORTS`
 - `types::SessionArgs`

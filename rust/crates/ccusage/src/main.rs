@@ -55,6 +55,7 @@ fn main() -> Result<()> {
         Command::OpenClaw(args) => adapter::openclaw::run(args),
         Command::Grok(args) => adapter::grok::run(args),
         Command::ZCode(args) => adapter::zcode::run(args),
+        Command::Cline(args) => adapter::cline::run(args),
     }
 }
 
@@ -81,7 +82,7 @@ mod tests {
 
     #[test]
     fn agent_commands_are_exposed_by_independent_crates() {
-        let runs: [fn(AgentCommandArgs) -> Result<()>; 17] = [
+        let runs: [fn(AgentCommandArgs) -> Result<()>; 18] = [
             ccusage_adapter_amp::run,
             ccusage_adapter_antigravity::run,
             ccusage_adapter_codebuff::run,
@@ -99,9 +100,10 @@ mod tests {
             ccusage_adapter_pi::run,
             ccusage_adapter_qwen::run,
             ccusage_adapter_zcode::run,
+            ccusage_adapter_cline::run,
         ];
 
-        assert_eq!(runs.len(), 17);
+        assert_eq!(runs.len(), 18);
     }
 
     #[test]
