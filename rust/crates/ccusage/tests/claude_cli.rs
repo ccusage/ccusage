@@ -146,6 +146,43 @@ fn daily_since_totals_match_after_pruning_stale_files() {
     assert!(table.contains("$3.00"), "{table}");
 }
 
+#[test]
+fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "projects/project-a/session-a/chat.jsonl",
+        [
+            r#"{"timestamp":"2026-09-11T12:00:00.000Z","sessionId":"session-a","requestId":"request-direct","costUSD":1.0,"message":{"id":"message-direct","model":"claude-sonnet-4-20250514","usage":{"input_tokens":1,"output_tokens":2}},"data":{"message":{"timestamp":"2026-09-12T12:00:00.000Z","requestId":"request-shadow","costUSD":5.0,"message":{"id":"message-shadow","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":200}}}}}"#,
+            r#"{"type":"progress","sessionId":"session-a","data":{"message":{"timestamp":"2026-09-12T12:00:00.000Z","requestId":"request-wrapped","costUSD":2.0,"message":{"id":"message-wrapped","model":"claude-sonnet-4-20250514","usage":{"input_tokens":3,"output_tokens":4}}}}}"#,
+        ]
+        .join("\n"),
+    );
+
+    let output = run_bounded_daily(&fixture, &["--json"]);
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let days = json["daily"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|day| {
+            (
+                day["date"].as_str().unwrap().to_string(),
+                day["totalTokens"].as_u64().unwrap(),
+                day["totalCost"].as_f64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        days,
+        vec![
+            ("2026-09-11".to_string(), 3, 1.0),
+            ("2026-09-12".to_string(), 7, 2.0),
+        ]
+    );
+    assert_eq!(json["totals"]["totalTokens"], 10);
+    assert_eq!(json["totals"]["totalCost"], 3.0);
+}
+
 // 2026-09-12T12:00:00Z, later than every fixture entry below.
 const FRESH_MTIME: u64 = 1_789_214_400;
 
