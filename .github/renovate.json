@@ -5,7 +5,7 @@
 		"enabled": true
 	},
 	"automerge": true,
-	"platformAutomerge": true,
+	"platformAutomerge": false,
 	"branchConcurrentLimit": 0,
 	"dependencyDashboard": false,
 	"gitIgnoredAuthors": ["114827586+autofix-ci[bot]@users.noreply.github.com"],
