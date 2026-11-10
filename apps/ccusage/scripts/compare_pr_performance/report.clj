@@ -1,98 +1,81 @@
-(defn format-fixture-path [head-dir fixture-dir]
-  (let [head (fs/canonicalize head-dir) fixture (fs/canonicalize fixture-dir)]
-    (try (let [relative (str (fs/relativize head fixture))]
-           (if (str/starts-with? relative "..") fixture-dir relative))
-         (catch Exception _ fixture-dir))))
-(defn format-fixture-stats [stats] (format "%s, %d files" (format-data-size (:bytes stats)) (:files stats)))
-(defn fixture-stats-for-command [section command]
-  (if (and (str/starts-with? command "codex") (:codex-fixture-stats section))
-    (:codex-fixture-stats section) (:fixture-stats section)))
 (defn escape-cell [value] (-> (str value) (str/replace "|" "\\|") (str/replace "\n" "<br>")))
-(defn escape-header [value] (str/replace (escape-cell value) "/" "&#x2f;"))
 (defn table-md [rows]
   (let [headers (keys (first rows)) row-values (fn [row] (map #(escape-cell (get row %)) headers))]
-    (str "| " (str/join " | " (map #(escape-header (name %)) headers)) " |\n"
+    (str "| " (str/join " | " (map escape-cell headers)) " |\n"
          "| " (str/join " | " (repeat (count headers) "---")) " |\n"
          (str/join "\n" (map #(str "| " (str/join " | " (row-values %)) " |") rows)))))
 
-(defn fixture-line [section options]
-  (if-not (:codex-fixture-dir section)
-    (format "Fixture: `%s` (%s)" (format-fixture-path (:head-dir options) (:fixture-dir section))
-            (format-fixture-stats (:fixture-stats section)))
-    (format "Fixtures: Claude `%s` (%s), Codex `%s` (%s)"
-            (format-fixture-path (:head-dir options) (:fixture-dir section)) (format-fixture-stats (:fixture-stats section))
-            (format-fixture-path (:head-dir options) (:codex-fixture-dir section))
-            (format-fixture-stats (or (:codex-fixture-stats section) (:fixture-stats section))))))
-(defn render-fixture-section [section options]
-  (let [has-memory (some #(or (:base-memory %) (:head-memory %)) (:results section))
-        base-desc (or (:base-runtime-description options) "Base runs the package `ccusage` bin from `apps/ccusage/package.json` with Node")
-        head-desc (or (:head-runtime-description options)
-                      (if (= "rust" (:head-runtime options)) "PR runs `rust/target/release/ccusage` directly"
-                          "PR runs the package `ccusage` bin from `apps/ccusage/package.json` with Node"))
-        rows (mapv (fn [result]
-                     (let [stats (fixture-stats-for-command section (:command result))
-                           common ["Command" (str "`" (:command result) " --offline --json`")
-                                   "Input" (format-data-size (:bytes stats))
-                                   "Base median" (format-duration (get-in result [:base :median]))
-                                   "PR median" (format-duration (get-in result [:head :median]))
-                                   "PR vs base" (format "%.2fx" (/ (double (get-in result [:base :median])) (get-in result [:head :median])))]
-                           memory (when has-memory
-                                    ["Base peak RSS" (format-optional-memory (:base-memory result))
-                                     "PR peak RSS" (format-optional-memory (:head-memory result))
-                                     "PR/base RSS" (format-memory-ratio (:base-memory result) (:head-memory result))])
-                           throughput ["Base throughput" (format-throughput (:bytes stats) (get-in result [:base :median]))
-                                       "PR throughput" (format-throughput (:bytes stats) (get-in result [:head :median]))]]
-                       (apply array-map (concat common memory throughput)))) (:results section))]
-    (str/join "\n" (concat [(str "## " (:title section)) "" (:description section) "" (fixture-line section options)
-                              (format "%s; %s. Both run `--offline --json`, measured by `hyperfine` with `%d` warmups and `%d` runs."
-                                      base-desc head-desc (:warmup section) (:runs section))]
-                             (when has-memory [(format "Peak RSS is measured separately with `/usr/bin/time` using `%d` runs. Lower RSS ratios are better." (:memory-runs section))])
-                             ["" (table-md rows)]))))
+(defn format-spread [{:keys [median min max]} formatter]
+  (format "%s (%s–%s)" (formatter median) (formatter min) (formatter max)))
+(defn format-ratio-spread [summary] (format-spread summary #(format "%.2f" (double %))))
 
-(defn render-runtime-section [section options]
-  (let [rows (mapv (fn [result] (let [stats (fixture-stats-for-command section (:command result))]
-                                  (array-map "Command" (str "`" (:command result) " --offline --json`") "Runtime" (:label result)
-                                             "Input" (format-data-size (:bytes stats)) "Median" (format-duration (get-in result [:measurement :median]))
-                                             "Throughput" (format-throughput (:bytes stats) (get-in result [:measurement :median]))
-                                             "Samples" (get-in result [:measurement :samples])))) (:results section))]
-    (str/join "\n" [(str "## " (:title section)) "" (:description section) "" (fixture-line section options)
-                      (format "All rows run `--offline --json`, measured by `hyperfine` with `%d` warmups and `%d` runs. This isolates wrapper overhead from the installed native optional dependency and the workspace release binary built on the runner." (:warmup section) (:runs section))
-                      "" (table-md rows)])))
+(def verdict-labels {:regression "slower" :improvement "faster" :unchanged "unchanged"})
+(def rss-verdict-labels {:regression "more memory" :improvement "less memory" :unchanged "unchanged"})
 
-(defn marker-name [runtime] (if (= runtime "rust") "ccusage-rust-perf-comment" "ccusage-perf-comment"))
-(defn render-skipped-markdown [{:keys [base-package-url base-sha head-runtime head-sha reason]}]
-  (let [marker (marker-name head-runtime)]
-    (str (str/join "\n" (concat [(str "<!-- " marker " -->")]
-                                (when head-sha [(str "<!-- " marker ":" head-sha " -->")])
-                                ["## ccusage performance comparison" ""]
-                                (when head-sha (concat [(str "PR SHA: `" (format-sha head-sha) "`")]
-                                                       (when base-sha [(str "Base SHA: `" (format-sha base-sha) "`")]) [""]))
-                                ["Performance comparison skipped." "" reason]
-                                (when base-package-url ["" (str "Base package: `" (package-url-sha base-package-url) "`")]) [""])) "\n")))
+(defn comparison-verdict [{:keys [cpu rss]}]
+  (let [parts (remove nil? [(when-not (= :unchanged (:verdict cpu)) (verdict-labels (:verdict cpu)))
+                            (when-not (= :unchanged (:verdict rss)) (rss-verdict-labels (:verdict rss)))])]
+    (cond
+      (or (= :regression (:verdict cpu)) (= :regression (:verdict rss))) (str "⚠️ " (str/join ", " parts))
+      (seq parts) (str "✅ " (str/join ", " parts))
+      :else "unchanged")))
 
-(defn render-report [context sections sizes]
-  (let [marker (marker-name (:head-runtime context))
-        size-rows (cond-> [(array-map "Artifact" "packed `ccusage-*.tgz`" "Base" (format-size (:base-package sizes))
-                                     "PR" (format-size (:head-package sizes)) "Delta" (format-size-delta (:base-package sizes) (:head-package sizes))
-                                     "Ratio" (format-size-ratio (:base-package sizes) (:head-package sizes)))]
-                    (or (:base-native-package-binary sizes) (:head-native-package-binary sizes))
-                    (conj (array-map "Artifact" "installed native package binary" "Base" (format-optional-size (:base-native-package-binary sizes))
-                                     "PR" (format-optional-size (:head-native-package-binary sizes))
-                                     "Delta" (format-size-delta (:base-native-package-binary sizes) (:head-native-package-binary sizes))
-                                     "Ratio" (format-size-ratio (:base-native-package-binary sizes) (:head-native-package-binary sizes))))
-                    (:head-rust-binary sizes)
-                    (conj (array-map "Artifact" "Rust release binary `rust/target/release/ccusage`" "Base" (format-optional-size (:base-rust-binary sizes))
-                                     "PR" (format-size (:head-rust-binary sizes)) "Delta" (format-size-delta (:base-rust-binary sizes) (:head-rust-binary sizes))
-                                     "Ratio" (format-size-ratio (:base-rust-binary sizes) (:head-rust-binary sizes)))))]
-    (str (str/join "\n" (concat [(str "<!-- " marker " -->")]
-                                (when (:head-sha context) [(str "<!-- " marker ":" (:head-sha context) " -->")])
-                                ["## ccusage performance comparison" ""]
-                                (when (:head-sha context) (concat [(str "PR SHA: `" (format-sha (:head-sha context)) "`")]
-                                                                  (when (:base-sha context) [(str "Base SHA: `" (format-sha (:base-sha context)) "`")]) [""]))
-                                [(if (= "rust" (:head-runtime context))
-                                   "This compares the Rust PR release binary against the configured base package on the same CI runner."
-                                   "This compares the PR package against the configured base package on the same CI runner.") ""]
-                                (mapcat #(vector (render-runtime-section % context) "") (:runtime-diagnostic-sections context))
-                                (mapcat #(vector (render-fixture-section % context) "") sections)
-                                ["## Artifact size" "" (table-md size-rows) ""
-                                 "Lower medians and smaller artifacts are better. CI runner noise still applies; use same-run ratios as directional PR feedback, not release guarantees." ""])) "\n")))
+(defn overall-verdict [results threshold]
+  (let [percent (Math/round (* 100 threshold))
+        regressions (filter #(some #{:regression} [(get-in % [:comparison :cpu :verdict]) (get-in % [:comparison :rss :verdict])]) results)
+        improvements (filter #(= :improvement (get-in % [:comparison :cpu :verdict])) results)
+        commands (fn [rs] (str/join ", " (map #(str "`" (:command %) "`") rs)))]
+    (cond
+      (seq regressions) {:regression? true
+                         :text (format "**Verdict: ⚠️ possible regression** in %s (CPU time or peak RSS above +%d%%, consistent across rounds)."
+                                       (commands regressions) percent)}
+      (seq improvements) {:text (format "**Verdict: ✅ faster** in %s; nothing regressed beyond %d%%." (commands improvements) percent)}
+      :else {:text (format "**Verdict: no significant change** (every command within ±%d%% CPU time and peak RSS)." percent)})))
+
+(defn fixture-line [{:keys [fixture-stats codex-fixture-stats]}]
+  (format "Fixture: generated Claude logs (%s on disk, %d files) and Codex logs (%s on disk, %d files, mostly zstd-compressed) shaped like current real logs; every value is synthetic."
+          (format-data-size (:bytes fixture-stats)) (:files fixture-stats)
+          (format-data-size (:bytes codex-fixture-stats)) (:files codex-fixture-stats)))
+
+(defn method-line [{:keys [runs warmup threshold]}]
+  (format (str "Base and PR are built from source the same way on this runner and run `--offline --json` in %d interleaved rounds after %d warmup rounds; "
+               "each round runs both binaries once in alternating order. Cells show median (min–max). "
+               "Ratios are PR/base per round, so below 1.00 is better. A command is flagged when the median CPU-time or peak-RSS ratio moves past %d%% "
+               "and at least four in five rounds agree. Wall time is shown but not judged.")
+          runs warmup (Math/round (* 100 threshold))))
+
+(defn comparison-rows [results]
+  (let [instructions? (every? #(get-in % [:comparison :instructions]) results)]
+    (mapv (fn [{:keys [command base head comparison]}]
+            (apply array-map
+                   (concat ["Command" (str "`" command "`")
+                            "CPU base" (format-duration (get-in base [:cpu :median]))
+                            "CPU PR" (format-duration (get-in head [:cpu :median]))
+                            "CPU ratio" (format-ratio-spread (:cpu comparison))
+                            "Wall base" (format-spread (:wall base) format-duration)
+                            "Wall PR" (format-spread (:wall head) format-duration)
+                            "RSS base" (format-memory-size (get-in base [:rss :median]))
+                            "RSS PR" (format-memory-size (get-in head [:rss :median]))
+                            "RSS ratio" (format-ratio-spread (:rss comparison))]
+                           (when instructions? ["Instructions ratio" (format-ratio-spread (:instructions comparison))])
+                           ["Verdict" (comparison-verdict comparison)])))
+          results)))
+
+(def comment-marker "ccusage-perf-comment")
+
+(defn render-report [{:keys [base-sha head-sha] :as context} results sizes]
+  (str (str/join "\n" (concat [(str "<!-- " comment-marker " -->")]
+                              (when head-sha [(str "<!-- " comment-marker ":" head-sha " -->")])
+                              ["## ccusage performance comparison" ""]
+                              (when head-sha [(str "PR: `" (format-sha head-sha) "`"
+                                                   (when base-sha (str " · Base: `" (format-sha base-sha) "`")))
+                                              ""])
+                              [(:text (overall-verdict results (:threshold context))) ""
+                               (fixture-line context) "" (method-line context) ""
+                               (table-md (comparison-rows results)) ""
+                               "### Binary size" ""
+                               (table-md [(array-map "Artifact" "release binary" "Base" (format-optional-size (:base sizes))
+                                                     "PR" (format-optional-size (:head sizes))
+                                                     "Delta" (format-size-delta (:base sizes) (:head sizes)))])
+                               ""]))
+       "\n"))

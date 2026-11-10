@@ -455,95 +455,44 @@ jobs:
           }
 
   ccusage-perf-comment:
-    name: ccusage ${{ matrix.label }}
+    name: ccusage perf comment
     if: github.event_name == 'pull_request' && needs.changes.outputs.code-changed == 'true'
-    needs:
-      - changes
-      - npm-publish-dry-run-and-upload-pkg-pr-now
+    needs: [changes, tirith-scan]
     permissions:
       contents: read
       pull-requests: write
       issues: write
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Same benchmark from two entry points, posted as two PR comments:
-          # the JS launcher (default runtime) and the bundled Rust native binary.
-          - runtime: js
-            label: perf comment
-            slug: perf-comment
-            head-runtime-arg: ''
-          - runtime: rust
-            label: rust perf comment
-            slug: rust-perf-comment
-            head-runtime-arg: --head-runtime rust
 
     steps:
       - name: Checkout PR
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
+      # Base and PR are built here with the same derivation the Linux x64
+      # native package ships, so that job's sticky disk already holds the
+      # dependency artifacts both builds reuse.
       - name: Setup Nix
         uses: ./.github/actions/setup-nix-cache
         with:
-          # This job only runs on pull requests, which never commit a sticky
-          # disk, so both legs read test's instead: it installs `just` and the
-          # same flake inputs on every push to main.
-          disk-job: test
-      # This job only benchmarks the prebuilt ccusage binary bundled in the
-      # installed pkg.pr.new package (no Rust build happens here), so the full
-      # `nix develop` dev shell is unnecessary. Install just the tools the perf
-      # scripts invoke, pinned to the flake's nixpkgs via `--inputs-from .`.
+          disk-job: build-native-packages
+          cache-scope: build-linux-x64
+          save: 'false'
+
       - name: Install perf tooling
         run: nix profile install --inputs-from . nixpkgs#just
 
-      - name: Resolve PR preview package URL
-        env:
-          PKG_PR_NEW_URLS: ${{ needs.npm-publish-dry-run-and-upload-pkg-pr-now.outputs.urls }}
-        run: |
-          preview_url="$(
-            printf '%s\n' "$PKG_PR_NEW_URLS" \
-              | tr '[:space:]' '\n' \
-              | grep -E '(^|/)ccusage@' \
-              | head -n 1
-          )"
-          if [ -z "$preview_url" ]; then
-            echo "ccusage preview URL not found in: $PKG_PR_NEW_URLS" >&2
-            exit 1
-          fi
-          echo "CCUSAGE_PREVIEW_URL=$preview_url" >> "$GITHUB_ENV"
-
-      # Pricing snapshot commits are pushed to main with GITHUB_TOKEN, which
-      # triggers no CI, so they never get a preview package and the benchmark
-      # would wait out its whole package timeout for one. They do not change
-      # code, so walk back over them to the nearest commit that has a package.
-      # Any other commit without one (e.g. its CI is still running) stops the
-      # walk and keeps the real base, which is then waited for as before.
-      - name: Resolve base preview package
+      - name: Build base and PR binaries
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          REPOSITORY: ${{ github.repository }}
         run: |
-          git fetch --quiet --no-tags --depth=50 origin "$BASE_SHA"
-          base="$BASE_SHA"
-          for sha in $(git rev-list --first-parent -n 50 "$BASE_SHA"); do
-            if curl --fail --head --location --silent --output /dev/null \
-              "https://pkg.pr.new/$REPOSITORY/ccusage@$sha"; then
-              base="$sha"
-              break
-            fi
-            if git diff --name-only "$sha^" "$sha" \
-              | grep -qvE '^(flake\.(lock|nix)|rust/crates/ccusage-pricing-snapshots/src/[^/]+\.json)$'; then
-              break
-            fi
-          done
-          echo "Comparing against base package ${base}"
-          echo "BASE_PACKAGE_SHA=$base" >> "$GITHUB_ENV"
+          NIX_CONFIG="access-tokens =" nix build .#ccusage-static --out-link "$RUNNER_TEMP/ccusage-head"
+          NIX_CONFIG="access-tokens =" nix build "git+file://$PWD?rev=$BASE_SHA#ccusage-static" \
+            --out-link "$RUNNER_TEMP/ccusage-base"
 
       - name: Generate large ccusage fixture
         run: |
@@ -553,32 +502,29 @@ jobs:
             1024
 
       - name: Compare performance
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           apps/ccusage/scripts/compare-pr-performance.bb \
-            --base-package-url "https://pkg.pr.new/${{ github.repository }}/ccusage@$BASE_PACKAGE_SHA" \
-            --base-sha "$BASE_PACKAGE_SHA" \
-            --head-dir . \
-            --head-package-url "$CCUSAGE_PREVIEW_URL" \
-            ${{ matrix.head-runtime-arg }} \
-            --fixture-dir apps/ccusage/test/fixtures/claude \
-            --codex-fixture-dir apps/ccusage/test/fixtures/codex \
+            --base-bin "$RUNNER_TEMP/ccusage-base/bin/ccusage" \
+            --base-sha "$BASE_SHA" \
+            --head-bin "$RUNNER_TEMP/ccusage-head/bin/ccusage" \
+            --head-sha "$HEAD_SHA" \
+            --fixture-dir "$RUNNER_TEMP/ccusage-large-fixture" \
+            --codex-fixture-dir "$RUNNER_TEMP/ccusage-large-codex-fixture" \
             --warmup 2 \
-            --runs 7 \
-            --large-fixture-dir "$RUNNER_TEMP/ccusage-large-fixture" \
-            --large-codex-fixture-dir "$RUNNER_TEMP/ccusage-large-codex-fixture" \
-            --large-warmup 0 \
-            --large-runs 1 \
-            --package-runner-timeout-ms 300000 \
-            --output "$RUNNER_TEMP/ccusage-${{ matrix.slug }}.md"
+            --runs 11 \
+            --output "$RUNNER_TEMP/ccusage-perf-comment.md"
 
       - name: Write job summary
-        run: cat "$RUNNER_TEMP/ccusage-${{ matrix.slug }}.md" >> "$GITHUB_STEP_SUMMARY"
+        run: cat "$RUNNER_TEMP/ccusage-perf-comment.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upsert PR comment
         if: ${{ !github.event.pull_request.head.repo.fork }}
         env:
-          COMMENT_FILE: ${{ runner.temp }}/ccusage-${{ matrix.slug }}.md
-          COMMENT_MARKER: <!-- ccusage-${{ matrix.slug }}:${{ github.event.pull_request.head.sha }} -->
+          COMMENT_FILE: ${{ runner.temp }}/ccusage-perf-comment.md
+          COMMENT_MARKER: <!-- ccusage-perf-comment:${{ github.event.pull_request.head.sha }} -->
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
