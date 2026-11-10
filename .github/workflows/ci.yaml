@@ -12,6 +12,15 @@ on:
 
 permissions: read-all
 
+env:
+  # Only runs of main may persist the Nix stores and the Cargo cache: the
+  # sticky disks these jobs mount are the ones main and release builds read.
+  # Pull requests and merge groups mount them without committing, so their
+  # changes are discarded. This is decided here rather than only inside the
+  # local actions, so the gate sits next to the triggers. It cannot stop a
+  # queued commit that edits this file; review before queuing does that.
+  PERSIST_CACHES: ${{ github.ref == 'refs/heads/main' }}
+
 jobs:
   changes:
     name: Detect code changes
@@ -48,6 +57,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - name: Install tirith
         run: nix profile install .#tirith
       # One pass produces the SARIF report and sets the gate exit code. tirith's
@@ -156,6 +167,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - name: Secret scan and workflow lint
         run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt
 
@@ -174,6 +187,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - parallel:
           - name: Run nix flake check
             run: nix flake check --print-build-logs
@@ -255,17 +270,20 @@ jobs:
           # get no token.
           nix-github-token: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
           cache-scope: ${{ matrix.name }}
+          save-nix-cache: ${{ env.PERSIST_CACHES }}
       - uses: ./.github/actions/build-macos-nix-native-package
         if: matrix.platform == 'darwin'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
+          save-nix-cache: ${{ env.PERSIST_CACHES }}
       - uses: ./.github/actions/build-windows-native-package
         if: matrix.platform == 'win32'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
+          save-cargo-cache: ${{ env.PERSIST_CACHES }}
 
   npm-publish-dry-run-and-upload-pkg-pr-now:
     # preflight gates the publish rather than the builds: a leaked secret must
@@ -288,6 +306,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       # Packing only repackages the native binaries restored from the build
       # matrix below (no Rust build happens here), so the full `nix develop` dev
       # shell is unnecessary. The package checks bring Nu through their Nix
@@ -506,6 +526,7 @@ jobs:
           # disk, so both legs read test's instead: it installs `just` and the
           # same flake inputs on every push to main.
           disk-job: test
+          save: ${{ env.PERSIST_CACHES }}
       # This job only benchmarks the prebuilt ccusage binary bundled in the
       # installed pkg.pr.new package (no Rust build happens here), so the full
       # `nix develop` dev shell is unnecessary. Install just the tools the perf
