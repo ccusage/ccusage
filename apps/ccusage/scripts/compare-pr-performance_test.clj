@@ -228,7 +228,18 @@
       (with-fixture ["sessions/2026/06/01/rollout-a.jsonl.zst"]
         #(is (.contains (:warning (codex-compatibility reads? [v30 main] %)) "`v20.0.30` cannot read zstd-compressed rollouts")))
       (with-fixture ["archived_sessions/rollout-a.jsonl.zst"]
-        #(is (= {:layout "current"} (codex-compatibility reads? [main] %)))))))
+        #(is (= {:layout "current"} (codex-compatibility reads? [main] %)))))
+    (testing "only files the Codex loader reads as rollouts count"
+      (with-fixture ["sessions/2026/06/01/cache.bin.zst" "sessions/notes.json.zst" "other/rollout-a.jsonl.zst"
+                     "archived_sessions/README.md" "sessions/2026/06/01/rollout-a.jsonl"]
+        #(is (nil? (codex-compatibility reads? [v5 main] %))))
+      (let [parent (babashka.fs/create-temp-dir {:prefix "ccusage-codex-fixture."})
+            dir (path parent "archived_sessions" "codex")]
+        (try
+          (babashka.fs/create-dirs (path dir "sessions"))
+          (spit (path dir "sessions" "rollout-a.jsonl") "")
+          (is (nil? (codex-compatibility reads? [v5 main] dir)))
+          (finally (babashka.fs/delete-tree parent)))))))
 
 (let [{:keys [fail error]} (apply run-tests ['compare-pr-performance-test])]
   (when (pos? (+ fail error))

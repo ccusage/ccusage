@@ -128,10 +128,19 @@
   #1794) do not apply to unbounded reports, so nothing else belongs here."
   [{:name "archived sessions (`archived_sessions/`)" :pr "#1230"
     :commit "a9b12c43ac608d308bb4a2c5f5673dc6b9e530c1"
-    :matches? #(str/includes? % "/archived_sessions/")}
+    :matches? #(re-matches #"archived_sessions/.+\.jsonl(\.zst)?" %)}
    {:name "zstd-compressed rollouts (`.jsonl.zst`)" :pr "#1890"
     :commit "44a3aa84e84cbc1afa40dab3f2849e03e9a9b054"
-    :matches? #(str/ends-with? % ".zst")}])
+    :matches? #(re-matches #"(archived_sessions|sessions)/.+\.jsonl\.zst" %)}])
+
+(defn codex-rollout-paths
+  "Fixture files relative to the Codex home, with `/` separators, which is
+  how the input classes match the directories and rollout names the Codex
+  loader reads."
+  [codex-dir]
+  (->> (file-seq (fs/file codex-dir))
+       (filter fs/regular-file?)
+       (map #(str/join "/" (map str (fs/relativize codex-dir %))))))
 
 (defn reads-input-class?
   "A binary path cannot be checked, so only a commit that contains the
@@ -160,7 +169,7 @@
        :note (str "Note: " (describe skipped) ". The Codex fixture therefore uses the legacy layout: every rollout "
                   "uncompressed under `sessions/`, which every ref reads in full.")}
       :else
-      (let [files (map str (filter fs/regular-file? (file-seq (fs/file fixture-codex-dir))))
+      (let [files (codex-rollout-paths fixture-codex-dir)
             present (filter (fn [input-class] (some (:matches? input-class) files)) skipped)]
         (when (seq present)
           {:warning (str "⚠️ **Warning:** the custom Codex fixture contains input some refs skip: " (describe present)
