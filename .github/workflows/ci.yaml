@@ -108,12 +108,11 @@ jobs:
   # `security-events: write` scope lives in a job that never executes
   # PR-controlled code: it only downloads the artifact and runs trusted, pinned
   # actions. `always()` so findings are published even when the gate blocked the
-  # PR; skipped for fork PRs, whose token is read-only and cannot upload, and for
-  # merge groups, whose commit reaches main and is uploaded by its push run.
+  # PR; skipped for fork PRs, whose token is read-only and cannot upload.
   tirith-sarif-upload:
     name: tirith SARIF upload
     needs: tirith-scan
-    if: ${{ always() && github.event_name != 'merge_group' && !github.event.pull_request.head.repo.fork }}
+    if: ${{ always() && !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-slim
     timeout-minutes: 10
     permissions:
@@ -332,8 +331,8 @@ jobs:
     # Run on PRs, merge groups, and pushes to the default branch. `push` only
     # fires on main (see on.push.branches), so this validates the published
     # preview package post-merge too, not just on PRs. Merge groups publish a
-    # preview keyed by the queued commit's SHA, so the queue verifies the exact
-    # package main will get.
+    # preview of the queued commit, so the queue verifies the package built from
+    # the tree main will get.
     if: needs.changes.outputs.code-changed == 'true'
     name: e2e ${{ matrix.runner }} (${{ matrix.os }})
     needs:
