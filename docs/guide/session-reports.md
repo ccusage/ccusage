@@ -34,6 +34,9 @@ This is particularly useful for:
 # Get session data in table format
 ccusage claude session --id session-abc123-def456
 
+# Add per-model rows to the session table
+ccusage claude session --id session-abc123-def456 --breakdown
+
 # Get session data as JSON for scripting
 ccusage codex session --id codex://threads/01a0bb8c-c7c0-7630-9d82-860b875930f0 --json
 
@@ -44,6 +47,8 @@ ccusage codex session --id 01a0bb8c-c7c0-7630-9d82-860b875930f0 --json | jq '.to
 COST=$(ccusage claude session --id "$SESSION_ID" --json | jq '.totalCost')
 echo "Current session: \$${COST}"
 ```
+
+The table shows the same columns as `ccusage claude session`, restricted to that one session, and `--breakdown` adds a row per model. Claude's JSON output keeps `sessionId`, `totalCost`, `totalTokens`, and the per-request `entries`, and also carries the session's `modelsUsed` and per-model `modelBreakdowns`.
 
 ### Session ID Format
 
