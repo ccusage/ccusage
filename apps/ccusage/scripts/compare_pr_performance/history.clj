@@ -108,6 +108,7 @@
         dir (path cache "fixture" (str size-mib "-" (subs (file-sha256 generator) 0 12)))
         claude (path dir "claude") codex (path dir "codex") done (path dir ".complete")]
     (when-not (fs/exists? done)
+      (fs/delete-tree dir)
       (write-progress (str "generating " size-mib " MiB fixtures in " dir))
       (run-checked [generator "--output-dir" claude "--codex-output-dir" codex
                     "--size-mib" (str size-mib) "--codex-size-mib" (str size-mib)]
