@@ -13877,6 +13877,16 @@
 			"context": 1048576
 		}
 	},
+	"gemini-4-carbon": {
+		"cost": {
+			"cache_read": 0.1,
+			"input": 2,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"gemini-embedding-001": {
 		"cost": {
 			"input": 0.15,
@@ -16121,6 +16131,17 @@
 			"context": 1048576
 		}
 	},
+	"google/gemini-4-carbon": {
+		"cost": {
+			"cache_read": 0.1,
+			"cache_write": 0.1875,
+			"input": 2,
+			"output": 10
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"google/gemini-deep-research": {
 		"cost": {
 			"input": 1.6,
@@ -16293,9 +16314,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.007,
-			"input": 0.013,
-			"output": 0.04
+			"cache_read": 0.015,
+			"input": 0.029,
+			"output": 0.088
 		},
 		"limit": {
 			"context": 262144
