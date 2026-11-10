@@ -294,7 +294,15 @@ fn should_replace_deduped_entry(candidate: &UsageEntry, existing: &UsageEntry) -
         return candidate_total > existing_total;
     }
 
-    candidate.message.usage.speed.is_some() && existing.message.usage.speed.is_none()
+    carries_more_usage_detail(&candidate.message.usage, &existing.message.usage)
+}
+
+/// Breaks a tie between duplicates with equal token totals by keeping the copy
+/// that reports more of the request: the speed tier, then the cache-write TTL
+/// split.
+fn carries_more_usage_detail(candidate: &TokenUsageRaw, existing: &TokenUsageRaw) -> bool {
+    let detail = |usage: &TokenUsageRaw| (usage.speed.is_some(), usage.cache_creation.is_some());
+    detail(candidate) > detail(existing)
 }
 
 fn push_deduped_entry(
@@ -990,7 +998,8 @@ mod tests {
         push_deduped_entry, read_usage_file, usage_files,
     };
     use crate::{
-        LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+        LoadedEntry, ModelBreakdown, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry,
+        UsageMessage,
         cli::{CostMode, SharedArgs},
     };
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
@@ -1345,6 +1354,41 @@ null,"usage":{"input_tokens":1}}}"#
                 .sum::<u64>(),
             275
         );
+    }
+
+    #[test]
+    fn keeps_the_cache_ttl_split_from_an_otherwise_equal_duplicate() {
+        for lines in [
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+            ],
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+            ],
+        ] {
+            let fixture = fs_fixture!({
+                "projects/project-a/session-a.jsonl": lines.join("\n"),
+            });
+            let _env = EnvVarsGuard::set_many([(
+                "CLAUDE_CONFIG_DIR",
+                Some(fixture.root().as_os_str().to_os_string()),
+            )]);
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                single_thread: true,
+                ..SharedArgs::default()
+            };
+
+            let deduped = load_deduped_entries(&shared, None).unwrap();
+
+            assert_eq!(deduped.entries.len(), 1);
+            let mut breakdown = ModelBreakdown::default();
+            breakdown.add_usage(&deduped.entries[0].data.message.usage);
+            assert_eq!(breakdown.cache_creation_tokens, 100);
+            assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+        }
     }
 
     #[test]

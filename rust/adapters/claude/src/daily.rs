@@ -21,8 +21,8 @@ use crate::{
 
 use super::{
     DailySummaries, DedupeIndexVec, SessionDays, advisor_usages_from_line,
-    chunk_file_indexes_by_size, deserialize_usage_line, is_anthropic_message_id, is_semver_prefix,
-    main_thread_session_days,
+    carries_more_usage_detail, chunk_file_indexes_by_size, deserialize_usage_line,
+    is_anthropic_message_id, is_semver_prefix, main_thread_session_days,
     paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
     push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
     sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
@@ -652,7 +652,7 @@ fn should_replace_deduped_daily_entry(
     if candidate.cost != existing.cost {
         return candidate.cost > existing.cost;
     }
-    candidate.usage.speed.is_some() && existing.usage.speed.is_none()
+    carries_more_usage_detail(&candidate.usage, &existing.usage)
 }
 
 fn is_sidechain_daily_entry(entry: &DailyLoadedEntry) -> bool {
@@ -990,6 +990,40 @@ mod tests {
                 .sum::<u64>(),
             30
         );
+    }
+
+    #[test]
+    fn keeps_the_cache_ttl_split_from_an_otherwise_equal_daily_duplicate() {
+        for lines in [
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+            ],
+            [
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":40,"ephemeral_1h_input_tokens":60}}}}"#,
+                r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg_a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":100}}}"#,
+            ],
+        ] {
+            let fixture = fs_fixture!({
+                "projects/project-a/session-a.jsonl": lines.join("\n"),
+            });
+            let _env = EnvVarsGuard::set_many([(
+                "CLAUDE_CONFIG_DIR",
+                Some(fixture.root().as_os_str().to_os_string()),
+            )]);
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                single_thread: true,
+                ..SharedArgs::default()
+            };
+
+            let daily = load_daily_summaries_inner(&shared, None, false, session_days).unwrap();
+
+            let breakdown = &daily.summaries[0].model_breakdowns[0];
+            assert_eq!(breakdown.cache_creation_tokens, 100);
+            assert_eq!(breakdown.cache_creation_1h_tokens, Some(60));
+        }
     }
 
     #[test]
