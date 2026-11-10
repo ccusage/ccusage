@@ -302,6 +302,22 @@ In `auto` [cost mode](/guide/cost-modes), an entry's `cost` can add together cos
 }
 ```
 
+## Cache Write TTL Split
+
+[Claude Code](/guide/claude/) records whether each cache write used the 5-minute or the 1-hour cache TTL, and the two tiers are billed at different rates. Each `modelBreakdowns` entry where at least one record reported that split carries `cacheCreation1hTokens`, the part of `cacheCreationTokens` written with the 1-hour TTL; the rest of `cacheCreationTokens` is 5-minute writes plus writes from records that reported no split, which ccusage prices at the 5-minute rate when it calculates cost. Entries whose records never reported a split, including every other agent, omit the key.
+
+```json
+{
+	"modelName": "claude-sonnet-4-20250514",
+	"inputTokens": 1500,
+	"outputTokens": 100,
+	"cacheCreationTokens": 400,
+	"cacheCreation1hTokens": 300,
+	"cacheReadTokens": 30,
+	"cost": 0.008184
+}
+```
+
 ## JSON Structure
 
 ### Daily Reports (Standard)
@@ -700,7 +716,7 @@ if (projectData.projects) {
 
 JSON output is designed for programmatic consumption:
 
-- **Consistent structure**: All fields are always present (with 0 or empty values when not applicable)
+- **Consistent structure**: Token and cost fields are always present (with 0 or empty values when not applicable), except that `--no-cost` removes cost fields. A few `modelBreakdowns` keys appear only when they apply: [`missingPricing`](#unpriced-models), [`storedCost`](#stored-costs), and [`cacheCreation1hTokens`](#cache-write-ttl-split)
 - **Standard types**: Numbers for metrics, strings for identifiers, arrays for lists
 - **ISO timestamps**: Standardized date/time formats for reliable parsing
 - **Stable schema**: Field names and structures remain consistent across versions

@@ -687,10 +687,7 @@ impl DailyAccumulator {
                 index
             };
             let breakdown = &mut self.breakdowns[index];
-            breakdown.input_tokens += entry.usage.input_tokens;
-            breakdown.output_tokens += entry.usage.output_tokens;
-            breakdown.cache_creation_tokens += entry.usage.cache_creation_token_count();
-            breakdown.cache_read_tokens += entry.usage.cache_read_input_tokens;
+            breakdown.add_usage(&entry.usage);
             breakdown.cost += entry.cost;
             if entry.missing_pricing_model.is_some() {
                 breakdown.missing_pricing = true;
