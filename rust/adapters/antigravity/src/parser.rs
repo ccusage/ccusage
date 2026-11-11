@@ -492,18 +492,19 @@ fn append_usage_event(
     let reasoning_tokens = usage
         .reasoning_tokens
         .max(total_output_tokens.saturating_sub(output_tokens));
-    let same_model_row = context.model.filter(|_| context.model_id == usage.model_id);
-    let model = usage
+    let id_model = usage
         .model_id
-        .and_then(known_model_name)
-        .and_then(normalize_antigravity_model)
-        .or_else(|| same_model_row.and_then(normalize_antigravity_model))
-        .or_else(|| {
-            usage
-                .model_id
-                .map(model_name_from_id)
-                .and_then(|model| normalize_antigravity_model(&model))
-        })
+        .map(model_name_from_id)
+        .and_then(|model| normalize_antigravity_model(&model));
+    let same_model_row = context
+        .model
+        .filter(|_| context.model_id == usage.model_id)
+        .and_then(normalize_antigravity_model);
+    let model = id_model
+        .clone()
+        .filter(|model| !is_unresolved_model(model))
+        .or_else(|| same_model_row.filter(|model| !is_unresolved_model(model)))
+        .or(id_model)
         .or_else(|| context.model.and_then(normalize_antigravity_model))
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
     let provider = usage.provider.or(context.provider);
@@ -565,7 +566,7 @@ pub(super) fn merge_usage_event(
         .saturating_add(target.cache_creation_tokens)
         .saturating_add(target.cache_read_tokens)
         .saturating_add(target.total_output_tokens);
-    if target.model == DEFAULT_MODEL && duplicate.model != DEFAULT_MODEL {
+    if is_unresolved_model(&target.model) && !is_unresolved_model(&duplicate.model) {
         target.model = duplicate.model.clone();
     }
     if target.provider.is_none() {
@@ -879,40 +880,42 @@ fn field_text(fields: &[ProtoField<'_>], number: u32) -> Option<String> {
 }
 
 fn model_name_from_id(model_id: u64) -> String {
-    known_model_name(model_id).map_or_else(
-        || match model_id {
-            1_000.. => format!("model_placeholder_m{}", model_id - 1_000),
-            _ => format!("antigravity-model-{model_id}"),
-        },
-        ToString::to_string,
-    )
+    match model_id {
+        246 => "gemini-2.5-pro".to_string(),
+        312 => "gemini-2.5-flash".to_string(),
+        313 | 329 => "gemini-2.5-flash-thinking".to_string(),
+        330 => "gemini-2.5-flash-lite".to_string(),
+        281 | 282 => "claude-4-sonnet".to_string(),
+        290 | 291 => "claude-4-opus".to_string(),
+        333 | 334 => "claude-4.5-sonnet".to_string(),
+        340 | 341 => "claude-4.5-haiku".to_string(),
+        342 => "model_openai_gpt_oss_120b_medium".to_string(),
+        1318 => "gemini-3.8-flash-high".to_string(),
+        1319 => "gemini-3.8-flash-medium".to_string(),
+        1320 => "gemini-3.8-flash-low".to_string(),
+        1298 => "gemini-3.7-flash-high".to_string(),
+        1299 => "gemini-3.7-flash-medium".to_string(),
+        1300 => "gemini-3.7-flash-low".to_string(),
+        1071 => "gemini-3.6-flash-high".to_string(),
+        1072 => "gemini-3.6-flash-medium".to_string(),
+        1073 => "gemini-3.6-flash-low".to_string(),
+        1417..=1419 => "gemini-4-argon".to_string(),
+        1402 => "claude-opus-5-5".to_string(),
+        1050 => "gemini-3.1-flash-lite".to_string(),
+        1_000.. => format!("{UNRESOLVED_PLACEHOLDER_PREFIX}{}", model_id - 1_000),
+        _ => format!("{UNRESOLVED_ID_PREFIX}{model_id}"),
+    }
 }
 
-fn known_model_name(model_id: u64) -> Option<&'static str> {
-    Some(match model_id {
-        246 => "gemini-2.5-pro",
-        312 => "gemini-2.5-flash",
-        313 | 329 => "gemini-2.5-flash-thinking",
-        330 => "gemini-2.5-flash-lite",
-        281 | 282 => "claude-4-sonnet",
-        290 | 291 => "claude-4-opus",
-        333 | 334 => "claude-4.5-sonnet",
-        340 | 341 => "claude-4.5-haiku",
-        342 => "model_openai_gpt_oss_120b_medium",
-        1318 => "gemini-3.8-flash-high",
-        1319 => "gemini-3.8-flash-medium",
-        1320 => "gemini-3.8-flash-low",
-        1298 => "gemini-3.7-flash-high",
-        1299 => "gemini-3.7-flash-medium",
-        1300 => "gemini-3.7-flash-low",
-        1071 => "gemini-3.6-flash-high",
-        1072 => "gemini-3.6-flash-medium",
-        1073 => "gemini-3.6-flash-low",
-        1417..=1419 => "gemini-4-argon",
-        1402 => "claude-opus-5-5",
-        1050 => "gemini-3.1-flash-lite",
-        _ => return None,
-    })
+const UNRESOLVED_PLACEHOLDER_PREFIX: &str = "model_placeholder_m";
+const UNRESOLVED_ID_PREFIX: &str = "antigravity-model-";
+
+// A placeholder that normalization did not map to a real model, so a model
+// name from another field or a duplicate copy should replace it.
+fn is_unresolved_model(model: &str) -> bool {
+    model == DEFAULT_MODEL
+        || model.starts_with(UNRESOLVED_PLACEHOLDER_PREFIX)
+        || model.starts_with(UNRESOLVED_ID_PREFIX)
 }
 
 fn normalize_antigravity_model(raw: &str) -> Option<String> {

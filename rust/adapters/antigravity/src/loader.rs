@@ -1014,6 +1014,74 @@ mod tests {
     }
 
     #[test]
+    fn keeps_alias_mapped_ids_over_explicit_model_name() {
+        let fixture = Fixture::new();
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                0,
+                metadata_blob(
+                    Some("gemini-3-flash-agent"),
+                    Some(UsageFixture {
+                        model_id: Some(1187),
+                        input_tokens: 60,
+                        total_output_tokens: 10,
+                        visible_output_tokens: 10,
+                        ..UsageFixture::default()
+                    }),
+                    Some((1_781_481_600, 0)),
+                    &[],
+                ),
+            )],
+            &[],
+            &[],
+        );
+
+        let entries = load_from_fixture(&fixture, true);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].model.as_deref(),
+            Some("gemini-3.5-flash-extra-low")
+        );
+    }
+
+    #[test]
+    fn keeps_explicit_model_name_when_merging_unnamed_step_copy() {
+        let fixture = Fixture::new();
+        let usage = UsageFixture {
+            model_id: Some(1401),
+            input_tokens: 60,
+            total_output_tokens: 10,
+            visible_output_tokens: 10,
+            response_id: Some("shared-response"),
+            ..UsageFixture::default()
+        };
+        create_database(
+            &fixture.path("conversations/session.db"),
+            &[(
+                0,
+                metadata_blob(
+                    Some("claude-opus-5-5-medium"),
+                    Some(usage),
+                    Some((1_781_481_600, 0)),
+                    &[],
+                ),
+            )],
+            &[(
+                0,
+                step_metadata_blob(None, Some(usage), Some((1_781_481_600, 0)), &[], Some(1)),
+            )],
+            &[],
+        );
+
+        let entries = load_from_fixture(&fixture, true);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("claude-opus-5-5-medium"));
+    }
+
+    #[test]
     fn skips_zero_byte_databases_and_reports_valid_entries() {
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/empty.db", "");
