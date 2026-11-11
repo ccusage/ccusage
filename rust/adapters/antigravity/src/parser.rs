@@ -218,6 +218,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Option<Vec<AntigravityUsa
                 usage,
                 EventContext {
                     model: model.as_deref(),
+                    model_id: metadata.model_id,
                     provider: metadata.provider,
                     timestamp,
                     trajectory_timestamp,
@@ -234,6 +235,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Option<Vec<AntigravityUsa
                 usage,
                 EventContext {
                     model: model.as_deref(),
+                    model_id: metadata.model_id,
                     provider: metadata.provider,
                     timestamp,
                     trajectory_timestamp,
@@ -285,6 +287,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Option<Vec<AntigravityUsa
                 usage,
                 EventContext {
                     model: model.as_deref(),
+                    model_id: metadata.model_id,
                     provider: None,
                     timestamp: metadata.timestamp.map(|timestamp| (timestamp, 3)),
                     trajectory_timestamp,
@@ -301,6 +304,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> Result<Option<Vec<AntigravityUsa
                 usage,
                 EventContext {
                     model: model.as_deref(),
+                    model_id: metadata.model_id,
                     provider: None,
                     timestamp: metadata.timestamp.map(|timestamp| (timestamp, 3)),
                     trajectory_timestamp,
@@ -446,6 +450,7 @@ fn table_exists(connection: &sqlite::Connection, table: &str) -> Result<bool> {
 #[derive(Clone, Copy)]
 struct EventContext<'a> {
     model: Option<&'a str>,
+    model_id: Option<u64>,
     provider: Option<u64>,
     timestamp: Option<(TimestampMs, u8)>,
     trajectory_timestamp: Option<TimestampMs>,
@@ -487,10 +492,19 @@ fn append_usage_event(
     let reasoning_tokens = usage
         .reasoning_tokens
         .max(total_output_tokens.saturating_sub(output_tokens));
-    let model = usage
+    let id_model = usage
         .model_id
         .map(model_name_from_id)
-        .and_then(|model| normalize_antigravity_model(&model))
+        .and_then(|model| normalize_antigravity_model(&model));
+    let same_model_row = context
+        .model
+        .filter(|_| context.model_id == usage.model_id)
+        .and_then(normalize_antigravity_model);
+    let model = id_model
+        .clone()
+        .filter(|model| is_resolved_model(model))
+        .or_else(|| same_model_row.filter(|model| is_resolved_model(model)))
+        .or(id_model)
         .or_else(|| context.model.and_then(normalize_antigravity_model))
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
     let provider = usage.provider.or(context.provider);
@@ -552,7 +566,7 @@ pub(super) fn merge_usage_event(
         .saturating_add(target.cache_creation_tokens)
         .saturating_add(target.cache_read_tokens)
         .saturating_add(target.total_output_tokens);
-    if target.model == DEFAULT_MODEL && duplicate.model != DEFAULT_MODEL {
+    if model_resolution(&duplicate.model) > model_resolution(&target.model) {
         target.model = duplicate.model.clone();
     }
     if target.provider.is_none() {
@@ -888,9 +902,37 @@ fn model_name_from_id(model_id: u64) -> String {
         1417..=1419 => "gemini-4-argon".to_string(),
         1402 => "claude-opus-5-5".to_string(),
         1050 => "gemini-3.1-flash-lite".to_string(),
-        1_000.. => format!("model_placeholder_m{}", model_id - 1_000),
-        _ => format!("antigravity-model-{model_id}"),
+        1_000.. => format!("{UNRESOLVED_PLACEHOLDER_PREFIX}{}", model_id - 1_000),
+        _ => format!("{UNRESOLVED_ID_PREFIX}{model_id}"),
     }
+}
+
+const UNRESOLVED_PLACEHOLDER_PREFIX: &str = "model_placeholder_m";
+const UNRESOLVED_ID_PREFIX: &str = "antigravity-model-";
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum ModelResolution {
+    Default,
+    Placeholder,
+    Resolved,
+}
+
+// Placeholders that normalization did not map to a real model rank below a
+// model name from another field or a duplicate copy, but above the default.
+fn model_resolution(model: &str) -> ModelResolution {
+    if model == DEFAULT_MODEL {
+        ModelResolution::Default
+    } else if model.starts_with(UNRESOLVED_PLACEHOLDER_PREFIX)
+        || model.starts_with(UNRESOLVED_ID_PREFIX)
+    {
+        ModelResolution::Placeholder
+    } else {
+        ModelResolution::Resolved
+    }
+}
+
+fn is_resolved_model(model: &str) -> bool {
+    model_resolution(model) == ModelResolution::Resolved
 }
 
 fn normalize_antigravity_model(raw: &str) -> Option<String> {
@@ -1407,12 +1449,68 @@ pub(super) mod test_support {
 mod tests {
     use super::test_support::{UsageFixture, metadata_blob_with_steps, step_metadata_blob};
     use super::{
-        API_PROVIDER_GOOGLE_GEMINI, ProtoField, ProtoValue, calculate_antigravity_cost,
-        field_bytes, field_bytes_all, field_text, field_varint, missing_antigravity_pricing,
-        model_candidates, model_name_from_id, normalize_antigravity_model,
-        parse_generator_metadata, parse_step_metadata,
+        API_PROVIDER_GOOGLE_GEMINI, DEFAULT_MODEL, EventContext, ModelUsage, ProtoField,
+        ProtoValue, append_usage_event, calculate_antigravity_cost, field_bytes, field_bytes_all,
+        field_text, field_varint, merge_usage_event, missing_antigravity_pricing, model_candidates,
+        model_name_from_id, normalize_antigravity_model, parse_generator_metadata,
+        parse_step_metadata,
     };
     use crate::{PricingMap, TimestampMs, TokenUsageRaw, cli::CostMode, parse_ts_timestamp};
+
+    #[test]
+    fn merge_prefers_resolved_then_placeholder_then_default_model() {
+        let event = |model: Option<&str>| {
+            let mut events = Vec::new();
+            append_usage_event(
+                &mut events,
+                &mut std::collections::HashMap::new(),
+                ModelUsage {
+                    input_tokens: 1,
+                    ..ModelUsage::default()
+                },
+                EventContext {
+                    model,
+                    model_id: None,
+                    provider: None,
+                    timestamp: None,
+                    trajectory_timestamp: None,
+                    fallback_timestamp: TimestampMs::UNIX_EPOCH,
+                    session_id: "session",
+                    fallback_identities: &[],
+                },
+            );
+            events.remove(0)
+        };
+        let merged_model = |target: Option<&str>, duplicate: Option<&str>| {
+            let mut target = event(target);
+            merge_usage_event(&mut target, event(duplicate));
+            target.model
+        };
+
+        assert_eq!(
+            merged_model(None, Some("model_placeholder_m401")),
+            "model_placeholder_m401"
+        );
+        assert_eq!(
+            merged_model(Some("model_placeholder_m401"), None),
+            "model_placeholder_m401"
+        );
+        assert_eq!(
+            merged_model(
+                Some("model_placeholder_m401"),
+                Some("claude-opus-5-5-medium")
+            ),
+            "claude-opus-5-5-medium"
+        );
+        assert_eq!(
+            merged_model(
+                Some("claude-opus-5-5-medium"),
+                Some("model_placeholder_m401")
+            ),
+            "claude-opus-5-5-medium"
+        );
+        assert_eq!(merged_model(None, None), DEFAULT_MODEL);
+    }
 
     #[test]
     fn protobuf_scalars_use_last_duplicate_and_messages_keep_merge_order() {
