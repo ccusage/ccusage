@@ -138,13 +138,13 @@
     "litellm": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-XgTplYdU2vG3g/RQwm1lsGfliScWHQKu+SbeuVTMsRQ=",
+        "narHash": "sha256-VPUKLzS+3f7MRnjQnaWb3tRL9AJZOB1ljA3hSXZAEPY=",
         "type": "file",
-        "url": "https://raw.githubusercontent.com/BerriAI/litellm/9ba551b871691bb7f9aa3eb59310ac5eb60b5ac0/model_prices_and_context_window.json"
+        "url": "https://raw.githubusercontent.com/BerriAI/litellm/461b56b14b2a024ff73e59f56c01db169dfb902f/model_prices_and_context_window.json"
       },
       "original": {
         "type": "file",
-        "url": "https://raw.githubusercontent.com/BerriAI/litellm/9ba551b871691bb7f9aa3eb59310ac5eb60b5ac0/model_prices_and_context_window.json"
+        "url": "https://raw.githubusercontent.com/BerriAI/litellm/461b56b14b2a024ff73e59f56c01db169dfb902f/model_prices_and_context_window.json"
       }
     },
     "models-dev": {
