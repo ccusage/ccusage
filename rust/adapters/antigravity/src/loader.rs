@@ -955,6 +955,65 @@ mod tests {
     }
 
     #[test]
+    fn prefers_explicit_model_name_over_placeholder_for_unknown_ids() {
+        let fixture = Fixture::new();
+        let cases = [
+            (1401, "claude-opus-5-5-medium", "unknown-opus"),
+            (1404, "claude-sonnet-5-5-medium", "unknown-sonnet"),
+            (1427, "gemini-4-carbon", "unknown-carbon-high"),
+            (1437, "gemini-4-carbon", "unknown-carbon-medium"),
+        ];
+        let rows = cases
+            .iter()
+            .enumerate()
+            .map(|(idx, (model_id, model, response_id))| {
+                (
+                    i64::try_from(idx).unwrap(),
+                    metadata_blob(
+                        Some(model),
+                        Some(UsageFixture {
+                            model_id: Some(*model_id),
+                            input_tokens: 60,
+                            total_output_tokens: 10,
+                            cache_read_tokens: 40,
+                            visible_output_tokens: 10,
+                            response_id: Some(response_id),
+                            ..UsageFixture::default()
+                        }),
+                        Some((1_781_481_600 + u64::try_from(idx).unwrap(), 0)),
+                        &[UsageFixture {
+                            model_id: Some(1499),
+                            input_tokens: 5,
+                            total_output_tokens: 1,
+                            visible_output_tokens: 1,
+                            response_id: Some("unknown-retry"),
+                            ..UsageFixture::default()
+                        }],
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        create_database(&fixture.path("conversations/session.db"), &rows, &[], &[]);
+
+        let entries = load_from_fixture(&fixture, true);
+
+        for (_, model, response_id) in cases {
+            let entry = entries
+                .iter()
+                .find(|entry| entry.data.message.id.as_deref() == Some(response_id))
+                .unwrap();
+            assert_eq!(entry.model.as_deref(), Some(model));
+            assert!(entry.cost > 0.0);
+            assert!(entry.missing_pricing_model.is_none());
+        }
+        let retry = entries
+            .iter()
+            .find(|entry| entry.data.message.id.as_deref() == Some("unknown-retry"))
+            .unwrap();
+        assert_eq!(retry.model.as_deref(), Some("model_placeholder_m499"));
+    }
+
+    #[test]
     fn skips_zero_byte_databases_and_reports_valid_entries() {
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/empty.db", "");
