@@ -67,7 +67,7 @@ jobs:
           steps.access.outputs.skip != 'true' &&
           steps.access.outputs.bypass != 'true'
         continue-on-error: true
-        uses: pullfrog/pullfrog@6ea756a2610692d1c241dfb985e0240c46bb1925 # v0.1.125
+        uses: pullfrog/pullfrog@88bcc3d4bb26951b99fafe09f65d90d20d5b6d62 # v0.1.126
         with:
           prompt: ${{ steps.request.outputs.prompt }}
           timeout: 15m
