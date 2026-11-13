@@ -61,7 +61,7 @@ struct CodexAutoReviewFallback<'a> {
     model: &'a str,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum CodexLineKind {
     Session,
     Headless,
@@ -942,7 +942,7 @@ fn codex_is_leap_year(year: u16) -> bool {
 }
 
 fn codex_session_id(sessions_dir: &Path, path: &Path) -> String {
-    let relative = path.strip_prefix(sessions_dir).unwrap_or(path);
+    let relative = path.trim_prefix(sessions_dir);
     let mut session_id = uncompressed_rollout_path(relative)
         .with_extension("")
         .components()
@@ -1406,6 +1406,7 @@ mod tests {
     use super::*;
     use ccusage_test_support::fs_fixture;
     use serde_json::json;
+    use std::assert_matches;
 
     #[test]
     fn maps_recorded_service_tier_spellings() {
@@ -1432,10 +1433,7 @@ mod tests {
             br#"{"type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"priority"}}}"#.as_slice(),
             br#"{ "type": "event_msg", "payload": { "type": "thread_settings_applied", "thread_settings": { "service_tier": "default" } } }"#.as_slice(),
         ] {
-            assert!(matches!(
-                codex_line_usage_kind(line),
-                Some(CodexLineKind::Session)
-            ));
+            assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Session));
         }
     }
 
@@ -1446,10 +1444,7 @@ mod tests {
             br#"{ "type" : "token_usage_record", "payload" : {} }"#.as_slice(),
             br#"{ "type" : "compacted", "payload" : {} }"#.as_slice(),
         ] {
-            assert!(matches!(
-                codex_line_usage_kind(line),
-                Some(CodexLineKind::Session)
-            ));
+            assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Session));
         }
     }
 
@@ -1625,10 +1620,7 @@ mod tests {
             br#"{"type" : "token_usage_record","payload":{"type":"request"}}"#.as_slice(),
             br#"{"type" : "compacted","payload":{"type":"summary"}}"#.as_slice(),
         ] {
-            assert!(matches!(
-                codex_line_usage_kind(line),
-                Some(CodexLineKind::Session)
-            ));
+            assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Session));
         }
     }
 

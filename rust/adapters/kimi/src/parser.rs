@@ -214,10 +214,7 @@ fn wire_line_to_entry_new(
         .map(TimestampMs::from_millis)
         .unwrap_or(fallback_timestamp);
     let model = line.model.as_deref().unwrap_or(DEFAULT_MODEL);
-    let model = model
-        .strip_prefix("kimi-code/")
-        .unwrap_or(model)
-        .to_string();
+    let model = model.trim_prefix("kimi-code/").to_string();
     Some(KimiUsageEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),

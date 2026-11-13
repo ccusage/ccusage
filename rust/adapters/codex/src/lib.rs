@@ -75,10 +75,9 @@ fn resolve_session_id<'a>(
 ) -> Result<&'a str> {
     let original_id = requested_id;
     let requested_id = original_id
-        .strip_prefix("codex://threads/")
-        .unwrap_or(original_id);
-    let requested_id = requested_id.strip_suffix(".zst").unwrap_or(requested_id);
-    let requested_id = requested_id.strip_suffix(".jsonl").unwrap_or(requested_id);
+        .trim_prefix("codex://threads/")
+        .trim_suffix(".zst")
+        .trim_suffix(".jsonl");
     let matches = groups
         .keys()
         .filter(|candidate| session_id_matches(candidate, requested_id))
@@ -96,7 +95,7 @@ fn resolve_session_id<'a>(
 }
 
 fn session_id_matches(candidate: &str, requested_id: &str) -> bool {
-    let candidate = candidate.strip_suffix(".jsonl").unwrap_or(candidate);
+    let candidate = candidate.trim_suffix(".jsonl");
     if candidate == requested_id
         || candidate
             .rsplit_once('/')
