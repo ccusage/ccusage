@@ -60,7 +60,7 @@ jobs:
         if: github.event_name == 'merge_group'
         run: echo 'Merge groups are built from pull requests whose titles already passed.'
       - if: github.event_name == 'pull_request'
-        uses: hustcer/setup-nu@eacad52a4634c4f8d17a94916f93be6856861b9c # v3.29
+        uses: hustcer/setup-nu@1b8faed9a8ff673c8ce0beae243e0b72d0787241 # v3.30
         with:
           # Matches the dev shell in flake.nix, so a title rejected here is
           # rejected the same way by the commit-msg hook.
