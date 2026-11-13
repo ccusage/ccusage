@@ -14,3 +14,6 @@ serde_json.workspace = true
 ccusage-core = { workspace = true, features = ["test-snapshots"] }
 ccusage-test-support.workspace = true
 insta.workspace = true
+
+[lints]
+workspace = true

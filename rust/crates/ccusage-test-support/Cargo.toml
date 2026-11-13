@@ -8,3 +8,6 @@ publish.workspace = true
 assert_fs.workspace = true
 jiff.workspace = true
 sqlite.workspace = true
+
+[lints]
+workspace = true

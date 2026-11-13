@@ -63,3 +63,6 @@ zstd.workspace = true
 # allocation-heavy JSONL parsing.
 [target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
 mimalloc.workspace = true
+
+[lints]
+workspace = true
