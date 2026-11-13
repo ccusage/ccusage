@@ -52,7 +52,7 @@ in
           cargoLock = root + /rust/Cargo.lock;
           inherit cargoArtifacts;
           cargoExtraArgs = "--workspace";
-          cargoClippyExtraArgs = "--all-targets -- -D warnings";
+          cargoClippyExtraArgs = "--all-targets --config 'build.warnings=\"deny\"'";
         }
       );
       # hawk belongs here rather than in treefmt: it analyses the whole workspace as a
