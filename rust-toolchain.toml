@@ -1,5 +1,5 @@
 [toolchain]
-channel = "1.97.1"
+channel = "1.100.0"
 # rustup's default profile adds rust-docs: ~730 MB and ~65k HTML files that
 # every CI Nix store and native build would download, unpack, and cache.
 profile = "minimal"
