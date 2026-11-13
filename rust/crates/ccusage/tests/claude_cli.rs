@@ -879,18 +879,16 @@ fn gateway_responses_reusing_one_message_id_are_counted_in_every_report() {
     let fixture = Fixture::new();
     // A relay that answers every response with the same message ID and no request ID; each
     // timestamp is a separate API call.
-    let lines = (0..3)
-        .map(|minute| {
-            requestless_line(
-                &format!("2026-09-1{}T12:0{minute}:00.000Z", minute + 1),
-                "session-a",
-                "ocgo",
-                100,
-                0,
-                false,
-            )
-        })
-        .collect::<Vec<_>>();
+    let lines = Vec::from_fn(3, |minute| {
+        requestless_line(
+            &format!("2026-09-1{}T12:0{minute}:00.000Z", minute + 1),
+            "session-a",
+            "ocgo",
+            100,
+            0,
+            false,
+        )
+    });
     let _ = fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
 
     for (command, total) in claude_report_totals(&fixture) {

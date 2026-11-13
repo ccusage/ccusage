@@ -13,3 +13,6 @@ serde_json.workspace = true
 
 [dev-dependencies]
 ccusage-test-support.workspace = true
+
+[lints]
+workspace = true

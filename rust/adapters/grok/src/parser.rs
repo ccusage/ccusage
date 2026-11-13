@@ -182,18 +182,12 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
         }
     };
 
-    let stripped = raw_model
-        .strip_prefix("[grok] ")
-        .unwrap_or(raw_model)
-        .trim();
+    let stripped = raw_model.trim_prefix("[grok] ").trim();
     if stripped.is_empty() {
         return candidates;
     }
 
-    let normalized = stripped
-        .strip_suffix("-build")
-        .unwrap_or(stripped)
-        .to_string();
+    let normalized = stripped.trim_suffix("-build").to_string();
 
     push(stripped.to_string());
     push(format!("xai/{stripped}"));
@@ -553,7 +547,7 @@ fn url_decode_lightweight(value: &str) -> String {
         out.push(bytes[i]);
         i += 1;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    String::from_utf8_lossy_owned(out)
 }
 
 fn from_hex(byte: u8) -> Option<u8> {

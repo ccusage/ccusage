@@ -321,7 +321,7 @@ mod tests {
 
         let single = read_files_parallel(&files, true, read);
         let multi = read_files_parallel(&files, false, read);
-        let expected = (0..256).map(|index| index.to_string()).collect::<Vec<_>>();
+        let expected = Vec::from_fn(256, |index| index.to_string());
 
         assert_eq!(single, expected);
         assert_eq!(multi, expected);

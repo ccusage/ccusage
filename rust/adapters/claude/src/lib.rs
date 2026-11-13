@@ -998,6 +998,7 @@ fn usage_limit_reset_time_from_line_bytes(
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
     use std::{path::Path, sync::Arc};
 
     use super::{
@@ -1428,10 +1429,7 @@ null,"usage":{"input_tokens":1}}}"#
             }
 
             assert_eq!(deduped.len(), 1);
-            assert!(matches!(
-                deduped[0].data.message.usage.speed,
-                Some(Speed::Fast)
-            ));
+            assert_matches!(deduped[0].data.message.usage.speed, Some(Speed::Fast));
         }
     }
 

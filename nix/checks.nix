@@ -52,26 +52,7 @@ in
           cargoLock = root + /rust/Cargo.lock;
           inherit cargoArtifacts;
           cargoExtraArgs = "--workspace";
-          cargoClippyExtraArgs = "--all-targets -- -D warnings";
-        }
-      );
-      # hawk belongs here rather than in treefmt: it analyses the whole workspace as a
-      # closed world instead of a file at a time, and narrowing a visibility is a
-      # semantic change, not formatting. It reuses the same dev-profile test artifacts as clippy,
-      # so the cost is its own analysis rather than another workspace build.
-      ccusage-hawk = craneLib.mkCargoDerivation (
-        commonArgs
-        // testArtifacts.consumerArgs
-        // {
-          pname = "ccusage-hawk";
-          src = rustSrc;
-          sourceRoot = "source/rust";
-          cargoLock = root + /rust/Cargo.lock;
-          cargoArtifacts = testArtifacts.hawkArtifacts;
-          nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ config.packages.cargo-hawk ];
-          buildPhaseCargoCommand = ''
-            cargo hawk check --manifest-path Cargo.toml --target-dir "''${CARGO_TARGET_DIR:-target}" -D warnings
-          '';
+          cargoClippyExtraArgs = "--all-targets --config 'build.warnings=\"deny\"'";
         }
       );
       ccusage-fmt = craneLib.cargoFmt {
@@ -174,11 +155,12 @@ in
       # optimized native package here too only duplicated a ~70s release compile
       # on cache-cold runners.
       checks = {
+        # ccusage-hawk is off the gate until a cargo-hawk release supports the
+        # pinned compiler (astral-sh/hawk#180); revert the commit that removed it.
         inherit
           bun-nix
           ccusage-clippy
           ccusage-fmt
-          ccusage-hawk
           config-schema
           ;
         oxlint = mkRepoCheck "oxlint-check" [ pkgs.oxlint ] ''

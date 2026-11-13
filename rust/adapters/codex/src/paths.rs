@@ -226,7 +226,7 @@ fn parse_date_part(value: &str, length: usize) -> Option<u16> {
 }
 
 fn codex_usage_file_key(source: &CodexUsageSource, file: &Path) -> (PathBuf, PathBuf) {
-    let relative = file.strip_prefix(&source.dir).unwrap_or(file);
+    let relative = file.trim_prefix(&source.dir);
     (
         source.dedupe_scope.clone(),
         uncompressed_rollout_path(relative),

@@ -209,8 +209,8 @@ jobs:
             run: .github/scripts/contribution-gate.test.nu
           - name: Babashka performance harness test
             run: apps/ccusage/scripts/compare-pr-performance_test.clj
-      # The dev-profile test and hawk dependency layers are only reused if the
-      # sticky disk keeps them, and this job roots nothing else. Rooting them in
+      # The dev-profile test dependency layer is only reused if the
+      # sticky disk keeps it, and this job roots nothing else. Rooting it in
       # the store's own gcroots protects them from the next trim (see
       # build-linux-native-package); only main commits the disk, so PRs skip it.
       - name: Root test dependency layers for the sticky disk
@@ -219,8 +219,6 @@ jobs:
           mkdir -p /nix/var/nix/gcroots/ci
           nix build .#ccusage-tests.passthru.cargoArtifacts \
             --out-link /nix/var/nix/gcroots/ci/ccusage-test-deps
-          nix build .#ccusage-tests.passthru.hawkArtifacts \
-            --out-link /nix/var/nix/gcroots/ci/ccusage-hawk-deps
 
   build-native-packages:
     needs: [changes, tirith-scan]

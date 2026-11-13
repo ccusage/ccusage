@@ -320,7 +320,7 @@ mod tests {
             }
             request.push(byte[0]);
         }
-        Ok(String::from_utf8_lossy(&request).into_owned())
+        Ok(String::from_utf8_lossy_owned(request))
     }
 
     fn serve_responses(
@@ -491,14 +491,12 @@ mod tests {
         let fixture = Fixture::new();
         let dir = fixture.path("http-cache");
         let url = "https://example.com/pricing.json";
-        let pairs: Vec<_> = (0..8)
-            .map(|index| {
-                (
-                    format!("\"etag-{index}\""),
-                    format!("body-{index}\nwith-newlines"),
-                )
-            })
-            .collect();
+        let pairs = Vec::from_fn(8, |index| {
+            (
+                format!("\"etag-{index}\""),
+                format!("body-{index}\nwith-newlines"),
+            )
+        });
         let handles: Vec<_> = pairs
             .iter()
             .cloned()

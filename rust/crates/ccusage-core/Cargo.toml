@@ -27,3 +27,6 @@ smallvec.workspace = true
 ccusage-pricing-snapshots.workspace = true
 ccusage-test-support.workspace = true
 insta.workspace = true
+
+[lints]
+workspace = true

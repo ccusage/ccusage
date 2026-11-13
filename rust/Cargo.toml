@@ -90,3 +90,7 @@ strip = "symbols"
 
 [profile.release.package."*"]
 opt-level = "s"
+
+[workspace.lints.cargo]
+unused_dependencies = "deny"
+unused_workspace_dependencies = "deny"

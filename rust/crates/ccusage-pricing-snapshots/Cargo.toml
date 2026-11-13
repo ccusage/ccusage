@@ -26,3 +26,6 @@ serde_json = { workspace = true, features = ["float_roundtrip"] }
 ccusage-core.workspace = true
 miniz_oxide.workspace = true
 serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -956,6 +956,7 @@ struct HookContext {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
     use std::ffi::OsString;
 
     use ccusage_config::ConfigContext;
@@ -1186,7 +1187,7 @@ mod tests {
         };
         let args = StatuslineArgs::default();
 
-        assert!(matches!(statusline_context_color(60, &args), Color::Yellow));
+        assert_matches!(statusline_context_color(60, &args), Color::Yellow);
         assert!(format_statusline_context(120_000, 200_000, &args, &shared).contains("60%"));
     }
 
