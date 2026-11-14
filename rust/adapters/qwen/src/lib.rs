@@ -93,6 +93,40 @@ mod tests {
     }
 
     #[test]
+    fn loads_archived_chat_files_alongside_live_ones() {
+        let fixture = fs_fixture!({
+            "projects/myProject/chats/live.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:00:00.000Z","sessionId":"live-0001","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50}}"#,
+            "projects/myProject/chats/archive/archived.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T03:00:00.000Z","sessionId":"arch-0002","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
+            // Only the flat `chats/archive/` location is picked up.
+            "projects/myProject/chats/other/ignored.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T04:00:00.000Z","sessionId":"other-0003","usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":500}}"#,
+            "projects/myProject/chats/archive/nested/deep.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T05:00:00.000Z","sessionId":"deep-0004","usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":500}}"#,
+        });
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let entries = load_entries(&shared).unwrap();
+        let rows = summarize_entries(&entries, AgentReportKind::Daily).unwrap();
+        let report = report_from_rows(&rows, AgentReportKind::Daily);
+
+        assert_eq!(entries.len(), 2);
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry.project_path.as_ref() == "myProject"),
+            "archived entries keep their project, got: {:?}",
+            entries
+                .iter()
+                .map(|entry| entry.project_path.as_ref())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(report["daily"][0]["totalTokens"], 165);
+    }
+
+    #[test]
     fn builds_qwen_daily_json_report_with_reasoning_in_total() {
         let fixture = fs_fixture!({
             "projects/myProject/chats/chat-a.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-23T14:24:56.857Z","sessionId":"session-json","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"thoughtsTokenCount":10,"cachedContentTokenCount":5}}"#,

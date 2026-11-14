@@ -16,6 +16,7 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 ## Data source
 
 - `${QWEN_DATA_DIR:-~/.qwen}/projects/**/*.jsonl` and `.../chats/*.jsonl`
+  (including `.../chats/archive/*.jsonl` where the daemon archives finished sessions)
 
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.
