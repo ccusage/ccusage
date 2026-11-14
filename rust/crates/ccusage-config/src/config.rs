@@ -831,7 +831,7 @@ mod tests {
         BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
         WeekDay, WeeklyArgs,
     };
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     #[test]
     fn applies_schema_backed_shared_options() {
@@ -1677,6 +1677,84 @@ mod tests {
 
         assert_eq!(shared.since.as_deref(), Some("20260101"));
         assert_eq!(shared.until.as_deref(), Some("20260131"));
+    }
+
+    #[test]
+    fn user_config_directories_follow_xdg_config_home() {
+        let _env = EnvVarsGuard::set_many([
+            ("CLAUDE_CONFIG_DIR", None),
+            ("HOME", Some("/home/user".into())),
+            ("XDG_CONFIG_HOME", Some("/custom/xdg".into())),
+        ]);
+
+        assert_eq!(
+            claude_config_dirs(),
+            [
+                PathBuf::from("/custom/xdg/claude"),
+                PathBuf::from("/home/user/.config/claude"),
+                PathBuf::from("/home/user/.claude")
+            ]
+        );
+    }
+
+    #[test]
+    fn user_config_directories_treat_an_empty_xdg_config_home_as_unset() {
+        for xdg_config_home in [None, Some(std::ffi::OsString::new())] {
+            let _env = EnvVarsGuard::set_many([
+                ("CLAUDE_CONFIG_DIR", None),
+                ("HOME", Some("/home/user".into())),
+                ("XDG_CONFIG_HOME", xdg_config_home),
+            ]);
+
+            assert_eq!(
+                claude_config_dirs(),
+                [
+                    PathBuf::from("/home/user/.config/claude"),
+                    PathBuf::from("/home/user/.claude")
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn user_config_directories_resolve_entries_like_the_data_loader() {
+        let fixture = fs_fixture!({
+            "archive/projects/project/session.jsonl": "",
+        });
+        let entries = format!(
+            "~/.config/claude, {}",
+            fixture.path("archive/projects").display()
+        );
+        let _env = EnvVarsGuard::set_many([
+            ("HOME", Some("/home/user".into())),
+            ("CLAUDE_CONFIG_DIR", Some(entries.into())),
+        ]);
+
+        assert_eq!(
+            claude_config_dirs(),
+            [
+                PathBuf::from("/home/user/.config/claude"),
+                fixture.path("archive")
+            ]
+        );
+    }
+
+    #[test]
+    fn loads_the_user_config_from_xdg_config_home() {
+        let fixture = fs_fixture!({
+            "xdg/claude/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
+        });
+        let _env = EnvVarsGuard::set_many([
+            ("CLAUDE_CONFIG_DIR", None),
+            ("HOME", Some(fixture.path("home").into())),
+            ("XDG_CONFIG_HOME", Some(fixture.path("xdg").into())),
+        ]);
+        let config = ConfigContext::from_args(&["daily".to_string()]);
+        let mut shared = SharedArgs::default();
+
+        apply_config_to_shared(&mut shared, &config);
+
+        assert_eq!(shared.timezone.as_deref(), Some("Asia/Tokyo"));
     }
 
     fn context(value: Value, raw: &str, agent: Option<&str>, report: &str) -> ConfigContext {
