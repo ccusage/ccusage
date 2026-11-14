@@ -86,6 +86,8 @@ ccusage searches for configuration files in these locations (in priority order):
 1. **Local project**: `.ccusage/ccusage.json` (higher priority)
 2. **User config**: `~/.claude/ccusage.json` or `~/.config/claude/ccusage.json` (lower priority)
 
+The user config lives in the Claude Code data directories. If `XDG_CONFIG_HOME` is set, `$XDG_CONFIG_HOME/claude/ccusage.json` is checked before the two paths above. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its directories instead, in the order they are listed.
+
 Configuration files are merged in priority order, with local project settings overriding user settings.
 If you pass a custom config file using `--config`, it will override both local and user configs.
 Note that configuration files are not required; if none are found, ccusage will use built-in defaults.
