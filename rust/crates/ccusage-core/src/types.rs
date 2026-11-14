@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::TimestampMs;
 
@@ -25,17 +25,83 @@ pub struct UsageMessage {
     pub id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TokenUsageRaw {
     pub input_tokens: u64,
     pub output_tokens: u64,
-    #[serde(default)]
     pub cache_creation_input_tokens: u64,
-    #[serde(default)]
     pub cache_read_input_tokens: u64,
     pub speed: Option<Speed>,
-    #[serde(default)]
     pub cache_creation: Option<CacheCreationRaw>,
+}
+
+impl<'de> Deserialize<'de> for TokenUsageRaw {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct TokenUsageRawHelper {
+            input_tokens: u64,
+            output_tokens: u64,
+            #[serde(default)]
+            cache_creation_input_tokens: u64,
+            #[serde(default)]
+            cache_read_input_tokens: u64,
+            #[serde(default)]
+            speed: Option<Speed>,
+            #[serde(default)]
+            cache_creation: Option<CacheCreationRaw>,
+            #[serde(default)]
+            iterations: serde_json::Value,
+        }
+
+        let helper = TokenUsageRawHelper::deserialize(deserializer)?;
+        // Claude Code advisor turns report one `usage` object whose top-level
+        // `cache_creation` 5m/1h split covers only the first `message`
+        // iteration, while `cache_creation_input_tokens` already sums every
+        // iteration. Summing the `message` iterations' splits restores the
+        // dropped writes for both token counts and cost.
+        let mut summed_5m = 0u64;
+        let mut summed_1h = 0u64;
+        let mut has_message_breakdown = false;
+        // The member is untyped so a malformed value cannot fail the whole
+        // `usage` object the way ignoring the unknown field used to.
+        let iterations = match helper.iterations {
+            serde_json::Value::Array(iterations) => iterations,
+            _ => Vec::new(),
+        };
+        for iteration in &iterations {
+            if iteration.get("type").and_then(|kind| kind.as_str()) != Some("message") {
+                continue;
+            }
+            let Some(breakdown) = iteration
+                .get("cache_creation")
+                .and_then(|value| serde_json::from_value::<CacheCreationRaw>(value.clone()).ok())
+            else {
+                continue;
+            };
+            has_message_breakdown = true;
+            summed_5m = summed_5m.saturating_add(breakdown.ephemeral_5m_input_tokens);
+            summed_1h = summed_1h.saturating_add(breakdown.ephemeral_1h_input_tokens);
+        }
+        let cache_creation = if has_message_breakdown {
+            Some(CacheCreationRaw {
+                ephemeral_5m_input_tokens: summed_5m,
+                ephemeral_1h_input_tokens: summed_1h,
+            })
+        } else {
+            helper.cache_creation
+        };
+        Ok(TokenUsageRaw {
+            input_tokens: helper.input_tokens,
+            output_tokens: helper.output_tokens,
+            cache_creation_input_tokens: helper.cache_creation_input_tokens,
+            cache_read_input_tokens: helper.cache_read_input_tokens,
+            speed: helper.speed,
+            cache_creation,
+        })
+    }
 }
 
 impl TokenUsageRaw {
@@ -273,5 +339,50 @@ mod tests {
         assert_eq!(counts.cache_creation_tokens, u64::MAX);
         assert_eq!(counts.cache_read_tokens, u64::MAX);
         assert_eq!(counts.total(), u64::MAX);
+    }
+
+    #[test]
+    fn sums_message_iteration_breakdowns_instead_of_the_truncated_top_level() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 4,
+                "output_tokens": 244,
+                "cache_creation_input_tokens": 12323,
+                "cache_read_input_tokens": 140030,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 11142
+                },
+                "iterations": [
+                    {"type": "message", "input_tokens": 2, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 11142}},
+                    {"type": "advisor_message", "model": "claude-fable-5-2", "input_tokens": 77025, "cache_creation": {"ephemeral_5m_input_tokens": 999, "ephemeral_1h_input_tokens": 999}},
+                    {"type": "message", "input_tokens": 2, "cache_creation": {"ephemeral_5m_input_tokens": 1181, "ephemeral_1h_input_tokens": 0}}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(usage.cache_creation_token_count(), 12323);
+    }
+
+    #[test]
+    fn keeps_the_top_level_breakdown_without_message_iteration_breakdowns() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 4,
+                "output_tokens": 244,
+                "cache_creation_input_tokens": 12323,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 11142
+                },
+                "iterations": [
+                    {"type": "advisor_message", "model": "m", "input_tokens": 1}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(usage.cache_creation_token_count(), 11142);
     }
 }
