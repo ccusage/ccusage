@@ -11353,7 +11353,7 @@
 			"context": 1048576
 		}
 	},
-	"deepseek-v4.1-flash-1017-basic": {
+	"deepseek-v4.1-flash-1017-economy": {
 		"cost": {
 			"cache_read": 0.01,
 			"input": 0.2,
@@ -16407,9 +16407,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.024,
-			"input": 0.047,
-			"output": 0.142
+			"cache_read": 0.011,
+			"input": 0.023,
+			"output": 0.068
 		},
 		"limit": {
 			"context": 262144
@@ -23196,7 +23196,7 @@
 	"moonshotai/kimi-k3.1-pro-highspeed": {
 		"cost": {
 			"cache_read": 0.2,
-			"cache_write": 4,
+			"cache_write": 5,
 			"input": 4,
 			"output": 20
 		},
