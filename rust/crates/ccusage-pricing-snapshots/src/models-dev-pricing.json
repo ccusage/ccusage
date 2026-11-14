@@ -16407,9 +16407,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.011,
-			"input": 0.023,
-			"output": 0.068
+			"cache_read": 0.007,
+			"input": 0.014,
+			"output": 0.043
 		},
 		"limit": {
 			"context": 262144
@@ -17708,9 +17708,9 @@
 	},
 	"greenpt/deepseek-v4-flash-0731": {
 		"cost": {
-			"cache_read": 0.044324,
-			"input": 0.155134,
-			"output": 0.387835
+			"cache_read": 0.044208,
+			"input": 0.154728,
+			"output": 0.38682
 		},
 		"limit": {
 			"context": 1000000
@@ -17718,9 +17718,9 @@
 	},
 	"greenpt/deepseek-v4.1-flash": {
 		"cost": {
-			"cache_read": 0.012189,
-			"input": 0.243782,
-			"output": 1.218909
+			"cache_read": 0.012157,
+			"input": 0.243144,
+			"output": 1.215719
 		},
 		"limit": {
 			"context": 1000000
@@ -17728,8 +17728,8 @@
 	},
 	"greenpt/gpt-oss-120b": {
 		"cost": {
-			"input": 0.22162,
-			"output": 0.77567
+			"input": 0.22104,
+			"output": 0.77364
 		},
 		"limit": {
 			"context": 128000
@@ -17737,8 +17737,8 @@
 	},
 	"greenpt/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 1.218909,
-			"output": 1.218909
+			"input": 1.215719,
+			"output": 1.215719
 		},
 		"limit": {
 			"context": 128000
@@ -17746,8 +17746,8 @@
 	},
 	"greenpt/qwen3-235b-a22b-instruct-2507": {
 		"cost": {
-			"input": 0.99729,
-			"output": 2.991869
+			"input": 0.99468,
+			"output": 2.984039
 		},
 		"limit": {
 			"context": 250000
@@ -19039,8 +19039,8 @@
 	},
 	"infomaniak/mistralai/Ministral-3-14B-Instruct-2512": {
 		"cost": {
-			"input": 0.33243,
-			"output": 0.44324
+			"input": 0.33156,
+			"output": 0.44208
 		},
 		"limit": {
 			"context": 100000
@@ -19098,8 +19098,8 @@
 	},
 	"ionos/Qwen/Qwen3-Coder-Next": {
 		"cost": {
-			"input": 0.166215,
-			"output": 0.88648
+			"input": 0.16578,
+			"output": 0.88416
 		},
 		"limit": {
 			"context": 128000
@@ -19107,8 +19107,8 @@
 	},
 	"ionos/meta-llama/Llama-3.3-70B-Instruct": {
 		"cost": {
-			"input": 0.720265,
-			"output": 0.720265
+			"input": 0.71838,
+			"output": 0.71838
 		},
 		"limit": {
 			"context": 128000
@@ -19116,8 +19116,8 @@
 	},
 	"ionos/openai/gpt-oss-120b": {
 		"cost": {
-			"input": 0.166215,
-			"output": 0.720265
+			"input": 0.16578,
+			"output": 0.71838
 		},
 		"limit": {
 			"context": 128000
@@ -21124,9 +21124,9 @@
 	},
 	"minimax/MiniMax-M3.1-Flash": {
 		"cost": {
-			"cache_read": 0.0075,
-			"input": 0.075,
-			"output": 0.3
+			"cache_read": 0.015,
+			"input": 0.15,
+			"output": 0.6
 		},
 		"limit": {
 			"context": 1048576
@@ -30964,9 +30964,9 @@
 	},
 	"scaleway/deepseek-v4-flash-0731": {
 		"cost": {
-			"cache_read": 0.088648,
-			"input": 0.44324,
-			"output": 0.88648
+			"cache_read": 0.088416,
+			"input": 0.44208,
+			"output": 0.88416
 		},
 		"limit": {
 			"context": 256000
@@ -30984,9 +30984,9 @@
 	},
 	"scaleway/deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.132972,
-			"input": 0.66486,
-			"output": 1.994579
+			"cache_read": 0.132624,
+			"input": 0.66312,
+			"output": 1.989359
 		},
 		"limit": {
 			"context": 256000
@@ -31003,8 +31003,8 @@
 	},
 	"scaleway/gpt-oss-120b": {
 		"cost": {
-			"input": 0.166215,
-			"output": 0.66486
+			"input": 0.16578,
+			"output": 0.66312
 		},
 		"limit": {
 			"context": 128000
@@ -31012,8 +31012,8 @@
 	},
 	"scaleway/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 0.99729,
-			"output": 0.99729
+			"input": 0.99468,
+			"output": 0.99468
 		},
 		"limit": {
 			"context": 128000
@@ -31021,8 +31021,8 @@
 	},
 	"scaleway/qwen3-235b-a22b-instruct-2507": {
 		"cost": {
-			"input": 0.831075,
-			"output": 2.493224
+			"input": 0.8289,
+			"output": 2.486699
 		},
 		"limit": {
 			"context": 250000
@@ -32831,9 +32831,9 @@
 	},
 	"tsystems/gpt-oss-120b": {
 		"cost": {
-			"cache_read": 0.033243,
-			"input": 0.22162,
-			"output": 0.720265
+			"cache_read": 0.033156,
+			"input": 0.22104,
+			"output": 0.71838
 		},
 		"limit": {
 			"context": 131072
@@ -35748,8 +35748,8 @@
 	},
 	"z-ai/glm-4.7-flash:thinking": {
 		"cost": {
-			"cache_read": 0.01,
-			"input": 0.07,
+			"cache_read": 0.03025,
+			"input": 0.0605,
 			"output": 0.4
 		},
 		"limit": {
