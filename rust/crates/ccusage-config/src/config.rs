@@ -298,18 +298,43 @@ fn discover_config_paths() -> Vec<PathBuf> {
     paths
 }
 
+/// The directories the user config is looked up in: the ones the Claude data
+/// loader reads, so a `ccusage.json` next to the data is found.
 fn claude_config_dirs() -> Vec<PathBuf> {
     if let Ok(paths) = env::var("CLAUDE_CONFIG_DIR") {
         return paths
             .split(',')
             .map(str::trim)
             .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
+            .map(claude_config_dir)
             .collect();
     }
-    ccusage_cli::home::home_dir()
-        .map(|home| vec![home.join(".config").join("claude"), home.join(".claude")])
-        .unwrap_or_default()
+    let Some(home) = ccusage_cli::home::home_dir() else {
+        return Vec::new();
+    };
+    let xdg = env::var_os("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+    // `~/.config/claude` stays in the list when `XDG_CONFIG_HOME` points
+    // elsewhere, so a config that was found there keeps loading.
+    let mut dirs = vec![xdg.join("claude")];
+    for dir in [home.join(".config").join("claude"), home.join(".claude")] {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
+}
+
+/// A `CLAUDE_CONFIG_DIR` entry as the Claude data loader resolves it: a leading
+/// `~` is the home directory, and a `projects` directory stands for its parent.
+fn claude_config_dir(raw: &str) -> PathBuf {
+    let path = ccusage_cli::home::expand_home_path(raw);
+    if path.file_name().is_some_and(|name| name == "projects") && path.is_dir() {
+        return path.parent().map(Path::to_path_buf).unwrap_or(path);
+    }
+    path
 }
 
 fn scan_config_path(args: &[String]) -> Option<PathBuf> {
