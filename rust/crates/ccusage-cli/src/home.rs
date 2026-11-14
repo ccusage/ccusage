@@ -9,6 +9,20 @@ pub fn home_dir() -> Option<PathBuf> {
     )
 }
 
+pub fn expand_home_path(raw: &str) -> PathBuf {
+    if raw == "~"
+        && let Some(home) = home_dir()
+    {
+        return home;
+    }
+    if let Some(rest) = raw.strip_prefix("~/")
+        && let Some(home) = home_dir()
+    {
+        return home.join(rest);
+    }
+    PathBuf::from(raw)
+}
+
 fn home_dir_from_env(
     home: Option<std::ffi::OsString>,
     user_profile: Option<std::ffi::OsString>,
