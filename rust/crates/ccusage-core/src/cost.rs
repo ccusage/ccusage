@@ -360,6 +360,37 @@ mod tests {
     }
 
     #[test]
+    fn prices_summed_message_iteration_breakdowns() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_creation_input_tokens": 30,
+                "cache_read_input_tokens": 30,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 10,
+                    "ephemeral_1h_input_tokens": 0
+                },
+                "iterations": [
+                    {"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": 10, "ephemeral_1h_input_tokens": 0}},
+                    {"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 20}}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let cost = calculate_cost_for_usage(
+            Some("test-model"),
+            usage,
+            None,
+            CostMode::Calculate,
+            Some(&pricing()),
+        );
+
+        assert!((cost - 55.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn prices_two_stage_model_as_whole_request_at_long_context_rates() {
         let mut pricing = PricingMap::default();
         assert_eq!(
