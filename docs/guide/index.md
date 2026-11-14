@@ -154,7 +154,7 @@ For Claude Code-specific setup and features, start from the [Claude Code data so
 - **Local Files Only** - Only analyzes data from your current machine
 - **Language Model Tokens** - API calls for tools like Web Search are not included
 - **Estimate Accuracy** - Costs are estimates and may not reflect actual billing
-  :::
+:::
 
 ## Acknowledgments
 
