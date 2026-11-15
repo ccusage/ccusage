@@ -66,13 +66,12 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     let speed = resolve_codex_speed(request.options.codex_speed);
 
     let (rows, detected) = if shared.since.is_none() && shared.until.is_none() {
-        let groups = load_groups_with_diagnostics(
+        let (groups, detected) = load_groups_with_diagnostics(
             shared,
             request.kind,
             request.multi_source_driver,
             &diagnostics,
         )?;
-        let detected = !groups.is_empty();
         let rows = groups
             .iter()
             .map(|(period, group)| {
@@ -172,6 +171,100 @@ mod diagnostic_tests {
     use ccusage_adapter_common::source::SourceOptions;
     use ccusage_core::cli::SharedArgs;
     use ccusage_test_support::{EnvVarsGuard, Fixture};
+    #[test]
+    fn discovered_nonusage_files_remain_detected_in_all_load_paths() {
+        let fixture = Fixture::new();
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        for file in ["sessions/header.jsonl", "archived_sessions/header.jsonl"] {
+            let _ = fixture.write_file(
+                file,
+                r#"{"type":"session_meta","payload":{"id":"metadata-only"}}"#,
+            );
+            for since in [None, Some("20260101".to_owned())] {
+                let shared = SharedArgs {
+                    offline: true,
+                    json: true,
+                    timezone: Some("UTC".to_owned()),
+                    since,
+                    ..Default::default()
+                };
+                for multi_source_driver in [false, true] {
+                    let result = SOURCE
+                        .unified_rows(&UnifiedRequest {
+                            kind: AgentReportKind::Daily,
+                            shared: &shared,
+                            options: SourceOptions::default(),
+                            pricing: Some(&pricing),
+                            progress: ProgressOwner::Caller,
+                            multi_source_driver,
+                            claude_counted: None,
+                        })
+                        .unwrap();
+                    assert!(result.detected);
+                    assert!(result.rows.is_empty());
+                    assert!(result.warnings.is_empty());
+                }
+                let (events, detected) = crate::load_codex_events_with_detection(&shared).unwrap();
+                assert!(detected);
+                assert!(events.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_session_timestamps_keep_healthy_usage_with_and_without_date_bounds() {
+        let fixture = Fixture::new();
+        let records = [
+            json!({"timestamp":"SECRET_CANARY","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}}),
+            json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}}),
+            json!({"timestamp":"SECRET_CANARY","type":"token_usage_record","payload":{"response_id":"invalid-response","usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}),
+        ].map(|record| record.to_string()).join("\n");
+        let _ = fixture.write_file("sessions/timestamps.jsonl", &records);
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        for since in [None, Some("20260101".to_owned())] {
+            let shared = SharedArgs {
+                offline: true,
+                debug: true,
+                timezone: Some("UTC".to_owned()),
+                since,
+                ..Default::default()
+            };
+            let result = SOURCE
+                .unified_rows(&UnifiedRequest {
+                    kind: AgentReportKind::Daily,
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: Some(&pricing),
+                    progress: ProgressOwner::Caller,
+                    multi_source_driver: true,
+                    claude_counted: None,
+                })
+                .unwrap();
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(result.rows[0].input_tokens, 10);
+            assert_eq!(result.rows[0].output_tokens, 1);
+            assert_eq!(result.rows[0].total_tokens, 11);
+            assert!(
+                result
+                    .warnings
+                    .iter()
+                    .any(|line| line
+                        == "WARN  codex: skipped 2 records in 1 input (invalid timestamp)"),
+                "{:?}",
+                result.warnings
+            );
+            assert!(!result.warnings.join("\n").contains("SECRET_CANARY"));
+        }
+    }
+
     #[test]
     fn specialized_diagnostics_keep_healthy_codex_usage() {
         let fixture = Fixture::new();

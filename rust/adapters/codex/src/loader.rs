@@ -106,7 +106,7 @@ fn load_codex_events_from_sources_with_files(
             &replay_plan,
             diagnostics,
         ));
-        return Ok((events, false));
+        return Ok((events, !files.is_empty()));
     }
 
     let groups = collect_deduped_codex_usage_files(sources);
@@ -151,12 +151,7 @@ fn load_codex_events_from_sources_with_files(
         ));
     }
     let events = dedupe_codex_events(events_by_file);
-    let detected = if shared.is_some_and(has_date_bounds) {
-        detected_before_filter
-    } else {
-        !events.is_empty()
-    };
-    Ok((events, detected))
+    Ok((events, detected_before_filter))
 }
 
 fn load_codex_events_from_directory_with_shared(
@@ -183,12 +178,7 @@ fn load_codex_events_from_directory_with_shared(
         &replay_plan,
         diagnostics,
     ));
-    let detected = if has_date_bounds(shared) {
-        !all_files.is_empty()
-    } else {
-        !events.is_empty()
-    };
-    Ok((events, detected))
+    Ok((events, !all_files.is_empty()))
 }
 
 fn read_codex_events_from_files(
@@ -3319,7 +3309,7 @@ mod tests {
             assert_eq!(parent_reads, 1);
 
             let diagnostics = Diagnostics::new("codex");
-            let groups = crate::aggregate::load_groups_from_directory_with_diagnostics(
+            let (groups, _) = crate::aggregate::load_groups_from_directory_with_diagnostics(
                 &fixture.path("sessions"),
                 &shared,
                 ccusage_core::cli::AgentReportKind::Daily,

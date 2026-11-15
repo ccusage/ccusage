@@ -92,16 +92,16 @@ fn read_agent_database(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
-    let Ok(connection) = sqlite::Connection::open_with_flags(
+    let connection = match sqlite::Connection::open_with_flags(
         &database.path,
         sqlite::OpenFlags::new().with_read_only(),
-    ) else {
-        diagnostics.record(Skip::unit(
-            &database.path,
-            SkipKind::Unreadable,
-            "could not open OpenClaw agent database",
-        ));
-        return Vec::new();
+    ) {
+        Ok(connection) => connection,
+        Err(error) => {
+            let (kind, detail) = sqlite_error_failure(error.code);
+            diagnostics.record(Skip::unit(&database.path, kind, detail));
+            return Vec::new();
+        }
     };
     match table_exists(&connection) {
         Ok(true) => {}
@@ -113,24 +113,21 @@ fn read_agent_database(
             ));
             return Vec::new();
         }
-        Err(kind) => {
-            diagnostics.record(Skip::unit(
-                &database.path,
-                kind,
-                "OpenClaw database schema probe failed",
-            ));
+        Err(error) => {
+            let (kind, detail) = sqlite_error_failure(error.code);
+            diagnostics.record(Skip::unit(&database.path, kind, detail));
             return Vec::new();
         }
     }
-    let Ok(mut statement) = connection.prepare(
+    let mut statement = match connection.prepare(
         "SELECT session_id, seq, event_json, created_at FROM transcript_events ORDER BY session_id ASC, seq ASC",
-    ) else {
-        diagnostics.record(Skip::unit(
-            &database.path,
-            SkipKind::Invariant,
-            "could not query OpenClaw transcript_events",
-        ));
-        return Vec::new();
+    ) {
+        Ok(statement) => statement,
+        Err(error) => {
+            let (kind, detail) = sqlite_error_failure(error.code);
+            diagnostics.record(Skip::unit(&database.path, kind, detail));
+            return Vec::new();
+        }
     };
     // Model/provider tracking is per session in the JSONL path (state resets
     // per file). SQLite rows arrive in session order, so track the current
@@ -213,12 +210,9 @@ fn read_agent_database(
                 entries.push(sqlite_entry_to_loaded(entry, message_id, tz, mode, pricing));
             }
             Ok(sqlite::State::Done) => break,
-            Err(_) => {
-                diagnostics.record(Skip::unit(
-                    &database.path,
-                    SkipKind::ReadInterrupted,
-                    "OpenClaw database query stopped before all rows were read",
-                ));
+            Err(error) => {
+                let (kind, detail) = sqlite_step_failure(error.code);
+                diagnostics.record(Skip::unit(&database.path, kind, detail));
                 break;
             }
         }
@@ -226,16 +220,47 @@ fn read_agent_database(
     entries
 }
 
-fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, SkipKind> {
+fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sqlite::Error> {
     let mut statement = connection
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
-        .map_err(|_| SkipKind::Unreadable)?;
-    statement
-        .bind((1, "transcript_events"))
-        .map_err(|_| SkipKind::Unreadable)?;
-    match statement.next().map_err(|_| SkipKind::Unreadable)? {
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")?;
+    statement.bind((1, "transcript_events"))?;
+    match statement.next()? {
         sqlite::State::Row => Ok(true),
         sqlite::State::Done => Ok(false),
+    }
+}
+
+fn sqlite_error_failure(code: Option<isize>) -> (SkipKind, &'static str) {
+    match code.map(|code| code & 0xff) {
+        Some(1) => (
+            SkipKind::Invariant,
+            "OpenClaw database schema is unavailable",
+        ),
+        Some(11) | Some(26) => (
+            SkipKind::InvalidData,
+            "OpenClaw agent database is corrupt or invalid",
+        ),
+        _ => (
+            SkipKind::Unreadable,
+            "OpenClaw agent database could not be read",
+        ),
+    }
+}
+
+fn sqlite_step_failure(code: Option<isize>) -> (SkipKind, &'static str) {
+    match sqlite_error_failure(code).0 {
+        SkipKind::Invariant => (
+            SkipKind::Invariant,
+            "OpenClaw database schema changed while reading; earlier rows were kept",
+        ),
+        SkipKind::InvalidData => (
+            SkipKind::InvalidData,
+            "OpenClaw agent database is corrupt or invalid; earlier rows were kept",
+        ),
+        _ => (
+            SkipKind::ReadInterrupted,
+            "OpenClaw database query stopped before all rows were read; earlier rows were kept",
+        ),
     }
 }
 
@@ -460,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_sqlite_schema_probe_failures_as_unreadable() {
+    fn reports_sqlite_corruption_during_schema_probe_as_invalid_data() {
         let fixture = fs_fixture!({
             "agents/main/agent/openclaw-agent.sqlite": "not a SQLite database",
         });
@@ -506,8 +531,32 @@ mod tests {
         let entries = crate::SOURCE.load_entries(&cx).unwrap();
 
         assert!(entries.is_empty());
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 0);
+    }
+
+    #[test]
+    fn classifies_sqlite_errors_by_primary_code_and_read_stage() {
+        for (code, expected) in [
+            (Some(1), SkipKind::Invariant),
+            (Some(11), SkipKind::InvalidData),
+            (Some(26), SkipKind::InvalidData),
+            (Some(267), SkipKind::InvalidData),
+            (Some(282), SkipKind::InvalidData),
+            (Some(5), SkipKind::Unreadable),
+            (Some(6), SkipKind::Unreadable),
+            (Some(10), SkipKind::Unreadable),
+            (Some(261), SkipKind::Unreadable),
+            (None, SkipKind::Unreadable),
+        ] {
+            assert_eq!(sqlite_error_failure(code).0, expected, "code {code:?}");
+        }
+
+        assert_eq!(sqlite_step_failure(Some(11)).0, SkipKind::InvalidData);
+        assert_eq!(sqlite_step_failure(Some(282)).0, SkipKind::InvalidData);
+        assert_eq!(sqlite_step_failure(Some(1)).0, SkipKind::Invariant);
+        assert_eq!(sqlite_step_failure(Some(261)).0, SkipKind::ReadInterrupted);
     }
 
     #[test]

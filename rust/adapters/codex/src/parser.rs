@@ -521,7 +521,7 @@ fn visit_codex_session_entry(
         if compaction_usage.emitted_response_ids.contains(&response_id) {
             return Ok(());
         }
-        let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
+        let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
             if payload.usage.is_some() {
                 location.invalid_timestamp();
             }
@@ -603,21 +603,13 @@ fn visit_codex_session_entry(
     if entry_type != Some("event_msg") {
         return Ok(());
     }
-    let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
-        if value.payload.as_ref().is_some_and(|payload| {
-            payload.payload_type.as_deref() == Some("token_count")
-                && payload.info.as_ref().is_some_and(|info| {
-                    info.last_token_usage.is_some() || info.total_token_usage.is_some()
-                })
-        }) {
-            location.invalid_timestamp();
-        }
-        return Ok(());
-    };
     let Some(payload) = value.payload.as_ref() else {
         return Ok(());
     };
     if payload.payload_type.as_deref() == Some("thread_settings_applied") {
+        if codex_session_timestamp(value.timestamp.as_ref()).is_none() {
+            return Ok(());
+        }
         // A settings event that carries no `service_tier` at all says nothing
         // about the tier, so the previous one stands. Codex emits such events
         // for auto-review threads. A tier that is present but unrecognized is
@@ -635,6 +627,16 @@ fn visit_codex_session_entry(
     if payload.payload_type.as_deref() != Some("token_count") {
         return Ok(());
     }
+    let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
+        if payload
+            .info
+            .as_ref()
+            .is_some_and(|info| info.last_token_usage.is_some() || info.total_token_usage.is_some())
+        {
+            location.invalid_timestamp();
+        }
+        return Ok(());
+    };
     let info = payload.info.as_ref();
     let CodexTokenCountUsage {
         total_usage,
@@ -924,6 +926,12 @@ fn codex_session_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String>
         }
         CodexTimestamp::Number(_) => normalize_codex_timestamp(value),
     }
+}
+
+fn codex_usage_timestamp(value: Option<&CodexTimestamp<'_>>) -> Option<String> {
+    let timestamp = codex_session_timestamp(value)?;
+    parse_ts_timestamp(&timestamp)?;
+    Some(timestamp)
 }
 
 fn parsed_model_is_missing(
