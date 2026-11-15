@@ -1,0 +1,155 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage copilot monthly --offline --json --timezone Asia/Tokyo
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 1300,
+      "inputTokens": 4740,
+      "messageCount": 13,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.1,
+          "inputTokens": 40,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 4,
+          "storedCost": 0.1
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
+          "cost": 0.017925000000000003,
+          "inputTokens": 300,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 600,
+          "cost": 0.015930000000000003,
+          "inputTokens": 2400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 500
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.0049375,
+          "inputTokens": 1500,
+          "modelName": "gpt-5",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00085,
+          "inputTokens": 500,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514",
+        "unknown",
+        "claude-haiku-4-5-20251001",
+        "gpt-5"
+      ],
+      "month": "2025-12",
+      "outputTokens": 1024,
+      "totalCost": 0.1396425,
+      "totalTokens": 7384
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 1300,
+      "inputTokens": 6270,
+      "messageCount": 17,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.41999999999999993,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0,
+          "storedCost": 0.41999999999999993
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.040499999999999994,
+          "inputTokens": 1800,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 180
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 800,
+          "cost": 0.02031,
+          "inputTokens": 1070,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 1074
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 400,
+          "cost": 0.00469,
+          "inputTokens": 1640,
+          "modelName": "gpt-5",
+          "outputTokens": 259
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0015350000000000001,
+          "inputTokens": 860,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 133
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 130
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "copilot-mystery-1",
+        "unknown",
+        "gpt-5",
+        "claude-opus-4-20250514"
+      ],
+      "month": "2026-01",
+      "outputTokens": 1776,
+      "totalCost": 0.48703499999999994,
+      "totalTokens": 9546
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 500,
+    "cacheReadTokens": 2600,
+    "inputTokens": 11010,
+    "outputTokens": 2800,
+    "totalCost": 0.6266775,
+    "totalTokens": 16930,
+    "unpricedModels": [
+      "copilot-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

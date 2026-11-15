@@ -1,0 +1,10 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude daily --offline --json --project -Users-dev-beta
+---
+exit: 2
+--- stdout ---
+
+--- stderr ---
+Missing value for --project
+Run 'ccusage --help' for usage.

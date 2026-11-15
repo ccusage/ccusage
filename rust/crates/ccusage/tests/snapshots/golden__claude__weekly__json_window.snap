@@ -1,0 +1,65 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 300,
+    "cacheReadTokens": 19300,
+    "inputTokens": 3290,
+    "outputTokens": 1220,
+    "totalCost": 0.5958700000000001,
+    "totalTokens": 24110,
+    "unpricedModels": [
+      "mystery-model-9000"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 19300,
+      "inputTokens": 3290,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 11000,
+          "cost": 0.52912,
+          "inputTokens": 1840,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 690,
+          "storedCost": 0.52
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7500,
+          "cost": 0.06675,
+          "inputTokens": 1150,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 460
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 800,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "mystery-model-9000",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "mystery-model-9000"
+      ],
+      "outputTokens": 1220,
+      "totalCost": 0.5958700000000001,
+      "totalTokens": 24110,
+      "week": "2025-12-28"
+    }
+  ]
+}
+
+--- stderr ---

@@ -1,0 +1,95 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage qwen session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-31T16:00:00.000Z",
+      "inputTokens": 150,
+      "lastActivity": "2025-12-31T16:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00027499999999999996,
+          "inputTokens": 150,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 25
+        }
+      ],
+      "modelsUsed": [
+        "qwen3-coder-plus"
+      ],
+      "outputTokens": 25,
+      "projectPath": "alpha",
+      "sessionId": "alpha-fallback-c",
+      "totalCost": 0.00027499999999999996,
+      "totalTokens": 175
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-31T16:00:00.000Z",
+      "inputTokens": 150,
+      "lastActivity": "2025-12-31T16:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00027499999999999996,
+          "inputTokens": 150,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 25
+        }
+      ],
+      "modelsUsed": [
+        "qwen3-coder-plus"
+      ],
+      "outputTokens": 25,
+      "projectPath": "beta",
+      "sessionId": "beta-fallback-c",
+      "totalCost": 0.00027499999999999996,
+      "totalTokens": 175
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-01T09:00:00.000Z",
+      "inputTokens": 250,
+      "lastActivity": "2026-01-01T09:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0015,
+          "inputTokens": 250,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "projectPath": "alpha",
+      "sessionId": "sess-d",
+      "totalCost": 0.0015,
+      "totalTokens": 300
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 0,
+    "inputTokens": 550,
+    "outputTokens": 100,
+    "totalCost": 0.0020499999999999997,
+    "totalTokens": 650
+  }
+}
+
+--- stderr ---

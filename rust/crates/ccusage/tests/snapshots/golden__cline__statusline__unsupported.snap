@@ -1,0 +1,11 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage cline statusline --offline --json
+---
+exit: 2
+--- stdout ---
+
+--- stderr ---
+The "statusline" report is only available for Claude Code usage.
+Use "ccusage cline daily" for Cline usage reports.
+Run 'ccusage --help' for usage.

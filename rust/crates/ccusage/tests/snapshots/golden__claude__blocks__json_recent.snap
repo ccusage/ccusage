@@ -1,0 +1,11 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude blocks --offline --json --recent
+---
+exit: 0
+--- stdout ---
+{
+  "blocks": []
+}
+
+--- stderr ---

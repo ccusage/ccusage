@@ -1,0 +1,97 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude monthly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 14000,
+      "inputTokens": 1720,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.05775,
+          "inputTokens": 900,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 7000,
+          "cost": 0.02606,
+          "inputTokens": 820,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 490,
+          "storedCost": 0.02
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514"
+      ],
+      "month": "2025-12",
+      "outputTokens": 890,
+      "totalCost": 0.08381,
+      "totalTokens": 16910
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 5300,
+      "inputTokens": 1570,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 4000,
+          "cost": 0.5030600000000001,
+          "inputTokens": 1020,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 200,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.009000000000000001,
+          "inputTokens": 250,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 800,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "mystery-model-9000",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "mystery-model-9000"
+      ],
+      "month": "2026-01",
+      "outputTokens": 330,
+      "totalCost": 0.5120600000000001,
+      "totalTokens": 7200
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 300,
+    "cacheReadTokens": 19300,
+    "inputTokens": 3290,
+    "outputTokens": 1220,
+    "totalCost": 0.5958700000000001,
+    "totalTokens": 24110,
+    "unpricedModels": [
+      "mystery-model-9000"
+    ]
+  }
+}
+
+--- stderr ---

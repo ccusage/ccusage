@@ -1,0 +1,156 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage copilot monthly --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 500,
+      "cacheReadTokens": 2200,
+      "inputTokens": 6870,
+      "messageCount": 20,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.15000000000000002,
+          "inputTokens": 40,
+          "modelName": "unknown",
+          "outputTokens": 4
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 1400,
+          "cost": 0.0,
+          "inputTokens": 3400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 1000
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0,
+          "inputTokens": 830,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 131
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.0,
+          "inputTokens": 2000,
+          "modelName": "gpt-5",
+          "outputTokens": 380
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514",
+        "unknown",
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "copilot-mystery-1"
+      ],
+      "month": "2025-12",
+      "outputTokens": 1735,
+      "totalCost": 0.15000000000000002,
+      "totalTokens": 11325
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 400,
+      "inputTokens": 4140,
+      "messageCount": 10,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.37,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 70,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 574
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 530,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 72
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 400,
+          "cost": 0.0,
+          "inputTokens": 1140,
+          "modelName": "gpt-5",
+          "outputTokens": 179
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 1800,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 180
+        }
+      ],
+      "modelsUsed": [
+        "unknown",
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "copilot-mystery-1",
+        "gpt-5",
+        "claude-opus-4-20250514"
+      ],
+      "month": "2026-01",
+      "outputTokens": 1065,
+      "totalCost": 0.37,
+      "totalTokens": 5605
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 500,
+    "cacheReadTokens": 2600,
+    "inputTokens": 11010,
+    "outputTokens": 2800,
+    "totalCost": 0.52,
+    "totalTokens": 16930
+  }
+}
+
+--- stderr ---
