@@ -4,7 +4,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz};
 use ccusage_adapter_common::source::LoadContext;
-use ccusage_core::Diagnostics;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 use super::{
     parser::{AntigravityUsageEvent, event_to_loaded, merge_usage_event, parse_sqlite_file},
@@ -36,8 +36,17 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
         Some(cx.diagnostics),
     )?;
     for database in &skipped {
-        if let Some(warning) = skipped_database_message(cx.shared, database) {
-            cx.diagnostics.push_line(warning);
+        match database {
+            SkippedDatabase::Unreadable { path, .. } => cx.diagnostics.record(Skip::unit(
+                path,
+                SkipKind::Unreadable,
+                "Antigravity database could not be read",
+            )),
+            SkippedDatabase::Uninitialized(_) => {
+                if let Some(warning) = skipped_database_message(cx.shared, database) {
+                    cx.diagnostics.push_line(warning);
+                }
+            }
         }
     }
     Ok(entries)
@@ -65,9 +74,9 @@ fn skipped_database_message(shared: &SharedArgs, database: &SkippedDatabase) -> 
                 path.display()
             )
         }),
-        SkippedDatabase::Unreadable { path, error } => (crate::log_level() != Some(0)).then(|| {
+        SkippedDatabase::Unreadable { path, .. } => (crate::log_level() != Some(0)).then(|| {
             format!(
-                "WARN  Skipping unreadable Antigravity database '{}': {error}",
+                "WARN  Skipping unreadable Antigravity database '{}': database could not be read",
                 path.display()
             )
         }),
@@ -1325,7 +1334,7 @@ mod tests {
         let path = PathBuf::from("/data/conversations/broken.db");
         let unreadable = SkippedDatabase::Unreadable {
             path: path.clone(),
-            error: "Failed to inspect Antigravity database: disk I/O error (code 10)".to_string(),
+            error: "SECRET_CANARY".to_string(),
         };
         let uninitialized = SkippedDatabase::Uninitialized(path);
         let debug = SharedArgs {
@@ -1338,7 +1347,7 @@ mod tests {
             assert_eq!(
                 skipped_database_message(&shared(true), &unreadable).as_deref(),
                 Some(
-                    "WARN  Skipping unreadable Antigravity database '/data/conversations/broken.db': Failed to inspect Antigravity database: disk I/O error (code 10)"
+                    "WARN  Skipping unreadable Antigravity database '/data/conversations/broken.db': database could not be read"
                 )
             );
             assert_eq!(
@@ -1350,5 +1359,33 @@ mod tests {
 
         let _guard = EnvVarsGuard::set_many([("LOG_LEVEL", Some(OsString::from("0")))]);
         assert_eq!(skipped_database_message(&shared(true), &unreadable), None);
+    }
+
+    #[test]
+    fn structured_loads_tally_unreadable_databases() {
+        use ccusage_adapter_common::source::{LoadContext, SourceOptions};
+        use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
+
+        let fixture = Fixture::new();
+        fixture.write_file("conversations/broken.db", "SECRET_CANARY");
+        let _guard = EnvVarsGuard::set_many([(
+            super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(fixture.root())),
+        )]);
+        let shared = shared(true);
+        let pricing = PricingMap::load_embedded();
+        let window = ReportWindow::from_shared(&shared);
+        let diagnostics = Diagnostics::new("antigravity");
+        let cx = LoadContext {
+            shared: &shared,
+            kind: AgentReportKind::Daily,
+            window: &window,
+            pricing: Some(&pricing),
+            options: SourceOptions::default(),
+            diagnostics: &diagnostics,
+        };
+
+        assert!(load_entries_for_context(&cx).unwrap().is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 }

@@ -300,7 +300,8 @@ fn current_rows() -> Vec<Row> {
     ]
 }
 
-/// Rows the adapter must drop. They carry 9999/7777 so a leak is visible.
+/// Rows the adapter must drop. Most carry 9999/7777 so a leak is visible;
+/// `x-no-tokens` clamps to zero usage instead.
 fn ignored_rows() -> Vec<Row> {
     let leak = ["9999", "7777", "0", "0", "17776"];
     let noon = || at(DEC_31, 12, 0, 0);

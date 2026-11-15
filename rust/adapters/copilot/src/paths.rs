@@ -68,8 +68,17 @@ fn paths_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<CopilotSourceFil
                             continue;
                         }
                         let path = entry.path().join("events.jsonl");
-                        if path.is_file() {
-                            add_file(&mut files, &mut seen, CopilotSourceKind::SessionState, path);
+                        match fs::metadata(&path) {
+                            Ok(metadata) if metadata.is_file() => add_file(
+                                &mut files,
+                                &mut seen,
+                                CopilotSourceKind::SessionState,
+                                path,
+                            ),
+                            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                                record_discovery_failure(diagnostics, &path)
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -135,6 +144,38 @@ mod tests {
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn diagnoses_inaccessible_sessions_and_keeps_healthy_siblings() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixture = fs_fixture!({
+            "session-state/blocked/events.jsonl": "{}",
+            "session-state/healthy/events.jsonl": "{}",
+        });
+        let _guard = EnvVarsGuard::set_many([
+            (COPILOT_HOME_ENV, Some(OsString::from(fixture.root()))),
+            (COPILOT_OTEL_FILE_EXPORTER_PATH_ENV, None),
+        ]);
+        let blocked = fixture.path("session-state/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::metadata(blocked.join("events.jsonl")).is_err();
+        let diagnostics = Diagnostics::new("copilot");
+        let files = paths_with_diagnostics(&diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        let files = files.unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            files[0].path,
+            fixture.path("session-state/healthy/events.jsonl")
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+    }
 
     #[test]
     fn discovers_session_state_and_otel_files_without_nested_session_files() {

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::golden::Case;
+use crate::golden::{Case, json_path};
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
@@ -21,10 +21,6 @@ fn header(id: &str, timestamp: Option<&str>, parent: Option<&str>) -> String {
     let timestamp = timestamp.map_or_else(String::new, |ts| format!(r#","timestamp":"{ts}""#));
     let parent = parent.map_or_else(String::new, |raw| format!(r#","parentSession":{raw}"#));
     format!(r#"{{"type":"session","version":3,"id":"{id}"{timestamp}{parent}}}"#)
-}
-
-fn json_string(path: &Path) -> String {
-    format!(r#""{}""#, path.to_string_lossy().replace('\\', "\\\\"))
 }
 
 /// Body of a `usage` object whose `totalTokens` agrees with its parts.
@@ -133,7 +129,7 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
             header(
                 "sess-alpha-fork",
                 Some("2026-01-01T13:00:00.000Z"),
-                Some(&json_string(&root.join(&main_file))),
+                Some(&json_path(&root.join(&main_file))),
             ),
             user,
             a1,
@@ -414,7 +410,7 @@ fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
             header(
                 "lab-child-nearmiss",
                 Some("2025-12-27T04:00:00.000Z"),
-                Some(&json_string(&root.join(lab("lab-root")))),
+                Some(&json_path(&root.join(lab("lab-root")))),
             ),
             p1.clone(),
             message(
@@ -553,7 +549,7 @@ fn seed_fork_lab(root: &Path, write: &impl Fn(&str, &[String])) {
             header(
                 "lab-outside-child",
                 Some("2025-12-27T12:00:00.000Z"),
-                Some(&json_string(&root.join(OUTSIDE_ROOT))),
+                Some(&json_path(&root.join(OUTSIDE_ROOT))),
             ),
             outside,
             message("2025-12-27T11:40:00.000Z", UNPRICED, &tokens(2, 1, 0, 0)),
@@ -700,7 +696,7 @@ fn seed_named_store(root: &Path, write: &impl Fn(&str, &[String])) {
         NAMED_STORE_CONFIG,
         &[format!(
             r#"{{"pi":{{"stores":[{{"name":"omp","path":{}}}]}}}}"#,
-            json_string(&root.join(NAMED_STORE))
+            json_path(&root.join(NAMED_STORE))
         )],
     );
 }

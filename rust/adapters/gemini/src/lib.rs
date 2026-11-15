@@ -1,6 +1,4 @@
-use ccusage_adapter_common::source::{
-    ALL_REPORTS, EntryDescriptor, EntrySource, LoadContext, SourceOptions,
-};
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext, SourceOptions};
 use ccusage_core::*;
 
 mod loader;
@@ -19,10 +17,7 @@ pub static SOURCE: Gemini = Gemini;
 
 impl EntrySource for Gemini {
     fn descriptor(&self) -> EntryDescriptor {
-        EntryDescriptor {
-            reports: ALL_REPORTS,
-            ..EntryDescriptor::standard("gemini", "Gemini CLI")
-        }
+        EntryDescriptor::standard("gemini", "Gemini CLI")
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {

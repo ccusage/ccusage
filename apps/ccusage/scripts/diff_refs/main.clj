@@ -38,7 +38,10 @@
   [{:name "json" :args ["--json"]}
    {:name "table" :args []}
    {:name "json-breakdown" :args ["--json" "--breakdown"]}
-   {:name "json-window" :args ["--json"] :window? true}])
+   {:name "json-window" :args ["--json"] :window? true}
+   {:name "json-mode-calculate" :args ["--json" "--mode" "calculate"]}
+   {:name "json-mode-display" :args ["--json" "--mode" "display"]}
+   {:name "json-tz-tokyo" :args ["--json"] :timezone "Asia/Tokyo"}])
 
 (defn real-dates
   "`--until yesterday` keeps files an agent is writing right now out of every
@@ -52,10 +55,10 @@
   fixture run and (real-dates today) for a real one."
   [{:keys [real]} dates]
   (for [command report-commands
-        {:keys [name args window?]} output-variants]
+        {:keys [name args window? timezone] :or {timezone "UTC"}} output-variants]
     {:id (str (str/replace command " " "-") "--" name)
      :json? (boolean (some #{"--json"} args))
-     :args (vec (concat (str/split command #" ") ["--offline" "--timezone" "UTC"] args
+     :args (vec (concat (str/split command #" ") ["--offline" "--timezone" timezone] args
                         (cond
                           (and real window?) ["--since" (:window-since dates) "--until" (:until dates)]
                           real ["--until" (:until dates)]
@@ -196,7 +199,9 @@
   (str "Usage: diff-refs.bb [options] <base> <head>\n\n"
        "Builds each git ref in release mode (or takes an existing binary path), runs every report\n"
        "command with both binaries under the same arguments and environment, and compares stdout,\n"
-       "stderr, and exit code byte for byte. Each build runs twice, and both run three more times when\n"
+       "stderr, and exit code byte for byte. Variants cover JSON, tables, breakdowns, date windows,\n"
+       "cost modes, and timezones. Agent-specific options and statusline hook payloads are covered\n"
+       "by the golden tests. Each build runs twice, and both run three more times when\n"
        "anything disagrees: a command whose base output is not reproducible is reported as unstable\n"
        "instead of different. Exits 0 only when every comparison is identical, 1 on a difference,\n"
        "and 2 when comparisons are unstable.\n\n"

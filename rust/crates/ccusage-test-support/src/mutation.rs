@@ -24,20 +24,23 @@ const REPORTED_FAILURES: usize = 5;
 /// Panics with the first few failing variants when `parse` panicked on any.
 pub fn assert_parser_survives_mutations(fixture: &[u8], parse: impl Fn(&[u8])) {
     let mut failures = Vec::new();
+    let mut failure_count = 0_usize;
     let mut total = 0_usize;
     for mutation in mutations(fixture) {
         total += 1;
         if catch_unwind(AssertUnwindSafe(|| parse(&mutation.bytes))).is_err() {
-            failures.push(mutation);
+            failure_count += 1;
+            if failures.len() < REPORTED_FAILURES {
+                failures.push(mutation);
+            }
         }
     }
     assert!(
-        failures.is_empty(),
+        failure_count == 0,
         "the parser panicked on {} of {total} damaged inputs; the first are:\n{}",
-        failures.len(),
+        failure_count,
         failures
             .iter()
-            .take(REPORTED_FAILURES)
             .map(|mutation| format!(
                 "- {}:\n{}",
                 mutation.label,

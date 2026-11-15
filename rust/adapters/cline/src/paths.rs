@@ -195,6 +195,32 @@ mod tests {
     use super::*;
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
+    #[cfg(unix)]
+    #[test]
+    fn diagnosed_discovery_keeps_healthy_tasks_when_a_sibling_is_unreadable() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let fixture = fs_fixture!({
+            "tasks/blocked/ui_messages.json": "[]",
+            "tasks/healthy/ui_messages.json": "[]",
+        });
+        let _guard = EnvVarGuard::set(CLINE_DATA_DIR_ENV, fixture.root());
+        let blocked = fixture.path("tasks/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let diagnostics = Diagnostics::new("cline");
+        let files = discover_files_with_diagnostics(&diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        let files = files.unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].session_id, "healthy");
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 1);
+    }
+
     #[test]
     fn discovers_extension_cli_task_and_both_cli_session_layouts_from_configured_roots() {
         let extension = fs_fixture!({

@@ -49,6 +49,10 @@ pub fn no_extras(_root: &Path) -> Vec<Case> {
     Vec::new()
 }
 
+pub fn json_path(path: &Path) -> String {
+    serde_json::to_string(&path.to_string_lossy()).expect("fixture path is JSON serialisable")
+}
+
 /// Every report kind the parser knows, in snapshot order.
 pub const ALL_REPORT_KINDS: [&str; 6] = [
     "daily",
@@ -326,11 +330,15 @@ pub fn run_case(root: &Path, seeded: &[(&'static str, PathBuf)], case: &Case) ->
 /// Snapshots one case as `golden__<scope>__<kind>__<variant>`, where `scope`
 /// is an agent name or `all` for the unified reports.
 pub fn assert_case(scope: &str, root: &Path, seeded: &[(&'static str, PathBuf)], case: &Case) {
+    assert_outcome(scope, root, case, run_case(root, seeded, case));
+}
+
+pub fn assert_outcome(scope: &str, root: &Path, case: &Case, outcome: Outcome) {
     let Outcome {
         exit,
         stdout,
         stderr,
-    } = run_case(root, seeded, case);
+    } = outcome;
     let rendered = format!("exit: {exit}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}");
 
     let mut settings = insta::Settings::clone_current();

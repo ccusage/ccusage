@@ -339,12 +339,12 @@ pub(crate) struct SessionMessageRow<'a> {
     pub(crate) created: i64,
 }
 
-pub(crate) fn session_message_value_to_entry(
+pub(crate) fn session_message_value_to_entry_checked(
     row: SessionMessageRow<'_>,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Option<(LoadedEntry, Option<Arc<str>>)> {
+) -> Result<Option<crate::LinkedEntry>, ccusage_adapter_common::units::UnitError> {
     let SessionMessageRow {
         kind,
         data,
@@ -352,18 +352,32 @@ pub(crate) fn session_message_value_to_entry(
         session_id,
         created,
     } = row;
-    let value = serde_json::from_str::<OpenCodeV2Message>(data).ok()?;
+    let value = serde_json::from_str::<OpenCodeV2Message>(data)?;
     // Running and failed compactions are out of scope: a failed one records
     // the usage it was billed but no model to attribute it to.
     if kind == SessionMessageKind::Compaction && value.status.as_deref() != Some("completed") {
-        return None;
+        return Ok(None);
     }
     let native_session = (value.provider() == Some("claude-agent"))
         .then(|| native_session_id(data))
         .flatten();
     let value = value.into_legacy_message(id, session_id, created);
-    message_value_to_entry(&value, None, None, tz, mode, pricing)
-        .map(|entry| (entry, native_session))
+    Ok(
+        message_value_to_entry(&value, None, None, tz, mode, pricing)
+            .map(|entry| (entry, native_session)),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn session_message_value_to_entry(
+    row: SessionMessageRow<'_>,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> Option<(LoadedEntry, Option<Arc<str>>)> {
+    session_message_value_to_entry_checked(row, tz, mode, pricing)
+        .ok()
+        .flatten()
 }
 
 pub(crate) struct OpenCodeSessionAggregate {

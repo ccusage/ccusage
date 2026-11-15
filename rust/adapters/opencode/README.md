@@ -22,6 +22,11 @@ Record shapes, token mapping, and cost rules are documented in [`src/README.md`]
 Reads SQLite with the bundled `sqlite` crate, which is why this crate declares it and
 most adapters do not.
 
+Read failures and rejected usage records produce sanitized diagnostics while readable usage is
+retained. Focused loaders print the warnings after loading; unified reports return them with the
+source rows. Optional missing sources and deliberately suppressed records stay quiet. Existing
+lenient field conversions are unchanged.
+
 ## Public surface
 
 - `loader::load_entries`

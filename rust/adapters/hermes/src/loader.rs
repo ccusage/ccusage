@@ -4,21 +4,12 @@ use ccusage_adapter_common::{
     source::LoadContext,
     units::{UnitError, read_units_flat},
 };
-use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind, cli::SharedArgs};
+use ccusage_core::{Diagnostics, LoadedEntry, Result, Skip, SkipKind};
 
 use super::{
     parser::{HermesEntry, read_session_row, to_loaded_entry},
     paths::hermes_state_db_paths,
 };
-
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-}
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx
@@ -106,7 +97,10 @@ mod tests {
 
     use super::*;
     use ccusage_adapter_common::{parity::assert_focused_matches_unified, source::SourceOptions};
-    use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
+    use ccusage_core::{
+        PricingMap, ReportWindow, SkipKind,
+        cli::{AgentReportKind, SharedArgs},
+    };
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     fn create_state_db(path: &Path) {

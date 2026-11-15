@@ -613,6 +613,22 @@ mod tests {
     use ccusage_test_support::fs_fixture;
 
     #[test]
+    fn diagnoses_malformed_whole_file_json() {
+        let fixture = fs_fixture!({"chat.json": "{\"SECRET_CANARY\":"});
+        let diagnostics = Diagnostics::new("gemini");
+
+        let loaded = ccusage_adapter_common::units::read_units(
+            &[fixture.path("chat.json")],
+            true,
+            &diagnostics,
+            parse_json_file,
+        );
+
+        assert!(loaded[0].is_none());
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
     fn diagnoses_malformed_jsonl_and_keeps_later_usage() {
         let fixture = fs_fixture!({
             "session.jsonl": concat!(

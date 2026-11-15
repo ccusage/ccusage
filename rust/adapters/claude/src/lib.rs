@@ -4,6 +4,7 @@ use ccusage_adapter_common::{
 use ccusage_core::*;
 
 mod daily;
+mod diagnostics;
 mod paths;
 mod source;
 
@@ -11,7 +12,6 @@ pub use source::SOURCE;
 
 use std::{
     collections::HashSet,
-    fs,
     hash::{Hash, Hasher},
     path::Path,
     sync::Arc,
@@ -61,7 +61,9 @@ pub fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<DedupedEntries> {
-    load_deduped_entries_with_progress(shared, project_filter, ProgressOwner::Source)
+    let loaded = load_deduped_entries_with_progress(shared, project_filter, ProgressOwner::Source)?;
+    diagnostics::emit(&loaded.warnings);
+    Ok(loaded)
 }
 
 /// Loads deduplicated entries with progress owned by the caller or source.
@@ -85,6 +87,7 @@ pub(crate) fn load_deduped_entries_with_progress(
 #[derive(Default)]
 pub struct DedupedEntries {
     pub entries: Vec<LoadedEntry>,
+    pub(crate) warnings: Vec<String>,
     /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
@@ -130,7 +133,10 @@ pub fn load_entries_since(
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
         load_entries_inner(shared, project_filter, true)
     })
-    .map(|deduped| deduped.entries)
+    .map(|deduped| {
+        diagnostics::emit(&deduped.warnings);
+        deduped.entries
+    })
 }
 
 /// Loads daily Claude summaries. Summaries dated before `since` may be
@@ -145,7 +151,10 @@ pub fn load_daily_summaries(
             SessionDays::default()
         })
     })
-    .map(|daily| daily.summaries)
+    .map(|daily| {
+        diagnostics::emit(&daily.warnings);
+        daily.summaries
+    })
 }
 
 /// Main-thread Claude usage as `(session ID, date)` pairs, so a source that
@@ -172,6 +181,7 @@ fn main_thread_session_days<'a>(
 pub struct DailySummaries {
     /// Summaries, possibly missing dates before `since`.
     pub summaries: Vec<UsageSummary>,
+    pub(crate) warnings: Vec<String>,
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
     pub detected: bool,
@@ -188,12 +198,14 @@ pub fn load_daily_summaries_with_detection(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<DailySummaries> {
-    load_daily_summaries_with_detection_progress(
+    let loaded = load_daily_summaries_with_detection_progress(
         shared,
         project_filter,
         group_by_project,
         ProgressOwner::Source,
-    )
+    )?;
+    diagnostics::emit(&loaded.warnings);
+    Ok(loaded)
 }
 
 /// Loads daily summaries with progress owned by the caller or source.
@@ -224,6 +236,7 @@ fn load_entries_inner(
     project_filter: Option<&str>,
     skip_files_before_since: bool,
 ) -> Result<DedupedEntries> {
+    let diagnostics = Diagnostics::new("claude");
     let paths = claude_paths()?;
     debug_log(
         shared,
@@ -268,7 +281,7 @@ fn load_entries_inner(
     let tz = parse_tz(shared.timezone.as_deref()).unwrap_or_else(JiffTimeZone::system);
     let mode = shared.mode;
     let loaded_files = read_files_parallel(&files, shared.single_thread, |file| {
-        read_usage_file(file, Some(&tz), mode, pricing.as_ref())
+        read_usage_file_with_diagnostics(file, Some(&tz), mode, pricing.as_ref(), &diagnostics)
     });
     let loaded_entry_count = loaded_files
         .iter()
@@ -309,6 +322,7 @@ fn load_entries_inner(
     Ok(DedupedEntries {
         entries: deduped,
         copies,
+        warnings: diagnostics.warnings(shared),
     })
 }
 
@@ -634,11 +648,22 @@ fn push_deduped_session_alias(
     }
 }
 
+#[cfg(test)]
 fn read_usage_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
+) -> LoadedFile {
+    read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+}
+
+fn read_usage_file_with_diagnostics(
+    path: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
 ) -> LoadedFile {
     let project: Arc<str> = Arc::from(extract_project(path));
     let (session_id, project_path) = extract_session_parts(path);
@@ -648,23 +673,29 @@ fn read_usage_file(
         timestamp: None,
         entries: Vec::new(),
     };
-    let Ok(content) = fs::read(path) else {
-        return loaded_file;
-    };
+    let content = diagnostics::read_content(path, diagnostics);
 
     let usage_marker = memmem::Finder::new(br#""usage":{"#);
-    for line in byte_lines(&content) {
+    for (index, line) in byte_lines(&content).enumerate() {
         if usage_marker.find(line).is_none() {
             continue;
         }
         let Some(data) = deserialize_usage_line::<UsageEntry>(line) else {
+            diagnostics::rejected(path, index, line, diagnostics, false);
             continue;
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
+            diagnostics.record(Skip::record(
+                path,
+                (index + 1) as u32,
+                SkipKind::InvalidTimestamp,
+                "invalid usage timestamp",
+            ));
             continue;
         };
         update_loaded_file_timestamp(&mut loaded_file, timestamp);
         if !is_valid_usage_entry(&data) {
+            diagnostics::rejected(path, index, line, diagnostics, false);
             continue;
         }
         let date = format_date_tz(timestamp, tz);

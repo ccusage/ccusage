@@ -1,6 +1,4 @@
-use ccusage_adapter_common::source::{
-    ALL_REPORTS, EntryDescriptor, EntrySource, LoadContext, SourceOptions,
-};
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext, SourceOptions};
 use ccusage_core::*;
 
 mod loader;
@@ -20,10 +18,7 @@ pub static SOURCE: OpenClaw = OpenClaw;
 
 impl EntrySource for OpenClaw {
     fn descriptor(&self) -> EntryDescriptor {
-        EntryDescriptor {
-            reports: ALL_REPORTS,
-            ..EntryDescriptor::standard("openclaw", "OpenClaw")
-        }
+        EntryDescriptor::standard("openclaw", "OpenClaw")
     }
 
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {

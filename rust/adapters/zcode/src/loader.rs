@@ -123,12 +123,7 @@ fn load_entries_from_database(
         ));
     }
 
-    let Some(schema) = read_schema(&connection, db_path, shared) else {
-        return Err(UnitError::new(
-            SkipKind::InvalidData,
-            "unsupported ZCode database schema",
-        ));
-    };
+    let schema = read_schema(&connection, db_path, shared)?;
     debug_log(
         shared,
         format!(
@@ -192,7 +187,7 @@ fn load_entries_from_database(
                     diagnostics.record(Skip::record(
                         db_path,
                         row_number,
-                        SkipKind::UndecodedUsage,
+                        SkipKind::InvalidData,
                         "completed ZCode usage row has unsupported values",
                     ));
                     continue;
@@ -225,33 +220,9 @@ fn read_schema(
     connection: &sqlite::Connection,
     db_path: &Path,
     shared: &SharedArgs,
-) -> Option<Schema> {
-    let model_columns = match table_columns(connection, "model_usage") {
-        Ok(columns) => columns,
-        Err(error) => {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to inspect ZCode model_usage schema at {}: {error}",
-                    db_path.display()
-                ),
-            );
-            return None;
-        }
-    };
-    let session_columns = match table_columns(connection, "session") {
-        Ok(columns) => columns,
-        Err(error) => {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to inspect ZCode session schema at {}: {error}",
-                    db_path.display()
-                ),
-            );
-            return None;
-        }
-    };
+) -> std::result::Result<Schema, UnitError> {
+    let model_columns = table_columns(connection, "model_usage")?;
+    let session_columns = table_columns(connection, "session")?;
     let missing_model = missing_columns(&model_columns, REQUIRED_MODEL_COLUMNS);
     let missing_session = missing_columns(&session_columns, REQUIRED_SESSION_COLUMNS);
     if !missing_model.is_empty() || !missing_session.is_empty() {
@@ -270,10 +241,13 @@ fn read_schema(
                 details.join("; ")
             ),
         );
-        return None;
+        return Err(UnitError::new(
+            SkipKind::InvalidData,
+            "unsupported ZCode database schema",
+        ));
     }
 
-    Some(Schema {
+    Ok(Schema {
         version: if session_columns.contains("version") {
             SchemaVersion::SessionVersioned
         } else {
@@ -287,11 +261,23 @@ fn read_schema(
     })
 }
 
-fn table_columns(connection: &sqlite::Connection, table: &str) -> sqlite::Result<HashSet<String>> {
+fn table_columns(
+    connection: &sqlite::Connection,
+    table: &str,
+) -> std::result::Result<HashSet<String>, UnitError> {
     // LIMIT 0 obtains column metadata without materializing any row values,
     // including prompt or content fields that may be present in future schemas.
     let query = format!("SELECT * FROM \"{table}\" LIMIT 0");
-    let statement = connection.prepare(query)?;
+    let statement = connection.prepare(query).map_err(|error| {
+        if error.code == Some(1) {
+            UnitError::new(SkipKind::InvalidData, "unsupported ZCode database schema")
+        } else {
+            UnitError::new(
+                SkipKind::Unreadable,
+                "ZCode database schema could not be read",
+            )
+        }
+    })?;
     Ok(statement.column_names().iter().cloned().collect())
 }
 
@@ -471,6 +457,50 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
+    }
+
+    #[test]
+    fn separates_unreadable_databases_from_unsupported_schemas() {
+        let fixture = fs_fixture!({"broken.db": "SECRET_CANARY"});
+        sqlite::open(fixture.path("unsupported.db")).unwrap();
+        let diagnostics = Diagnostics::new("zcode");
+        let shared = SharedArgs::default();
+        let pricing = PricingMap::load_embedded();
+        let loaded = read_units(
+            &[fixture.path("broken.db"), fixture.path("unsupported.db")],
+            true,
+            &diagnostics,
+            |path| load_entries_from_database(path, None, &shared, &pricing, &diagnostics),
+        );
+
+        assert!(loaded.iter().all(Option::is_none));
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn diagnoses_rejected_completed_usage_and_keeps_healthy_rows() {
+        let fixture = fs_fixture!({});
+        let path = fixture.path("usage.db");
+        create_db(&path, false);
+        insert_current_usage(&path, "healthy", "completed");
+        insert_current_usage(&path, "broken", "completed");
+        sqlite::open(&path)
+            .unwrap()
+            .execute("UPDATE model_usage SET model_id = NULL WHERE id = 'broken'")
+            .unwrap();
+        let diagnostics = Diagnostics::new("zcode");
+        let entries = load_entries_from_database(
+            &path,
+            None,
+            &SharedArgs::default(),
+            &PricingMap::load_embedded(),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]

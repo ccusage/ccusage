@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use ccusage_adapter_common::units::UnitError;
+use ccusage_adapter_common::jsonl;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -165,24 +165,14 @@ fn read_agent_database(
                     ));
                     continue;
                 };
-                if !["\"usage\"", "\"model_change\"", "\"model-snapshot\""]
-                    .iter()
-                    .any(|marker| event_json.contains(marker))
-                {
+                let Some(record) = jsonl::decode_record::<OpenClawLine>(
+                    event_json.as_bytes(),
+                    &database.path,
+                    row_number,
+                    diagnostics,
+                    Some(super::parser::is_usage_envelope),
+                ) else {
                     continue;
-                }
-                let record = match serde_json::from_str::<OpenClawLine>(&event_json) {
-                    Ok(record) => record,
-                    Err(error) => {
-                        let error = UnitError::from(error);
-                        diagnostics.record(Skip::record(
-                            &database.path,
-                            row_number,
-                            SkipKind::UndecodedUsage,
-                            error,
-                        ));
-                        continue;
-                    }
                 };
                 if super::parser::is_model_change(&record) {
                     let (model, provider) = super::parser::model_change_source(&record);
@@ -345,15 +335,49 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
         assert_eq!(entries[1].data.message.usage.input_tokens, 30);
-        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         let warnings = diagnostics
             .warnings(&ccusage_core::cli::SharedArgs {
                 debug: true,
                 ..Default::default()
             })
             .join("\n");
-        assert!(warnings.contains("undecoded usage"));
+        assert!(warnings.contains("invalid data"));
         assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn reads_escaped_usage_keys_and_diagnoses_nested_usage_errors() {
+        let fixture = fs_fixture!({});
+        let db_path = sqlite_root(&fixture);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        create_agent_db(
+            &db_path,
+            &[
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","usage":"SECRET_CANARY"}}"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","\u0075sage":{"input":10,"output":20}}}"#,
+                ),
+            ],
+        );
+        let diagnostics = diagnostics();
+        let entries = read_agent_database(
+            &AgentDatabase { path: db_path },
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]

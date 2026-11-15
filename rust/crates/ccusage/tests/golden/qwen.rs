@@ -130,7 +130,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
             ),
             a2,
             assistant("sess-b", "2025-12-31T15:30:00.000Z", SONNET, a2_usage),
-            // Large enough to reach the model's tiered pricing.
             assistant(
                 "sess-b",
                 "2026-01-01T12:00:00.000Z",

@@ -168,6 +168,18 @@ mod tests {
         assert_eq!(entries[1].session_id.as_ref(), "project-a-file-stem");
         assert_eq!(entries[1].project_path.as_ref(), "project-a");
 
+        ccusage_adapter_common::parity::assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        for kind in [
+            AgentReportKind::Daily,
+            AgentReportKind::Monthly,
+            AgentReportKind::Session,
+        ] {
+            let rows = crate::report::summarize_entries(&entries, kind).unwrap();
+            let report = crate::report::report_from_rows(&rows, kind);
+            assert_eq!(report["totals"]["inputTokens"], 20);
+            assert_eq!(report["totals"]["outputTokens"], 10);
+        }
+
         let outside_window = SharedArgs {
             since: Some("20270101".to_string()),
             ..shared

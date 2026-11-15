@@ -31,6 +31,11 @@ Uses `ccusage-adapter-common` for walking and size-balanced chunking. `loader.rs
 the ordered parallel reads, and `reader.rs` streams `.jsonl.zst` rollouts through `zstd`
 without unpacking them to disk.
 
+Read failures and rejected usage records produce sanitized diagnostics while readable usage is
+retained. Focused loaders print the warnings after loading; unified reports return them with the
+source rows. Optional missing sources and deliberately suppressed records stay quiet. Existing
+lenient field conversions are unchanged.
+
 ## Public surface
 
 - `aggregate::aggregate_events`

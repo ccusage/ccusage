@@ -19,9 +19,9 @@ layers.
   the object-safe trait the unified report holds, and
   `EntrySource`, the hooks of a source whose loader yields `Vec<LoadedEntry>`,
   with its declared window, detection and pricing policies.
-- `pipeline` — the one order an `EntrySource` report runs in, with a focused
-  and a unified entry point, so both apply the date window and the detection
-  rule the same way.
+- `pipeline` — the one order an `EntrySource` report runs in, with focused
+  and unified entry points sharing date-window and pricing policies. Detection
+  applies to the unified entry point.
 - `rows` and `claims` — the row a source hands the unified report, and the
   record of what the Claude source counted that OpenCode must not count again.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
