@@ -3,6 +3,7 @@ use std::{fmt, io};
 pub mod agent_report;
 pub mod cost;
 pub mod date_utils;
+pub mod diagnostics;
 pub mod fast;
 pub mod logger;
 pub mod model_aliases;
@@ -31,6 +32,7 @@ pub use cost::{
     missing_pricing_model_for_usage, stored_cost_for_mode,
 };
 pub use date_utils::*;
+pub use diagnostics::{Diagnostics, Skip, SkipKind};
 pub use logger::{debug_log, log_level};
 pub use output::{
     UsageTableOptions, attach_unpriced_models, format_currency, format_models_multiline,
