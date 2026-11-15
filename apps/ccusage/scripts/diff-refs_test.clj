@@ -98,6 +98,11 @@
     (testing "stderr is ignored on request, the exit code never"
       (is (= :identical (:status (classify {:base [base base] :head [(run 0 "a" "x")]} true))))
       (is (= {:status :different :streams [:exit]} (verdict {:base [base base] :head [(run 1 "a" "x")]} true))))
+    (testing "matching nonzero exits fail even when stderr differences are allowed"
+      (doseq [exit [1 2 130] allow-stderr-diff [false true]
+              :let [failed (run exit "" "rejected")]]
+        (is (= {:status :failed :streams [:exit]}
+               (verdict {:base [failed failed] :head [failed failed]} allow-stderr-diff)))))
     (testing "a base that disagrees with itself is unstable, whatever head printed"
       (is (= {:status :unstable :streams [:stdout]} (verdict {:base [base (run 0 "c" "w")] :head [(run 0 "b" "w")]} false)))
       (is (= {:status :unstable :streams [:stdout]}
@@ -110,8 +115,8 @@
         (is (= [base odd] (:pair result)))))))
 
 (deftest summary
-  (is (= {"Commands run" 4 "Identical" 2 "Different" 1 "Unstable" 1}
-         (summary-counts [{:status :identical} {:status :different} {:status :identical} {:status :unstable}]))))
+  (is (= {"Commands run" 5 "Identical" 2 "Different" 1 "Unstable" 1 "Failed" 1}
+         (summary-counts [{:status :identical} {:status :different} {:status :identical} {:status :unstable} {:status :failed}]))))
 
 (deftest end-to-end
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-e2e."})
@@ -121,6 +126,7 @@
                    (babashka.fs/set-posix-file-permissions file "rwx------")
                    file))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
+        rejected (script "rejected" "echo 'unsupported report arguments' >&2; exit 2")
         reordered (script "reordered" "echo '{\"b\":2,\"a\":1}'")
         changed (script "changed" "echo '{\"b\":2,\"a\":3}'; echo warn >&2")
         intermittent (script "intermittent"
@@ -136,6 +142,16 @@
         (let [result (compare {:base stable :head stable} false)]
           (is (= :identical (:status result)))
           (is (not (babashka.fs/exists? (:dir result))))))
+      (testing "matching rejected commands cannot pass a report comparison"
+        (let [output-dir (path dir "rejected-reports")
+              status (atom nil)
+              output (with-out-str
+                       (reset! status (diff-main rejected rejected "--output-dir" output-dir)))]
+          (is (= 2 @status))
+          (is (not (re-find #"(?m)^PASS\s" output)))
+          (is (re-find #"(?m)^ERROR\s" output))
+          (is (= "unsupported report arguments\n"
+                 (slurp (path output-dir "daily--json" "base-1.stderr"))))))
       (testing "head must agree on repeated runs even when its first run matches"
         (let [result (compare {:base stable :head intermittent} false)]
           (is (= :different (:status result)))

@@ -116,7 +116,8 @@
   "Takes every run of each binary. A base that disagrees with itself cannot
   tell the refs apart, so that command is unstable rather than different. A
   head that disagrees with a reproducible base is different, even when only
-  some of its runs do: nondeterminism the head introduced is a change."
+  some of its runs do: nondeterminism the head introduced is a change.
+  Matching failures cannot establish report equivalence."
   [{:keys [base head]} allow-stderr-diff]
   (let [reference (first base)
         verdict (fn [status found] {:status status :streams (:streams found) :pair [reference (:run found)]})]
@@ -124,7 +125,9 @@
       (verdict :unstable unstable)
       (if-let [different (first-differing reference head allow-stderr-diff)]
         (verdict :different different)
-        {:status :identical :streams []}))))
+        (if (zero? (:exit reference))
+          {:status :identical :streams []}
+          (verdict :failed {:run (first head) :streams [:exit]}))))))
 
 (def confirmation-rounds
   "Extra runs of each binary once a first round disagrees, so a command that
@@ -138,7 +141,7 @@
                                    :label (str (name variant) " run " n)))
         first-round {:base [(run :base 1)] :head [(run :head 1)]}
         first-round (-> first-round (update :base conj (run :base 2)) (update :head conj (run :head 2)))
-        runs (if (= :identical (:status (classify first-round allow-stderr-diff)))
+        runs (if (#{:identical :failed} (:status (classify first-round allow-stderr-diff)))
                first-round
                (reduce (fn [runs n] (-> runs (update :base conj (run :base (+ 2 n))) (update :head conj (run :head (+ 2 n)))))
                        first-round (range 1 (inc confirmation-rounds))))
@@ -173,7 +176,7 @@
 (defn command-label [{:keys [args]}] (str/join " " (map command-text-arg args)))
 
 (defn report-result! [{:keys [status streams pair json?] :as result}]
-  (println (format "%-8s %s" (case status :identical "PASS" :different "FAIL" :unstable "UNSTABLE") (command-label result)))
+  (println (format "%-8s %s" (case status :identical "PASS" :different "FAIL" :unstable "UNSTABLE" :failed "ERROR") (command-label result)))
   (let [[a b] pair]
     (doseq [stream streams]
       (case stream
@@ -185,7 +188,8 @@
 (defn summary-counts [results]
   (let [counts (frequencies (map :status results))]
     (array-map "Commands run" (count results) "Identical" (get counts :identical 0)
-               "Different" (get counts :different 0) "Unstable" (get counts :unstable 0))))
+               "Different" (get counts :different 0) "Unstable" (get counts :unstable 0)
+               "Failed" (get counts :failed 0))))
 
 (defn parse-diff-cli [argv]
   (let [{:keys [args opts]} (cli/parse-args argv {:spec diff-spec :restrict true})]
@@ -208,8 +212,8 @@
        "cost modes, and timezones. Agent-specific options and statusline hook payloads are covered\n"
        "by the golden tests. Each build runs twice, and both run three more times when\n"
        "anything disagrees: a command whose base output is not reproducible is reported as unstable\n"
-       "instead of different. Exits 0 only when every comparison is identical, 1 on a difference,\n"
-       "and 2 when comparisons are unstable.\n\n"
+       "instead of different. Exits 0 only when all commands succeed with identical output,\n"
+       "1 on a difference, and 2 when comparisons are unstable or matching commands fail.\n\n"
        (cli/format-opts {:spec diff-spec})))
 
 (defn- run-all! [jobs commands compare!]
@@ -254,5 +258,6 @@
             (cond
               (pos? (get counts "Different")) 1
               (pos? (get counts "Unstable")) 2
+              (pos? (get counts "Failed")) 2
               :else 0))
           (finally (fs/delete-tree empty-home)))))))
