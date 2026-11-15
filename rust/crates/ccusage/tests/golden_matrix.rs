@@ -65,6 +65,28 @@ fn all_agents_unified() {
     golden::all::run(AGENTS);
 }
 
+#[test]
+fn claude_project_case_runs_a_successful_filtered_report() {
+    let fixture = Fixture::new();
+    let root = fixture.root();
+    let seeded = golden::claude::seed(root);
+    let case = golden::claude::extra_cases(root)
+        .into_iter()
+        .find(|case| case.variant == "json_project")
+        .unwrap();
+    let output = run_case(root, &seeded, &case);
+
+    assert_eq!(output.exit, "0", "{}", output.stderr);
+    let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
+    let dates = report["daily"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["date"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(dates, ["2025-12-31", "2026-01-01", "2026-01-02"]);
+}
+
 /// The names under `COMMANDS:` in a `--help` page.
 fn help_commands(help: &str) -> Vec<String> {
     help.lines()

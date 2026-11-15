@@ -314,8 +314,7 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
                 "daily",
                 "--offline",
                 "--json",
-                "--project",
-                "-Users-dev-beta",
+                "--project=-Users-dev-beta",
             ],
         ),
         Case::new(
