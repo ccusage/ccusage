@@ -12,7 +12,7 @@ use crate::{TimestampMs, cli::SharedArgs, date_range_bounds_ms, format_date_tz, 
 pub struct ReportWindow {
     since: Option<Box<str>>,
     until: Option<Box<str>>,
-    timezone: Option<JiffTimeZone>,
+    timezone: JiffTimeZone,
 }
 
 impl ReportWindow {
@@ -20,7 +20,7 @@ impl ReportWindow {
         Self {
             since: shared.since.as_deref().map(Box::from),
             until: shared.until.as_deref().map(Box::from),
-            timezone: parse_tz(shared.timezone.as_deref()),
+            timezone: parse_tz(shared.timezone.as_deref()).unwrap_or_else(JiffTimeZone::system),
         }
     }
 
@@ -29,7 +29,7 @@ impl ReportWindow {
         Self {
             since: None,
             until: None,
-            timezone: None,
+            timezone: JiffTimeZone::system(),
         }
     }
 
@@ -37,9 +37,9 @@ impl ReportWindow {
         self.since.is_none() && self.until.is_none()
     }
 
-    /// The report timezone, `None` for the system one.
-    pub fn timezone(&self) -> Option<&JiffTimeZone> {
-        self.timezone.as_ref()
+    /// The timezone resolved once for this report.
+    pub fn timezone(&self) -> &JiffTimeZone {
+        &self.timezone
     }
 
     /// Reports whether a `YYYY-MM-DD` day is inside the window.
@@ -61,8 +61,7 @@ impl ReportWindow {
     /// Reports whether the day `timestamp` falls on in the report timezone is
     /// inside the window.
     pub fn contains_timestamp(&self, timestamp: TimestampMs) -> bool {
-        self.is_unbounded()
-            || self.contains_date(&format_date_tz(timestamp, self.timezone.as_ref()))
+        self.is_unbounded() || self.contains_date(&format_date_tz(timestamp, Some(&self.timezone)))
     }
 
     /// The window as half-open Unix millisecond bounds, for a loader that can
@@ -73,7 +72,7 @@ impl ReportWindow {
         date_range_bounds_ms(
             self.since.as_deref(),
             self.until.as_deref(),
-            self.timezone.as_ref(),
+            Some(&self.timezone),
         )
     }
 }

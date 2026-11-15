@@ -47,7 +47,7 @@ impl ClaudeCounted {
     }
 
     fn covers(&self, session: &Arc<str>, timestamp: TimestampMs) -> bool {
-        let date = || format_date_tz(timestamp, self.window.timezone());
+        let date = || format_date_tz(timestamp, Some(self.window.timezone()));
         match &self.counted {
             Counted::SessionDays(days) => days.contains(&(Arc::clone(session), date())),
             // Claude counts only the session's in-window days, so a row outside them stays.
