@@ -91,6 +91,12 @@ strip = "symbols"
 [profile.release.package."*"]
 opt-level = "s"
 
+[profile.release.package.ccusage-adapter-claude]
+opt-level = "s"
+
+[profile.release.package.ccusage-adapter-codex]
+opt-level = "s"
+
 [workspace.lints.cargo]
 unused_dependencies = "deny"
 unused_workspace_dependencies = "deny"
