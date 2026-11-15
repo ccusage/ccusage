@@ -91,12 +91,9 @@ fn load_state_db_entries(
                 }
             }
             Ok(sqlite::State::Done) => break,
-            Err(_) => {
-                diagnostics.record(Skip::unit(
-                    db_path,
-                    SkipKind::ReadInterrupted,
-                    "reading Hermes sessions stopped early; loaded rows were kept",
-                ));
+            Err(error) => {
+                let (kind, detail) = sessions_step_failure(error.code);
+                diagnostics.record(Skip::unit(db_path, kind, detail));
                 break;
             }
         }
@@ -105,7 +102,7 @@ fn load_state_db_entries(
 }
 
 fn sessions_query_failure(code: Option<isize>) -> (SkipKind, &'static str) {
-    match code {
+    match primary_sqlite_code(code) {
         Some(1) => (SkipKind::Invariant, "Hermes sessions schema is unavailable"),
         Some(11) | Some(26) => (
             SkipKind::InvalidData,
@@ -116,13 +113,34 @@ fn sessions_query_failure(code: Option<isize>) -> (SkipKind, &'static str) {
 }
 
 fn state_database_open_failure(code: Option<isize>) -> (SkipKind, &'static str) {
-    match code {
+    match primary_sqlite_code(code) {
         Some(11) | Some(26) => (
             SkipKind::InvalidData,
             "Hermes state database is corrupt or invalid",
         ),
         _ => (SkipKind::Unreadable, "could not open Hermes state database"),
     }
+}
+
+fn sessions_step_failure(code: Option<isize>) -> (SkipKind, &'static str) {
+    match primary_sqlite_code(code) {
+        Some(1) => (
+            SkipKind::Invariant,
+            "Hermes sessions schema changed while reading; earlier rows were kept",
+        ),
+        Some(11) | Some(26) => (
+            SkipKind::InvalidData,
+            "Hermes state database is corrupt or invalid; earlier rows were kept",
+        ),
+        _ => (
+            SkipKind::ReadInterrupted,
+            "reading Hermes sessions stopped early; loaded rows were kept",
+        ),
+    }
+}
+
+fn primary_sqlite_code(code: Option<isize>) -> Option<isize> {
+    code.map(|code| code & 0xff)
 }
 
 #[cfg(test)]
@@ -278,6 +296,8 @@ mod tests {
         assert_eq!(sessions_query_failure(Some(1)).0, SkipKind::Invariant);
         assert_eq!(sessions_query_failure(Some(11)).0, SkipKind::InvalidData);
         assert_eq!(sessions_query_failure(Some(26)).0, SkipKind::InvalidData);
+        assert_eq!(sessions_query_failure(Some(267)).0, SkipKind::InvalidData);
+        assert_eq!(sessions_query_failure(Some(282)).0, SkipKind::InvalidData);
         for code in [Some(5), Some(6), Some(10), None] {
             assert_eq!(sessions_query_failure(code).0, SkipKind::Unreadable);
         }
@@ -315,11 +335,23 @@ mod tests {
 
     #[test]
     fn classifies_state_database_open_failures_by_sqlite_error_code() {
-        for code in [Some(11), Some(26)] {
+        for code in [Some(11), Some(26), Some(267), Some(282)] {
             assert_eq!(state_database_open_failure(code).0, SkipKind::InvalidData);
         }
         for code in [Some(5), Some(6), Some(10), Some(1), None] {
             assert_eq!(state_database_open_failure(code).0, SkipKind::Unreadable);
+        }
+    }
+
+    #[test]
+    fn classifies_sessions_step_failures_without_losing_interruption_semantics() {
+        assert_eq!(sessions_step_failure(Some(1)).0, SkipKind::Invariant);
+        assert_eq!(sessions_step_failure(Some(11)).0, SkipKind::InvalidData);
+        assert_eq!(sessions_step_failure(Some(26)).0, SkipKind::InvalidData);
+        assert_eq!(sessions_step_failure(Some(267)).0, SkipKind::InvalidData);
+        assert_eq!(sessions_step_failure(Some(282)).0, SkipKind::InvalidData);
+        for code in [Some(5), Some(6), Some(10), Some(261), None] {
+            assert_eq!(sessions_step_failure(code).0, SkipKind::ReadInterrupted);
         }
     }
 
