@@ -32,7 +32,8 @@
     (is (= ["codex daily" "codex monthly" "codex session"]
            (filter #(clojure.string/starts-with? % "codex ") report-commands)))
     (is (not-any? #(re-find #"statusline|^(codex|amp) (weekly|blocks)" %) report-commands)))
-  (is (= 65 (count report-commands))))
+  (is (some #{"blocks"} report-commands))
+  (is (= 66 (count report-commands))))
 
 (defn- args-of [plan id] (:args (first (filter #(= id (:id %)) plan))))
 
@@ -44,6 +45,7 @@
     (testing "fixture runs are unbounded except for the window variant"
       (is (= ["claude" "daily" "--offline" "--timezone" "UTC" "--json"] (args-of fixture "claude-daily--json")))
       (is (= ["daily" "--offline" "--timezone" "UTC"] (args-of fixture "daily--table")))
+      (is (= ["blocks" "--offline" "--timezone" "UTC" "--json"] (args-of fixture "blocks--json")))
       (is (= ["codex" "session" "--offline" "--timezone" "UTC" "--json" "--breakdown"]
              (args-of fixture "codex-session--json-breakdown")))
       (is (= ["claude" "blocks" "--offline" "--timezone" "UTC" "--json" "--since" "20250101" "--until" "20250131"]

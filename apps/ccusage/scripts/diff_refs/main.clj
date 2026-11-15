@@ -31,7 +31,7 @@
     period-reports))
 
 (def report-commands
-  (vec (concat weekly-reports
+  (vec (concat (conj weekly-reports "blocks")
                (for [agent (keys agent-env-vars) report (agent-reports agent)] (str agent " " report)))))
 
 (def output-variants
