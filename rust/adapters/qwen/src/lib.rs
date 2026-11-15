@@ -1,8 +1,8 @@
-use ccusage_adapter_common::{
-    collect_files_with_extension, filter_loaded_entries_by_date,
-    filter_session_summaries_by_last_activity, read_files_parallel,
+use ccusage_adapter_common::source::{
+    Detection, EntryDescriptor, EntrySource, LoadContext, PricingSupply, WindowMode,
 };
 use ccusage_core::*;
+use serde_json::Value;
 
 mod loader;
 mod parser;
@@ -10,45 +10,64 @@ mod paths;
 mod report;
 
 use crate::{
-    Result,
+    LoadedEntry, Result, UsageSummary,
     cli::{AgentCommandArgs, AgentReportKind},
-    print_json_or_jq, print_usage_table, sort_summaries, wants_json,
 };
 
 pub use loader::load_entries;
 pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 
+pub struct Qwen;
+
+pub static SOURCE: Qwen = Qwen;
+
+impl EntrySource for Qwen {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor {
+            window: WindowMode::SessionLastActivity,
+            detection: Detection::NonEmptyOrHasData(has_data),
+            pricing: PricingSupply::Source,
+            ..EntryDescriptor::standard("qwen", "Qwen")
+        }
+    }
+
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_entries_with_context(cx)
+    }
+
+    fn summarize(
+        &self,
+        entries: &[LoadedEntry],
+        kind: AgentReportKind,
+    ) -> Result<Vec<UsageSummary>> {
+        summarize_entries(entries, kind)
+    }
+
+    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
+        report_from_rows(rows, kind)
+    }
+
+    fn print_table(
+        &self,
+        rows: &[UsageSummary],
+        kind: AgentReportKind,
+        shared: &crate::cli::SharedArgs,
+    ) -> Result<()> {
+        crate::print_usage_table(
+            "Qwen Token Usage Report",
+            ccusage_core::first_column(kind),
+            rows,
+            shared,
+            false,
+            None,
+        )?;
+        Ok(())
+    }
+}
+
 pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let mut entries = load_entries(&args.shared)?;
-    let mut rows = if args.kind == AgentReportKind::Session {
-        summarize_entries(&entries, args.kind)?
-    } else {
-        filter_loaded_entries_by_date(&mut entries, &args.shared);
-        summarize_entries(&entries, args.kind)?
-    };
-    if args.kind == AgentReportKind::Session {
-        filter_session_summaries_by_last_activity(&mut rows, &args.shared);
-    }
-    sort_summaries(&mut rows, &args.shared.order, |row| {
-        ccusage_core::summary_period(row)
-    });
-    if wants_json(&args.shared) {
-        return print_json_or_jq(
-            report_from_rows(&rows, args.kind),
-            args.shared.jq.as_deref(),
-            args.shared.no_cost,
-        );
-    }
-    print_usage_table(
-        "Qwen Token Usage Report",
-        ccusage_core::first_column(args.kind),
-        &rows,
-        &args.shared,
-        false,
-        None,
-    )?;
-    Ok(())
+    SOURCE.run_focused(args)
 }
 
 pub fn has_data() -> bool {
@@ -57,6 +76,10 @@ pub fn has_data() -> bool {
 
 #[cfg(test)]
 mod tests {
+    use ccusage_adapter_common::{
+        parity::assert_focused_matches_unified,
+        source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
+    };
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
     use serde_json::json;
 
@@ -127,5 +150,89 @@ mod tests {
                 "cost": 0.0
             }])
         );
+    }
+
+    #[test]
+    fn session_window_keeps_the_last_activity_policy_and_detection() {
+        let fixture = fs_fixture!({
+            "projects/project-a/chats/chat.jsonl": [
+                r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-01-31T23:30:00.000Z","sessionId":"same-session","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2}}"#,
+                r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-01T00:30:00.000Z","sessionId":"same-session","usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":3}}"#,
+            ]
+            .join("\n"),
+        });
+        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            since: Some("20260131".to_string()),
+            until: Some("20260131".to_string()),
+            timezone: Some("UTC".to_string()),
+            offline: true,
+            ..SharedArgs::default()
+        };
+
+        assert_focused_matches_unified(&SOURCE, &shared, &[]);
+
+        let outside_window = SharedArgs {
+            since: Some("20270101".to_string()),
+            ..shared.clone()
+        };
+        let rows = SOURCE
+            .unified_rows(&UnifiedRequest {
+                kind: AgentReportKind::Daily,
+                shared: &outside_window,
+                options: SourceOptions::default(),
+                pricing: None,
+                progress: ProgressOwner::Caller,
+                multi_source_driver: true,
+                claude_counted: None,
+            })
+            .unwrap();
+        assert!(rows.detected);
+        assert!(rows.rows.is_empty());
+    }
+
+    #[test]
+    fn malformed_selected_lines_are_classified_and_later_usage_survives() {
+        let fixture = fs_fixture!({
+            "projects/project-a/chats/chat.jsonl": [
+                r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-01T00:30:00.000Z","sessionId":"same-session","usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":3}}"#,
+                r#"{"type":"assistant","usageMetadata":"SECRET_CANARY"}"#,
+                r#"{"type":"user","usageMetadata":"SECRET_CANARY"}"#,
+            ]
+            .join("\n"),
+        });
+        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            debug: true,
+            timezone: Some("UTC".to_string()),
+            offline: true,
+            ..SharedArgs::default()
+        };
+
+        let rows = SOURCE
+            .unified_rows(&UnifiedRequest {
+                kind: AgentReportKind::Daily,
+                shared: &shared,
+                options: SourceOptions::default(),
+                pricing: None,
+                progress: ProgressOwner::Caller,
+                multi_source_driver: true,
+                claude_counted: None,
+            })
+            .unwrap();
+
+        assert_eq!(rows.rows.len(), 1);
+        assert!(rows.warnings.iter().any(|warning| {
+            warning.contains("invalid data")
+                && warning.contains("chat.jsonl:2")
+                && !warning.contains("SECRET_CANARY")
+        }));
+        assert!(rows.warnings.iter().any(|warning| {
+            warning.contains("undecoded usage")
+                && warning.contains("chat.jsonl:3")
+                && !warning.contains("SECRET_CANARY")
+        }));
     }
 }

@@ -4,7 +4,11 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::{Result, collect_files_with_extension};
+use crate::Result;
+use ccusage_adapter_common::{
+    collect_files_with_extension, collect_files_with_extension_diagnosed,
+};
+use ccusage_core::Diagnostics;
 
 const QWEN_DATA_DIR_ENV: &str = "QWEN_DATA_DIR";
 
@@ -30,6 +34,16 @@ fn paths() -> Result<Vec<PathBuf>> {
 }
 
 pub(super) fn discover_chat_files() -> Result<Vec<PathBuf>> {
+    discover_chat_files_inner(None)
+}
+
+pub(super) fn discover_chat_files_with_diagnostics(
+    diagnostics: &Diagnostics,
+) -> Result<Vec<PathBuf>> {
+    discover_chat_files_inner(Some(diagnostics))
+}
+
+fn discover_chat_files_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for root in paths()? {
         let projects = root.join("projects");
@@ -37,7 +51,16 @@ pub(super) fn discover_chat_files() -> Result<Vec<PathBuf>> {
             continue;
         }
         let mut root_files = Vec::new();
-        collect_files_with_extension(&projects, "jsonl", &mut root_files);
+        if let Some(diagnostics) = diagnostics {
+            collect_files_with_extension_diagnosed(
+                &projects,
+                "jsonl",
+                &mut root_files,
+                diagnostics,
+            );
+        } else {
+            collect_files_with_extension(&projects, "jsonl", &mut root_files);
+        }
         root_files.retain(|file| is_chat_file(&projects, file));
         files.extend(root_files);
     }
