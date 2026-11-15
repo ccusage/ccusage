@@ -32,12 +32,6 @@ fn read_content_from(
             SkipKind::ReadInterrupted,
             "file read failed",
         ));
-        content.truncate(
-            content
-                .iter()
-                .rposition(|byte| *byte == b'\n')
-                .map_or(0, |index| index + 1),
-        );
     }
     content
 }
@@ -74,7 +68,7 @@ pub(super) fn rejected(
         path,
         number,
         SkipKind::InvalidData,
-        "usage record did not decode",
+        "usage record was rejected",
     ));
 }
 
@@ -107,11 +101,23 @@ mod tests {
         }
     }
     #[test]
-    fn keeps_complete_lines_before_a_read_interruption() {
+    fn retains_valid_unterminated_usage_before_a_read_interruption() {
+        let diagnostics = Diagnostics::new("claude");
+        let line = br#"{"timestamp":"2026-09-01T00:00:01Z","message":{"model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#;
+        let mut reader = Cursor::new(line).chain(Interrupted);
+        let bytes = read_content_from(&mut reader, 0, Path::new("session.jsonl"), &diagnostics);
+        let entry = crate::deserialize_usage_line::<crate::UsageEntry>(&bytes).unwrap();
+        assert_eq!(entry.message.usage.input_tokens, 10);
+        assert_eq!(entry.message.usage.output_tokens, 2);
+        assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 1);
+    }
+
+    #[test]
+    fn preserves_received_bytes_before_a_read_interruption() {
         let diagnostics = Diagnostics::new("claude");
         let mut reader = Cursor::new(b"complete\npartial").chain(Interrupted);
         let bytes = read_content_from(&mut reader, 0, Path::new("session.jsonl"), &diagnostics);
-        assert_eq!(bytes, b"complete\n");
+        assert_eq!(bytes, b"complete\npartial");
         assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 1);
         assert!(
             !diagnostics
