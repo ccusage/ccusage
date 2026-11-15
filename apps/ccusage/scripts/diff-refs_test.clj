@@ -121,6 +121,7 @@
                    (babashka.fs/set-posix-file-permissions file "rwx------")
                    file))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
+        reordered (script "reordered" "echo '{\"b\":2,\"a\":1}'")
         changed (script "changed" "echo '{\"b\":2,\"a\":3}'; echo warn >&2")
         intermittent (script "intermittent"
                              (str "if [ -f " (path dir "head-ran") " ]; then echo '{\"a\":3,\"b\":2}'; "
@@ -149,7 +150,15 @@
           (is (babashka.fs/exists? (:err-file head)))
           (is (.contains diff "-  \"a\": 1"))
           (is (.contains diff "+  \"a\": 3"))
-          (is (not (.contains diff "\"b\": 2,\n+")))))
+          (is (not-any? #(clojure.string/starts-with? % "+  \"b\":")
+                        (clojure.string/split-lines diff)))))
+      (testing "raw-byte differences remain visible when sorted JSON matches"
+        (let [result (compare {:base stable :head reordered} false)
+              [base head] (:pair result)
+              diff (unified-diff (:out-file base) (:out-file head) true)]
+          (is (= :different (:status result)))
+          (is (.contains diff "-{\"a\":1,\"b\":2}"))
+          (is (.contains diff "+{\"b\":2,\"a\":1}"))))
       (testing "the stderr difference alone is tolerated on request"
         (is (= [:stdout] (:streams (compare {:base stable :head changed} true)))))
       (testing "a binary that never prints the same thing twice is unstable"
