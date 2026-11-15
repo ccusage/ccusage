@@ -23,6 +23,8 @@ neither has a consumer outside it.
   JSON shaping, and table rendering.
 - `date_utils.rs`, `fast.rs`, `path_utils.rs`, `utils.rs` — timestamp
   parsing, byte-level line scanning, and small shared helpers.
+- `window.rs` — `ReportWindow`, the `--since`/`--until` window of one report,
+  so the decision whether a day is in the report is made by one type.
 - `progress.rs` — the load progress indicator.
 - `types.rs`, `CliError`, and the `Result` alias every crate returns.
 

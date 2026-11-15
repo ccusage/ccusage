@@ -14,6 +14,7 @@ pub mod project_names;
 pub mod summary;
 pub mod types;
 pub mod utils;
+pub mod window;
 
 pub mod cli {
     pub use ccusage_cli::*;
@@ -49,6 +50,7 @@ pub use types::*;
 pub use utils::{
     apply_total_token_fallback, json_value_u64, non_empty_json_string, total_usage_tokens,
 };
+pub use window::ReportWindow;
 
 pub use ccusage_terminal::{Align, Color, SimpleTable, TerminalStyle, terminal_width};
 
