@@ -1,6 +1,7 @@
 use std::{fs::File, io::Read, path::Path};
 
 use ccusage_core::{Diagnostics, Skip, SkipKind};
+use serde::{Deserialize, de::IgnoredAny};
 
 pub(super) fn emit(warnings: &[String]) {
     for warning in warnings {
@@ -42,6 +43,12 @@ fn read_content_from(
     content
 }
 
+#[derive(Deserialize)]
+struct DirectEnvelope {
+    message: Option<IgnoredAny>,
+}
+
+#[cold]
 pub(super) fn rejected(
     path: &Path,
     index: usize,
@@ -49,6 +56,12 @@ pub(super) fn rejected(
     diagnostics: &Diagnostics,
     progress: bool,
 ) {
+    if !progress
+        && serde_json::from_slice::<DirectEnvelope>(line)
+            .is_ok_and(|envelope| envelope.message.is_none())
+    {
+        return;
+    }
     let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
     let Some(value) = ccusage_adapter_common::jsonl::decode_record::<serde_json::Value>(
         line,
