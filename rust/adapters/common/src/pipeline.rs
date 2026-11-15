@@ -54,7 +54,6 @@ pub fn focused_rows(
         pricing: pricing.as_ref(),
         options: SourceOptions::from_command(args),
         diagnostics: &diagnostics,
-        claude_counted: None,
     };
     let entries = load(source, &cx, ProgressOwner::Source)?;
     for warning in diagnostics.warnings(shared) {
@@ -82,7 +81,6 @@ pub fn unified_rows(source: &dyn EntrySource, request: &UnifiedRequest<'_>) -> R
         pricing: request.pricing.or(own_pricing.as_ref()),
         options: request.options,
         diagnostics: &diagnostics,
-        claude_counted: request.claude_counted,
     };
     let entries = load(source, &cx, request.progress)?;
     let detected = detect(descriptor.detection, &entries);
@@ -120,7 +118,6 @@ pub fn load_entries_for_unmigrated_caller(
         pricing,
         options,
         diagnostics: &diagnostics,
-        claude_counted: None,
     };
     let entries = load(source, &cx, ProgressOwner::Source)?;
     for warning in diagnostics.warnings(shared) {

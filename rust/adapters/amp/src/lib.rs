@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext, UsageSource};
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
 use ccusage_core::*;
 
 mod loader;
@@ -61,7 +61,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 mod tests {
     use ccusage_adapter_common::{
         parity::assert_focused_matches_unified,
-        source::{ProgressOwner, SourceOptions, UnifiedRequest},
+        source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
     };
     use ccusage_test_support::{EnvVarGuard, Fixture, fs_fixture};
 

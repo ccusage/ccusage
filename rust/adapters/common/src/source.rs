@@ -1,11 +1,10 @@
-//! The contract between a usage source and the two reports that read it.
+//! The contracts between a usage source and the reports that read it.
 //!
-//! [`UsageSource`] is what the binary and the unified report hold: one value
-//! per source that can run its own report and hand rows to the unified one.
-//! The sources whose currency is `Vec<LoadedEntry>` implement [`EntrySource`]
-//! instead and get [`UsageSource`] for free; both of their reports then run
-//! through [`crate::pipeline`], so the date window and the detection rule are
-//! applied in one place for `ccusage <agent> daily` and `ccusage daily` alike.
+//! [`UsageSource`] supplies identity, supported reports and unified rows to
+//! the unified registry. Sources whose loader yields `Vec<LoadedEntry>` also
+//! implement [`EntrySource`], which runs focused and unified reports through
+//! [`crate::pipeline`]. Format-specific sources implement [`UsageSource`]
+//! directly and keep their focused report paths in their own adapter.
 
 use serde_json::Value;
 
@@ -32,7 +31,7 @@ pub const ALL_REPORTS: &[AgentReportKind] = &[
     AgentReportKind::Session,
 ];
 
-/// One usage source, as the binary and the unified report see it.
+/// One usage source registered for the unified report.
 pub trait UsageSource: Sync {
     /// The agent name on the command line and in unified rows, such as `amp`.
     fn id(&self) -> &'static str;
@@ -42,9 +41,6 @@ pub trait UsageSource: Sync {
 
     /// The report kinds `ccusage <id> <kind>` accepts.
     fn reports(&self) -> &'static [AgentReportKind];
-
-    /// Runs `ccusage <id> <kind>`: loads, and prints the JSON or the table.
-    fn run_focused(&self, args: AgentCommandArgs) -> Result<()>;
 
     /// Loads the rows this source contributes to the unified report.
     ///
@@ -125,7 +121,7 @@ pub struct UnifiedRequest<'a> {
     pub multi_source_driver: bool,
     /// OpenCode only: blocks until the Claude source of the same report has
     /// loaded and yields what it counted.
-    pub claude_counted: Option<&'a (dyn Fn() -> ClaudeCounted + Sync)>,
+    pub claude_counted: Option<&'a (dyn Fn() -> ClaudeCounted + Send)>,
 }
 
 /// What one source contributes to the unified report.
@@ -221,8 +217,6 @@ pub struct LoadContext<'a> {
     pub options: SourceOptions<'a>,
     /// Where the loader records what it skipped.
     pub diagnostics: &'a Diagnostics,
-    /// See [`UnifiedRequest::claude_counted`]; `None` in a focused report.
-    pub claude_counted: Option<&'a (dyn Fn() -> ClaudeCounted + Sync)>,
 }
 
 /// A source whose loader yields `Vec<LoadedEntry>`.
@@ -233,6 +227,14 @@ pub struct LoadContext<'a> {
 /// [`crate::pipeline`] owns.
 pub trait EntrySource: Sync {
     fn descriptor(&self) -> EntryDescriptor;
+
+    /// Runs `ccusage <id> <kind>` through the shared entry pipeline.
+    fn run_focused(&self, args: AgentCommandArgs) -> Result<()>
+    where
+        Self: Sized,
+    {
+        pipeline::run_focused(self, args)
+    }
 
     /// Loads every entry, sorted the way the adapter's reports expect. The
     /// pipeline shows progress and applies the date window, so the loader does
@@ -281,10 +283,6 @@ impl<S: EntrySource> UsageSource for S {
 
     fn reports(&self) -> &'static [AgentReportKind] {
         self.descriptor().reports
-    }
-
-    fn run_focused(&self, args: AgentCommandArgs) -> Result<()> {
-        pipeline::run_focused(self, args)
     }
 
     fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
