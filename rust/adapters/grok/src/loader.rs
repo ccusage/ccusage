@@ -1,48 +1,64 @@
 use std::collections::HashSet;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
+use ccusage_adapter_common::{
+    pipeline, read_units,
+    source::{LoadContext, SourceOptions},
 };
 
-use super::{
-    parser::parse_session_files,
-    paths::{GrokSessionFiles, discover_session_files},
-};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs};
+
+use super::paths::{GrokSessionFiles, discover_session_files};
 
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(crate::progress::UsageLoadAgent("Grok"), shared.json, || {
-        load_entries_inner(shared, pricing)
-    })
+    pipeline::load_entries_for_unmigrated_caller(
+        &crate::SOURCE,
+        shared,
+        SourceOptions::default(),
+        Some(pricing),
+    )
 }
 
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let sessions = discover_session_files()?;
+pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let shared = cx.shared;
+    let owned_pricing = cx.pricing.is_none().then(|| {
+        PricingMap::load_with_overrides(
+            shared.offline,
+            crate::log_level() != Some(0),
+            shared.pricing_overrides.iter(),
+        )
+    });
+    let pricing = cx
+        .pricing
+        .or(owned_pricing.as_ref())
+        .expect("pricing is available");
+    let sessions = super::paths::discover_session_files_with_diagnostics(cx.diagnostics)?;
     let updates_paths: Vec<_> = sessions
         .iter()
         .map(|session| session.updates.clone())
         .collect();
-    let loaded = read_files_parallel(&updates_paths, shared.single_thread, |updates| {
-        let session = GrokSessionFiles {
-            updates: updates.to_path_buf(),
-            summary: {
-                let summary = updates.with_file_name("summary.json");
-                summary.is_file().then_some(summary)
-            },
-        };
-        parse_session_files(&session, tz.as_ref(), shared.mode, pricing).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read Grok session file {}: {error}",
-                    session.updates.display()
-                ),
-            );
-            Vec::new()
-        })
-    });
+    let loaded = read_units(
+        &updates_paths,
+        shared.single_thread,
+        cx.diagnostics,
+        |updates| {
+            let session = GrokSessionFiles {
+                updates: updates.to_path_buf(),
+                summary: {
+                    let summary = updates.with_file_name("summary.json");
+                    summary.is_file().then_some(summary)
+                },
+            };
+            super::parser::parse_session_files_with_diagnostics(
+                &session,
+                Some(cx.window.timezone()),
+                shared.mode,
+                pricing,
+                cx.diagnostics,
+            )
+        },
+    );
 
-    let mut entries: Vec<_> = loaded.into_iter().flatten().collect();
+    let mut entries: Vec<_> = loaded.into_iter().flatten().flatten().collect();
     // Global dedupe across files: the same server event can be exported into more
     // than one session, and `eventId` is what identifies it. Entries without one
     // are left alone rather than matched on their token counts, because

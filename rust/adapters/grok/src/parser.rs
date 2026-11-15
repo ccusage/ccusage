@@ -9,11 +9,18 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
     missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
 };
-use ccusage_adapter_common::jsonl;
+
+#[cfg(test)]
+use crate::Result;
+use ccusage_adapter_common::{
+    jsonl,
+    units::{UnitError, read_json, read_units},
+};
+use ccusage_core::Diagnostics;
 use ccusage_core::fast::LinePrefilter;
 
 use super::paths::GrokSessionFiles;
@@ -198,19 +205,38 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
     candidates
 }
 
+#[cfg(test)]
 pub(super) fn parse_session_files(
     files: &GrokSessionFiles,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
-    let meta = load_session_meta(files);
+    let diagnostics = Diagnostics::new("grok");
+    parse_session_files_with_diagnostics(files, tz, mode, pricing, &diagnostics)
+        .map_err(|error| crate::cli_error(error.to_string()))
+}
+
+pub(super) fn parse_session_files_with_diagnostics(
+    files: &GrokSessionFiles,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: &PricingMap,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
+    let meta = load_session_meta(files, diagnostics);
     let content = fs::read(&files.updates)?;
     let prefilter = LinePrefilter::all(&[br#""turn_completed""#]);
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
 
-    for line in jsonl::records::<GrokUpdateLine>(&content, Some(&prefilter)) {
+    for line in jsonl::records_with_usage_diagnostics::<GrokUpdateLine>(
+        &content,
+        Some(&prefilter),
+        &files.updates,
+        diagnostics,
+        is_grok_usage,
+    ) {
         let Some(params) = line.params.as_ref() else {
             continue;
         };
@@ -326,6 +352,27 @@ pub(super) fn parse_session_files(
     Ok(entries)
 }
 
+fn is_grok_usage(value: &Value) -> bool {
+    let Some(update) = value.get("params").and_then(|params| params.get("update")) else {
+        return false;
+    };
+    if update.get("sessionUpdate").and_then(Value::as_str) != Some("turn_completed") {
+        return false;
+    }
+    let Some(usage) = update.get("usage").and_then(Value::as_object) else {
+        return false;
+    };
+    [
+        "modelUsage",
+        "inputTokens",
+        "outputTokens",
+        "cachedReadTokens",
+        "cacheCreationTokens",
+    ]
+    .iter()
+    .any(|field| usage.contains_key(*field))
+}
+
 fn model_usage_rows(
     usage: &GrokUsage,
     default_model: Option<&str>,
@@ -358,7 +405,7 @@ fn model_usage_rows(
     )]
 }
 
-fn load_session_meta(files: &GrokSessionFiles) -> SessionMeta {
+fn load_session_meta(files: &GrokSessionFiles, diagnostics: &Diagnostics) -> SessionMeta {
     let session_dir_name = files
         .updates
         .parent()
@@ -379,10 +426,16 @@ fn load_session_meta(files: &GrokSessionFiles) -> SessionMeta {
     let mut project_path = project_from_path;
     let mut default_model = None;
 
-    if let Some(summary_path) = files.summary.as_ref()
-        && let Ok(content) = fs::read_to_string(summary_path)
-        && let Ok(summary) = serde_json::from_str::<GrokSummary>(&content)
-    {
+    let summary = files.summary.as_ref().and_then(|summary_path| {
+        let loaded = read_units(
+            std::slice::from_ref(summary_path),
+            true,
+            diagnostics,
+            read_json::<GrokSummary>,
+        );
+        loaded.into_iter().next().flatten()
+    });
+    if let Some(summary) = summary {
         if let Some(id) = summary.info.as_ref().and_then(|info| info.id.clone()) {
             session_id = id;
         }
