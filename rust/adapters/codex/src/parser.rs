@@ -379,15 +379,17 @@ fn visit_codex_session_file_inner(
         let Some(line_kind) = codex_line_usage_kind(&line) else {
             continue;
         };
-        match line_kind {
-            CodexLineKind::Session => {
-                let value = match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        record_decode_failure(path, line_number, &line, error, diagnostics);
-                        continue;
-                    }
-                };
+        if matches!(line_kind, CodexLineKind::Session) {
+            let value = match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
+                Ok(value) => value,
+                Err(error) => {
+                    record_decode_failure(path, line_number, &line, error, diagnostics);
+                    continue;
+                }
+            };
+            // Type names inside headless data can pass the substring scan;
+            // only the decoded envelope selects session accounting.
+            if is_session_usage_entry(&value) {
                 if value.entry_type.as_deref() == Some("token_usage_record") {
                     replay.observe_usage_record();
                 }
@@ -402,34 +404,33 @@ fn visit_codex_session_file_inner(
                         diagnostics,
                     },
                 )?;
-            }
-            CodexLineKind::Headless => {
-                if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
-                    add_codex_exec_event(
-                        &session_id,
-                        &value,
-                        &fallback_timestamp,
-                        &mut state.current_model,
-                        &mut state.current_model_is_fallback,
-                        &mut |event| replay.visit(event, &mut visit),
-                    )?;
-                } else {
-                    add_codex_exec_event_from_value(
-                        &session_id,
-                        &line,
-                        &fallback_timestamp,
-                        &mut state.current_model,
-                        &mut state.current_model_is_fallback,
-                        &mut |event| replay.visit(event, &mut visit),
-                        &RecordLocation {
-                            path,
-                            line: line_number,
-                            diagnostics,
-                        },
-                    )?;
-                };
+                continue;
             }
         }
+        if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
+            add_codex_exec_event(
+                &session_id,
+                &value,
+                &fallback_timestamp,
+                &mut state.current_model,
+                &mut state.current_model_is_fallback,
+                &mut |event| replay.visit(event, &mut visit),
+            )?;
+        } else {
+            add_codex_exec_event_from_value(
+                &session_id,
+                &line,
+                &fallback_timestamp,
+                &mut state.current_model,
+                &mut state.current_model_is_fallback,
+                &mut |event| replay.visit(event, &mut visit),
+                &RecordLocation {
+                    path,
+                    line: line_number,
+                    diagnostics,
+                },
+            )?;
+        };
     }
 
     if let Some(history) = compaction_history
@@ -447,6 +448,20 @@ fn visit_codex_session_file_inner(
     }
 
     Ok(())
+}
+
+fn is_session_usage_entry(value: &CodexSessionLogEntry<'_>) -> bool {
+    matches!(
+        value.entry_type.as_deref(),
+        Some("turn_context" | "token_usage_record" | "compacted")
+    ) || (value.entry_type.as_deref() == Some("event_msg")
+        && matches!(
+            value
+                .payload
+                .as_ref()
+                .and_then(|payload| payload.payload_type.as_deref()),
+            Some("token_count" | "thread_settings_applied")
+        ))
 }
 
 fn visit_codex_session_entry(
@@ -1560,6 +1575,41 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
+    }
+
+    #[test]
+    fn loads_headless_usage_with_nested_session_type_names() {
+        for (entry_type, padding) in [
+            (Some("result"), 70 * 1024),
+            (None, 70 * 1024),
+            (Some("result"), 0),
+        ] {
+            let mut record = json!({
+                "timestamp": "2026-09-01T00:00:01Z",
+                "model": "gpt-5-mini",
+                "usage": { "input_tokens": 100, "output_tokens": 20 },
+                "data": {
+                    "type": "event_msg",
+                    "nested": { "type": "token_count" },
+                    "padding": "x".repeat(padding),
+                },
+            });
+            if let Some(entry_type) = entry_type {
+                record["type"] = json!(entry_type);
+            }
+            let line = record
+                .to_string()
+                .replace(r#""type":"event_msg""#, r#""type" : "event_msg""#)
+                .replace(r#""type":"token_count""#, r#""type" : "token_count""#);
+            let fixture = fs_fixture!({ "headless.jsonl": line });
+
+            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].input_tokens, 100);
+            assert_eq!(events[0].output_tokens, 20);
+            assert_eq!(events[0].total_tokens, 120);
+        }
     }
 
     #[test]
