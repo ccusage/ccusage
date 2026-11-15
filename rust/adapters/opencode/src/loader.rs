@@ -816,14 +816,14 @@ fn fork_copy_cutoffs(connection: &sqlite::Connection) -> HashMap<String, i64> {
     if !table_exists(connection, "session_v2") || !table_exists(connection, "session_message") {
         return cutoffs;
     }
-    let v2_columns = table_columns(connection, "session_v2");
+    let v2_columns = table_columns(connection, "session_v2").unwrap_or_default();
     if !["id", "fork_session_id", "fork_boundary"]
         .into_iter()
         .all(|column| v2_columns.contains(column))
     {
         return cutoffs;
     }
-    let message_columns = table_columns(connection, "session_message");
+    let message_columns = table_columns(connection, "session_message").unwrap_or_default();
     if !["id", "session_id", "seq"]
         .into_iter()
         .all(|column| message_columns.contains(column))
@@ -928,31 +928,25 @@ fn is_fork_copy(
         .is_some_and(|seq| seq <= *cutoff)
 }
 
-fn table_columns(connection: &sqlite::Connection, table: &str) -> HashSet<String> {
+fn table_columns(connection: &sqlite::Connection, table: &str) -> sqlite::Result<HashSet<String>> {
     let sql = match table {
         "message" => "SELECT * FROM message LIMIT 0",
         "session" => "SELECT * FROM session LIMIT 0",
         "session_v2" => "SELECT * FROM session_v2 LIMIT 0",
         "session_message" => "SELECT * FROM session_message LIMIT 0",
-        _ => return HashSet::new(),
+        _ => return Ok(HashSet::new()),
     };
-    let Ok(statement) = connection.prepare(sql) else {
-        return HashSet::new();
-    };
-    let mut columns = HashSet::new();
-    for index in 0..statement.column_count() {
-        if let Ok(name) = statement.column_name(index) {
-            columns.insert(name.to_string());
-        }
-    }
-    columns
+    let statement = connection.prepare(sql)?;
+    (0..statement.column_count())
+        .map(|index| statement.column_name(index).map(str::to_string))
+        .collect()
 }
 
 fn prepare_session_message_query(
     connection: &sqlite::Connection,
     window: DateWindow,
 ) -> Option<sqlite::Statement<'_>> {
-    let columns = table_columns(connection, "session_message");
+    let columns = table_columns(connection, "session_message").ok()?;
     if !["id", "session_id", "type", "data"]
         .into_iter()
         .all(|column| columns.contains(column))
@@ -1002,7 +996,7 @@ fn prepare_session_aggregate_query<'a>(
         "session_v2" => "session_v2",
         _ => return Ok(None),
     };
-    let columns = table_columns(connection, table);
+    let columns = table_columns(connection, table)?;
     if ![
         "id",
         "time_created",
@@ -1340,7 +1334,7 @@ fn time_created_looks_like_millis(connection: &sqlite::Connection, table: &str) 
         }
         _ => return false,
     };
-    if !table_columns(connection, table).contains("time_created") {
+    if !table_columns(connection, table).is_ok_and(|columns| columns.contains("time_created")) {
         return false;
     }
     let Ok(mut statement) = connection.prepare(sql) else {
@@ -1437,6 +1431,37 @@ mod tests {
                 .unwrap();
         assert!(loaded.message_entries.is_empty());
         assert!(diagnostics.warnings(&shared).is_empty());
+    }
+
+    #[test]
+    fn reports_aggregate_schema_read_failures() {
+        use super::{
+            DatabaseLoadContext, DateWindow, load_session_aggregate_entries, table_exists,
+        };
+        use ccusage_core::{Diagnostics, SkipKind};
+
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("opencode.db");
+        let connection = sqlite::open(&path).unwrap();
+        connection
+            .execute("CREATE TABLE session_v2 (id TEXT PRIMARY KEY)")
+            .unwrap();
+        assert!(table_exists(&connection, "session_v2"));
+        connection.execute("DROP TABLE session_v2").unwrap();
+        let shared = SharedArgs::default();
+        let diagnostics = Diagnostics::new("opencode");
+        let context = DatabaseLoadContext {
+            tz: None,
+            mode: CostMode::Display,
+            pricing: None,
+            window: DateWindow::UNBOUNDED,
+            shared: &shared,
+            db_path: &path,
+            diagnostics: &diagnostics,
+        };
+
+        assert!(load_session_aggregate_entries(&connection, "session_v2", &context).is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[test]
