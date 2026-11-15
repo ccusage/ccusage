@@ -1,37 +1,55 @@
-use ccusage_adapter_common::{filter_loaded_entries_by_date, read_files_parallel};
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
+use ccusage_core::cli::{AgentCommandArgs, AgentReportKind, SharedArgs};
 use ccusage_core::*;
+use serde_json::Value;
 
 mod loader;
 mod parser;
 mod paths;
 mod report;
 
-use crate::{
-    PricingMap, Result, cli::AgentCommandArgs, print_json_or_jq, sort_summaries, wants_json,
-};
-
 pub use loader::load_entries;
-pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 
-pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let shared = args.shared;
-    let pricing = PricingMap::load_with_overrides(
-        shared.offline,
-        crate::log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    );
-    let mut entries = load_entries(&shared, &pricing)?;
-    filter_loaded_entries_by_date(&mut entries, &shared);
-    let mut rows = summarize_entries(&entries, args.kind)?;
-    sort_summaries(&mut rows, &shared.order, report::summary_period);
-    if wants_json(&shared) {
-        return print_json_or_jq(
-            report_from_rows(&rows, args.kind),
-            shared.jq.as_deref(),
-            shared.no_cost,
-        );
+pub struct Goose;
+
+pub static SOURCE: Goose = Goose;
+
+impl EntrySource for Goose {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor::standard("goose", "Goose")
     }
-    ccusage_adapter_common::print_table_for_agent("Goose", args.kind, &rows, &shared)?;
-    Ok(())
+
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_entries_with_context(cx)
+    }
+
+    fn summarize(
+        &self,
+        entries: &[LoadedEntry],
+        kind: AgentReportKind,
+    ) -> Result<Vec<UsageSummary>> {
+        report::summarize_entries(entries, kind)
+    }
+
+    fn sort_key<'a>(&self, row: &'a UsageSummary) -> &'a str {
+        report::summary_period(row)
+    }
+
+    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
+        report::report_from_rows(rows, kind)
+    }
+
+    fn print_table(
+        &self,
+        rows: &[UsageSummary],
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+    ) -> Result<()> {
+        ccusage_adapter_common::print_table_for_agent("Goose", kind, rows, shared)
+    }
+}
+
+pub fn run(args: AgentCommandArgs) -> Result<()> {
+    SOURCE.run_focused(args)
 }
