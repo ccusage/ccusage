@@ -21,11 +21,13 @@ use crate::{
     BUILT_IN_AGENT_NAMES, Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result,
     adapter::{claude, opencode, pi},
     cli::{AgentReportKind, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
-    filter_loaded_entries_by_date,
 };
 
 #[cfg(test)]
-use crate::{CodexGroup, SessionAccumulator, UsageSummary, adapter::codex, cli::CodexSpeed};
+use crate::{
+    CodexGroup, SessionAccumulator, UsageSummary, adapter::codex, cli::CodexSpeed,
+    filter_loaded_entries_by_date,
+};
 
 use super::{
     report::sort_rows,

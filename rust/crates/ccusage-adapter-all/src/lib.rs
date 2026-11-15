@@ -5,6 +5,7 @@ mod types;
 
 #[cfg(test)]
 use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
+#[cfg(test)]
 use ccusage_adapter_common::filter_loaded_entries_by_date;
 use ccusage_core::*;
 
