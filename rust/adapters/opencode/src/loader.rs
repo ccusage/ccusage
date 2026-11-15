@@ -370,9 +370,9 @@ fn load_entries_from_database(
 
     let mut seen_message_ids = HashSet::new();
     let mut message_sessions = HashSet::new();
-    let fork_copies = fork_copy_cutoffs(&connection);
+    let fork_copies = fork_copy_cutoffs(&connection, db_path, diagnostics);
 
-    if table_exists(&connection, "message") {
+    if table_exists(&connection, "message", db_path, diagnostics) {
         // Push the window into SQL only while a sample of `time_created` still
         // looks millisecond-scaled. The payload check remains authoritative.
         let pushdown =
@@ -496,7 +496,7 @@ fn load_entries_from_database(
         }
     }
 
-    let has_session_messages = table_exists(&connection, "session_message");
+    let has_session_messages = table_exists(&connection, "session_message", db_path, diagnostics);
     if has_session_messages {
         let pushdown = if window.is_unbounded()
             || time_created_looks_like_millis(&connection, "session_message")
@@ -660,10 +660,10 @@ fn load_entries_from_database(
         // Session aggregates are cumulative and cannot be sliced safely for a
         // bounded report, so only unbounded reports may use this fallback.
         let mut aggregate_tables = Vec::new();
-        if table_exists(&connection, "session_v2") {
+        if table_exists(&connection, "session_v2", db_path, diagnostics) {
             aggregate_tables.push("session_v2");
         }
-        if has_session_messages && table_exists(&connection, "session") {
+        if has_session_messages && table_exists(&connection, "session", db_path, diagnostics) {
             aggregate_tables.push("session");
         }
         for table in aggregate_tables {
@@ -792,16 +792,26 @@ fn append_fallback_entries(
     }
 }
 
-fn table_exists(connection: &sqlite::Connection, table: &str) -> bool {
-    let Ok(mut statement) = connection
+fn table_exists(
+    connection: &sqlite::Connection,
+    table: &str,
+    db_path: &Path,
+    diagnostics: &Diagnostics,
+) -> bool {
+    let exists = connection
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
-    else {
-        return false;
-    };
-    if statement.bind((1, table)).is_err() {
-        return false;
+        .and_then(|mut statement| {
+            statement.bind((1, table))?;
+            statement.next()
+        });
+    match exists {
+        Ok(sqlite::State::Row) => true,
+        Ok(sqlite::State::Done) => false,
+        Err(_) => {
+            record_database_schema_probe_failure(db_path, diagnostics);
+            false
+        }
     }
-    matches!(statement.next(), Ok(sqlite::State::Row))
 }
 
 /// Fork sessions whose leading `seq` range is a copy of the parent history.
@@ -811,19 +821,32 @@ fn table_exists(connection: &sqlite::Connection, table: &str) -> bool {
 /// keeping what the fork generated itself. `session_v2` carries the fork
 /// link (`fork_session_id`) plus the boundary message; `session_message`
 /// carries the `seq` the fork kept when it copied the parent's rows.
-fn fork_copy_cutoffs(connection: &sqlite::Connection) -> HashMap<String, i64> {
+fn fork_copy_cutoffs(
+    connection: &sqlite::Connection,
+    db_path: &Path,
+    diagnostics: &Diagnostics,
+) -> HashMap<String, i64> {
     let mut cutoffs = HashMap::new();
-    if !table_exists(connection, "session_v2") || !table_exists(connection, "session_message") {
-        return cutoffs;
+    for table in ["session_v2", "session_message"] {
+        if !table_exists(connection, table, db_path, diagnostics) {
+            return cutoffs;
+        }
     }
-    let v2_columns = table_columns(connection, "session_v2").unwrap_or_default();
+    let Some(v2_columns) = fork_table_columns(connection, "session_v2", db_path, diagnostics)
+    else {
+        return cutoffs;
+    };
     if !["id", "fork_session_id", "fork_boundary"]
         .into_iter()
         .all(|column| v2_columns.contains(column))
     {
         return cutoffs;
     }
-    let message_columns = table_columns(connection, "session_message").unwrap_or_default();
+    let Some(message_columns) =
+        fork_table_columns(connection, "session_message", db_path, diagnostics)
+    else {
+        return cutoffs;
+    };
     if !["id", "session_id", "seq"]
         .into_iter()
         .all(|column| message_columns.contains(column))
@@ -854,6 +877,29 @@ fn fork_copy_cutoffs(connection: &sqlite::Connection) -> HashMap<String, i64> {
         }
     }
     cutoffs
+}
+
+fn fork_table_columns(
+    connection: &sqlite::Connection,
+    table: &str,
+    db_path: &Path,
+    diagnostics: &Diagnostics,
+) -> Option<HashSet<String>> {
+    match table_columns(connection, table) {
+        Ok(columns) => Some(columns),
+        Err(_) => {
+            record_database_schema_probe_failure(db_path, diagnostics);
+            None
+        }
+    }
+}
+
+fn record_database_schema_probe_failure(db_path: &Path, diagnostics: &Diagnostics) {
+    diagnostics.record(Skip::unit(
+        db_path,
+        SkipKind::Unreadable,
+        "database schema probe failed",
+    ));
 }
 
 /// Largest copied `seq` for one fork: the parent's boundary `seq` for a
@@ -1374,6 +1420,39 @@ mod tests {
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     #[test]
+    fn reports_failed_fork_schema_probes_without_database_details() {
+        use ccusage_core::{Diagnostics, SkipKind};
+
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("opencode.db");
+        let connection = sqlite::open(&path).unwrap();
+        connection
+            .execute("CREATE TABLE session_message (id TEXT, session_id TEXT, seq INTEGER)")
+            .unwrap();
+        let diagnostics = Diagnostics::new("opencode");
+        assert!(super::table_exists(
+            &connection,
+            "session_message",
+            &path,
+            &diagnostics,
+        ));
+        connection.execute("DROP TABLE session_message").unwrap();
+        assert!(
+            super::fork_table_columns(&connection, "session_message", &path, &diagnostics,)
+                .is_none()
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("database schema probe failed"));
+        assert!(!warnings.contains("no such table"));
+    }
+
+    #[test]
     fn specialized_diagnostics_keep_healthy_database_rows() {
         let fixture = ccusage_test_support::Fixture::new();
         let db = fixture.path("opencode.db");
@@ -1446,10 +1525,10 @@ mod tests {
         connection
             .execute("CREATE TABLE session_v2 (id TEXT PRIMARY KEY)")
             .unwrap();
-        assert!(table_exists(&connection, "session_v2"));
+        let diagnostics = Diagnostics::new("opencode");
+        assert!(table_exists(&connection, "session_v2", &path, &diagnostics));
         connection.execute("DROP TABLE session_v2").unwrap();
         let shared = SharedArgs::default();
-        let diagnostics = Diagnostics::new("opencode");
         let context = DatabaseLoadContext {
             tz: None,
             mode: CostMode::Display,
