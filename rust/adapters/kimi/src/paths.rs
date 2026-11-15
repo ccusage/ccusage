@@ -4,7 +4,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::{Result, collect_files_with_extension};
+use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_core::Diagnostics;
+
+use crate::Result;
 
 pub(super) const KIMI_DATA_DIR_ENV: &str = "KIMI_DATA_DIR";
 const KIMI_SESSIONS_DIR_NAME: &str = "sessions";
@@ -38,12 +41,17 @@ fn paths() -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-pub(super) fn discover_wire_files() -> Result<Vec<PathBuf>> {
+pub(super) fn discover_wire_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for kimi_path in paths()? {
         let sessions_path = kimi_path.join(KIMI_SESSIONS_DIR_NAME);
         let mut candidates = Vec::new();
-        collect_files_with_extension(&sessions_path, "jsonl", &mut candidates);
+        collect_files_with_extension_diagnosed(
+            &sessions_path,
+            "jsonl",
+            &mut candidates,
+            diagnostics,
+        );
         files.extend(
             candidates
                 .into_iter()
@@ -86,7 +94,7 @@ mod tests {
             "sessions/nested/path/session/wire.jsonl": "{}\n",
         });
         let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let files = discover_wire_files().unwrap();
+        let files = discover_wire_files(&Diagnostics::new("kimi")).unwrap();
 
         assert_eq!(
             files,
@@ -102,7 +110,7 @@ mod tests {
             "sessions/group/session-d/wire.jsonl": "{}\n",
         });
         let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let files = discover_wire_files().unwrap();
+        let files = discover_wire_files(&Diagnostics::new("kimi")).unwrap();
 
         assert_eq!(
             files,

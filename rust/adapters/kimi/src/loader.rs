@@ -1,45 +1,35 @@
 use std::collections::HashSet;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use ccusage_adapter_common::{read_units, source::LoadContext};
+
+use crate::{LoadedEntry, Result};
 
 use super::{
     parser::{kimi_entry_key, kimi_entry_to_loaded, read_wire_file},
     paths::discover_wire_files,
 };
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(crate::progress::UsageLoadAgent("Kimi"), shared.json, || {
-        load_entries_inner(shared, pricing)
-    })
-}
-
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let files = discover_wire_files()?;
+pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let files = discover_wire_files(cx.diagnostics)?;
+    let pricing = cx
+        .pricing
+        .ok_or_else(|| crate::cli_error("Kimi pricing was not supplied"))?;
     // Read wire files in parallel, then apply the first-wins dedup sequentially
     // over the original discovery order so the surviving entry per key matches
     // the single-threaded read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_wire_file(file).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!("Failed to read Kimi wire file {}: {error}", file.display()),
-            );
-            Vec::new()
-        })
+    let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
+        read_wire_file(file, cx.diagnostics)
     });
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
-    for file_entries in loaded {
+    for file_entries in loaded.into_iter().flatten() {
         for entry in file_entries {
             let key = kimi_entry_key(&entry);
             if seen.insert(key) {
                 entries.push(kimi_entry_to_loaded(
                     entry,
-                    tz.as_ref(),
-                    shared.mode,
+                    Some(cx.window.timezone()),
+                    cx.shared.mode,
                     pricing,
                 ));
             }
@@ -52,7 +42,7 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
 #[cfg(test)]
 mod tests {
     use super::super::paths::KIMI_DATA_DIR_ENV;
-    use super::*;
+    use ccusage_core::{Diagnostics, PricingMap, SkipKind, cli::SharedArgs};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     #[test]
@@ -71,7 +61,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-02-13");
@@ -100,7 +90,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 1, "session-scoped record must be skipped");
         assert_eq!(entries[0].session_id.as_ref(), "session-b");
@@ -121,8 +111,37 @@ mod tests {
             .join("\n"),
         });
         let _cleanup = EnvVarGuard::set(KIMI_DATA_DIR_ENV, fixture.root());
-        let entries = load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
+        let entries =
+            crate::load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
 
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn diagnoses_malformed_usage_record_and_keeps_later_wire_usage() {
+        let fixture = fs_fixture!({
+            "sessions/group/session-a/wire.jsonl": [
+                r#"{"type":"usage.record","model":"kimi-for-coding","usage":"SECRET_CANARY","usageScope":"turn"}"#,
+                r#"{"type":"usage.record","model":"kimi-for-coding","usage":{"inputOther":100,"output":20},"usageScope":"turn","time":1770983427000}"#,
+            ]
+            .join("\n"),
+        });
+        let diagnostics = Diagnostics::new("kimi");
+
+        let entries = super::super::parser::read_wire_file(
+            &fixture.path("sessions/group/session-a/wire.jsonl"),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(!warnings.contains("SECRET_CANARY"));
     }
 }
