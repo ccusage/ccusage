@@ -265,8 +265,8 @@
               (when-not (:output-dir options) (fs/delete-tree output-dir))
               (println (str "\nSaved outputs: " output-dir)))
             (cond
-              (pos? (get counts "Different")) 1
               (pos? (get counts "Unstable")) 2
               (pos? (get counts "Failed")) 2
+              (pos? (get counts "Different")) 1
               :else 0))
           (finally (fs/delete-tree empty-home)))))))
