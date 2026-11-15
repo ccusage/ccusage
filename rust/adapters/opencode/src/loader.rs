@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use ccusage_adapter_common::source::ProgressOwner;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
@@ -38,12 +39,24 @@ pub fn load_entries_with_native_sessions(
     shared: &SharedArgs,
     report_kind: AgentReportKind,
 ) -> Result<Vec<LinkedEntry>> {
+    load_entries_with_native_sessions_with_progress(shared, report_kind, ProgressOwner::Source)
+}
+
+pub(super) fn load_entries_with_native_sessions_with_progress(
+    shared: &SharedArgs,
+    report_kind: AgentReportKind,
+    owner: ProgressOwner,
+) -> Result<Vec<LinkedEntry>> {
     let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("OpenCode"),
-        shared.json,
-        || load_entries_inner(shared, allow_aggregate_fallback),
-    )
+    let load = || load_entries_inner(shared, allow_aggregate_fallback);
+    match owner {
+        ProgressOwner::Source => crate::progress::track_usage_load(
+            crate::progress::UsageLoadAgent("OpenCode"),
+            shared.json,
+            load,
+        ),
+        ProgressOwner::Caller => load(),
+    }
 }
 
 fn load_entries_inner(

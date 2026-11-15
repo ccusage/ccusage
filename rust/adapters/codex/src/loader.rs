@@ -3,6 +3,7 @@ use std::{
     thread,
 };
 
+use ccusage_adapter_common::source::ProgressOwner;
 use compact_str::CompactString;
 
 use crate::{
@@ -41,9 +42,20 @@ pub fn load_codex_events_from_directory(
 pub fn load_codex_events_with_detection(
     shared: &SharedArgs,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
-    progress::track_usage_load(progress::UsageLoadAgent("Codex"), shared.json, || {
-        load_codex_events_from_sources_with_shared(&codex_usage_sources()?, shared)
-    })
+    load_codex_events_with_detection_progress(shared, ProgressOwner::Source)
+}
+
+pub(super) fn load_codex_events_with_detection_progress(
+    shared: &SharedArgs,
+    owner: ProgressOwner,
+) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
+    let load = || load_codex_events_from_sources_with_shared(&codex_usage_sources()?, shared);
+    match owner {
+        ProgressOwner::Source => {
+            progress::track_usage_load(progress::UsageLoadAgent("Codex"), shared.json, load)
+        }
+        ProgressOwner::Caller => load(),
+    }
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ mod paths;
 mod reader;
 mod replay;
 mod report;
+mod source;
 mod speed;
 mod types;
 
@@ -18,14 +19,19 @@ mod compression_tests;
 
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
+pub(crate) use aggregate::load_groups_with_driver;
 pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
 #[doc(hidden)]
 pub use loader::load_codex_events_from_directory;
 pub use loader::load_codex_events_with_detection;
+pub(crate) use loader::load_codex_events_with_detection_progress;
 pub use report::{
     calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
     non_cached_input_tokens,
 };
+pub use source::SOURCE;
+#[doc(hidden)]
+pub use source::unified_row_from_group;
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
 pub use types::{
     CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexTokenUsageEvent,

@@ -42,6 +42,10 @@ pub trait UsageSource: Sync {
     /// The report kinds `ccusage <id> <kind>` accepts.
     fn reports(&self) -> &'static [AgentReportKind];
 
+    fn pricing_supply(&self) -> PricingSupply {
+        PricingSupply::Pipeline
+    }
+
     /// Loads the rows this source contributes to the unified report.
     ///
     /// `request.kind` is the kind the unified report loads at, not the one it
@@ -283,6 +287,10 @@ impl<S: EntrySource> UsageSource for S {
 
     fn reports(&self) -> &'static [AgentReportKind] {
         self.descriptor().reports
+    }
+
+    fn pricing_supply(&self) -> PricingSupply {
+        self.descriptor().pricing
     }
 
     fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {

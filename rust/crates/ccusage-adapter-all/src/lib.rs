@@ -1,13 +1,11 @@
 mod loader;
 mod report;
+mod sources;
 mod types;
 
-use ccusage_adapter_codex::CodexGroup;
 #[cfg(test)]
-use ccusage_adapter_codex::CodexModelUsage;
-use ccusage_adapter_common::{
-    filter_loaded_entries_by_date, filter_session_summaries_by_last_activity,
-};
+use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
+use ccusage_adapter_common::filter_loaded_entries_by_date;
 use ccusage_core::*;
 
 mod adapter {

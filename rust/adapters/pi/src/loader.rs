@@ -64,6 +64,15 @@ pub fn load_entries_for_store_paths(
     )
 }
 
+#[doc(hidden)]
+pub fn load_entries_for_store_paths_with_context(
+    cx: &LoadContext<'_>,
+    store_paths: Vec<PathBuf>,
+    store_name: &str,
+) -> Result<Vec<LoadedEntry>> {
+    load_entries_for_context(cx, store_paths, PiLoadScope::Named { store_name })
+}
+
 #[derive(Clone, Copy)]
 enum PiLoadScope<'a> {
     Default,

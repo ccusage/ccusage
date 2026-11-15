@@ -1,8 +1,13 @@
-use ccusage_adapter_common::{chunk_file_indexes_by_size, read_files_parallel};
+use ccusage_adapter_common::{
+    chunk_file_indexes_by_size, read_files_parallel, source::ProgressOwner,
+};
 use ccusage_core::*;
 
 mod daily;
 mod paths;
+mod source;
+
+pub use source::SOURCE;
 
 use std::{
     collections::HashSet,
@@ -56,9 +61,22 @@ pub fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<DedupedEntries> {
-    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        load_entries_inner(shared, project_filter, false)
-    })
+    load_deduped_entries_with_progress(shared, project_filter, ProgressOwner::Source)
+}
+
+/// Loads deduplicated entries with progress owned by the caller or source.
+pub(crate) fn load_deduped_entries_with_progress(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    owner: ProgressOwner,
+) -> Result<DedupedEntries> {
+    let load = || load_entries_inner(shared, project_filter, false);
+    match owner {
+        ProgressOwner::Source => {
+            progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
+        }
+        ProgressOwner::Caller => load(),
+    }
 }
 
 /// Deduplicated Claude entries plus the main-thread copies dedup merged into
@@ -170,14 +188,35 @@ pub fn load_daily_summaries_with_detection(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<DailySummaries> {
-    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
+    load_daily_summaries_with_detection_progress(
+        shared,
+        project_filter,
+        group_by_project,
+        ProgressOwner::Source,
+    )
+}
+
+/// Loads daily summaries with progress owned by the caller or source.
+pub(crate) fn load_daily_summaries_with_detection_progress(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    group_by_project: bool,
+    owner: ProgressOwner,
+) -> Result<DailySummaries> {
+    let load = || {
         daily::load_daily_summaries_inner(
             shared,
             project_filter,
             group_by_project,
             daily::session_days,
         )
-    })
+    };
+    match owner {
+        ProgressOwner::Source => {
+            progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
+        }
+        ProgressOwner::Caller => load(),
+    }
 }
 
 fn load_entries_inner(

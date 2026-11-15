@@ -7,9 +7,12 @@ mod loader;
 mod parser;
 mod paths;
 mod report;
+mod source;
 
+pub(crate) use loader::load_entries_with_native_sessions_with_progress;
 pub use loader::{LinkedEntry, load_entries_with_native_sessions};
 pub use report::{report_json, summarize_entries};
+pub use source::SOURCE;
 
 use crate::{
     Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries, wants_json,

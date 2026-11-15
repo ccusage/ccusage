@@ -5,8 +5,9 @@ into one table or JSON document.
 
 ## Owns
 
-- `loader.rs` — per-agent loading, the agent selection the CLI asks for, and the
-  merge into shared rows.
+- `sources.rs` — the registry of sources contributing unified rows.
+- `loader.rs` — shared pricing, parallel loads, source dependencies, named pi
+  stores and the merge into shared rows.
 - `report.rs` — the unified row and total shapes.
 - `types.rs` — the accumulators the merge needs.
 

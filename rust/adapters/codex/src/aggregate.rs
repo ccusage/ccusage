@@ -132,8 +132,16 @@ pub fn load_groups(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
+    load_groups_with_driver(shared, kind, wants_json(shared))
+}
+
+pub(super) fn load_groups_with_driver(
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    multi_source_driver: bool,
+) -> Result<BTreeMap<String, CodexGroup>> {
     let sources = paths::codex_usage_sources()?;
-    if sources.len() == 1 && !wants_json(shared) {
+    if sources.len() == 1 && !multi_source_driver {
         return load_groups_from_directory(&sources[0].dir, shared, kind);
     }
     load_groups_from_sources(&sources, shared, kind)
