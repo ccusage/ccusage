@@ -22,11 +22,9 @@ use serde::{
 };
 
 use ccusage_core::{
-    Diagnostics, SkipKind,
+    Diagnostics, Skip, SkipKind,
     fast::{LinePrefilter, byte_lines},
 };
-
-use crate::units::UnitError;
 
 /// Iterate over deserialized JSONL records contained in `content`.
 ///
@@ -139,30 +137,63 @@ fn diagnosed_records<'data, T>(
 where
     T: DeserializeOwned + 'data,
 {
-    selected_lines(content, prefilter).filter_map(
-        move |(number, line)| match serde_json::from_slice::<T>(line) {
-            Ok(record) => Some(record),
-            Err(error) => {
-                use serde_json::error::Category;
-                let kind = match error.classify() {
-                    Category::Io => SkipKind::Unreadable,
-                    Category::Syntax | Category::Eof => SkipKind::InvalidData,
-                    Category::Data => {
-                        if is_usage.is_some_and(|confirm| {
-                            serde_json::from_slice::<serde_json::Value>(line)
-                                .is_ok_and(|value| confirm(&value))
-                        }) {
-                            SkipKind::InvalidData
-                        } else {
-                            SkipKind::UndecodedUsage
-                        }
-                    }
-                };
-                UnitError::from(error).record_as(kind, diagnostics, unit, number);
-                None
-            }
-        },
-    )
+    selected_lines(content, prefilter)
+        .filter_map(move |(number, line)| decode_record(line, unit, number, diagnostics, is_usage))
+}
+
+/// Decodes one JSON record, sharing failure classification between JSONL lines
+/// and database JSON columns. Usage confirmation runs only after a rejection.
+pub fn decode_record<T: DeserializeOwned>(
+    content: &[u8],
+    unit: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+    is_usage: Option<fn(&serde_json::Value) -> bool>,
+) -> Option<T> {
+    match serde_json::from_slice(content) {
+        Ok(record) => Some(record),
+        Err(error) => {
+            record_decode_error(content, error, unit, number, diagnostics, is_usage);
+            None
+        }
+    }
+}
+
+#[cold]
+fn record_decode_error(
+    content: &[u8],
+    error: serde_json::Error,
+    unit: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+    is_usage: Option<fn(&serde_json::Value) -> bool>,
+) {
+    use serde_json::error::Category;
+    let (kind, category) = match error.classify() {
+        Category::Io => (SkipKind::Unreadable, "I/O"),
+        Category::Syntax => (SkipKind::InvalidData, "syntax"),
+        Category::Eof => (SkipKind::InvalidData, "EOF"),
+        Category::Data => {
+            let confirmed = is_usage.is_some_and(|confirm| {
+                serde_json::from_slice::<serde_json::Value>(content)
+                    .is_ok_and(|value| confirm(&value))
+            });
+            (
+                if confirmed {
+                    SkipKind::InvalidData
+                } else {
+                    SkipKind::UndecodedUsage
+                },
+                "data",
+            )
+        }
+    };
+    diagnostics.record(Skip::record(
+        unit,
+        number,
+        kind,
+        format!("JSON {category} error at column {}", error.column()),
+    ));
 }
 
 /// Deserialize a JSON value into `u64` with the same lenient rules as
@@ -623,7 +654,7 @@ mod tests {
                 ..SharedArgs::default()
             })
             .join("\n");
-        assert!(warnings.contains("/logs/session.jsonl:3: JSON data error at line 1, column"));
+        assert!(warnings.contains("/logs/session.jsonl:3: JSON data error at column"));
         assert!(!warnings.contains("SECRET_CANARY"));
     }
 

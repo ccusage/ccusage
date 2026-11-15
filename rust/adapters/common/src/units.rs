@@ -25,16 +25,6 @@ impl UnitError {
             detail: detail.into(),
         }
     }
-
-    pub(crate) fn record_as(
-        self,
-        kind: SkipKind,
-        diagnostics: &Diagnostics,
-        unit: &Path,
-        line: u32,
-    ) {
-        diagnostics.record(Skip::record(unit, line, kind, self.detail));
-    }
 }
 
 impl fmt::Display for UnitError {
@@ -52,7 +42,10 @@ impl From<CliError> for UnitError {
 
 impl From<io::Error> for UnitError {
     fn from(error: io::Error) -> Self {
-        Self::new(SkipKind::Unreadable, error.to_string())
+        Self::new(
+            SkipKind::Unreadable,
+            format!("I/O error ({:?})", error.kind()),
+        )
     }
 }
 
@@ -269,6 +262,14 @@ mod tests {
     #[test]
     fn unstructured_reader_errors_never_echo_input() {
         let error = UnitError::from(cli_error("invalid token SECRET_CANARY"));
+
+        assert_eq!(error.kind, SkipKind::Unreadable);
+        assert!(!error.to_string().contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn custom_io_errors_never_echo_input() {
+        let error = UnitError::from(std::io::Error::other("SECRET_CANARY"));
 
         assert_eq!(error.kind, SkipKind::Unreadable);
         assert!(!error.to_string().contains("SECRET_CANARY"));

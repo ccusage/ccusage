@@ -16,10 +16,8 @@ pub enum SkipKind {
     Unreadable,
     /// Reading stopped part-way; what was read before the failure is kept.
     ReadInterrupted,
-    /// A record that looks like usage did not decode. This is the signal for
-    /// an upstream schema change, and also what a strict decoder reports for
-    /// lines it rejects by design, so it is counted but only printed under
-    /// `--debug`.
+    /// A selected record did not decode and was not confirmed to carry usage.
+    /// Such records may be rejected by design, so only `--debug` prints them.
     UndecodedUsage,
     /// A record carried a timestamp the report cannot place on a day.
     InvalidTimestamp,
@@ -177,11 +175,18 @@ impl Diagnostics {
     }
 
     fn summary_line(&self, kind: SkipKind, tally: &Tally) -> String {
-        let files = counted(tally.units.len() as u64, "file");
+        let inputs = counted(tally.units.len() as u64, "input");
+        let whole_units = tally.skips - tally.records;
         let skipped = if tally.records == 0 {
-            files
+            inputs
+        } else if whole_units == 0 {
+            format!("{} in {inputs}", counted(tally.records, "record"))
         } else {
-            format!("{} in {files}", counted(tally.skips, "record"))
+            format!(
+                "{} and {} in {inputs}",
+                counted(whole_units, "input"),
+                counted(tally.records, "record")
+            )
         };
         format!(
             "WARN  {}: skipped {skipped} ({})",
@@ -254,7 +259,7 @@ mod tests {
 
         assert_eq!(
             diagnostics.render(true, false),
-            ["WARN  codex: skipped 3 records in 2 files (invalid timestamp)"]
+            ["WARN  codex: skipped 3 records in 2 inputs (invalid timestamp)"]
         );
         assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 3);
     }
@@ -272,9 +277,30 @@ mod tests {
         assert_eq!(
             diagnostics.render(true, false),
             [
-                "WARN  amp: skipped 1 file (unreadable)",
-                "WARN  amp: skipped 1 record in 1 file (invalid timestamp)",
+                "WARN  amp: skipped 1 input (unreadable)",
+                "WARN  amp: skipped 1 record in 1 input (invalid timestamp)",
             ]
+        );
+    }
+
+    #[test]
+    fn mixed_skips_count_whole_units_separately_from_records() {
+        let diagnostics = Diagnostics::new("test");
+        diagnostics.record(Skip::unit(
+            Path::new("/logs/broken.json"),
+            SkipKind::InvalidData,
+            "malformed JSON",
+        ));
+        diagnostics.record(Skip::record(
+            Path::new("/logs/partial.jsonl"),
+            3,
+            SkipKind::InvalidData,
+            "malformed JSON",
+        ));
+
+        assert_eq!(
+            diagnostics.render(true, false),
+            ["WARN  test: skipped 1 input and 1 record in 2 inputs (invalid data)"]
         );
     }
 
@@ -289,12 +315,12 @@ mod tests {
 
         assert_eq!(
             diagnostics.render(true, false),
-            ["WARN  codex: skipped 1 file (invalid data)"]
+            ["WARN  codex: skipped 1 input (invalid data)"]
         );
         assert_eq!(
             diagnostics.render(true, true),
             [
-                "WARN  codex: skipped 1 file (invalid data)",
+                "WARN  codex: skipped 1 input (invalid data)",
                 "codex: invalid data: /logs/session.json: JSON syntax error at line 1, column 12",
             ]
         );
@@ -323,7 +349,7 @@ mod tests {
         assert_eq!(
             diagnostics.render(true, true),
             [
-                "WARN  claude: skipped 1 record in 1 file (undecoded usage)",
+                "WARN  claude: skipped 1 record in 1 input (undecoded usage)",
                 "claude: undecoded usage: /projects/p/s.jsonl:7: missing field `output_tokens`",
             ]
         );
@@ -345,7 +371,7 @@ mod tests {
 
         assert_eq!(
             lines[0],
-            format!("WARN  amp: skipped {total} files (unreadable)")
+            format!("WARN  amp: skipped {total} inputs (unreadable)")
         );
         assert_eq!(
             lines[1],
@@ -365,7 +391,7 @@ mod tests {
             diagnostics.render(true, false),
             [
                 "WARN  Skipping unreadable Antigravity database '/data/b.db': boom",
-                "WARN  antigravity: skipped 1 record in 1 file (invalid timestamp)",
+                "WARN  antigravity: skipped 1 record in 1 input (invalid timestamp)",
             ]
         );
         assert_eq!(
