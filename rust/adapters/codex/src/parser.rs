@@ -383,7 +383,14 @@ fn visit_codex_session_file_inner(
             let value = match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
                 Ok(value) => value,
                 Err(error) => {
-                    record_decode_failure(path, line_number, &line, error, diagnostics);
+                    record_decode_failure(
+                        path,
+                        line_number,
+                        &line,
+                        error,
+                        diagnostics,
+                        Some(&mut state.previous_totals),
+                    );
                     continue;
                 }
             };
@@ -627,22 +634,21 @@ fn visit_codex_session_entry(
     if payload.payload_type.as_deref() != Some("token_count") {
         return Ok(());
     }
-    let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
-        if payload
-            .info
-            .as_ref()
-            .is_some_and(|info| info.last_token_usage.is_some() || info.total_token_usage.is_some())
-        {
-            location.invalid_timestamp();
-        }
-        return Ok(());
-    };
+    // Rejected timestamps must not move this usage into the next cumulative delta.
     let info = payload.info.as_ref();
     let CodexTokenCountUsage {
         total_usage,
         cumulative_advanced,
         delta,
     } = codex_token_count_usage(info, previous_totals);
+    let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
+        if info
+            .is_some_and(|info| info.last_token_usage.is_some() || info.total_token_usage.is_some())
+        {
+            location.invalid_timestamp();
+        }
+        return Ok(());
+    };
     let Some(raw_usage) = delta else {
         return Ok(());
     };
@@ -749,6 +755,7 @@ fn add_codex_exec_event_from_value(
                 line,
                 error,
                 location.diagnostics,
+                None,
             );
             return Ok(());
         }
@@ -1515,6 +1522,7 @@ fn record_decode_failure(
     content: &[u8],
     error: serde_json::Error,
     diagnostics: &Diagnostics,
+    previous_totals: Option<&mut Option<CodexRawUsage>>,
 ) {
     use serde_json::error::Category;
     let kind = match error.classify() {
@@ -1524,6 +1532,14 @@ fn record_decode_failure(
             let Ok(value) = serde_json::from_slice::<Value>(content) else {
                 return;
             };
+            if let Some(previous_totals) = previous_totals
+                && value.get("type").and_then(Value::as_str) == Some("event_msg")
+                && value.pointer("/payload/type").and_then(Value::as_str) == Some("token_count")
+                && let Some(total) = value.pointer("/payload/info/total_token_usage")
+                && let Ok(total) = serde_json::from_value::<CodexRawUsage>(total.clone())
+            {
+                *previous_totals = Some(total);
+            }
             let usage = value.get("type").and_then(Value::as_str) == Some("token_usage_record")
                 || (value.get("type").and_then(Value::as_str) == Some("event_msg")
                     && value.pointer("/payload/type").and_then(Value::as_str)

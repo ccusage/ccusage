@@ -289,7 +289,7 @@ fn table_columns(
 }
 
 fn database_prepare_error_kind(code: Option<isize>) -> SkipKind {
-    if code == Some(1) {
+    if matches!(code.map(|code| code & 0xff), Some(1 | 17)) {
         SkipKind::InvalidData
     } else {
         SkipKind::Unreadable
@@ -560,6 +560,15 @@ mod tests {
     #[test]
     fn classifies_usage_query_prepare_failures_by_sqlite_code() {
         assert_eq!(database_prepare_error_kind(Some(1)), SkipKind::InvalidData);
+        assert_eq!(database_prepare_error_kind(Some(17)), SkipKind::InvalidData);
+        assert_eq!(
+            database_prepare_error_kind(Some(273)),
+            SkipKind::InvalidData
+        );
+        assert_eq!(
+            database_prepare_error_kind(Some(257)),
+            SkipKind::InvalidData
+        );
         for code in [Some(5), Some(6), Some(10), Some(26), None] {
             assert_eq!(database_prepare_error_kind(code), SkipKind::Unreadable);
         }

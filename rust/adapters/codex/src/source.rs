@@ -172,6 +172,55 @@ mod diagnostic_tests {
     use ccusage_core::cli::SharedArgs;
     use ccusage_test_support::{EnvVarsGuard, Fixture};
     #[test]
+    fn rejected_timestamps_advance_cumulative_usage_without_recounting_tokens() {
+        let fixture = Fixture::new();
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        for (invalid_timestamp, category) in [
+            (json!("SECRET_CANARY"), "invalid timestamp"),
+            (serde_json::Value::Null, "invalid timestamp"),
+            (json!({"SECRET_CANARY": true}), "invalid data"),
+        ] {
+            let records = [
+                json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}),
+                json!({"timestamp":invalid_timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":110,"output_tokens":22,"total_tokens":132}}}}),
+                json!({"timestamp":"2026-01-02T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":115,"output_tokens":23,"total_tokens":138}}}}),
+            ].map(|record| record.to_string()).join("\n");
+            let _ = fixture.write_file("sessions/cumulative.jsonl", &records);
+            for since in [None, Some("20260101".to_owned())] {
+                let shared = SharedArgs {
+                    offline: true,
+                    debug: true,
+                    timezone: Some("UTC".to_owned()),
+                    since,
+                    ..Default::default()
+                };
+                let result = SOURCE
+                    .unified_rows(&UnifiedRequest {
+                        kind: AgentReportKind::Daily,
+                        shared: &shared,
+                        options: SourceOptions::default(),
+                        pricing: Some(&pricing),
+                        progress: ProgressOwner::Caller,
+                        multi_source_driver: true,
+                        claude_counted: None,
+                    })
+                    .unwrap();
+                assert_eq!(result.rows.len(), 1);
+                assert_eq!(result.rows[0].input_tokens, 15);
+                assert_eq!(result.rows[0].output_tokens, 3);
+                assert_eq!(result.rows[0].total_tokens, 18);
+                assert!(result.warnings.iter().any(|line| line
+                    == &format!("WARN  codex: skipped 1 record in 1 input ({category})")));
+                assert!(!result.warnings.join("\n").contains("SECRET_CANARY"));
+            }
+        }
+    }
+
+    #[test]
     fn discovered_nonusage_files_remain_detected_in_all_load_paths() {
         let fixture = Fixture::new();
         let _env = EnvVarsGuard::set_many([

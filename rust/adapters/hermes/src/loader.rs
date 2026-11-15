@@ -103,7 +103,7 @@ fn load_state_db_entries(
 
 fn sessions_query_failure(code: Option<isize>) -> (SkipKind, &'static str) {
     match primary_sqlite_code(code) {
-        Some(1) => (SkipKind::Invariant, "Hermes sessions schema is unavailable"),
+        Some(1) | Some(17) => (SkipKind::Invariant, "Hermes sessions schema is unavailable"),
         Some(11) | Some(26) => (
             SkipKind::InvalidData,
             "Hermes state database is corrupt or invalid",
@@ -124,7 +124,7 @@ fn state_database_open_failure(code: Option<isize>) -> (SkipKind, &'static str) 
 
 fn sessions_step_failure(code: Option<isize>) -> (SkipKind, &'static str) {
     match primary_sqlite_code(code) {
-        Some(1) => (
+        Some(1) | Some(17) => (
             SkipKind::Invariant,
             "Hermes sessions schema changed while reading; earlier rows were kept",
         ),
@@ -294,6 +294,8 @@ mod tests {
     #[test]
     fn classifies_sessions_query_failures_by_sqlite_error_code() {
         assert_eq!(sessions_query_failure(Some(1)).0, SkipKind::Invariant);
+        assert_eq!(sessions_query_failure(Some(17)).0, SkipKind::Invariant);
+        assert_eq!(sessions_query_failure(Some(273)).0, SkipKind::Invariant);
         assert_eq!(sessions_query_failure(Some(11)).0, SkipKind::InvalidData);
         assert_eq!(sessions_query_failure(Some(26)).0, SkipKind::InvalidData);
         assert_eq!(sessions_query_failure(Some(267)).0, SkipKind::InvalidData);
@@ -346,6 +348,8 @@ mod tests {
     #[test]
     fn classifies_sessions_step_failures_without_losing_interruption_semantics() {
         assert_eq!(sessions_step_failure(Some(1)).0, SkipKind::Invariant);
+        assert_eq!(sessions_step_failure(Some(17)).0, SkipKind::Invariant);
+        assert_eq!(sessions_step_failure(Some(273)).0, SkipKind::Invariant);
         assert_eq!(sessions_step_failure(Some(11)).0, SkipKind::InvalidData);
         assert_eq!(sessions_step_failure(Some(26)).0, SkipKind::InvalidData);
         assert_eq!(sessions_step_failure(Some(267)).0, SkipKind::InvalidData);
