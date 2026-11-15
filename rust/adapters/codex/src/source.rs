@@ -1,3 +1,7 @@
+use crate::{
+    aggregate::load_groups_with_diagnostics, loader::load_codex_events_with_detection_diagnostics,
+};
+use ccusage_core::Diagnostics;
 use serde_json::json;
 
 use ccusage_adapter_common::{
@@ -13,8 +17,8 @@ use ccusage_core::{
 
 use crate::{
     CodexGroup, aggregate_events, calculate_codex_model_cost, calculate_group_cost,
-    codex_model_missing_pricing, filter_events_by_date, load_codex_events_with_detection_progress,
-    load_groups_with_driver, non_cached_input_tokens, resolve_codex_speed,
+    codex_model_missing_pricing, filter_events_by_date, non_cached_input_tokens,
+    resolve_codex_speed,
 };
 
 pub struct Codex;
@@ -46,6 +50,7 @@ impl UsageSource for Codex {
 }
 
 fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
+    let diagnostics = Diagnostics::new("codex");
     let shared = request.shared;
     let owned_pricing = request.pricing.is_none().then(|| {
         PricingMap::load_with_overrides(
@@ -61,7 +66,12 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     let speed = resolve_codex_speed(request.options.codex_speed);
 
     let (rows, detected) = if shared.since.is_none() && shared.until.is_none() {
-        let groups = load_groups_with_driver(shared, request.kind, request.multi_source_driver)?;
+        let groups = load_groups_with_diagnostics(
+            shared,
+            request.kind,
+            request.multi_source_driver,
+            &diagnostics,
+        )?;
         let detected = !groups.is_empty();
         let rows = groups
             .iter()
@@ -71,8 +81,11 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
             .collect();
         (rows, detected)
     } else {
-        let (mut events, detected) =
-            load_codex_events_with_detection_progress(shared, ProgressOwner::Caller)?;
+        let (mut events, detected) = load_codex_events_with_detection_diagnostics(
+            shared,
+            ProgressOwner::Caller,
+            &diagnostics,
+        )?;
         filter_events_by_date(&mut events, shared)?;
         let groups = aggregate_events(&events, request.kind, shared.timezone.as_deref())?;
         let rows = groups
@@ -87,7 +100,7 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     Ok(SourceRows {
         rows,
         detected,
-        warnings: Vec::new(),
+        warnings: diagnostics.warnings(shared),
         claude_counted: None,
     })
 }
@@ -150,5 +163,84 @@ where
         metadata_agents: Some(vec!["codex"]),
         agent_breakdowns: None,
         model_breakdowns,
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use ccusage_adapter_common::source::SourceOptions;
+    use ccusage_core::cli::SharedArgs;
+    use ccusage_test_support::{EnvVarsGuard, Fixture};
+    #[test]
+    fn specialized_diagnostics_keep_healthy_codex_usage() {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("sessions/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1}}}}"#);
+        let _ = fixture.write_file("sessions/bad.jsonl", r#"{"timestamp":{"unexpected":"SECRET_CANARY"},"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}"#);
+        let _ = fixture.write_file("sessions/corrupt.jsonl.zst", "SECRET_CANARY");
+        let good = std::fs::read_to_string(fixture.path("sessions/good.jsonl"))
+            .unwrap()
+            .replace("00:00:00Z", "00:01:00Z")
+            .replace("input_tokens\":10", "input_tokens\":20")
+            .into_bytes();
+        let mut interrupted =
+            zstd::stream::encode_all([good.as_slice(), b"\n"].concat().as_slice(), 0).unwrap();
+        interrupted.extend_from_slice(b"SECRET_CANARY");
+        std::fs::write(fixture.path("sessions/interrupted.jsonl.zst"), interrupted).unwrap();
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        for since in [None, Some("2026-01-01".to_owned())] {
+            let shared = SharedArgs {
+                offline: true,
+                debug: true,
+                since,
+                ..Default::default()
+            };
+            let rows = SOURCE
+                .unified_rows(&UnifiedRequest {
+                    kind: AgentReportKind::Daily,
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: Some(&pricing),
+                    progress: ProgressOwner::Caller,
+                    multi_source_driver: true,
+                    claude_counted: None,
+                })
+                .unwrap();
+            assert_eq!(rows.rows.len(), 1);
+            let diagnostics = Diagnostics::new("codex");
+            let (events, _) = load_codex_events_with_detection_diagnostics(
+                &shared,
+                ProgressOwner::Caller,
+                &diagnostics,
+            )
+            .unwrap();
+            assert_eq!(events.len(), 2);
+            assert_eq!(
+                events.iter().map(|event| event.input_tokens).sum::<u64>(),
+                30
+            );
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+            assert_eq!(
+                diagnostics.skipped(ccusage_core::SkipKind::ReadInterrupted),
+                2
+            );
+            assert!(
+                rows.warnings
+                    .iter()
+                    .any(|line| line.contains("invalid data")),
+                "{:?}",
+                rows.warnings
+            );
+            assert!(
+                rows.warnings
+                    .iter()
+                    .any(|line| line.contains("read interrupted") || line.contains("unreadable"))
+            );
+            assert!(!rows.warnings.join("\n").contains("SECRET_CANARY"));
+        }
     }
 }

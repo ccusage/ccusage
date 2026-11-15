@@ -1,3 +1,4 @@
+use ccusage_core::Diagnostics;
 use std::{
     path::{Path, PathBuf},
     thread,
@@ -13,7 +14,7 @@ use crate::{
 
 use super::{
     aggregate::CodexFileOccurrences,
-    parser::visit_codex_session_file,
+    parser::visit_codex_session_file_with_diagnostics,
     paths,
     paths::{
         CodexUsageSource, codex_usage_sources, collect_codex_usage_files,
@@ -26,6 +27,7 @@ pub fn load_codex_events_from_directory(
     sessions_dir: &Path,
     single_thread: bool,
 ) -> Result<Vec<CodexTokenUsageEvent>> {
+    let diagnostics = &Diagnostics::new("codex");
     let files = collect_codex_usage_files(sessions_dir);
     let replay_plan = CodexReplayPlan::new([(sessions_dir, files.as_slice())], single_thread);
     let events = dedupe_codex_events(read_codex_events_from_files(
@@ -33,6 +35,7 @@ pub fn load_codex_events_from_directory(
         &files,
         single_thread,
         &replay_plan,
+        diagnostics,
     ));
     Ok(events)
 }
@@ -45,11 +48,13 @@ pub fn load_codex_events_with_detection(
     load_codex_events_with_detection_progress(shared, ProgressOwner::Source)
 }
 
-pub(super) fn load_codex_events_with_detection_progress(
+pub(super) fn load_codex_events_with_detection_diagnostics(
     shared: &SharedArgs,
     owner: ProgressOwner,
+    diagnostics: &Diagnostics,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
-    let load = || load_codex_events_from_sources_with_shared(&codex_usage_sources()?, shared);
+    let load =
+        || load_codex_events_from_sources_with_shared(&codex_usage_sources()?, shared, diagnostics);
     match owner {
         ProgressOwner::Source => {
             progress::track_usage_load(progress::UsageLoadAgent("Codex"), shared.json, load)
@@ -63,25 +68,33 @@ fn load_codex_events_from_sources(
     sources: &[CodexUsageSource],
     single_thread: bool,
 ) -> Result<Vec<CodexTokenUsageEvent>> {
-    load_codex_events_from_sources_with_files(sources, single_thread, None)
+    let diagnostics = &Diagnostics::new("codex");
+    load_codex_events_from_sources_with_files(sources, single_thread, None, diagnostics)
         .map(|(events, _)| events)
 }
 
 fn load_codex_events_from_sources_with_shared(
     sources: &[CodexUsageSource],
     shared: &SharedArgs,
+    diagnostics: &Diagnostics,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
-    load_codex_events_from_sources_with_files(sources, shared.single_thread, Some(shared))
+    load_codex_events_from_sources_with_files(
+        sources,
+        shared.single_thread,
+        Some(shared),
+        diagnostics,
+    )
 }
 
 fn load_codex_events_from_sources_with_files(
     sources: &[CodexUsageSource],
     single_thread: bool,
     shared: Option<&SharedArgs>,
+    diagnostics: &Diagnostics,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
     if let [source] = sources {
         if let Some(shared) = shared {
-            return load_codex_events_from_directory_with_shared(&source.dir, shared);
+            return load_codex_events_from_directory_with_shared(&source.dir, shared, diagnostics);
         }
         let files = collect_codex_usage_files(&source.dir);
         let replay_plan =
@@ -91,6 +104,7 @@ fn load_codex_events_from_sources_with_files(
             &files,
             single_thread,
             &replay_plan,
+            diagnostics,
         ));
         return Ok((events, false));
     }
@@ -132,6 +146,7 @@ fn load_codex_events_from_sources_with_files(
             &files,
             single_thread,
             &replay_plan,
+            diagnostics,
         ));
     }
     let events = dedupe_codex_events(events_by_file);
@@ -146,6 +161,7 @@ fn load_codex_events_from_sources_with_files(
 fn load_codex_events_from_directory_with_shared(
     sessions_dir: &Path,
     shared: &SharedArgs,
+    diagnostics: &Diagnostics,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
     let all_files = collect_codex_usage_files(sessions_dir);
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
@@ -163,6 +179,7 @@ fn load_codex_events_from_directory_with_shared(
         &files,
         shared.single_thread,
         &replay_plan,
+        diagnostics,
     ));
     let detected = if has_date_bounds(shared) {
         !all_files.is_empty()
@@ -177,14 +194,15 @@ fn read_codex_events_from_files(
     files: &[PathBuf],
     single_thread: bool,
     replay_plan: &CodexReplayPlan,
+    diagnostics: &Diagnostics,
 ) -> Vec<Vec<CodexTokenUsageEvent>> {
     if single_thread {
         files
             .iter()
-            .map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
+            .map(|file| read_codex_session_file(sessions_dir, file, replay_plan, diagnostics))
             .collect()
     } else {
-        read_codex_session_files_parallel(sessions_dir, files, replay_plan)
+        read_codex_session_files_parallel(sessions_dir, files, replay_plan, diagnostics)
     }
 }
 
@@ -196,6 +214,7 @@ fn read_codex_session_files_parallel(
     sessions_dir: &Path,
     files: &[PathBuf],
     replay_plan: &CodexReplayPlan,
+    diagnostics: &Diagnostics,
 ) -> Vec<Vec<CodexTokenUsageEvent>> {
     let worker_count = thread::available_parallelism()
         .map(usize::from)
@@ -204,7 +223,7 @@ fn read_codex_session_files_parallel(
     if worker_count <= 1 {
         return files
             .iter()
-            .map(|file| read_codex_session_file(sessions_dir, file, replay_plan))
+            .map(|file| read_codex_session_file(sessions_dir, file, replay_plan, diagnostics))
             .collect();
     }
 
@@ -218,7 +237,12 @@ fn read_codex_session_files_parallel(
                     .map(|index| {
                         (
                             index,
-                            read_codex_session_file(sessions_dir, &files[index], replay_plan),
+                            read_codex_session_file(
+                                sessions_dir,
+                                &files[index],
+                                replay_plan,
+                                diagnostics,
+                            ),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -241,15 +265,22 @@ fn read_codex_session_file(
     sessions_dir: &Path,
     path: &Path,
     replay_plan: &CodexReplayPlan,
+    diagnostics: &Diagnostics,
 ) -> Vec<CodexTokenUsageEvent> {
     let mut events = Vec::new();
-    let _ = visit_codex_session_file(sessions_dir, path, replay_plan.fork_replay(path), |event| {
-        if replay_plan.is_replayed_compaction(path, event.response_id.as_deref()) {
-            return Ok(());
-        }
-        events.push(event);
-        Ok(())
-    });
+    let _ = visit_codex_session_file_with_diagnostics(
+        sessions_dir,
+        path,
+        replay_plan.fork_replay(path),
+        |event| {
+            if replay_plan.is_replayed_compaction(path, event.response_id.as_deref()) {
+                return Ok(());
+            }
+            events.push(event);
+            Ok(())
+        },
+        diagnostics,
+    );
     events
 }
 
@@ -314,6 +345,18 @@ struct CodexEventUsage(
     u64,
     u64,
 );
+
+pub(super) fn load_codex_events_with_detection_progress(
+    shared: &SharedArgs,
+    owner: ProgressOwner,
+) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
+    let diagnostics = Diagnostics::new("codex");
+    let loaded = load_codex_events_with_detection_diagnostics(shared, owner, &diagnostics)?;
+    for warning in diagnostics.warnings(shared) {
+        eprintln!("{warning}");
+    }
+    Ok(loaded)
+}
 
 #[cfg(test)]
 mod tests {
@@ -2872,6 +2915,7 @@ mod tests {
                     single_thread,
                     ..shared.clone()
                 },
+                &Diagnostics::new("codex"),
             )
             .unwrap();
 
@@ -2937,6 +2981,7 @@ mod tests {
                     single_thread,
                     ..shared.clone()
                 },
+                &Diagnostics::new("codex"),
             )
             .unwrap();
 
@@ -3008,6 +3053,7 @@ mod tests {
                     single_thread,
                     ..shared.clone()
                 },
+                &Diagnostics::new("codex"),
             )
             .unwrap();
 
@@ -3066,6 +3112,7 @@ mod tests {
                     single_thread,
                     ..shared.clone()
                 },
+                &Diagnostics::new("codex"),
             )
             .unwrap();
 
@@ -3167,8 +3214,12 @@ mod tests {
         };
 
         let _ = crate::replay::take_observed_file_reads();
-        let (events, detected) =
-            load_codex_events_from_sources_with_shared(&sources, &shared).unwrap();
+        let (events, detected) = load_codex_events_from_sources_with_shared(
+            &sources,
+            &shared,
+            &Diagnostics::new("codex"),
+        )
+        .unwrap();
 
         assert!(detected);
         assert_eq!(events.len(), 1);

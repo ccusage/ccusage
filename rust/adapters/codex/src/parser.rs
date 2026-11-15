@@ -1,3 +1,5 @@
+use ccusage_adapter_common::units::UnitError;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -285,6 +287,7 @@ impl CodexReplayFilter<'_> {
 ///
 /// `fork_replay` carries the usage a forked session copied from its parent so it
 /// is not counted twice, and is `None` for sessions that are not forks.
+#[cfg(test)]
 pub(super) fn visit_codex_session_file(
     sessions_dir: &Path,
     path: &Path,
@@ -301,9 +304,42 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
+    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+) -> Result<()> {
+    visit_codex_session_file_inner(
+        sessions_dir,
+        path,
+        fork_replay,
+        compaction_history,
+        visit,
+        &Diagnostics::new("codex"),
+    )
+}
+
+pub(super) fn visit_codex_session_file_with_diagnostics(
+    sessions_dir: &Path,
+    path: &Path,
+    fork_replay: Option<CodexForkReplay<'_>>,
+    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: &Diagnostics,
+) -> Result<()> {
+    visit_codex_session_file_inner(sessions_dir, path, fork_replay, None, visit, diagnostics)
+}
+
+fn visit_codex_session_file_inner(
+    sessions_dir: &Path,
+    path: &Path,
+    fork_replay: Option<CodexForkReplay<'_>>,
+    compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: &Diagnostics,
 ) -> Result<()> {
     let Ok((mut reader, opened_path)) = open_rollout_reader(path) else {
+        diagnostics.record(Skip::unit(
+            path,
+            SkipKind::Unreadable,
+            "rollout open failed",
+        ));
         return Ok(());
     };
     let mut line = Vec::new();
@@ -325,28 +361,47 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
             .is_some_and(|fork_replay| fork_replay.ends_at_usage_record),
     };
 
+    let mut line_number = 0_u32;
     loop {
         line.clear();
         let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
+            diagnostics.record(Skip::unit(
+                path,
+                SkipKind::ReadInterrupted,
+                "rollout read failed",
+            ));
             break;
         };
         if bytes_read == 0 {
             break;
         }
+        line_number = line_number.saturating_add(1);
         let Some(line_kind) = codex_line_usage_kind(&line) else {
             continue;
         };
         match line_kind {
             CodexLineKind::Session => {
-                let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
-                    continue;
+                let value = match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        record_decode_failure(path, line_number, &line, error, diagnostics);
+                        continue;
+                    }
                 };
                 if value.entry_type.as_deref() == Some("token_usage_record") {
                     replay.observe_usage_record();
                 }
-                visit_codex_session_entry(&session_id, value, &mut state, &mut |event| {
-                    replay.visit(event, &mut visit)
-                })?;
+                visit_codex_session_entry(
+                    &session_id,
+                    value,
+                    &mut state,
+                    &mut |event| replay.visit(event, &mut visit),
+                    &RecordLocation {
+                        path,
+                        line: line_number,
+                        diagnostics,
+                    },
+                )?;
             }
             CodexLineKind::Headless => {
                 if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
@@ -366,6 +421,11 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
                         &mut state.current_model,
                         &mut state.current_model_is_fallback,
                         &mut |event| replay.visit(event, &mut visit),
+                        &RecordLocation {
+                            path,
+                            line: line_number,
+                            diagnostics,
+                        },
                     )?;
                 };
             }
@@ -394,6 +454,7 @@ fn visit_codex_session_entry(
     value: CodexSessionLogEntry<'_>,
     state: &mut CodexSessionUsageState,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    location: &RecordLocation<'_>,
 ) -> Result<()> {
     let CodexSessionUsageState {
         previous_totals,
@@ -441,6 +502,9 @@ fn visit_codex_session_entry(
             return Ok(());
         }
         let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
+            if payload.usage.is_some() {
+                location.invalid_timestamp();
+            }
             return Ok(());
         };
         let Some(raw_usage) = payload.usage.map(normalize_codex_raw_usage) else {
@@ -520,6 +584,14 @@ fn visit_codex_session_entry(
         return Ok(());
     }
     let Some(timestamp) = codex_session_timestamp(value.timestamp.as_ref()) else {
+        if value.payload.as_ref().is_some_and(|payload| {
+            payload.payload_type.as_deref() == Some("token_count")
+                && payload.info.as_ref().is_some_and(|info| {
+                    info.last_token_usage.is_some() || info.total_token_usage.is_some()
+                })
+        }) {
+            location.invalid_timestamp();
+        }
         return Ok(());
     };
     let Some(payload) = value.payload.as_ref() else {
@@ -638,9 +710,20 @@ fn add_codex_exec_event_from_value(
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    location: &RecordLocation<'_>,
 ) -> Result<()> {
-    let Ok(value) = serde_json::from_slice::<Value>(line) else {
-        return Ok(());
+    let value = match serde_json::from_slice::<Value>(line) {
+        Ok(value) => value,
+        Err(error) => {
+            record_decode_failure(
+                location.path,
+                location.line,
+                line,
+                error,
+                location.diagnostics,
+            );
+            return Ok(());
+        }
     };
     let Some(raw_usage) = normalize_headless_codex_usage_value(&value) else {
         return Ok(());
@@ -1401,6 +1484,53 @@ fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
     usage
 }
 
+fn record_decode_failure(
+    path: &Path,
+    line: u32,
+    content: &[u8],
+    error: serde_json::Error,
+    diagnostics: &Diagnostics,
+) {
+    use serde_json::error::Category;
+    let kind = match error.classify() {
+        Category::Io => SkipKind::Unreadable,
+        Category::Syntax | Category::Eof => SkipKind::InvalidData,
+        Category::Data => {
+            let Ok(value) = serde_json::from_slice::<Value>(content) else {
+                return;
+            };
+            let usage = value.get("type").and_then(Value::as_str) == Some("token_usage_record")
+                || (value.get("type").and_then(Value::as_str) == Some("event_msg")
+                    && value.pointer("/payload/type").and_then(Value::as_str)
+                        == Some("token_count")
+                    && value
+                        .pointer("/payload/info")
+                        .is_some_and(|info| !info.is_null()));
+            if !usage {
+                return;
+            }
+            SkipKind::InvalidData
+        }
+    };
+    diagnostics.record(Skip::record(path, line, kind, UnitError::from(error)));
+}
+
+struct RecordLocation<'a> {
+    path: &'a Path,
+    line: u32,
+    diagnostics: &'a Diagnostics,
+}
+impl RecordLocation<'_> {
+    fn invalid_timestamp(&self) {
+        self.diagnostics.record(Skip::record(
+            self.path,
+            self.line,
+            SkipKind::InvalidTimestamp,
+            "invalid usage timestamp",
+        ));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1661,5 +1791,42 @@ mod tests {
         assert_eq!(events[1].cached_input_tokens, 200);
         assert_eq!(events[1].model.as_deref(), Some("gpt-5"));
         assert!(events[1].is_fallback_model);
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use ccusage_test_support::Fixture;
+    #[test]
+    fn nonusage_and_suppressed_session_records_stay_quiet() {
+        let fixture = Fixture::new();
+        let path = fixture.write_file("session.jsonl", [
+            r#"{"type":"turn_context","timestamp":{},"payload":{"model":"SECRET_CANARY"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0}}}}"#,
+        ].join("\n"));
+        let diagnostics = Diagnostics::new("codex");
+        let mut events = Vec::new();
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |event| {
+                events.push(event);
+                Ok(())
+            },
+            &diagnostics,
+        )
+        .unwrap();
+        assert!(events.is_empty());
+        assert!(
+            diagnostics
+                .warnings(&crate::cli::SharedArgs {
+                    debug: true,
+                    ..Default::default()
+                })
+                .is_empty()
+        );
     }
 }

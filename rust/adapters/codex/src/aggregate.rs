@@ -1,3 +1,4 @@
+use ccusage_core::Diagnostics;
 use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
@@ -126,31 +127,44 @@ struct CodexAggregateRun<'a> {
     kind: AgentReportKind,
     replay_plan: &'a CodexReplayPlan,
     file_offset: usize,
+    diagnostics: &'a Diagnostics,
 }
 
 pub fn load_groups(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    load_groups_with_driver(shared, kind, wants_json(shared))
+    let diagnostics = Diagnostics::new("codex");
+    let groups = load_groups_with_diagnostics(shared, kind, wants_json(shared), &diagnostics)?;
+    for warning in diagnostics.warnings(shared) {
+        eprintln!("{warning}");
+    }
+    Ok(groups)
 }
 
-pub(super) fn load_groups_with_driver(
+pub(super) fn load_groups_with_diagnostics(
     shared: &SharedArgs,
     kind: AgentReportKind,
     multi_source_driver: bool,
+    diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let sources = paths::codex_usage_sources()?;
     if sources.len() == 1 && !multi_source_driver {
-        return load_groups_from_directory(&sources[0].dir, shared, kind);
+        return load_groups_from_directory_with_diagnostics(
+            &sources[0].dir,
+            shared,
+            kind,
+            diagnostics,
+        );
     }
-    load_groups_from_sources(&sources, shared, kind)
+    load_groups_from_sources_with_diagnostics(&sources, shared, kind, diagnostics)
 }
 
-fn load_groups_from_sources(
+fn load_groups_from_sources_with_diagnostics(
     sources: &[paths::CodexUsageSource],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let file_groups = paths::collect_deduped_codex_usage_files(sources);
     let files_by_group = file_groups
@@ -193,6 +207,7 @@ fn load_groups_from_sources(
                     kind,
                     replay_plan: &replay_plan,
                     file_offset,
+                    diagnostics,
                 },
                 &seen,
             )?,
@@ -203,10 +218,11 @@ fn load_groups_from_sources(
     Ok(groups)
 }
 
-pub(super) fn load_groups_from_directory(
+pub(super) fn load_groups_from_directory_with_diagnostics(
     sessions_dir: &Path,
     shared: &SharedArgs,
     kind: AgentReportKind,
+    diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let all_files = paths::collect_codex_usage_files(sessions_dir);
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
@@ -226,6 +242,7 @@ pub(super) fn load_groups_from_directory(
         kind,
         replay_plan: &replay_plan,
         file_offset: 0,
+        diagnostics,
     };
     if shared.single_thread {
         return aggregate_files_local(&run);
@@ -308,7 +325,7 @@ fn aggregate_file(
 ) -> Result<()> {
     let file = &run.files[file_index];
     let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-    parser::visit_codex_session_file(
+    parser::visit_codex_session_file_with_diagnostics(
         run.sessions_dir,
         file,
         run.replay_plan.fork_replay(file),
@@ -329,6 +346,7 @@ fn aggregate_file(
                 &mut provenance,
             )
         },
+        run.diagnostics,
     )
 }
 
@@ -359,7 +377,7 @@ fn aggregate_file_local(
 ) -> Result<()> {
     let file = &run.files[file_index];
     let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-    parser::visit_codex_session_file(
+    parser::visit_codex_session_file_with_diagnostics(
         run.sessions_dir,
         file,
         run.replay_plan.fork_replay(file),
@@ -379,6 +397,7 @@ fn aggregate_file_local(
                 &mut provenance,
             )
         },
+        run.diagnostics,
     )
 }
 
@@ -1002,6 +1021,29 @@ pub fn filter_events_by_date(
     }
     *events = kept;
     Ok(())
+}
+
+#[cfg(test)]
+pub(super) fn load_groups_from_directory(
+    sessions_dir: &Path,
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    load_groups_from_directory_with_diagnostics(
+        sessions_dir,
+        shared,
+        kind,
+        &Diagnostics::new("codex"),
+    )
+}
+
+#[cfg(test)]
+fn load_groups_from_sources(
+    sources: &[paths::CodexUsageSource],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    load_groups_from_sources_with_diagnostics(sources, shared, kind, &Diagnostics::new("codex"))
 }
 
 #[cfg(test)]
