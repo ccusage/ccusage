@@ -6,47 +6,44 @@ use super::{
     parser::{CodebuffEntry, calculate_codebuff_cost, load_chat_file, missing_codebuff_pricing},
     paths::discover_chat_files,
 };
+use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
+
 use crate::{
-    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, debug_log,
-    format_date_tz, parse_tz, read_files_parallel,
+    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, format_date_tz,
 };
 
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("Codebuff"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
+    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+        &crate::SOURCE,
+        shared,
+        ccusage_adapter_common::source::SourceOptions::default(),
+        Some(pricing),
     )
 }
 
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let mut files = discover_chat_files()?;
+pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let pricing = cx
+        .pricing
+        .ok_or_else(|| crate::cli_error("Codebuff needs pricing from the report pipeline"))?;
+    let tz = Some(cx.window.timezone());
+    let mut files = discover_chat_files(cx.diagnostics)?;
     files.sort();
     // Read files in parallel but apply the last-wins dedup sequentially over the
     // original (sorted) file order, so the surviving entry per dedup key is
     // identical to the single-threaded read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        load_chat_file(file).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read Codebuff chat file {}: {error}",
-                    file.display()
-                ),
-            );
-            Vec::new()
-        })
-    });
+    let loaded = read_units_flat(
+        &files,
+        cx.shared.single_thread,
+        cx.diagnostics,
+        load_chat_file,
+    );
     let mut deduped = HashMap::<String, CodebuffEntry>::new();
-    for file_entries in loaded {
-        for entry in file_entries {
-            deduped.insert(entry.dedup_key.clone(), entry);
-        }
+    for entry in loaded {
+        deduped.insert(entry.dedup_key.clone(), entry);
     }
     let mut entries = deduped
         .into_values()
-        .map(|entry| to_loaded_entry(entry, tz.as_ref(), pricing))
+        .map(|entry| to_loaded_entry(entry, tz, pricing))
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
@@ -101,6 +98,9 @@ mod tests {
     use crate::{
         TokenUsageRaw, UsageEntry, UsageMessage, cli::AgentReportKind, parse_ts_timestamp,
     };
+    use ccusage_adapter_common::parity::assert_focused_matches_unified;
+    use ccusage_adapter_common::source::{LoadContext, SourceOptions};
+    use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     #[test]
@@ -135,6 +135,51 @@ mod tests {
         );
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].credits, Some(1.25));
+    }
+
+    #[test]
+    fn malformed_chat_file_does_not_discard_healthy_files() {
+        let fixture = fs_fixture!({
+            "projects/project-a/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
+                {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}
+            ]"#,
+            "projects/project-b/chats/2026-01-03T03-04-05.000Z/chat-messages.json": "[broken",
+        });
+        let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let shared = SharedArgs::default();
+        let pricing = PricingMap::load_embedded();
+        let window = ReportWindow::from_shared(&shared);
+        let diagnostics = Diagnostics::new("codebuff");
+        let cx = LoadContext {
+            shared: &shared,
+            kind: AgentReportKind::Daily,
+            window: &window,
+            pricing: Some(&pricing),
+            options: SourceOptions::default(),
+            diagnostics: &diagnostics,
+        };
+
+        let entries = load_entries_with_context(&cx).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn focused_and_unified_reports_agree() {
+        let fixture = fs_fixture!({
+            "projects/project-a/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
+                {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}
+            ]"#,
+        });
+        let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let shared = SharedArgs {
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_focused_matches_unified(&crate::SOURCE, &shared, &[]);
     }
 
     #[test]
