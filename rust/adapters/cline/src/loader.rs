@@ -2,10 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
-use ccusage_adapter_common::read_files_parallel;
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs};
+use ccusage_adapter_common::{read_units_flat, source::LoadContext};
 
-use super::paths::discover_files;
+use super::paths::discover_files_with_diagnostics;
 
 pub(super) struct EntryInput {
     pub timestamp: crate::TimestampMs,
@@ -17,16 +17,19 @@ pub(super) struct EntryInput {
 }
 
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("Cline"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
+    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+        &crate::SOURCE,
+        shared,
+        ccusage_adapter_common::source::SourceOptions::default(),
+        Some(pricing),
     )
 }
 
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let sources = discover_files()?;
-    let timezone = parse_tz(shared.timezone.as_deref());
+pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let shared = cx.shared;
+    let pricing = cx.pricing.expect("Cline uses pipeline pricing");
+    let sources = discover_files_with_diagnostics(cx.diagnostics)?;
+    let timezone = Some(cx.window.timezone());
     let files = sources
         .iter()
         .map(|source| source.path.clone())
@@ -35,26 +38,14 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         .iter()
         .map(|source| (source.path.as_path(), source))
         .collect::<HashMap<_, _>>();
-    let mut entries = read_files_parallel(&files, shared.single_thread, |path| {
+    let mut entries = read_units_flat(&files, shared.single_thread, cx.diagnostics, |path| {
         let source = source_by_path
             .get(path)
             .copied()
             .expect("discovered Cline file has source metadata");
-        super::parser::read_file(source, shared.mode, pricing, timezone.as_ref()).unwrap_or_else(
-            |error| {
-                debug_log(
-                    shared,
-                    format!(
-                        "Failed to read Cline source file {}: {error}",
-                        path.display()
-                    ),
-                );
-                Vec::new()
-            },
-        )
+        super::parser::read_file(source, shared.mode, pricing, timezone)
     })
     .into_iter()
-    .flatten()
     .collect::<Vec<_>>();
     entries.sort_by(|left, right| {
         left.timestamp
@@ -276,6 +267,31 @@ mod tests {
         assert_eq!(
             entries[3].missing_pricing_model.as_deref(),
             Some("vendor/legacy-model")
+        );
+    }
+
+    #[test]
+    fn keeps_healthy_cline_files_when_another_file_is_invalid_json() {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file(
+            "tasks/healthy/ui_messages.json",
+            include_str!("../tests/fixtures/extension/ui_messages.json"),
+        );
+        let _ = fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":");
+        let _env = EnvVarGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
+        let shared = SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        assert!(!entries.is_empty());
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry.session_id.as_ref() == "task:healthy")
         );
     }
 }

@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::Result;
+use ccusage_core::Diagnostics;
 
 pub(super) const CLINE_DATA_DIR_ENV: &str = "CLINE_DATA_DIR";
 const CLINE_EXTENSION_ID: &str = "saoudrizwan.claude-dev";
@@ -24,7 +25,18 @@ pub(super) struct SourceFile {
     pub session_id: String,
 }
 
+#[cfg(test)]
 pub(super) fn discover_files() -> Result<Vec<SourceFile>> {
+    discover_files_inner(None)
+}
+
+pub(super) fn discover_files_with_diagnostics(
+    diagnostics: &Diagnostics,
+) -> Result<Vec<SourceFile>> {
+    discover_files_inner(Some(diagnostics))
+}
+
+fn discover_files_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<SourceFile>> {
     let roots = data_roots()?;
     let mut files = Vec::new();
     let mut seen = HashSet::new();
@@ -32,18 +44,25 @@ pub(super) fn discover_files() -> Result<Vec<SourceFile>> {
     for root in roots {
         let mut candidates = Vec::new();
         for relative_root in ["tasks", "data/tasks", "data/sessions", "sessions"] {
-            ccusage_adapter_common::collect_files_matching(
-                &root.join(relative_root),
-                &|path| {
-                    path.file_name().is_some_and(|name| {
-                        name == "ui_messages.json"
-                            || name
-                                .to_str()
-                                .is_some_and(|name| name.ends_with(".messages.json"))
-                    })
-                },
-                &mut candidates,
-            );
+            let matches = |path: &Path| {
+                path.file_name().is_some_and(|name| {
+                    name == "ui_messages.json"
+                        || name
+                            .to_str()
+                            .is_some_and(|name| name.ends_with(".messages.json"))
+                })
+            };
+            let dir = root.join(relative_root);
+            if let Some(diagnostics) = diagnostics {
+                ccusage_adapter_common::collect_files_matching_diagnosed(
+                    &dir,
+                    &matches,
+                    &mut candidates,
+                    diagnostics,
+                );
+            } else {
+                ccusage_adapter_common::collect_files_matching(&dir, &matches, &mut candidates);
+            }
         }
         candidates.sort();
 

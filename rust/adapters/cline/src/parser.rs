@@ -1,5 +1,6 @@
 use std::fs;
 
+use ccusage_adapter_common::UnitError;
 use serde_json::Value;
 
 use crate::{LoadedEntry, PricingMap, Result, TokenUsageRaw, cli::CostMode};
@@ -14,7 +15,7 @@ pub(super) fn read_file(
     mode: CostMode,
     pricing: &PricingMap,
     timezone: Option<&jiff::tz::TimeZone>,
-) -> Result<Vec<LoadedEntry>> {
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let content = fs::read(&source.path)?;
     let root = serde_json::from_slice::<Value>(&content)?;
     match source.kind {
@@ -23,6 +24,12 @@ pub(super) fn read_file(
         }
         SourceKind::Cli => parse_cli_messages(&root, source, mode, pricing, timezone),
     }
+    .map_err(|_| {
+        UnitError::new(
+            ccusage_core::SkipKind::InvalidData,
+            "invalid Cline usage data",
+        )
+    })
 }
 
 fn parse_extension_messages(
