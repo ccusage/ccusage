@@ -155,6 +155,21 @@ fn parse_thread(
     }
     let thread = serde_json::from_slice::<AmpThread>(content)?;
     let Some(thread_id) = thread.id else {
+        if thread
+            .messages
+            .iter()
+            .any(|message| message.usage.is_some())
+            || thread
+                .usage_ledger
+                .as_ref()
+                .and_then(|ledger| ledger.events.as_ref())
+                .is_some_and(|events| !events.is_empty())
+        {
+            return Err(UnitError::new(
+                SkipKind::InvalidData,
+                "Amp usage thread has no id",
+            ));
+        }
         return Ok(Vec::new());
     };
     let messages = &thread.messages;
@@ -190,9 +205,6 @@ fn parse_ledger_events(
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for (index, event) in events.iter().enumerate() {
-        let Some(model) = event.model.clone() else {
-            continue;
-        };
         let Some(tokens) = event.tokens.as_ref() else {
             continue;
         };
@@ -220,6 +232,15 @@ fn parse_ledger_events(
         {
             continue;
         }
+        let Some(model) = event.model.clone() else {
+            unit.diagnostics.record(Skip::record(
+                unit.path,
+                u32::try_from(index + 1).unwrap_or(u32::MAX),
+                SkipKind::InvalidData,
+                "Amp usage record has no model",
+            ));
+            continue;
+        };
         let Some(timestamp) = unit.timestamp(index + 1, event.timestamp.as_deref()) else {
             continue;
         };
@@ -297,11 +318,6 @@ fn parse_message_usage(
         let Some(usage) = message.usage.as_ref() else {
             continue;
         };
-        let Some(model) = non_empty_json_string(usage.get("model"))
-            .or_else(|| non_empty_json_string(message.model.as_ref()))
-        else {
-            continue;
-        };
         let usage_raw = TokenUsageRaw {
             input_tokens: json_value_u64(usage.get("inputTokens")),
             output_tokens: json_value_u64(usage.get("outputTokens")),
@@ -321,12 +337,28 @@ fn parse_message_usage(
         {
             continue;
         }
-        let timestamp_text = non_empty_json_string(usage.get("timestamp"))
-            .or_else(|| non_empty_json_string(message.timestamp.as_ref()));
-        let Some(timestamp) = unit.timestamp(index + 1, timestamp_text.as_deref()) else {
+        let Some(model) = non_empty_json_string(usage.get("model"))
+            .or_else(|| non_empty_json_string(message.model.as_ref()))
+        else {
+            unit.diagnostics.record(Skip::record(
+                unit.path,
+                u32::try_from(index + 1).unwrap_or(u32::MAX),
+                SkipKind::InvalidData,
+                "Amp usage record has no model",
+            ));
             continue;
         };
-        let timestamp_text = timestamp_text.unwrap();
+        let parsed_timestamp =
+            |text: String| crate::parse_ts_timestamp(&text).map(|timestamp| (text, timestamp));
+        let timestamp = non_empty_json_string(usage.get("timestamp"))
+            .and_then(parsed_timestamp)
+            .or_else(|| {
+                non_empty_json_string(message.timestamp.as_ref()).and_then(parsed_timestamp)
+            });
+        let Some((timestamp_text, timestamp)) = timestamp else {
+            unit.timestamp(index + 1, None);
+            continue;
+        };
         let message_id = message.message_id.as_ref().and_then(|id| {
             id.as_i64()
                 .map(|v| v.to_string())
@@ -478,6 +510,29 @@ mod tests {
             assert_eq!(parse(content.as_bytes(), &diagnostics).unwrap().len(), 1);
             assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
         }
+    }
+
+    #[test]
+    fn diagnoses_usage_without_an_identifier_or_model() {
+        let diagnostics = Diagnostics::new("amp");
+        let no_id = MESSAGES_THREAD.replace("\"id\":\"T-messages\",", "");
+        assert!(parse(no_id.as_bytes(), &diagnostics).is_err());
+
+        let no_model = MESSAGES_THREAD.replace("\"model\":\"gpt-5\",", "");
+        assert_eq!(parse(no_model.as_bytes(), &diagnostics).unwrap().len(), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn uses_message_timestamp_when_usage_timestamp_is_invalid() {
+        let diagnostics = Diagnostics::new("amp");
+        let content = br#"{"id":"thread","messages":[{"role":"assistant","model":"gpt-5","timestamp":"2026-01-31T11:42:10Z","usage":{"inputTokens":10,"timestamp":"SECRET_CANARY"}}]}"#;
+
+        let entries = parse(content, &diagnostics).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.timestamp, "2026-01-31T11:42:10Z");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
     }
 
     #[test]
