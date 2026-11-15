@@ -8,7 +8,7 @@ on:
       dry-run:
         description: Plan only; do not repack, touch, or delete anything.
         type: boolean
-        default: false
+        default: true
 
 permissions: {}
 
