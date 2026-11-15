@@ -383,20 +383,47 @@ fn visit_codex_session_file_inner(
             let value = match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
                 Ok(value) => value,
                 Err(error) => {
-                    record_decode_failure(
-                        path,
-                        line_number,
-                        &line,
-                        error,
-                        diagnostics,
-                        Some(&mut state.previous_totals),
-                    );
+                    if let Ok(value) = serde_json::from_slice::<Value>(&line)
+                        && !is_session_usage_type(
+                            value.get("type").and_then(Value::as_str),
+                            value.pointer("/payload/type").and_then(Value::as_str),
+                        )
+                    {
+                        add_codex_exec_event_value(
+                            &session_id,
+                            &value,
+                            &fallback_timestamp,
+                            &mut state.current_model,
+                            &mut state.current_model_is_fallback,
+                            &mut |event| replay.visit(event, &mut visit),
+                            &RecordLocation {
+                                path,
+                                line: line_number,
+                                diagnostics,
+                            },
+                        )?;
+                    } else {
+                        record_decode_failure(
+                            path,
+                            line_number,
+                            &line,
+                            error,
+                            diagnostics,
+                            Some(&mut state.previous_totals),
+                        );
+                    }
                     continue;
                 }
             };
             // Type names inside headless data can pass the substring scan;
             // only the decoded envelope selects session accounting.
-            if is_session_usage_entry(&value) {
+            if is_session_usage_type(
+                value.entry_type.as_deref(),
+                value
+                    .payload
+                    .as_ref()
+                    .and_then(|payload| payload.payload_type.as_deref()),
+            ) {
                 if value.entry_type.as_deref() == Some("token_usage_record") {
                     replay.observe_usage_record();
                 }
@@ -462,16 +489,13 @@ fn visit_codex_session_file_inner(
     Ok(())
 }
 
-fn is_session_usage_entry(value: &CodexSessionLogEntry<'_>) -> bool {
+fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -> bool {
     matches!(
-        value.entry_type.as_deref(),
+        entry_type,
         Some("turn_context" | "token_usage_record" | "compacted")
-    ) || (value.entry_type.as_deref() == Some("event_msg")
+    ) || (entry_type == Some("event_msg")
         && matches!(
-            value
-                .payload
-                .as_ref()
-                .and_then(|payload| payload.payload_type.as_deref()),
+            payload_type,
             Some("token_count" | "thread_settings_applied")
         ))
 }
@@ -763,7 +787,27 @@ fn add_codex_exec_event_from_value(
             return Ok(());
         }
     };
-    let raw_usage = match normalize_headless_codex_usage_value(&value) {
+    add_codex_exec_event_value(
+        session_id,
+        &value,
+        fallback_timestamp,
+        current_model,
+        current_model_is_fallback,
+        visit,
+        location,
+    )
+}
+
+fn add_codex_exec_event_value(
+    session_id: &str,
+    value: &Value,
+    fallback_timestamp: &str,
+    current_model: &mut Option<String>,
+    current_model_is_fallback: &mut bool,
+    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    location: &RecordLocation<'_>,
+) -> Result<()> {
+    let raw_usage = match normalize_headless_codex_usage_value(value) {
         Ok(Some(raw_usage)) => raw_usage,
         Ok(None) => return Ok(()),
         Err(()) => {
@@ -771,11 +815,11 @@ fn add_codex_exec_event_from_value(
             return Ok(());
         }
     };
-    let parsed_model = codex_model_from_result_value(&value);
+    let parsed_model = codex_model_from_result_value(value);
     let timestamps = CodexExecTimestamps {
-        event: codex_timestamp_from_result_value(&value)
+        event: codex_timestamp_from_result_value(value)
             .unwrap_or_else(|| fallback_timestamp.to_string()),
-        model: codex_model_timestamp_from_result_value(&value)
+        model: codex_model_timestamp_from_result_value(value)
             .unwrap_or_else(|| fallback_timestamp.to_string()),
     };
     visit_codex_exec_usage_event(
@@ -1675,6 +1719,37 @@ mod tests {
             let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
 
             assert_eq!(events.len(), 1);
+            assert_eq!(events[0].input_tokens, 100);
+            assert_eq!(events[0].output_tokens, 20);
+            assert_eq!(events[0].total_tokens, 120);
+        }
+    }
+
+    #[test]
+    fn loads_headless_created_at_after_session_candidate_decode_fails() {
+        for timestamp in [json!(false), json!({"SECRET_CANARY": true})] {
+            let record = json!({
+                "type": "result",
+                "timestamp": timestamp,
+                "created_at": "2026-09-01T00:00:01Z",
+                "model": "gpt-5-mini",
+                "usage": { "input_tokens": 100, "output_tokens": 20 },
+                "data": {
+                    "type": "event_msg",
+                    "nested": { "type": "token_count" },
+                    "padding": "x".repeat(70 * 1024),
+                },
+            });
+            let line = record
+                .to_string()
+                .replace(r#""type":"event_msg""#, r#""type" : "event_msg""#)
+                .replace(r#""type":"token_count""#, r#""type" : "token_count""#);
+            let fixture = fs_fixture!({ "headless.jsonl": line });
+
+            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].timestamp, "2026-09-01T00:00:01.000Z");
             assert_eq!(events[0].input_tokens, 100);
             assert_eq!(events[0].output_tokens, 20);
             assert_eq!(events[0].total_tokens, 120);
