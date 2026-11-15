@@ -72,7 +72,8 @@ pub(crate) fn load_deduped_entries_with_progress(
     project_filter: Option<&str>,
     owner: ProgressOwner,
 ) -> Result<DedupedEntries> {
-    let load = || load_entries_inner(shared, project_filter, false);
+    let diagnostics = Diagnostics::new("claude");
+    let load = || load_entries_inner(shared, project_filter, false, &diagnostics);
     match owner {
         ProgressOwner::Source => {
             progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
@@ -130,13 +131,22 @@ pub fn load_entries_since(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<Vec<LoadedEntry>> {
+    let diagnostics = Diagnostics::new("claude");
+    let entries = load_entries_since_with_diagnostics(shared, project_filter, &diagnostics)?;
+    diagnostics::emit(&diagnostics.warnings(shared));
+    Ok(entries)
+}
+
+/// Loads bounded entries into caller-owned diagnostics without emitting warnings.
+pub fn load_entries_since_with_diagnostics(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
+) -> Result<Vec<LoadedEntry>> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        load_entries_inner(shared, project_filter, true)
+        load_entries_inner(shared, project_filter, true, diagnostics)
     })
-    .map(|deduped| {
-        diagnostics::emit(&deduped.warnings);
-        deduped.entries
-    })
+    .map(|deduped| deduped.entries)
 }
 
 /// Loads daily Claude summaries. Summaries dated before `since` may be
@@ -235,8 +245,8 @@ fn load_entries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     skip_files_before_since: bool,
+    diagnostics: &Diagnostics,
 ) -> Result<DedupedEntries> {
-    let diagnostics = Diagnostics::new("claude");
     let paths = claude_paths()?;
     debug_log(
         shared,
@@ -281,7 +291,7 @@ fn load_entries_inner(
     let tz = parse_tz(shared.timezone.as_deref());
     let mode = shared.mode;
     let loaded_files = read_files_parallel(&files, shared.single_thread, |file| {
-        read_usage_file_with_diagnostics(file, tz.as_ref(), mode, pricing.as_ref(), &diagnostics)
+        read_usage_file_with_diagnostics(file, tz.as_ref(), mode, pricing.as_ref(), diagnostics)
     });
     let loaded_entry_count = loaded_files
         .iter()
