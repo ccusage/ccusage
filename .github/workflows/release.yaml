@@ -113,10 +113,9 @@ jobs:
         with:
           ref: ${{ needs.tagpr.outputs.tag }}
           persist-credentials: false
-      # Linux mounts the sticky disk CI commits on every push to main. Saving
-      # here would only race those commits on Linux, and on macOS the release's
-      # own cache entries are evicted long before the next release, while the
-      # save delays the npm job.
+      # Linux mounts the sticky disk CI commits on every push to main, and macOS
+      # substitutes from the hestia cache CI writes on main. Saving here would
+      # only race those writes, while the upload delays the npm job.
       - uses: ./.github/actions/build-linux-native-package
         if: matrix.platform == 'linux'
         with:
