@@ -20,7 +20,7 @@ use super::{
     reader::{open_rollout_reader, uncompressed_rollout_path},
     types::{
         CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
-        CodexSessionLogEntry, CodexTimestamp,
+        CodexSessionLogEntry, CodexTimestamp, CodexUsageCandidate,
     },
 };
 
@@ -415,6 +415,11 @@ fn visit_codex_session_file_inner(
                 &mut state.current_model,
                 &mut state.current_model_is_fallback,
                 &mut |event| replay.visit(event, &mut visit),
+                &RecordLocation {
+                    path,
+                    line: line_number,
+                    diagnostics,
+                },
             )?;
         } else {
             add_codex_exec_event_from_value(
@@ -697,9 +702,15 @@ fn add_codex_exec_event(
     current_model: &mut Option<String>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    location: &RecordLocation<'_>,
 ) -> Result<()> {
-    let Some(raw_usage) = normalize_headless_codex_usage(value) else {
-        return Ok(());
+    let raw_usage = match normalize_headless_codex_usage(value) {
+        Ok(Some(raw_usage)) => raw_usage,
+        Ok(None) => return Ok(()),
+        Err(()) => {
+            location.invalid_usage();
+            return Ok(());
+        }
     };
     let parsed_model = codex_model_from_result(value);
     let timestamps = CodexExecTimestamps {
@@ -740,8 +751,13 @@ fn add_codex_exec_event_from_value(
             return Ok(());
         }
     };
-    let Some(raw_usage) = normalize_headless_codex_usage_value(&value) else {
-        return Ok(());
+    let raw_usage = match normalize_headless_codex_usage_value(&value) {
+        Ok(Some(raw_usage)) => raw_usage,
+        Ok(None) => return Ok(()),
+        Err(()) => {
+            location.invalid_usage();
+            return Ok(());
+        }
     };
     let parsed_model = codex_model_from_result_value(&value);
     let timestamps = CodexExecTimestamps {
@@ -1116,52 +1132,65 @@ fn non_empty_value_string(value: Option<&Value>) -> Option<String> {
     })
 }
 
-fn usage_from_result(value: &CodexLogEntry<'_>) -> Option<CodexRawUsage> {
-    value
-        .usage
-        .as_ref()
-        .copied()
-        .or_else(|| {
-            value
-                .data
-                .as_ref()
-                .and_then(|data| data.usage.as_ref().copied())
-        })
-        .or_else(|| {
-            value
-                .result
-                .as_ref()
-                .and_then(|result| result.usage.as_ref().copied())
-        })
-        .or_else(|| {
-            value
-                .response
-                .as_ref()
-                .and_then(|response| response.usage.as_ref().copied())
-        })
+fn usage_from_result(value: &CodexLogEntry<'_>) -> CodexUsageCandidate {
+    first_decoded_usage([
+        value.usage,
+        value
+            .data
+            .as_ref()
+            .map_or(CodexUsageCandidate::Missing, |data| data.usage),
+        value
+            .result
+            .as_ref()
+            .map_or(CodexUsageCandidate::Missing, |result| result.usage),
+        value
+            .response
+            .as_ref()
+            .map_or(CodexUsageCandidate::Missing, |response| response.usage),
+    ])
 }
 
-fn usage_from_result_value(value: &Value) -> Option<CodexRawUsage> {
-    usage_from_value(value.get("usage"))
-        .or_else(|| {
-            value
-                .get("data")
-                .and_then(|data| usage_from_value(data.get("usage")))
-        })
-        .or_else(|| {
-            value
-                .get("result")
-                .and_then(|result| usage_from_value(result.get("usage")))
-        })
-        .or_else(|| {
+fn usage_from_result_value(value: &Value) -> CodexUsageCandidate {
+    first_decoded_usage(
+        [
+            value.get("usage"),
+            value.get("data").and_then(|data| data.get("usage")),
+            value.get("result").and_then(|result| result.get("usage")),
             value
                 .get("response")
-                .and_then(|response| usage_from_value(response.get("usage")))
-        })
+                .and_then(|response| response.get("usage")),
+        ]
+        .into_iter()
+        .map(usage_from_value),
+    )
 }
 
-fn usage_from_value(value: Option<&Value>) -> Option<CodexRawUsage> {
-    serde_json::from_value(value?.clone()).ok()
+fn first_decoded_usage(
+    candidates: impl IntoIterator<Item = CodexUsageCandidate>,
+) -> CodexUsageCandidate {
+    let mut malformed = false;
+    for candidate in candidates {
+        match candidate {
+            decoded @ CodexUsageCandidate::Decoded(_) => return decoded,
+            CodexUsageCandidate::Malformed => malformed = true,
+            CodexUsageCandidate::Missing => {}
+        }
+    }
+    if malformed {
+        CodexUsageCandidate::Malformed
+    } else {
+        CodexUsageCandidate::Missing
+    }
+}
+
+fn usage_from_value(value: Option<&Value>) -> CodexUsageCandidate {
+    match value {
+        None | Some(Value::Null) => CodexUsageCandidate::Missing,
+        Some(value @ Value::Object(_)) => serde_json::from_value(value.clone())
+            .map(CodexUsageCandidate::Decoded)
+            .unwrap_or(CodexUsageCandidate::Malformed),
+        Some(_) => CodexUsageCandidate::Malformed,
+    }
 }
 
 fn codex_timestamp_from_result(value: &CodexLogEntry<'_>) -> Option<String> {
@@ -1359,22 +1388,26 @@ fn normalize_value_timestamp(value: Option<&Value>) -> Option<String> {
     )))
 }
 
-fn normalize_headless_codex_usage(value: &CodexLogEntry<'_>) -> Option<CodexRawUsage> {
-    let usage = normalize_codex_raw_usage(usage_from_result(value)?);
-    if usage.input_tokens == 0
-        && usage.cached_input_tokens == 0
-        && usage.cache_creation_tokens == 0
-        && usage.output_tokens == 0
-        && usage.reasoning_output_tokens == 0
-        && usage.total_tokens == 0
-    {
-        return None;
-    }
-    Some(usage)
+fn normalize_headless_codex_usage(
+    value: &CodexLogEntry<'_>,
+) -> std::result::Result<Option<CodexRawUsage>, ()> {
+    normalize_headless_usage_candidate(usage_from_result(value))
 }
 
-fn normalize_headless_codex_usage_value(value: &Value) -> Option<CodexRawUsage> {
-    let usage = normalize_codex_raw_usage(usage_from_result_value(value)?);
+fn normalize_headless_codex_usage_value(
+    value: &Value,
+) -> std::result::Result<Option<CodexRawUsage>, ()> {
+    normalize_headless_usage_candidate(usage_from_result_value(value))
+}
+
+fn normalize_headless_usage_candidate(
+    candidate: CodexUsageCandidate,
+) -> std::result::Result<Option<CodexRawUsage>, ()> {
+    let usage = match candidate {
+        CodexUsageCandidate::Decoded(usage) => normalize_codex_raw_usage(usage),
+        CodexUsageCandidate::Malformed => return Err(()),
+        CodexUsageCandidate::Missing => return Ok(None),
+    };
     if usage.input_tokens == 0
         && usage.cached_input_tokens == 0
         && usage.cache_creation_tokens == 0
@@ -1382,9 +1415,9 @@ fn normalize_headless_codex_usage_value(value: &Value) -> Option<CodexRawUsage> 
         && usage.reasoning_output_tokens == 0
         && usage.total_tokens == 0
     {
-        return None;
+        return Ok(None);
     }
-    Some(usage)
+    Ok(Some(usage))
 }
 
 fn file_modified_timestamp(path: &Path) -> String {
@@ -1505,6 +1538,15 @@ struct RecordLocation<'a> {
     diagnostics: &'a Diagnostics,
 }
 impl RecordLocation<'_> {
+    fn invalid_usage(&self) {
+        self.diagnostics.record(Skip::record(
+            self.path,
+            self.line,
+            SkipKind::InvalidData,
+            "headless usage did not decode",
+        ));
+    }
+
     fn invalid_timestamp(&self) {
         self.diagnostics.record(Skip::record(
             self.path,

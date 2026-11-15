@@ -95,6 +95,13 @@ struct State {
     tallies: [Tally; SkipKind::ALL.len()],
 }
 
+fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
+    left.unit
+        .cmp(&right.unit)
+        .then_with(|| left.line.cmp(&right.line))
+        .then_with(|| left.detail.cmp(&right.detail))
+}
+
 /// What one source left out while loading one report.
 ///
 /// Loaders record every skip here instead of dropping it silently or logging
@@ -126,8 +133,15 @@ impl Diagnostics {
         if !tally.units.contains(&skip.unit) {
             tally.units.insert(skip.unit.clone());
         }
-        if tally.samples.len() < SAMPLES_PER_KIND {
+        if tally.samples.len() < SAMPLES_PER_KIND
+            || tally
+                .samples
+                .last()
+                .is_some_and(|sample| sample_order(&skip, sample).is_lt())
+        {
             tally.samples.push(skip);
+            tally.samples.sort_by(sample_order);
+            tally.samples.truncate(SAMPLES_PER_KIND);
         }
     }
 
@@ -379,6 +393,50 @@ mod tests {
         );
         assert_eq!(lines.len(), 1 + SAMPLES_PER_KIND + 1);
         assert_eq!(lines[lines.len() - 1], "amp: unreadable: 2 more not listed");
+    }
+
+    #[test]
+    fn debug_samples_are_stable_and_bounded_across_recording_orders() {
+        let skips = [
+            ("/logs/z.jsonl", 1, "z-one"),
+            ("/logs/a.jsonl", 4, "a-four"),
+            ("/logs/a.jsonl", 2, "a-beta"),
+            ("/logs/b.jsonl", 2, "b-two"),
+            ("/logs/a.jsonl", 2, "a-alpha"),
+            ("/logs/c.jsonl", 1, "c-one"),
+            ("/logs/a.jsonl", 1, "a-one"),
+            ("/logs/d.jsonl", 1, "d-one"),
+        ]
+        .map(|(unit, line, detail)| {
+            Skip::record(Path::new(unit), line, SkipKind::InvalidData, detail)
+        });
+        let expected = [
+            "WARN  test: skipped 8 records in 5 inputs (invalid data)",
+            "test: invalid data: /logs/a.jsonl:1: a-one",
+            "test: invalid data: /logs/a.jsonl:2: a-alpha",
+            "test: invalid data: /logs/a.jsonl:2: a-beta",
+            "test: invalid data: /logs/a.jsonl:4: a-four",
+            "test: invalid data: /logs/b.jsonl:2: b-two",
+            "test: invalid data: 3 more not listed",
+        ];
+        let orders = [
+            [0, 1, 2, 3, 4, 5, 6, 7],
+            [7, 6, 5, 4, 3, 2, 1, 0],
+            [3, 0, 6, 2, 7, 4, 1, 5],
+        ];
+
+        for order in orders {
+            let diagnostics = Diagnostics::new("test");
+            for index in order {
+                diagnostics.record(skips[index].clone());
+            }
+
+            assert_eq!(
+                diagnostics.skipped(SkipKind::InvalidData),
+                skips.len() as u64
+            );
+            assert_eq!(diagnostics.render(true, true), expected);
+        }
     }
 
     #[test]

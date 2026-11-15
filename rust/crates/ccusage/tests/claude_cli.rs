@@ -275,6 +275,14 @@ fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress
 const FRESH_MTIME: u64 = 1_789_214_400;
 
 fn run_ccusage(fixture: &Fixture, args: &[&str], stdin: Option<&str>) -> String {
+    String::from_utf8(run_ccusage_output(fixture, args, stdin).stdout).unwrap()
+}
+
+fn run_ccusage_output(
+    fixture: &Fixture,
+    args: &[&str],
+    stdin: Option<&str>,
+) -> std::process::Output {
     use std::io::Write as _;
 
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
@@ -301,7 +309,51 @@ fn run_ccusage(fixture: &Fixture, args: &[&str], stdin: Option<&str>) -> String 
         "ccusage {args:?} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).unwrap()
+    output
+}
+
+#[test]
+fn statusline_emits_one_warning_across_repeated_usage_loads() {
+    let fixture = Fixture::new();
+    let transcript = fixture.write_file(
+        "projects/project-a/session-now.jsonl",
+        r#"{"message":{"usage":{"SECRET_CANARY":"#,
+    );
+    let hook = serde_json::json!({
+        "session_id": "session-now",
+        "transcript_path": transcript,
+        "model": {"display_name": "Model"},
+    })
+    .to_string();
+    let output = run_ccusage_output(
+        &fixture,
+        &[
+            "claude",
+            "statusline",
+            "--offline",
+            "--no-cache",
+            "--cost-source",
+            "ccusage",
+            "--timezone",
+            "UTC",
+        ],
+        Some(&hook),
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(
+        stderr
+            .lines()
+            .filter(|line| line.contains("invalid data"))
+            .count(),
+        1,
+        "{stderr}"
+    );
+    assert!(!stderr.contains("SECRET_CANARY"));
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("session")
+    );
 }
 
 /// Runs `args` twice: once with the fixture's own mtimes and once with every
