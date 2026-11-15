@@ -2679,12 +2679,7 @@ fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
         fixture.path("antigravity").into_os_string(),
     );
     let shared = fixture_shared("20250615", "20250615");
-    let expected = vec![format!(
-        "WARN  Skipping unreadable Antigravity database '{}': Failed to inspect Antigravity database: file is not a database (code 26)",
-        fixture
-            .path("antigravity/conversations/not-a-database.db")
-            .display()
-    )];
+    let expected = vec!["WARN  antigravity: skipped 1 input (unreadable)".to_string()];
 
     let rows = loader::load_rows(
         AgentReportKind::Daily,
