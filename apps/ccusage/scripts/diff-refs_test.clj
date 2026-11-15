@@ -32,7 +32,8 @@
     (is (= ["codex daily" "codex monthly" "codex session"]
            (filter #(clojure.string/starts-with? % "codex ") report-commands)))
     (is (not-any? #(re-find #"statusline|^(codex|amp) (weekly|blocks)" %) report-commands)))
-  (is (= 65 (count report-commands))))
+  (is (some #{"blocks"} report-commands))
+  (is (= 66 (count report-commands))))
 
 (defn- args-of [plan id] (:args (first (filter #(= id (:id %)) plan))))
 
@@ -44,6 +45,7 @@
     (testing "fixture runs are unbounded except for the window variant"
       (is (= ["claude" "daily" "--offline" "--timezone" "UTC" "--json"] (args-of fixture "claude-daily--json")))
       (is (= ["daily" "--offline" "--timezone" "UTC"] (args-of fixture "daily--table")))
+      (is (= ["blocks" "--offline" "--timezone" "UTC" "--json"] (args-of fixture "blocks--json")))
       (is (= ["codex" "session" "--offline" "--timezone" "UTC" "--json" "--breakdown"]
              (args-of fixture "codex-session--json-breakdown")))
       (is (= ["claude" "blocks" "--offline" "--timezone" "UTC" "--json" "--since" "20250101" "--until" "20250131"]
@@ -127,6 +129,8 @@
                    file))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
         rejected (script "rejected" "echo 'unsupported report arguments' >&2; exit 2")
+        unlaunchable (doto (script "unlaunchable" "echo unused")
+                       (babashka.fs/set-posix-file-permissions "rw-------"))
         reordered (script "reordered" "echo '{\"b\":2,\"a\":1}'")
         changed (script "changed" "echo '{\"b\":2,\"a\":3}'; echo warn >&2")
         intermittent (script "intermittent"
@@ -152,6 +156,17 @@
           (is (re-find #"(?m)^ERROR\s" output))
           (is (= "unsupported report arguments\n"
                  (slurp (path output-dir "daily--json" "base-1.stderr"))))))
+      (testing "a command execution exception is an inconclusive comparison"
+        (let [entry (expand (path script-dir "diff-refs.bb"))
+              result (run-process [entry "--output-dir" (path dir "unlaunchable-reports") unlaunchable stable])]
+          (is (= 2 (:exit result)))
+          (is (re-find #"(?m)^ERROR\s" (:out result)))
+          (is (not (re-find #"(?m)^FAIL\s" (:out result))))
+          (is (.contains (:out result) "IOException"))))
+      (testing "invalid comparison arguments are not reported as output differences"
+        (let [result (run-process [(expand (path script-dir "diff-refs.bb")) "--jobs" "0" "HEAD" "HEAD"])]
+          (is (= 2 (:exit result)))
+          (is (clojure.string/blank? (:out result)))))
       (testing "head must agree on repeated runs even when its first run matches"
         (let [result (compare {:base stable :head intermittent} false)]
           (is (= :different (:status result)))

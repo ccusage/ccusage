@@ -18,4 +18,4 @@
      (catch Exception error
        (binding [*out* *err*]
          (println (ex-message error)))
-       1))))
+       2))))
