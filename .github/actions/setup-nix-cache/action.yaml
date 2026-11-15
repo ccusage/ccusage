@@ -4,8 +4,9 @@ description: >
   runners /nix is a sticky disk: a block device cloned from the last committed
   snapshot, so the whole store is there at mount time without a restore or save
   step and without counting against the Actions cache quota. Runners without
-  sticky disks (macOS, GitHub-hosted) fall back to cache-nix-action, which
-  restores and saves the store through the Actions cache.
+  sticky disks (macOS, GitHub-hosted) use hestia instead: a Nix binary cache
+  backed by the Actions cache that substitutes what earlier runs built and
+  uploads only the deduplicated chunks a run added.
 inputs:
   cache-scope:
     description: >
@@ -22,34 +23,11 @@ inputs:
     default: ''
   save:
     description: >
-      Whether this job may persist the store for later runs. Sticky disks only
-      commit from runs on main that are not pull_request(_target) events, so
-      pull request code can never write a store that main and releases read.
+      Whether this job may persist the store for later runs. Sticky disks and
+      hestia only write from runs on main that are not pull_request(_target)
+      events, so pull request code can never write a store that main and
+      releases read.
     default: 'true'
-  gc-max-store-size-linux:
-    description: >
-      Optional Linux store size limit applied before a cache-nix-action save.
-      Callers must root every artifact they want the garbage collector to retain.
-    default: ''
-  defer-save:
-    description: >
-      Only restore the cache-nix-action store here and leave saving to the
-      caller, which runs cache-nix-action/save with the `primary-key` output
-      when the `save` output is true. A caller nested in another composite
-      action needs this: the post-job save of a nested cache-nix-action step
-      read `save` as empty and silently skipped every save. It also lets the
-      caller root what the next run needs before the save collects garbage.
-      Has no effect on sticky disks.
-    default: 'false'
-outputs:
-  primary-key:
-    description: cache-nix-action key for this run's store; empty on sticky disks.
-    value: ${{ steps.key.outputs.primary }}
-  save:
-    description: >
-      Whether this run may persist the store: `save` is true and the run is a
-      push to main rather than a pull request.
-    value: ${{ steps.backend.outputs.commit }}
 runs:
   using: composite
   steps:
@@ -102,58 +80,15 @@ runs:
           keep-derivations = true
           keep-outputs = true
 
-    # package.json only supplies the final binary version. It is excluded
-    # because release bumps do not change the deps-only Crane derivation.
-    # Likewise, checks and developer-tooling modules do not affect Cargo
-    # artifacts; only package modules participate in this hash.
-    #
-    # The commit sha ends the primary key so every commit writes a fresh entry:
-    # cache-nix-action skips saving on an exact primary-key hit, so a key that
-    # only depended on the deps hash would persist the first run's store
-    # forever. The restore prefixes (without the sha) then restore the newest
-    # prior entry to warm the deps: the first prefers the current deps hash, the
-    # second drops it so a flake change that only adds developer tooling still
-    # restores a warm store. Blacksmith handles stale cache eviction without the
-    # GitHub REST API used by cache-nix-action's purge mode.
-    #
-    # Like the sticky disk key, the key has no workflow name, so release.yaml's
-    # macOS builds, which never save, restore the entry ci.yaml saved for the
-    # previous main commit: release starts before CI saves for the release
-    # commit, which only bumps package.json files outside the deps hash. Two
-    # workflows sharing a job id can only collide on the primary key for the
-    # same commit, whose stores hold the same build.
-    - name: Compute Nix cache key
+    # The post step drains (uploads) based on state saved by the main step
+    # rather than re-evaluated inputs, so the read-only switch also holds when
+    # this action is nested inside another composite action.
+    - name: Start hestia binary cache
       if: steps.backend.outputs.sticky != 'true'
-      id: key
-      shell: bash
-      env:
-        DEPS_HASH: ${{ hashFiles('flake.lock', 'flake.nix', 'default.nix', 'package.nix', 'nix/packages.nix', 'nix/static-package.nix', 'nix/darwin-x64-package.nix', 'rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}
-        SCOPE: nix-${{ github.job }}-${{ inputs.cache-scope }}
-        SHA: ${{ github.sha }}
-      run: |
-        {
-          echo "primary=$SCOPE-$DEPS_HASH-$SHA"
-          echo "restore-prefixes<<EOF"
-          echo "$SCOPE-$DEPS_HASH-"
-          echo "$SCOPE-"
-          echo "EOF"
-        } >> "$GITHUB_OUTPUT"
-
-    - name: Cache Nix store
-      if: steps.backend.outputs.sticky != 'true' && inputs.defer-save != 'true'
-      uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      uses: Mic92/hestia@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
       with:
-        primary-key: ${{ steps.key.outputs.primary }}
-        restore-prefixes-first-match: ${{ steps.key.outputs.restore-prefixes }}
-        save: ${{ inputs.save }}
-        gc-max-store-size-linux: ${{ inputs.gc-max-store-size-linux }}
-
-    - name: Restore Nix store
-      if: steps.backend.outputs.sticky != 'true' && inputs.defer-save == 'true'
-      uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
-      with:
-        primary-key: ${{ steps.key.outputs.primary }}
-        restore-prefixes-first-match: ${{ steps.key.outputs.restore-prefixes }}
+        version: v3.1.0
+        read-only: ${{ steps.backend.outputs.commit != 'true' }}
 
     - name: Fix single-user Nix store ownership
       if: runner.os != 'Windows'
