@@ -353,6 +353,10 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
 
     let mut diagnostics = StatuslineDiagnostics::default();
     let statusline_result = render_statusline(&hook, &args, &shared, &mut diagnostics);
+    let shared = SharedArgs {
+        debug: args.debug,
+        ..shared
+    };
     for warning in diagnostics.warnings(&shared) {
         eprintln!("{warning}");
     }
