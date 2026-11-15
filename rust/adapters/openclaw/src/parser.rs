@@ -1,15 +1,16 @@
 use std::{fs, path::Path, sync::Arc};
 
+use ccusage_adapter_common::{jsonl, units::UnitError};
+use ccusage_core::Diagnostics;
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
     format_date_tz, missing_pricing_model_for_usage, stored_cost_for_mode,
 };
-use ccusage_adapter_common::jsonl;
 
 /// A single parsed OpenClaw session line. Only the fields ccusage consumes are
 /// declared; serde skips everything else. Both `model_change`/`model-snapshot`
@@ -177,10 +178,11 @@ pub(super) fn parse_session_file(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let session_id = extract_session_id(path);
     let fallback_timestamp = file_modified_timestamp(path);
-    let content = fs::read(path)?;
+    let content = fs::read(path).map_err(UnitError::from)?;
     // OpenClaw lines that matter are either model-tracking records
     // (`model_change`/`model-snapshot`) or assistant records carrying `usage`,
     // so admit lines containing any of those substrings before JSON parsing.
@@ -189,7 +191,13 @@ pub(super) fn parse_session_file(
     let mut current_model = None::<String>;
     let mut current_provider = None::<String>;
     let mut entries = Vec::new();
-    for record in jsonl::records::<OpenClawLine>(&content, Some(&prefilter)) {
+    for record in jsonl::records_with_usage_diagnostics::<OpenClawLine>(
+        &content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_usage_envelope,
+    ) {
         if is_model_change(&record) {
             let (model, provider) = model_change_source(&record);
             if let Some(model) = model {
@@ -211,6 +219,19 @@ pub(super) fn parse_session_file(
         }
     }
     Ok(entries)
+}
+
+fn is_usage_envelope(value: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("message")
+        && value
+            .get("message")
+            .and_then(|message| message.get("role"))
+            .and_then(Value::as_str)
+            == Some("assistant")
+        && value
+            .get("message")
+            .and_then(|message| message.get("usage"))
+            .is_some()
 }
 
 pub(super) fn is_model_change(record: &OpenClawLine) -> bool {
@@ -499,6 +520,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn diagnoses_malformed_usage_line_and_keeps_later_usage() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"message","customType":{"secret":"SECRET_CANARY"},"message":{"role":"assistant","usage":{"input":1}}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20},"timestamp":1769753935279}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        let warnings = diagnostics
+            .warnings(&ccusage_core::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
     fn malformed_message_does_not_drop_model_tracking_line() {
         // A `model_change` line whose `message` field is a non-object must still
         // deserialize and update the tracked model/provider, instead of being
@@ -513,7 +566,14 @@ mod tests {
         });
         let file = fixture.path("session.jsonl");
 
-        let entries = parse_session_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries = parse_session_file(
+            &file,
+            None,
+            CostMode::Auto,
+            None,
+            &Diagnostics::new("openclaw"),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
@@ -553,6 +613,7 @@ mod tests {
             None,
             CostMode::Calculate,
             Some(&pricing),
+            &Diagnostics::new("openclaw"),
         )
         .unwrap();
 

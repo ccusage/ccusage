@@ -1,8 +1,7 @@
 use std::collections::HashSet;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use crate::{LoadedEntry, Result};
+use ccusage_adapter_common::{read_units, source::LoadContext};
 
 use super::{
     parser::{entry_id, migration_id, parse_session_file},
@@ -10,24 +9,8 @@ use super::{
     sqlite::collect_sqlite_entries,
 };
 
-pub fn load_entries(
-    shared: &SharedArgs,
-    custom_path: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("OpenClaw"),
-        shared.json,
-        || load_entries_inner(shared, custom_path, pricing),
-    )
-}
-
-fn load_entries_inner(
-    shared: &SharedArgs,
-    custom_path: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
+pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let pricing = cx.pricing;
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     // SQLite-era event ids (`session_id`, message `id`) win over the
@@ -36,31 +19,28 @@ fn load_entries_inner(
     // disk, and the SQLite row carries the provider-billed embedded cost.
     let mut sqlite_ids = HashSet::new();
     let mut sqlite_entries: Vec<LoadedEntry> = Vec::new();
-    for root in paths(custom_path) {
+    for root in paths(cx.options.open_claw_path) {
         sqlite_entries.extend(collect_sqlite_entries(
             &root,
-            tz.as_ref(),
-            shared.mode,
+            Some(cx.window.timezone()),
+            cx.shared.mode,
             pricing,
-            &|message| debug_log(shared, message),
+            cx.diagnostics,
         ));
-        let files = collect_session_files(&root)?;
+        let files = collect_session_files(&root, cx.diagnostics);
         // Read session files in parallel; the first-wins dedup runs sequentially
         // over the original file order so the surviving record per id is the
         // same as the single-threaded read.
-        let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-            parse_session_file(file, tz.as_ref(), shared.mode, pricing).unwrap_or_else(|error| {
-                debug_log(
-                    shared,
-                    format!(
-                        "Failed to read OpenClaw session file {}: {error}",
-                        file.display()
-                    ),
-                );
-                Vec::new()
-            })
+        let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
+            parse_session_file(
+                file,
+                Some(cx.window.timezone()),
+                cx.shared.mode,
+                pricing,
+                cx.diagnostics,
+            )
         });
-        for file_entries in loaded {
+        for file_entries in loaded.into_iter().flatten() {
             for entry in file_entries {
                 if seen.insert(entry_id(&entry)) {
                     entries.push(entry);
@@ -105,7 +85,7 @@ fn load_entries_inner(
 mod tests {
     use std::sync::Mutex;
 
-    use super::*;
+    use ccusage_core::{PricingMap, cli::SharedArgs};
     use ccusage_test_support::fs_fixture;
 
     static OPENCLAW_DIR_LOCK: Mutex<()> = Mutex::new(());
@@ -124,7 +104,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries(&shared, fixture.root().to_str(), None).unwrap();
+        let entries = crate::load_entries(&shared, fixture.root().to_str(), None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-30");
@@ -148,7 +128,8 @@ mod tests {
         let fixture = fs_fixture!({
             "agents/main/sessions/session.jsonl": format!("{line}\n{line}\n"),
         });
-        let entries = load_entries(&SharedArgs::default(), fixture.root().to_str(), None).unwrap();
+        let entries =
+            crate::load_entries(&SharedArgs::default(), fixture.root().to_str(), None).unwrap();
 
         assert_eq!(entries.len(), 1);
     }
@@ -175,7 +156,8 @@ mod tests {
         let pricing =
             PricingMap::load_with_overrides(shared.offline, false, shared.pricing_overrides.iter());
 
-        let entries = load_entries(&shared, fixture.root().to_str(), Some(&pricing)).unwrap();
+        let entries =
+            crate::load_entries(&shared, fixture.root().to_str(), Some(&pricing)).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert!((entries[0].cost - 0.002).abs() < f64::EPSILON);
@@ -214,7 +196,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let entries = load_entries(&shared, fixture.root().to_str(), None).unwrap();
+        let entries = crate::load_entries(&shared, fixture.root().to_str(), None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-30");
@@ -255,7 +237,8 @@ mod tests {
             .unwrap();
         statement.next().unwrap();
 
-        let entries = load_entries(&SharedArgs::default(), fixture.root().to_str(), None).unwrap();
+        let entries =
+            crate::load_entries(&SharedArgs::default(), fixture.root().to_str(), None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-sqlite"));

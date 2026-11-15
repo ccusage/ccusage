@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use ccusage_adapter_common::units::UnitError;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::parser::{OpenClawLine, parse_transcript_message, sqlite_entry_to_loaded};
@@ -61,11 +63,17 @@ pub(super) fn collect_sqlite_entries(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-    debug: &dyn Fn(String),
+    diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for database in collect_agent_databases(root) {
-        entries.extend(read_agent_database(&database, tz, mode, pricing, debug));
+        entries.extend(read_agent_database(
+            &database,
+            tz,
+            mode,
+            pricing,
+            diagnostics,
+        ));
     }
     entries
 }
@@ -82,31 +90,34 @@ fn read_agent_database(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-    debug: &dyn Fn(String),
+    diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let Ok(connection) = sqlite::Connection::open_with_flags(
         &database.path,
         sqlite::OpenFlags::new().with_read_only(),
     ) else {
-        debug(format!(
-            "Failed to open OpenClaw agent database: {}",
-            database.path.display()
+        diagnostics.record(Skip::unit(
+            &database.path,
+            SkipKind::Unreadable,
+            "could not open OpenClaw agent database",
         ));
         return Vec::new();
     };
     if !table_exists(&connection) {
-        debug(format!(
-            "OpenClaw agent database has no transcript_events table: {}",
-            database.path.display()
+        diagnostics.record(Skip::unit(
+            &database.path,
+            SkipKind::Invariant,
+            "OpenClaw database has no transcript_events table",
         ));
         return Vec::new();
     }
     let Ok(mut statement) = connection.prepare(
         "SELECT session_id, seq, event_json, created_at FROM transcript_events ORDER BY session_id ASC, seq ASC",
     ) else {
-        debug(format!(
-            "Failed to query OpenClaw agent database: {}",
-            database.path.display()
+        diagnostics.record(Skip::unit(
+            &database.path,
+            SkipKind::Invariant,
+            "could not query OpenClaw transcript_events",
         ));
         return Vec::new();
     };
@@ -117,10 +128,18 @@ fn read_agent_database(
     let mut current_model: Option<String> = None;
     let mut current_provider: Option<String> = None;
     let mut entries = Vec::new();
+    let mut row_number = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
+                row_number = row_number.saturating_add(1);
                 let Ok(session_id) = statement.read::<String, _>(0) else {
+                    diagnostics.record(Skip::record(
+                        &database.path,
+                        row_number,
+                        SkipKind::InvalidData,
+                        "OpenClaw transcript row has no session id",
+                    ));
                     continue;
                 };
                 if current_session.as_deref() != Some(&session_id) {
@@ -138,10 +157,32 @@ fn read_agent_database(
                     .unwrap_or(0);
                 let fallback_timestamp = TimestampMs::from_millis(created_at.max(0));
                 let Ok(event_json) = statement.read::<String, _>(2) else {
+                    diagnostics.record(Skip::record(
+                        &database.path,
+                        row_number,
+                        SkipKind::InvalidData,
+                        "OpenClaw transcript row has no event data",
+                    ));
                     continue;
                 };
-                let Ok(record) = serde_json::from_str::<OpenClawLine>(&event_json) else {
+                if !["\"usage\"", "\"model_change\"", "\"model-snapshot\""]
+                    .iter()
+                    .any(|marker| event_json.contains(marker))
+                {
                     continue;
+                }
+                let record = match serde_json::from_str::<OpenClawLine>(&event_json) {
+                    Ok(record) => record,
+                    Err(error) => {
+                        let error = UnitError::from(error);
+                        diagnostics.record(Skip::record(
+                            &database.path,
+                            row_number,
+                            SkipKind::UndecodedUsage,
+                            error,
+                        ));
+                        continue;
+                    }
                 };
                 if super::parser::is_model_change(&record) {
                     let (model, provider) = super::parser::model_change_source(&record);
@@ -166,9 +207,10 @@ fn read_agent_database(
             }
             Ok(sqlite::State::Done) => break,
             Err(_) => {
-                debug(format!(
-                    "Failed to read OpenClaw agent database: {}",
-                    database.path.display()
+                diagnostics.record(Skip::unit(
+                    &database.path,
+                    SkipKind::ReadInterrupted,
+                    "OpenClaw database query stopped before all rows were read",
                 ));
                 break;
             }
@@ -195,7 +237,9 @@ mod tests {
 
     use super::*;
 
-    fn no_debug(_: String) {}
+    fn diagnostics() -> Diagnostics {
+        Diagnostics::new("openclaw")
+    }
 
     fn create_agent_db(path: &Path, rows: &[(&str, i64, &str)]) {
         let db = sqlite::open(path).unwrap();
@@ -246,7 +290,7 @@ mod tests {
             None,
             CostMode::Auto,
             None,
-            &no_debug,
+            &diagnostics(),
         );
 
         assert_eq!(entries.len(), 1);
@@ -276,7 +320,11 @@ mod tests {
                     1_769_753_935_279,
                     r#"{"id":"evt-1","type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20},"timestamp":1769753935279}}"#,
                 ),
-                ("session-a", 1_769_753_935_279, "not json"),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    "{\"usage\":\"SECRET_CANARY\",}",
+                ),
                 (
                     "session-a",
                     1_769_753_935_279,
@@ -285,17 +333,27 @@ mod tests {
             ],
         );
 
+        let diagnostics = diagnostics();
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
             None,
             CostMode::Auto,
             None,
-            &no_debug,
+            &diagnostics,
         );
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
         assert_eq!(entries[1].data.message.usage.input_tokens, 30);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+        let warnings = diagnostics
+            .warnings(&ccusage_core::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("undecoded usage"));
+        assert!(!warnings.contains("SECRET_CANARY"));
     }
 
     #[test]
@@ -307,7 +365,7 @@ mod tests {
             .unwrap()
             .execute("CREATE TABLE other (id TEXT)")
             .unwrap();
-        let debug = std::cell::RefCell::new(Vec::new());
+        let diagnostics = diagnostics();
 
         let entries = read_agent_database(
             &AgentDatabase {
@@ -316,17 +374,11 @@ mod tests {
             None,
             CostMode::Auto,
             None,
-            &|message| debug.borrow_mut().push(message),
+            &diagnostics,
         );
 
         assert!(entries.is_empty());
-        assert_eq!(
-            debug.into_inner(),
-            vec![format!(
-                "OpenClaw agent database has no transcript_events table: {}",
-                db_path.display()
-            )]
-        );
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }
 
     #[test]
