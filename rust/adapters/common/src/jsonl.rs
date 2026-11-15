@@ -85,6 +85,12 @@ fn selected_lines<'data>(
     byte_lines(content)
         .enumerate()
         .filter_map(move |(index, line)| {
+            if line
+                .iter()
+                .all(|byte| matches!(*byte, b' ' | b'\t' | b'\r' | b'\n'))
+            {
+                return None;
+            }
             if let Some(prefilter) = prefilter
                 && !prefilter.matches(line)
             {
@@ -577,7 +583,7 @@ mod tests {
     use super::{
         FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
         lenient_object, lenient_u64, lenient_vec, non_empty_string, records,
-        records_with_diagnostics, try_records,
+        records_with_diagnostics, records_with_usage_diagnostics, try_records,
     };
     use ccusage_core::fast::LinePrefilter;
 
@@ -693,6 +699,65 @@ mod tests {
         assert_eq!(records, [3]);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+    }
+
+    #[test]
+    fn ignores_blank_jsonl_lines_and_keeps_physical_line_numbers() {
+        #[derive(Debug, Deserialize)]
+        struct UsageRecord {
+            tokens: u64,
+        }
+
+        let content = concat!(
+            r#"{"kind":"usage","tokens":1}"#,
+            "\n \t\r\n",
+            r#"{"kind":"usage","tokens":"SECRET_CANARY"}"#,
+            "\n",
+            r#"{"kind":"usage","tokens":2}"#,
+        )
+        .as_bytes();
+        let diagnostics = Diagnostics::new("test");
+        let records = records_with_usage_diagnostics::<UsageRecord>(
+            content,
+            None,
+            Path::new("/logs/session.jsonl"),
+            &diagnostics,
+            |value| value.get("kind").and_then(serde_json::Value::as_str) == Some("usage"),
+        )
+        .map(|record| record.tokens)
+        .collect::<Vec<_>>();
+
+        assert_eq!(records, [1, 2]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+
+        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("skipped 1 record in 1 input (invalid data)"));
+        assert!(warnings.contains("/logs/session.jsonl:3: JSON data error"));
+        assert!(!warnings.contains("/logs/session.jsonl:2:"));
+        assert!(!warnings.contains("SECRET_CANARY"));
+
+        let database_diagnostics = Diagnostics::new("test");
+        assert!(
+            super::decode_record::<UsageRecord>(
+                b" \t\r",
+                Path::new("/logs/state.db"),
+                1,
+                &database_diagnostics,
+                Some(|_| true),
+            )
+            .is_none()
+        );
+        assert_eq!(
+            database_diagnostics.skipped(SkipKind::InvalidData),
+            1,
+            "blank database cells are not JSONL blank lines"
+        );
     }
 
     #[test]
