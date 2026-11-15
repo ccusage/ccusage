@@ -174,6 +174,12 @@ fn read_agent_database(
                 ) else {
                     continue;
                 };
+                super::parser::record_message_error(
+                    &record,
+                    &database.path,
+                    row_number,
+                    diagnostics,
+                );
                 if super::parser::is_model_change(&record) {
                     let (model, provider) = super::parser::model_change_source(&record);
                     if let Some(model) = model {
@@ -378,6 +384,40 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn malformed_message_object_keeps_sqlite_model_tracking() {
+        let fixture = fs_fixture!({});
+        let db_path = sqlite_root(&fixture);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        create_agent_db(
+            &db_path,
+            &[
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":{"role":1}}"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                ),
+            ],
+        );
+        let diagnostics = diagnostics();
+        let entries = read_agent_database(
+            &AgentDatabase { path: db_path },
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
     }
 
     #[test]
