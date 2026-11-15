@@ -97,6 +97,9 @@ opt-level = "s"
 [profile.release.package.ccusage-adapter-codex]
 opt-level = "s"
 
+[profile.release.package.zstd-sys]
+opt-level = 3
+
 [workspace.lints.cargo]
 unused_dependencies = "deny"
 unused_workspace_dependencies = "deny"
