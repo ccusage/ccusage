@@ -207,14 +207,14 @@ fn load_entries_from_database(
                 }
             }
             Ok(sqlite::State::Done) => break,
-            Err(_) => {
+            Err(error) => {
                 debug_log(
                     shared,
                     format!("Failed to read ZCode database: {}", db_path.display()),
                 );
                 diagnostics.record(Skip::unit(
                     db_path,
-                    SkipKind::ReadInterrupted,
+                    database_step_error_kind(error.code),
                     "ZCode database read stopped after a row failure",
                 ));
                 break;
@@ -286,6 +286,13 @@ fn table_columns(
         UnitError::new(kind, detail)
     })?;
     Ok(statement.column_names().iter().cloned().collect())
+}
+
+fn database_step_error_kind(code: Option<isize>) -> SkipKind {
+    match database_prepare_error_kind(code) {
+        SkipKind::InvalidData => SkipKind::InvalidData,
+        _ => SkipKind::ReadInterrupted,
+    }
 }
 
 fn database_prepare_error_kind(code: Option<isize>) -> SkipKind {
@@ -559,6 +566,12 @@ mod tests {
 
     #[test]
     fn classifies_usage_query_prepare_failures_by_sqlite_code() {
+        for code in [Some(1), Some(17), Some(273)] {
+            assert_eq!(database_step_error_kind(code), SkipKind::InvalidData);
+        }
+        for code in [Some(5), Some(6), Some(10), None] {
+            assert_eq!(database_step_error_kind(code), SkipKind::ReadInterrupted);
+        }
         assert_eq!(database_prepare_error_kind(Some(1)), SkipKind::InvalidData);
         assert_eq!(database_prepare_error_kind(Some(17)), SkipKind::InvalidData);
         assert_eq!(
