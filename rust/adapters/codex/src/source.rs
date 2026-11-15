@@ -172,6 +172,69 @@ mod diagnostic_tests {
     use ccusage_core::cli::SharedArgs;
     use ccusage_test_support::{EnvVarsGuard, Fixture};
     #[test]
+    fn malformed_compaction_usage_warns_while_missing_and_zero_usage_stay_quiet() {
+        let fixture = Fixture::new();
+        let mut records = [
+            ("array", json!([])),
+            ("string", json!("SECRET_CANARY")),
+            ("null", serde_json::Value::Null),
+            ("zero", json!({})),
+            ("healthy", json!({"input_tokens":10,"output_tokens":2,"total_tokens":12})),
+        ].into_iter().flat_map(|(response_id, usage)| [
+            json!({"type":"token_usage_record","timestamp":"2026-01-02T00:00:00Z","payload":{"response_id":response_id,"usage":usage}}),
+            json!({"type":"compacted","payload":{"compaction_response_id":response_id}}),
+        ]).collect::<Vec<_>>();
+        records.extend([
+            json!({"type":"token_usage_record","timestamp":"2026-01-02T00:00:00Z","payload":{"response_id":"missing"}}),
+            json!({"type":"compacted","payload":{"compaction_response_id":"missing"}}),
+        ]);
+        let contents = records
+            .into_iter()
+            .map(|record| record.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let _ = fixture.write_file("sessions/compaction.jsonl", &contents);
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        for since in [None, Some("20260101".to_owned())] {
+            let shared = SharedArgs {
+                offline: true,
+                debug: true,
+                timezone: Some("UTC".to_owned()),
+                since,
+                ..Default::default()
+            };
+            let result = SOURCE
+                .unified_rows(&UnifiedRequest {
+                    kind: AgentReportKind::Daily,
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: Some(&pricing),
+                    progress: ProgressOwner::Caller,
+                    multi_source_driver: true,
+                    claude_counted: None,
+                })
+                .unwrap();
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(result.rows[0].input_tokens, 10);
+            assert_eq!(result.rows[0].output_tokens, 2);
+            assert_eq!(result.rows[0].total_tokens, 12);
+            assert!(
+                result
+                    .warnings
+                    .iter()
+                    .any(|line| line == "WARN  codex: skipped 2 records in 1 input (invalid data)"),
+                "{:?}",
+                result.warnings
+            );
+            assert!(!result.warnings.join("\n").contains("SECRET_CANARY"));
+        }
+    }
+
+    #[test]
     fn rejected_timestamps_advance_cumulative_usage_without_recounting_tokens() {
         let fixture = Fixture::new();
         let _env = EnvVarsGuard::set_many([

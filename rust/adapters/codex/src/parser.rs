@@ -529,13 +529,16 @@ fn visit_codex_session_entry(
         if compaction_usage.emitted_response_ids.contains(&response_id) {
             return Ok(());
         }
-        let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
-            if payload.usage.is_some() {
-                location.invalid_timestamp();
+        let raw_usage = match payload.usage {
+            CodexUsageCandidate::Missing => return Ok(()),
+            CodexUsageCandidate::Malformed => {
+                location.invalid_usage("compaction usage did not decode");
+                return Ok(());
             }
-            return Ok(());
+            CodexUsageCandidate::Decoded(usage) => normalize_codex_raw_usage(usage),
         };
-        let Some(raw_usage) = payload.usage.map(normalize_codex_raw_usage) else {
+        let Some(timestamp) = codex_usage_timestamp(value.timestamp.as_ref()) else {
+            location.invalid_timestamp();
             return Ok(());
         };
         if raw_usage.input_tokens == 0
@@ -717,7 +720,7 @@ fn add_codex_exec_event(
         Ok(Some(raw_usage)) => raw_usage,
         Ok(None) => return Ok(()),
         Err(()) => {
-            location.invalid_usage();
+            location.invalid_usage("headless usage did not decode");
             return Ok(());
         }
     };
@@ -765,7 +768,7 @@ fn add_codex_exec_event_from_value(
         Ok(Some(raw_usage)) => raw_usage,
         Ok(None) => return Ok(()),
         Err(()) => {
-            location.invalid_usage();
+            location.invalid_usage("headless usage did not decode");
             return Ok(());
         }
     };
@@ -1594,12 +1597,12 @@ struct RecordLocation<'a> {
     diagnostics: &'a Diagnostics,
 }
 impl RecordLocation<'_> {
-    fn invalid_usage(&self) {
+    fn invalid_usage(&self, detail: &'static str) {
         self.diagnostics.record(Skip::record(
             self.path,
             self.line,
             SkipKind::InvalidData,
-            "headless usage did not decode",
+            detail,
         ));
     }
 
