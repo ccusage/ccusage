@@ -129,6 +129,8 @@
                    file))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
         rejected (script "rejected" "echo 'unsupported report arguments' >&2; exit 2")
+        unlaunchable (doto (script "unlaunchable" "echo unused")
+                       (babashka.fs/set-posix-file-permissions "rw-------"))
         reordered (script "reordered" "echo '{\"b\":2,\"a\":1}'")
         changed (script "changed" "echo '{\"b\":2,\"a\":3}'; echo warn >&2")
         intermittent (script "intermittent"
@@ -154,6 +156,17 @@
           (is (re-find #"(?m)^ERROR\s" output))
           (is (= "unsupported report arguments\n"
                  (slurp (path output-dir "daily--json" "base-1.stderr"))))))
+      (testing "a command execution exception is an inconclusive comparison"
+        (let [entry (expand (path script-dir "diff-refs.bb"))
+              result (run-process [entry "--output-dir" (path dir "unlaunchable-reports") unlaunchable stable])]
+          (is (= 2 (:exit result)))
+          (is (re-find #"(?m)^ERROR\s" (:out result)))
+          (is (not (re-find #"(?m)^FAIL\s" (:out result))))
+          (is (.contains (:out result) "IOException"))))
+      (testing "invalid comparison arguments are not reported as output differences"
+        (let [result (run-process [(expand (path script-dir "diff-refs.bb")) "--jobs" "0" "HEAD" "HEAD"])]
+          (is (= 2 (:exit result)))
+          (is (clojure.string/blank? (:out result)))))
       (testing "head must agree on repeated runs even when its first run matches"
         (let [result (compare {:base stable :head intermittent} false)]
           (is (= :different (:status result)))

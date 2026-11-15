@@ -175,8 +175,9 @@
 
 (defn command-label [{:keys [args]}] (str/join " " (map command-text-arg args)))
 
-(defn report-result! [{:keys [status streams pair json?] :as result}]
+(defn report-result! [{:keys [status streams pair json? error] :as result}]
   (println (format "%-8s %s" (case status :identical "PASS" :different "FAIL" :unstable "UNSTABLE" :failed "ERROR") (command-label result)))
+  (when error (println (str "  comparison could not run (" error ")")))
   (let [[a b] pair]
     (doseq [stream streams]
       (case stream
@@ -213,13 +214,21 @@
        "by the golden tests. Each build runs twice, and both run three more times when\n"
        "anything disagrees: a command whose base output is not reproducible is reported as unstable\n"
        "instead of different. Exits 0 only when all commands succeed with identical output,\n"
-       "1 on a difference, and 2 when comparisons are unstable or matching commands fail.\n\n"
+       "1 on a confirmed difference, and 2 when a comparison cannot complete successfully.\n\n"
        (cli/format-opts {:spec diff-spec})))
 
 (defn- run-all! [jobs commands compare!]
   (let [pool (java.util.concurrent.Executors/newFixedThreadPool jobs)]
     (try
-      (let [futures (mapv (fn [command] (.submit pool ^Callable (fn [] (compare! command)))) commands)]
+      (let [futures (mapv (fn [command]
+                            (.submit pool ^Callable
+                                     (fn []
+                                       (try
+                                         (compare! command)
+                                         (catch Exception error
+                                           (assoc command :status :failed :streams []
+                                                  :error (.getSimpleName (class error))))))))
+                          commands)]
         (mapv (fn [future] (doto (.get ^java.util.concurrent.Future future) report-result!)) futures))
       (finally (.shutdownNow pool)))))
 
