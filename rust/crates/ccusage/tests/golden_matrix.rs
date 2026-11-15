@@ -100,7 +100,8 @@ fn statusline_hook_paths_round_trip_as_json() {
         let hook: serde_json::Value = serde_json::from_str(payload).unwrap();
         assert_eq!(
             hook["transcript_path"].as_str().unwrap(),
-            root.join("claude/projects/-Users-dev-alpha/sess-alpha-1.jsonl")
+            root.join("claude/projects/-Users-dev-alpha")
+                .join("sess-alpha-1.jsonl")
                 .to_str()
                 .unwrap()
         );
