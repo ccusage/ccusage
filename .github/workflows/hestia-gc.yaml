@@ -12,34 +12,11 @@ on:
 
 permissions: {}
 
-# A second GC's repack reads race the first one's pack deletes.
-concurrency:
-  group: hestia-gc
-  cancel-in-progress: false
-
 jobs:
   gc:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
     permissions:
-      # Cache deletes go through the REST API.
       actions: write
       contents: read
-    steps:
-      - name: Install Nix
-        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
-      - uses: Mic92/hestia@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
-        with:
-          version: v3.1.0
-          read-only: true
-      - name: Collect garbage
-        env:
-          DRY_RUN: ${{ inputs.dry-run }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          if [ "$DRY_RUN" = true ]; then
-            "$HESTIA_BIN" gc --dry-run
-          else
-            "$HESTIA_BIN" gc
-          fi
+    uses: x-ryoppippi/setup-nix/.github/workflows/gc.yaml@7f7ff26554cbbf09c1ce4f3369ca8fd2120a42d1
+    with:
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
