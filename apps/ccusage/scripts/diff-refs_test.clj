@@ -133,6 +133,7 @@
                        (babashka.fs/set-posix-file-permissions "rw-------"))
         reordered (script "reordered" "echo '{\"b\":2,\"a\":1}'")
         changed (script "changed" "echo '{\"b\":2,\"a\":3}'; echo warn >&2")
+        mixed-head (script "mixed-head" "case \"$1\" in weekly) echo '{\"a\":2,\"b\":2}';; *) echo '{\"a\":1,\"b\":2}';; esac")
         intermittent (script "intermittent"
                              (str "if [ -f " (path dir "head-ran") " ]; then echo '{\"a\":3,\"b\":2}'; "
                                   "else : > " (path dir "head-ran") "; echo '{\"a\":1,\"b\":2}'; fi"))
@@ -167,6 +168,14 @@
         (let [result (run-process [(expand (path script-dir "diff-refs.bb")) "--jobs" "0" "HEAD" "HEAD"])]
           (is (= 2 (:exit result)))
           (is (clojure.string/blank? (:out result)))))
+      (testing "an incomplete command takes precedence over confirmed differences"
+        (let [output-dir (path dir "mixed-results")
+              _ (babashka.fs/create-dirs output-dir)
+              _ (spit (path output-dir "daily--json") "blocks a command output directory")
+              result (run-process [(expand (path script-dir "diff-refs.bb")) "--output-dir" output-dir stable mixed-head])]
+          (is (= 2 (:exit result)))
+          (is (re-find #"(?m)^ERROR\s" (:out result)))
+          (is (re-find #"(?m)^FAIL\s" (:out result)))))
       (testing "head must agree on repeated runs even when its first run matches"
         (let [result (compare {:base stable :head intermittent} false)]
           (is (= :different (:status result)))

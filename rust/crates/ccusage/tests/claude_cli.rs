@@ -325,35 +325,38 @@ fn statusline_emits_one_warning_across_repeated_usage_loads() {
         "model": {"display_name": "Model"},
     })
     .to_string();
-    let output = run_ccusage_output(
-        &fixture,
-        &[
-            "claude",
-            "statusline",
-            "--offline",
-            "--no-cache",
-            "--cost-source",
-            "ccusage",
-            "--timezone",
-            "UTC",
-        ],
-        Some(&hook),
-    );
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert_eq!(
-        stderr
-            .lines()
-            .filter(|line| line.contains("invalid data"))
-            .count(),
-        1,
-        "{stderr}"
-    );
-    assert!(!stderr.contains("SECRET_CANARY"));
-    assert!(
-        String::from_utf8(output.stdout)
-            .unwrap()
-            .contains("session")
-    );
+    for cost_source in ["ccusage", "cc"] {
+        let output = run_ccusage_output(
+            &fixture,
+            &[
+                "claude",
+                "statusline",
+                "--offline",
+                "--no-cache",
+                "--cost-source",
+                cost_source,
+                "--timezone",
+                "UTC",
+            ],
+            Some(&hook),
+        );
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(
+            stderr
+                .lines()
+                .filter(|line| line.contains("invalid data"))
+                .count(),
+            1,
+            "{stderr}"
+        );
+        assert!(stderr.contains("skipped 1 record in 1 input"), "{stderr}");
+        assert!(!stderr.contains("SECRET_CANARY"));
+        assert!(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .contains("session")
+        );
+    }
 }
 
 /// Runs `args` twice: once with the fixture's own mtimes and once with every

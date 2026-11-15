@@ -22,9 +22,8 @@ most adapters do not.
 
 ## Public surface
 
-- `loader::load_entries`
-- `report::report_from_rows`
-- `report::summarize_entries`
+- `SOURCE` — the shared `EntrySource` interface
+- `summarize_entries`
 - `run`
 
 ## Depends on

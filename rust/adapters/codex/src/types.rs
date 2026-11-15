@@ -310,8 +310,8 @@ pub(super) struct CodexPayload<'a> {
     pub(super) response_id: Option<Cow<'a, str>>,
     #[serde(borrow, default)]
     pub(super) compaction_response_id: Option<Cow<'a, str>>,
-    #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
-    pub(super) usage: Option<CodexRawUsage>,
+    #[serde(default)]
+    pub(super) usage: CodexUsageCandidate,
     #[serde(default, deserialize_with = "deserialize_optional_object_lossy")]
     pub(super) thread_token_usage: Option<CodexRawUsage>,
     #[serde(
