@@ -6,36 +6,43 @@ use std::{
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
+#[cfg(test)]
+use super::parser::parse_otel_file;
 use super::{
     parser::{
-        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry, parse_otel_file,
-        parse_session_state_file,
+        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry,
+        parse_otel_file_with_diagnostics, parse_session_state_file_with_diagnostics,
     },
-    paths::{CopilotSourceKind, paths},
+    paths::CopilotSourceKind,
 };
+use ccusage_adapter_common::{read_units, source::LoadContext, units::UnitError};
+use ccusage_core::{Diagnostics, SkipKind};
+#[cfg(test)]
+use ccusage_core::{ReportWindow, cli::AgentReportKind};
+
 use crate::{
     LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    calculate_cost_for_usage_at, cli::CostMode, date_range_bounds_ms, debug_log, format_date_tz,
-    missing_pricing_model_for_usage, parse_tz, read_files_parallel, stored_cost_for_mode,
+    calculate_cost_for_usage_at, cli::CostMode, format_date_tz, missing_pricing_model_for_usage,
+    stored_cost_for_mode,
 };
 
 pub fn load_entries(
     shared: &crate::cli::SharedArgs,
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("GitHub Copilot CLI"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
+    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+        &crate::SOURCE,
+        shared,
+        ccusage_adapter_common::source::SourceOptions::default(),
+        Some(pricing),
     )
 }
 
-fn load_entries_inner(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let sources = paths()?;
+pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let shared = cx.shared;
+    let pricing = cx.pricing.expect("Copilot uses pipeline pricing");
+    let tz = Some(cx.window.timezone());
+    let sources = super::paths::paths_with_diagnostics(cx.diagnostics)?;
     let source_kinds = sources
         .iter()
         .map(|source| (source.path.clone(), source.kind))
@@ -46,30 +53,25 @@ fn load_entries_inner(
         .collect::<Vec<_>>();
     // Read source files in parallel; entries keep their original file order before
     // the stable sort, so OTel-only output is identical to the previous read.
-    let parsed = read_files_parallel(&files, shared.single_thread, |path| {
+    let parsed = read_units(&files, shared.single_thread, cx.diagnostics, |path| {
         let kind = source_kinds
             .get(path)
             .copied()
-            .unwrap_or(CopilotSourceKind::Otel);
-        read_source_file(path, kind).unwrap_or_else(|error| {
-            let source_name = match kind {
-                CopilotSourceKind::Otel => "OTEL",
-                CopilotSourceKind::SessionState => "session-state",
-            };
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read Copilot {source_name} file {}: {error}",
-                    path.display(),
-                ),
-            );
-            CopilotSourceUsage::default()
+            .expect("discovered Copilot file has source metadata");
+        read_source_file(path, kind, cx.diagnostics).map_err(|_| {
+            UnitError::new(
+                SkipKind::Unreadable,
+                "Copilot source file could not be read",
+            )
         })
     });
     let mut otel_entries = Vec::new();
     let mut session_state_entries = Vec::new();
     let mut credit_snapshots = Vec::new();
     for (source, file_usage) in sources.iter().map(|source| source.kind).zip(parsed) {
+        let Some(file_usage) = file_usage else {
+            continue;
+        };
         match source {
             CopilotSourceKind::Otel => otel_entries.extend(file_usage.entries),
             CopilotSourceKind::SessionState => {
@@ -78,11 +80,7 @@ fn load_entries_inner(
             }
         }
     }
-    let (since_millis, until_millis) = date_range_bounds_ms(
-        shared.since.as_deref(),
-        shared.until.as_deref(),
-        tz.as_ref(),
-    );
+    let (since_millis, until_millis) = cx.window.bounds_ms();
     let session_state = reconcile_session_state_entries(
         session_state_entries,
         &otel_call_timestamps(&otel_entries),
@@ -118,7 +116,7 @@ fn load_entries_inner(
         .into_iter()
         .chain(otel_entries)
         .chain(credit_gaps)
-        .map(|entry| usage_entry_to_loaded(entry, tz.as_ref(), shared.mode, pricing))
+        .map(|entry| usage_entry_to_loaded(entry, tz, shared.mode, pricing))
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
@@ -431,13 +429,19 @@ fn has_usage(entry: &CopilotUsageEntry) -> bool {
         || entry.request_count > 0
 }
 
-fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<CopilotSourceUsage> {
+fn read_source_file(
+    path: &Path,
+    kind: CopilotSourceKind,
+    diagnostics: &Diagnostics,
+) -> Result<CopilotSourceUsage> {
     match kind {
         CopilotSourceKind::Otel => Ok(CopilotSourceUsage {
-            entries: parse_otel_file(path)?,
+            entries: parse_otel_file_with_diagnostics(path, diagnostics)?,
             credit_snapshots: Vec::new(),
         }),
-        CopilotSourceKind::SessionState => parse_session_state_file(path),
+        CopilotSourceKind::SessionState => {
+            parse_session_state_file_with_diagnostics(path, diagnostics)
+        }
     }
 }
 
@@ -448,11 +452,32 @@ fn read_otel_file(
     mode: CostMode,
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
-    Ok(read_source_file(path, CopilotSourceKind::Otel)?
-        .entries
-        .into_iter()
-        .map(|entry| usage_entry_to_loaded(entry, tz, mode, pricing))
-        .collect())
+    Ok(CopilotSourceUsage {
+        entries: parse_otel_file(path)?,
+        credit_snapshots: Vec::new(),
+    }
+    .entries
+    .into_iter()
+    .map(|entry| usage_entry_to_loaded(entry, tz, mode, pricing))
+    .collect())
+}
+
+#[cfg(test)]
+fn load_entries_inner(
+    shared: &crate::cli::SharedArgs,
+    pricing: &crate::PricingMap,
+) -> Result<Vec<LoadedEntry>> {
+    let window = ReportWindow::from_shared(shared);
+    let diagnostics = Diagnostics::new("copilot");
+    let cx = LoadContext {
+        shared,
+        kind: AgentReportKind::Daily,
+        window: &window,
+        pricing: Some(pricing),
+        options: Default::default(),
+        diagnostics: &diagnostics,
+    };
+    load_entries_for_context(&cx)
 }
 
 fn usage_entry_to_loaded(
@@ -577,6 +602,51 @@ mod tests {
         assert_eq!(entries[0].cache_read_tokens, 123);
         assert_eq!(entries[0].reasoning_output_tokens, 128);
         assert_eq!(entries[0].dedup_key, "trace-1:span-1");
+    }
+
+    #[test]
+    fn reports_malformed_usage_lines_and_keeps_the_next_record() {
+        let fixture = fs_fixture!({
+            "copilot.jsonl": [
+                String::from(r#"{"attributes":{"gen_ai.usage.input_tokens": "#),
+                json!({"attributes": "SECRET_CANARY"}).to_string(),
+                json!({
+                    "type": "span",
+                    "traceId": "trace-healthy",
+                    "spanId": "span-healthy",
+                    "name": "chat claude-sonnet-4",
+                    "endTime": [1_775_934_264_u64, 967_317_833_u64],
+                    "attributes": {
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.request.model": "claude-sonnet-4",
+                        "gen_ai.response.model": "claude-sonnet-4",
+                        "gen_ai.conversation.id": "conv-healthy",
+                        "gen_ai.usage.input_tokens": 10,
+                        "gen_ai.usage.output_tokens": 5,
+                    },
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+        let diagnostics = Diagnostics::new("copilot");
+
+        let entries =
+            parse_otel_file_with_diagnostics(&fixture.path("copilot.jsonl"), &diagnostics).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id, "conv-healthy");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+        let warnings = diagnostics.warnings(&crate::cli::SharedArgs {
+            debug: true,
+            ..crate::cli::SharedArgs::default()
+        });
+        assert!(
+            warnings
+                .iter()
+                .all(|warning| !warning.contains("SECRET_CANARY"))
+        );
     }
 
     #[test]

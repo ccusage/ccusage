@@ -12,6 +12,7 @@ use crate::{
     parse_ts_timestamp,
 };
 use ccusage_adapter_common::jsonl;
+use ccusage_core::Diagnostics;
 
 /// A single parsed Copilot OpenTelemetry record. Only the fields ccusage
 /// consumes are declared; serde skips everything else. The `attributes` block
@@ -123,12 +124,27 @@ struct CopilotUsageCandidate {
     dedup_key: String,
 }
 
+#[cfg(test)]
 pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
+    parse_otel_file_with_diagnostics(path, &Diagnostics::new("copilot"))
+}
+
+pub(super) fn parse_otel_file_with_diagnostics(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> Result<Vec<CopilotUsageEntry>> {
     let content = fs::read(path)?;
     // Every usable Copilot OTel record carries the `attributes` object, so
     // lines without it are skipped before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""attributes""#]);
-    let records = jsonl::records::<CopilotRecord>(&content, Some(&prefilter)).collect::<Vec<_>>();
+    let records = jsonl::records_with_usage_diagnostics::<CopilotRecord>(
+        &content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_otel_usage_envelope,
+    )
+    .collect::<Vec<_>>();
     let trace_contexts = collect_trace_contexts(&records);
     let fallback_timestamp = file_modified_timestamp(path);
     let candidates = records
@@ -228,7 +244,75 @@ struct CopilotSessionUsage {
 const SHUTDOWN_EVENT: &str = "session.shutdown";
 const USAGE_CHECKPOINT_EVENT: &str = "session.usage_checkpoint";
 
+fn is_otel_usage_envelope(value: &Value) -> bool {
+    const USAGE_ATTRIBUTES: &[&str] = &[
+        "gen_ai.usage.input_tokens",
+        "gen_ai.usage.output_tokens",
+        "gen_ai.usage.cache_read.input_tokens",
+        "gen_ai.usage.cache_write.input_tokens",
+        "gen_ai.usage.cache_creation.input_tokens",
+        "gen_ai.usage.reasoning.output_tokens",
+        "gen_ai.usage.reasoning_tokens",
+        "gen_ai.usage.total_tokens",
+        "gen_ai.usage.total.token_count",
+    ];
+
+    value
+        .get("attributes")
+        .and_then(Value::as_object)
+        .is_some_and(|attributes| {
+            USAGE_ATTRIBUTES
+                .iter()
+                .any(|key| attributes.contains_key(*key))
+        })
+}
+
+fn is_session_state_usage_envelope(value: &Value) -> bool {
+    let Some(event_type) = value.get("type").and_then(Value::as_str) else {
+        return false;
+    };
+    if event_type != SHUTDOWN_EVENT && event_type != USAGE_CHECKPOINT_EVENT {
+        return false;
+    }
+    let Some(data) = value.get("data").and_then(Value::as_object) else {
+        return false;
+    };
+    if data.get("totalNanoAiu").is_some_and(Value::is_number) {
+        return true;
+    }
+
+    const USAGE_FIELDS: &[&str] = &[
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "reasoningTokens",
+    ];
+    data.get("modelMetrics")
+        .and_then(Value::as_object)
+        .is_some_and(|models| {
+            models.values().any(|metrics| {
+                metrics
+                    .get("usage")
+                    .and_then(Value::as_object)
+                    .is_some_and(|usage| USAGE_FIELDS.iter().any(|key| usage.contains_key(*key)))
+                    || metrics
+                        .get("requests")
+                        .and_then(Value::as_object)
+                        .is_some_and(|requests| requests.contains_key("count"))
+            })
+        })
+}
+
+#[cfg(test)]
 pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage> {
+    parse_session_state_file_with_diagnostics(path, &Diagnostics::new("copilot"))
+}
+
+pub(super) fn parse_session_state_file_with_diagnostics(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> Result<CopilotSourceUsage> {
     let session_id = path
         .parent()
         .and_then(Path::file_name)
@@ -244,7 +328,13 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
     let prefilter =
         LinePrefilter::any(&[SHUTDOWN_EVENT.as_bytes(), USAGE_CHECKPOINT_EVENT.as_bytes()]);
     let mut parsed = CopilotSourceUsage::default();
-    for event in jsonl::records::<CopilotSessionStateEvent>(&content, Some(&prefilter)) {
+    for event in jsonl::records_with_usage_diagnostics::<CopilotSessionStateEvent>(
+        &content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_session_state_usage_envelope,
+    ) {
         let is_shutdown = match event.event_type.as_deref() {
             Some(SHUTDOWN_EVENT) => true,
             Some(USAGE_CHECKPOINT_EVENT) => false,
@@ -844,6 +934,36 @@ mod session_state_tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn confirms_usage_diagnostics_from_token_or_credit_fields() {
+        assert!(is_otel_usage_envelope(&json!({
+            "attributes": {"gen_ai.usage.input_tokens": 0}
+        })));
+        assert!(!is_otel_usage_envelope(&json!({
+            "attributes": {"gen_ai.request.model": "gpt-5"}
+        })));
+        assert!(!is_otel_usage_envelope(
+            &json!({"attributes": "SECRET_CANARY"})
+        ));
+
+        assert!(is_session_state_usage_envelope(&json!({
+            "type": "session.shutdown",
+            "data": {"modelMetrics": {"gpt-5": {"usage": {"inputTokens": 0}}}}
+        })));
+        assert!(is_session_state_usage_envelope(&json!({
+            "type": "session.usage_checkpoint",
+            "data": {"totalNanoAiu": 0}
+        })));
+        assert!(!is_session_state_usage_envelope(&json!({
+            "type": "tool",
+            "data": {"modelMetrics": {"gpt-5": {"usage": {"inputTokens": 1}}}}
+        })));
+        assert!(!is_session_state_usage_envelope(&json!({
+            "type": "session.shutdown",
+            "data": {"message": "SECRET_CANARY"}
+        })));
+    }
 
     #[test]
     fn parses_session_shutdown_model_metrics() {

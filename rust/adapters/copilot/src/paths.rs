@@ -1,6 +1,8 @@
 use std::{collections::HashSet, env, fs, path::PathBuf};
 
-use crate::{Result, collect_files_with_extension};
+use crate::Result;
+use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 pub const COPILOT_OTEL_FILE_EXPORTER_PATH_ENV: &str = "COPILOT_OTEL_FILE_EXPORTER_PATH";
 pub const COPILOT_HOME_ENV: &str = "COPILOT_HOME";
@@ -17,32 +19,66 @@ pub(super) struct CopilotSourceFile {
     pub(super) path: PathBuf,
 }
 
+#[cfg(test)]
 pub(super) fn paths() -> Result<Vec<CopilotSourceFile>> {
+    paths_inner(None)
+}
+
+pub(super) fn paths_with_diagnostics(diagnostics: &Diagnostics) -> Result<Vec<CopilotSourceFile>> {
+    paths_inner(Some(diagnostics))
+}
+
+fn paths_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<CopilotSourceFile>> {
     let mut files = Vec::new();
     let mut seen = HashSet::new();
     if let Some(copilot_root) = copilot_root() {
         let otel_dir = copilot_root.join("otel");
-        if otel_dir.is_dir() {
-            let mut otel_files = Vec::new();
-            collect_files_with_extension(&otel_dir, "jsonl", &mut otel_files);
-            for path in otel_files {
-                add_file(&mut files, &mut seen, CopilotSourceKind::Otel, path);
-            }
+        let mut otel_files = Vec::new();
+        if let Some(diagnostics) = diagnostics {
+            collect_files_with_extension_diagnosed(
+                &otel_dir,
+                "jsonl",
+                &mut otel_files,
+                diagnostics,
+            );
+        } else {
+            ccusage_adapter_common::collect_files_with_extension(
+                &otel_dir,
+                "jsonl",
+                &mut otel_files,
+            );
+        }
+        for path in otel_files {
+            add_file(&mut files, &mut seen, CopilotSourceKind::Otel, path);
         }
         let session_state_dir = copilot_root.join("session-state");
-        if let Ok(entries) = fs::read_dir(session_state_dir) {
-            for entry in entries.filter_map(std::result::Result::ok) {
-                let Ok(file_type) = entry.file_type() else {
-                    continue;
-                };
-                if !file_type.is_dir() {
-                    continue;
+        match fs::metadata(&session_state_dir) {
+            Ok(metadata) if metadata.is_dir() => match fs::read_dir(&session_state_dir) {
+                Ok(entries) => {
+                    for entry in entries {
+                        let Ok(entry) = entry else {
+                            record_discovery_failure(diagnostics, &session_state_dir);
+                            continue;
+                        };
+                        let Ok(file_type) = entry.file_type() else {
+                            record_discovery_failure(diagnostics, &entry.path());
+                            continue;
+                        };
+                        if !file_type.is_dir() {
+                            continue;
+                        }
+                        let path = entry.path().join("events.jsonl");
+                        if path.is_file() {
+                            add_file(&mut files, &mut seen, CopilotSourceKind::SessionState, path);
+                        }
+                    }
                 }
-                let path = entry.path().join("events.jsonl");
-                if path.is_file() {
-                    add_file(&mut files, &mut seen, CopilotSourceKind::SessionState, path);
-                }
+                Err(_) => record_discovery_failure(diagnostics, &session_state_dir),
+            },
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                record_discovery_failure(diagnostics, &session_state_dir);
             }
+            _ => {}
         }
     }
     if let Some(path) = copilot_exporter_path() {
@@ -50,6 +86,16 @@ pub(super) fn paths() -> Result<Vec<CopilotSourceFile>> {
     }
     files.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(files)
+}
+
+fn record_discovery_failure(diagnostics: Option<&Diagnostics>, path: &std::path::Path) {
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.record(Skip::unit(
+            path,
+            SkipKind::Unreadable,
+            "Copilot source directory could not be read",
+        ));
+    }
 }
 
 fn copilot_root() -> Option<PathBuf> {
