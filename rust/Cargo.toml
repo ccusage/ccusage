@@ -74,7 +74,7 @@ sqlite = { version = "0.37.4", default-features = false, features = ["bundled", 
 terminal_size = "0.4.4"
 toml = { version = "1.2.1", default-features = false, features = ["parse", "serde", "std"] }
 unicode-width = "0.2.3"
-ureq = { version = "3.5.1", default-features = false, features = [
+ureq = { version = "3.5.2", default-features = false, features = [
 	"gzip",
 	"rustls-no-provider",
 	"rustls-webpki-roots",
