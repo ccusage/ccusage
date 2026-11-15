@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     fmt,
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
@@ -85,7 +85,7 @@ impl Skip {
 struct Tally {
     skips: u64,
     records: u64,
-    units: BTreeSet<PathBuf>,
+    units: BTreeMap<PathBuf, bool>,
     samples: Vec<Skip>,
 }
 
@@ -130,8 +130,10 @@ impl Diagnostics {
         if skip.line.is_some() {
             tally.records += 1;
         }
-        if !tally.units.contains(&skip.unit) {
-            tally.units.insert(skip.unit.clone());
+        if let Some(whole_input) = tally.units.get_mut(&skip.unit) {
+            *whole_input |= skip.line.is_none();
+        } else {
+            tally.units.insert(skip.unit.clone(), skip.line.is_none());
         }
         if tally.samples.len() < SAMPLES_PER_KIND
             || tally
@@ -190,15 +192,15 @@ impl Diagnostics {
 
     fn summary_line(&self, kind: SkipKind, tally: &Tally) -> String {
         let inputs = counted(tally.units.len() as u64, "input");
-        let whole_units = tally.skips - tally.records;
+        let whole_inputs = tally.units.values().filter(|whole| **whole).count() as u64;
         let skipped = if tally.records == 0 {
             inputs
-        } else if whole_units == 0 {
+        } else if whole_inputs == 0 {
             format!("{} in {inputs}", counted(tally.records, "record"))
         } else {
             format!(
                 "{} and {} in {inputs}",
-                counted(whole_units, "input"),
+                counted(whole_inputs, "input"),
                 counted(tally.records, "record")
             )
         };
@@ -312,6 +314,33 @@ mod tests {
             "malformed JSON",
         ));
 
+        assert_eq!(
+            diagnostics.render(true, false),
+            ["WARN  test: skipped 1 input and 1 record in 2 inputs (invalid data)"]
+        );
+    }
+
+    #[test]
+    fn mixed_skips_count_distinct_whole_units_without_changing_skip_totals() {
+        let diagnostics = Diagnostics::new("test");
+        diagnostics.record(Skip::unit(
+            Path::new("/logs/broken.json"),
+            SkipKind::InvalidData,
+            "malformed JSON",
+        ));
+        diagnostics.record(Skip::unit(
+            Path::new("/logs/broken.json"),
+            SkipKind::InvalidData,
+            "could not parse JSON",
+        ));
+        diagnostics.record(Skip::record(
+            Path::new("/logs/partial.jsonl"),
+            3,
+            SkipKind::InvalidData,
+            "malformed JSON",
+        ));
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 3);
         assert_eq!(
             diagnostics.render(true, false),
             ["WARN  test: skipped 1 input and 1 record in 2 inputs (invalid data)"]
