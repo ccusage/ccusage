@@ -44,8 +44,9 @@ fn load_state_db_entries(
 ) -> std::result::Result<Vec<HermesEntry>, UnitError> {
     let connection =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|_| {
-                UnitError::new(SkipKind::Unreadable, "could not open Hermes state database")
+            .map_err(|error| {
+                let (kind, detail) = state_database_open_failure(error.code);
+                UnitError::new(kind, detail)
             })?;
     let mut statement = connection
         .prepare(
@@ -68,7 +69,10 @@ fn load_state_db_entries(
                 AND TRIM(model) != ''
         ",
         )
-        .map_err(|_| UnitError::new(SkipKind::InvalidData, "could not read Hermes sessions"))?;
+        .map_err(|error| {
+            let (kind, detail) = sessions_query_failure(error.code);
+            UnitError::new(kind, detail)
+        })?;
     let mut entries = Vec::new();
     loop {
         match statement.next() {
@@ -91,11 +95,33 @@ fn load_state_db_entries(
     Ok(entries)
 }
 
+fn sessions_query_failure(code: Option<isize>) -> (SkipKind, &'static str) {
+    match code {
+        Some(1) => (SkipKind::Invariant, "Hermes sessions schema is unavailable"),
+        Some(11) | Some(26) => (
+            SkipKind::InvalidData,
+            "Hermes state database is corrupt or invalid",
+        ),
+        _ => (SkipKind::Unreadable, "Hermes sessions could not be read"),
+    }
+}
+
+fn state_database_open_failure(code: Option<isize>) -> (SkipKind, &'static str) {
+    match code {
+        Some(11) | Some(26) => (
+            SkipKind::InvalidData,
+            "Hermes state database is corrupt or invalid",
+        ),
+        _ => (SkipKind::Unreadable, "could not open Hermes state database"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use super::*;
+    use ccusage_adapter_common::source::EntrySource;
     use ccusage_adapter_common::{parity::assert_focused_matches_unified, source::SourceOptions};
     use ccusage_core::{
         PricingMap, ReportWindow, SkipKind,
@@ -192,10 +218,11 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_state_database_does_not_hide_healthy_sessions() {
+    fn classifies_state_database_query_failures_and_keeps_healthy_sessions() {
         let fixture = fs_fixture!({
             "good/state.db": "",
             "broken/state.db": "not a SQLite database",
+            "schema/state.db": "",
         });
         let good_db = fixture.path("good/state.db");
         create_state_db(&good_db);
@@ -205,10 +232,15 @@ mod tests {
                 "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES ('session-a', 'cli', 'gpt-5', 1750000000, 100, 50)",
             )
             .unwrap();
+        sqlite::open(fixture.path("schema/state.db"))
+            .unwrap()
+            .execute("CREATE TABLE unrelated (id TEXT)")
+            .unwrap();
         let homes = format!(
-            "{},{}",
+            "{},{},{}",
             fixture.root().join("good").display(),
-            fixture.root().join("broken").display()
+            fixture.root().join("broken").display(),
+            fixture.root().join("schema").display()
         );
         let _cleanup = EnvVarGuard::set("HERMES_HOME", homes);
         let shared = SharedArgs::default();
@@ -224,11 +256,32 @@ mod tests {
             diagnostics: &diagnostics,
         };
 
-        let entries = load_entries_with_context(&cx).unwrap();
+        let entries = crate::SOURCE.load_entries(&cx).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn classifies_sessions_query_failures_by_sqlite_error_code() {
+        assert_eq!(sessions_query_failure(Some(1)).0, SkipKind::Invariant);
+        assert_eq!(sessions_query_failure(Some(11)).0, SkipKind::InvalidData);
+        assert_eq!(sessions_query_failure(Some(26)).0, SkipKind::InvalidData);
+        for code in [Some(5), Some(6), Some(10), None] {
+            assert_eq!(sessions_query_failure(code).0, SkipKind::Unreadable);
+        }
+    }
+
+    #[test]
+    fn classifies_state_database_open_failures_by_sqlite_error_code() {
+        for code in [Some(11), Some(26)] {
+            assert_eq!(state_database_open_failure(code).0, SkipKind::InvalidData);
+        }
+        for code in [Some(5), Some(6), Some(10), Some(1), None] {
+            assert_eq!(state_database_open_failure(code).0, SkipKind::Unreadable);
+        }
     }
 
     #[test]
