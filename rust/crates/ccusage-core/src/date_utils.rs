@@ -302,12 +302,14 @@ pub fn format_date_tz(timestamp: TimestampMs, timezone: Option<&JiffTimeZone>) -
     let Ok(timestamp) = JiffTimestamp::from_millisecond(timestamp.as_millis()) else {
         return format_utc_date(timestamp);
     };
-    let timezone = timezone.cloned().unwrap_or_else(JiffTimeZone::system);
-    let zoned = timestamp.to_zoned(timezone);
+    let datetime = match timezone {
+        Some(timezone) => timezone.to_datetime(timestamp),
+        None => JiffTimeZone::system().to_datetime(timestamp),
+    };
     format_date_parts(
-        i32::from(zoned.year()),
-        u32::from(zoned.month() as u8),
-        u32::from(zoned.day() as u8),
+        i32::from(datetime.year()),
+        u32::from(datetime.month() as u8),
+        u32::from(datetime.day() as u8),
     )
 }
 
@@ -346,6 +348,20 @@ mod tests {
 
     // 2026-01-02 00:00:00 UTC
     const JAN_2_UTC: i64 = 1_767_312_000_000;
+
+    #[test]
+    fn formats_local_dates_across_dst_boundaries() {
+        let timezone = parse_tz(Some("Europe/London")).unwrap();
+        for (timestamp, expected) in [
+            ("2026-03-28T23:30:00Z", "2026-03-28"),
+            ("2026-03-29T23:30:00Z", "2026-03-30"),
+            ("2026-10-24T23:30:00Z", "2026-10-25"),
+            ("2026-10-25T23:30:00Z", "2026-10-25"),
+        ] {
+            let timestamp = super::parse_ts_timestamp(timestamp).unwrap();
+            assert_eq!(super::format_date_tz(timestamp, Some(&timezone)), expected);
+        }
+    }
 
     #[test]
     fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {
