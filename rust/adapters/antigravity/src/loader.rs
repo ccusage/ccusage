@@ -1367,7 +1367,7 @@ mod tests {
         use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
 
         let fixture = Fixture::new();
-        fixture.write_file("conversations/broken.db", "SECRET_CANARY");
+        let _ = fixture.write_file("conversations/broken.db", "SECRET_CANARY");
         let _guard = EnvVarsGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
