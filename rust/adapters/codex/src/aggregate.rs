@@ -135,7 +135,7 @@ pub fn load_groups(
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let diagnostics = Diagnostics::new("codex");
-    let groups = load_groups_with_diagnostics(shared, kind, wants_json(shared), &diagnostics)?;
+    let (groups, _) = load_groups_with_diagnostics(shared, kind, wants_json(shared), &diagnostics)?;
     for warning in diagnostics.warnings(shared) {
         eprintln!("{warning}");
     }
@@ -147,7 +147,7 @@ pub(super) fn load_groups_with_diagnostics(
     kind: AgentReportKind,
     multi_source_driver: bool,
     diagnostics: &Diagnostics,
-) -> Result<BTreeMap<String, CodexGroup>> {
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     let sources = paths::codex_usage_sources()?;
     if sources.len() == 1 && !multi_source_driver {
         return load_groups_from_directory_with_diagnostics(
@@ -165,8 +165,9 @@ fn load_groups_from_sources_with_diagnostics(
     shared: &SharedArgs,
     kind: AgentReportKind,
     diagnostics: &Diagnostics,
-) -> Result<BTreeMap<String, CodexGroup>> {
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     let file_groups = paths::collect_deduped_codex_usage_files(sources);
+    let detected = file_groups.iter().any(|group| !group.files.is_empty());
     let files_by_group = file_groups
         .iter()
         .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, shared))
@@ -216,7 +217,7 @@ fn load_groups_from_sources_with_diagnostics(
         file_offset += files.len();
     }
     apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
-    Ok(groups)
+    Ok((groups, detected))
 }
 
 pub(super) fn load_groups_from_directory_with_diagnostics(
@@ -224,8 +225,9 @@ pub(super) fn load_groups_from_directory_with_diagnostics(
     shared: &SharedArgs,
     kind: AgentReportKind,
     diagnostics: &Diagnostics,
-) -> Result<BTreeMap<String, CodexGroup>> {
+) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     let all_files = paths::collect_codex_usage_files(sessions_dir);
+    let detected = !all_files.is_empty();
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
     let replay_plan = if shared.since.is_some() || shared.until.is_some() {
         CodexReplayPlan::for_bounded_files(
@@ -247,12 +249,12 @@ pub(super) fn load_groups_from_directory_with_diagnostics(
         diagnostics,
     };
     if shared.single_thread {
-        return aggregate_files_local(&run);
+        return aggregate_files_local(&run).map(|groups| (groups, detected));
     }
     let seen = create_dedupe_shards();
     let mut groups = aggregate_files_parallel(&run, &seen)?;
     apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
-    Ok(groups)
+    Ok((groups, detected))
 }
 
 fn aggregate_files_with_dedupe(
@@ -1037,6 +1039,7 @@ pub(super) fn load_groups_from_directory(
         kind,
         &Diagnostics::new("codex"),
     )
+    .map(|(groups, _)| groups)
 }
 
 #[cfg(test)]
@@ -1046,6 +1049,7 @@ fn load_groups_from_sources(
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     load_groups_from_sources_with_diagnostics(sources, shared, kind, &Diagnostics::new("codex"))
+        .map(|(groups, _)| groups)
 }
 
 #[cfg(test)]

@@ -66,13 +66,12 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     let speed = resolve_codex_speed(request.options.codex_speed);
 
     let (rows, detected) = if shared.since.is_none() && shared.until.is_none() {
-        let groups = load_groups_with_diagnostics(
+        let (groups, detected) = load_groups_with_diagnostics(
             shared,
             request.kind,
             request.multi_source_driver,
             &diagnostics,
         )?;
-        let detected = !groups.is_empty();
         let rows = groups
             .iter()
             .map(|(period, group)| {
@@ -172,6 +171,50 @@ mod diagnostic_tests {
     use ccusage_adapter_common::source::SourceOptions;
     use ccusage_core::cli::SharedArgs;
     use ccusage_test_support::{EnvVarsGuard, Fixture};
+    #[test]
+    fn discovered_nonusage_files_remain_detected_in_all_load_paths() {
+        let fixture = Fixture::new();
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        for file in ["sessions/header.jsonl", "archived_sessions/header.jsonl"] {
+            let _ = fixture.write_file(
+                file,
+                r#"{"type":"session_meta","payload":{"id":"metadata-only"}}"#,
+            );
+            for since in [None, Some("20260101".to_owned())] {
+                let shared = SharedArgs {
+                    offline: true,
+                    json: true,
+                    timezone: Some("UTC".to_owned()),
+                    since,
+                    ..Default::default()
+                };
+                for multi_source_driver in [false, true] {
+                    let result = SOURCE
+                        .unified_rows(&UnifiedRequest {
+                            kind: AgentReportKind::Daily,
+                            shared: &shared,
+                            options: SourceOptions::default(),
+                            pricing: Some(&pricing),
+                            progress: ProgressOwner::Caller,
+                            multi_source_driver,
+                            claude_counted: None,
+                        })
+                        .unwrap();
+                    assert!(result.detected);
+                    assert!(result.rows.is_empty());
+                    assert!(result.warnings.is_empty());
+                }
+                let (events, detected) = crate::load_codex_events_with_detection(&shared).unwrap();
+                assert!(detected);
+                assert!(events.is_empty());
+            }
+        }
+    }
+
     #[test]
     fn invalid_session_timestamps_keep_healthy_usage_with_and_without_date_bounds() {
         let fixture = Fixture::new();
