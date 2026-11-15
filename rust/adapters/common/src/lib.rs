@@ -8,6 +8,8 @@ use ccusage_core::{LoadedEntry, ReportWindow, UsageSummary, cli::SharedArgs};
 
 pub mod claims;
 pub mod jsonl;
+#[cfg(feature = "testing")]
+pub mod parity;
 pub mod pipeline;
 pub mod report;
 pub mod rows;

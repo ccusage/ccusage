@@ -14,14 +14,19 @@
 //!    `serde_json::from_slice`, so unused fields are skipped instead of being
 //!    materialized into an intermediate `Value` tree.
 
-use std::{fmt, marker::PhantomData};
+use std::{fmt, marker::PhantomData, path::Path};
 
 use serde::{
     Deserialize, Deserializer,
     de::{self, DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor},
 };
 
-use ccusage_core::fast::{LinePrefilter, byte_lines};
+use ccusage_core::{
+    Diagnostics, SkipKind,
+    fast::{LinePrefilter, byte_lines},
+};
+
+use crate::units::UnitError;
 
 /// Iterate over deserialized JSONL records contained in `content`.
 ///
@@ -56,13 +61,55 @@ pub fn records<'data, T>(
 where
     T: DeserializeOwned + 'data,
 {
-    byte_lines(content).filter_map(move |line| {
-        if let Some(prefilter) = prefilter
-            && !prefilter.matches(line)
-        {
-            return None;
+    try_records(content, prefilter).filter_map(|(_, record)| record.ok())
+}
+
+/// Like [`records`], but keeps the lines that pass the prefilter and then fail
+/// to deserialize, each with its 1-based line number.
+///
+/// A line the prefilter accepts looks like usage, so one that does not decode
+/// is how an upstream schema change first shows. A loader records it in its
+/// `Diagnostics` as `SkipKind::UndecodedUsage` instead of losing it.
+pub fn try_records<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+) -> impl Iterator<Item = (u32, serde_json::Result<T>)> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    byte_lines(content)
+        .enumerate()
+        .filter_map(move |(index, line)| {
+            if let Some(prefilter) = prefilter
+                && !prefilter.matches(line)
+            {
+                return None;
+            }
+            let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
+            Some((number, serde_json::from_slice::<T>(line)))
+        })
+}
+
+/// Iterates over decoded JSONL records and records selected lines that fail to
+/// decode as `SkipKind::UndecodedUsage`.
+///
+/// Lines rejected by `prefilter` are never parsed or counted as skipped. JSON
+/// error details retain only the category and source location, not input text.
+pub fn records_with_diagnostics<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+    unit: &'data Path,
+    diagnostics: &'data Diagnostics,
+) -> impl Iterator<Item = T> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    try_records(content, prefilter).filter_map(move |(line, record)| match record {
+        Ok(record) => Some(record),
+        Err(error) => {
+            UnitError::from(error).record_as(SkipKind::UndecodedUsage, diagnostics, unit, line);
+            None
         }
-        serde_json::from_slice::<T>(line).ok()
     })
 }
 
@@ -420,11 +467,17 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for LenientSeq<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use serde::Deserialize;
+
+    use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
+    use ccusage_test_support::EnvVarGuard;
 
     use super::{
         FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
         lenient_object, lenient_u64, lenient_vec, non_empty_string, records,
+        records_with_diagnostics, try_records,
     };
     use ccusage_core::fast::LinePrefilter;
 
@@ -459,6 +512,18 @@ mod tests {
     }
 
     #[test]
+    fn try_records_numbers_the_marked_lines_that_do_not_decode() {
+        let content = b"{\"model\":\"a\",\"tokens\":1}\n{\"other\":true}\n\n{\"model\":\"b\",\"tok";
+        let prefilter = LinePrefilter::all(&[b"model"]);
+
+        let parsed = try_records::<Record>(content, Some(&prefilter))
+            .map(|(line, record)| (line, record.ok().map(|record| record.tokens)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(parsed, [(1, Some(1)), (4, None)]);
+    }
+
+    #[test]
     fn records_skips_unparsable_lines() {
         let content = b"{\"tokens\":1}\nnot json\n{\"tokens\":2}\n";
         let parsed = records::<Record>(content, None).collect::<Vec<_>>();
@@ -470,6 +535,44 @@ mod tests {
                 .collect::<Vec<_>>(),
             [1, 2]
         );
+    }
+
+    #[test]
+    fn records_with_diagnostics_skips_bad_selected_lines_without_leaking_input() {
+        #[derive(Debug, Deserialize)]
+        struct StrictRecord {
+            model: String,
+            tokens: u64,
+        }
+
+        let content = b"{\"model\":\"before\",\"tokens\":1}\n{\"other\":\"SECRET_CANARY\",\"tokens\":}\n{\"model\":\"broken\",\"tokens\":\"SECRET_CANARY\"}\n{\"model\":\"after\",\"tokens\":2}";
+        let prefilter = LinePrefilter::all(&[b"model"]);
+        let diagnostics = Diagnostics::new("test");
+
+        let records = records_with_diagnostics::<StrictRecord>(
+            content,
+            Some(&prefilter),
+            Path::new("/logs/session.jsonl"),
+            &diagnostics,
+        )
+        .map(|record| (record.model, record.tokens))
+        .collect::<Vec<_>>();
+
+        assert_eq!(
+            records,
+            [("before".to_string(), 1), ("after".to_string(), 2)]
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+
+        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("/logs/session.jsonl:3: JSON data error at line 1, column"));
+        assert!(!warnings.contains("SECRET_CANARY"));
     }
 
     #[test]

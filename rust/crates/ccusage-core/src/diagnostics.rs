@@ -25,15 +25,18 @@ pub enum SkipKind {
     InvalidTimestamp,
     /// The input broke an assumption the loader relies on.
     Invariant,
+    /// A whole unit was read but did not decode as valid data.
+    InvalidData,
 }
 
 impl SkipKind {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Unreadable,
         Self::ReadInterrupted,
         Self::UndecodedUsage,
         Self::InvalidTimestamp,
         Self::Invariant,
+        Self::InvalidData,
     ];
 
     fn label(self) -> &'static str {
@@ -43,6 +46,7 @@ impl SkipKind {
             Self::UndecodedUsage => "undecoded usage",
             Self::InvalidTimestamp => "invalid timestamp",
             Self::Invariant => "unexpected shape",
+            Self::InvalidData => "invalid data",
         }
     }
 }
@@ -270,6 +274,28 @@ mod tests {
             [
                 "WARN  amp: skipped 1 file (unreadable)",
                 "WARN  amp: skipped 1 record in 1 file (invalid timestamp)",
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_data_is_reported_by_default() {
+        let diagnostics = Diagnostics::new("codex");
+        diagnostics.record(Skip::unit(
+            Path::new("/logs/session.json"),
+            SkipKind::InvalidData,
+            "JSON syntax error at line 1, column 12",
+        ));
+
+        assert_eq!(
+            diagnostics.render(true, false),
+            ["WARN  codex: skipped 1 file (invalid data)"]
+        );
+        assert_eq!(
+            diagnostics.render(true, true),
+            [
+                "WARN  codex: skipped 1 file (invalid data)",
+                "codex: invalid data: /logs/session.json: JSON syntax error at line 1, column 12",
             ]
         );
     }

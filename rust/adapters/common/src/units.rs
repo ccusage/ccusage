@@ -1,9 +1,10 @@
 use std::{
-    io,
+    fmt, fs, io,
     path::{Path, PathBuf},
 };
 
 use ccusage_core::{CliError, Diagnostics, Skip, SkipKind};
+use serde::de::DeserializeOwned;
 
 use crate::read_files_parallel;
 
@@ -11,6 +12,7 @@ use crate::read_files_parallel;
 ///
 /// The errors unit readers already return convert into it as
 /// [`SkipKind::Unreadable`], so a reader is passed to [`read_units`] as it is.
+#[derive(Debug)]
 pub struct UnitError {
     kind: SkipKind,
     detail: String,
@@ -22,6 +24,22 @@ impl UnitError {
             kind,
             detail: detail.into(),
         }
+    }
+
+    pub(crate) fn record_as(
+        self,
+        kind: SkipKind,
+        diagnostics: &Diagnostics,
+        unit: &Path,
+        line: u32,
+    ) {
+        diagnostics.record(Skip::record(unit, line, kind, self.detail));
+    }
+}
+
+impl fmt::Display for UnitError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.detail)
     }
 }
 
@@ -35,6 +53,37 @@ impl From<io::Error> for UnitError {
     fn from(error: io::Error) -> Self {
         Self::new(SkipKind::Unreadable, error.to_string())
     }
+}
+
+impl From<serde_json::Error> for UnitError {
+    fn from(error: serde_json::Error) -> Self {
+        use serde_json::error::Category;
+
+        let (kind, category) = match error.classify() {
+            Category::Io => (SkipKind::Unreadable, "I/O"),
+            Category::Syntax => (SkipKind::InvalidData, "syntax"),
+            Category::Data => (SkipKind::InvalidData, "data"),
+            Category::Eof => (SkipKind::InvalidData, "EOF"),
+        };
+        Self::new(
+            kind,
+            format!(
+                "JSON {category} error at line {}, column {}",
+                error.line(),
+                error.column()
+            ),
+        )
+    }
+}
+
+/// Reads a whole JSON unit and decodes it without copying input into a string.
+///
+/// File IO failures are recorded as unreadable units; decoding failures are
+/// recorded separately as invalid data, with only the error category and byte
+/// location retained for diagnostics.
+pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
+    let content = fs::read(path)?;
+    Ok(serde_json::from_slice(&content)?)
 }
 
 /// Reads `files` like [`read_files_parallel`], and records a unit whose read
@@ -179,5 +228,40 @@ mod tests {
 
         assert_eq!(loaded, [None]);
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+    }
+
+    #[test]
+    fn read_json_classifies_read_and_decode_failures_separately() {
+        let fixture = Fixture::new();
+        let files = vec![
+            fixture.path("missing.json"),
+            fixture.write_file("broken.json", "{\"value\":}"),
+        ];
+        let diagnostics = Diagnostics::new("test");
+
+        let loaded = read_units(
+            &files,
+            true,
+            &diagnostics,
+            super::read_json::<serde_json::Value>,
+        );
+
+        assert_eq!(loaded, [None, None]);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn serde_error_details_keep_only_category_and_location() {
+        let error = serde_json::from_str::<u64>(r#""SECRET_CANARY""#).unwrap_err();
+
+        let error = UnitError::from(error);
+
+        assert_eq!(error.kind, SkipKind::InvalidData);
+        assert!(error.detail.contains("data"));
+        assert!(error.detail.contains("line 1"));
+        assert!(error.detail.contains("column"));
+        assert!(!error.detail.contains("SECRET_CANARY"));
+        assert_eq!(error.to_string(), error.detail.as_str());
     }
 }
