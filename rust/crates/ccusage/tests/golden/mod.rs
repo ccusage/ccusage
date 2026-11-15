@@ -169,10 +169,10 @@ impl Case {
     }
 }
 
-/// The variants every agent runs for `kind`, decided from the parser alone:
-/// `daily`, `weekly`, `monthly`, `session`, and `blocks` all take the shared
+/// The variants each agent runs for its supported `kind`, decided from the parser:
+/// `daily`, `weekly`, `monthly`, `session`, and `blocks` take the shared
 /// options (`--json`, `--breakdown`, `--since`, `--until`, `--mode`,
-/// `--timezone`) for every agent, while `statusline` takes none of them and
+/// `--timezone`), while `statusline` takes none of them and
 /// needs a hook payload on stdin, so it is covered by agent-specific cases.
 pub fn matrix_cases(agent: &'static str, kind: &'static str) -> Vec<Case> {
     if kind == "statusline" {

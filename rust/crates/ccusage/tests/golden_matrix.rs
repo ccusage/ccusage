@@ -159,15 +159,15 @@ fn every_accepted_agent_report_is_in_the_matrix() {
             .map(|case| case.kind)
             .collect();
         for kind in ALL_REPORT_KINDS {
+            if snapshotted.contains(kind) {
+                continue;
+            }
             let case = Case::new(
                 kind,
                 UNSUPPORTED_VARIANT,
                 &[matrix.agent, kind, "--offline", "--json"],
             );
             let probe = run_case(root, &[], &case);
-            if snapshotted.contains(kind) {
-                continue;
-            }
             if probe.exit == "2" {
                 golden::assert_outcome(matrix.agent, root, &case, probe);
             } else {
