@@ -232,7 +232,7 @@ fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sq
 
 fn sqlite_error_failure(code: Option<isize>) -> (SkipKind, &'static str) {
     match code.map(|code| code & 0xff) {
-        Some(1) => (
+        Some(1) | Some(17) => (
             SkipKind::Invariant,
             "OpenClaw database schema is unavailable",
         ),
@@ -540,6 +540,8 @@ mod tests {
     fn classifies_sqlite_errors_by_primary_code_and_read_stage() {
         for (code, expected) in [
             (Some(1), SkipKind::Invariant),
+            (Some(17), SkipKind::Invariant),
+            (Some(273), SkipKind::Invariant),
             (Some(11), SkipKind::InvalidData),
             (Some(26), SkipKind::InvalidData),
             (Some(267), SkipKind::InvalidData),
@@ -556,6 +558,7 @@ mod tests {
         assert_eq!(sqlite_step_failure(Some(11)).0, SkipKind::InvalidData);
         assert_eq!(sqlite_step_failure(Some(282)).0, SkipKind::InvalidData);
         assert_eq!(sqlite_step_failure(Some(1)).0, SkipKind::Invariant);
+        assert_eq!(sqlite_step_failure(Some(17)).0, SkipKind::Invariant);
         assert_eq!(sqlite_step_failure(Some(261)).0, SkipKind::ReadInterrupted);
     }
 
