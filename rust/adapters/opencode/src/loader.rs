@@ -996,11 +996,11 @@ fn prepare_session_message_query(
 fn prepare_session_aggregate_query<'a>(
     connection: &'a sqlite::Connection,
     table: &str,
-) -> Option<sqlite::Statement<'a>> {
+) -> sqlite::Result<Option<sqlite::Statement<'a>>> {
     let table = match table {
         "session" => "session",
         "session_v2" => "session_v2",
-        _ => return None,
+        _ => return Ok(None),
     };
     let columns = table_columns(connection, table);
     if ![
@@ -1015,7 +1015,7 @@ fn prepare_session_aggregate_query<'a>(
     .into_iter()
     .all(|column| columns.contains(column))
     {
-        return None;
+        return Ok(None);
     }
     let reasoning = if columns.contains("tokens_reasoning") {
         "tokens_reasoning"
@@ -1031,7 +1031,7 @@ fn prepare_session_aggregate_query<'a>(
         "SELECT id, time_created, cost, tokens_input, tokens_output, \
          tokens_cache_read, tokens_cache_write, {reasoning}, {model} FROM {table}"
     );
-    connection.prepare(&sql).ok()
+    connection.prepare(&sql).map(Some)
 }
 
 fn load_session_aggregate_entries(
@@ -1039,20 +1039,24 @@ fn load_session_aggregate_entries(
     table: &str,
     context: &DatabaseLoadContext<'_>,
 ) -> Vec<LoadedEntry> {
-    let Some(mut statement) = prepare_session_aggregate_query(connection, table) else {
-        debug_log(
-            context.shared,
-            format!(
-                "Failed to read OpenCode {table} table: {}",
-                context.db_path.display()
-            ),
-        );
-        context.diagnostics.record(Skip::unit(
-            context.db_path,
-            SkipKind::Unreadable,
-            "aggregate query preparation failed",
-        ));
-        return Vec::new();
+    let mut statement = match prepare_session_aggregate_query(connection, table) {
+        Ok(Some(statement)) => statement,
+        Ok(None) => return Vec::new(),
+        Err(_) => {
+            debug_log(
+                context.shared,
+                format!(
+                    "Failed to read OpenCode {table} table: {}",
+                    context.db_path.display()
+                ),
+            );
+            context.diagnostics.record(Skip::unit(
+                context.db_path,
+                SkipKind::Unreadable,
+                "aggregate query preparation failed",
+            ));
+            return Vec::new();
+        }
     };
     let mut entries = Vec::new();
     let mut row = 0_u32;
@@ -1413,6 +1417,10 @@ mod tests {
     #[test]
     fn specialized_diagnostics_leave_optional_sources_and_nonusage_quiet() {
         let fixture = ccusage_test_support::Fixture::new();
+        sqlite::open(fixture.path("opencode.db"))
+            .unwrap()
+            .execute("CREATE TABLE session_v2 (id TEXT PRIMARY KEY)")
+            .unwrap();
         let _ = fixture.write_file(
             "storage/message/user.json",
             r#"{"role":"user","content":"SECRET_CANARY"}"#,
