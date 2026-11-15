@@ -1,11 +1,16 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{Arc, mpsc},
     thread,
 };
 
-use serde_json::{Value, json};
+use serde_json::json;
+
+use ccusage_adapter_common::{
+    claims::ClaudeCounted,
+    rows::{UnifiedRow, summary_rows},
+};
 
 use crate::{
     BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result,
@@ -16,13 +21,12 @@ use crate::{
     },
     cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
     date_within_range, filter_loaded_entries_by_date, filter_session_summaries_by_last_activity,
-    format_date_tz, json_float, parse_tz,
 };
 
 use super::{
     report::sort_rows,
     types::{
-        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllRow, AllSectionsLoadResult,
+        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllSectionsLoadResult,
         LoadedAgentRows,
     },
 };
@@ -302,12 +306,8 @@ fn load_base_rows(
                         // returns instead of blocking; the report then fails on that error.
                         let claude_counted = claude_counted
                             .recv()
-                            .unwrap_or_else(|_| ClaudeCounted::Sessions(HashSet::new()));
-                        Ok(without_turns_counted_by_claude(
-                            entries,
-                            &claude_counted,
-                            &source_shared["claude"],
-                        ))
+                            .unwrap_or_else(|_| ClaudeCounted::nothing());
+                        Ok(claude_counted.retain_uncounted(entries))
                     },
                     opencode::summarize_entries,
                 )?;
@@ -606,10 +606,10 @@ fn load_base_rows(
 
 fn finish_rows(
     kind: AgentReportKind,
-    mut rows: Vec<AllRow>,
+    mut rows: Vec<UnifiedRow>,
     shared: &SharedArgs,
     start_of_week: WeekDay,
-) -> Vec<AllRow> {
+) -> Vec<UnifiedRow> {
     if kind == AgentReportKind::Session {
         for row in &mut rows {
             row.metadata_agents = None;
@@ -694,7 +694,7 @@ pub(super) fn load_agent_rows_parallel(
 }
 
 fn append_agent_rows(
-    rows: &mut Vec<AllRow>,
+    rows: &mut Vec<UnifiedRow>,
     detected_agents: &mut Vec<&'static str>,
     agent: &'static str,
     agent_rows: AgentRows,
@@ -850,33 +850,6 @@ fn filtered_pi_format_agent_rows(
     })
 }
 
-/// The Claude Code usage the Claude source counts, so a source that runs
-/// Claude Code, such as OpenCode's `claude-agent` provider, can skip its copy.
-enum ClaudeCounted {
-    /// Daily-family reports count usage on the day Claude logged it.
-    SessionDays(claude::SessionDays),
-    /// A session report counts every session with in-window usage.
-    Sessions(HashSet<Arc<str>>),
-}
-
-impl ClaudeCounted {
-    fn covers(
-        &self,
-        session: &Arc<str>,
-        date: impl FnOnce() -> String,
-        claude: &SharedArgs,
-    ) -> bool {
-        match self {
-            Self::SessionDays(days) => days.contains(&(Arc::clone(session), date())),
-            // Claude counts only the session's in-window days, so a row outside them stays.
-            Self::Sessions(sessions) => {
-                sessions.contains(session)
-                    && date_within_range(&date(), claude.since.as_deref(), claude.until.as_deref())
-            }
-        }
-    }
-}
-
 /// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
 /// source counts are left to it unless `include_claude_agent` is set, so the
 /// focused reports add up to the unified one.
@@ -897,11 +870,7 @@ pub(super) fn load_opencode_entries(
     // Focused Claude reports, sessions included, count only in-window days, so match by
     // session day. Missing Claude directories load as no session days, so those turns stay.
     let (_, claude_counted) = load_claude_rows(AgentReportKind::Daily, &claude_shared, None)?;
-    Ok(without_turns_counted_by_claude(
-        entries,
-        &claude_counted,
-        &claude_shared,
-    ))
+    Ok(claude_counted.retain_uncounted(entries))
 }
 
 /// Claude rows plus the usage they count.
@@ -938,7 +907,7 @@ fn load_claude_rows(
                 detected,
                 warnings: Vec::new(),
             },
-            ClaudeCounted::Sessions(sessions),
+            ClaudeCounted::sessions(sessions, shared),
         ));
     }
 
@@ -960,36 +929,8 @@ fn load_claude_rows(
             detected,
             warnings: Vec::new(),
         },
-        ClaudeCounted::SessionDays(session_days),
+        ClaudeCounted::session_days(session_days, shared),
     ))
-}
-
-/// Drops OpenCode `claude-agent` rows whose Claude Code session the Claude
-/// source counted, so each turn is counted once, priced by the resolved model
-/// the Claude transcript records. OpenCode stores only the usage of turns
-/// Claude Code also writes to that session's transcript, so a counted session
-/// holds every turn of its OpenCode rows. Daily-family reports match per day,
-/// and a row is dated by its turn's start, so a turn whose calls Claude logs
-/// after midnight lands on a day Claude may not have counted and is kept.
-fn without_turns_counted_by_claude(
-    entries: Vec<opencode::LinkedEntry>,
-    claude_counted: &ClaudeCounted,
-    claude_shared: &SharedArgs,
-) -> Vec<LoadedEntry> {
-    let claude_tz = parse_tz(claude_shared.timezone.as_deref());
-    entries
-        .into_iter()
-        .filter(|(entry, native_session)| {
-            native_session.as_ref().is_none_or(|session| {
-                !claude_counted.covers(
-                    session,
-                    || format_date_tz(entry.timestamp, claude_tz.as_ref()),
-                    claude_shared,
-                )
-            })
-        })
-        .map(|(entry, _)| entry)
-        .collect()
 }
 
 fn filter_daily_summaries_by_date(rows: &mut Vec<UsageSummary>, shared: &SharedArgs) {
@@ -1097,73 +1038,13 @@ fn needs_session(kinds: &[AgentReportKind]) -> bool {
     kinds.contains(&AgentReportKind::Session)
 }
 
-fn summary_rows(
-    agent: &'static str,
-    summaries: Vec<UsageSummary>,
-    include_project_path: bool,
-) -> Vec<AllRow> {
-    summaries
-        .into_iter()
-        .filter_map(|summary| {
-            let period = summary
-                .date
-                .as_ref()
-                .or(summary.week.as_ref())
-                .or(summary.month.as_ref())
-                .or(summary.session_id.as_ref())?
-                .clone();
-            let total_tokens = summary.total_tokens();
-            // Cost-only rows, such as Copilot credits missing from modelMetrics, still bill.
-            if total_tokens == 0 && summary.total_cost == 0.0 {
-                return None;
-            }
-            let metadata = summary_metadata(&summary, include_project_path);
-            Some(AllRow {
-                period,
-                agent,
-                models_used: summary.models_used,
-                input_tokens: summary.input_tokens,
-                output_tokens: summary.output_tokens,
-                cache_creation_tokens: summary.cache_creation_tokens,
-                cache_read_tokens: summary.cache_read_tokens,
-                total_tokens,
-                total_cost: summary.total_cost,
-                metadata,
-                metadata_agents: Some(vec![agent]),
-                agent_breakdowns: None,
-                model_breakdowns: summary.model_breakdowns,
-            })
-        })
-        .collect()
-}
-
-fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Option<Value> {
-    let mut metadata = serde_json::Map::new();
-    if let Some(credits) = summary.credits {
-        metadata.insert("credits".to_string(), json_float(credits));
-    }
-    if summary.session_id.is_some() {
-        if let Some(last_activity) = summary.last_activity.as_ref() {
-            metadata.insert("lastActivity".to_string(), json!(last_activity));
-        }
-        if include_project_path && let Some(project_path) = summary.project_path.as_ref() {
-            metadata.insert("projectPath".to_string(), json!(project_path));
-        }
-    }
-    if metadata.is_empty() {
-        None
-    } else {
-        Some(Value::Object(metadata))
-    }
-}
-
 pub(super) fn codex_group_row<S>(
     period: &str,
     group: &CodexGroup,
     pricing: &PricingMap,
     speed: S,
     mode: CostMode,
-) -> AllRow
+) -> UnifiedRow
 where
     S: Into<codex::CodexSpeedPolicy> + Copy,
 {
@@ -1193,7 +1074,7 @@ where
         })
         .collect();
     model_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-    AllRow {
+    UnifiedRow {
         period: period.to_string(),
         agent: "codex",
         models_used: group.models.keys().cloned().collect(),
@@ -1218,10 +1099,10 @@ where
 }
 
 pub(super) fn aggregate_rows(
-    rows: Vec<AllRow>,
+    rows: Vec<UnifiedRow>,
     kind: AgentReportKind,
     start_of_week: WeekDay,
-) -> Vec<AllRow> {
+) -> Vec<UnifiedRow> {
     let mut groups = BTreeMap::<String, AllAccumulator>::new();
     for mut row in rows {
         let period = match kind {
@@ -1274,7 +1155,7 @@ mod tests {
         }
     }
 
-    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> AllRow {
+    fn sorting_row(period: &str, agent: &'static str, cost: f64) -> UnifiedRow {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
         summary_rows(agent, vec![summary], false).pop().unwrap()
@@ -1687,14 +1568,14 @@ mod tests {
         kind: AgentReportKind,
         shared: &SharedArgs,
         pricing: &PricingMap,
-    ) -> Result<Vec<AllRow>> {
+    ) -> Result<Vec<UnifiedRow>> {
         let mut entries = pi::load_entries(shared, Some(store_path), Some(pricing))?;
         filter_loaded_entries_by_date(&mut entries, shared);
         let summaries = pi::summarize_entries(&entries, kind)?;
         Ok(summary_rows("pi", summaries, true))
     }
 
-    fn usage_fingerprint(rows: &[AllRow]) -> Vec<(String, u64, u64, u64, u64, u64)> {
+    fn usage_fingerprint(rows: &[UnifiedRow]) -> Vec<(String, u64, u64, u64, u64, u64)> {
         rows.iter()
             .map(|row| {
                 (

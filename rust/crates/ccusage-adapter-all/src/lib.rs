@@ -107,6 +107,8 @@ fn requested_sections(
 }
 
 #[cfg(test)]
+use ccusage_adapter_common::rows::UnifiedRow;
+#[cfg(test)]
 use loader::{aggregate_rows, codex_group_row, load_agent_rows_parallel, load_rows, load_sections};
 #[cfg(test)]
 use report::{
@@ -114,7 +116,7 @@ use report::{
     sections_report_json,
 };
 #[cfg(test)]
-use types::{AgentLoadSpec, AgentRows, AllRow};
+use types::{AgentLoadSpec, AgentRows};
 
 #[cfg(test)]
 mod tests;

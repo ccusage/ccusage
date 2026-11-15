@@ -9,8 +9,10 @@ use ccusage_core::{
     parse_ts_timestamp, parse_tz,
 };
 
+pub mod claims;
 pub mod jsonl;
 pub mod report;
+pub mod rows;
 pub mod units;
 
 pub use report::print_table_for_agent;

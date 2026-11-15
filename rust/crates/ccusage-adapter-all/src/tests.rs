@@ -23,7 +23,7 @@ use ccusage_test_support::{EnvVarsGuard, fs_fixture, zcode::create_fixture};
 
 fn test_agent_rows(agent: &'static str) -> AgentRows {
     AgentRows {
-        rows: vec![AllRow {
+        rows: vec![UnifiedRow {
             period: "2026-01-02".to_string(),
             agent,
             models_used: Vec::new(),
@@ -85,7 +85,7 @@ fn loads_agent_rows_concurrently() {
 fn aggregates_daily_agent_rows_by_period() {
     let rows = aggregate_rows(
         vec![
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-02".to_string(),
                 agent: "codex",
                 models_used: vec!["gpt-5".to_string()],
@@ -100,7 +100,7 @@ fn aggregates_daily_agent_rows_by_period() {
                 agent_breakdowns: None,
                 model_breakdowns: Vec::new(),
             },
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
                 models_used: vec!["claude-sonnet-4-20250514".to_string()],
@@ -182,8 +182,8 @@ fn buckets_unified_weekly_rows_by_requested_start_of_week() {
     assert_eq!(periods(WeekDay::Sunday), ["2026-01-04"]);
 }
 
-fn extreme_all_row(period: &str, tokens: u64) -> AllRow {
-    AllRow {
+fn extreme_all_row(period: &str, tokens: u64) -> UnifiedRow {
+    UnifiedRow {
         period: period.to_string(),
         agent: "codex",
         models_used: vec!["gpt-5".to_string()],
@@ -212,7 +212,7 @@ fn extreme_all_row(period: &str, tokens: u64) -> AllRow {
 fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
     let rows = aggregate_rows(
         vec![
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
                 models_used: vec!["claude-sonnet-4-20250514".to_string()],
@@ -235,7 +235,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
                     ..ModelBreakdown::default()
                 }],
             },
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-15".to_string(),
                 agent: "claude",
                 models_used: vec!["claude-opus-4-20250514".to_string()],
@@ -258,7 +258,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
                     ..ModelBreakdown::default()
                 }],
             },
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-20".to_string(),
                 agent: "codex",
                 models_used: vec!["gpt-5".to_string()],
@@ -333,7 +333,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
 
 #[test]
 fn renders_all_report_json_with_period_and_agent_metadata() {
-    let rows = vec![AllRow {
+    let rows = vec![UnifiedRow {
         period: "2026-01-02".to_string(),
         agent: "all",
         models_used: vec!["gpt-5".to_string()],
@@ -359,7 +359,7 @@ fn renders_all_report_json_with_period_and_agent_metadata() {
 
 #[test]
 fn all_report_totals_list_unpriced_models_only_when_present() {
-    let mut row = AllRow {
+    let mut row = UnifiedRow {
         period: "2026-01-02".to_string(),
         agent: "all",
         models_used: vec!["new-model".to_string(), "gpt-5".to_string()],
@@ -413,7 +413,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
     );
 
     let nested = report_json_with_agents(
-        &[AllRow {
+        &[UnifiedRow {
             agent_breakdowns: Some(vec![row.clone()]),
             ..row.clone()
         }],
@@ -425,7 +425,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
         true
     );
 
-    let priced_session = AllRow {
+    let priced_session = UnifiedRow {
         period: "session-a".to_string(),
         model_breakdowns: vec![row.model_breakdowns[1].clone()],
         ..row.clone()
@@ -444,7 +444,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
         "sections totals follow the invoked section only"
     );
 
-    let unpriced_session = AllRow {
+    let unpriced_session = UnifiedRow {
         period: "session-b".to_string(),
         ..row.clone()
     };
@@ -470,7 +470,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
 
 #[test]
 fn renders_by_agent_json_breakdowns_when_requested() {
-    let rows = vec![AllRow {
+    let rows = vec![UnifiedRow {
         period: "2026-01-02".to_string(),
         agent: "all",
         models_used: vec!["claude-sonnet-4-20250514".to_string(), "gpt-5".to_string()],
@@ -483,7 +483,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
         metadata: None,
         metadata_agents: Some(vec!["claude", "codex"]),
         agent_breakdowns: Some(vec![
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
                 models_used: vec!["claude-sonnet-4-20250514".to_string()],
@@ -506,7 +506,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
                     ..ModelBreakdown::default()
                 }],
             },
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-02".to_string(),
                 agent: "codex",
                 models_used: vec!["gpt-5".to_string()],
@@ -569,7 +569,7 @@ fn renders_by_agent_json_breakdowns_when_requested() {
 #[test]
 fn omits_by_agent_json_breakdowns_by_default() {
     let rows = aggregate_rows(
-        vec![AllRow {
+        vec![UnifiedRow {
             period: "2026-01-02".to_string(),
             agent: "codex",
             models_used: vec!["gpt-5".to_string()],
@@ -595,7 +595,7 @@ fn omits_by_agent_json_breakdowns_by_default() {
 
 #[test]
 fn renders_multi_section_json_with_command_totals() {
-    let daily_rows = vec![AllRow {
+    let daily_rows = vec![UnifiedRow {
         period: "2026-01-02".to_string(),
         agent: "all",
         models_used: vec!["gpt-5".to_string()],
@@ -615,7 +615,7 @@ fn renders_multi_section_json_with_command_totals() {
         AgentReportKind::Monthly,
         WeekDay::Monday,
     );
-    let session_rows = vec![AllRow {
+    let session_rows = vec![UnifiedRow {
         period: "session-a".to_string(),
         agent: "codex",
         models_used: vec!["gpt-5".to_string()],
@@ -1899,7 +1899,7 @@ fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
 }
 
 fn assert_cline_unified_result_contains_only_accepted_requests(
-    rows: &[AllRow],
+    rows: &[UnifiedRow],
     kind: AgentReportKind,
 ) {
     for (actual, expected, label) in [
@@ -2039,7 +2039,7 @@ fn fixture_shared(since: &str, until: &str) -> SharedArgs {
 }
 
 fn table_snapshot(
-    rows: &[AllRow],
+    rows: &[UnifiedRow],
     kind: AgentReportKind,
     detected_agents: &[&'static str],
 ) -> Value {
@@ -2060,7 +2060,7 @@ fn table_snapshot(
         }
     }
     let totals = report_json(rows, kind)["totals"].clone();
-    let total_row = AllRow {
+    let total_row = UnifiedRow {
         period: "Total".to_string(),
         agent: "all",
         models_used: Vec::new(),
@@ -2403,7 +2403,7 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
 fn aggregates_model_breakdowns_across_agents() {
     let rows = aggregate_rows(
         vec![
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-02".to_string(),
                 agent: "codex",
                 models_used: vec!["gpt-5".to_string()],
@@ -2433,7 +2433,7 @@ fn aggregates_model_breakdowns_across_agents() {
                     },
                 ],
             },
-            AllRow {
+            UnifiedRow {
                 period: "2026-01-02".to_string(),
                 agent: "claude",
                 models_used: vec!["gpt-5".to_string(), "claude-sonnet-4-20250514".to_string()],
@@ -2504,7 +2504,7 @@ fn aggregates_model_breakdowns_across_agents() {
 
 #[test]
 fn displays_total_tokens_including_extra_tokens() {
-    let row = AllRow {
+    let row = UnifiedRow {
         period: "2026-01-02".to_string(),
         agent: "codex",
         models_used: vec!["gpt-5".to_string()],
@@ -2527,7 +2527,7 @@ fn displays_total_tokens_including_extra_tokens() {
 
 #[test]
 fn report_title_uses_detected_agents_even_when_filtered_rows_are_sparse() {
-    let rows = vec![AllRow {
+    let rows = vec![UnifiedRow {
         period: "2026-01-02".to_string(),
         agent: "all",
         models_used: vec!["gpt-5".to_string()],
@@ -2557,7 +2557,7 @@ fn report_title_uses_detected_agents_even_when_filtered_rows_are_sparse() {
 
 #[test]
 fn all_table_rows_match_main_agent_breakdown_display() {
-    let row = AllRow {
+    let row = UnifiedRow {
         period: "2026-01-02".to_string(),
         agent: "all",
         models_used: vec!["gpt-5".to_string()],
@@ -2569,7 +2569,7 @@ fn all_table_rows_match_main_agent_breakdown_display() {
         total_cost: 0.01,
         metadata: None,
         metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: Some(vec![AllRow {
+        agent_breakdowns: Some(vec![UnifiedRow {
             period: "2026-01-02".to_string(),
             agent: "codex",
             models_used: vec!["gpt-5".to_string()],
@@ -2604,7 +2604,7 @@ fn all_table_rows_match_main_agent_breakdown_display() {
 
 #[test]
 fn all_report_title_lists_detected_agents() {
-    let row = AllRow {
+    let row = UnifiedRow {
         period: "2026-01-02".to_string(),
         agent: "all",
         models_used: Vec::new(),
