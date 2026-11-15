@@ -1,13 +1,14 @@
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
+use ccusage_adapter_common::units::UnitError;
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost, cli::CostMode, format_date_tz, json_value_u64,
-    missing_pricing_model_for_usage, non_empty_json_string,
+    Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind, TimestampMs, TokenUsageRaw,
+    UsageEntry, UsageMessage, apply_total_token_fallback, calculate_cost, cli::CostMode,
+    format_date_tz, json_value_u64, missing_pricing_model_for_usage, non_empty_json_string,
 };
 
 /// A single Amp thread file: one JSON object holding the thread id, the chat
@@ -86,16 +87,73 @@ struct AmpMessage {
     message_id: Option<Value>,
 }
 
+/// Where a thread's records come from and where the ones that cannot be
+/// counted are recorded.
+struct ThreadUnit<'a> {
+    path: &'a Path,
+    diagnostics: &'a Diagnostics,
+}
+
+impl ThreadUnit<'_> {
+    /// Parses a record's timestamp, recording a record whose timestamp the
+    /// report cannot place on a day. `record` is its 1-based position.
+    fn timestamp(&self, record: usize, text: Option<&str>) -> Option<TimestampMs> {
+        let timestamp = text.and_then(crate::parse_ts_timestamp);
+        if timestamp.is_none() {
+            self.diagnostics.record(Skip::record(
+                self.path,
+                u32::try_from(record).unwrap_or(u32::MAX),
+                SkipKind::InvalidTimestamp,
+                "missing or unsupported timestamp",
+            ));
+        }
+        timestamp
+    }
+}
+
+/// Reads one thread file without reporting what it skipped; the loader goes
+/// through [`read_thread`].
 pub fn read_thread_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
+    read_thread(path, tz, mode, pricing, &Diagnostics::new("amp"))
+        .map_err(|error| crate::cli_error(error.to_string()))
+}
+
+pub(crate) fn read_thread(
+    path: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let content = fs::read(path)?;
-    let Ok(thread) = serde_json::from_slice::<AmpThread>(&content) else {
+    parse_thread(
+        &content,
+        &ThreadUnit { path, diagnostics },
+        tz,
+        mode,
+        pricing,
+    )
+}
+
+/// Fails when the content is not a thread object at all, so the caller skips
+/// the file as a unit instead of taking it for a thread without usage.
+fn parse_thread(
+    content: &[u8],
+    unit: &ThreadUnit<'_>,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
+    if content.iter().all(u8::is_ascii_whitespace) {
+        // A file Amp has created but not written yet holds no usage to lose.
         return Ok(Vec::new());
-    };
+    }
+    let thread = serde_json::from_slice::<AmpThread>(content)?;
     let Some(thread_id) = thread.id else {
         return Ok(Vec::new());
     };
@@ -109,31 +167,29 @@ pub fn read_thread_file(
             events,
             &cache_tokens,
             &thread_id,
+            unit,
             tz,
             mode,
             pricing,
         ));
     }
 
-    Ok(parse_message_usage(messages, &thread_id, tz, mode, pricing))
+    Ok(parse_message_usage(
+        messages, &thread_id, unit, tz, mode, pricing,
+    ))
 }
 
 fn parse_ledger_events(
     events: &[AmpLedgerEvent],
     cache_tokens: &HashMap<i64, (u64, u64)>,
     thread_id: &str,
+    unit: &ThreadUnit<'_>,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
-    for event in events {
-        let Some(timestamp_text) = event.timestamp.clone() else {
-            continue;
-        };
-        let Some(timestamp) = crate::parse_ts_timestamp(&timestamp_text) else {
-            continue;
-        };
+    for (index, event) in events.iter().enumerate() {
         let Some(model) = event.model.clone() else {
             continue;
         };
@@ -164,6 +220,10 @@ fn parse_ledger_events(
         {
             continue;
         }
+        let Some(timestamp) = unit.timestamp(index + 1, event.timestamp.as_deref()) else {
+            continue;
+        };
+        let timestamp_text = event.timestamp.clone().unwrap();
         let data = UsageEntry {
             session_id: Some(thread_id.to_string()),
             timestamp: timestamp_text,
@@ -224,24 +284,17 @@ fn parse_ledger_events(
 fn parse_message_usage(
     messages: &[AmpMessage],
     thread_id: &str,
+    unit: &ThreadUnit<'_>,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
-    for message in messages {
+    for (index, message) in messages.iter().enumerate() {
         if message.role.as_ref().and_then(Value::as_str) != Some("assistant") {
             continue;
         }
         let Some(usage) = message.usage.as_ref() else {
-            continue;
-        };
-        let Some(timestamp_text) = non_empty_json_string(usage.get("timestamp"))
-            .or_else(|| non_empty_json_string(message.timestamp.as_ref()))
-        else {
-            continue;
-        };
-        let Some(timestamp) = crate::parse_ts_timestamp(&timestamp_text) else {
             continue;
         };
         let Some(model) = non_empty_json_string(usage.get("model"))
@@ -268,6 +321,12 @@ fn parse_message_usage(
         {
             continue;
         }
+        let timestamp_text = non_empty_json_string(usage.get("timestamp"))
+            .or_else(|| non_empty_json_string(message.timestamp.as_ref()));
+        let Some(timestamp) = unit.timestamp(index + 1, timestamp_text.as_deref()) else {
+            continue;
+        };
+        let timestamp_text = timestamp_text.unwrap();
         let message_id = message.message_id.as_ref().and_then(|id| {
             id.as_i64()
                 .map(|v| v.to_string())
@@ -358,7 +417,83 @@ fn json_value_f64(value: Option<&Value>) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{fs_fixture, mutation::assert_parser_survives_mutations};
+
+    const LEDGER_THREAD: &str = r#"{"id":"T-ledger","usageLedger":{"events":[
+{"id":"e1","timestamp":"2026-01-30T23:30:00.000Z","model":"claude-sonnet-4-20250514","tokens":{"input":1200,"output":340},"toMessageId":1,"credits":1.25},
+{"id":"e2","timestamp":"2026-01-31T10:00:00+09:00","model":"gpt-5","tokens":{"total":1500},"toMessageId":2}
+]},"messages":[
+{"role":"user","content":"hi"},
+{"role":"assistant","messageId":1,"usage":{"cacheCreationInputTokens":500,"cacheReadInputTokens":7000}},
+{"role":"assistant","messageId":2,"usage":{"cacheReadInputTokens":12000}}
+]}"#;
+
+    const MESSAGES_THREAD: &str = r#"{"id":"T-messages","messages":[
+{"role":"assistant","messageId":10,"timestamp":"2026-01-31T11:42:10.652Z","model":"gpt-5","usage":{"inputTokens":10,"outputTokens":178,"cacheCreationInputTokens":986,"cacheReadInputTokens":11372,"credits":0.75}},
+{"role":"assistant","messageId":"m11","usage":{"model":"claude-haiku-4-5-20251001","totalTokens":345,"timestamp":"2026-02-01T23:59:59Z"}}
+]}"#;
+
+    fn parse(
+        content: &[u8],
+        diagnostics: &Diagnostics,
+    ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
+        let unit = ThreadUnit {
+            path: Path::new("/threads/T.json"),
+            diagnostics,
+        };
+        parse_thread(content, &unit, None, CostMode::Auto, None)
+    }
+
+    #[test]
+    fn returns_on_every_damaged_thread() {
+        let diagnostics = Diagnostics::new("amp");
+        for fixture in [LEDGER_THREAD, MESSAGES_THREAD] {
+            assert_eq!(parse(fixture.as_bytes(), &diagnostics).unwrap().len(), 2);
+            assert_parser_survives_mutations(fixture.as_bytes(), |content| {
+                let _ = parse(content, &diagnostics);
+            });
+        }
+    }
+
+    #[test]
+    fn records_usage_whose_timestamp_cannot_be_placed() {
+        let diagnostics = Diagnostics::new("amp");
+        // Microsecond precision is a shape the timestamp parser does not read.
+        let ledger = LEDGER_THREAD.replace("23:30:00.000Z", "23:30:00.000000Z");
+        let messages = MESSAGES_THREAD.replace("2026-02-01T23:59:59Z", "yesterday");
+
+        assert_eq!(parse(ledger.as_bytes(), &diagnostics).unwrap().len(), 1);
+        assert_eq!(parse(messages.as_bytes(), &diagnostics).unwrap().len(), 1);
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+    }
+
+    #[test]
+    fn records_usage_without_a_timestamp_and_keeps_the_healthy_record() {
+        for content in [
+            LEDGER_THREAD.replace("\"timestamp\":\"2026-01-30T23:30:00.000Z\",", ""),
+            MESSAGES_THREAD.replace("\"timestamp\":\"2026-01-31T11:42:10.652Z\",", ""),
+        ] {
+            let diagnostics = Diagnostics::new("amp");
+            assert_eq!(parse(content.as_bytes(), &diagnostics).unwrap().len(), 1);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+        }
+    }
+
+    #[test]
+    fn fails_content_that_is_not_a_thread_and_accepts_an_unwritten_file() {
+        let diagnostics = Diagnostics::new("amp");
+
+        assert!(parse(&LEDGER_THREAD.as_bytes()[..80], &diagnostics).is_err());
+        assert!(parse(b"7", &diagnostics).is_err());
+        assert!(parse(b"", &diagnostics).unwrap().is_empty());
+        assert!(parse(b"\n", &diagnostics).unwrap().is_empty());
+        assert!(
+            parse(br#"{"messages":[]}"#, &diagnostics)
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn falls_back_to_total_tokens_when_amp_parts_are_missing() {

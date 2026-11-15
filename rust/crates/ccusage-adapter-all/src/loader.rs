@@ -10,6 +10,7 @@ use serde_json::json;
 use ccusage_adapter_common::{
     claims::ClaudeCounted,
     rows::{UnifiedRow, summary_rows},
+    source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
 };
 
 use crate::{
@@ -324,13 +325,12 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[3],
             progress_agent: crate::progress::UsageLoadAgent("Amp"),
             load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "amp",
+                load_source_rows(
+                    &amp::SOURCE,
                     load_kind,
-                    &source_shared["amp"],
-                    &pricing["amp"],
-                    amp::load_entries,
-                    amp::summarize_entries,
+                    shared,
+                    sources,
+                    Some(&pricing["amp"]),
                 )
             }),
         },
@@ -767,6 +767,31 @@ fn path_key(path: &Path) -> PathBuf {
 /// overlapping.
 fn paths_overlap(left: &Path, right: &Path) -> bool {
     left == right || left.starts_with(right) || right.starts_with(left)
+}
+
+/// Asks a source that implements the contract for its unified rows.
+fn load_source_rows(
+    source: &dyn UsageSource,
+    load_kind: AgentReportKind,
+    shared: &SharedArgs,
+    sources: &BTreeMap<String, SourceArgs>,
+    pricing: Option<&PricingMap>,
+) -> Result<AgentRows> {
+    let source_args = sources.get(source.id());
+    let rows = source.unified_rows(&UnifiedRequest {
+        kind: load_kind,
+        shared: source_args.map_or(shared, |source| &source.shared),
+        options: SourceOptions::from_source(source_args),
+        pricing,
+        progress: ProgressOwner::Caller,
+        multi_source_driver: true,
+        claude_counted: None,
+    })?;
+    Ok(AgentRows {
+        rows: rows.rows,
+        detected: rows.detected,
+        warnings: rows.warnings,
+    })
 }
 
 fn load_summary_agent_rows(
