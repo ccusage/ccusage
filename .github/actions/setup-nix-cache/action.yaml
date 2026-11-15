@@ -23,10 +23,13 @@ inputs:
     default: ''
   save:
     description: >
-      Whether this job may persist the store for later runs. Sticky disks and
-      hestia only write from runs on main that are not pull_request(_target)
-      events, so pull request code can never write a store that main and
-      releases read.
+      Whether this job may persist the store for later runs. Sticky disks only
+      commit from runs on main that are not pull_request(_target) events: a disk
+      has no per-branch scope, so anything else would let pull request code write
+      the store main and releases mount. hestia writes from any ref because the
+      Actions cache scopes entries per branch (a pull request reads main's
+      entries but writes only its own) and hestia roots its GC per branch; only
+      pull_request_target stays read-only, as it runs in the base branch scope.
     default: 'true'
 runs:
   using: composite
@@ -48,6 +51,11 @@ runs:
           echo "commit=true" >> "$GITHUB_OUTPUT"
         else
           echo "commit=false" >> "$GITHUB_OUTPUT"
+        fi
+        if [ "$SAVE" = true ] && [ "$GITHUB_EVENT_NAME" != pull_request_target ]; then
+          echo "hestia-write=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "hestia-write=false" >> "$GITHUB_OUTPUT"
         fi
 
     # The key has no workflow name, so release.yaml's build-native-packages
@@ -88,7 +96,7 @@ runs:
       uses: Mic92/hestia@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
       with:
         version: v3.1.0
-        read-only: ${{ steps.backend.outputs.commit != 'true' }}
+        read-only: ${{ steps.backend.outputs.hestia-write != 'true' }}
 
     - name: Fix single-user Nix store ownership
       if: runner.os != 'Windows'

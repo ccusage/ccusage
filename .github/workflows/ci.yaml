@@ -23,6 +23,8 @@ env:
   # changes are discarded. This is decided here rather than only inside the
   # local actions, so the gate sits next to the triggers. It cannot stop a
   # queued commit that edits this file; review before queuing does that.
+  # The macOS legs do not take this gate: hestia writes into the Actions cache
+  # scope of the run's own branch, which main never reads.
   PERSIST_CACHES: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
@@ -279,7 +281,6 @@ jobs:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
-          save-nix-cache: ${{ env.PERSIST_CACHES }}
       - uses: ./.github/actions/build-windows-native-package
         if: matrix.platform == 'win32'
         with:
