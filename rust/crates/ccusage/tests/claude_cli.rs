@@ -359,6 +359,40 @@ fn statusline_emits_one_warning_across_repeated_usage_loads() {
     }
 }
 
+#[test]
+fn statusline_debug_includes_sanitized_skip_samples() {
+    let fixture = Fixture::new();
+    let transcript = fixture.write_file(
+        "projects/project-a/session-now.jsonl",
+        r#"{"message":{"usage":{"SECRET_CANARY":"#,
+    );
+    let hook = serde_json::json!({
+        "session_id": "session-now",
+        "transcript_path": transcript,
+        "model": {"display_name": "Model"},
+    })
+    .to_string();
+    let output = run_ccusage_output(
+        &fixture,
+        &[
+            "claude",
+            "statusline",
+            "--offline",
+            "--no-cache",
+            "--cost-source",
+            "cc",
+            "--debug",
+            "--timezone",
+            "UTC",
+        ],
+        Some(&hook),
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("session-now.jsonl:1"), "{stderr}");
+    assert!(stderr.contains("skipped 1 record in 1 input"), "{stderr}");
+    assert!(!stderr.contains("SECRET_CANARY"), "{stderr}");
+}
+
 /// Runs `args` twice: once with the fixture's own mtimes and once with every
 /// file touched to a fresh mtime. mtime pruning must never change a report.
 fn assert_output_ignores_mtimes(
