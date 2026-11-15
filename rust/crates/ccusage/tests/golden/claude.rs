@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::golden::{Case, set_modified};
+use crate::golden::{Case, json_path, set_modified};
 
 const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
@@ -288,8 +288,8 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
     let transcript = root.join(ALPHA).join("sess-alpha-1.jsonl");
     let hook = |context: &str| {
         format!(
-            r#"{{"session_id":"sess-alpha-1","transcript_path":"{}","model":{{"id":"{SONNET}","display_name":"Sonnet 4"}},"cost":{{"total_cost_usd":1.23}},"effort":{{"level":"high"}}{context}}}"#,
-            transcript.display()
+            r#"{{"session_id":"sess-alpha-1","transcript_path":{},"model":{{"id":"{SONNET}","display_name":"Sonnet 4"}},"cost":{{"total_cost_usd":1.23}},"effort":{{"level":"high"}}{context}}}"#,
+            json_path(&transcript)
         )
     };
     let hook_with_context =
