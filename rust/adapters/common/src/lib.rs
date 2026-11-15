@@ -33,24 +33,90 @@ pub fn collect_files_with_extension(dir: &Path, extension: &str, files: &mut Vec
     );
 }
 
+pub fn collect_files_with_extension_diagnosed(
+    dir: &Path,
+    extension: &str,
+    files: &mut Vec<PathBuf>,
+    diagnostics: &ccusage_core::Diagnostics,
+) {
+    collect_files_matching_inner(
+        dir,
+        &|path| path.extension().is_some_and(|ext| ext == extension),
+        files,
+        Some(diagnostics),
+    );
+}
+
 pub fn collect_files_matching(
     dir: &Path,
     matches: &impl Fn(&Path) -> bool,
     files: &mut Vec<PathBuf>,
 ) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
+    collect_files_matching_inner(dir, matches, files, None);
+}
+
+pub fn collect_files_matching_diagnosed(
+    dir: &Path,
+    matches: &dyn Fn(&Path) -> bool,
+    files: &mut Vec<PathBuf>,
+    diagnostics: &ccusage_core::Diagnostics,
+) {
+    collect_files_matching_inner(dir, matches, files, Some(diagnostics));
+}
+
+fn collect_files_matching_inner(
+    dir: &Path,
+    matches: &dyn Fn(&Path) -> bool,
+    files: &mut Vec<PathBuf>,
+    diagnostics: Option<&ccusage_core::Diagnostics>,
+) {
+    use ccusage_core::{Skip, SkipKind};
+
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            if error.kind() != std::io::ErrorKind::NotFound
+                && let Some(diagnostics) = diagnostics
+            {
+                diagnostics.record(Skip::unit(
+                    dir,
+                    SkipKind::Unreadable,
+                    "cannot read directory",
+                ));
+            }
+            return;
+        }
     };
 
-    for entry in entries.filter_map(std::result::Result::ok) {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.record(Skip::unit(
+                        dir,
+                        SkipKind::ReadInterrupted,
+                        "cannot read directory entry",
+                    ));
+                }
+                continue;
+            }
+        };
         let Ok(file_type) = entry.file_type() else {
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.record(Skip::unit(
+                    &entry.path(),
+                    SkipKind::Unreadable,
+                    "cannot read file type",
+                ));
+            }
             continue;
         };
         let path = entry.path();
         if file_type.is_file() && matches(&path) {
             files.push(path);
         } else if file_type.is_dir() {
-            collect_files_matching(&path, matches, files);
+            collect_files_matching_inner(&path, matches, files, diagnostics);
         }
     }
 }
@@ -286,6 +352,23 @@ mod tests {
         );
 
         assert_eq!(files, vec![kept]);
+    }
+
+    #[test]
+    fn discovery_reports_failed_roots_without_losing_healthy_roots() {
+        use ccusage_core::{Diagnostics, SkipKind};
+
+        let fixture = Fixture::new();
+        let failed = fixture.write_file("not-a-directory", "");
+        let healthy = fixture.write_file("healthy/nested/session.jsonl", "");
+        let diagnostics = Diagnostics::new("test");
+        let mut files = Vec::new();
+        for root in [fixture.path("missing"), failed, fixture.path("healthy")] {
+            super::collect_files_with_extension_diagnosed(&root, "jsonl", &mut files, &diagnostics);
+        }
+
+        assert_eq!(files, [healthy]);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[test]

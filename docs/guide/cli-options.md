@@ -144,6 +144,12 @@ ccusage daily --debug
 ccusage daily --debug --debug-samples 10
 ```
 
+Skipped-input warnings summarize files or usage records left out of a report;
+healthy input continues to count. `--debug` adds a bounded sample of file paths
+and record locations, including usage lines that could not be decoded. JSON
+decoding details show the error category and location without echoing log
+contents. These diagnostics go to stderr, keeping JSON output on stdout.
+
 ### Configuration File
 
 Use a custom configuration file:

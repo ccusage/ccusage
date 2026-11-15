@@ -1,4 +1,6 @@
-use ccusage_adapter_common::{collect_files_with_extension, read_units_flat, source::LoadContext};
+use ccusage_adapter_common::{
+    collect_files_with_extension_diagnosed, read_units_flat, source::LoadContext,
+};
 
 use crate::{LoadedEntry, Result};
 
@@ -9,7 +11,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     for path in paths::paths()? {
         let threads_dir = path.join("threads");
         let mut files = Vec::new();
-        collect_files_with_extension(&threads_dir, "json", &mut files);
+        collect_files_with_extension_diagnosed(&threads_dir, "json", &mut files, cx.diagnostics);
         entries.extend(read_units_flat(
             &files,
             cx.shared.single_thread,

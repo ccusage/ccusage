@@ -34,6 +34,18 @@ helper over duplicating period/session aggregation. Keep highly specialized
 loaders such as Codex parsing separate when their file format or pricing
 semantics require it.
 
+`common::source::UsageSource` supplies unified rows without prescribing an
+intermediate representation. Sources that already load `Vec<LoadedEntry>`
+implement `EntrySource`: the common pipeline owns progress, date windows and
+detection, while the source owns aggregation and rendering. Claude's daily
+summaries and Codex's grouped loader keep their specialized paths.
+
+File and database readers isolate failures with `common::units`; JSONL readers
+can record rejected usage lines with `records_with_diagnostics` and continue to
+the next record. Decoding diagnostics retain categories and locations rather
+than input values. Keep typed errors until this boundary so decoding failures
+remain distinct from unreadable files.
+
 Agent-specific source notes live in each adapter's `README.md` when the source
 has non-obvious paths, record shapes, token semantics, model fallback behavior,
 or command differences.

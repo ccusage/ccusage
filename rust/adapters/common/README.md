@@ -16,7 +16,7 @@ layers.
   isolation: a unit whose read fails is recorded in the load's `Diagnostics`
   and the rest of the report goes on, so no call site writes its own skip.
 - `source` — the contract between a usage source and the reports: `UsageSource`,
-  the object-safe trait the binary and the unified report hold, and
+  the object-safe trait the unified report holds, and
   `EntrySource`, the hooks of a source whose loader yields `Vec<LoadedEntry>`,
   with its declared window, detection and pricing policies.
 - `pipeline` — the one order an `EntrySource` report runs in, with a focused
@@ -27,7 +27,8 @@ layers.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
 - `filter_session_summaries_by_last_activity` — the same window applied to
   session summaries by the local day of their last activity.
-- `jsonl` — the streaming JSONL parsing helpers.
+- `jsonl` — the streaming JSONL parsing helpers, including diagnostics for
+  selected records that fail to decode without discarding later records.
 - `report::print_table_for_agent` — the usage table for adapters whose rows are
   plain `UsageSummary` values, parameterized by agent name.
 
@@ -37,6 +38,7 @@ layers.
 - `collect_usage_files`
 - `collect_files_with_extension`
 - `collect_files_matching`
+- `collect_files_with_extension_diagnosed` and `collect_files_matching_diagnosed`
 - `filter_loaded_entries_by_date`
 - `filter_session_summaries_by_last_activity`
 - `chunk_file_indexes_by_size`
@@ -44,6 +46,8 @@ layers.
 - `units::read_units`
 - `units::read_units_flat`
 - `units::UnitError`
+- `units::read_json`
+- `jsonl::records_with_diagnostics` and `records_with_usage_diagnostics`
 - `source::UsageSource`, `source::EntrySource` and the request, row and policy
   types they exchange
 - `pipeline::run_focused`

@@ -10,8 +10,8 @@ use crate::read_files_parallel;
 
 /// Why a whole unit (one file or database) was left out.
 ///
-/// The errors unit readers already return convert into it as
-/// [`SkipKind::Unreadable`], so a reader is passed to [`read_units`] as it is.
+/// Typed decoding errors retain their category and location; erased reader
+/// errors convert to [`SkipKind::Unreadable`] without their untrusted text.
 #[derive(Debug)]
 pub struct UnitError {
     kind: SkipKind,
@@ -44,8 +44,9 @@ impl fmt::Display for UnitError {
 }
 
 impl From<CliError> for UnitError {
-    fn from(error: CliError) -> Self {
-        Self::new(SkipKind::Unreadable, error.to_string())
+    fn from(_error: CliError) -> Self {
+        // The erased error may include input; typed readers retain safe details.
+        Self::new(SkipKind::Unreadable, "unit reader failed")
     }
 }
 
@@ -263,5 +264,13 @@ mod tests {
         assert!(error.detail.contains("column"));
         assert!(!error.detail.contains("SECRET_CANARY"));
         assert_eq!(error.to_string(), error.detail.as_str());
+    }
+
+    #[test]
+    fn unstructured_reader_errors_never_echo_input() {
+        let error = UnitError::from(cli_error("invalid token SECRET_CANARY"));
+
+        assert_eq!(error.kind, SkipKind::Unreadable);
+        assert!(!error.to_string().contains("SECRET_CANARY"));
     }
 }

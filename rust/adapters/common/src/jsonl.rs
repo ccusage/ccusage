@@ -67,9 +67,8 @@ where
 /// Like [`records`], but keeps the lines that pass the prefilter and then fail
 /// to deserialize, each with its 1-based line number.
 ///
-/// A line the prefilter accepts looks like usage, so one that does not decode
-/// is how an upstream schema change first shows. A loader records it in its
-/// `Diagnostics` as `SkipKind::UndecodedUsage` instead of losing it.
+/// The prefilter selects possible records; it does not prove a record carries
+/// usage. A caller decides how to classify a decoding failure.
 pub fn try_records<'data, T>(
     content: &'data [u8],
     prefilter: Option<&'data LinePrefilter>,
@@ -77,6 +76,14 @@ pub fn try_records<'data, T>(
 where
     T: DeserializeOwned + 'data,
 {
+    selected_lines(content, prefilter)
+        .map(|(number, line)| (number, serde_json::from_slice::<T>(line)))
+}
+
+fn selected_lines<'data>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+) -> impl Iterator<Item = (u32, &'data [u8])> + 'data {
     byte_lines(content)
         .enumerate()
         .filter_map(move |(index, line)| {
@@ -86,12 +93,12 @@ where
                 return None;
             }
             let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
-            Some((number, serde_json::from_slice::<T>(line)))
+            Some((number, line))
         })
 }
 
-/// Iterates over decoded JSONL records and records selected lines that fail to
-/// decode as `SkipKind::UndecodedUsage`.
+/// Iterates over decoded JSONL records, diagnosing malformed JSON separately
+/// from selected records that a typed decoder rejects.
 ///
 /// Lines rejected by `prefilter` are never parsed or counted as skipped. JSON
 /// error details retain only the category and source location, not input text.
@@ -104,13 +111,58 @@ pub fn records_with_diagnostics<'data, T>(
 where
     T: DeserializeOwned + 'data,
 {
-    try_records(content, prefilter).filter_map(move |(line, record)| match record {
-        Ok(record) => Some(record),
-        Err(error) => {
-            UnitError::from(error).record_as(SkipKind::UndecodedUsage, diagnostics, unit, line);
-            None
-        }
-    })
+    diagnosed_records(content, prefilter, unit, diagnostics, None)
+}
+
+/// Adds a normal warning for a decoding failure whose JSON envelope the source
+/// confirms carries usage. The confirmation runs only on decoding failures.
+pub fn records_with_usage_diagnostics<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+    unit: &'data Path,
+    diagnostics: &'data Diagnostics,
+    is_usage: fn(&serde_json::Value) -> bool,
+) -> impl Iterator<Item = T> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    diagnosed_records(content, prefilter, unit, diagnostics, Some(is_usage))
+}
+
+fn diagnosed_records<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+    unit: &'data Path,
+    diagnostics: &'data Diagnostics,
+    is_usage: Option<fn(&serde_json::Value) -> bool>,
+) -> impl Iterator<Item = T> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
+    selected_lines(content, prefilter).filter_map(
+        move |(number, line)| match serde_json::from_slice::<T>(line) {
+            Ok(record) => Some(record),
+            Err(error) => {
+                use serde_json::error::Category;
+                let kind = match error.classify() {
+                    Category::Io => SkipKind::Unreadable,
+                    Category::Syntax | Category::Eof => SkipKind::InvalidData,
+                    Category::Data => {
+                        if is_usage.is_some_and(|confirm| {
+                            serde_json::from_slice::<serde_json::Value>(line)
+                                .is_ok_and(|value| confirm(&value))
+                        }) {
+                            SkipKind::InvalidData
+                        } else {
+                            SkipKind::UndecodedUsage
+                        }
+                    }
+                };
+                UnitError::from(error).record_as(kind, diagnostics, unit, number);
+                None
+            }
+        },
+    )
 }
 
 /// Deserialize a JSON value into `u64` with the same lenient rules as
@@ -573,6 +625,26 @@ mod tests {
             .join("\n");
         assert!(warnings.contains("/logs/session.jsonl:3: JSON data error at line 1, column"));
         assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn confirmed_usage_decode_failures_warn_without_labeling_other_records_as_usage() {
+        #[derive(Deserialize)]
+        struct Record {
+            tokens: u64,
+        }
+        let diagnostics = Diagnostics::new("test");
+        let records = super::records_with_usage_diagnostics::<Record>(
+            b"{\"type\":\"user\",\"tokens\":\"text\"}\n{\"type\":\"usage\",\"tokens\":\"SECRET_CANARY\"}\n{\"type\":\"usage\",\"tokens\":3}",
+            None,
+            Path::new("/logs/session.jsonl"),
+            &diagnostics,
+            |value| value.get("type").and_then(serde_json::Value::as_str) == Some("usage"),
+        ).map(|record| record.tokens).collect::<Vec<_>>();
+
+        assert_eq!(records, [3]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
     }
 
     #[test]

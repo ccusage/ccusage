@@ -25,7 +25,7 @@ pub enum SkipKind {
     InvalidTimestamp,
     /// The input broke an assumption the loader relies on.
     Invariant,
-    /// A whole unit was read but did not decode as valid data.
+    /// Input was malformed, or a confirmed usage record did not decode.
     InvalidData,
 }
 
