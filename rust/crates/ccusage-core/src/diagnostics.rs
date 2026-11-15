@@ -5,7 +5,7 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use crate::{cli::SharedArgs, log_level};
+use crate::{cli::SharedArgs, log_level, output::sanitize_terminal_text};
 
 const SAMPLES_PER_KIND: usize = 5;
 
@@ -188,6 +188,9 @@ impl Diagnostics {
             }
         }
         lines
+            .into_iter()
+            .map(|line| sanitize_terminal_text(&line))
+            .collect()
     }
 
     fn summary_line(&self, kind: SkipKind, tally: &Tally) -> String {
@@ -365,6 +368,26 @@ mod tests {
             [
                 "WARN  codex: skipped 1 input (invalid data)",
                 "codex: invalid data: /logs/session.json: JSON syntax error at line 1, column 12",
+            ]
+        );
+    }
+
+    #[test]
+    fn rendered_diagnostics_escape_terminal_controls_in_dynamic_text() {
+        let diagnostics = Diagnostics::new("test");
+        diagnostics.push_line("WARN  source path \u{1b}[2J");
+        diagnostics.record(Skip::unit(
+            Path::new("/logs/bad\u{1b}[2J.json"),
+            SkipKind::InvalidData,
+            "invalid \u{1b}[31m JSON",
+        ));
+
+        assert_eq!(
+            diagnostics.render(true, true),
+            [
+                r"WARN  source path \u{1b}[2J",
+                "WARN  test: skipped 1 input (invalid data)",
+                r"test: invalid data: /logs/bad\u{1b}[2J.json: invalid \u{1b}[31m JSON",
             ]
         );
     }
