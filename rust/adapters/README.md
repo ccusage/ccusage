@@ -41,7 +41,8 @@ detection, while the source owns aggregation and rendering. Claude's daily
 summaries and Codex's grouped loader keep their specialized paths.
 
 File and database readers isolate failures with `common::units`; JSONL readers
-can record rejected usage lines with `records_with_diagnostics` and continue to
+can record selected decoding failures with `records_with_diagnostics`, or
+confirm usage envelopes with `records_with_usage_diagnostics`, and continue to
 the next record. Decoding diagnostics retain categories and locations rather
 than input values. Keep typed errors until this boundary so decoding failures
 remain distinct from unreadable files.
