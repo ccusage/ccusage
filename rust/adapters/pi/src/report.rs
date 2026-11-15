@@ -64,6 +64,27 @@ pub fn summarize_entries(
     }
 }
 
+pub(crate) fn summarize_unified_entries(
+    entries: &[LoadedEntry],
+    kind: AgentReportKind,
+) -> Result<Vec<crate::UsageSummary>> {
+    if kind != AgentReportKind::Session {
+        return summarize_entries(entries, kind);
+    }
+
+    let mut groups = BTreeMap::<(String, String), SessionAccumulator>::new();
+    for entry in entries {
+        groups
+            .entry((entry.project_path.to_string(), entry.session_id.to_string()))
+            .or_default()
+            .add_entry(entry);
+    }
+    groups
+        .into_values()
+        .map(|group| group.into_summary())
+        .collect()
+}
+
 fn rows_key(kind: AgentReportKind) -> &'static str {
     match kind {
         AgentReportKind::Daily => "daily",

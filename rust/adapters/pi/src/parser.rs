@@ -7,6 +7,7 @@ use std::{
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::{
     LoadedEntry, Pricing, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
@@ -14,7 +15,8 @@ use crate::{
     cli::CostMode, fast::LinePrefilter, format_date_tz, missing_pricing_model_for_usage,
     stored_cost_for_mode,
 };
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{jsonl, units::UnitError};
+use ccusage_core::Diagnostics;
 
 /// A single parsed pi session record. Only the fields ccusage consumes are
 /// declared; serde skips everything else.
@@ -185,7 +187,9 @@ pub(crate) fn read_session_file_data(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<PiSessionData> {
-    read_session_file_data_with_context(path, tz, mode, pricing, PiStoreContext::Default)
+    let diagnostics = Diagnostics::new("pi");
+    read_session_file_data_with_diagnostics(path, tz, mode, pricing, &diagnostics)
+        .map_err(|error| crate::cli_error(error.to_string()))
 }
 
 pub(crate) fn read_session_file_data_for_store(
@@ -196,6 +200,45 @@ pub(crate) fn read_session_file_data_for_store(
     pricing: Option<&PricingMap>,
     store_name: &str,
 ) -> Result<PiSessionData> {
+    let diagnostics = Diagnostics::new("pi");
+    read_session_file_data_for_store_with_diagnostics(
+        path,
+        store_root,
+        tz,
+        mode,
+        pricing,
+        store_name,
+        &diagnostics,
+    )
+    .map_err(|error| crate::cli_error(error.to_string()))
+}
+
+pub(crate) fn read_session_file_data_with_diagnostics(
+    path: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<PiSessionData, UnitError> {
+    read_session_file_data_with_context(
+        path,
+        tz,
+        mode,
+        pricing,
+        PiStoreContext::Default,
+        diagnostics,
+    )
+}
+
+pub(crate) fn read_session_file_data_for_store_with_diagnostics(
+    path: &Path,
+    store_root: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    store_name: &str,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<PiSessionData, UnitError> {
     read_session_file_data_with_context(
         path,
         tz,
@@ -205,6 +248,7 @@ pub(crate) fn read_session_file_data_for_store(
             root: store_root,
             name: store_name,
         },
+        diagnostics,
     )
 }
 
@@ -306,7 +350,8 @@ fn read_session_file_data_with_context(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     context: PiStoreContext<'_>,
-) -> Result<PiSessionData> {
+    diagnostics: &Diagnostics,
+) -> std::result::Result<PiSessionData, UnitError> {
     let content = fs::read(path)?;
     let project = context.project(path);
     let session_id = extract_session_id(path);
@@ -317,7 +362,13 @@ fn read_session_file_data_with_context(
     let mut entries = Vec::new();
     let mut usage_records = Vec::new();
 
-    for record in jsonl::records::<PiLine>(&content, Some(&prefilter)) {
+    for record in jsonl::records_with_usage_diagnostics::<PiLine>(
+        &content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_pi_usage_envelope,
+    ) {
         if !is_pi_message_usage(&record) {
             continue;
         }
@@ -577,6 +628,21 @@ fn is_pi_message_usage(record: &PiLine) -> bool {
         return false;
     };
     message.role.as_deref() == Some("assistant") && message.usage.is_some()
+}
+
+fn is_pi_usage_envelope(value: &Value) -> bool {
+    value
+        .get("type")
+        .and_then(Value::as_str)
+        .is_none_or(|message_type| message_type == "message")
+        && value
+            .get("message")
+            .and_then(|message| message.get("role"))
+            .and_then(Value::as_str)
+            == Some("assistant")
+        && value
+            .get("message")
+            .is_some_and(|message| message.get("usage").is_some())
 }
 
 fn extract_session_id(path: &Path) -> String {

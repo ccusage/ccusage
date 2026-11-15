@@ -1,7 +1,6 @@
-use ccusage_adapter_common::{
-    collect_files_with_extension, filter_loaded_entries_by_date, read_files_parallel,
-};
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
 use ccusage_core::*;
+use serde_json::Value;
 
 mod loader;
 mod parser;
@@ -9,7 +8,8 @@ mod paths;
 mod report;
 
 use crate::{
-    Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries, wants_json,
+    LoadedEntry, Result, UsageSummary,
+    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
 #[doc(hidden)]
@@ -18,32 +18,149 @@ pub use loader::{load_entries, load_entries_for_store_paths};
 pub use paths::{named_store_paths, paths as default_paths};
 pub use report::{report_from_rows, summarize_entries};
 
+pub struct Pi;
+
+pub static SOURCE: Pi = Pi;
+
+impl EntrySource for Pi {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor {
+            unified_project_path: true,
+            ..EntryDescriptor::standard("pi", "pi-agent")
+        }
+    }
+
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_entries_with_context(cx)
+    }
+
+    fn summarize(
+        &self,
+        entries: &[LoadedEntry],
+        kind: AgentReportKind,
+    ) -> Result<Vec<UsageSummary>> {
+        summarize_entries(entries, kind)
+    }
+
+    fn summarize_unified(
+        &self,
+        entries: &[LoadedEntry],
+        kind: AgentReportKind,
+    ) -> Result<Vec<UsageSummary>> {
+        report::summarize_unified_entries(entries, kind)
+    }
+
+    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
+        report_from_rows(rows, kind)
+    }
+
+    fn print_table(
+        &self,
+        rows: &[UsageSummary],
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+    ) -> Result<()> {
+        crate::print_usage_table(
+            "pi-agent Token Usage Report",
+            ccusage_core::first_column(kind),
+            rows,
+            shared,
+            false,
+            None,
+        )?;
+        Ok(())
+    }
+}
+
 pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let pricing = crate::PricingMap::load_with_overrides(
-        args.shared.offline,
-        crate::log_level() != Some(0),
-        args.shared.pricing_overrides.iter(),
-    );
-    let mut entries = load_entries(&args.shared, args.pi_path.as_deref(), Some(&pricing))?;
-    filter_loaded_entries_by_date(&mut entries, &args.shared);
-    let mut rows = summarize_entries(&entries, args.kind)?;
-    sort_summaries(&mut rows, &args.shared.order, |row| {
-        ccusage_core::summary_period(row)
-    });
-    if wants_json(&args.shared) {
-        return print_json_or_jq(
-            report_from_rows(&rows, args.kind),
-            args.shared.jq.as_deref(),
-            args.shared.no_cost,
+    SOURCE.run_focused(args)
+}
+
+#[cfg(test)]
+mod tests {
+    use ccusage_adapter_common::{
+        parity::assert_focused_matches_unified,
+        source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
+    };
+    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    use super::*;
+
+    #[test]
+    fn unified_sessions_keep_project_paths_and_focused_totals() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_same-session.jsonl": [
+                r#"{"type":"session","id":"same-session","timestamp":"2026-01-01T00:00:00.000Z"}"#,
+                r#"{"type":"message","timestamp":"2026-01-02T10:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+            ]
+            .join("\n"),
+            "sessions/project-b/agent_same-session.jsonl": [
+                r#"{"type":"session","id":"same-session","timestamp":"2026-01-01T00:00:00.000Z"}"#,
+                r#"{"type":"message","timestamp":"2026-01-02T10:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
+            ]
+            .join("\n"),
+        });
+        let _guard = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
+        let shared = crate::cli::SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            offline: true,
+            ..crate::cli::SharedArgs::default()
+        };
+
+        assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        let entries = load_entries(&shared, None, None).unwrap();
+        let focused = summarize_entries(&entries, AgentReportKind::Session).unwrap();
+        let unified =
+            report::summarize_unified_entries(&entries, AgentReportKind::Session).unwrap();
+
+        assert_eq!(focused.len(), 1);
+        assert_eq!(unified.len(), 2);
+        assert_eq!(
+            unified
+                .iter()
+                .filter_map(|row| row.project_path.as_deref())
+                .collect::<std::collections::BTreeSet<_>>(),
+            ["project-a", "project-b"].into()
         );
     }
-    print_usage_table(
-        "pi-agent Token Usage Report",
-        ccusage_core::first_column(args.kind),
-        &rows,
-        &args.shared,
-        false,
-        None,
-    )?;
-    Ok(())
+
+    #[test]
+    fn malformed_selected_message_is_diagnosed_without_dropping_following_usage() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": [
+                r#"{"type":"session","id":"session-a","timestamp":"2026-01-01T00:00:00.000Z"}"#,
+                r#"{"type":"message","message":{"role":"assistant","usage":"SECRET_CANARY"}}"#,
+                r#"{"type":"message","timestamp":"2026-01-02T10:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+            ]
+            .join("\n"),
+        });
+        let _guard = EnvVarGuard::set("PI_AGENT_DIR", fixture.path("sessions"));
+        let shared = crate::cli::SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            debug: true,
+            timezone: Some("UTC".to_string()),
+            offline: true,
+            ..crate::cli::SharedArgs::default()
+        };
+
+        let rows = SOURCE
+            .unified_rows(&UnifiedRequest {
+                kind: AgentReportKind::Daily,
+                shared: &shared,
+                options: SourceOptions::default(),
+                pricing: None,
+                progress: ProgressOwner::Caller,
+                multi_source_driver: true,
+                claude_counted: None,
+            })
+            .unwrap();
+
+        assert_eq!(rows.rows.len(), 1);
+        assert!(rows.warnings.iter().any(|warning| {
+            warning.contains("invalid data")
+                && warning.contains("agent_session-a.jsonl:2")
+                && !warning.contains("SECRET_CANARY")
+        }));
+    }
 }

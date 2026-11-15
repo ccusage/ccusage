@@ -3,9 +3,14 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use ccusage_adapter_common::{
+    collect_files_with_extension_diagnosed, pipeline, read_units,
+    source::{LoadContext, SourceOptions},
+};
+
 use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, collect_files_with_extension, debug_log,
-    parse_tz, read_files_parallel,
+    Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result,
+    cli::{AgentReportKind, SharedArgs},
 };
 
 use super::{parser, paths};
@@ -15,24 +20,19 @@ pub fn load_entries(
     custom_path: Option<&str>,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("pi-agent"),
-        shared.json,
-        || load_entries_inner(shared, custom_path, pricing),
+    pipeline::load_entries_for_unmigrated_caller(
+        &crate::SOURCE,
+        shared,
+        SourceOptions {
+            pi_path: custom_path,
+            ..SourceOptions::default()
+        },
+        pricing,
     )
 }
 
-fn load_entries_inner(
-    shared: &SharedArgs,
-    custom_path: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    load_entries_from_paths(
-        shared,
-        paths::paths(custom_path)?,
-        pricing,
-        PiLoadScope::Default,
-    )
+pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    load_entries_for_context(cx, paths::paths(cx.options.pi_path)?, PiLoadScope::Default)
 }
 
 #[doc(hidden)]
@@ -77,13 +77,6 @@ impl<'a> PiLoadScope<'a> {
             Self::Named { store_name } => store_name,
         }
     }
-
-    fn debug_label(self) -> String {
-        match self {
-            Self::Default => "pi".to_string(),
-            Self::Named { store_name } => format!("pi-format store '{store_name}'"),
-        }
-    }
 }
 
 fn load_entries_from_paths(
@@ -92,14 +85,36 @@ fn load_entries_from_paths(
     pricing: Option<&PricingMap>,
     scope: PiLoadScope<'_>,
 ) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
+    let window = ReportWindow::from_shared(shared);
+    let diagnostics = Diagnostics::new("pi");
+    let cx = LoadContext {
+        shared,
+        kind: AgentReportKind::Daily,
+        window: &window,
+        pricing,
+        options: SourceOptions::default(),
+        diagnostics: &diagnostics,
+    };
+    let entries = load_entries_for_context(&cx, paths, scope)?;
+    for warning in diagnostics.warnings(shared) {
+        eprintln!("{warning}");
+    }
+    Ok(entries)
+}
+
+fn load_entries_for_context(
+    cx: &LoadContext<'_>,
+    paths: Vec<PathBuf>,
+    scope: PiLoadScope<'_>,
+) -> Result<Vec<LoadedEntry>> {
+    let shared = cx.shared;
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
     let mut discovered_files = Vec::new();
     let mut loaded_files = Vec::new();
     for path in paths {
         let mut files = Vec::new();
-        collect_files_with_extension(&path, "jsonl", &mut files);
+        collect_files_with_extension_diagnosed(&path, "jsonl", &mut files, cx.diagnostics);
         // pi-subagents writes derived debug transcripts under a
         // `subagent-artifacts/` directory inside the sessions tree. They are
         // pure copies of calls already recorded in the primary session files
@@ -111,35 +126,31 @@ fn load_entries_from_paths(
         // Read session files in parallel; the first-wins dedup runs sequentially
         // over the original file order so the surviving record per id matches the
         // single-threaded read.
-        let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-            let result = match scope {
-                PiLoadScope::Default => {
-                    parser::read_session_file_data(file, tz.as_ref(), shared.mode, pricing)
-                }
-                PiLoadScope::Named { store_name } => parser::read_session_file_data_for_store(
+        let loaded = read_units(
+            &files,
+            shared.single_thread,
+            cx.diagnostics,
+            |file| match scope {
+                PiLoadScope::Default => parser::read_session_file_data_with_diagnostics(
                     file,
-                    &path,
-                    tz.as_ref(),
+                    Some(cx.window.timezone()),
                     shared.mode,
-                    pricing,
-                    store_name,
+                    cx.pricing,
+                    cx.diagnostics,
                 ),
-            };
-            match result {
-                Ok(data) => Some(data),
-                Err(error) => {
-                    let label = scope.debug_label();
-                    debug_log(
-                        shared,
-                        format!(
-                            "Failed to read {label} session file {}: {error}",
-                            file.display()
-                        ),
-                    );
-                    None
+                PiLoadScope::Named { store_name } => {
+                    parser::read_session_file_data_for_store_with_diagnostics(
+                        file,
+                        &path,
+                        Some(cx.window.timezone()),
+                        shared.mode,
+                        cx.pricing,
+                        store_name,
+                        cx.diagnostics,
+                    )
                 }
-            }
-        });
+            },
+        );
         discovered_files.extend(files.into_iter().map(|file| DiscoveredFile { path: file }));
         loaded_files.extend(loaded);
     }
