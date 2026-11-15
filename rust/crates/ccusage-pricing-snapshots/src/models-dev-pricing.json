@@ -16985,9 +16985,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.011,
-			"input": 0.021,
-			"output": 0.064
+			"cache_read": 0.01,
+			"input": 0.019,
+			"output": 0.058
 		},
 		"limit": {
 			"context": 262144
@@ -30558,7 +30558,7 @@
 		"cost": {
 			"cache_read": 0.00034,
 			"input": 0.0021,
-			"output": 0.012
+			"output": 0.013
 		},
 		"exactOnly": true,
 		"limit": {
@@ -30715,7 +30715,7 @@
 		"cost": {
 			"cache_read": 0.00016,
 			"input": 0.0011,
-			"output": 0.0042
+			"output": 0.0043
 		},
 		"limit": {
 			"context": 262144
@@ -30917,7 +30917,7 @@
 	},
 	"qwen3-next-80b-a3b": {
 		"cost": {
-			"input": 0.0013,
+			"input": 0.0014,
 			"output": 0.016
 		},
 		"limit": {
