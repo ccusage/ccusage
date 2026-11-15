@@ -211,8 +211,8 @@
        "command with both binaries under the same arguments and environment, and compares stdout,\n"
        "stderr, and exit code byte for byte. Variants cover JSON, tables, breakdowns, date windows,\n"
        "cost modes, and timezones. Agent-specific options and statusline hook payloads are covered\n"
-       "by the golden tests. Each build runs twice, and both run three more times when\n"
-       "anything disagrees: a command whose base output is not reproducible is reported as unstable\n"
+       "by the golden tests. Each command runs twice per binary, then three more times per binary\n"
+       "when the results disagree: a command whose base output is not reproducible is reported as unstable\n"
        "instead of different. Exits 0 only when all commands succeed with identical output,\n"
        "1 on a confirmed difference, and 2 when a comparison cannot complete successfully.\n\n"
        (cli/format-opts {:spec diff-spec})))
