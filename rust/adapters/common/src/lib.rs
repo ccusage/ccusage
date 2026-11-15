@@ -4,15 +4,16 @@ use std::{
     thread,
 };
 
-use ccusage_core::{
-    LoadedEntry, UsageSummary, cli::SharedArgs, date_within_range, format_date_tz,
-    parse_ts_timestamp, parse_tz,
-};
+use ccusage_core::{LoadedEntry, ReportWindow, UsageSummary, cli::SharedArgs};
 
 pub mod claims;
 pub mod jsonl;
+pub mod pipeline;
 pub mod report;
 pub mod rows;
+pub mod source;
+#[cfg(test)]
+mod test_source;
 pub mod units;
 
 pub use report::print_table_for_agent;
@@ -53,16 +54,7 @@ pub fn collect_files_matching(
 }
 
 pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &SharedArgs) {
-    if shared.since.is_none() && shared.until.is_none() {
-        return;
-    }
-    entries.retain(|entry| {
-        date_within_range(
-            &entry.date,
-            shared.since.as_deref(),
-            shared.until.as_deref(),
-        )
-    });
+    pipeline::retain_entries_in(entries, &ReportWindow::from_shared(shared));
 }
 
 /// Keeps the sessions whose last activity falls on a day inside the
@@ -72,22 +64,7 @@ pub fn filter_session_summaries_by_last_activity(
     rows: &mut Vec<UsageSummary>,
     shared: &SharedArgs,
 ) {
-    if shared.since.is_none() && shared.until.is_none() {
-        return;
-    }
-    let timezone = parse_tz(shared.timezone.as_deref());
-    rows.retain(|row| {
-        row.last_activity
-            .as_deref()
-            .and_then(parse_ts_timestamp)
-            .is_some_and(|timestamp| {
-                date_within_range(
-                    &format_date_tz(timestamp, timezone.as_ref()),
-                    shared.since.as_deref(),
-                    shared.until.as_deref(),
-                )
-            })
-    });
+    pipeline::retain_sessions_last_active_in(rows, &ReportWindow::from_shared(shared));
 }
 
 pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<Vec<usize>> {
