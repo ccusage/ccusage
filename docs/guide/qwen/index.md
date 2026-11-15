@@ -35,8 +35,12 @@ QWEN_DATA_DIR="$HOME/.qwen,/backup/qwen" ccusage qwen daily
 └── projects/
     └── {project}/
         └── chats/
-            └── *.jsonl
+            ├── *.jsonl
+            └── archive/
+                └── *.jsonl
 ```
+
+Archived chats contribute to the same project and session reports as active chats.
 
 ## Report Views
 
