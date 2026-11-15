@@ -4,8 +4,7 @@ const SONNET: &str = "claude-sonnet-4-20250514";
 const OPUS: &str = "claude-opus-4-20250514";
 const HAIKU: &str = "claude-haiku-4-5-20251001";
 const UNPRICED: &str = "goose-mystery-1";
-/// Has no bare pricing entry, so it exercises the `<provider>/<model>` lookup
-/// with the provider inferred from the `qwen` prefix.
+/// A literal catalog key with the provider inferred from the `qwen` prefix.
 const PROVIDER_PREFIXED: &str = "qwen/qwen3-coder";
 
 /// The columns the adapter selects plus some it never reads. `id` is not a
@@ -138,7 +137,8 @@ fn counted_rows() -> Vec<Row> {
     ]
 }
 
-/// Rows the adapter must drop. They carry 9999/7777 so a leak is visible.
+/// Rows the adapter must drop. Most carry 9999/7777 so a leak is visible;
+/// `x-no-tokens` clamps to zero usage instead.
 fn ignored_rows() -> Vec<Row> {
     let leak = ["NULL", "NULL", "NULL", "17776", "9999", "7777"];
     let ignored = |id, model_config: String, created_at| Row {

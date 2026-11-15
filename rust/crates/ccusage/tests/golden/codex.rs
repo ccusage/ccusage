@@ -34,7 +34,7 @@ fn utc(day: i64, hour: u64, minute: u64) -> u64 {
         + minute * 60
 }
 
-/// Rollout path below a sessions directory; it is also the session ID.
+/// Rollout path below a sessions directory; the session ID omits `.jsonl`.
 fn rollout(date: &str, time: &str, id: &str) -> String {
     format!(
         "{}/rollout-{date}T{time}-{id}.jsonl",

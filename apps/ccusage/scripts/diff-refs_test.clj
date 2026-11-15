@@ -1,5 +1,5 @@
 #!/usr/bin/env nix
-#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped --command bb
+#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#git nixpkgs#jq nixpkgs#diffutils --command bb
 
 (ns diff-refs-test
   (:require [babashka.fs]
@@ -39,7 +39,7 @@
 (deftest planned-commands
   (let [fixture (command-plan {} {:since "20250101" :until "20250131"})
         real (command-plan {:real true} (real-dates (java.time.LocalDate/of 2026 3 1)))]
-    (is (= (* 4 (count report-commands)) (count fixture) (count real)))
+    (is (= (* (count output-variants) (count report-commands)) (count fixture) (count real)))
     (is (apply distinct? (map :id fixture)))
     (testing "fixture runs are unbounded except for the window variant"
       (is (= ["claude" "daily" "--offline" "--timezone" "UTC" "--json"] (args-of fixture "claude-daily--json")))
@@ -54,6 +54,19 @@
              (args-of real "daily--json-window"))))
     (is (true? (:json? (first fixture))))
     (is (false? (:json? (second fixture))))))
+
+(deftest cost-mode-and-timezone-commands
+  (let [fixture (command-plan {} {:since "20250101" :until "20250131"})
+        real (command-plan {:real true} (real-dates (java.time.LocalDate/of 2026 3 1)))]
+    (doseq [command report-commands
+            [variant timezone extra] [["json-mode-calculate" "UTC" ["--mode" "calculate"]]
+                                      ["json-mode-display" "UTC" ["--mode" "display"]]
+                                      ["json-tz-tokyo" "Asia/Tokyo" []]]]
+      (let [id (str (clojure.string/replace command " " "-") "--" variant)
+            args (vec (concat (clojure.string/split command #" ")
+                              ["--offline" "--timezone" timezone "--json"] extra))]
+        (is (= args (args-of fixture id)) id)
+        (is (= (into args ["--until" "20260228"]) (args-of real id)) id)))))
 
 (deftest environments
   (let [fixture (babashka.fs/create-temp-dir {:prefix "ccusage-diff-fixture."})]

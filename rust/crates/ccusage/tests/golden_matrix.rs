@@ -87,6 +87,26 @@ fn claude_project_case_runs_a_successful_filtered_report() {
     assert_eq!(dates, ["2025-12-31", "2026-01-01", "2026-01-02"]);
 }
 
+#[test]
+fn statusline_hook_paths_round_trip_as_json() {
+    let root = std::path::Path::new(r#"C:\fixtures\a "quoted" directory"#);
+    let cases = golden::claude::extra_cases(root);
+    let payloads: Vec<_> = cases
+        .iter()
+        .filter_map(|case| case.stdin.as_ref())
+        .collect();
+    assert!(!payloads.is_empty());
+    for payload in payloads {
+        let hook: serde_json::Value = serde_json::from_str(payload).unwrap();
+        assert_eq!(
+            hook["transcript_path"].as_str().unwrap(),
+            root.join("claude/projects/-Users-dev-alpha/sess-alpha-1.jsonl")
+                .to_str()
+                .unwrap()
+        );
+    }
+}
+
 /// The names under `COMMANDS:` in a `--help` page.
 fn help_commands(help: &str) -> Vec<String> {
     help.lines()
@@ -138,12 +158,18 @@ fn every_accepted_agent_report_is_in_the_matrix() {
             .map(|case| case.kind)
             .collect();
         for kind in ALL_REPORT_KINDS {
-            let probe = run(&[matrix.agent, kind, "--offline", "--json"]);
-            let rejected = probe.exit == "2"
-                && probe
-                    .stderr
-                    .starts_with(&format!("The \"{kind}\" report is "));
-            if !rejected && !snapshotted.contains(kind) {
+            let case = Case::new(
+                kind,
+                UNSUPPORTED_VARIANT,
+                &[matrix.agent, kind, "--offline", "--json"],
+            );
+            let probe = run_case(root, &[], &case);
+            if snapshotted.contains(kind) {
+                continue;
+            }
+            if probe.exit == "2" {
+                golden::assert_outcome(matrix.agent, root, &case, probe);
+            } else {
                 uncovered.push(format!("{} {kind}", matrix.agent));
             }
         }
