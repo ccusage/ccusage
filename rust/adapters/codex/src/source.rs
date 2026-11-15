@@ -173,6 +173,56 @@ mod diagnostic_tests {
     use ccusage_core::cli::SharedArgs;
     use ccusage_test_support::{EnvVarsGuard, Fixture};
     #[test]
+    fn invalid_session_timestamps_keep_healthy_usage_with_and_without_date_bounds() {
+        let fixture = Fixture::new();
+        let records = [
+            json!({"timestamp":"SECRET_CANARY","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}}),
+            json!({"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1,"total_tokens":11}}}}),
+            json!({"timestamp":"SECRET_CANARY","type":"token_usage_record","payload":{"response_id":"invalid-response","usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}),
+        ].map(|record| record.to_string()).join("\n");
+        let _ = fixture.write_file("sessions/timestamps.jsonl", &records);
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        for since in [None, Some("20260101".to_owned())] {
+            let shared = SharedArgs {
+                offline: true,
+                debug: true,
+                timezone: Some("UTC".to_owned()),
+                since,
+                ..Default::default()
+            };
+            let result = SOURCE
+                .unified_rows(&UnifiedRequest {
+                    kind: AgentReportKind::Daily,
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: Some(&pricing),
+                    progress: ProgressOwner::Caller,
+                    multi_source_driver: true,
+                    claude_counted: None,
+                })
+                .unwrap();
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(result.rows[0].input_tokens, 10);
+            assert_eq!(result.rows[0].output_tokens, 1);
+            assert_eq!(result.rows[0].total_tokens, 11);
+            assert!(
+                result
+                    .warnings
+                    .iter()
+                    .any(|line| line
+                        == "WARN  codex: skipped 2 records in 1 input (invalid timestamp)"),
+                "{:?}",
+                result.warnings
+            );
+            assert!(!result.warnings.join("\n").contains("SECRET_CANARY"));
+        }
+    }
+
+    #[test]
     fn specialized_diagnostics_keep_healthy_codex_usage() {
         let fixture = Fixture::new();
         let _ = fixture.write_file("sessions/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1}}}}"#);
