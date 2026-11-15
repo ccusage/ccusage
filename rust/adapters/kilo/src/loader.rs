@@ -1,6 +1,6 @@
 use std::{collections::HashSet, path::Path, path::PathBuf};
 
-use ccusage_adapter_common::{UnitError, read_units, source::LoadContext};
+use ccusage_adapter_common::{UnitError, jsonl, read_units, source::LoadContext};
 use ccusage_core::{Skip, SkipKind};
 
 use crate::{LoadedEntry, PricingMap, Result};
@@ -50,7 +50,7 @@ fn load_entries_from_database(
             .map_err(|_| UnitError::new(SkipKind::Unreadable, "could not open Kilo database"))?;
     let mut statement = connection
         .prepare("SELECT id, session_id, data FROM message")
-        .map_err(|_| UnitError::new(SkipKind::Invariant, "Kilo database has no message table"))?;
+        .map_err(|_| UnitError::new(SkipKind::Unreadable, "could not query Kilo messages"))?;
     let mut entries = Vec::new();
     let mut row_number = 0_u32;
     loop {
@@ -78,18 +78,17 @@ fn load_entries_from_database(
                     ));
                     continue;
                 };
-                let value = match serde_json::from_str::<KiloMessage>(&data) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        let error = UnitError::from(error);
-                        cx.diagnostics.record(Skip::record(
-                            db_path,
-                            row_number,
-                            SkipKind::UndecodedUsage,
-                            error,
-                        ));
-                        continue;
-                    }
+                let Some(value) = jsonl::decode_record::<KiloMessage>(
+                    data.as_bytes(),
+                    db_path,
+                    row_number,
+                    cx.diagnostics,
+                    Some(|value| {
+                        value.get("role").and_then(serde_json::Value::as_str) == Some("assistant")
+                            && value.get("tokens").is_some()
+                    }),
+                ) else {
+                    continue;
                 };
                 if let Some(entry) = message_value_to_entry(
                     &value,
@@ -279,7 +278,8 @@ mod tests {
         let warnings = diagnostics.warnings(&shared).join("\n");
 
         assert!(entries.is_empty());
-        assert!(warnings.contains("undecoded usage"));
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert!(warnings.contains("invalid data"));
         assert!(!warnings.contains("SECRET_CANARY"));
     }
 }
