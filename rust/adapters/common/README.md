@@ -12,6 +12,9 @@ layers.
 - `read_files_parallel` — ordered parallel reads: results come back in file order,
   so output does not depend on worker scheduling, and `--single-thread` collapses
   to a plain sequential read.
+- `units::read_units` and `read_units_flat` — `read_files_parallel` with fault
+  isolation: a unit whose read fails is recorded in the load's `Diagnostics`
+  and the rest of the report goes on, so no call site writes its own skip.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
 - `filter_session_summaries_by_last_activity` — the same window applied to
   session summaries by the local day of their last activity.
@@ -29,6 +32,9 @@ layers.
 - `filter_session_summaries_by_last_activity`
 - `chunk_file_indexes_by_size`
 - `read_files_parallel`
+- `units::read_units`
+- `units::read_units_flat`
+- `units::UnitError`
 
 ## Depends on
 

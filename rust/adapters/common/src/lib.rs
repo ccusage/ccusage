@@ -11,8 +11,10 @@ use ccusage_core::{
 
 pub mod jsonl;
 pub mod report;
+pub mod units;
 
 pub use report::print_table_for_agent;
+pub use units::{UnitError, read_units, read_units_flat};
 
 pub fn collect_usage_files(dir: &Path, files: &mut Vec<PathBuf>) {
     collect_files_with_extension(dir, "jsonl", files);
