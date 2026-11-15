@@ -12,6 +12,7 @@ pub enum Command {
     Blocks(BlocksArgs),
     Statusline(StatuslineArgs),
     Codex(AgentCommandArgs),
+    CodexStatusline(CodexStatuslineArgs),
     OpenCode(AgentCommandArgs),
     Amp(AgentCommandArgs),
     Droid(AgentCommandArgs),
@@ -169,6 +170,13 @@ pub struct StatuslineArgs {
     pub debug: bool,
     pub model_label_aliases: HashMap<String, String>,
     pub pricing_overrides: BTreeMap<String, PricingOverride>,
+}
+
+#[derive(Clone)]
+pub struct CodexStatuslineArgs {
+    pub shared: SharedArgs,
+    pub session_id: Option<String>,
+    pub codex_speed: CodexSpeed,
 }
 
 #[derive(Clone)]

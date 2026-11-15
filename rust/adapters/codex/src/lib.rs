@@ -9,6 +9,7 @@ mod reader;
 mod replay;
 mod report;
 mod speed;
+mod statusline;
 mod types;
 
 #[cfg(test)]
@@ -27,6 +28,7 @@ pub use report::{
     non_cached_input_tokens,
 };
 pub use speed::{CodexSpeedPolicy, resolve_codex_speed};
+pub use statusline::run_statusline;
 pub use types::{
     CodexGroup, CodexModelUsage, CodexServiceTier, CodexTimestampedUsage, CodexTokenUsageEvent,
     CodexUsageBucket,

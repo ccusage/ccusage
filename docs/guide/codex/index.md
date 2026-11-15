@@ -21,6 +21,25 @@ ccusage codex session
 
 Most users can start with unified reports such as `ccusage daily`. Add the `codex` namespace only when you want to focus the same report shape on Codex usage or pass Codex-specific options such as `--speed`.
 
+## Statusline
+
+`ccusage codex statusline` prints today's Codex token usage and estimated cost as one plain line, using embedded pricing by default. It reads local Codex session logs and does not need input on stdin.
+
+```text
+Codex | Today: 1,050 tokens | Est. $0.00
+```
+
+Use `--id <session-id>` to show one full session, or `--since` and `--until` to select a date range; `--last` is not supported. The command also supports `--timezone`, `--speed`, `--no-cost`, `--json`, `--jq`, and the [`pricingOverrides` setting](/guide/config-files#pricing-overrides). Use `--no-offline` to fetch current pricing. The JSON summary includes token totals such as `inputTokens`, `cacheReadTokens`, and `outputTokens`, plus `costUSD`, `scope` (`today`, `range`, or `session`), optional `sessionId`, and `unpricedModels` when applicable.
+
+```bash
+ccusage codex statusline
+ccusage codex statusline --id <session-id>
+ccusage codex statusline --since 2026-11-01 --until 2026-11-15 --timezone Europe/London
+ccusage codex statusline --json --jq '.scope'
+```
+
+The command writes its summary to stdout. Codex's built-in TUI footer is configured separately through [`tui.status_line`](https://developers.openai.com/codex/config-reference/), which selects from Codex's built-in status-line item identifiers.
+
 ## Data Source
 
 The CLI reads Codex session JSONL files, both plain `.jsonl` and Zstandard-compressed `.jsonl.zst`, located under `CODEX_HOME` (defaults to `~/.codex`). `CODEX_HOME` can be one directory or a comma-separated list of directories. For each entry, ccusage discovers `sessions/` and `archived_sessions/` independently, so an entry with only `archived_sessions/` still contributes archived Codex logs. When neither directory exists, the entry is read directly as a JSONL directory, which lets saved `codex exec --json` output live beside normal Codex homes. Compression does not change a session ID. Within one directory, when a plain and a compressed copy of the same rollout both exist, the plain copy is read and the compressed one is skipped, matching Codex. If the same relative rollout path exists in both `sessions/` and `archived_sessions/` for one Codex home, the active `sessions/` copy wins regardless of encoding, so archived copies are not double counted.

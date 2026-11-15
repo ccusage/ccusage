@@ -4,9 +4,9 @@ use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     ALL_AGENT_REPORTS, AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed,
-    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, STANDARD_AGENT_REPORTS,
-    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    CodexStatuslineArgs, Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs,
+    STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate,
+    WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 use crate::Cli;
@@ -94,6 +94,10 @@ impl Cli {
             return Err(message.to_string());
         }
         let mut shared = SharedArgs::with_defaults();
+        if matches!(command_tokens(&parser.args).as_slice(), [agent, report, ..] if agent == "codex" && report == "statusline")
+        {
+            shared.offline = true;
+        }
         config.apply_shared(&mut shared);
         let mut root_all_options = RootAllOptions::default();
         while let Some(arg) = parser.peek() {
@@ -650,7 +654,13 @@ fn parse_codex_command(
     mut shared: SharedArgs,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, "codex", STANDARD_AGENT_REPORTS)?;
+    let statusline = parser.peek() == Some("statusline");
+    let kind = if statusline {
+        parser.next();
+        AgentReportKind::Session
+    } else {
+        parse_agent_report_kind(parser, "codex", STANDARD_AGENT_REPORTS)?
+    };
     let mut codex_speed = CodexSpeed::Auto;
     let mut session_id = None;
     config.apply_agent_args(&mut codex_speed, None, None);
@@ -665,6 +675,13 @@ fn parse_codex_command(
             }
             flag => return Err(format!("Unknown codex option '{flag}'")),
         }
+    }
+    if statusline {
+        return Ok(Command::CodexStatusline(CodexStatuslineArgs {
+            shared,
+            session_id,
+            codex_speed,
+        }));
     }
     Ok(Command::Codex(AgentCommandArgs {
         shared,
@@ -931,9 +948,13 @@ fn unsupported_agent_report_error(args: &[String]) -> Option<String> {
     }
 
     let display = agent_display_name(agent);
-    let message = if matches!(report.as_str(), "blocks" | "statusline") {
+    let message = if report == "blocks" {
         format!(
             "The \"{report}\" report is only available for Claude Code usage.\nUse \"ccusage {agent} daily\" for {display} usage reports."
+        )
+    } else if report == "statusline" {
+        format!(
+            "The \"statusline\" command is available for Claude Code and Codex usage.\nUse \"ccusage {agent} daily\" for {display} usage reports."
         )
     } else {
         format!(
@@ -1033,7 +1054,7 @@ fn agent_report_supported(agent: &str, report: &str) -> bool {
             report,
             "daily" | "weekly" | "monthly" | "session" | "blocks" | "statusline"
         ),
-        "codex" => matches!(report, "daily" | "monthly" | "session"),
+        "codex" => matches!(report, "daily" | "monthly" | "session" | "statusline"),
         "opencode" | "cline" => matches!(report, "daily" | "weekly" | "monthly" | "session"),
         "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
         | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
@@ -1133,6 +1154,7 @@ fn report_shared<'a>(
         Some(Command::Session(args)) => (&args.shared, false),
         Some(Command::Blocks(args)) => (&args.shared, false),
         Some(Command::Statusline(_)) => (root_shared, false),
+        Some(Command::CodexStatusline(args)) => (&args.shared, false),
         Some(
             Command::Codex(args)
             | Command::OpenCode(args)

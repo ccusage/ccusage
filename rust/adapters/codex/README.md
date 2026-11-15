@@ -13,6 +13,7 @@ into the usage entries the reports render.
 - `replay.rs` — detecting history that a forked or subagent session replays.
 - `report.rs` — the JSON and table shapes where they differ from the shared ones.
 - `speed.rs` — resolving the service tier that priced each request.
+- `statusline.rs` — one-line usage summaries.
 - `types.rs` — types that stay inside this adapter.
 
 Anything that is not specific to this source belongs in `ccusage-core` or
@@ -33,6 +34,7 @@ without unpacking them to disk.
 
 ## Public surface
 
+- `run_statusline`
 - `aggregate::aggregate_events`
 - `aggregate::filter_events_by_date`
 - `aggregate::load_groups`

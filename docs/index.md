@@ -42,8 +42,12 @@ features:
     link: /guide/json-output
   - icon: ⏰
     title: Claude Code Features
-    details: Blocks and statusline remain separate because they depend on Claude-specific local data and hooks
+    details: Track Claude Code's five-hour billing windows from local session data
     link: /guide/claude/
+  - icon: 📟
+    title: Statusline Summaries
+    details: Claude Code hook integration and a one-line Codex usage summary
+    link: /guide/statusline
   - icon: 🔄
     title: Cache Support
     details: Tracks cache creation and cache read tokens separately

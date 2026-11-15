@@ -10,6 +10,183 @@ const SESSION_FILE: &str = "rollout-2026-09-19T23-22-40-01a0bb8c-c7c0-7630-9d82-
 const OTHER_UUID: &str = "01a0cc9d-d8d1-8741-ae93-971c986041a1";
 
 #[test]
+fn codex_statusline_reports_today_without_reading_stdin() {
+    let today = ccusage_report::format_date(ccusage_core::utc_now(), Some("UTC"));
+    let fixture = fs_fixture!({
+        "codex/sessions/today.jsonl": usage(&format!("{today}T12:00:00.000Z"), 1_000, 50),
+        "codex/sessions/old.jsonl": usage("2026-01-01T12:00:00.000Z", 9_000, 500),
+    });
+
+    let output = run_cli(&fixture, &["codex", "statusline"]);
+
+    assert_eq!(output, "Codex | Today: 1,050 tokens | Est. $0.00\n");
+}
+
+#[test]
+fn codex_statusline_filters_sessions_and_uses_shared_pricing() {
+    let fixture = codex_fixture();
+    let config = fixture.write_file(
+        "ccusage.json",
+        r#"{
+            "codex": { "commands": { "statusline": {
+                "pricingOverrides": { "gpt-5": {
+                    "inputCostPerToken": 0.01,
+                    "outputCostPerToken": 0.02,
+                    "cacheReadInputTokenCost": 0.005
+                } }
+            } } }
+        }"#,
+    );
+    let output = run_cli(
+        &fixture,
+        &[
+            "codex",
+            "statusline",
+            "--id",
+            SESSION_UUID,
+            "--config",
+            config.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output, "Codex | Session: 150 tokens | Est. $1.95\n");
+
+    let summary: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[
+            "codex",
+            "statusline",
+            "--id",
+            SESSION_UUID,
+            "--json",
+            "--config",
+            config.to_str().unwrap(),
+        ],
+    ))
+    .unwrap();
+    assert_eq!(summary["scope"], "session");
+    assert_eq!(summary["sessionId"], SESSION_ID);
+    assert_eq!(summary["totalTokens"], 150);
+    assert_eq!(summary["costUSD"], 1.95);
+}
+
+#[test]
+fn codex_statusline_date_range_matches_daily_totals() {
+    let fixture = codex_fixture();
+    let filters = ["--since", "2026-09-19", "--until", "20260919"];
+    let summary: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[&["codex", "statusline", "--json"][..], &filters].concat(),
+    ))
+    .unwrap();
+    let daily: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[&["codex", "daily", "--json"][..], &filters].concat(),
+    ))
+    .unwrap();
+
+    assert_eq!(summary["scope"], "range");
+    for (field, value) in daily["totals"].as_object().unwrap() {
+        assert_eq!(&summary[field], value, "{field}");
+    }
+    assert_eq!(summary["totalTokens"], 150);
+    assert_eq!(
+        run_cli(
+            &fixture,
+            &["codex", "statusline", "--id", SESSION_UUID, "--no-cost"]
+        ),
+        "Codex | Session: 150 tokens\n"
+    );
+}
+
+#[test]
+fn codex_statusline_uses_the_selected_timezone_for_today() {
+    let today = ccusage_report::format_date(ccusage_core::utc_now(), Some("Asia/Tokyo"));
+    let fixture = fs_fixture!({
+        "codex/sessions/today.jsonl": usage(&format!("{today}T00:30:00.000Z"), 100, 50),
+        "codex/sessions/tomorrow.jsonl": usage(&format!("{today}T23:30:00.000Z"), 9_000, 500),
+    });
+    let output = Command::new(env!("CARGO_BIN_EXE_ccusage"))
+        .args(["codex", "statusline", "--timezone", "Asia/Tokyo"])
+        .env("CODEX_HOME", fixture.path("codex"))
+        .env("HOME", fixture.path("empty-home"))
+        .env("XDG_CONFIG_HOME", fixture.path("empty-xdg-config"))
+        .env_remove("LOG_LEVEL")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "Codex | Today: 150 tokens | Est. $0.00\n"
+    );
+}
+
+#[test]
+fn codex_statusline_handles_missing_usage_and_unknown_sessions() {
+    let fixture = fs_fixture!({ "codex/sessions/.keep": "" });
+    assert_eq!(
+        run_cli(&fixture, &["codex", "statusline"]),
+        "Codex | Today: 0 tokens | Est. $0.00\n"
+    );
+    let output = run_cli_output(&fixture, &["codex", "statusline", "--id", "missing"]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("No Codex session found")
+    );
+}
+
+#[test]
+fn codex_statusline_marks_incomplete_pricing_and_can_hide_costs() {
+    let fixture = fs_fixture!({
+        "codex/sessions/unknown.jsonl": usage("2026-09-19T12:00:00.000Z", 100, 50)
+            .replace("gpt-5", "unknown-statusline-model"),
+    });
+    let args = [
+        "codex",
+        "statusline",
+        "--since",
+        "20260919",
+        "--until",
+        "20260919",
+    ];
+    assert!(run_cli(&fixture, &args).contains("(incomplete pricing)"));
+    let summary: Value =
+        serde_json::from_str(&run_cli(&fixture, &[&args[..], &["--json"]].concat())).unwrap();
+    assert_eq!(
+        summary["unpricedModels"],
+        json!(["unknown-statusline-model"])
+    );
+
+    let summary: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[&args[..], &["--json", "--no-cost"]].concat(),
+    ))
+    .unwrap();
+    assert_eq!(summary["totalTokens"], 150);
+    assert!(summary.get("costUSD").is_none());
+    assert_eq!(
+        summary["unpricedModels"],
+        json!(["unknown-statusline-model"])
+    );
+    assert_eq!(
+        run_cli(&fixture, &[&args[..], &["--jq", ".totalTokens"]].concat()),
+        "150\n"
+    );
+}
+
+#[test]
 fn selects_codex_session_by_supported_id_forms() {
     let fixture = codex_fixture();
 
@@ -245,6 +422,21 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
         assert_eq!(daily["totals"]["totalTokens"], total_tokens);
         let cost = daily["totals"]["costUSD"].as_f64().unwrap();
         assert!((cost - expected_cost).abs() < 1e-12, "{cost}");
+        let summary: Value = serde_json::from_str(&run_cli(
+            &fixture,
+            &[
+                "codex",
+                "statusline",
+                "--since",
+                "20261027",
+                "--until",
+                "20261027",
+                "--json",
+            ],
+        ))
+        .unwrap();
+        assert_eq!(summary["costUSD"], daily["totals"]["costUSD"]);
+        assert_eq!(summary["totalTokens"], total_tokens);
     }
 }
 
