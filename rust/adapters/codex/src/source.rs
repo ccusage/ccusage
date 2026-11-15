@@ -243,4 +243,94 @@ mod diagnostic_tests {
             assert!(!rows.warnings.join("\n").contains("SECRET_CANARY"));
         }
     }
+
+    #[test]
+    fn headless_usage_decode_failures_warn_without_dropping_healthy_usage() {
+        let fixture = Fixture::new();
+        let records = [
+            json!({
+                "type": "turn.completed",
+                "timestamp": "2026-01-02T00:00:00Z",
+                "usage": "SECRET_CANARY",
+            })
+            .to_string(),
+            json!({
+                "type": "turn.completed",
+                "timestamp": "2026-01-02T00:00:01Z",
+                "model": { "unexpected": "shape" },
+                "usage": "SECRET_CANARY",
+            })
+            .to_string(),
+            json!({
+                "type": "turn.completed",
+                "timestamp": "2026-01-02T00:00:02Z",
+                "usage": "SECRET_CANARY",
+                "data": {
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 2,
+                        "total_tokens": 12,
+                    }
+                },
+            })
+            .to_string(),
+            json!({
+                "type": "turn.completed",
+                "timestamp": "2026-01-02T00:00:03Z",
+                "usage": {},
+            })
+            .to_string(),
+            json!({
+                "type": "turn.completed",
+                "timestamp": "2026-01-02T00:00:04Z",
+                "usage": {
+                    "input_tokens": 30,
+                    "output_tokens": 3,
+                    "total_tokens": 33,
+                },
+            })
+            .to_string(),
+        ]
+        .join("\n");
+        let _ = fixture.write_file("sessions/headless.jsonl", &records);
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        let shared = SharedArgs {
+            offline: true,
+            debug: true,
+            timezone: Some("UTC".to_owned()),
+            ..Default::default()
+        };
+
+        let rows = SOURCE
+            .unified_rows(&UnifiedRequest {
+                kind: AgentReportKind::Daily,
+                shared: &shared,
+                options: SourceOptions::default(),
+                pricing: Some(&pricing),
+                progress: ProgressOwner::Caller,
+                multi_source_driver: true,
+                claude_counted: None,
+            })
+            .unwrap();
+
+        assert_eq!(rows.rows.len(), 1, "{:?}", rows.warnings);
+        assert_eq!(rows.rows[0].input_tokens, 40);
+        assert_eq!(rows.rows[0].output_tokens, 5);
+        assert_eq!(rows.rows[0].total_tokens, 45);
+        assert!(
+            rows.warnings
+                .iter()
+                .any(|line| { line == "WARN  codex: skipped 2 records in 1 input (invalid data)" }),
+            "{:?}",
+            rows.warnings
+        );
+        let warnings = rows.warnings.join("\n");
+        assert!(warnings.contains("headless.jsonl:1:"), "{warnings}");
+        assert!(warnings.contains("headless.jsonl:2:"), "{warnings}");
+        assert!(!warnings.contains("SECRET_CANARY"), "{warnings}");
+    }
 }
