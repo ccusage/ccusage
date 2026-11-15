@@ -155,12 +155,17 @@
 
 (defn unified-diff
   "At most `diff-line-limit` lines; JSON goes through `jq -S` first so a
-  reordered key does not bury the changed value."
+  reordered key does not bury the changed value. Raw bytes are shown when
+  normalization would hide the entire difference."
   [left right json?]
   (let [[a b] (or (when json?
                     (let [a (sorted-json! left) b (sorted-json! right)] (when (and a b) [a b])))
                   [left right])
-        lines (str/split-lines (:out (run-process ["diff" "-u" a b])))]
+        difference (:out (run-process ["diff" "-u" a b]))
+        difference (if (and (empty? difference) (not= [a b] [left right]))
+                     (:out (run-process ["diff" "-u" left right]))
+                     difference)
+        lines (str/split-lines difference)]
     (str/join "\n" (cond-> (vec (take diff-line-limit lines))
                      (> (count lines) diff-line-limit)
                      (conj (format "... (%d more lines)" (- (count lines) diff-line-limit)))))))
