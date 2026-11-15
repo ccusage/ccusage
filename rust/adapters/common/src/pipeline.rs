@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Runs `ccusage <agent> <kind>` for an [`EntrySource`].
-pub fn run_focused<S: EntrySource>(source: &S, args: AgentCommandArgs) -> Result<()> {
+pub fn run_focused(source: &dyn EntrySource, args: AgentCommandArgs) -> Result<()> {
     let rows = focused_rows(source, &args)?;
     let shared = &args.shared;
     if wants_json(shared) {
@@ -38,8 +38,8 @@ pub fn run_focused<S: EntrySource>(source: &S, args: AgentCommandArgs) -> Result
 
 /// The rows of a focused report, sorted, before they are rendered. Prints what
 /// the load skipped to stderr.
-pub fn focused_rows<S: EntrySource>(
-    source: &S,
+pub fn focused_rows(
+    source: &dyn EntrySource,
     args: &AgentCommandArgs,
 ) -> Result<Vec<UsageSummary>> {
     let descriptor = source.descriptor();
@@ -68,10 +68,7 @@ pub fn focused_rows<S: EntrySource>(
 }
 
 /// Loads the rows an [`EntrySource`] contributes to the unified report.
-pub fn unified_rows<S: EntrySource>(
-    source: &S,
-    request: &UnifiedRequest<'_>,
-) -> Result<SourceRows> {
+pub fn unified_rows(source: &dyn EntrySource, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     let descriptor = source.descriptor();
     let shared = request.shared;
     let own_pricing = (descriptor.pricing == PricingSupply::Pipeline && request.pricing.is_none())
@@ -106,8 +103,8 @@ pub fn unified_rows<S: EntrySource>(
 /// and still calls an adapter's own `load_entries` function: progress follows
 /// `shared.json` as it always did, and what the load skipped is printed here.
 /// Remove with the last such function.
-pub fn load_entries_for_unmigrated_caller<S: EntrySource>(
-    source: &S,
+pub fn load_entries_for_unmigrated_caller(
+    source: &dyn EntrySource,
     shared: &SharedArgs,
     options: SourceOptions<'_>,
     pricing: Option<&PricingMap>,
@@ -140,8 +137,8 @@ fn load_pricing(shared: &SharedArgs) -> PricingMap {
     )
 }
 
-fn load<S: EntrySource>(
-    source: &S,
+fn load(
+    source: &dyn EntrySource,
     cx: &LoadContext<'_>,
     progress: ProgressOwner,
 ) -> Result<Vec<LoadedEntry>> {
