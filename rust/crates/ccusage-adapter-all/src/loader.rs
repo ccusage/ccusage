@@ -601,7 +601,7 @@ fn load_named_pi_store_rows_from_paths(
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
     let window = ReportWindow::from_shared(shared);
-    let diagnostics = Diagnostics::new("pi");
+    let diagnostics = Diagnostics::new(agent);
     let cx = LoadContext {
         shared,
         kind,
@@ -1297,6 +1297,7 @@ mod tests {
         assert_eq!(rows.rows.len(), 1);
         assert!(rows.warnings.iter().any(|warning| {
             warning.contains("invalid data")
+                && warning.starts_with("omp:")
                 && warning.contains("agent_session-a.jsonl:2")
                 && !warning.contains("SECRET_CANARY")
         }));
