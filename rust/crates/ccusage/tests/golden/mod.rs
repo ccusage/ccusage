@@ -367,8 +367,53 @@ fn redact_root(root: &Path, text: &str) -> String {
     if let Ok(canonical) = root.canonicalize() {
         spellings.push(canonical.to_string_lossy().into_owned());
     }
+    let mut spellings: Vec<_> = spellings
+        .into_iter()
+        .flat_map(|spelling| {
+            let quoted =
+                serde_json::to_string(&spelling).expect("fixture root is JSON serialisable");
+            let escaped = quoted[1..quoted.len() - 1].to_string();
+            [spelling, escaped]
+        })
+        .collect();
     spellings.sort_by_key(|spelling| std::cmp::Reverse(spelling.len()));
-    spellings.iter().fold(text.to_string(), |text, spelling| {
+    spellings.dedup();
+    let redacted = spellings.iter().fold(text.to_string(), |text, spelling| {
         text.replace(spelling.as_str(), "[ROOT]")
-    })
+    });
+    let mut normalized = String::with_capacity(redacted.len());
+    let mut tail = redacted.as_str();
+    while let Some(index) = tail.find("[ROOT]") {
+        let end = index + "[ROOT]".len();
+        normalized.push_str(&tail[..end]);
+        tail = &tail[end..];
+        if tail.starts_with('\\') || tail.starts_with('/') {
+            let end = tail
+                .find(['\"', '\'', ':', '\n', '\r', '\t'])
+                .unwrap_or(tail.len());
+            normalized.push_str(&tail[..end].replace("\\\\", "/").replace('\\', "/"));
+            tail = &tail[end..];
+        }
+    }
+    normalized.push_str(tail);
+    normalized
+}
+
+#[test]
+fn redacts_windows_fixture_paths_without_rewriting_other_escapes() {
+    let root = Path::new(r"C:\temp\fixture");
+    assert_eq!(
+        redact_root(
+            root,
+            r"Skipping 'C:\temp\fixture\antigravity\ide\empty.db': empty SQLite snapshot"
+        ),
+        "Skipping '[ROOT]/antigravity/ide/empty.db': empty SQLite snapshot"
+    );
+    assert_eq!(
+        redact_root(
+            root,
+            r#"{"path":"C:\\temp\\fixture\\antigravity\\ide\\empty.db","model":"keep\\slashes","text":"line\nquote\""}"#
+        ),
+        r#"{"path":"[ROOT]/antigravity/ide/empty.db","model":"keep\\slashes","text":"line\nquote\""}"#
+    );
 }
