@@ -54,16 +54,16 @@ pub(super) fn load_daily_summaries_inner(
             shared.pricing_overrides.iter(),
         ))
     };
-    let tz = parse_tz(shared.timezone.as_deref());
+    let tz = parse_tz(shared.timezone.as_deref()).unwrap_or_else(JiffTimeZone::system);
     let deduped =
-        load_deduped_daily_entries(&kept, shared, project_filter, tz.as_ref(), pricing.as_ref());
+        load_deduped_daily_entries(&kept, shared, project_filter, Some(&tz), pricing.as_ref());
     let session_days = session_days(&deduped);
     let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
     // exactly as an unbounded load would. The first file with an entry settles it.
     let detected = !summaries.is_empty()
         || pruned.iter().any(|file| {
-            read_daily_usage_file(file, tz.as_ref(), shared.mode, pricing.as_ref())
+            read_daily_usage_file(file, Some(&tz), shared.mode, pricing.as_ref())
                 .entries
                 .iter()
                 .any(|entry| project_filter.is_none_or(|filter| entry.project.as_ref() == filter))
@@ -341,6 +341,7 @@ fn read_daily_usage_file(
     let project: Arc<str> = Arc::from(extract_project(path));
     let (path_session_id, _) = super::paths::extract_session_parts(path);
     let path_session_id: Arc<str> = Arc::from(path_session_id);
+    let mut recorded_session_id = Arc::clone(&path_session_id);
     let mut loaded_file = DailyLoadedFile {
         timestamp: None,
         entries: Vec::new(),
@@ -384,28 +385,29 @@ fn read_daily_usage_file(
             mode,
             pricing,
         );
-        let model = data.message.model.as_ref().and_then(|model| {
+        let model = data.message.model.and_then(|model| {
             if model == "<synthetic>" {
                 None
             } else if matches!(usage.speed, Some(Speed::Fast)) {
-                Some(suffix_string(model, "-fast"))
+                Some(suffix_string(&model, "-fast"))
             } else {
-                Some(model.clone())
+                Some(model)
             }
         });
-        let date = format_date_tz(timestamp, tz);
-        let session_id: Arc<str> = data
-            .session_id
-            .as_deref()
-            .map(Arc::from)
-            .unwrap_or_else(|| Arc::clone(&path_session_id));
-        let message_id = data.message.id.clone();
-        let request_id = data.request_id.clone();
+        let session_id = if let Some(session_id) = data.session_id.as_deref() {
+            if recorded_session_id.as_ref() != session_id {
+                recorded_session_id = Arc::from(session_id);
+            }
+            Arc::clone(&recorded_session_id)
+        } else {
+            Arc::clone(&path_session_id)
+        };
+        let parent_index = loaded_file.entries.len();
         loaded_file.entries.push(DailyLoadedEntry {
             timestamp,
-            date: date.clone(),
+            date: format_date_tz(timestamp, tz),
             project: Arc::clone(&project),
-            session_id: Arc::clone(&session_id),
+            session_id,
             usage,
             cost,
             model,
@@ -416,6 +418,7 @@ fn read_daily_usage_file(
             is_sidechain: data.is_sidechain,
         });
         for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
+            let parent = &loaded_file.entries[parent_index];
             let missing_pricing_model = missing_pricing_model_for_usage(
                 Some(&advisor.model),
                 advisor.usage,
@@ -425,9 +428,9 @@ fn read_daily_usage_file(
             );
             loaded_file.entries.push(DailyLoadedEntry {
                 timestamp,
-                date: date.clone(),
+                date: parent.date.clone(),
                 project: Arc::clone(&project),
-                session_id: Arc::clone(&session_id),
+                session_id: Arc::clone(&parent.session_id),
                 usage: advisor.usage,
                 cost: calculate_cost_for_usage_at(
                     Some(&advisor.model),
@@ -440,10 +443,11 @@ fn read_daily_usage_file(
                 model: Some(advisor.model),
                 missing_pricing_model,
                 stored_cost: None,
-                message_id: message_id
+                message_id: parent
+                    .message_id
                     .as_ref()
                     .map(|message_id| format!("{message_id}:advisor:{index}")),
-                request_id: request_id.clone(),
+                request_id: parent.request_id.clone(),
                 is_sidechain: data.is_sidechain,
             });
         }

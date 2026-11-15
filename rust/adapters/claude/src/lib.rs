@@ -25,7 +25,7 @@ use smallvec::SmallVec;
 
 use crate::{
     LoadedEntry, LoadedFile, PricingMap, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
-    UsageSummary, calculate_cost, calculate_cost_for_usage_at,
+    UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     debug_log,
     fast::{FxHashMap, byte_lines, suffix_string},
@@ -265,10 +265,10 @@ fn load_entries_inner(
             shared.pricing_overrides.iter(),
         ))
     };
-    let tz = parse_tz(shared.timezone.as_deref());
+    let tz = parse_tz(shared.timezone.as_deref()).unwrap_or_else(JiffTimeZone::system);
     let mode = shared.mode;
     let loaded_files = read_files_parallel(&files, shared.single_thread, |file| {
-        read_usage_file(file, tz.as_ref(), mode, pricing.as_ref())
+        read_usage_file(file, Some(&tz), mode, pricing.as_ref())
     });
     let loaded_entry_count = loaded_files
         .iter()
@@ -668,7 +668,14 @@ fn read_usage_file(
             continue;
         }
         let date = format_date_tz(timestamp, tz);
-        let cost = calculate_cost(&data, mode, pricing);
+        let cost = calculate_cost_for_usage_at(
+            data.message.model.as_deref(),
+            data.message.usage,
+            data.cost_usd,
+            Some(timestamp),
+            mode,
+            pricing,
+        );
         let missing_pricing_model = missing_pricing_model_for_usage(
             data.message.model.as_deref(),
             data.message.usage,
