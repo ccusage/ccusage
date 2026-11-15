@@ -54,7 +54,7 @@ impl UsageSource for Claude {
             return Ok(SourceRows {
                 rows: summary_rows("claude", summaries, false),
                 detected,
-                warnings: Vec::new(),
+                warnings: deduped.warnings,
                 claude_counted: Some(ClaudeCounted::sessions(sessions, shared)),
             });
         }
@@ -82,7 +82,7 @@ impl UsageSource for Claude {
         Ok(SourceRows {
             rows: summary_rows("claude", summaries, false),
             detected: loaded.detected,
-            warnings: Vec::new(),
+            warnings: loaded.warnings,
             claude_counted: Some(ClaudeCounted::session_days(session_days, shared)),
         })
     }
@@ -100,4 +100,62 @@ fn summarize_entry_sessions(entries: &[ccusage_core::LoadedEntry]) -> Result<Vec
         .into_values()
         .map(|group| group.into_summary())
         .collect()
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
+    use ccusage_core::cli::{CostMode, SharedArgs};
+    use ccusage_test_support::{EnvVarsGuard, Fixture};
+
+    #[test]
+    fn specialized_diagnostics_keep_healthy_claude_usage() {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("projects/p/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#);
+        let _ = fixture.write_file("projects/p/bad.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"SECRET_CANARY"}}}"#);
+        let _env = EnvVarsGuard::set_many([
+            (
+                "CLAUDE_CONFIG_DIR",
+                Some(fixture.root().as_os_str().to_owned()),
+            ),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            debug: true,
+            ..Default::default()
+        };
+        let focused = crate::load_deduped_entries(&shared, None).unwrap();
+        assert_eq!(focused.entries.len(), 1);
+        assert!(
+            focused
+                .warnings
+                .iter()
+                .any(|line| line.contains("invalid data"))
+        );
+        for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+            let rows = SOURCE
+                .unified_rows(&UnifiedRequest {
+                    kind,
+                    shared: &shared,
+                    options: SourceOptions::default(),
+                    pricing: None,
+                    progress: ProgressOwner::Caller,
+                    multi_source_driver: true,
+                    claude_counted: None,
+                })
+                .unwrap();
+            assert_eq!(rows.rows.len(), 1);
+            assert!(
+                rows.warnings
+                    .iter()
+                    .any(|line| line.contains("invalid data")),
+                "{:?}",
+                rows.warnings
+            );
+            assert!(!rows.warnings.join("\n").contains("SECRET_CANARY"));
+        }
+    }
 }

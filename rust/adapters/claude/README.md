@@ -20,6 +20,11 @@ Record shapes, token mapping, and cost rules are documented in [`src/README.md`]
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.
 
+Read failures and rejected usage records produce sanitized diagnostics while readable usage is
+retained. Focused loaders print the warnings after loading; unified reports return them with the
+source rows. Optional missing sources and deliberately suppressed records stay quiet. Existing
+lenient field conversions are unchanged.
+
 ## Public surface
 
 - `paths::timestamp_from_line`

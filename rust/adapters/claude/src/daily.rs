@@ -1,6 +1,6 @@
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     collections::BTreeMap,
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -34,12 +34,14 @@ pub(super) fn load_daily_summaries_inner(
     group_by_project: bool,
     session_days: impl FnOnce(&DedupedDailyEntries) -> SessionDays,
 ) -> Result<DailySummaries> {
+    let diagnostics = Diagnostics::new("claude");
     let paths = claude_paths()?;
     let SinceFiles { kept, pruned } =
         split_files_before_since(usage_files(&paths, project_filter), shared, utc_now());
     if kept.is_empty() && pruned.is_empty() {
         return Ok(DailySummaries {
             summaries: Vec::new(),
+            warnings: Vec::new(),
             detected: false,
             session_days: SessionDays::default(),
         });
@@ -55,21 +57,34 @@ pub(super) fn load_daily_summaries_inner(
         ))
     };
     let tz = parse_tz(shared.timezone.as_deref());
-    let deduped =
-        load_deduped_daily_entries(&kept, shared, project_filter, tz.as_ref(), pricing.as_ref());
+    let deduped = load_deduped_daily_entries(
+        &kept,
+        shared,
+        project_filter,
+        tz.as_ref(),
+        pricing.as_ref(),
+        &diagnostics,
+    );
     let session_days = session_days(&deduped);
     let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
     // exactly as an unbounded load would. The first file with an entry settles it.
     let detected = !summaries.is_empty()
         || pruned.iter().any(|file| {
-            read_daily_usage_file(file, tz.as_ref(), shared.mode, pricing.as_ref())
-                .entries
-                .iter()
-                .any(|entry| project_filter.is_none_or(|filter| entry.project.as_ref() == filter))
+            read_daily_usage_file_with_diagnostics(
+                file,
+                tz.as_ref(),
+                shared.mode,
+                pricing.as_ref(),
+                &diagnostics,
+            )
+            .entries
+            .iter()
+            .any(|entry| project_filter.is_none_or(|filter| entry.project.as_ref() == filter))
         });
     Ok(DailySummaries {
         summaries,
+        warnings: diagnostics.warnings(shared),
         detected,
         session_days,
     })
@@ -110,6 +125,7 @@ fn load_deduped_daily_entries(
     project_filter: Option<&str>,
     tz: Option<&JiffTimeZone>,
     pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
 ) -> DedupedDailyEntries {
     if files.is_empty() {
         return DedupedDailyEntries {
@@ -121,10 +137,12 @@ fn load_deduped_daily_entries(
     let loaded_files = if shared.single_thread {
         files
             .iter()
-            .map(|file| read_daily_usage_file(file, tz, mode, pricing))
+            .map(|file| {
+                read_daily_usage_file_with_diagnostics(file, tz, mode, pricing, diagnostics)
+            })
             .collect::<Vec<_>>()
     } else {
-        read_daily_usage_files_parallel(files, tz, mode, pricing)
+        read_daily_usage_files_parallel(files, tz, mode, pricing, diagnostics)
     };
 
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
@@ -288,6 +306,7 @@ fn read_daily_usage_files_parallel(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
 ) -> Vec<DailyLoadedFile> {
     let worker_count = thread::available_parallelism()
         .map(usize::from)
@@ -296,7 +315,9 @@ fn read_daily_usage_files_parallel(
     if worker_count <= 1 {
         return files
             .iter()
-            .map(|file| read_daily_usage_file(file, tz, mode, pricing))
+            .map(|file| {
+                read_daily_usage_file_with_diagnostics(file, tz, mode, pricing, diagnostics)
+            })
             .collect();
     }
 
@@ -311,7 +332,13 @@ fn read_daily_usage_files_parallel(
                     .map(|index| {
                         (
                             index,
-                            read_daily_usage_file(&files[index], tz.as_ref(), mode, pricing),
+                            read_daily_usage_file_with_diagnostics(
+                                &files[index],
+                                tz.as_ref(),
+                                mode,
+                                pricing,
+                                diagnostics,
+                            ),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -332,11 +359,22 @@ fn read_daily_usage_files_parallel(
     })
 }
 
+#[cfg(test)]
 fn read_daily_usage_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
+) -> DailyLoadedFile {
+    read_daily_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+}
+
+fn read_daily_usage_file_with_diagnostics(
+    path: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    diagnostics: &Diagnostics,
 ) -> DailyLoadedFile {
     let project: Arc<str> = Arc::from(extract_project(path));
     let (path_session_id, _) = super::paths::extract_session_parts(path);
@@ -345,19 +383,24 @@ fn read_daily_usage_file(
         timestamp: None,
         entries: Vec::new(),
     };
-    let Ok(content) = fs::read(path) else {
-        return loaded_file;
-    };
+    let content = super::diagnostics::read_content(path, diagnostics);
 
     let usage_marker = memmem::Finder::new(br#""usage":{"#);
-    for line in byte_lines(&content) {
+    for (index, line) in byte_lines(&content).enumerate() {
         if usage_marker.find(line).is_none() {
             continue;
         }
         let Some(data) = deserialize_daily_usage_line(line) else {
+            super::diagnostics::rejected(path, index, line, diagnostics, true);
             continue;
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
+            diagnostics.record(Skip::record(
+                path,
+                (index + 1) as u32,
+                SkipKind::InvalidTimestamp,
+                "invalid usage timestamp",
+            ));
             continue;
         };
         loaded_file.timestamp = Some(
@@ -366,6 +409,7 @@ fn read_daily_usage_file(
                 .map_or(timestamp, |current| current.min(timestamp)),
         );
         if !is_valid_daily_usage_entry(&data) {
+            super::diagnostics::rejected(path, index, line, diagnostics, true);
             continue;
         }
         let usage = data.message.usage;
