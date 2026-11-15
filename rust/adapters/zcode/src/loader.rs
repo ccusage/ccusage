@@ -2,9 +2,10 @@ use std::{collections::HashSet, path::Path};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use ccusage_adapter_common::read_files_parallel;
+use ccusage_adapter_common::{read_units, source::LoadContext, units::UnitError};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log};
 
 use super::{
     parser::{ZcodeUsageRow, row_to_entry},
@@ -48,33 +49,34 @@ impl SchemaVersion {
 }
 
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("ZCode"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
+    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+        &crate::SOURCE,
+        shared,
+        ccusage_adapter_common::source::SourceOptions::default(),
+        Some(pricing),
     )
 }
 
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
+pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let shared = cx.shared;
+    let pricing = cx.pricing.expect("ZCode uses pipeline pricing");
+    let tz = Some(cx.window.timezone());
     let db_paths = db_paths(shared)?;
-    let loaded = read_files_parallel(&db_paths, shared.single_thread, |db_path| {
-        load_entries_from_database(db_path, tz.as_ref(), shared, pricing)
+    let loaded = read_units(&db_paths, shared.single_thread, cx.diagnostics, |db_path| {
+        load_entries_from_database(db_path, tz, shared, pricing, cx.diagnostics)
     });
 
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
-    for db_entries in loaded {
-        for entry in db_entries {
-            let id = entry
-                .data
-                .message
-                .id
-                .as_deref()
-                .expect("ZCode entries always have message IDs");
-            if seen.insert(id.to_string()) {
-                entries.push(entry);
-            }
+    for entry in loaded.into_iter().flatten().flatten() {
+        let id = entry
+            .data
+            .message
+            .id
+            .as_deref()
+            .expect("ZCode entries always have message IDs");
+        if seen.insert(id.to_string()) {
+            entries.push(entry);
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);
@@ -86,34 +88,46 @@ fn load_entries_from_database(
     tz: Option<&JiffTimeZone>,
     shared: &SharedArgs,
     pricing: &PricingMap,
-) -> Vec<LoadedEntry> {
-    let Ok(connection) =
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
+    let connection =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-    else {
-        debug_log(
-            shared,
-            format!("Failed to open ZCode database: {}", db_path.display()),
-        );
-        return Vec::new();
-    };
+            .map_err(|_| {
+                UnitError::new(SkipKind::Unreadable, "ZCode database could not be opened")
+            })?;
 
-    if let Err(error) = connection.execute("PRAGMA busy_timeout = 5000") {
+    if connection.execute("PRAGMA busy_timeout = 5000").is_err() {
         debug_log(
             shared,
-            format!("Failed to configure ZCode database locking: {error}"),
+            format!(
+                "Failed to configure ZCode database locking: {}",
+                db_path.display()
+            ),
         );
-        return Vec::new();
+        return Err(UnitError::new(
+            SkipKind::Unreadable,
+            "ZCode database setup failed",
+        ));
     }
-    if let Err(error) = connection.execute("PRAGMA query_only = ON") {
+    if connection.execute("PRAGMA query_only = ON").is_err() {
         debug_log(
             shared,
-            format!("Failed to configure ZCode read-only mode: {error}"),
+            format!(
+                "Failed to configure ZCode read-only mode: {}",
+                db_path.display()
+            ),
         );
-        return Vec::new();
+        return Err(UnitError::new(
+            SkipKind::Unreadable,
+            "ZCode database setup failed",
+        ));
     }
 
     let Some(schema) = read_schema(&connection, db_path, shared) else {
-        return Vec::new();
+        return Err(UnitError::new(
+            SkipKind::InvalidData,
+            "unsupported ZCode database schema",
+        ));
     };
     debug_log(
         shared,
@@ -162,33 +176,49 @@ fn load_entries_from_database(
             shared,
             format!("Failed to query ZCode database: {}", db_path.display()),
         );
-        return Vec::new();
+        return Err(UnitError::new(
+            SkipKind::InvalidData,
+            "ZCode usage query failed",
+        ));
     };
 
     let mut entries = Vec::new();
+    let mut row_number = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
-                if let Some(entry) = read_usage_row(&statement).and_then(|row| {
+                row_number = row_number.saturating_add(1);
+                let Some(row) = read_usage_row(&statement) else {
+                    diagnostics.record(Skip::record(
+                        db_path,
+                        row_number,
+                        SkipKind::UndecodedUsage,
+                        "completed ZCode usage row has unsupported values",
+                    ));
+                    continue;
+                };
+                if let Some(entry) =
                     row_to_entry(row, tz, shared.mode, pricing, &shared.pricing_overrides)
-                }) {
+                {
                     entries.push(entry);
                 }
             }
             Ok(sqlite::State::Done) => break,
-            Err(error) => {
+            Err(_) => {
                 debug_log(
                     shared,
-                    format!(
-                        "Failed to read ZCode database {}: {error}",
-                        db_path.display()
-                    ),
+                    format!("Failed to read ZCode database: {}", db_path.display()),
                 );
+                diagnostics.record(Skip::unit(
+                    db_path,
+                    SkipKind::ReadInterrupted,
+                    "ZCode database read stopped after a row failure",
+                ));
                 break;
             }
         }
     }
-    entries
+    Ok(entries)
 }
 
 fn read_schema(
@@ -411,6 +441,36 @@ mod tests {
         assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
         assert_eq!(entries[0].data.timestamp, "2026-08-16T19:37:22.666Z");
         assert_eq!(entries[0].project_path.as_ref(), "/project");
+    }
+
+    #[test]
+    fn keeps_healthy_databases_when_another_database_has_no_supported_schema() {
+        let broken = fs_fixture!({
+            "cli/db/db.sqlite": "not a ZCode database",
+        });
+        let healthy = fs_fixture!({});
+        let _ = healthy.create_dir_all("cli/db");
+        let database = healthy.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
+        create_db(&database, false);
+        let db = sqlite::open(&database).unwrap();
+        db.execute("INSERT INTO session VALUES ('session-1', '/project', '0.16.3')")
+            .unwrap();
+        insert_current_usage(&database, "usage-1", "completed");
+        drop(db);
+        let _env = EnvVarGuard::set(
+            super::super::paths::ZCODE_HOME_ENV,
+            format!("{},{}", broken.root().display(), healthy.root().display()),
+        );
+        let shared = SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
     }
 
     #[test]
