@@ -181,6 +181,7 @@ fn load_groups_from_sources_with_diagnostics(
                 .iter()
                 .map(|group| (group.dir.as_path(), group.files.as_slice())),
             shared.single_thread,
+            diagnostics,
         )
     } else {
         CodexReplayPlan::new(
@@ -231,6 +232,7 @@ pub(super) fn load_groups_from_directory_with_diagnostics(
             [(sessions_dir, files.as_slice())],
             [(sessions_dir, all_files.as_slice())],
             shared.single_thread,
+            diagnostics,
         )
     } else {
         CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
