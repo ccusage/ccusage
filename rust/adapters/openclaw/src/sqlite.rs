@@ -103,13 +103,24 @@ fn read_agent_database(
         ));
         return Vec::new();
     };
-    if !table_exists(&connection) {
-        diagnostics.record(Skip::unit(
-            &database.path,
-            SkipKind::Invariant,
-            "OpenClaw database has no transcript_events table",
-        ));
-        return Vec::new();
+    match table_exists(&connection) {
+        Ok(true) => {}
+        Ok(false) => {
+            diagnostics.record(Skip::unit(
+                &database.path,
+                SkipKind::Invariant,
+                "OpenClaw database has no transcript_events table",
+            ));
+            return Vec::new();
+        }
+        Err(kind) => {
+            diagnostics.record(Skip::unit(
+                &database.path,
+                kind,
+                "OpenClaw database schema probe failed",
+            ));
+            return Vec::new();
+        }
     }
     let Ok(mut statement) = connection.prepare(
         "SELECT session_id, seq, event_json, created_at FROM transcript_events ORDER BY session_id ASC, seq ASC",
@@ -215,20 +226,23 @@ fn read_agent_database(
     entries
 }
 
-fn table_exists(connection: &sqlite::Connection) -> bool {
-    let Ok(mut statement) = connection
+fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, SkipKind> {
+    let mut statement = connection
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
-    else {
-        return false;
-    };
-    if statement.bind((1, "transcript_events")).is_err() {
-        return false;
+        .map_err(|_| SkipKind::Unreadable)?;
+    statement
+        .bind((1, "transcript_events"))
+        .map_err(|_| SkipKind::Unreadable)?;
+    match statement.next().map_err(|_| SkipKind::Unreadable)? {
+        sqlite::State::Row => Ok(true),
+        sqlite::State::Done => Ok(false),
     }
-    matches!(statement.next(), Ok(sqlite::State::Row))
 }
 
 #[cfg(test)]
 mod tests {
+    use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
+    use ccusage_core::{PricingMap, ReportWindow, cli::AgentReportKind};
     use ccusage_test_support::{Fixture, fs_fixture};
 
     use super::*;
@@ -443,6 +457,57 @@ mod tests {
 
         assert!(entries.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn reports_sqlite_schema_probe_failures_as_unreadable() {
+        let fixture = fs_fixture!({
+            "agents/main/agent/openclaw-agent.sqlite": "not a SQLite database",
+        });
+        let db_path = sqlite_root(&fixture);
+        let connection = sqlite::Connection::open_with_flags(
+            &db_path,
+            sqlite::OpenFlags::new().with_read_only(),
+        )
+        .expect("SQLite should open the damaged file before probing its schema");
+        let probe = connection
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
+            .and_then(|mut statement| {
+                statement.bind((1, "transcript_events"))?;
+                statement.next()
+            });
+        assert!(
+            probe.is_err(),
+            "the schema probe must fail for this fixture"
+        );
+        drop(connection);
+
+        let custom_path = fixture.root().to_str().unwrap();
+        let shared = ccusage_core::cli::SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..Default::default()
+        };
+        let window = ReportWindow::from_shared(&shared);
+        let pricing = PricingMap::load_embedded();
+        let diagnostics = diagnostics();
+        let cx = LoadContext {
+            shared: &shared,
+            kind: AgentReportKind::Daily,
+            window: &window,
+            pricing: Some(&pricing),
+            options: SourceOptions {
+                open_claw_path: Some(custom_path),
+                ..SourceOptions::default()
+            },
+            diagnostics: &diagnostics,
+        };
+
+        let entries = crate::SOURCE.load_entries(&cx).unwrap();
+
+        assert!(entries.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 0);
     }
 
     #[test]
