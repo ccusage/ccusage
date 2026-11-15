@@ -130,6 +130,7 @@ fn load_codex_events_from_sources_with_files(
                 .iter()
                 .map(|group| (group.dir.as_path(), group.files.as_slice())),
             single_thread,
+            diagnostics,
         )
     } else {
         CodexReplayPlan::new(
@@ -170,6 +171,7 @@ fn load_codex_events_from_directory_with_shared(
             [(sessions_dir, files.as_slice())],
             [(sessions_dir, all_files.as_slice())],
             shared.single_thread,
+            diagnostics,
         )
     } else {
         CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
@@ -3240,6 +3242,102 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(parent_usage_reads, vec![parent]);
+    }
+
+    #[test]
+    fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+                r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"SECRET_CANARY","#.to_string(),
+            ].join("\n"),
+            "sessions/2026/03/15/child.jsonl": [
+                replay_metadata("2026-03-15T08:00:00.000Z", "child", Some("parent")),
+                replay_token_count("2026-03-15T08:00:00.000Z", 100),
+                replay_token_count("2026-03-15T08:01:00.000Z", 50),
+            ].join("\n"),
+        });
+        let parent = fixture.path("sessions/2025/01/01/parent.jsonl");
+        let child = fixture.path("sessions/2026/03/15/child.jsonl");
+        crate::paths::set_file_modified(
+            &parent,
+            crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
+        );
+        crate::paths::set_file_modified(
+            &child,
+            crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
+        );
+        let sources = [CodexUsageSource::new_for_test(
+            fixture.path("sessions"),
+            fixture.root().to_path_buf(),
+        )];
+
+        for (since, parent_tokens) in [("20260315", 0), ("20250101", 100)] {
+            let shared = SharedArgs {
+                since: Some(since.to_string()),
+                until: Some("20260315".to_string()),
+                timezone: Some("UTC".to_string()),
+                single_thread: true,
+                debug: true,
+                ..Default::default()
+            };
+            let diagnostics = Diagnostics::new("codex");
+            let _ = crate::replay::take_observed_file_read_events();
+            let (events, _) =
+                load_codex_events_from_sources_with_shared(&sources, &shared, &diagnostics)
+                    .unwrap();
+
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event.session_id == "2026/03/15/child")
+                    .map(|event| event.input_tokens)
+                    .sum::<u64>(),
+                50
+            );
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event.session_id == "2025/01/01/parent")
+                    .map(|event| event.input_tokens)
+                    .sum::<u64>(),
+                parent_tokens
+            );
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+            assert!(
+                !diagnostics
+                    .warnings(&shared)
+                    .join("\n")
+                    .contains("SECRET_CANARY")
+            );
+            let reads = crate::replay::take_observed_file_read_events();
+            let parent_reads = reads
+                .iter()
+                .filter(|read| matches!(read, crate::replay::ObservedFileRead::ParentUsage(path) if path == &parent))
+                .count();
+            assert_eq!(parent_reads, 1);
+
+            let diagnostics = Diagnostics::new("codex");
+            let groups = crate::aggregate::load_groups_from_directory_with_diagnostics(
+                &fixture.path("sessions"),
+                &shared,
+                ccusage_core::cli::AgentReportKind::Daily,
+                &diagnostics,
+            )
+            .unwrap();
+            assert_eq!(
+                groups.values().map(|group| group.input_tokens).sum::<u64>(),
+                50 + parent_tokens
+            );
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+            let reads = crate::replay::take_observed_file_read_events();
+            let parent_reads = reads
+                .iter()
+                .filter(|read| matches!(read, crate::replay::ObservedFileRead::ParentUsage(path) if path == &parent))
+                .count();
+            assert_eq!(parent_reads, 1);
+        }
     }
 
     fn replay_metadata(timestamp: &str, id: &str, parent: Option<&str>) -> String {

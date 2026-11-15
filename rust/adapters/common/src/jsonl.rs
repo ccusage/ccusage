@@ -109,7 +109,7 @@ pub fn records_with_diagnostics<'data, T>(
 where
     T: DeserializeOwned + 'data,
 {
-    diagnosed_records(content, prefilter, unit, diagnostics, None)
+    diagnosed_records::<T>(content, prefilter, unit, diagnostics, None).map(|(_, record)| record)
 }
 
 /// Adds a normal warning for a decoding failure whose JSON envelope the source
@@ -124,6 +124,22 @@ pub fn records_with_usage_diagnostics<'data, T>(
 where
     T: DeserializeOwned + 'data,
 {
+    numbered_records_with_usage_diagnostics::<T>(content, prefilter, unit, diagnostics, is_usage)
+        .map(|(_, record)| record)
+}
+
+/// Retains source line numbers so callers can diagnose rejected fields while
+/// preserving independently decoded state in the same record.
+pub fn numbered_records_with_usage_diagnostics<'data, T>(
+    content: &'data [u8],
+    prefilter: Option<&'data LinePrefilter>,
+    unit: &'data Path,
+    diagnostics: &'data Diagnostics,
+    is_usage: fn(&serde_json::Value) -> bool,
+) -> impl Iterator<Item = (u32, T)> + 'data
+where
+    T: DeserializeOwned + 'data,
+{
     diagnosed_records(content, prefilter, unit, diagnostics, Some(is_usage))
 }
 
@@ -133,12 +149,13 @@ fn diagnosed_records<'data, T>(
     unit: &'data Path,
     diagnostics: &'data Diagnostics,
     is_usage: Option<fn(&serde_json::Value) -> bool>,
-) -> impl Iterator<Item = T> + 'data
+) -> impl Iterator<Item = (u32, T)> + 'data
 where
     T: DeserializeOwned + 'data,
 {
-    selected_lines(content, prefilter)
-        .filter_map(move |(number, line)| decode_record(line, unit, number, diagnostics, is_usage))
+    selected_lines(content, prefilter).filter_map(move |(number, line)| {
+        decode_record::<T>(line, unit, number, diagnostics, is_usage).map(|record| (number, record))
+    })
 }
 
 /// Decodes one JSON record, sharing failure classification between JSONL lines

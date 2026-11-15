@@ -1,7 +1,7 @@
 use std::{fs, path::Path, sync::Arc};
 
 use ccusage_adapter_common::{jsonl, units::UnitError};
-use ccusage_core::Diagnostics;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 use serde_json::Value;
@@ -39,27 +39,64 @@ pub(super) struct OpenClawLine {
     model: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     provider: Option<String>,
-    // A non-object `message` previously navigated to no usage without dropping
-    // the line, so deserialize it leniently. Otherwise a malformed `message` on
-    // a model-tracking line would fail the whole record and lose the
-    // model/provider state update for subsequent usage entries.
+    // Message failures must not discard the model/provider state on the same
+    // record; readers diagnose the rejected field after decoding the envelope.
     #[serde(default, deserialize_with = "deserialize_message")]
-    message: Option<OpenClawMessage>,
+    message: DecodedMessage,
     timestamp: Option<Value>,
 }
 
-fn deserialize_message<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<OpenClawMessage>, D::Error>
+#[derive(Debug, Default)]
+struct DecodedMessage {
+    value: Option<OpenClawMessage>,
+    rejected: bool,
+    usage_envelope: bool,
+}
+
+fn deserialize_message<'de, D>(deserializer: D) -> std::result::Result<DecodedMessage, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     match Option::<Value>::deserialize(deserializer)? {
-        Some(value @ Value::Object(_)) => serde_json::from_value(value)
-            .map(Some)
-            .map_err(serde::de::Error::custom),
-        _ => Ok(None),
+        Some(value @ Value::Object(_)) => {
+            let usage_envelope = value.get("role").and_then(Value::as_str) == Some("assistant")
+                && value.get("usage").is_some();
+            Ok(match serde_json::from_value(value) {
+                Ok(message) => DecodedMessage {
+                    value: Some(message),
+                    ..Default::default()
+                },
+                Err(_) => DecodedMessage {
+                    rejected: true,
+                    usage_envelope,
+                    ..Default::default()
+                },
+            })
+        }
+        _ => Ok(DecodedMessage::default()),
     }
+}
+
+pub(super) fn record_message_error(
+    record: &OpenClawLine,
+    path: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+) {
+    if !record.message.rejected {
+        return;
+    }
+    let kind = if record.r#type.as_deref() == Some("message") && record.message.usage_envelope {
+        SkipKind::InvalidData
+    } else {
+        SkipKind::UndecodedUsage
+    };
+    diagnostics.record(Skip::record(
+        path,
+        number,
+        kind,
+        "message object did not decode",
+    ));
 }
 
 /// Deserialize the `data` block of a model-change record, mirroring the
@@ -209,13 +246,14 @@ pub(super) fn parse_session_file(
     let mut current_model = None::<String>;
     let mut current_provider = None::<String>;
     let mut entries = Vec::new();
-    for record in jsonl::records_with_usage_diagnostics::<OpenClawLine>(
+    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<OpenClawLine>(
         &content,
         Some(&prefilter),
         path,
         diagnostics,
         is_usage_envelope,
     ) {
+        record_message_error(&record, path, number, diagnostics);
         if is_model_change(&record) {
             let (model, provider) = model_change_source(&record);
             if let Some(model) = model {
@@ -313,7 +351,7 @@ pub(super) fn parse_transcript_message(
     if record.r#type.as_deref() != Some("message") {
         return None;
     }
-    let message = record.message.as_ref()?;
+    let message = record.message.value.as_ref()?;
     if message.role.as_deref() != Some("assistant") {
         return None;
     }
@@ -632,6 +670,44 @@ mod tests {
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
         assert_eq!(entries[0].data.version.as_deref(), Some("openai"));
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+    }
+
+    #[test]
+    fn malformed_message_object_keeps_model_state_and_its_own_diagnostic() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                "{}\n\n",
+                r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":{"role":1,"secret":"SECRET_CANARY"}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            None,
+            CostMode::Auto,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
+        assert_eq!(entries[0].data.version.as_deref(), Some("openai"));
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
+            1
+        );
+        let warnings = diagnostics
+            .warnings(&ccusage_core::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("session.jsonl:3:"));
+        assert!(!warnings.contains("SECRET_CANARY"));
     }
 
     #[test]

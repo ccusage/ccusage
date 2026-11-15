@@ -48,6 +48,7 @@ layers.
 - `units::UnitError`
 - `units::read_json`
 - `jsonl::records_with_diagnostics` and `records_with_usage_diagnostics`
+- `jsonl::numbered_records_with_usage_diagnostics`
 - `source::UsageSource`, `source::EntrySource` and the request, row and policy
   types they exchange
 - `pipeline::run_focused`

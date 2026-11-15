@@ -278,7 +278,14 @@ pub(super) fn visit_codex_session_file(
     fork_replay: Option<CodexForkReplay<'_>>,
     visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
 ) -> Result<()> {
-    visit_codex_session_file_with_compaction_history(sessions_dir, path, fork_replay, None, visit)
+    visit_codex_session_file_with_compaction_history(
+        sessions_dir,
+        path,
+        fork_replay,
+        None,
+        visit,
+        None,
+    )
 }
 
 /// Visits usage while optionally retaining matched compaction identities,
@@ -289,14 +296,23 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: Option<&Diagnostics>,
 ) -> Result<()> {
+    let quiet;
+    let diagnostics = match diagnostics {
+        Some(diagnostics) => diagnostics,
+        None => {
+            quiet = Diagnostics::new("codex");
+            &quiet
+        }
+    };
     visit_codex_session_file_inner(
         sessions_dir,
         path,
         fork_replay,
         compaction_history,
         visit,
-        &Diagnostics::new("codex"),
+        diagnostics,
     )
 }
 
