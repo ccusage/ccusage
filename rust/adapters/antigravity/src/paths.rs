@@ -1,6 +1,9 @@
 use std::{collections::HashSet, env, fs, path::PathBuf};
 
-use ccusage_adapter_common::collect_files_with_extension;
+use ccusage_adapter_common::{
+    collect_files_with_extension, collect_files_with_extension_diagnosed,
+};
+use ccusage_core::Diagnostics;
 
 use crate::Result;
 
@@ -49,6 +52,16 @@ fn conversation_dir(root: PathBuf) -> PathBuf {
 }
 
 pub(super) fn conversation_db_paths() -> Result<Vec<PathBuf>> {
+    conversation_db_paths_inner(None)
+}
+
+pub(super) fn conversation_db_paths_with_diagnostics(
+    diagnostics: &Diagnostics,
+) -> Result<Vec<PathBuf>> {
+    conversation_db_paths_inner(Some(diagnostics))
+}
+
+fn conversation_db_paths_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<PathBuf>> {
     let (roots, custom_root) = resolve_roots();
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
@@ -63,7 +76,11 @@ pub(super) fn conversation_db_paths() -> Result<Vec<PathBuf>> {
         }
         let dir = conversation_dir(root);
         let mut files = Vec::new();
-        collect_files_with_extension(&dir, "db", &mut files);
+        if let Some(diagnostics) = diagnostics {
+            collect_files_with_extension_diagnosed(&dir, "db", &mut files, diagnostics);
+        } else {
+            collect_files_with_extension(&dir, "db", &mut files);
+        }
         for path in files {
             let canonical_path = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if seen.insert(canonical_path) {

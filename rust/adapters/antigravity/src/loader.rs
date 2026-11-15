@@ -1,10 +1,14 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use jiff::tz::TimeZone as JiffTimeZone;
+
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz};
+use ccusage_adapter_common::source::LoadContext;
+use ccusage_core::Diagnostics;
 
 use super::{
     parser::{AntigravityUsageEvent, event_to_loaded, merge_usage_event, parse_sqlite_file},
-    paths::conversation_db_paths,
+    paths::{conversation_db_paths, conversation_db_paths_with_diagnostics},
 };
 
 #[derive(Debug, PartialEq)]
@@ -15,12 +19,27 @@ enum SkippedDatabase {
 
 /// Loads Antigravity generation metadata from all discovered conversation databases.
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let (entries, warnings) = crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("Antigravity"),
-        shared.json,
-        || load_entries_with_warnings(shared, pricing),
+    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+        &crate::SOURCE,
+        shared,
+        ccusage_adapter_common::source::SourceOptions::default(),
+        Some(pricing),
+    )
+}
+
+pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let pricing = cx.pricing.expect("Antigravity uses pipeline pricing");
+    let (entries, skipped) = load_entries_with_timezone(
+        cx.shared,
+        pricing,
+        Some(cx.window.timezone()),
+        Some(cx.diagnostics),
     )?;
-    warnings.iter().for_each(|warning| eprintln!("{warning}"));
+    for database in &skipped {
+        if let Some(warning) = skipped_database_message(cx.shared, database) {
+            cx.diagnostics.push_line(warning);
+        }
+    }
     Ok(entries)
 }
 
@@ -60,7 +79,20 @@ fn load_entries_inner(
     pricing: &PricingMap,
 ) -> Result<(Vec<LoadedEntry>, Vec<SkippedDatabase>)> {
     let timezone = parse_tz(shared.timezone.as_deref());
-    let (parsed_events, skipped) = conversation_db_paths()?.into_iter().fold(
+    load_entries_with_timezone(shared, pricing, timezone.as_ref(), None)
+}
+
+fn load_entries_with_timezone(
+    shared: &SharedArgs,
+    pricing: &PricingMap,
+    timezone: Option<&JiffTimeZone>,
+    diagnostics: Option<&Diagnostics>,
+) -> Result<(Vec<LoadedEntry>, Vec<SkippedDatabase>)> {
+    let database_paths = diagnostics.map_or_else(
+        conversation_db_paths,
+        conversation_db_paths_with_diagnostics,
+    )?;
+    let (parsed_events, skipped) = database_paths.into_iter().fold(
         (Vec::new(), Vec::new()),
         |(mut events, mut skipped), database_path| {
             match parse_sqlite_file(&database_path) {
@@ -78,7 +110,7 @@ fn load_entries_inner(
     events.sort_by_key(|event| event.timestamp);
     let entries = events
         .into_iter()
-        .map(|event| event_to_loaded(event, timezone.as_ref(), shared.mode, pricing))
+        .map(|event| event_to_loaded(event, timezone, shared.mode, pricing))
         .collect();
     Ok((entries, skipped))
 }

@@ -1,4 +1,4 @@
-use ccusage_adapter_common::filter_loaded_entries_by_date;
+use ccusage_adapter_common::source::{ALL_REPORTS, EntryDescriptor, EntrySource, LoadContext};
 use ccusage_core::*;
 
 mod loader;
@@ -7,43 +7,59 @@ mod paths;
 mod report;
 
 use crate::{
-    PricingMap, Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries,
-    wants_json,
+    LoadedEntry, Result,
+    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-pub(crate) use loader::load_entries;
+pub use loader::load_entries;
 pub use loader::load_entries_with_warnings;
-pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
+
+pub struct Antigravity;
+pub static SOURCE: Antigravity = Antigravity;
+
+impl EntrySource for Antigravity {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor {
+            reports: ALL_REPORTS,
+            ..EntryDescriptor::standard("antigravity", "Antigravity")
+        }
+    }
+
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_entries_for_context(cx)
+    }
+
+    fn summarize(
+        &self,
+        entries: &[LoadedEntry],
+        kind: AgentReportKind,
+    ) -> Result<Vec<UsageSummary>> {
+        report::summarize_entries(entries, kind)
+    }
+
+    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> serde_json::Value {
+        report::report_from_rows(rows, kind)
+    }
+
+    fn print_table(
+        &self,
+        rows: &[UsageSummary],
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+    ) -> Result<()> {
+        crate::print_usage_table(
+            "Antigravity Token Usage Report",
+            ccusage_core::first_column(kind),
+            rows,
+            shared,
+            false,
+            None,
+        )
+    }
+}
 
 /// Runs an Antigravity usage report for the requested report kind.
 pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let shared = args.shared;
-    let pricing = PricingMap::load_with_overrides(
-        shared.offline,
-        crate::log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    );
-    let mut entries = load_entries(&shared, &pricing)?;
-    filter_loaded_entries_by_date(&mut entries, &shared);
-    let mut rows = summarize_entries(&entries, args.kind)?;
-    sort_summaries(&mut rows, &shared.order, |row| {
-        ccusage_core::summary_period(row)
-    });
-    if wants_json(&shared) {
-        return print_json_or_jq(
-            report_from_rows(&rows, args.kind),
-            shared.jq.as_deref(),
-            shared.no_cost,
-        );
-    }
-    print_usage_table(
-        "Antigravity Token Usage Report",
-        ccusage_core::first_column(args.kind),
-        &rows,
-        &shared,
-        false,
-        None,
-    )?;
-    Ok(())
+    SOURCE.run_focused(args)
 }
