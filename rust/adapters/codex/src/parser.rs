@@ -22,22 +22,6 @@ use super::{
     },
 };
 
-static EVENT_MSG_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"event_msg""#));
-static TURN_CONTEXT_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"turn_context""#));
-static TOKEN_COUNT_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"token_count""#));
-static THREAD_SETTINGS_APPLIED_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"thread_settings_applied""#));
-static TOKEN_USAGE_RECORD_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"token_usage_record""#));
-static COMPACTED_TYPE_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"compacted""#));
-static THREAD_SETTINGS_APPLIED_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(b"thread_settings_applied"));
-static COMPACT_TYPE_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""type":"#));
 static TYPE_KEY_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""type""#));
 static USAGE_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""usage":"#));
@@ -709,51 +693,20 @@ fn codex_service_tier(value: &str) -> Option<CodexServiceTier> {
 }
 
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
-    let has_event_msg = EVENT_MSG_TYPE_FINDER.find(line).is_some();
-    let has_token_count = has_event_msg && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
-    let has_thread_settings_applied =
-        has_event_msg && THREAD_SETTINGS_APPLIED_TYPE_FINDER.find(line).is_some();
-    if TURN_CONTEXT_TYPE_FINDER.find(line).is_some()
-        || has_token_count
-        || has_thread_settings_applied
-        || TOKEN_USAGE_RECORD_TYPE_FINDER.find(line).is_some()
-        || COMPACTED_TYPE_FINDER.find(line).is_some()
+    let (
+        has_turn_context,
+        has_event_msg,
+        has_token_count,
+        has_thread_settings_applied,
+        has_token_usage_record,
+        has_compacted,
+    ) = codex_line_type_flags(line);
+    if has_turn_context
+        || has_token_usage_record
+        || has_compacted
+        || (has_event_msg && (has_token_count || has_thread_settings_applied))
     {
         return Some(CodexLineKind::Session);
-    }
-    let has_compact_type = COMPACT_TYPE_FIELD_FINDER.find(line).is_some();
-    let has_nested_token_count = !has_event_msg
-        && has_compact_type
-        && line.len() < 64 * 1024
-        && memchr::memmem::find(line, b"token_count").is_some();
-    let has_nested_thread_settings_applied = !has_event_msg
-        && has_compact_type
-        && line.len() < 64 * 1024
-        && THREAD_SETTINGS_APPLIED_FINDER.find(line).is_some();
-    let has_compaction_type = memchr::memmem::find(line, b"token_usage_record").is_some()
-        || memchr::memmem::find(line, b"compacted").is_some();
-    if has_event_msg
-        || memchr::memmem::find(line, b"turn_context").is_some()
-        || has_nested_token_count
-        || has_nested_thread_settings_applied
-        || has_compaction_type
-        || !has_compact_type
-    {
-        let (
-            has_turn_context,
-            has_event_msg,
-            has_token_count,
-            has_thread_settings_applied,
-            has_token_usage_record,
-            has_compacted,
-        ) = codex_line_type_flags(line);
-        if has_turn_context
-            || has_token_usage_record
-            || has_compacted
-            || (has_event_msg && (has_token_count || has_thread_settings_applied))
-        {
-            return Some(CodexLineKind::Session);
-        }
     }
     if USAGE_FIELD_FINDER.find(line).is_some()
         || INPUT_TOKENS_FIELD_FINDER.find(line).is_some()
@@ -1435,6 +1388,32 @@ mod tests {
         ] {
             assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Session));
         }
+    }
+
+    #[test]
+    fn loads_large_spaced_token_counts_with_compact_payload_types() {
+        let line = serde_json::json!({
+            "timestamp": "2026-09-01T00:00:01Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": { "last_token_usage": { "input_tokens": 100, "output_tokens": 20 } },
+                "padding": "x".repeat(70 * 1024),
+            },
+        })
+        .to_string()
+        .replace(r#""type":"event_msg""#, r#""type" : "event_msg""#);
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                r#"{"type":"turn_context","payload":{"model":"gpt-5-mini"}}"#,
+                line.as_str(),
+            ].join("\n"),
+        });
+
+        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].total_tokens, 120);
     }
 
     #[test]
