@@ -117,15 +117,16 @@
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-e2e."})
         script (fn [name body]
                  (let [file (path dir name)]
-                   (spit file (str "#!/bin/sh\n" body "\n"))
+                   (spit file (str "#!/bin/sh\nPATH=/no-such-path\n" body "\n"))
                    (babashka.fs/set-posix-file-permissions file "rwx------")
                    file))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
         changed (script "changed" "echo '{\"b\":2,\"a\":3}'; echo warn >&2")
         intermittent (script "intermittent"
                              (str "if [ -f " (path dir "head-ran") " ]; then echo '{\"a\":3,\"b\":2}'; "
-                                  "else touch " (path dir "head-ran") "; echo '{\"a\":1,\"b\":2}'; fi"))
-        flaky (script "flaky" (str "echo x >> " (path dir "calls") "; wc -l < " (path dir "calls")))
+                                  "else : > " (path dir "head-ran") "; echo '{\"a\":1,\"b\":2}'; fi"))
+        flaky (script "flaky" (str "n=0; if [ -f " (path dir "calls") " ]; then read -r n < " (path dir "calls")
+                                   "; fi; n=$((n + 1)); echo \"$n\" > " (path dir "calls") "; echo \"$n\""))
         compare (fn [bins allow-stderr-diff]
                   (compare-command! bins (hermetic-env nil (str dir)) (str dir) (str dir) allow-stderr-diff
                                     {:id "daily--json" :json? true :args ["daily"]}))]
@@ -136,7 +137,8 @@
           (is (not (babashka.fs/exists? (:dir result))))))
       (testing "head must agree on repeated runs even when its first run matches"
         (let [result (compare {:base stable :head intermittent} false)]
-          (is (= :different (:status result)))))
+          (is (= :different (:status result)))
+          (is (= [:stdout] (:streams result)))))
       (testing "a difference keeps both outputs and diffs them key-sorted"
         (let [result (compare {:base stable :head changed} false)
               [base head] (:pair result)

@@ -625,10 +625,14 @@ fn statusline_active_block_keeps_anchors_from_older_files() {
     )
     .unwrap();
     let files = write_block_chain(&fixture, now_ms - 60 * 60 * 1000, 71);
-    let hook = format!(
-        r#"{{"session_id":"session-chain","transcript_path":"{}","model":{{"display_name":"Model"}},"cost":{{"total_cost_usd":0}},"context_window":{{"total_input_tokens":1,"context_window_size":100}}}}"#,
-        files.last().unwrap().display()
-    );
+    let hook = serde_json::json!({
+        "session_id": "session-chain",
+        "transcript_path": files.last().unwrap(),
+        "model": {"display_name": "Model"},
+        "cost": {"total_cost_usd": 0},
+        "context_window": {"total_input_tokens": 1, "context_window_size": 100},
+    })
+    .to_string();
     let fresh_mtime = u64::try_from(now_ms / 1000).unwrap();
 
     let block = assert_output_ignores_mtimes(
@@ -718,10 +722,14 @@ fn statusline_keeps_the_current_block_before_future_dated_entries() {
         ]
         .join("\n"),
     );
-    let hook = format!(
-        r#"{{"session_id":"session-now","transcript_path":"{}","model":{{"display_name":"Model"}},"cost":{{"total_cost_usd":0}},"context_window":{{"total_input_tokens":1,"context_window_size":100}}}}"#,
-        transcript.display()
-    );
+    let hook = serde_json::json!({
+        "session_id": "session-now",
+        "transcript_path": transcript,
+        "model": {"display_name": "Model"},
+        "cost": {"total_cost_usd": 0},
+        "context_window": {"total_input_tokens": 1, "context_window_size": 100},
+    })
+    .to_string();
 
     let output = run_ccusage(
         &fixture,
