@@ -1,5 +1,6 @@
-use std::{collections::HashSet, fs, io, path::Path};
+use std::{collections::HashSet, fs, path::Path};
 
+use ccusage_adapter_common::units::{UnitError, read_json};
 use serde_json::Value;
 
 use crate::{
@@ -29,18 +30,10 @@ pub(super) struct DroidTokenUsage {
     pub(super) thinking_tokens: u64,
 }
 
-pub(super) fn load_settings_file(path: &Path) -> Result<Option<DroidEntry>> {
-    let content = match fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    let value = serde_json::from_str::<Value>(&content).map_err(|error| {
-        crate::cli_error(format!(
-            "failed to parse Droid settings {}: {error}",
-            path.display()
-        ))
-    })?;
+pub(super) fn load_settings_file(
+    path: &Path,
+) -> std::result::Result<Option<DroidEntry>, UnitError> {
+    let value = read_json::<Value>(path)?;
     let Some(settings) = value.as_object() else {
         return Ok(None);
     };

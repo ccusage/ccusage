@@ -6,39 +6,37 @@ use super::{
     parser::{DroidEntry, calculate_droid_cost, load_settings_file, missing_droid_pricing},
     paths::discover_settings_files,
 };
+use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
+
 use crate::{
-    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, debug_log,
-    format_date_tz, parse_tz, read_files_parallel,
+    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, format_date_tz,
 };
 
 pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("Droid"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
+    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+        &crate::SOURCE,
+        shared,
+        ccusage_adapter_common::source::SourceOptions::default(),
+        Some(pricing),
     )
 }
 
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let mut files = discover_settings_files()?;
+pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let pricing = cx
+        .pricing
+        .ok_or_else(|| crate::cli_error("Droid needs pricing from the report pipeline"))?;
+    let tz = Some(cx.window.timezone());
+    let mut files = discover_settings_files(cx.diagnostics)?;
     files.sort();
     // Read files in parallel, reassembled in the original (sorted) file order so
     // the subsequent stable sort and reverse latest-wins dedup pick the same
     // snapshot per session as the single-threaded read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        load_settings_file(file).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read Droid settings file {}: {error}",
-                    file.display()
-                ),
-            );
-            None
-        })
-    });
-    let mut parsed: Vec<DroidEntry> = loaded.into_iter().flatten().collect();
+    let mut parsed = read_units_flat(
+        &files,
+        cx.shared.single_thread,
+        cx.diagnostics,
+        load_settings_file,
+    );
     parsed.sort_by_key(|entry| entry.timestamp);
     let mut seen_sessions = HashSet::new();
     let mut entries = Vec::new();
@@ -46,7 +44,7 @@ fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<L
         if !seen_sessions.insert(entry.session_id.clone()) {
             continue;
         }
-        entries.push(to_loaded_entry(entry, tz.as_ref(), pricing));
+        entries.push(to_loaded_entry(entry, tz, pricing));
     }
     Ok(entries)
 }
@@ -95,6 +93,9 @@ use super::report::{report_from_rows, summarize_entries};
 
 #[cfg(test)]
 mod tests {
+    use ccusage_adapter_common::parity::assert_focused_matches_unified;
+    use ccusage_adapter_common::source::{LoadContext, SourceOptions};
+    use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
     use serde_json::json;
 
@@ -171,6 +172,57 @@ mod tests {
         );
         assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
         assert_eq!(entries[0].extra_total_tokens, 5);
+    }
+
+    #[test]
+    fn malformed_settings_file_does_not_discard_healthy_files() {
+        let fixture = fs_fixture!({
+            "session-a.settings.json": r#"{
+                "model": "Claude-Sonnet-4-[Anthropic]",
+                "providerLock": "anthropic",
+                "providerLockTimestamp": "2026-05-01T01:02:03.000Z",
+                "tokenUsage": {"inputTokens": 100, "outputTokens": 50}
+            }"#,
+            "session-b.settings.json": "{broken",
+        });
+        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let shared = SharedArgs::default();
+        let pricing = PricingMap::load_embedded();
+        let window = ReportWindow::from_shared(&shared);
+        let diagnostics = Diagnostics::new("droid");
+        let cx = LoadContext {
+            shared: &shared,
+            kind: AgentReportKind::Daily,
+            window: &window,
+            pricing: Some(&pricing),
+            options: SourceOptions::default(),
+            diagnostics: &diagnostics,
+        };
+
+        let entries = load_entries_with_context(&cx).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn focused_and_unified_reports_agree() {
+        let fixture = fs_fixture!({
+            "session-a.settings.json": r#"{
+                "model": "Claude-Sonnet-4-[Anthropic]",
+                "providerLock": "anthropic",
+                "providerLockTimestamp": "2026-05-01T01:02:03.000Z",
+                "tokenUsage": {"inputTokens": 100, "outputTokens": 50}
+            }"#,
+        });
+        let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
+        let shared = SharedArgs {
+            offline: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_focused_matches_unified(&crate::SOURCE, &shared, &[]);
     }
 
     #[test]

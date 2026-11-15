@@ -1,13 +1,15 @@
 use std::{collections::HashSet, env, path::PathBuf};
 
-use crate::{Result, collect_files_with_extension};
+use crate::Result;
+use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_core::Diagnostics;
 
 pub(super) const DROID_SESSIONS_DIR_ENV: &str = "DROID_SESSIONS_DIR";
 
-pub(super) fn discover_settings_files() -> Result<Vec<PathBuf>> {
+pub(super) fn discover_settings_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for root in droid_session_paths()? {
-        collect_files_with_extension(&root, "json", &mut files);
+        collect_files_with_extension_diagnosed(&root, "json", &mut files, diagnostics);
     }
     Ok(files
         .into_iter()
