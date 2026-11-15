@@ -3,13 +3,16 @@ use ccusage_adapter_common::{
     rows::summary_rows,
     source::{ALL_REPORTS, PricingSupply, ProgressOwner, SourceRows, UnifiedRequest, UsageSource},
 };
+use ccusage_core::Diagnostics;
 use ccusage_core::{
     ReportWindow, Result,
     cli::AgentReportKind,
     progress::{UsageLoadAgent, track_usage_load},
 };
 
-use crate::{has_data, load_entries_with_native_sessions_with_progress, summarize_entries};
+use crate::{
+    has_data, loader::load_entries_with_native_sessions_with_diagnostics, summarize_entries,
+};
 
 pub struct OpenCode;
 
@@ -44,10 +47,12 @@ impl UsageSource for OpenCode {
 }
 
 fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-    let linked = load_entries_with_native_sessions_with_progress(
+    let diagnostics = Diagnostics::new("opencode");
+    let linked = load_entries_with_native_sessions_with_diagnostics(
         request.shared,
         request.kind,
         ProgressOwner::Caller,
+        &diagnostics,
     )?;
     let detected = !linked.is_empty() || has_data();
     let mut entries = if linked.iter().any(|(_, session)| session.is_some()) {
@@ -65,7 +70,60 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     Ok(SourceRows {
         rows: summary_rows("opencode", summaries, false),
         detected,
-        warnings: Vec::new(),
+        warnings: diagnostics.warnings(request.shared),
         claude_counted: None,
     })
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use ccusage_adapter_common::source::SourceOptions;
+    use ccusage_core::cli::{CostMode, SharedArgs};
+    use ccusage_test_support::{EnvVarsGuard, Fixture};
+    #[test]
+    fn specialized_diagnostics_keep_healthy_opencode_usage() {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("opencode.db", "SECRET_CANARY");
+        let _ = fixture.write_file("storage/message/good.json", r#"{"id":"good","sessionID":"s","modelID":"claude-opus-5","providerID":"anthropic","time":{"created":1767312000000},"tokens":{"input":10,"output":1}}"#);
+        let _ = fixture.write_file("storage/message/bad.json", "{SECRET_CANARY");
+        let _env = EnvVarsGuard::set_many([
+            (
+                "OPENCODE_DATA_DIR",
+                Some(fixture.root().as_os_str().to_owned()),
+            ),
+            ("LOG_LEVEL", Some("3".into())),
+        ]);
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            debug: true,
+            ..Default::default()
+        };
+        let rows = SOURCE
+            .unified_rows(&UnifiedRequest {
+                kind: AgentReportKind::Daily,
+                shared: &shared,
+                options: SourceOptions::default(),
+                pricing: None,
+                progress: ProgressOwner::Caller,
+                multi_source_driver: true,
+                claude_counted: None,
+            })
+            .unwrap();
+        assert_eq!(rows.rows.len(), 1);
+        assert!(
+            rows.warnings
+                .iter()
+                .any(|line| line.contains("invalid data")),
+            "{:?}",
+            rows.warnings
+        );
+        assert!(
+            rows.warnings.iter().any(|line| line.contains("unreadable")),
+            "{:?}",
+            rows.warnings
+        );
+        assert!(!rows.warnings.join("\n").contains("SECRET_CANARY"));
+    }
 }

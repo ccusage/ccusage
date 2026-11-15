@@ -1,3 +1,5 @@
+use ccusage_adapter_common::units::UnitError;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -11,7 +13,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use super::{
     parser::{
         OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind, SessionMessageRow,
-        message_value_to_entry, session_message_value_to_entry, session_value_to_entry,
+        message_value_to_entry, session_message_value_to_entry_checked, session_value_to_entry,
     },
     paths::paths,
 };
@@ -42,13 +44,14 @@ pub fn load_entries_with_native_sessions(
     load_entries_with_native_sessions_with_progress(shared, report_kind, ProgressOwner::Source)
 }
 
-pub(super) fn load_entries_with_native_sessions_with_progress(
+pub(super) fn load_entries_with_native_sessions_with_diagnostics(
     shared: &SharedArgs,
     report_kind: AgentReportKind,
     owner: ProgressOwner,
+    diagnostics: &Diagnostics,
 ) -> Result<Vec<LinkedEntry>> {
     let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
-    let load = || load_entries_inner(shared, allow_aggregate_fallback);
+    let load = || load_entries_inner(shared, allow_aggregate_fallback, diagnostics);
     match owner {
         ProgressOwner::Source => crate::progress::track_usage_load(
             crate::progress::UsageLoadAgent("OpenCode"),
@@ -62,6 +65,7 @@ pub(super) fn load_entries_with_native_sessions_with_progress(
 fn load_entries_inner(
     shared: &SharedArgs,
     allow_aggregate_fallback: bool,
+    diagnostics: &Diagnostics,
 ) -> Result<Vec<LinkedEntry>> {
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
@@ -69,8 +73,12 @@ fn load_entries_inner(
     let mut compaction_entries = Vec::new();
     let mut aggregate_entries = Vec::new();
     for path in paths()? {
-        let directory_entries =
-            load_entries_from_directory_parts(&path, shared, allow_aggregate_fallback)?;
+        let directory_entries = load_entries_from_directory_parts(
+            &path,
+            shared,
+            allow_aggregate_fallback,
+            diagnostics,
+        )?;
         for linked in directory_entries.message_entries {
             message_sessions.insert(linked.0.session_id.to_string());
             if let Some(id) = entry_id(&linked.0)
@@ -108,10 +116,12 @@ fn load_entries_from_directory_for_report(
     shared: &SharedArgs,
     report_kind: AgentReportKind,
 ) -> Result<Vec<LoadedEntry>> {
+    let diagnostics = &Diagnostics::new("opencode");
     let directory_entries = load_entries_from_directory_parts(
         opencode_dir,
         shared,
         report_kind == AgentReportKind::Session,
+        diagnostics,
     )?;
     let message_sessions = message_session_ids(&directory_entries.message_entries);
     let mut seen = entry_ids(&directory_entries.message_entries);
@@ -131,6 +141,7 @@ fn load_entries_from_directory_parts(
     opencode_dir: &Path,
     shared: &SharedArgs,
     allow_aggregate_fallback: bool,
+    diagnostics: &Diagnostics,
 ) -> Result<DirectoryLoadResult> {
     let pricing = if shared.mode == CostMode::Display {
         None
@@ -149,12 +160,15 @@ fn load_entries_from_directory_parts(
     let mut aggregate_entries = Vec::new();
     if let Some(db_path) = db_path(opencode_dir) {
         let database_entries = load_entries_from_database(
-            &db_path,
-            tz.as_ref(),
-            shared.mode,
-            pricing.as_ref(),
-            shared,
-            window,
+            &DatabaseLoadContext {
+                db_path: &db_path,
+                tz: tz.as_ref(),
+                mode: shared.mode,
+                pricing: pricing.as_ref(),
+                shared,
+                window,
+                diagnostics,
+            },
             allow_aggregate_fallback,
         );
         for linked in database_entries.message_entries {
@@ -203,8 +217,8 @@ fn load_entries_from_directory_parts(
             tz.as_ref(),
             shared.mode,
             pricing.as_ref(),
-            shared,
             window,
+            diagnostics,
         )
     });
     for entry in loaded.into_iter().flatten() {
@@ -295,6 +309,7 @@ struct DatabaseLoadContext<'a> {
     window: DateWindow,
     shared: &'a SharedArgs,
     db_path: &'a Path,
+    diagnostics: &'a Diagnostics,
 }
 
 #[derive(Default)]
@@ -312,14 +327,18 @@ struct DirectoryLoadResult {
 }
 
 fn load_entries_from_database(
-    db_path: &Path,
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    shared: &SharedArgs,
-    window: DateWindow,
+    context: &DatabaseLoadContext<'_>,
     allow_aggregate_fallback: bool,
 ) -> DatabaseLoadResult {
+    let &DatabaseLoadContext {
+        tz,
+        mode,
+        pricing,
+        shared,
+        window,
+        db_path,
+        diagnostics,
+    } = context;
     let Ok(connection) =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
     else {
@@ -327,8 +346,25 @@ fn load_entries_from_database(
             shared,
             format!("Failed to open OpenCode database: {}", db_path.display()),
         );
+        diagnostics.record(Skip::unit(
+            db_path,
+            SkipKind::Unreadable,
+            "database open failed",
+        ));
         return DatabaseLoadResult::default();
     };
+    if connection
+        .prepare("SELECT name FROM sqlite_master LIMIT 1")
+        .and_then(|mut statement| statement.next())
+        .is_err()
+    {
+        diagnostics.record(Skip::unit(
+            db_path,
+            SkipKind::Unreadable,
+            "database schema read failed",
+        ));
+        return DatabaseLoadResult::default();
+    }
     let mut message_entries = Vec::new();
     let mut compaction_entries = Vec::new();
 
@@ -365,16 +401,36 @@ fn load_entries_from_database(
             prepare_message_query(&connection, DateWindow::UNBOUNDED)
         });
         if let Some(mut statement) = statement {
+            let mut row = 0_u32;
             loop {
                 match statement.next() {
                     Ok(sqlite::State::Row) => {
+                        row = row.saturating_add(1);
                         let Ok(id) = statement.read::<String, _>(0) else {
+                            diagnostics.record(Skip::record(
+                                db_path,
+                                row,
+                                SkipKind::InvalidData,
+                                "database column read failed",
+                            ));
                             continue;
                         };
                         let Ok(session_id) = statement.read::<String, _>(1) else {
+                            diagnostics.record(Skip::record(
+                                db_path,
+                                row,
+                                SkipKind::InvalidData,
+                                "database column read failed",
+                            ));
                             continue;
                         };
                         let Ok(data) = statement.read::<String, _>(2) else {
+                            diagnostics.record(Skip::record(
+                                db_path,
+                                row,
+                                SkipKind::InvalidData,
+                                "database column read failed",
+                            ));
                             continue;
                         };
                         if !window.is_unbounded()
@@ -383,8 +439,17 @@ fn load_entries_from_database(
                         {
                             continue;
                         }
-                        let Ok(value) = serde_json::from_str::<OpenCodeMessage>(&data) else {
-                            continue;
+                        let value = match serde_json::from_str::<OpenCodeMessage>(&data) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                diagnostics.record(Skip::record(
+                                    db_path,
+                                    row,
+                                    SkipKind::InvalidData,
+                                    UnitError::from(error),
+                                ));
+                                continue;
+                            }
                         };
                         if let Some(entry) = message_value_to_entry(
                             &value,
@@ -405,6 +470,11 @@ fn load_entries_from_database(
                     }
                     Ok(sqlite::State::Done) => break,
                     Err(_) => {
+                        diagnostics.record(Skip::unit(
+                            db_path,
+                            SkipKind::ReadInterrupted,
+                            "database query interrupted",
+                        ));
                         debug_log(
                             shared,
                             format!("Failed to query OpenCode database: {}", db_path.display()),
@@ -414,6 +484,11 @@ fn load_entries_from_database(
                 }
             }
         } else {
+            diagnostics.record(Skip::unit(
+                db_path,
+                SkipKind::Unreadable,
+                "database query preparation failed",
+            ));
             debug_log(
                 shared,
                 format!("Failed to read OpenCode database: {}", db_path.display()),
@@ -443,23 +518,49 @@ fn load_entries_from_database(
         let mut v2_rows = 0;
         let mut v2_entries = 0;
         if let Some(mut statement) = statement {
+            let mut row = 0_u32;
             loop {
                 match statement.next() {
                     Ok(sqlite::State::Row) => {
+                        row = row.saturating_add(1);
                         v2_rows += 1;
                         let Ok(id) = statement.read::<String, _>(0) else {
+                            diagnostics.record(Skip::record(
+                                db_path,
+                                row,
+                                SkipKind::InvalidData,
+                                "database column read failed",
+                            ));
                             continue;
                         };
                         let Ok(session_id) = statement.read::<String, _>(1) else {
+                            diagnostics.record(Skip::record(
+                                db_path,
+                                row,
+                                SkipKind::InvalidData,
+                                "database column read failed",
+                            ));
                             continue;
                         };
                         let Ok(message_type) = statement.read::<String, _>(2) else {
+                            diagnostics.record(Skip::record(
+                                db_path,
+                                row,
+                                SkipKind::InvalidData,
+                                "database column read failed",
+                            ));
                             continue;
                         };
                         let Some(kind) = SessionMessageKind::from_row_type(&message_type) else {
                             continue;
                         };
                         let Ok(data) = statement.read::<String, _>(3) else {
+                            diagnostics.record(Skip::record(
+                                db_path,
+                                row,
+                                SkipKind::InvalidData,
+                                "database column read failed",
+                            ));
                             continue;
                         };
                         let created = statement
@@ -480,7 +581,7 @@ fn load_entries_from_database(
                         {
                             continue;
                         }
-                        let Some(linked) = session_message_value_to_entry(
+                        let linked = match session_message_value_to_entry_checked(
                             SessionMessageRow {
                                 kind,
                                 data: &data,
@@ -491,8 +592,18 @@ fn load_entries_from_database(
                             tz,
                             mode,
                             pricing,
-                        ) else {
-                            continue;
+                        ) {
+                            Ok(Some(linked)) => linked,
+                            Ok(None) => continue,
+                            Err(error) => {
+                                diagnostics.record(Skip::record(
+                                    db_path,
+                                    row,
+                                    SkipKind::InvalidData,
+                                    error,
+                                ));
+                                continue;
+                            }
                         };
                         v2_entries += 1;
                         // The session counters already include compaction usage,
@@ -510,6 +621,11 @@ fn load_entries_from_database(
                     }
                     Ok(sqlite::State::Done) => break,
                     Err(_) => {
+                        diagnostics.record(Skip::unit(
+                            db_path,
+                            SkipKind::ReadInterrupted,
+                            "database query interrupted",
+                        ));
                         debug_log(
                             shared,
                             format!(
@@ -521,6 +637,12 @@ fn load_entries_from_database(
                     }
                 }
             }
+        } else {
+            diagnostics.record(Skip::unit(
+                db_path,
+                SkipKind::Unreadable,
+                "database query preparation failed",
+            ));
         }
         if v2_rows > 0 && v2_entries == 0 {
             debug_log(
@@ -544,16 +666,8 @@ fn load_entries_from_database(
         if has_session_messages && table_exists(&connection, "session") {
             aggregate_tables.push("session");
         }
-        let aggregate_context = DatabaseLoadContext {
-            tz,
-            mode,
-            pricing,
-            window,
-            shared,
-            db_path,
-        };
         for table in aggregate_tables {
-            for entry in load_session_aggregate_entries(&connection, table, &aggregate_context) {
+            for entry in load_session_aggregate_entries(&connection, table, context) {
                 if message_sessions.contains(entry.session_id.as_ref()) {
                     continue;
                 }
@@ -574,19 +688,17 @@ fn read_message_file(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-    shared: &SharedArgs,
     window: DateWindow,
+    diagnostics: &Diagnostics,
 ) -> Option<LoadedEntry> {
     let content = match fs::read(path) {
         Ok(content) => content,
-        Err(error) => {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read OpenCode message file {}: {error}",
-                    path.display()
-                ),
-            );
+        Err(_) => {
+            diagnostics.record(Skip::unit(
+                path,
+                SkipKind::Unreadable,
+                "message file read failed",
+            ));
             return None;
         }
     };
@@ -599,7 +711,17 @@ fn read_message_file(
     {
         return None;
     }
-    let value = serde_json::from_slice::<OpenCodeMessage>(&content).ok()?;
+    let value = match serde_json::from_slice::<OpenCodeMessage>(&content) {
+        Ok(value) => value,
+        Err(error) => {
+            diagnostics.record(Skip::unit(
+                path,
+                SkipKind::InvalidData,
+                UnitError::from(error),
+            ));
+            return None;
+        }
+    };
     message_value_to_entry(&value, None, None, tz, mode, pricing)
 }
 
@@ -925,19 +1047,38 @@ fn load_session_aggregate_entries(
                 context.db_path.display()
             ),
         );
+        context.diagnostics.record(Skip::unit(
+            context.db_path,
+            SkipKind::Unreadable,
+            "aggregate query preparation failed",
+        ));
         return Vec::new();
     };
     let mut entries = Vec::new();
+    let mut row = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
+                row = row.saturating_add(1);
                 let Ok(session_id) = statement.read::<String, _>(0) else {
+                    context.diagnostics.record(Skip::record(
+                        context.db_path,
+                        row,
+                        SkipKind::InvalidData,
+                        "invalid aggregate row",
+                    ));
                     continue;
                 };
                 let Some(created) = read_f64(&statement, 1)
                     .filter(|value| value.is_finite())
                     .map(|value| value.trunc() as i64)
                 else {
+                    context.diagnostics.record(Skip::record(
+                        context.db_path,
+                        row,
+                        SkipKind::InvalidData,
+                        "invalid aggregate row",
+                    ));
                     continue;
                 };
                 if !context.window.is_unbounded() && !context.window.contains(created) {
@@ -974,6 +1115,11 @@ fn load_session_aggregate_entries(
             }
             Ok(sqlite::State::Done) => break,
             Err(_) => {
+                context.diagnostics.record(Skip::unit(
+                    context.db_path,
+                    SkipKind::ReadInterrupted,
+                    "aggregate query interrupted",
+                ));
                 debug_log(
                     context.shared,
                     format!(
@@ -1204,6 +1350,20 @@ fn time_created_looks_like_millis(connection: &sqlite::Connection, table: &str) 
     }
 }
 
+pub(super) fn load_entries_with_native_sessions_with_progress(
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    owner: ProgressOwner,
+) -> Result<Vec<LinkedEntry>> {
+    let diagnostics = Diagnostics::new("opencode");
+    let entries =
+        load_entries_with_native_sessions_with_diagnostics(shared, kind, owner, &diagnostics)?;
+    for warning in diagnostics.warnings(shared) {
+        eprintln!("{warning}");
+    }
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{ffi::OsString, path::Path};
@@ -1214,6 +1374,105 @@ mod tests {
     };
     use crate::cli::{AgentReportKind, CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+
+    #[test]
+    fn specialized_diagnostics_keep_healthy_database_rows() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let db = fixture.path("opencode.db");
+        create_db_message(
+            &db,
+            "good",
+            "s",
+            r#"{"modelID":"claude-opus-5","providerID":"anthropic","time":{"created":1767312000000},"tokens":{"input":10,"output":1}}"#,
+        );
+        create_db_message_with_time(&db, "bad", "s", 1767312000000, "{SECRET_CANARY");
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            debug: true,
+            ..Default::default()
+        };
+        let diagnostics = ccusage_core::Diagnostics::new("opencode");
+        let loaded =
+            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
+                .unwrap();
+        assert_eq!(loaded.message_entries.len(), 1);
+        assert_eq!(
+            loaded.message_entries[0].0.data.message.usage.input_tokens,
+            10
+        );
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert!(
+            !diagnostics
+                .warnings(&shared)
+                .join("\n")
+                .contains("SECRET_CANARY")
+        );
+    }
+
+    #[test]
+    fn specialized_diagnostics_leave_optional_sources_and_nonusage_quiet() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let _ = fixture.write_file(
+            "storage/message/user.json",
+            r#"{"role":"user","content":"SECRET_CANARY"}"#,
+        );
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            debug: true,
+            ..Default::default()
+        };
+        let diagnostics = ccusage_core::Diagnostics::new("opencode");
+        let loaded =
+            super::load_entries_from_directory_parts(fixture.root(), &shared, true, &diagnostics)
+                .unwrap();
+        assert!(loaded.message_entries.is_empty());
+        assert!(diagnostics.warnings(&shared).is_empty());
+    }
+
+    #[test]
+    fn specialized_diagnostics_distinguish_v2_usage_from_suppressed_rows() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let db = fixture.path("opencode.db");
+        create_db_session_message_table(&db, true);
+        for (id, kind, data) in [
+            (
+                "good",
+                "assistant",
+                r#"{"modelID":"claude-opus-5","providerID":"anthropic","tokens":{"input":10,"output":1}}"#,
+            ),
+            ("bad", "assistant", "{SECRET_CANARY"),
+            ("user", "user", "{SECRET_CANARY"),
+            (
+                "failed",
+                "compaction",
+                r#"{"status":"failed","tokens":{"input":10}}"#,
+            ),
+            ("pending", "assistant", r#"{"tokens":null}"#),
+        ] {
+            insert_db_session_message(&db, id, "s", kind, 1767312000000, data, true);
+        }
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            debug: true,
+            ..Default::default()
+        };
+        let diagnostics = ccusage_core::Diagnostics::new("opencode");
+        let loaded =
+            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
+                .unwrap();
+        assert_eq!(loaded.message_entries.len(), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
+        assert!(
+            !diagnostics
+                .warnings(&shared)
+                .join("\n")
+                .contains("SECRET_CANARY")
+        );
+    }
 
     // Mirrors the real OpenCode schema, where `time_created` repeats the
     // payload's `time.created`, so tests exercise the range push-down.
