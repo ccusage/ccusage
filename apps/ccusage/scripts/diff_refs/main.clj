@@ -134,10 +134,10 @@
         run (fn [variant n] (assoc (run-captured! (get bins variant) args env dir (str (name variant) "-" n) cwd)
                                    :label (str (name variant) " run " n)))
         first-round {:base [(run :base 1)] :head [(run :head 1)]}
-        first-round (update first-round :base conj (run :base 2))
+        first-round (-> first-round (update :base conj (run :base 2)) (update :head conj (run :head 2)))
         runs (if (= :identical (:status (classify first-round allow-stderr-diff)))
                first-round
-               (reduce (fn [runs n] (-> runs (update :base conj (run :base (+ 2 n))) (update :head conj (run :head (inc n)))))
+               (reduce (fn [runs n] (-> runs (update :base conj (run :base (+ 2 n))) (update :head conj (run :head (+ 2 n)))))
                        first-round (range 1 (inc confirmation-rounds))))
         verdict (classify runs allow-stderr-diff)]
     (when (= :identical (:status verdict)) (fs/delete-tree dir))
@@ -196,9 +196,10 @@
   (str "Usage: diff-refs.bb [options] <base> <head>\n\n"
        "Builds each git ref in release mode (or takes an existing binary path), runs every report\n"
        "command with both binaries under the same arguments and environment, and compares stdout,\n"
-       "stderr, and exit code byte for byte. Base runs twice, and both run three more times when\n"
+       "stderr, and exit code byte for byte. Each build runs twice, and both run three more times when\n"
        "anything disagrees: a command whose base output is not reproducible is reported as unstable\n"
-       "instead of different. Exits 1 on any difference.\n\n"
+       "instead of different. Exits 0 only when every comparison is identical, 1 on a difference,\n"
+       "and 2 when comparisons are unstable.\n\n"
        (cli/format-opts {:spec diff-spec})))
 
 (defn- run-all! [jobs commands compare!]
@@ -240,5 +241,8 @@
             (if (= (get counts "Identical") (count results))
               (when-not (:output-dir options) (fs/delete-tree output-dir))
               (println (str "\nSaved outputs: " output-dir)))
-            (if (pos? (get counts "Different")) 1 0))
+            (cond
+              (pos? (get counts "Different")) 1
+              (pos? (get counts "Unstable")) 2
+              :else 0))
           (finally (fs/delete-tree empty-home)))))))

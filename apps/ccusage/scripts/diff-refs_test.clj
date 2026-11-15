@@ -109,6 +109,9 @@
                    file))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
         changed (script "changed" "echo '{\"b\":2,\"a\":3}'; echo warn >&2")
+        intermittent (script "intermittent"
+                             (str "if [ -f " (path dir "head-ran") " ]; then echo '{\"a\":3,\"b\":2}'; "
+                                  "else touch " (path dir "head-ran") "; echo '{\"a\":1,\"b\":2}'; fi"))
         flaky (script "flaky" (str "echo x >> " (path dir "calls") "; wc -l < " (path dir "calls")))
         compare (fn [bins allow-stderr-diff]
                   (compare-command! bins (hermetic-env nil (str dir)) (str dir) (str dir) allow-stderr-diff
@@ -118,6 +121,9 @@
         (let [result (compare {:base stable :head stable} false)]
           (is (= :identical (:status result)))
           (is (not (babashka.fs/exists? (:dir result))))))
+      (testing "head must agree on repeated runs even when its first run matches"
+        (let [result (compare {:base stable :head intermittent} false)]
+          (is (= :different (:status result)))))
       (testing "a difference keeps both outputs and diffs them key-sorted"
         (let [result (compare {:base stable :head changed} false)
               [base head] (:pair result)
@@ -133,6 +139,18 @@
         (is (= [:stdout] (:streams (compare {:base stable :head changed} true)))))
       (testing "a binary that never prints the same thing twice is unstable"
         (is (= :unstable (:status (compare {:base flaky :head flaky} false)))))
+      (finally (babashka.fs/delete-tree dir)))))
+
+(deftest inconclusive-comparisons-exit-nonzero
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-status."})
+        status (atom nil)]
+    (try
+      (with-redefs [resolve-variants (fn [& _] [{:bin "base"} {:bin "head"}])
+                    run-all! (fn [& _] [{:status :unstable :args ["daily"]}])
+                    write-progress (fn [_])]
+        (with-out-str
+          (reset! status (diff-main "HEAD" "HEAD" "--output-dir" (str dir)))))
+      (is (= 2 @status))
       (finally (babashka.fs/delete-tree dir)))))
 
 (let [{:keys [fail error]} (apply run-tests ['diff-refs-test])]
