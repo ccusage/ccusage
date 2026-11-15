@@ -24,21 +24,18 @@ pub(super) struct ZcodeUsageRow {
     pub(super) version: Option<String>,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum RowRejection {
+    InvalidIdentity,
+}
+
 pub(super) fn row_to_entry(
     row: ZcodeUsageRow,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: &PricingMap,
     pricing_overrides: &BTreeMap<String, PricingOverride>,
-) -> Option<LoadedEntry> {
-    if row.id.trim().is_empty()
-        || row.session_id.trim().is_empty()
-        || row.model_id.trim().is_empty()
-        || row.started_at <= 0
-    {
-        return None;
-    }
-
+) -> std::result::Result<Option<LoadedEntry>, RowRejection> {
     let cache_read = row.cache_read_input_tokens.min(row.input_tokens);
     let cache_creation = row
         .cache_creation_input_tokens
@@ -57,7 +54,14 @@ pub(super) fn row_to_entry(
     let (usage, extra_total_tokens) =
         apply_total_token_fallback(usage, 0, row.computed_total_tokens);
     if total_usage_tokens(usage) == 0 && extra_total_tokens == 0 {
-        return None;
+        return Ok(None);
+    }
+    if row.id.trim().is_empty()
+        || row.session_id.trim().is_empty()
+        || row.model_id.trim().is_empty()
+        || row.started_at <= 0
+    {
+        return Err(RowRejection::InvalidIdentity);
     }
 
     let raw_model = row.model_id.trim().to_string();
@@ -110,7 +114,7 @@ pub(super) fn row_to_entry(
             .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned())
     };
 
-    Some(LoadedEntry {
+    Ok(Some(LoadedEntry {
         data: UsageEntry {
             session_id: Some(row.session_id.clone()),
             timestamp: format_rfc3339_millis(timestamp),
@@ -138,7 +142,7 @@ pub(super) fn row_to_entry(
         usage_limit_reset_time: None,
         missing_pricing_model,
         stored_cost: None,
-    })
+    }))
 }
 
 fn pricing_candidates(raw_model: &str, provider_id: Option<&str>) -> Vec<String> {
@@ -236,7 +240,8 @@ mod tests {
             &PricingMap::load_embedded(),
             &BTreeMap::new(),
         )
-        .unwrap();
+        .unwrap()
+        .expect("test row has usage");
         let usage = entry.data.message.usage;
 
         assert_eq!(usage.input_tokens, 60);
@@ -268,7 +273,8 @@ mod tests {
                     &pricing,
                     &BTreeMap::new(),
                 )
-                .unwrap();
+                .unwrap()
+                .expect("test row has usage");
                 assert!(entry.cost > 0.0, "{provider} {model}");
                 assert!(entry.missing_pricing_model.is_none(), "{provider} {model}");
             }
@@ -285,7 +291,8 @@ mod tests {
             &pricing,
             &BTreeMap::new(),
         )
-        .unwrap();
+        .unwrap()
+        .expect("test row has usage");
         assert!(priced.cost > 0.0);
         assert!(priced.missing_pricing_model.is_none());
 
@@ -299,7 +306,8 @@ mod tests {
             &pricing,
             &BTreeMap::new(),
         )
-        .unwrap();
+        .unwrap()
+        .expect("test row has usage");
         assert_eq!(custom.cost, 0.0);
         assert_eq!(
             custom.missing_pricing_model.as_deref(),
@@ -319,7 +327,8 @@ mod tests {
             &PricingMap::load_embedded(),
             &BTreeMap::new(),
         )
-        .unwrap();
+        .unwrap()
+        .expect("test row has usage");
 
         assert_eq!(entry.cost, 0.00015549999999999999);
         assert!(entry.missing_pricing_model.is_none());
@@ -339,6 +348,7 @@ mod tests {
                 &BTreeMap::new(),
             )
             .unwrap()
+            .expect("test row has usage")
         };
 
         let glm_52 = priced("GLM-5.2");
@@ -376,7 +386,8 @@ mod tests {
             &pricing,
             &overrides,
         )
-        .unwrap();
+        .unwrap()
+        .expect("test row has usage");
 
         assert!(entry.cost > 0.0);
         assert!(entry.missing_pricing_model.is_none());
@@ -393,13 +404,14 @@ mod tests {
             &PricingMap::load_embedded(),
             &BTreeMap::new(),
         )
-        .unwrap();
+        .unwrap()
+        .expect("test row has usage");
         assert_eq!(entry.extra_total_tokens, 13);
         assert_eq!(entry.data.message.usage.output_tokens, 10);
     }
 
     #[test]
-    fn returns_no_entry_for_invalid_identity_or_timestamp() {
+    fn rejects_invalid_identity_or_timestamp() {
         let mut invalid_row = row();
         invalid_row.id.clear();
         assert!(
@@ -410,7 +422,7 @@ mod tests {
                 &PricingMap::default(),
                 &BTreeMap::new(),
             )
-            .is_none()
+            .is_err()
         );
 
         let mut invalid_row = row();
@@ -423,7 +435,7 @@ mod tests {
                 &PricingMap::default(),
                 &BTreeMap::new(),
             )
-            .is_none()
+            .is_err()
         );
     }
 }

@@ -8,7 +8,7 @@ use ccusage_core::{Diagnostics, Skip, SkipKind};
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log};
 
 use super::{
-    parser::{ZcodeUsageRow, row_to_entry},
+    parser::{RowRejection, ZcodeUsageRow, row_to_entry},
     paths::db_paths,
 };
 
@@ -166,16 +166,19 @@ fn load_entries_from_database(
     let query = format!(
         "SELECT m.id, m.session_id, m.started_at, m.model_id, m.input_tokens, m.output_tokens, {cache_creation}, {cache_read}, {computed_total}, {provider_id}, s.directory, {version} FROM model_usage m LEFT JOIN session s ON s.id = m.session_id WHERE m.status = 'completed'"
     );
-    let Ok(mut statement) = connection.prepare(&query) else {
+    let mut statement = connection.prepare(&query).map_err(|error| {
         debug_log(
             shared,
             format!("Failed to query ZCode database: {}", db_path.display()),
         );
-        return Err(UnitError::new(
-            SkipKind::InvalidData,
-            "ZCode usage query failed",
-        ));
-    };
+        let kind = database_prepare_error_kind(error.code);
+        let detail = if kind == SkipKind::InvalidData {
+            "unsupported ZCode database schema"
+        } else {
+            "ZCode usage query could not be read"
+        };
+        UnitError::new(kind, detail)
+    })?;
 
     let mut entries = Vec::new();
     let mut row_number = 0_u32;
@@ -192,10 +195,15 @@ fn load_entries_from_database(
                     ));
                     continue;
                 };
-                if let Some(entry) =
-                    row_to_entry(row, tz, shared.mode, pricing, &shared.pricing_overrides)
-                {
-                    entries.push(entry);
+                match row_to_entry(row, tz, shared.mode, pricing, &shared.pricing_overrides) {
+                    Ok(Some(entry)) => entries.push(entry),
+                    Ok(None) => {}
+                    Err(RowRejection::InvalidIdentity) => diagnostics.record(Skip::record(
+                        db_path,
+                        row_number,
+                        SkipKind::InvalidData,
+                        "completed ZCode usage row has an invalid identity or timestamp",
+                    )),
                 }
             }
             Ok(sqlite::State::Done) => break,
@@ -269,16 +277,23 @@ fn table_columns(
     // including prompt or content fields that may be present in future schemas.
     let query = format!("SELECT * FROM \"{table}\" LIMIT 0");
     let statement = connection.prepare(query).map_err(|error| {
-        if error.code == Some(1) {
-            UnitError::new(SkipKind::InvalidData, "unsupported ZCode database schema")
+        let kind = database_prepare_error_kind(error.code);
+        let detail = if kind == SkipKind::InvalidData {
+            "unsupported ZCode database schema"
         } else {
-            UnitError::new(
-                SkipKind::Unreadable,
-                "ZCode database schema could not be read",
-            )
-        }
+            "ZCode database schema could not be read"
+        };
+        UnitError::new(kind, detail)
     })?;
     Ok(statement.column_names().iter().cloned().collect())
+}
+
+fn database_prepare_error_kind(code: Option<isize>) -> SkipKind {
+    if code == Some(1) {
+        SkipKind::InvalidData
+    } else {
+        SkipKind::Unreadable
+    }
 }
 
 fn missing_columns(columns: &HashSet<String>, required: &[&str]) -> Vec<String> {
@@ -335,6 +350,8 @@ fn read_timestamp_ms(statement: &sqlite::Statement<'_>, index: usize) -> Option<
 mod tests {
     use std::path::Path;
 
+    use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
+    use ccusage_core::{ReportWindow, cli::AgentReportKind};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     use super::*;
@@ -386,6 +403,43 @@ mod tests {
             .unwrap();
         statement.bind((1, id)).unwrap();
         statement.bind((2, status)).unwrap();
+        statement.next().unwrap();
+    }
+
+    fn insert_usage_record(
+        db: &sqlite::Connection,
+        id: &str,
+        session_id: &str,
+        started_at: i64,
+        model_id: &str,
+        usage: [i64; 5],
+    ) {
+        let [
+            input_tokens,
+            output_tokens,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+            computed_total_tokens,
+        ] = usage;
+        let mut statement = db
+            .prepare(
+                "INSERT INTO model_usage
+                 (id, session_id, started_at, model_id, provider_id, status, input_tokens,
+                  output_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+                  computed_total_tokens)
+                 VALUES (?1, ?2, ?3, ?4, 'builtin:zai-coding-plan', 'completed',
+                         ?5, ?6, ?7, ?8, ?9)",
+            )
+            .unwrap();
+        statement.bind((1, id)).unwrap();
+        statement.bind((2, session_id)).unwrap();
+        statement.bind((3, started_at)).unwrap();
+        statement.bind((4, model_id)).unwrap();
+        statement.bind((5, input_tokens)).unwrap();
+        statement.bind((6, output_tokens)).unwrap();
+        statement.bind((7, cache_creation_input_tokens)).unwrap();
+        statement.bind((8, cache_read_input_tokens)).unwrap();
+        statement.bind((9, computed_total_tokens)).unwrap();
         statement.next().unwrap();
     }
 
@@ -501,6 +555,93 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn classifies_usage_query_prepare_failures_by_sqlite_code() {
+        assert_eq!(database_prepare_error_kind(Some(1)), SkipKind::InvalidData);
+        for code in [Some(5), Some(6), Some(10), Some(26), None] {
+            assert_eq!(database_prepare_error_kind(code), SkipKind::Unreadable);
+        }
+    }
+
+    #[test]
+    fn diagnoses_malformed_usage_identity_only_when_the_row_has_usage() {
+        let fixture = fs_fixture!({});
+        let _ = fixture.create_dir_all("cli/db");
+        let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
+        create_db(&db_path, false);
+        let db = sqlite::open(&db_path).unwrap();
+        db.execute("INSERT INTO session VALUES ('session-1', '/project', '0.16.3')")
+            .unwrap();
+        insert_current_usage_on_connection(&db, "healthy", "completed");
+        insert_usage_record(
+            &db,
+            "",
+            "session-1",
+            1_786_909_042_667,
+            "GLM-5.3",
+            [100, 10, 15, 25, 110],
+        );
+        insert_usage_record(
+            &db,
+            "blank-session",
+            "",
+            1_786_909_042_668,
+            "GLM-5.3",
+            [100, 10, 15, 25, 110],
+        );
+        insert_usage_record(
+            &db,
+            "blank-model",
+            "session-1",
+            1_786_909_042_669,
+            "",
+            [100, 10, 15, 25, 110],
+        );
+        insert_usage_record(
+            &db,
+            "bad-timestamp",
+            "session-1",
+            0,
+            "GLM-5.3",
+            [100, 10, 15, 25, 110],
+        );
+        insert_usage_record(&db, "zero-token", "session-1", 0, "", [0; 5]);
+        drop(db);
+
+        let _home = EnvVarGuard::set(super::super::paths::ZCODE_HOME_ENV, fixture.root());
+        let shared = SharedArgs {
+            single_thread: true,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let window = ReportWindow::from_shared(&shared);
+        let pricing = PricingMap::load_embedded();
+        let diagnostics = Diagnostics::new("zcode");
+        let cx = LoadContext {
+            shared: &shared,
+            kind: AgentReportKind::Daily,
+            window: &window,
+            pricing: Some(&pricing),
+            options: SourceOptions::default(),
+            diagnostics: &diagnostics,
+        };
+
+        let entries = crate::SOURCE.load_entries(&cx).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("healthy"));
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 4);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(!warnings.contains("blank-session"));
+        assert!(!warnings.contains("blank-model"));
+        assert!(!warnings.contains("bad-timestamp"));
     }
 
     #[test]
