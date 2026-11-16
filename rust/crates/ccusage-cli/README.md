@@ -1,8 +1,9 @@
 # ccusage-cli
 
 The plain argument types the runtime shares: `SharedArgs`, the per-command
-argument structs, the enums the reports switch on, and the few constants and
-helpers (`BUILT_IN_AGENT_NAMES`, `DEFAULT_SESSION_DURATION_HOURS`,
+argument structs, the enums the reports switch on, the built-in agent table
+(`AGENTS`: each agent's name, label and reports), and the few constants and
+helpers (`DEFAULT_SESSION_DURATION_HOURS`,
 `home::home_dir`, `home::expand_home_path`, `home::claude_config_dirs`) that
 `ccusage-config` and `ccusage-cli-parser` need without depending on
 `ccusage-core`. `home::claude_config_dirs` is the one place the Claude Code
@@ -16,7 +17,10 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 
 ## Public surface
 
-- `BUILT_IN_AGENT_NAMES`
+- `agents::AGENTS`
+- `agents::AgentId`
+- `agents::AgentSpec`
+- `agents::BUILT_IN_AGENT_NAMES`
 - `DEFAULT_SESSION_DURATION_HOURS`
 - `home::ClaudeConfigDirs`
 - `home::claude_config_dirs`
@@ -24,7 +28,6 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `home::home_dir`
 - `types::AgentCommandArgs`
 - `types::AgentReportKind`
-- `types::ALL_AGENT_REPORTS`
 - `types::BlocksArgs`
 - `types::CliConfig`
 - `types::CodexSpeed`
@@ -36,7 +39,6 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `types::NamedPiStore`
 - `types::NoConfig`
 - `types::PricingOverride`
-- `types::STANDARD_AGENT_REPORTS`
 - `types::SessionArgs`
 - `types::SharedArgs`
 - `types::SortOrder`

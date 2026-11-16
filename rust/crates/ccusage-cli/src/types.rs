@@ -216,18 +216,22 @@ pub enum AgentReportKind {
     Session,
 }
 
-pub const STANDARD_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
-    ("daily", AgentReportKind::Daily),
-    ("monthly", AgentReportKind::Monthly),
-    ("session", AgentReportKind::Session),
-];
+impl AgentReportKind {
+    const ALL: [Self; 4] = [Self::Daily, Self::Weekly, Self::Monthly, Self::Session];
 
-pub const ALL_AGENT_REPORTS: &[(&str, AgentReportKind)] = &[
-    ("daily", AgentReportKind::Daily),
-    ("weekly", AgentReportKind::Weekly),
-    ("monthly", AgentReportKind::Monthly),
-    ("session", AgentReportKind::Session),
-];
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Daily => "daily",
+            Self::Weekly => "weekly",
+            Self::Monthly => "monthly",
+            Self::Session => "session",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.name() == name)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CodexSpeed {

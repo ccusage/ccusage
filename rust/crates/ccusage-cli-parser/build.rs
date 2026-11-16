@@ -1,5 +1,10 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs,
+    path::PathBuf,
+};
 
+use ccusage_cli::AGENTS;
 use serde_json::Value;
 
 #[path = "src/help_codegen.rs"]
@@ -24,6 +29,42 @@ fn generate_cli_help_rs() {
     let option_sets = serde_json::from_str::<Value>(&option_source).expect("parse CLI help spec");
     let command_spec =
         serde_json::from_str::<Value>(&command_source).expect("parse CLI command spec");
+    check_agent_pages(&command_spec);
     let output = help_codegen::generate_cli_help_source(&option_sets, &command_spec);
     fs::write(out_dir_path("cli-help.rs"), output).expect("write generated CLI help");
+}
+
+fn check_agent_pages(command_spec: &Value) {
+    let help = command_spec["pages"]
+        .as_array()
+        .expect("CLI command spec has pages")
+        .iter()
+        .filter_map(|page| {
+            let [agent] = page["path"].as_array()?.as_slice() else {
+                return None;
+            };
+            let commands = page["commands"]
+                .as_array()?
+                .iter()
+                .map(|command| command["name"].as_str().expect("command has a name"))
+                .collect::<BTreeSet<_>>();
+            Some((agent.as_str().expect("page path is text"), commands))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let table = AGENTS
+        .iter()
+        .map(|spec| {
+            let commands = spec
+                .reports
+                .iter()
+                .map(|kind| kind.name())
+                .chain(spec.extra_commands.iter().copied())
+                .collect::<BTreeSet<_>>();
+            (spec.name, commands)
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert!(
+        help == table,
+        "{CLI_COMMANDS_JSON} agent pages differ from ccusage_cli::AGENTS\n  help:  {help:?}\n  table: {table:?}"
+    );
 }

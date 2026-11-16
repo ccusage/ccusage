@@ -3,10 +3,9 @@ use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
-    ALL_AGENT_REPORTS, AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed,
-    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, STANDARD_AGENT_REPORTS,
-    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command,
+    CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, SessionArgs, SharedArgs, SortOrder,
+    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 use crate::Cli;
@@ -189,179 +188,135 @@ fn parse_command(
             root_all_options,
         ),
         "session" => parse_top_level_session_command(parser, shared, config, root_all_options),
-        "blocks" => {
-            let mut args = BlocksArgs {
+        "blocks" => parse_blocks_command(parser, shared, config, default_session_duration_hours),
+        "statusline" => parse_statusline_command(parser, &shared, config),
+        _ => match AgentId::from_name(command) {
+            Some(agent) => parse_agent_command(
+                agent,
+                parser,
                 shared,
-                active: false,
-                recent: false,
-                token_limit: None,
-                session_length: default_session_duration_hours,
-            };
-            config.apply_blocks_args(&mut args);
-            while parser.peek().is_some() {
-                if parse_shared_arg_for_command(parser, &mut args.shared)? {
-                    continue;
-                }
-                match parser.next_flag()?.as_str() {
-                    "-a" | "--active" => args.active = true,
-                    "-r" | "--recent" => args.recent = true,
-                    "-t" | "--token-limit" => {
-                        args.token_limit = Some(parser.value_for("--token-limit")?)
-                    }
-                    "-n" | "--session-length" => {
-                        args.session_length = parser
-                            .value_for("--session-length")?
-                            .parse()
-                            .map_err(|_| "Invalid value for --session-length".to_string())?
-                    }
-                    flag => return Err(format!("Unknown blocks option '{flag}'")),
-                }
-            }
-            Ok(Command::Blocks(args))
-        }
-        "statusline" => {
-            let mut args = StatuslineArgs::default();
-            config.apply_statusline_args(&mut args);
-            args.timezone = shared.timezone.clone();
-            while parser.peek().is_some() {
-                match parser.next_flag()?.as_str() {
-                    "-O" | "--offline" => args.offline = true,
-                    "--no-offline" => args.no_offline = true,
-                    "-B" | "--visual-burn-rate" => {
-                        args.visual_burn_rate =
-                            parse_visual_burn_rate(&parser.value_for("--visual-burn-rate")?)?
-                    }
-                    "--cost-source" => {
-                        args.cost_source = parse_cost_source(&parser.value_for("--cost-source")?)?
-                    }
-                    "--cache" => args.cache = true,
-                    "--no-cache" => args.no_cache = true,
-                    "--refresh-interval" => {
-                        args.refresh_interval = parser
-                            .value_for("--refresh-interval")?
-                            .parse()
-                            .map_err(|_| "Invalid value for --refresh-interval".to_string())?
-                    }
-                    "--context-low-threshold" => {
-                        args.context_low_threshold = parser
-                            .value_for("--context-low-threshold")?
-                            .parse()
-                            .map_err(|_| "Invalid value for --context-low-threshold".to_string())?
-                    }
-                    "--context-medium-threshold" => {
-                        args.context_medium_threshold = parser
-                            .value_for("--context-medium-threshold")?
-                            .parse()
-                            .map_err(|_| {
-                                "Invalid value for --context-medium-threshold".to_string()
-                            })?
-                    }
-                    "-z" | "--timezone" => args.timezone = Some(parser.value_for("--timezone")?),
-                    "--config" => args.config = Some(PathBuf::from(parser.value_for("--config")?)),
-                    "--debug" => args.debug = true,
-                    flag => return Err(format!("Unknown statusline option '{flag}'")),
-                }
-            }
-            Ok(Command::Statusline(args))
-        }
-        "claude" => parse_claude_command(parser, shared, config, default_session_duration_hours),
-        "codex" => parse_codex_command(parser, shared, config),
-        "opencode" => parse_opencode_command(parser, shared),
-        "amp" => {
-            parse_basic_agent_command(parser, shared, "amp", STANDARD_AGENT_REPORTS, Command::Amp)
-        }
-        "droid" => parse_basic_agent_command(
-            parser,
-            shared,
-            "droid",
-            STANDARD_AGENT_REPORTS,
-            Command::Droid,
-        ),
-        "codebuff" => parse_basic_agent_command(
-            parser,
-            shared,
-            "codebuff",
-            STANDARD_AGENT_REPORTS,
-            Command::Codebuff,
-        ),
-        "hermes" => parse_basic_agent_command(
-            parser,
-            shared,
-            "hermes",
-            STANDARD_AGENT_REPORTS,
-            Command::Hermes,
-        ),
-        "pi" => parse_pi_command(parser, shared, config),
-        "goose" => parse_basic_agent_command(
-            parser,
-            shared,
-            "goose",
-            STANDARD_AGENT_REPORTS,
-            Command::Goose,
-        ),
-        "kilo" => parse_basic_agent_command(
-            parser,
-            shared,
-            "kilo",
-            STANDARD_AGENT_REPORTS,
-            Command::Kilo,
-        ),
-        "copilot" => parse_basic_agent_command(
-            parser,
-            shared,
-            "copilot",
-            STANDARD_AGENT_REPORTS,
-            Command::Copilot,
-        ),
-        "gemini" => parse_basic_agent_command(
-            parser,
-            shared,
-            "gemini",
-            STANDARD_AGENT_REPORTS,
-            Command::Gemini,
-        ),
-        "antigravity" => parse_basic_agent_command(
-            parser,
-            shared,
-            "antigravity",
-            STANDARD_AGENT_REPORTS,
-            Command::Antigravity,
-        ),
-        "kimi" => parse_basic_agent_command(
-            parser,
-            shared,
-            "kimi",
-            STANDARD_AGENT_REPORTS,
-            Command::Kimi,
-        ),
-        "qwen" => parse_basic_agent_command(
-            parser,
-            shared,
-            "qwen",
-            STANDARD_AGENT_REPORTS,
-            Command::Qwen,
-        ),
-        "openclaw" => parse_openclaw_command(parser, shared, config),
-        "grok" => parse_basic_agent_command(
-            parser,
-            shared,
-            "grok",
-            STANDARD_AGENT_REPORTS,
-            Command::Grok,
-        ),
-        "zcode" => parse_basic_agent_command(
-            parser,
-            shared,
-            "zcode",
-            STANDARD_AGENT_REPORTS,
-            Command::ZCode,
-        ),
-        "cline" => {
-            parse_basic_agent_command(parser, shared, "cline", ALL_AGENT_REPORTS, Command::Cline)
-        }
-        "dsh" => parse_basic_agent_command(parser, shared, "dsh", ALL_AGENT_REPORTS, Command::Dsh),
-        _ => Err(format!("Unknown command '{command}'")),
+                config,
+                default_session_duration_hours,
+            ),
+            None => Err(format!("Unknown command '{command}'")),
+        },
     }
+}
+
+fn parse_agent_command(
+    agent: AgentId,
+    parser: &mut ArgParser,
+    shared: SharedArgs,
+    config: &dyn CliConfig,
+    default_session_duration_hours: f64,
+) -> Result<Command, String> {
+    let constructor: fn(AgentCommandArgs) -> Command = match agent {
+        AgentId::Claude => {
+            return parse_claude_command(parser, shared, config, default_session_duration_hours);
+        }
+        AgentId::Codex => return parse_codex_command(parser, shared, config),
+        AgentId::OpenCode => return parse_opencode_command(parser, shared),
+        AgentId::Pi => return parse_pi_command(parser, shared, config),
+        AgentId::OpenClaw => return parse_openclaw_command(parser, shared, config),
+        AgentId::Amp => Command::Amp,
+        AgentId::Droid => Command::Droid,
+        AgentId::Codebuff => Command::Codebuff,
+        AgentId::Hermes => Command::Hermes,
+        AgentId::Goose => Command::Goose,
+        AgentId::Kilo => Command::Kilo,
+        AgentId::Copilot => Command::Copilot,
+        AgentId::Gemini => Command::Gemini,
+        AgentId::Antigravity => Command::Antigravity,
+        AgentId::Kimi => Command::Kimi,
+        AgentId::Qwen => Command::Qwen,
+        AgentId::Grok => Command::Grok,
+        AgentId::ZCode => Command::ZCode,
+        AgentId::Cline => Command::Cline,
+        AgentId::Dsh => Command::Dsh,
+    };
+    parse_basic_agent_command(parser, shared, agent, constructor)
+}
+
+fn parse_blocks_command(
+    parser: &mut ArgParser,
+    shared: SharedArgs,
+    config: &dyn CliConfig,
+    default_session_duration_hours: f64,
+) -> Result<Command, String> {
+    let mut args = BlocksArgs {
+        shared,
+        active: false,
+        recent: false,
+        token_limit: None,
+        session_length: default_session_duration_hours,
+    };
+    config.apply_blocks_args(&mut args);
+    while parser.peek().is_some() {
+        if parse_shared_arg_for_command(parser, &mut args.shared)? {
+            continue;
+        }
+        match parser.next_flag()?.as_str() {
+            "-a" | "--active" => args.active = true,
+            "-r" | "--recent" => args.recent = true,
+            "-t" | "--token-limit" => args.token_limit = Some(parser.value_for("--token-limit")?),
+            "-n" | "--session-length" => {
+                args.session_length = parser
+                    .value_for("--session-length")?
+                    .parse()
+                    .map_err(|_| "Invalid value for --session-length".to_string())?
+            }
+            flag => return Err(format!("Unknown blocks option '{flag}'")),
+        }
+    }
+    Ok(Command::Blocks(args))
+}
+
+fn parse_statusline_command(
+    parser: &mut ArgParser,
+    shared: &SharedArgs,
+    config: &dyn CliConfig,
+) -> Result<Command, String> {
+    let mut args = StatuslineArgs::default();
+    config.apply_statusline_args(&mut args);
+    args.timezone = shared.timezone.clone();
+    while parser.peek().is_some() {
+        match parser.next_flag()?.as_str() {
+            "-O" | "--offline" => args.offline = true,
+            "--no-offline" => args.no_offline = true,
+            "-B" | "--visual-burn-rate" => {
+                args.visual_burn_rate =
+                    parse_visual_burn_rate(&parser.value_for("--visual-burn-rate")?)?
+            }
+            "--cost-source" => {
+                args.cost_source = parse_cost_source(&parser.value_for("--cost-source")?)?
+            }
+            "--cache" => args.cache = true,
+            "--no-cache" => args.no_cache = true,
+            "--refresh-interval" => {
+                args.refresh_interval = parser
+                    .value_for("--refresh-interval")?
+                    .parse()
+                    .map_err(|_| "Invalid value for --refresh-interval".to_string())?
+            }
+            "--context-low-threshold" => {
+                args.context_low_threshold = parser
+                    .value_for("--context-low-threshold")?
+                    .parse()
+                    .map_err(|_| "Invalid value for --context-low-threshold".to_string())?
+            }
+            "--context-medium-threshold" => {
+                args.context_medium_threshold = parser
+                    .value_for("--context-medium-threshold")?
+                    .parse()
+                    .map_err(|_| "Invalid value for --context-medium-threshold".to_string())?
+            }
+            "-z" | "--timezone" => args.timezone = Some(parser.value_for("--timezone")?),
+            "--config" => args.config = Some(PathBuf::from(parser.value_for("--config")?)),
+            "--debug" => args.debug = true,
+            flag => return Err(format!("Unknown statusline option '{flag}'")),
+        }
+    }
+    Ok(Command::Statusline(args))
 }
 
 fn accepts_root_all_options(command: &str) -> bool {
@@ -584,13 +539,10 @@ fn parse_claude_command(
     default_session_duration_hours: f64,
 ) -> Result<Command, String> {
     let command = match parser.peek() {
-        Some(command @ ("daily" | "monthly" | "weekly" | "session" | "blocks" | "statusline")) => {
+        Some(command) if !command.starts_with('-') => {
             let command = command.to_string();
             parser.next();
             command
-        }
-        Some(command) if !command.starts_with('-') => {
-            return Err(format!("Unknown claude command '{command}'"));
         }
         _ => "daily".to_string(),
     };
@@ -599,26 +551,19 @@ fn parse_claude_command(
         "monthly" => parse_claude_monthly_command(parser, shared, config),
         "weekly" => parse_claude_weekly_command(parser, shared, config),
         "session" => parse_claude_session_command(parser, shared, config),
-        "blocks" | "statusline" => parse_command(
-            &command,
-            parser,
-            shared,
-            config,
-            default_session_duration_hours,
-            RootAllOptions::default(),
-        ),
-        _ => unreachable!("claude command is prevalidated"),
+        "blocks" => parse_blocks_command(parser, shared, config, default_session_duration_hours),
+        "statusline" => parse_statusline_command(parser, &shared, config),
+        command => Err(format!("Unknown claude command '{command}'")),
     }
 }
 
 fn parse_basic_agent_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
-    agent: &str,
-    reports: &[(&str, AgentReportKind)],
+    agent: AgentId,
     command: fn(AgentCommandArgs) -> Command,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, agent, reports)?;
+    let kind = parse_agent_report_kind(parser, agent)?;
     while parser.peek().is_some() {
         parse_shared_arg(parser, &mut shared)?;
     }
@@ -629,7 +574,7 @@ fn parse_opencode_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, "opencode", ALL_AGENT_REPORTS)?;
+    let kind = parse_agent_report_kind(parser, AgentId::OpenCode)?;
     let mut include_claude_agent = false;
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut shared)? {
@@ -651,7 +596,7 @@ fn parse_codex_command(
     mut shared: SharedArgs,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, "codex", STANDARD_AGENT_REPORTS)?;
+    let kind = parse_agent_report_kind(parser, AgentId::Codex)?;
     let mut codex_speed = CodexSpeed::Auto;
     let mut session_id = None;
     config.apply_agent_args(&mut codex_speed, None, None);
@@ -687,7 +632,7 @@ fn parse_pi_command(
     mut shared: SharedArgs,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, "pi", STANDARD_AGENT_REPORTS)?;
+    let kind = parse_agent_report_kind(parser, AgentId::Pi)?;
     let mut pi_path = None;
     let mut codex_speed = CodexSpeed::Auto;
     config.apply_agent_args(&mut codex_speed, Some(&mut pi_path), None);
@@ -720,7 +665,7 @@ fn parse_openclaw_command(
     mut shared: SharedArgs,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let kind = parse_agent_report_kind(parser, "openclaw", STANDARD_AGENT_REPORTS)?;
+    let kind = parse_agent_report_kind(parser, AgentId::OpenClaw)?;
     let mut open_claw_path = None;
     let mut codex_speed = CodexSpeed::Auto;
     config.apply_agent_args(&mut codex_speed, None, Some(&mut open_claw_path));
@@ -750,18 +695,20 @@ fn parse_openclaw_command(
 
 fn parse_agent_report_kind(
     parser: &mut ArgParser,
-    agent: &str,
-    reports: &[(&str, AgentReportKind)],
+    agent: AgentId,
 ) -> Result<AgentReportKind, String> {
     let Some(command) = parser.peek() else {
         return Ok(AgentReportKind::Daily);
     };
-    if let Some((_, kind)) = reports.iter().find(|(report, _)| *report == command) {
+    let spec = agent.spec();
+    if let Some(kind) =
+        AgentReportKind::from_name(command).filter(|kind| spec.reports.contains(kind))
+    {
         parser.next();
-        return Ok(*kind);
+        return Ok(kind);
     }
     if !command.starts_with('-') {
-        return Err(format!("Unknown {agent} command '{command}'"));
+        return Err(format!("Unknown {} command '{command}'", spec.name));
     }
     Ok(AgentReportKind::Daily)
 }
@@ -834,36 +781,17 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
     Ok(())
 }
 
+const TOP_LEVEL_COMMANDS: &[&str] = &[
+    "daily",
+    "monthly",
+    "weekly",
+    "session",
+    "blocks",
+    "statusline",
+];
+
 fn is_command(arg: &str) -> bool {
-    matches!(
-        arg,
-        "daily"
-            | "monthly"
-            | "weekly"
-            | "session"
-            | "blocks"
-            | "statusline"
-            | "claude"
-            | "codex"
-            | "opencode"
-            | "amp"
-            | "droid"
-            | "codebuff"
-            | "hermes"
-            | "pi"
-            | "goose"
-            | "openclaw"
-            | "kilo"
-            | "copilot"
-            | "gemini"
-            | "antigravity"
-            | "kimi"
-            | "qwen"
-            | "grok"
-            | "zcode"
-            | "cline"
-            | "dsh"
-    )
+    TOP_LEVEL_COMMANDS.contains(&arg) || AgentId::from_name(arg).is_some()
 }
 
 fn normalize_legacy_agent_command_args(args: &mut Vec<String>) {
@@ -873,14 +801,10 @@ fn normalize_legacy_agent_command_args(args: &mut Vec<String>) {
     let Some((agent, report)) = command.split_once(':') else {
         return;
     };
-    if !legacy_agent_report_supported(agent, report) {
+    if !AgentId::from_name(agent).is_some_and(|agent| agent.spec().accepts(report)) {
         return;
     }
     args.splice(0..1, [agent.to_string(), report.to_string()]);
-}
-
-fn legacy_agent_report_supported(agent: &str, report: &str) -> bool {
-    agent_report_supported(agent, report)
 }
 
 fn report_flag_alias_error(args: &[String]) -> Option<String> {
@@ -928,14 +852,17 @@ fn unsupported_agent_report_error(args: &[String]) -> Option<String> {
     let [agent, report, ..] = tokens.as_slice() else {
         return None;
     };
-    if !is_agent_command(agent) || agent_report_supported(agent, report) {
+    let spec = AgentId::from_name(agent)?.spec();
+    if spec.accepts(report) {
         return None;
     }
 
-    let display = agent_display_name(agent);
-    let message = if matches!(report.as_str(), "blocks" | "statusline") {
+    let display = spec.label;
+    let claude = AgentId::Claude.spec();
+    let message = if claude.extra_commands.contains(&report.as_str()) {
         format!(
-            "The \"{report}\" report is only available for Claude Code usage.\nUse \"ccusage {agent} daily\" for {display} usage reports."
+            "The \"{report}\" report is only available for {} usage.\nUse \"ccusage {agent} daily\" for {display} usage reports.",
+            claude.label
         )
     } else {
         format!(
@@ -1002,76 +929,6 @@ fn option_takes_value(arg: &str) -> bool {
             | "--open-claw-path"
             | "--sections"
     )
-}
-
-fn is_agent_command(command: &str) -> bool {
-    matches!(
-        command,
-        "claude"
-            | "codex"
-            | "opencode"
-            | "amp"
-            | "droid"
-            | "codebuff"
-            | "hermes"
-            | "pi"
-            | "goose"
-            | "kilo"
-            | "copilot"
-            | "gemini"
-            | "antigravity"
-            | "kimi"
-            | "qwen"
-            | "openclaw"
-            | "grok"
-            | "zcode"
-            | "cline"
-            | "dsh"
-    )
-}
-
-fn agent_report_supported(agent: &str, report: &str) -> bool {
-    match agent {
-        "claude" => matches!(
-            report,
-            "daily" | "weekly" | "monthly" | "session" | "blocks" | "statusline"
-        ),
-        "codex" => matches!(report, "daily" | "monthly" | "session"),
-        "opencode" | "cline" | "dsh" => {
-            matches!(report, "daily" | "weekly" | "monthly" | "session")
-        }
-        "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
-        | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
-            matches!(report, "daily" | "monthly" | "session")
-        }
-        _ => false,
-    }
-}
-
-fn agent_display_name(agent: &str) -> &'static str {
-    match agent {
-        "claude" => "Claude Code",
-        "codex" => "Codex",
-        "opencode" => "OpenCode",
-        "amp" => "Amp",
-        "droid" => "Droid",
-        "codebuff" => "Codebuff",
-        "hermes" => "Hermes",
-        "pi" => "pi-agent",
-        "goose" => "Goose",
-        "kilo" => "Kilo",
-        "copilot" => "GitHub Copilot CLI",
-        "gemini" => "Gemini CLI",
-        "antigravity" => "Antigravity",
-        "kimi" => "Kimi",
-        "qwen" => "Qwen",
-        "openclaw" => "OpenClaw",
-        "grok" => "Grok",
-        "zcode" => "ZCode",
-        "cline" => "Cline",
-        "dsh" => "DeepSeek Harness",
-        _ => unreachable!("agent is prevalidated"),
-    }
 }
 
 fn is_shared_flag(arg: &str) -> bool {
@@ -1221,16 +1078,10 @@ fn parse_report_sections(value: &str) -> Result<Vec<AgentReportKind>, String> {
         if token.is_empty() {
             continue;
         }
-        let kind = match token {
-            "daily" => AgentReportKind::Daily,
-            "weekly" => AgentReportKind::Weekly,
-            "monthly" => AgentReportKind::Monthly,
-            "session" => AgentReportKind::Session,
-            _ => {
-                return Err(format!(
-                    "Invalid --sections value '{token}'. Expected one or more of: daily, weekly, monthly, session."
-                ));
-            }
+        let Some(kind) = AgentReportKind::from_name(token) else {
+            return Err(format!(
+                "Invalid --sections value '{token}'. Expected one or more of: daily, weekly, monthly, session."
+            ));
         };
         if !sections.contains(&kind) {
             sections.push(kind);

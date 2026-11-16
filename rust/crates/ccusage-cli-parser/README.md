@@ -9,7 +9,8 @@ Argument parsing and `--help` rendering: it turns a command line, plus any
   the `CliConfig` trait.
 - `arg_parser.rs` — the token-level argument reader.
 - `help.rs`, `help_codegen.rs`, `build.rs` — help text generation from
-  `src/cli-help.json` and `src/cli-commands.json`.
+  `src/cli-help.json` and `src/cli-commands.json`. The build fails when the
+  agent pages in `src/cli-commands.json` differ from `ccusage_cli::AGENTS`.
 - `tests.rs` — parse-shape and help snapshot tests, plus the config-merge tests.
 
 Only the `ccusage` binary depends on this crate. The argument types themselves
@@ -18,7 +19,7 @@ adapter.
 
 ## Depends on
 
-- `ccusage-cli`
+- `ccusage-cli`, also as a build-dependency
 
 ## Build layer
 
