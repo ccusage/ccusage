@@ -9,12 +9,16 @@ use ccusage_core::{BucketKind, Result, pricing};
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn main() -> Result<()> {
+fn install_embedded_snapshots() {
     pricing::set_embedded_snapshots(pricing::EmbeddedSnapshots {
         litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
         models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
         models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
     });
+}
+
+fn main() -> Result<()> {
+    install_embedded_snapshots();
     pricing::set_json_fetcher(http::fetch_json);
     match cli::parse() {
         Command::All(args) => adapter::all::run(args),
