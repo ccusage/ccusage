@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::golden::Case;
+
 const V4_PRO: &str = "deepseek-v4-pro";
 const FLASH: &str = "deepseek-flash";
 const SONNET: &str = "anthropic/claude-sonnet-4.5";
@@ -372,4 +374,13 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         missing = dsh.join("missing").display(),
     );
     vec![("DSH_HOME", PathBuf::from(homes))]
+}
+
+/// What the adapter says under `--debug` about the logs it cannot read.
+pub fn extra_cases(_root: &Path) -> Vec<Case> {
+    vec![Case::new(
+        "session",
+        "json_debug",
+        &["dsh", "session", "--offline", "--json", "--debug"],
+    )]
 }
