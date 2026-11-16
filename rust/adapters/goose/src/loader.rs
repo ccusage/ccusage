@@ -7,7 +7,7 @@ use ccusage_adapter_common::{
     source::LoadContext,
     units::{UnitError, read_units},
 };
-use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result};
+use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, Skip};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -72,11 +72,20 @@ fn load_entries_from_db(
         .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
     let mut entries = Vec::new();
+    let mut row_number = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
-                if let Some(entry) = row_to_entry(&statement, tz, pricing) {
-                    entries.push(entry);
+                row_number = row_number.saturating_add(1);
+                match row_to_entry(&statement, tz, pricing) {
+                    Ok(Some(entry)) => entries.push(entry),
+                    Ok(None) => {}
+                    Err(rejection) => diagnostics.record(Skip::record(
+                        db_path,
+                        row_number,
+                        rejection.kind(),
+                        rejection.detail(),
+                    )),
                 }
             }
             Ok(sqlite::State::Done) => break,
@@ -191,6 +200,46 @@ INSERT INTO sessions (
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);
         assert_eq!(entries[0].data.message.usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 30);
+    }
+
+    #[test]
+    fn diagnoses_sessions_with_usage_it_cannot_place_or_attribute() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path(super::super::paths::GOOSE_DB_FILE_NAME);
+        create_goose_db(&db_path);
+        let session = |id, model_config, created_at, total| SessionFixture {
+            id,
+            model_config,
+            provider: Some("openai"),
+            created_at,
+            total,
+            input: total,
+            output: 0,
+        };
+        let gpt = r#"{"model_name":"gpt-5"}"#;
+        insert_session(&db_path, session("healthy", gpt, "2026-05-01 01:02:03", 10));
+        insert_session(&db_path, session("bad-time", gpt, "SECRET_CANARY", 10));
+        insert_session(
+            &db_path,
+            session("no-model", "{}", "2026-05-01 01:02:03", 10),
+        );
+        insert_session(&db_path, session("idle", "{}", "SECRET_CANARY", 0));
+
+        let diagnostics = Diagnostics::new("goose");
+        let entries =
+            load_entries_from_db(&db_path, None, &PricingMap::default(), &diagnostics).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "healthy");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(!warnings.contains("SECRET_CANARY"));
     }
 
     #[test]
