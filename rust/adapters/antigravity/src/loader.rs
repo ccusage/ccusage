@@ -1,127 +1,36 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
-use jiff::tz::TimeZone as JiffTimeZone;
-
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, resolve_tz};
 use ccusage_adapter_common::source::LoadContext;
-use ccusage_core::{Diagnostics, Skip, SkipKind};
+
+use crate::{LoadedEntry, Result};
 
 use super::{
     parser::{AntigravityUsageEvent, event_to_loaded, merge_usage_event, parse_sqlite_file},
-    paths::{conversation_db_paths, conversation_db_paths_with_diagnostics},
+    paths::conversation_db_paths,
 };
 
-#[derive(Debug, PartialEq)]
-enum SkippedDatabase {
-    Uninitialized(PathBuf),
-    Unreadable { path: PathBuf, error: String },
-}
-
-/// Loads Antigravity generation metadata from all discovered conversation databases.
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-}
-
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.expect("Antigravity uses pipeline pricing");
-    let (entries, skipped) = load_entries_with_timezone(
-        cx.shared,
-        pricing,
-        cx.window.timezone(),
-        Some(cx.diagnostics),
-    )?;
-    for database in &skipped {
-        match database {
-            SkippedDatabase::Unreadable { path, .. } => cx.diagnostics.record(Skip::unit(
-                path,
-                SkipKind::Unreadable,
-                "Antigravity database could not be read",
-            )),
-            SkippedDatabase::Uninitialized(_) => {
-                if let Some(warning) = skipped_database_message(cx.shared, database) {
-                    cx.diagnostics.push_line(warning);
-                }
-            }
+    let pricing = cx.pipeline_pricing()?;
+    let mut events = Vec::new();
+    for database_path in conversation_db_paths(cx.diagnostics)? {
+        match parse_sqlite_file(&database_path) {
+            Ok(Some(parsed)) => events.extend(parsed),
+            Ok(None) => cx.diagnostics.debug_note(
+                &database_path,
+                format!(
+                    "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
+                    database_path.display()
+                ),
+            ),
+            Err(error) => error.record(&database_path, cx.diagnostics),
         }
     }
-    Ok(entries)
-}
-
-/// Loads Antigravity entries and returns the skipped-database messages instead
-/// of printing them, so callers can emit them once their progress output stops.
-pub fn load_entries_with_warnings(
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Result<(Vec<LoadedEntry>, Vec<String>)> {
-    let (entries, skipped) = load_entries_inner(shared, pricing)?;
-    let warnings = skipped
-        .iter()
-        .filter_map(|database| skipped_database_message(shared, database))
-        .collect();
-    Ok((entries, warnings))
-}
-
-fn skipped_database_message(shared: &SharedArgs, database: &SkippedDatabase) -> Option<String> {
-    match database {
-        SkippedDatabase::Uninitialized(path) => shared.debug.then(|| {
-            format!(
-                "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
-                path.display()
-            )
-        }),
-        SkippedDatabase::Unreadable { path, .. } => (crate::log_level() != Some(0)).then(|| {
-            format!(
-                "WARN  Skipping unreadable Antigravity database '{}': database could not be read",
-                path.display()
-            )
-        }),
-    }
-}
-
-fn load_entries_inner(
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Result<(Vec<LoadedEntry>, Vec<SkippedDatabase>)> {
-    let timezone = resolve_tz(shared.timezone.as_deref());
-    load_entries_with_timezone(shared, pricing, &timezone, None)
-}
-
-fn load_entries_with_timezone(
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-    timezone: &JiffTimeZone,
-    diagnostics: Option<&Diagnostics>,
-) -> Result<(Vec<LoadedEntry>, Vec<SkippedDatabase>)> {
-    let database_paths = diagnostics.map_or_else(
-        conversation_db_paths,
-        conversation_db_paths_with_diagnostics,
-    )?;
-    let (parsed_events, skipped) = database_paths.into_iter().fold(
-        (Vec::new(), Vec::new()),
-        |(mut events, mut skipped), database_path| {
-            match parse_sqlite_file(&database_path) {
-                Ok(Some(parsed)) => events.extend(parsed),
-                Ok(None) => skipped.push(SkippedDatabase::Uninitialized(database_path)),
-                Err(error) => skipped.push(SkippedDatabase::Unreadable {
-                    path: database_path,
-                    error: error.to_string(),
-                }),
-            }
-            (events, skipped)
-        },
-    );
-    let mut events = deduplicate_events(parsed_events);
+    let mut events = deduplicate_events(events);
     events.sort_by_key(|event| event.timestamp);
-    let entries = events
+    Ok(events
         .into_iter()
-        .map(|event| event_to_loaded(event, timezone, shared.mode, pricing))
-        .collect();
-    Ok((entries, skipped))
+        .map(|event| event_to_loaded(event, cx.window.timezone(), cx.shared.mode, pricing))
+        .collect())
 }
 
 fn deduplicate_events(
@@ -178,11 +87,17 @@ mod tests {
     use ccusage_test_support::{EnvVarsGuard, Fixture};
     use serde_json::json;
 
+    use std::path::Path;
+
+    use ccusage_adapter_common::source::SourceOptions;
+    use ccusage_core::{Diagnostics, SkipKind};
+
     use super::*;
     use crate::parser::test_support::{
         UsageFixture, create_database, metadata_blob, metadata_blob_with_steps, step_metadata_blob,
         trajectory_metadata_blob,
     };
+    use crate::{PricingMap, cli::SharedArgs};
 
     fn shared(single_thread: bool) -> SharedArgs {
         SharedArgs {
@@ -193,14 +108,43 @@ mod tests {
         }
     }
 
-    fn load_single_unreadable_database() -> (PathBuf, String) {
-        let (entries, skipped) =
-            load_entries_inner(&shared(true), &PricingMap::load_embedded()).unwrap();
+    fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
+        load_with_diagnostics(shared, pricing).map(|(entries, _)| entries)
+    }
+
+    fn load_with_diagnostics(
+        shared: &SharedArgs,
+        pricing: &PricingMap,
+    ) -> Result<(Vec<LoadedEntry>, Diagnostics)> {
+        ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            shared,
+            SourceOptions::default(),
+            Some(pricing),
+        )
+    }
+
+    /// Loads a fixture holding databases the loader skips, and returns what
+    /// was recorded about them.
+    fn skipped_databases() -> Diagnostics {
+        let (entries, diagnostics) =
+            load_with_diagnostics(&shared(true), &PricingMap::load_embedded()).unwrap();
         assert!(entries.is_empty());
-        match <[SkippedDatabase; 1]>::try_from(skipped) {
-            Ok([SkippedDatabase::Unreadable { path, error }]) => (path, error),
-            other => panic!("expected one unreadable database, got {other:?}"),
-        }
+        diagnostics
+    }
+
+    /// Asserts that `path` is the one database skipped, as `kind`.
+    fn assert_skipped(diagnostics: &Diagnostics, kind: SkipKind, label: &str, path: &Path) {
+        assert_eq!(diagnostics.skipped(kind), 1, "{kind:?}");
+        let lines = diagnostics.warnings(&SharedArgs {
+            debug: true,
+            ..shared(true)
+        });
+        let prefix = format!("antigravity: {label}: {}: ", path.display());
+        assert!(
+            lines.iter().any(|line| line.starts_with(&prefix)),
+            "{lines:?}"
+        );
     }
 
     fn load_from_fixture(fixture: &Fixture, single_thread: bool) -> Vec<LoadedEntry> {
@@ -1184,7 +1128,7 @@ mod tests {
         ]);
 
         assert!(
-            super::super::paths::conversation_db_paths()
+            super::super::paths::conversation_db_paths(&Diagnostics::new("antigravity"))
                 .unwrap()
                 .is_empty()
         );
@@ -1209,20 +1153,25 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let (entries, skipped) =
-            load_entries_inner(&shared(true), &PricingMap::load_embedded()).unwrap();
+        let diagnostics = skipped_databases();
 
-        assert!(entries.is_empty());
-        assert_eq!(skipped.len(), 2);
-        assert!(skipped.contains(&SkippedDatabase::Uninitialized(
-            fixture.path("conversations/empty.db")
-        )));
-        assert!(skipped.iter().any(|database| matches!(
-            database,
-            SkippedDatabase::Unreadable { path, error }
-                if *path == fixture.path("conversations/malformed.db")
-                    && error.contains("parse Antigravity metadata")
-        )));
+        assert!(
+            diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..shared(true)
+                })
+                .contains(&format!(
+                    "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
+                    fixture.path("conversations/empty.db").display()
+                ))
+        );
+        assert_skipped(
+            &diagnostics,
+            SkipKind::InvalidData,
+            "invalid data",
+            &fixture.path("conversations/malformed.db"),
+        );
     }
 
     #[test]
@@ -1234,12 +1183,11 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let (path, error) = load_single_unreadable_database();
-
-        assert_eq!(path, not_a_database);
-        assert_eq!(
-            error,
-            "Failed to inspect Antigravity database: file is not a database (code 26)"
+        assert_skipped(
+            &skipped_databases(),
+            SkipKind::InvalidData,
+            "invalid data",
+            &not_a_database,
         );
     }
 
@@ -1257,10 +1205,12 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let (path, error) = load_single_unreadable_database();
-
-        assert_eq!(path, db_path);
-        assert!(error.contains("gen_metadata"), "{error}");
+        assert_skipped(
+            &skipped_databases(),
+            SkipKind::Invariant,
+            "unexpected shape",
+            &db_path,
+        );
     }
 
     #[test]
@@ -1300,10 +1250,12 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let (path, error) = load_single_unreadable_database();
-
-        assert_eq!(path, db_path);
-        assert!(error.contains("steps"), "{error}");
+        assert_skipped(
+            &skipped_databases(),
+            SkipKind::Invariant,
+            "unexpected shape",
+            &db_path,
+        );
     }
 
     #[test]
@@ -1320,51 +1272,18 @@ mod tests {
             Some(OsString::from(fixture.root())),
         )]);
 
-        let (path, error) = load_single_unreadable_database();
-
-        assert_eq!(path, fixture.path("conversations/malformed.db"));
-        assert!(
-            error.starts_with("Failed to parse Antigravity metadata row 1:"),
-            "{error}"
+        assert_skipped(
+            &skipped_databases(),
+            SkipKind::InvalidData,
+            "invalid data",
+            &fixture.path("conversations/malformed.db"),
         );
     }
 
     #[test]
-    fn skipped_database_messages_name_the_path_once_and_respect_log_level() {
-        let path = PathBuf::from("/data/conversations/broken.db");
-        let unreadable = SkippedDatabase::Unreadable {
-            path: path.clone(),
-            error: "SECRET_CANARY".to_string(),
-        };
-        let uninitialized = SkippedDatabase::Uninitialized(path);
-        let debug = SharedArgs {
-            debug: true,
-            ..shared(true)
-        };
-
-        {
-            let _guard = EnvVarsGuard::set_many([("LOG_LEVEL", None::<OsString>)]);
-            assert_eq!(
-                skipped_database_message(&shared(true), &unreadable).as_deref(),
-                Some(
-                    "WARN  Skipping unreadable Antigravity database '/data/conversations/broken.db': database could not be read"
-                )
-            );
-            assert_eq!(
-                skipped_database_message(&shared(true), &uninitialized),
-                None
-            );
-            assert!(skipped_database_message(&debug, &uninitialized).is_some());
-        }
-
-        let _guard = EnvVarsGuard::set_many([("LOG_LEVEL", Some(OsString::from("0")))]);
-        assert_eq!(skipped_database_message(&shared(true), &unreadable), None);
-    }
-
-    #[test]
-    fn structured_loads_tally_unreadable_databases() {
-        use ccusage_adapter_common::source::{LoadContext, SourceOptions};
-        use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
+    fn structured_loads_tally_skipped_databases_without_their_content() {
+        use ccusage_adapter_common::source::LoadContext;
+        use ccusage_core::{ReportWindow, cli::AgentReportKind};
 
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/broken.db", "SECRET_CANARY");
@@ -1386,6 +1305,15 @@ mod tests {
         };
 
         assert!(load_entries_for_context(&cx).unwrap().is_empty());
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert!(
+            !diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..shared
+                })
+                .join("\n")
+                .contains("SECRET_CANARY")
+        );
     }
 }

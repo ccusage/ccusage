@@ -56,9 +56,7 @@ pub fn focused_rows(
         diagnostics: &diagnostics,
     };
     let entries = load(source, &cx, ProgressOwner::Source)?;
-    for warning in diagnostics.warnings(shared) {
-        eprintln!("{warning}");
-    }
+    diagnostics.emit(shared);
     let mut rows = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
         source.summarize(entries, kind)
     })?;
@@ -84,46 +82,15 @@ pub fn unified_rows(source: &dyn EntrySource, request: &UnifiedRequest<'_>) -> R
     };
     let entries = load(source, &cx, request.progress)?;
     let detected = detect(descriptor.detection, &entries);
-    let warnings = diagnostics.warnings(shared);
     let summaries = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
         source.summarize_unified(entries, kind)
     })?;
     Ok(SourceRows {
         rows: summary_rows(descriptor.id, summaries, descriptor.unified_project_path),
         detected,
-        warnings,
+        diagnostics,
         claude_counted: None,
     })
-}
-
-/// Loads entries for a caller that has not moved to
-/// [`UsageSource::unified_rows`](crate::source::UsageSource::unified_rows) yet
-/// and still calls an adapter's own `load_entries` function: progress follows
-/// `shared.json` as it always did, and what the load skipped is printed here.
-/// Remove with the last such function.
-pub fn load_entries_for_unmigrated_caller(
-    source: &dyn EntrySource,
-    shared: &SharedArgs,
-    options: SourceOptions<'_>,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    let window = ReportWindow::from_shared(shared);
-    let diagnostics = Diagnostics::new(source.descriptor().id);
-    let cx = LoadContext {
-        shared,
-        // These callers never told the loader the kind, so no loader behind
-        // them reads it.
-        kind: AgentReportKind::Daily,
-        window: &window,
-        pricing,
-        options,
-        diagnostics: &diagnostics,
-    };
-    let entries = load(source, &cx, ProgressOwner::Source)?;
-    for warning in diagnostics.warnings(shared) {
-        eprintln!("{warning}");
-    }
-    Ok(entries)
 }
 
 fn load_pricing(shared: &SharedArgs) -> PricingMap {
@@ -203,7 +170,7 @@ mod tests {
         cli::{AgentCommandArgs, AgentReportKind, SharedArgs, SortOrder},
     };
 
-    use super::{focused_rows, load_entries_for_unmigrated_caller, unified_rows};
+    use super::{focused_rows, unified_rows};
     use crate::{
         source::{
             Detection, EntryDescriptor, ProgressOwner, SourceOptions, UnifiedRequest, UsageSource,
@@ -438,11 +405,11 @@ mod tests {
         let rows = unified_rows(&source, &request(AgentReportKind::Daily, &shared)).unwrap();
 
         assert_eq!(rows.rows.len(), 3, "the rest of the source still reports");
+        let warnings = rows.diagnostics.warnings(&shared);
         assert!(
-            rows.warnings
+            warnings
                 .contains(&"fake: unreadable: /data/broken.json: permission denied".to_string()),
-            "{:?}",
-            rows.warnings
+            "{warnings:?}"
         );
     }
 
@@ -468,27 +435,6 @@ mod tests {
 
         assert_eq!(project_path(&with_path), Some(json!("project")));
         assert_eq!(project_path(&without_path), None);
-    }
-
-    #[test]
-    fn unmigrated_callers_get_the_entries_as_loaded() {
-        let source = Fake::new(EntryDescriptor::standard("fake", "Fake"), entries());
-        let pricing = PricingMap::default();
-        let shared = SharedArgs {
-            json: true,
-            ..shared(Some("20260102"), None)
-        };
-
-        let loaded = load_entries_for_unmigrated_caller(
-            &source,
-            &shared,
-            SourceOptions::default(),
-            Some(&pricing),
-        )
-        .unwrap();
-
-        assert_eq!(loaded.len(), 4, "the caller applies the window itself");
-        assert!(source.saw_pricing.load(Ordering::Relaxed));
     }
 
     #[test]

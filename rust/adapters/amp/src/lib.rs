@@ -141,10 +141,13 @@ mod tests {
         assert!(rows.detected);
         let truncated = fixture.path("threads/T-truncated.json");
         assert!(
-            rows.warnings.iter().any(|warning| warning
-                .starts_with(&format!("amp: invalid data: {}: ", truncated.display()))),
+            rows.diagnostics
+                .warnings(&shared)
+                .iter()
+                .any(|warning| warning
+                    .starts_with(&format!("amp: invalid data: {}: ", truncated.display()))),
             "{:?}",
-            rows.warnings
+            rows.diagnostics.warnings(&shared)
         );
     }
 }

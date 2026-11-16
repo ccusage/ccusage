@@ -1,5 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
+use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
@@ -27,6 +28,13 @@ pub(super) enum SessionRowError {
 }
 
 impl SessionRowError {
+    pub(super) const fn kind(self) -> SkipKind {
+        match self {
+            Self::InvalidIdentity => SkipKind::InvalidData,
+            Self::InvalidTimestamp => SkipKind::InvalidTimestamp,
+        }
+    }
+
     pub(super) const fn detail(self) -> &'static str {
         match self {
             Self::InvalidIdentity => "Hermes usage row has no valid session identity",
@@ -66,7 +74,7 @@ pub(super) fn read_session_row(
         .map_err(|_| SessionRowError::InvalidIdentity)?
         .trim()
         .to_string();
-    if session_id.trim().is_empty() || model.is_empty() {
+    if session_id.is_empty() || model.is_empty() {
         return Err(SessionRowError::InvalidIdentity);
     }
     let started_at = read_f64(statement, 3).ok_or(SessionRowError::InvalidTimestamp)?;

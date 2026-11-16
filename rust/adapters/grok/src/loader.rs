@@ -1,37 +1,29 @@
 use std::collections::HashSet;
 
-use ccusage_adapter_common::{
-    pipeline, read_units,
-    source::{LoadContext, SourceOptions},
-};
+use ccusage_adapter_common::{read_units, source::LoadContext};
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs};
+use crate::{LoadedEntry, Result};
 
 use super::paths::{GrokSessionFiles, discover_session_files};
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    pipeline::load_entries_for_unmigrated_caller(
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
+    pricing: &crate::PricingMap,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &crate::SOURCE,
         shared,
-        SourceOptions::default(),
+        ccusage_adapter_common::source::SourceOptions::default(),
         Some(pricing),
     )
+    .map(|(entries, _)| entries)
 }
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let owned_pricing = cx.pricing.is_none().then(|| {
-        PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        )
-    });
-    let pricing = cx
-        .pricing
-        .or(owned_pricing.as_ref())
-        .expect("pricing is available");
-    let sessions = super::paths::discover_session_files_with_diagnostics(cx.diagnostics)?;
+    let pricing = cx.pipeline_pricing()?;
+    let sessions = super::paths::discover_session_files(cx.diagnostics)?;
     let updates_paths: Vec<_> = sessions
         .iter()
         .map(|session| session.updates.clone())
@@ -80,12 +72,14 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
 }
 
 pub fn has_data() -> bool {
-    discover_session_files().is_ok_and(|files| !files.is_empty())
+    discover_session_files(&ccusage_core::Diagnostics::new("grok"))
+        .is_ok_and(|files| !files.is_empty())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{PricingMap, cli::SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use std::ffi::OsString;
 

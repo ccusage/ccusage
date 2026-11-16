@@ -18,7 +18,7 @@ use crate::{
 use crate::Result;
 use ccusage_adapter_common::{
     jsonl,
-    units::{UnitError, read_json, read_units},
+    units::{UnitError, read_json},
 };
 use ccusage_core::Diagnostics;
 use ccusage_core::fast::LinePrefilter;
@@ -426,14 +426,21 @@ fn load_session_meta(files: &GrokSessionFiles, diagnostics: &Diagnostics) -> Ses
     let mut project_path = project_from_path;
     let mut default_model = None;
 
+    // summary.json only refines metadata the session path already supplies,
+    // so a summary that cannot be read loses no usage and is not a skip.
     let summary = files.summary.as_ref().and_then(|summary_path| {
-        let loaded = read_units(
-            std::slice::from_ref(summary_path),
-            true,
-            diagnostics,
-            read_json::<GrokSummary>,
-        );
-        loaded.into_iter().next().flatten()
+        read_json::<GrokSummary>(summary_path)
+            .inspect_err(|error| {
+                diagnostics.debug_note(
+                    summary_path,
+                    format!(
+                        "{}: {}: {error}; session id, project and default model come from the session path",
+                        diagnostics.source(),
+                        summary_path.display()
+                    ),
+                );
+            })
+            .ok()
     });
     if let Some(summary) = summary {
         if let Some(id) = summary.info.as_ref().and_then(|info| info.id.clone()) {
@@ -957,6 +964,44 @@ mod tests {
 
         assert_eq!(entries[0].session_id.as_ref(), "canonical-session");
         assert_eq!(entries[0].project_path.as_ref(), "D:\\canonical\\cwd");
+    }
+
+    #[test]
+    fn a_malformed_summary_falls_back_to_path_metadata_without_a_skip() {
+        let fixture = fs_fixture!({
+            "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
+            "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"SECRET_CANARY""#,
+        });
+        let files = GrokSessionFiles {
+            updates: fixture.path("sessions/proj/sess-1/updates.jsonl"),
+            summary: Some(fixture.path("sessions/proj/sess-1/summary.json")),
+        };
+        let diagnostics = Diagnostics::new("grok");
+
+        let entries = parse_session_files_with_diagnostics(
+            &files,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            &PricingMap::load_embedded(),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].project_path.as_ref(), "proj");
+        assert!(
+            diagnostics
+                .warnings(&crate::cli::SharedArgs::default())
+                .is_empty()
+        );
+        let debug = diagnostics
+            .warnings(&crate::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(debug.contains("summary.json"));
+        assert!(!debug.contains("SECRET_CANARY"));
     }
 
     #[test]

@@ -14,7 +14,8 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind},
 };
 
-pub use loader::load_entries;
+#[cfg(test)]
+pub(crate) use loader::load_entries;
 pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 
@@ -71,7 +72,8 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 }
 
 pub fn has_data() -> bool {
-    paths::discover_chat_files().is_ok_and(|files| !files.is_empty())
+    paths::discover_chat_files(&ccusage_core::Diagnostics::new("qwen"))
+        .is_ok_and(|files| !files.is_empty())
 }
 
 #[cfg(test)]
@@ -224,12 +226,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(rows.rows.len(), 1);
-        assert!(rows.warnings.iter().any(|warning| {
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
             warning.contains("invalid data")
                 && warning.contains("chat.jsonl:2")
                 && !warning.contains("SECRET_CANARY")
         }));
-        assert!(rows.warnings.iter().any(|warning| {
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
             warning.contains("undecoded usage")
                 && warning.contains("chat.jsonl:3")
                 && !warning.contains("SECRET_CANARY")

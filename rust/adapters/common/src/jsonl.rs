@@ -96,7 +96,7 @@ fn selected_lines<'data>(
             {
                 return None;
             }
-            let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
+            let number = ccusage_core::Skip::line_number(index);
             Some((number, line))
         })
 }
@@ -160,12 +160,13 @@ where
     T: DeserializeOwned + 'data,
 {
     selected_lines(content, prefilter).filter_map(move |(number, line)| {
-        decode_record::<T>(line, unit, number, diagnostics, is_usage).map(|record| (number, record))
+        decode_line::<T>(content, line, unit, number, diagnostics, is_usage)
+            .map(|record| (number, record))
     })
 }
 
-/// Decodes one JSON record, sharing failure classification between JSONL lines
-/// and database JSON columns. Usage confirmation runs only after a rejection.
+/// Decodes one JSON record held whole, such as a database JSON column. Usage
+/// confirmation runs only after a rejection.
 pub fn decode_record<T: DeserializeOwned>(
     content: &[u8],
     unit: &Path,
@@ -176,29 +177,82 @@ pub fn decode_record<T: DeserializeOwned>(
     match serde_json::from_slice(content) {
         Ok(record) => Some(record),
         Err(error) => {
-            record_decode_error(content, error, unit, number, diagnostics, is_usage);
+            record_decode_error(content, error, unit, number, false, diagnostics, is_usage);
             None
         }
     }
 }
 
-#[cold]
-fn record_decode_error(
+/// Decodes `line`, one line of the JSONL file `content`, like
+/// [`decode_record`]. The last line of a file that does not end in a newline
+/// may still be being written, so a record it cuts short is not a skip.
+pub fn decode_line<T: DeserializeOwned>(
     content: &[u8],
-    error: serde_json::Error,
+    line: &[u8],
     unit: &Path,
     number: u32,
     diagnostics: &Diagnostics,
     is_usage: Option<fn(&serde_json::Value) -> bool>,
+) -> Option<T> {
+    match serde_json::from_slice(line) {
+        Ok(record) => Some(record),
+        Err(error) => {
+            let unterminated =
+                !content.ends_with(b"\n") && line.as_ptr_range().end == content.as_ptr_range().end;
+            record_decode_error(
+                line,
+                error,
+                unit,
+                number,
+                unterminated,
+                diagnostics,
+                is_usage,
+            );
+            None
+        }
+    }
+}
+
+/// Records why `record`, record `number` of `unit`, failed to decode.
+///
+/// `unterminated` says the record is the last line of a JSONL file that does
+/// not end in a newline yet. An agent appends its log while ccusage reads it,
+/// so a record such a line cuts short is noted under `--debug` instead of
+/// skipped: the next run reads it whole.
+///
+/// A data error is invalid data when `is_usage` confirms that the record, read
+/// as plain JSON, carries usage, and undecoded usage otherwise. `is_usage`
+/// runs only for a data error, so a source may also take what it needs from
+/// the rejected record there.
+#[cold]
+pub fn record_decode_error(
+    record: &[u8],
+    error: serde_json::Error,
+    unit: &Path,
+    number: u32,
+    unterminated: bool,
+    diagnostics: &Diagnostics,
+    is_usage: Option<impl FnOnce(&serde_json::Value) -> bool>,
 ) {
     use serde_json::error::Category;
     let (kind, category) = match error.classify() {
+        Category::Eof if unterminated => {
+            diagnostics.debug_note(
+                unit,
+                format!(
+                    "{}: {}:{number}: last line is incomplete, read as still being written",
+                    diagnostics.source(),
+                    unit.display()
+                ),
+            );
+            return;
+        }
         Category::Io => (SkipKind::Unreadable, "I/O"),
         Category::Syntax => (SkipKind::InvalidData, "syntax"),
         Category::Eof => (SkipKind::InvalidData, "EOF"),
         Category::Data => {
             let confirmed = is_usage.is_some_and(|confirm| {
-                serde_json::from_slice::<serde_json::Value>(content)
+                serde_json::from_slice::<serde_json::Value>(record)
                     .is_ok_and(|value| confirm(&value))
             });
             (
@@ -627,6 +681,49 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(parsed, [(1, Some(1)), (4, None)]);
+    }
+
+    #[test]
+    fn a_record_cut_short_by_the_end_of_the_file_is_noted_not_skipped() {
+        let diagnostics = Diagnostics::new("test");
+        let records = records_with_diagnostics::<Record>(
+            b"{\"tokens\":1}\n{\"tokens\":2,\"mod",
+            None,
+            Path::new("/logs/live.jsonl"),
+            &diagnostics,
+        )
+        .map(|record| record.tokens)
+        .collect::<Vec<_>>();
+
+        assert_eq!(records, [1]);
+        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
+        assert_eq!(
+            diagnostics.warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            }),
+            ["test: /logs/live.jsonl:2: last line is incomplete, read as still being written"]
+        );
+    }
+
+    #[test]
+    fn a_record_cut_short_before_a_newline_is_invalid_data() {
+        for content in [
+            b"{\"tokens\":2,\"mod\n{\"tokens\":1}".as_slice(),
+            b"{\"tokens\":1}\n{\"tokens\":2,\"mod\n",
+        ] {
+            let diagnostics = Diagnostics::new("test");
+            let _ = records_with_diagnostics::<Record>(
+                content,
+                None,
+                Path::new("/logs/torn.jsonl"),
+                &diagnostics,
+            )
+            .count();
+
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        }
     }
 
     #[test]

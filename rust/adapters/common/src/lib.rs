@@ -8,7 +8,7 @@ use ccusage_core::{LoadedEntry, ReportWindow, UsageSummary, cli::SharedArgs};
 
 pub mod claims;
 pub mod jsonl;
-#[cfg(feature = "testing")]
+#[cfg(any(test, feature = "testing"))]
 pub mod parity;
 pub mod pipeline;
 pub mod report;
@@ -16,10 +16,12 @@ pub mod rows;
 pub mod source;
 #[cfg(test)]
 mod test_source;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod units;
 
 pub use report::print_table_for_agent;
-pub use units::{UnitError, read_units, read_units_flat};
+pub use units::{SqliteStage, UnitError, read_units, read_units_flat};
 
 pub fn collect_usage_files(dir: &Path, files: &mut Vec<PathBuf>) {
     collect_files_with_extension(dir, "jsonl", files);

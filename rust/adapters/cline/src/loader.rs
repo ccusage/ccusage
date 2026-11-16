@@ -2,10 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs};
+use crate::{LoadedEntry, PricingMap, Result};
 use ccusage_adapter_common::{read_units_flat, source::LoadContext};
 
-use super::paths::discover_files_with_diagnostics;
+use super::paths::discover_files;
 
 pub(super) struct EntryInput {
     pub timestamp: crate::TimestampMs,
@@ -16,19 +16,24 @@ pub(super) struct EntryInput {
     pub request_id: Option<String>,
 }
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
+    pricing: &crate::PricingMap,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &crate::SOURCE,
         shared,
         ccusage_adapter_common::source::SourceOptions::default(),
         Some(pricing),
     )
+    .map(|(entries, _)| entries)
 }
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.expect("Cline uses pipeline pricing");
-    let sources = discover_files_with_diagnostics(cx.diagnostics)?;
+    let pricing = cx.pipeline_pricing()?;
+    let sources = discover_files(cx.diagnostics)?;
     let timezone = cx.window.timezone();
     let files = sources
         .iter()
@@ -44,9 +49,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
             .copied()
             .expect("discovered Cline file has source metadata");
         super::parser::read_file(source, shared.mode, pricing, timezone)
-    })
-    .into_iter()
-    .collect::<Vec<_>>();
+    });
     entries.sort_by(|left, right| {
         left.timestamp
             .cmp(&right.timestamp)
@@ -153,6 +156,7 @@ pub(super) fn loaded_entry(
 mod tests {
     use super::*;
     use crate::cli::CostMode;
+    use crate::cli::SharedArgs;
     use ccusage_test_support::{EnvVarGuard, Fixture};
 
     #[test]
@@ -278,6 +282,7 @@ mod tests {
             include_str!("../tests/fixtures/extension/ui_messages.json"),
         );
         let _ = fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":");
+        let _ = fixture.write_file("tasks/unwritten/ui_messages.json", "");
         let _env = EnvVarGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             single_thread: true,
@@ -285,13 +290,24 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &shared,
+            ccusage_adapter_common::source::SourceOptions::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert!(!entries.is_empty());
         assert!(
             entries
                 .iter()
                 .all(|entry| entry.session_id.as_ref() == "task:healthy")
+        );
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidData),
+            1,
+            "the damaged task is reported, the unwritten one is not"
         );
     }
 }

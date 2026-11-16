@@ -12,11 +12,8 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-#[doc(hidden)]
-pub use loader::load_entries_for_store_path;
-pub use loader::{
-    load_entries, load_entries_for_store_paths, load_entries_for_store_paths_with_context,
-};
+#[cfg(test)]
+pub(crate) use loader::load_entries;
 pub use paths::{named_store_paths, paths as default_paths};
 pub use report::{report_from_rows, summarize_entries};
 
@@ -76,6 +73,63 @@ impl EntrySource for Pi {
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
     SOURCE.run_focused(args)
+}
+
+/// A `pi.stores` entry: a pi-format store the unified report lists as its own
+/// agent, under the store's name.
+pub struct NamedStore {
+    name: &'static str,
+    paths: Vec<std::path::PathBuf>,
+}
+
+impl NamedStore {
+    /// `paths` are the store's session directories, as
+    /// [`named_store_paths`] resolves them.
+    pub fn new(name: &'static str, paths: Vec<std::path::PathBuf>) -> Self {
+        Self { name, paths }
+    }
+}
+
+impl EntrySource for NamedStore {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor {
+            unified_project_path: true,
+            ..EntryDescriptor::standard(self.name, self.name)
+        }
+    }
+
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_named_store_entries(cx, &self.paths, self.name)
+    }
+
+    fn summarize(
+        &self,
+        entries: &[LoadedEntry],
+        kind: AgentReportKind,
+    ) -> Result<Vec<UsageSummary>> {
+        SOURCE.summarize(entries, kind)
+    }
+
+    fn summarize_unified(
+        &self,
+        entries: &[LoadedEntry],
+        kind: AgentReportKind,
+    ) -> Result<Vec<UsageSummary>> {
+        SOURCE.summarize_unified(entries, kind)
+    }
+
+    fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
+        SOURCE.report_json(rows, kind)
+    }
+
+    fn print_table(
+        &self,
+        rows: &[UsageSummary],
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+    ) -> Result<()> {
+        SOURCE.print_table(rows, kind, shared)
+    }
 }
 
 #[cfg(test)]
@@ -159,7 +213,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(rows.rows.len(), 1);
-        assert!(rows.warnings.iter().any(|warning| {
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
             warning.contains("invalid data")
                 && warning.contains("agent_session-a.jsonl:2")
                 && !warning.contains("SECRET_CANARY")

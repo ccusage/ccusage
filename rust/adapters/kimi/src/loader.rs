@@ -11,9 +11,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_wire_files(cx.diagnostics)?;
-    let pricing = cx
-        .pricing
-        .ok_or_else(|| crate::cli_error("Kimi pricing was not supplied"))?;
+    let pricing = cx.pipeline_pricing()?;
     // Read wire files in parallel, then apply the first-wins dedup sequentially
     // over the original discovery order so the surviving entry per key matches
     // the single-threaded read.

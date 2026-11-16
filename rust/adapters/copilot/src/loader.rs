@@ -6,12 +6,10 @@ use std::{
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-#[cfg(test)]
-use super::parser::parse_otel_file;
 use super::{
     parser::{
-        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry,
-        parse_otel_file_with_diagnostics, parse_session_state_file_with_diagnostics,
+        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry, parse_otel_file,
+        parse_session_state_file,
     },
     paths::CopilotSourceKind,
 };
@@ -26,23 +24,11 @@ use crate::{
     stored_cost_for_mode,
 };
 
-pub fn load_entries(
-    shared: &crate::cli::SharedArgs,
-    pricing: &crate::PricingMap,
-) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-}
-
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.expect("Copilot uses pipeline pricing");
+    let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
-    let sources = super::paths::paths_with_diagnostics(cx.diagnostics)?;
+    let sources = super::paths::paths(cx.diagnostics)?;
     let source_kinds = sources
         .iter()
         .map(|source| (source.path.clone(), source.kind))
@@ -436,12 +422,10 @@ fn read_source_file(
 ) -> Result<CopilotSourceUsage> {
     match kind {
         CopilotSourceKind::Otel => Ok(CopilotSourceUsage {
-            entries: parse_otel_file_with_diagnostics(path, diagnostics)?,
+            entries: parse_otel_file(path, diagnostics)?,
             credit_snapshots: Vec::new(),
         }),
-        CopilotSourceKind::SessionState => {
-            parse_session_state_file_with_diagnostics(path, diagnostics)
-        }
+        CopilotSourceKind::SessionState => parse_session_state_file(path, diagnostics),
     }
 }
 
@@ -453,7 +437,7 @@ fn read_otel_file(
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
     Ok(CopilotSourceUsage {
-        entries: parse_otel_file(path)?,
+        entries: parse_otel_file(path, &Diagnostics::new("copilot"))?,
         credit_snapshots: Vec::new(),
     }
     .entries
@@ -590,7 +574,7 @@ mod tests {
         });
         let file = fixture.path("copilot.jsonl");
 
-        let entries = parse_otel_file(&file).unwrap();
+        let entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp_text, "2026-04-11T19:04:24.967Z");
@@ -631,8 +615,7 @@ mod tests {
         });
         let diagnostics = Diagnostics::new("copilot");
 
-        let entries =
-            parse_otel_file_with_diagnostics(&fixture.path("copilot.jsonl"), &diagnostics).unwrap();
+        let entries = parse_otel_file(&fixture.path("copilot.jsonl"), &diagnostics).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id, "conv-healthy");
@@ -700,7 +683,7 @@ mod tests {
         });
         let file = fixture.path("copilot.jsonl");
 
-        let entries = parse_otel_file(&file).unwrap();
+        let entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].dedup_key, "trace-dupe:chat-1");
@@ -755,7 +738,8 @@ mod tests {
             .join("\n"),
         });
 
-        let entries = parse_otel_file(&fixture.path("copilot.jsonl")).unwrap();
+        let entries =
+            parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot")).unwrap();
 
         assert_eq!(
             dedup_keys(&entries),
@@ -775,7 +759,8 @@ mod tests {
             .join("\n"),
         });
 
-        let entries = parse_otel_file(&fixture.path("copilot.jsonl")).unwrap();
+        let entries =
+            parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot")).unwrap();
 
         assert_eq!(
             dedup_keys(&entries),
@@ -936,11 +921,14 @@ mod tests {
             )
         };
 
-        let otel = parse_otel_file(&fixture.path("copilot.jsonl")).unwrap();
-        let session_state =
-            super::super::parser::parse_session_state_file(&fixture.path("session-1/events.jsonl"))
-                .unwrap()
-                .entries;
+        let otel =
+            parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot")).unwrap();
+        let session_state = super::super::parser::parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap()
+        .entries;
 
         assert_eq!(split(&otel[0]), (10, 12_000, 7_990, 300));
         assert_eq!(split(&otel[0]), split(&session_state[0]));
@@ -970,7 +958,7 @@ mod tests {
         });
         let file = fixture.path("copilot.jsonl");
 
-        let entries = parse_otel_file(&file).unwrap();
+        let entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].output_tokens, 567);

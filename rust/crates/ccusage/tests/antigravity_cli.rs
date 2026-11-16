@@ -106,7 +106,7 @@ fn antigravity_skips_corrupt_databases_and_warns_without_dropping_other_reports(
         "expected a warning in stderr: {stderr}"
     );
     assert!(
-        stderr.contains("antigravity: skipped 2 inputs (unreadable)"),
+        stderr.contains("antigravity: skipped 2 inputs (invalid data)"),
         "expected both skipped databases in the warning count: {stderr}"
     );
     assert!(
@@ -134,7 +134,7 @@ fn unified_report_counts_skipped_antigravity_databases_and_lists_each_debug_samp
     let stderr = String::from_utf8(output.stderr).expect("CLI stderr was not UTF-8");
     assert_eq!(stderr.matches("WARN  ").count(), 1, "{stderr}");
     assert!(
-        stderr.contains("antigravity: skipped 2 inputs (unreadable)"),
+        stderr.contains("antigravity: skipped 2 inputs (invalid data)"),
         "{stderr}"
     );
     assert_eq!(stderr.matches("partial.db").count(), 1, "{stderr}");

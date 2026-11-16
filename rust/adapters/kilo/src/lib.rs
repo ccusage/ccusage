@@ -1,4 +1,4 @@
-use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext, SourceOptions};
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
 use ccusage_core::*;
 
 mod loader;
@@ -57,16 +57,18 @@ impl EntrySource for Kilo {
     }
 }
 
-pub fn load_entries(
+#[cfg(test)]
+pub(crate) fn load_entries(
     shared: &crate::cli::SharedArgs,
-    pricing: &PricingMap,
-) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+    pricing: &crate::PricingMap,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &SOURCE,
         shared,
-        SourceOptions::default(),
+        ccusage_adapter_common::source::SourceOptions::default(),
         Some(pricing),
     )
+    .map(|(entries, _)| entries)
 }
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {

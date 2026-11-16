@@ -8,23 +8,24 @@ use super::{
 };
 use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
 
-use crate::{
-    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, format_date_tz,
-};
+use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
+    pricing: &crate::PricingMap,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &crate::SOURCE,
         shared,
         ccusage_adapter_common::source::SourceOptions::default(),
         Some(pricing),
     )
+    .map(|(entries, _)| entries)
 }
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx
-        .pricing
-        .ok_or_else(|| crate::cli_error("Droid needs pricing from the report pipeline"))?;
+    let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let mut files = discover_settings_files(cx.diagnostics)?;
     files.sort();
@@ -89,6 +90,7 @@ use super::report::{report_from_rows, summarize_entries};
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::SharedArgs;
     use ccusage_adapter_common::parity::assert_focused_matches_unified;
     use ccusage_adapter_common::source::{LoadContext, SourceOptions};
     use ccusage_core::{Diagnostics, ReportWindow, SkipKind};
@@ -171,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_settings_file_does_not_discard_healthy_files() {
+    fn malformed_settings_file_is_reported_and_an_unwritten_one_is_not() {
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -180,6 +182,7 @@ mod tests {
                 "tokenUsage": {"inputTokens": 100, "outputTokens": 50}
             }"#,
             "session-b.settings.json": "{broken",
+            "session-c.settings.json": "",
         });
         let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();

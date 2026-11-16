@@ -11,8 +11,6 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-pub use loader::load_entries;
-pub use loader::load_entries_with_warnings;
 pub use report::summarize_entries;
 
 pub struct Antigravity;

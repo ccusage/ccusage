@@ -904,7 +904,16 @@ mod tests {
             ..SharedArgs::default()
         };
         let sessions_path = fixture.path("sessions");
-        let entries = adapter::pi::load_entries(&shared, sessions_path.to_str(), None).unwrap();
+        let (entries, _) = ccusage_adapter_common::testing::load_entries(
+            &adapter::pi::SOURCE,
+            &shared,
+            ccusage_adapter_common::source::SourceOptions {
+                pi_path: sessions_path.to_str(),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-04-22");

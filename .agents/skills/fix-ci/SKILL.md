@@ -13,12 +13,13 @@ description: Diagnoses and fixes failing GitHub Actions checks with gh. Use when
 2. Reproduce locally. CI runs almost everything through Nix, so the failing step maps onto a
    `just` recipe:
 
-   | CI job / step                                  | Local                                                  |
-   | ---------------------------------------------- | ------------------------------------------------------ |
-   | `preflight`, or `Run nix flake check`          | `just check`                                           |
-   | `Run Rust tests` (`nix build .#ccusage-tests`) | `just rust::test`                                      |
-   | `JS test`                                      | `just test-node`                                       |
-   | `Babashka performance harness test`            | `apps/ccusage/scripts/compare-pr-performance_test.clj` |
+   | CI job / step                                  | Local                                    |
+   | ---------------------------------------------- | ---------------------------------------- |
+   | `preflight`, or `Run nix flake check`          | `just check`                             |
+   | `Run Rust tests` (`nix build .#ccusage-tests`) | `just rust::test`                        |
+   | `JS test`                                      | `just test-node`                         |
+   | `Babashka performance harness test`            | `just ccusage::test-performance-harness` |
+   | `Babashka diff-refs test`                      | `just ccusage::test-diff-refs`           |
 
    Start with the narrowest command that reproduces the failure — a single `cargo test`
    filter — before the recipe above.

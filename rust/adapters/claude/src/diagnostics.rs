@@ -1,20 +1,15 @@
 use std::{fmt, fs::File, io::Read, path::Path};
 
+use ccusage_adapter_common::UnitError;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde::{
     Deserialize, Deserializer,
     de::{MapAccess, SeqAccess, Visitor},
 };
 
-pub(super) fn emit(warnings: &[String]) {
-    for warning in warnings {
-        eprintln!("{warning}");
-    }
-}
-
 pub(super) fn read_content(path: &Path, diagnostics: &Diagnostics) -> Vec<u8> {
     let Ok(mut file) = File::open(path) else {
-        diagnostics.record(Skip::unit(path, SkipKind::Unreadable, "file open failed"));
+        UnitError::new(SkipKind::Unreadable, "file open failed").record(path, diagnostics);
         return Vec::new();
     };
     let capacity = file
@@ -130,9 +125,21 @@ impl<'de> Visitor<'de> for CheckedValue {
     }
 }
 
+/// Records that line `index` of `path` carried a timestamp no day holds.
+pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnostics) {
+    diagnostics.record(Skip::record(
+        path,
+        Skip::line_number(index),
+        SkipKind::InvalidTimestamp,
+        "invalid usage timestamp",
+    ));
+}
+
+/// Records why `line`, line `index` of `content`, was not counted.
 #[cold]
 pub(super) fn rejected(
     path: &Path,
+    content: &[u8],
     index: usize,
     line: &[u8],
     diagnostics: &Diagnostics,
@@ -144,8 +151,9 @@ pub(super) fn rejected(
     {
         return;
     }
-    let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
-    let Some(value) = ccusage_adapter_common::jsonl::decode_record::<serde_json::Value>(
+    let number = Skip::line_number(index);
+    let Some(value) = ccusage_adapter_common::jsonl::decode_line::<serde_json::Value>(
+        content,
         line,
         path,
         number,
@@ -179,22 +187,37 @@ mod tests {
     use std::io::{self, Cursor};
 
     #[test]
-    fn missing_files_and_malformed_usage_are_diagnosed() {
+    fn a_file_removed_after_discovery_is_not_a_skip() {
         let fixture = ccusage_test_support::Fixture::new();
         let diagnostics = Diagnostics::new("claude");
 
         assert!(read_content(&fixture.path("missing.jsonl"), &diagnostics).is_empty());
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
+        assert!(
+            diagnostics
+                .warnings(&ccusage_core::cli::SharedArgs::default())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn malformed_usage_is_diagnosed() {
+        let diagnostics = Diagnostics::new("claude");
+
+        let line = br#"{"message":{"usage":{"SECRET_CANARY":"#;
         rejected(
             Path::new("session.jsonl"),
+            &[line.as_slice(), b"\n"].concat(),
             0,
-            br#"{"message":{"usage":{"SECRET_CANARY":"#,
+            line,
             &diagnostics,
             false,
         );
 
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
+
     struct Interrupted;
     impl Read for Interrupted {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
@@ -231,6 +254,25 @@ mod tests {
         );
     }
     #[test]
+    fn a_usage_line_still_being_written_is_not_a_skip() {
+        let diagnostics = Diagnostics::new("claude");
+        let content = br#"{"message":{"usage":{"input_tokens":10}}}
+{"message":{"usage":{"input_tok"#;
+        let line = &content[content.iter().position(|byte| *byte == b'\n').unwrap() + 1..];
+
+        rejected(
+            Path::new("session.jsonl"),
+            content,
+            1,
+            line,
+            &diagnostics,
+            false,
+        );
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
     fn unrelated_and_intentionally_unsupported_records_stay_quiet() {
         let diagnostics = Diagnostics::new("claude");
         for line in [
@@ -239,7 +281,14 @@ mod tests {
             br#"{"data":{"usage":{},"content":[{"text":"\uD83D\uDE00"},true,false,null,-1,2,3.5]}}"#,
             br#"{"m\u0065ssage":null,"data":{"usage":{}}}"#,
         ] {
-            rejected(Path::new("session.jsonl"), 0, line, &diagnostics, false);
+            rejected(
+                Path::new("session.jsonl"),
+                line,
+                0,
+                line,
+                &diagnostics,
+                false,
+            );
         }
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
@@ -254,7 +303,15 @@ mod tests {
             br#"{"data":{"usage":{},"value":1e400}}"#,
         ] {
             let diagnostics = Diagnostics::new("claude");
-            rejected(Path::new("session.jsonl"), 0, line, &diagnostics, false);
+            let content = [line, b"\n"].concat();
+            rejected(
+                Path::new("session.jsonl"),
+                &content,
+                0,
+                &content[..line.len()],
+                &diagnostics,
+                false,
+            );
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         }
     }

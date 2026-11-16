@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{SqliteStage, UnitError, jsonl};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -98,8 +98,7 @@ fn read_agent_database(
     ) {
         Ok(connection) => connection,
         Err(error) => {
-            let (kind, detail) = sqlite_error_failure(error.code);
-            diagnostics.record(Skip::unit(&database.path, kind, detail));
+            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
             return Vec::new();
         }
     };
@@ -114,8 +113,7 @@ fn read_agent_database(
             return Vec::new();
         }
         Err(error) => {
-            let (kind, detail) = sqlite_error_failure(error.code);
-            diagnostics.record(Skip::unit(&database.path, kind, detail));
+            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
             return Vec::new();
         }
     }
@@ -124,14 +122,14 @@ fn read_agent_database(
     ) {
         Ok(statement) => statement,
         Err(error) => {
-            let (kind, detail) = sqlite_error_failure(error.code);
-            diagnostics.record(Skip::unit(&database.path, kind, detail));
+            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
             return Vec::new();
         }
     };
     // Model/provider tracking is per session in the JSONL path (state resets
     // per file). SQLite rows arrive in session order, so track the current
     // session and reset the tracked model/provider on session boundaries.
+    let prefilter = super::parser::record_prefilter();
     let mut current_session: Option<String> = None;
     let mut current_model: Option<String> = None;
     let mut current_provider: Option<String> = None;
@@ -173,6 +171,9 @@ fn read_agent_database(
                     ));
                     continue;
                 };
+                if !prefilter.matches(event_json.as_bytes()) {
+                    continue;
+                }
                 let Some(record) = jsonl::decode_record::<OpenClawLine>(
                     event_json.as_bytes(),
                     &database.path,
@@ -211,8 +212,8 @@ fn read_agent_database(
             }
             Ok(sqlite::State::Done) => break,
             Err(error) => {
-                let (kind, detail) = sqlite_step_failure(error.code);
-                diagnostics.record(Skip::unit(&database.path, kind, detail));
+                UnitError::sqlite(SqliteStage::Rows, error.code)
+                    .record(&database.path, diagnostics);
                 break;
             }
         }
@@ -227,40 +228,6 @@ fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sq
     match statement.next()? {
         sqlite::State::Row => Ok(true),
         sqlite::State::Done => Ok(false),
-    }
-}
-
-fn sqlite_error_failure(code: Option<isize>) -> (SkipKind, &'static str) {
-    match code.map(|code| code & 0xff) {
-        Some(1) | Some(17) => (
-            SkipKind::Invariant,
-            "OpenClaw database schema is unavailable",
-        ),
-        Some(11) | Some(26) => (
-            SkipKind::InvalidData,
-            "OpenClaw agent database is corrupt or invalid",
-        ),
-        _ => (
-            SkipKind::Unreadable,
-            "OpenClaw agent database could not be read",
-        ),
-    }
-}
-
-fn sqlite_step_failure(code: Option<isize>) -> (SkipKind, &'static str) {
-    match sqlite_error_failure(code).0 {
-        SkipKind::Invariant => (
-            SkipKind::Invariant,
-            "OpenClaw database schema changed while reading; earlier rows were kept",
-        ),
-        SkipKind::InvalidData => (
-            SkipKind::InvalidData,
-            "OpenClaw agent database is corrupt or invalid; earlier rows were kept",
-        ),
-        _ => (
-            SkipKind::ReadInterrupted,
-            "OpenClaw database query stopped before all rows were read; earlier rows were kept",
-        ),
     }
 }
 
@@ -392,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_escaped_usage_keys_and_diagnoses_nested_usage_errors() {
+    fn diagnoses_nested_usage_errors_and_skips_events_without_markers() {
         let fixture = fs_fixture!({});
         let db_path = sqlite_root(&fixture);
         std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
@@ -407,7 +374,12 @@ mod tests {
                 (
                     "session-a",
                     1_769_753_935_279,
-                    r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","\u0075sage":{"input":10,"output":20}}}"#,
+                    r#"{"type":"message","message":{"role":"toolResult","content":"\u001b[31mred"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20}}}"#,
                 ),
             ],
         );
@@ -534,32 +506,6 @@ mod tests {
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 0);
-    }
-
-    #[test]
-    fn classifies_sqlite_errors_by_primary_code_and_read_stage() {
-        for (code, expected) in [
-            (Some(1), SkipKind::Invariant),
-            (Some(17), SkipKind::Invariant),
-            (Some(273), SkipKind::Invariant),
-            (Some(11), SkipKind::InvalidData),
-            (Some(26), SkipKind::InvalidData),
-            (Some(267), SkipKind::InvalidData),
-            (Some(282), SkipKind::InvalidData),
-            (Some(5), SkipKind::Unreadable),
-            (Some(6), SkipKind::Unreadable),
-            (Some(10), SkipKind::Unreadable),
-            (Some(261), SkipKind::Unreadable),
-            (None, SkipKind::Unreadable),
-        ] {
-            assert_eq!(sqlite_error_failure(code).0, expected, "code {code:?}");
-        }
-
-        assert_eq!(sqlite_step_failure(Some(11)).0, SkipKind::InvalidData);
-        assert_eq!(sqlite_step_failure(Some(282)).0, SkipKind::InvalidData);
-        assert_eq!(sqlite_step_failure(Some(1)).0, SkipKind::Invariant);
-        assert_eq!(sqlite_step_failure(Some(17)).0, SkipKind::Invariant);
-        assert_eq!(sqlite_step_failure(Some(261)).0, SkipKind::ReadInterrupted);
     }
 
     #[test]

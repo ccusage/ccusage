@@ -8,7 +8,7 @@ use crate::{
     cli::{AgentReportKind, CostMode, SharedArgs},
     color, format_breakdown_model_label, format_currency, format_models_multiline, format_number,
     json_float, missing_pricing_model_for_token_total, print_box_title,
-    print_missing_pricing_warnings_for_models, sanitize_terminal_text,
+    print_missing_pricing_warnings_for_models, sanitize_terminal_text, sum_costs,
 };
 
 use super::speed::CodexSpeedPolicy;
@@ -188,10 +188,8 @@ pub fn calculate_codex_model_cost(
 ) -> f64 {
     let speed = speed.into();
     if !usage.timestamped_usage.is_empty() {
-        return usage
-            .timestamped_usage
-            .iter()
-            .filter_map(|(timestamp, timestamped_usage)| {
+        return sum_costs(usage.timestamped_usage.iter().filter_map(
+            |(timestamp, timestamped_usage)| {
                 let pricing =
                     pricing.find_at(model, crate::TimestampMs::from_millis(*timestamp))?;
                 Some(calculate_codex_usage_cost(
@@ -199,8 +197,8 @@ pub fn calculate_codex_model_cost(
                     &pricing,
                     speed,
                 ))
-            })
-            .sum();
+            },
+        ));
     }
 
     let Some(pricing) = pricing.find(model) else {
@@ -400,11 +398,12 @@ where
     S: Into<CodexSpeedPolicy> + Copy,
 {
     let speed = speed.into();
-    group
-        .models
-        .iter()
-        .map(|(model, usage)| calculate_codex_model_cost(model, usage, pricing, speed))
-        .sum()
+    sum_costs(
+        group
+            .models
+            .iter()
+            .map(|(model, usage)| calculate_codex_model_cost(model, usage, pricing, speed)),
+    )
 }
 
 pub fn codex_model_missing_pricing(

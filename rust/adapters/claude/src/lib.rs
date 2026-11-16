@@ -61,8 +61,14 @@ pub fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<DedupedEntries> {
-    let loaded = load_deduped_entries_with_progress(shared, project_filter, ProgressOwner::Source)?;
-    diagnostics::emit(&loaded.warnings);
+    let diagnostics = Diagnostics::new("claude");
+    let loaded = load_deduped_entries_with_progress(
+        shared,
+        project_filter,
+        ProgressOwner::Source,
+        &diagnostics,
+    )?;
+    diagnostics.emit(shared);
     Ok(loaded)
 }
 
@@ -71,9 +77,9 @@ pub(crate) fn load_deduped_entries_with_progress(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     owner: ProgressOwner,
+    diagnostics: &Diagnostics,
 ) -> Result<DedupedEntries> {
-    let diagnostics = Diagnostics::new("claude");
-    let load = || load_entries_inner(shared, project_filter, false, &diagnostics);
+    let load = || load_entries_inner(shared, project_filter, false, diagnostics);
     match owner {
         ProgressOwner::Source => {
             progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
@@ -88,7 +94,6 @@ pub(crate) fn load_deduped_entries_with_progress(
 #[derive(Default)]
 pub struct DedupedEntries {
     pub entries: Vec<LoadedEntry>,
-    pub(crate) warnings: Vec<String>,
     /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
@@ -133,7 +138,7 @@ pub fn load_entries_since(
 ) -> Result<Vec<LoadedEntry>> {
     let diagnostics = Diagnostics::new("claude");
     let entries = load_entries_since_with_diagnostics(shared, project_filter, &diagnostics)?;
-    diagnostics::emit(&diagnostics.warnings(shared));
+    diagnostics.emit(shared);
     Ok(entries)
 }
 
@@ -156,15 +161,19 @@ pub fn load_daily_summaries(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
-    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        daily::load_daily_summaries_inner(shared, project_filter, group_by_project, |_| {
-            SessionDays::default()
-        })
-    })
-    .map(|daily| {
-        diagnostics::emit(&daily.warnings);
-        daily.summaries
-    })
+    let diagnostics = Diagnostics::new("claude");
+    let daily =
+        progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
+            daily::load_daily_summaries_inner(
+                shared,
+                project_filter,
+                group_by_project,
+                |_| SessionDays::default(),
+                &diagnostics,
+            )
+        })?;
+    diagnostics.emit(shared);
+    Ok(daily.summaries)
 }
 
 /// Main-thread Claude usage as `(session ID, date)` pairs, so a source that
@@ -191,7 +200,6 @@ fn main_thread_session_days<'a>(
 pub struct DailySummaries {
     /// Summaries, possibly missing dates before `since`.
     pub summaries: Vec<UsageSummary>,
-    pub(crate) warnings: Vec<String>,
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
     pub detected: bool,
@@ -208,13 +216,15 @@ pub fn load_daily_summaries_with_detection(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<DailySummaries> {
+    let diagnostics = Diagnostics::new("claude");
     let loaded = load_daily_summaries_with_detection_progress(
         shared,
         project_filter,
         group_by_project,
         ProgressOwner::Source,
+        &diagnostics,
     )?;
-    diagnostics::emit(&loaded.warnings);
+    diagnostics.emit(shared);
     Ok(loaded)
 }
 
@@ -224,6 +234,7 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
     project_filter: Option<&str>,
     group_by_project: bool,
     owner: ProgressOwner,
+    diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
     let load = || {
         daily::load_daily_summaries_inner(
@@ -231,6 +242,7 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
             project_filter,
             group_by_project,
             daily::session_days,
+            diagnostics,
         )
     };
     match owner {
@@ -332,7 +344,6 @@ fn load_entries_inner(
     Ok(DedupedEntries {
         entries: deduped,
         copies,
-        warnings: diagnostics.warnings(shared),
     })
 }
 
@@ -690,22 +701,21 @@ fn read_usage_file_with_diagnostics(
         if usage_marker.find(line).is_none() {
             continue;
         }
-        let Some(data) = deserialize_usage_line::<UsageEntry>(line) else {
-            diagnostics::rejected(path, index, line, diagnostics, false);
-            continue;
+        let data = match deserialize_usage_line::<UsageEntry>(line) {
+            Ok(data) => data,
+            Err(Rejection::NullContract) => continue,
+            Err(Rejection::Malformed) => {
+                diagnostics::rejected(path, &content, index, line, diagnostics, false);
+                continue;
+            }
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
-            diagnostics.record(Skip::record(
-                path,
-                (index + 1) as u32,
-                SkipKind::InvalidTimestamp,
-                "invalid usage timestamp",
-            ));
+            diagnostics::invalid_timestamp(path, index, diagnostics);
             continue;
         };
         update_loaded_file_timestamp(&mut loaded_file, timestamp);
         if !is_valid_usage_entry(&data) {
-            diagnostics::rejected(path, index, line, diagnostics, false);
+            diagnostics::rejected(path, &content, index, line, diagnostics, false);
             continue;
         }
         let date = format_date_tz(timestamp, tz);
@@ -923,19 +933,34 @@ fn has_unsupported_null_field(line: &[u8]) -> bool {
     unsupported
 }
 
+/// Why [`deserialize_usage_line`] did not return a record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Rejection {
+    /// A member the nullable-field contract guards is `null`. Claude Code
+    /// writes such lines itself, such as `<synthetic>` records with
+    /// `"speed":null`, so skipping one is by design rather than a sign of bad
+    /// input.
+    NullContract,
+    /// The line did not decode as the record type.
+    Malformed,
+}
+
 /// Deserializes a transcript line while enforcing Claude's nullable-field contract.
 ///
 /// Every other rejection, such as a duplicate known field, comes from the typed parse
 /// of the raw line, so a line is loaded or skipped the same way whether or not it
 /// also needed the null check.
-pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(line: &[u8]) -> Option<T> {
+pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
+    line: &[u8],
+) -> std::result::Result<T, Rejection> {
     if may_have_unsupported_null_field(line) {
-        let root = serde_json::from_slice::<serde_json::Value>(line).ok()?;
+        let root =
+            serde_json::from_slice::<serde_json::Value>(line).map_err(|_| Rejection::Malformed)?;
         if has_unsupported_null_field_in_value(&root) {
-            return None;
+            return Err(Rejection::NullContract);
         }
     }
-    serde_json::from_slice(line).ok()
+    serde_json::from_slice(line).map_err(|_| Rejection::Malformed)
 }
 
 /// Whether a `null` in `line` could be the value of a member that
@@ -1099,6 +1124,38 @@ mod tests {
         cli::{CostMode, SharedArgs},
     };
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+
+    pub(crate) const SYNTHETIC_NULL_SPEED_LINE: &str = r#"{"timestamp":"2026-01-02T10:00:01.000Z","sessionId":"session-a","isApiErrorMessage":true,"message":{"id":"msg-synthetic","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"service_tier":null,"speed":null}}}"#;
+
+    #[test]
+    fn null_contract_rejections_claude_code_writes_stay_quiet() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": [
+                r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+                SYNTHETIC_NULL_SPEED_LINE,
+            ]
+            .join("\n"),
+        });
+        let diagnostics = ccusage_core::Diagnostics::new("claude");
+
+        let loaded = super::read_usage_file_with_diagnostics(
+            &fixture.path("projects/project-a/session-a.jsonl"),
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            None,
+            &diagnostics,
+        );
+
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(
+            diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..SharedArgs::default()
+                })
+                .is_empty()
+        );
+    }
 
     #[test]
     fn limits_usage_file_discovery_to_requested_project() {
@@ -1322,11 +1379,11 @@ null,"usage":{"input_tokens":1}}}"#
             );
 
             assert!(
-                deserialize_usage_line::<UsageEntry>(duplicate_known.as_bytes()).is_none(),
+                deserialize_usage_line::<UsageEntry>(duplicate_known.as_bytes()).is_err(),
                 "{duplicate_known}"
             );
             assert!(
-                deserialize_usage_line::<UsageEntry>(duplicate_unknown.as_bytes()).is_some(),
+                deserialize_usage_line::<UsageEntry>(duplicate_unknown.as_bytes()).is_ok(),
                 "{duplicate_unknown}"
             );
         }
@@ -1337,7 +1394,7 @@ null,"usage":{"input_tokens":1}}}"#
         assert!(deserialize_usage_line::<UsageEntry>(
             br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
         )
-        .is_none());
+        .is_err());
     }
 
     /// The repro line from #1710 loads as one Fable 5.1 entry with its own token counts.

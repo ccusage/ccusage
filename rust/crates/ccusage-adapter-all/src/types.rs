@@ -2,19 +2,21 @@ use std::collections::BTreeSet;
 
 use ccusage_adapter_common::rows::UnifiedRow;
 
-use crate::{ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
+use crate::{Diagnostics, ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
 
 pub(super) struct AllLoadResult {
     pub(super) rows: Vec<UnifiedRow>,
     pub(super) detected_agents: Vec<&'static str>,
-    pub(super) warnings: Vec<String>,
+    /// One per source, in source order.
+    pub(super) diagnostics: Vec<Diagnostics>,
 }
 
 pub(super) struct AllSectionsLoadResult {
     pub(super) sections: Vec<(AgentReportKind, Vec<UnifiedRow>)>,
     pub(super) daily_detected_agents: Vec<&'static str>,
     pub(super) session_detected_agents: Vec<&'static str>,
-    pub(super) warnings: Vec<String>,
+    /// One per source, in source order, each covering both loads.
+    pub(super) diagnostics: Vec<Diagnostics>,
 }
 
 impl AllSectionsLoadResult {
@@ -31,7 +33,7 @@ impl AllSectionsLoadResult {
 pub(super) struct AgentRows {
     pub(super) rows: Vec<UnifiedRow>,
     pub(super) detected: bool,
-    pub(super) warnings: Vec<String>,
+    pub(super) diagnostics: Diagnostics,
 }
 
 pub(super) struct AgentLoadSpec<'scope> {

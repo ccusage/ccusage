@@ -282,8 +282,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 }
 
 /// Claude-only options, plus `statusline`, which reads a hook payload from
-/// stdin. Every record is months old, so `blocks` has no active block and
-/// `statusline` reports nothing for today.
+/// stdin. The clock is pinned to `golden::FIXED_NOW`, inside the last block.
 pub fn extra_cases(root: &Path) -> Vec<Case> {
     let transcript = root.join(ALPHA).join("sess-alpha-1.jsonl");
     let hook = |context: &str| {

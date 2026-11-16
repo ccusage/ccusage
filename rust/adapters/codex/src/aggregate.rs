@@ -136,9 +136,7 @@ pub fn load_groups(
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let diagnostics = Diagnostics::new("codex");
     let (groups, _) = load_groups_with_diagnostics(shared, kind, wants_json(shared), &diagnostics)?;
-    for warning in diagnostics.warnings(shared) {
-        eprintln!("{warning}");
-    }
+    diagnostics.emit(shared);
     Ok(groups)
 }
 

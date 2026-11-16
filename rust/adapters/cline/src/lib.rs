@@ -11,7 +11,6 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-pub use loader::load_entries;
 pub use report::summarize_entries;
 
 pub struct Cline;

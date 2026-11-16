@@ -344,9 +344,7 @@ pub(super) fn load_codex_events_with_detection_progress(
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
     let diagnostics = Diagnostics::new("codex");
     let loaded = load_codex_events_with_detection_diagnostics(shared, owner, &diagnostics)?;
-    for warning in diagnostics.warnings(shared) {
-        eprintln!("{warning}");
-    }
+    diagnostics.emit(shared);
     Ok(loaded)
 }
 
@@ -3241,7 +3239,7 @@ mod tests {
                 replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
                 replay_token_count("2025-01-01T08:01:00.000Z", 100),
                 r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"SECRET_CANARY","#.to_string(),
-            ].join("\n"),
+            ].join("\n") + "\n",
             "sessions/2026/03/15/child.jsonl": [
                 replay_metadata("2026-03-15T08:00:00.000Z", "child", Some("parent")),
                 replay_token_count("2026-03-15T08:00:00.000Z", 100),

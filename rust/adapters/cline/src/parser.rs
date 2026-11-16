@@ -1,6 +1,4 @@
-use std::fs;
-
-use ccusage_adapter_common::UnitError;
+use ccusage_adapter_common::{UnitError, units::read_json};
 use serde_json::Value;
 
 use crate::{LoadedEntry, PricingMap, Result, TokenUsageRaw, cli::CostMode};
@@ -16,8 +14,7 @@ pub(super) fn read_file(
     pricing: &PricingMap,
     timezone: &jiff::tz::TimeZone,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let content = fs::read(&source.path)?;
-    let root = serde_json::from_slice::<Value>(&content)?;
+    let root = read_json::<Value>(&source.path)?;
     match source.kind {
         SourceKind::Extension | SourceKind::CliTask => {
             parse_extension_messages(&root, source, mode, pricing, timezone)

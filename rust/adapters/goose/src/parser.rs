@@ -8,6 +8,7 @@ use crate::{
     cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
 };
 use ccusage_adapter_common::jsonl;
+use ccusage_core::SkipKind;
 
 /// Goose stores the per-session model selection as a JSON blob in the
 /// `model_config_json` column. Only the human-readable model name is consumed.
@@ -17,18 +18,36 @@ struct GooseModelConfig {
     model_name: Option<String>,
 }
 
+/// Why a Goose session row that carries usage was left out.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RowRejection {
+    MissingId,
+    MissingModel,
+    InvalidTimestamp,
+}
+
+impl RowRejection {
+    pub(super) const fn kind(self) -> SkipKind {
+        match self {
+            Self::MissingId | Self::MissingModel => SkipKind::InvalidData,
+            Self::InvalidTimestamp => SkipKind::InvalidTimestamp,
+        }
+    }
+
+    pub(super) const fn detail(self) -> &'static str {
+        match self {
+            Self::MissingId => "Goose session row with usage has no session id",
+            Self::MissingModel => "Goose session row with usage names no model",
+            Self::InvalidTimestamp => "Goose session row with usage has an invalid created_at",
+        }
+    }
+}
+
 pub(super) fn row_to_entry(
     statement: &sqlite::Statement<'_>,
     tz: &JiffTimeZone,
     pricing: &PricingMap,
-) -> Option<LoadedEntry> {
-    let id = statement.read::<String, _>(0).ok()?;
-    let model_config = statement.read::<String, _>(1).ok()?;
-    let provider_name = statement.read::<String, _>(2).ok();
-    let created_at = read_timestamp_value(statement, 3)?;
-    let timestamp = parse_goose_timestamp(&created_at)?;
-    let model = parse_goose_model_config(&model_config)?;
-
+) -> Result<Option<LoadedEntry>, RowRejection> {
     let input_tokens = read_token_value(statement, 8)
         .or_else(|| read_token_value(statement, 5))
         .unwrap_or(0);
@@ -39,8 +58,21 @@ pub(super) fn row_to_entry(
         .or_else(|| read_token_value(statement, 4))
         .unwrap_or(input_tokens.saturating_add(output_tokens));
     if input_tokens == 0 && output_tokens == 0 && total_tokens == 0 {
-        return None;
+        return Ok(None);
     }
+
+    let id = statement
+        .read::<String, _>(0)
+        .map_err(|_| RowRejection::MissingId)?;
+    let model = statement
+        .read::<String, _>(1)
+        .ok()
+        .and_then(|config| parse_goose_model_config(&config))
+        .ok_or(RowRejection::MissingModel)?;
+    let provider_name = statement.read::<String, _>(2).ok();
+    let timestamp = read_timestamp_value(statement, 3)
+        .and_then(|created_at| parse_goose_timestamp(&created_at))
+        .ok_or(RowRejection::InvalidTimestamp)?;
 
     let reasoning_tokens = total_tokens.saturating_sub(input_tokens.saturating_add(output_tokens));
     let provider_id = normalize_provider(provider_name.as_deref(), &model);
@@ -78,7 +110,7 @@ pub(super) fn row_to_entry(
     let missing_pricing_model =
         missing_goose_pricing(&model, &provider_id, usage, reasoning_tokens, pricing);
 
-    Some(LoadedEntry {
+    Ok(Some(LoadedEntry {
         date: format_date_tz(timestamp, tz),
         timestamp,
         project: Arc::from("goose"),
@@ -93,7 +125,7 @@ pub(super) fn row_to_entry(
         message_count: None,
         data,
         stored_cost: None,
-    })
+    }))
 }
 
 fn read_token_value(statement: &sqlite::Statement<'_>, index: usize) -> Option<u64> {

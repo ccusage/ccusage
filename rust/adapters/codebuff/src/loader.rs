@@ -8,23 +8,24 @@ use super::{
 };
 use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
 
-use crate::{
-    LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, cli::SharedArgs, format_date_tz,
-};
+use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
+    pricing: &crate::PricingMap,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &crate::SOURCE,
         shared,
         ccusage_adapter_common::source::SourceOptions::default(),
         Some(pricing),
     )
+    .map(|(entries, _)| entries)
 }
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx
-        .pricing
-        .ok_or_else(|| crate::cli_error("Codebuff needs pricing from the report pipeline"))?;
+    let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let mut files = discover_chat_files(cx.diagnostics)?;
     files.sort();
@@ -91,6 +92,7 @@ use super::report::{report_from_rows, summarize_entries};
 mod tests {
     use super::super::{parser::parse_usage_object, paths::CODEBUFF_DATA_DIR_ENV};
     use super::*;
+    use crate::cli::SharedArgs;
     use crate::{
         TokenUsageRaw, UsageEntry, UsageMessage, cli::AgentReportKind, parse_ts_timestamp,
     };
@@ -134,12 +136,13 @@ mod tests {
     }
 
     #[test]
-    fn malformed_chat_file_does_not_discard_healthy_files() {
+    fn malformed_chat_file_is_reported_and_an_unwritten_one_is_not() {
         let fixture = fs_fixture!({
             "projects/project-a/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
                 {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}
             ]"#,
             "projects/project-b/chats/2026-01-03T03-04-05.000Z/chat-messages.json": "[broken",
+            "projects/project-c/chats/2026-01-04T03-04-05.000Z/chat-messages.json": "",
         });
         let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();

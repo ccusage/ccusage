@@ -234,15 +234,7 @@ pub(super) fn parse_session_file(
     let session_id = extract_session_id(path);
     let fallback_timestamp = file_modified_timestamp(path);
     let content = fs::read(path).map_err(UnitError::from)?;
-    // OpenClaw lines that matter are either model-tracking records
-    // (`model_change`/`model-snapshot`) or assistant records carrying `usage`,
-    // so admit lines containing any of those substrings before JSON parsing.
-    let prefilter = LinePrefilter::any(&[
-        br#""model_change""#,
-        br#""model-snapshot""#,
-        br#""usage""#,
-        br#"\u"#,
-    ]);
+    let prefilter = record_prefilter();
     let mut current_model = None::<String>;
     let mut current_provider = None::<String>;
     let mut entries = Vec::new();
@@ -275,6 +267,14 @@ pub(super) fn parse_session_file(
         }
     }
     Ok(entries)
+}
+
+/// Admits the records a transcript reader needs before JSON parsing: the
+/// model-tracking records (`model_change`/`model-snapshot`) and assistant
+/// records carrying `usage`. The JSONL and SQLite readers share it so both
+/// select the same records.
+pub(super) fn record_prefilter() -> LinePrefilter {
+    LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#])
 }
 
 pub(super) fn is_usage_envelope(value: &Value) -> bool {
@@ -576,12 +576,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn diagnoses_nested_usage_failure_and_preserves_escaped_usage_keys() {
+    fn diagnoses_nested_usage_failure_and_skips_lines_without_markers() {
         let fixture = fs_fixture!({
             "session.jsonl": concat!(
                 r#"{"type":"message","message":{"role":"assistant","usage":"SECRET_CANARY"}}"#,
                 "\n",
-                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","\u0075sage":{"input":10,"output":20}}}"#,
+                r#"{"type":"message","message":{"role":"toolResult","content":"\u001b[31mred\u001b[0m C:\\users"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20}}}"#,
                 "\n",
             ),
         });

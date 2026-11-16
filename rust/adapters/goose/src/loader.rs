@@ -3,10 +3,11 @@ use std::{collections::HashSet, path::Path};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use ccusage_adapter_common::{
+    SqliteStage,
     source::LoadContext,
     units::{UnitError, read_units},
 };
-use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind, cli::SharedArgs};
+use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, Skip};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -27,19 +28,8 @@ WHERE model_config_json IS NOT NULL
     AND TRIM(model_config_json) != ''
 "#;
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-}
-
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx
-        .pricing
-        .ok_or_else(|| crate::cli_error("Goose needs pricing from the report pipeline"))?;
+    let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let db_paths = goose_db_paths()?;
     // Load each database in parallel (a fresh read-only connection per DB), then
@@ -76,26 +66,31 @@ fn load_entries_from_db(
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let connection =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|_| UnitError::new(SkipKind::Unreadable, "could not open Goose database"))?;
+            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     let mut statement = connection
         .prepare(GOOSE_SESSION_QUERY)
-        .map_err(|_| UnitError::new(SkipKind::InvalidData, "could not read Goose sessions"))?;
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
     let mut entries = Vec::new();
+    let mut row_number = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
-                if let Some(entry) = row_to_entry(&statement, tz, pricing) {
-                    entries.push(entry);
+                row_number = row_number.saturating_add(1);
+                match row_to_entry(&statement, tz, pricing) {
+                    Ok(Some(entry)) => entries.push(entry),
+                    Ok(None) => {}
+                    Err(rejection) => diagnostics.record(Skip::record(
+                        db_path,
+                        row_number,
+                        rejection.kind(),
+                        rejection.detail(),
+                    )),
                 }
             }
             Ok(sqlite::State::Done) => break,
-            Err(_) => {
-                diagnostics.record(Skip::unit(
-                    db_path,
-                    SkipKind::ReadInterrupted,
-                    "reading Goose sessions stopped early; loaded rows were kept",
-                ));
+            Err(error) => {
+                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
                 break;
             }
         }
@@ -105,6 +100,7 @@ fn load_entries_from_db(
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::SharedArgs;
     use std::path::Path;
 
     use super::*;
@@ -200,6 +196,73 @@ INSERT INTO sessions (
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);
         assert_eq!(entries[0].data.message.usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 30);
+    }
+
+    #[test]
+    fn diagnoses_sessions_with_usage_it_cannot_place_or_attribute() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path(super::super::paths::GOOSE_DB_FILE_NAME);
+        create_goose_db(&db_path);
+        let session = |id, model_config, created_at, total| SessionFixture {
+            id,
+            model_config,
+            provider: Some("openai"),
+            created_at,
+            total,
+            input: total,
+            output: 0,
+        };
+        let gpt = r#"{"model_name":"gpt-5"}"#;
+        insert_session(&db_path, session("healthy", gpt, "2026-05-01 01:02:03", 10));
+        insert_session(&db_path, session("bad-time", gpt, "SECRET_CANARY", 10));
+        insert_session(
+            &db_path,
+            session("no-model", "{}", "2026-05-01 01:02:03", 10),
+        );
+        insert_session(&db_path, session("idle", "{}", "SECRET_CANARY", 0));
+
+        let diagnostics = Diagnostics::new("goose");
+        let entries = load_entries_from_db(
+            &db_path,
+            &jiff::tz::TimeZone::UTC,
+            &PricingMap::default(),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "healthy");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn a_database_without_the_session_columns_is_an_unsupported_schema() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("sessions.db");
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute("CREATE TABLE sessions (id TEXT)")
+            .unwrap();
+
+        let error = load_entries_from_db(
+            &db_path,
+            &jiff::tz::TimeZone::UTC,
+            &PricingMap::default(),
+            &Diagnostics::new("goose"),
+        )
+        .unwrap_err();
+        let diagnostics = Diagnostics::new("goose");
+        error.record(&db_path, &diagnostics);
+
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }
 
     #[test]

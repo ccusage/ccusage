@@ -10,6 +10,10 @@ publish.workspace = true
 # pricing. Crates enable it from [dev-dependencies], which Cargo leaves out of
 # `cargo build`, so the Crane layers and the shipped binary never compile it.
 test-snapshots = ["dep:ccusage-pricing-snapshots"]
+# Tests only: `utc_now` returns the RFC 3339 instant in `CCUSAGE_TEST_NOW`
+# when it is set, so tests of the binary can pin "now" for clock-relative
+# reports. Enabled from [dev-dependencies] for the same reason as above.
+test-clock = []
 
 [dependencies]
 ccusage-cli.workspace = true

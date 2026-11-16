@@ -99,7 +99,7 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     Ok(SourceRows {
         rows,
         detected,
-        warnings: diagnostics.warnings(shared),
+        diagnostics,
         claude_counted: None,
     })
 }
@@ -224,13 +224,20 @@ mod diagnostic_tests {
             assert_eq!(result.rows[0].total_tokens, 12);
             assert!(
                 result
-                    .warnings
+                    .diagnostics
+                    .warnings(&shared)
                     .iter()
                     .any(|line| line == "WARN  codex: skipped 2 records in 1 input (invalid data)"),
                 "{:?}",
-                result.warnings
+                result.diagnostics.warnings(&shared)
             );
-            assert!(!result.warnings.join("\n").contains("SECRET_CANARY"));
+            assert!(
+                !result
+                    .diagnostics
+                    .warnings(&shared)
+                    .join("\n")
+                    .contains("SECRET_CANARY")
+            );
         }
     }
 
@@ -276,9 +283,15 @@ mod diagnostic_tests {
                 assert_eq!(result.rows[0].input_tokens, 15);
                 assert_eq!(result.rows[0].output_tokens, 3);
                 assert_eq!(result.rows[0].total_tokens, 18);
-                assert!(result.warnings.iter().any(|line| line
+                assert!(result.diagnostics.warnings(&shared).iter().any(|line| line
                     == &format!("WARN  codex: skipped 1 record in 1 input ({category})")));
-                assert!(!result.warnings.join("\n").contains("SECRET_CANARY"));
+                assert!(
+                    !result
+                        .diagnostics
+                        .warnings(&shared)
+                        .join("\n")
+                        .contains("SECRET_CANARY")
+                );
             }
         }
     }
@@ -318,7 +331,7 @@ mod diagnostic_tests {
                         .unwrap();
                     assert!(result.detected);
                     assert!(result.rows.is_empty());
-                    assert!(result.warnings.is_empty());
+                    assert!(result.diagnostics.warnings(&shared).is_empty());
                 }
                 let (events, detected) = crate::load_codex_events_with_detection(&shared).unwrap();
                 assert!(detected);
@@ -366,14 +379,21 @@ mod diagnostic_tests {
             assert_eq!(result.rows[0].total_tokens, 11);
             assert!(
                 result
-                    .warnings
+                    .diagnostics
+                    .warnings(&shared)
                     .iter()
                     .any(|line| line
                         == "WARN  codex: skipped 2 records in 1 input (invalid timestamp)"),
                 "{:?}",
-                result.warnings
+                result.diagnostics.warnings(&shared)
             );
-            assert!(!result.warnings.join("\n").contains("SECRET_CANARY"));
+            assert!(
+                !result
+                    .diagnostics
+                    .warnings(&shared)
+                    .join("\n")
+                    .contains("SECRET_CANARY")
+            );
         }
     }
 
@@ -434,18 +454,26 @@ mod diagnostic_tests {
                 2
             );
             assert!(
-                rows.warnings
+                rows.diagnostics
+                    .warnings(&shared)
                     .iter()
                     .any(|line| line.contains("invalid data")),
                 "{:?}",
-                rows.warnings
+                rows.diagnostics.warnings(&shared)
             );
             assert!(
-                rows.warnings
+                rows.diagnostics
+                    .warnings(&shared)
                     .iter()
                     .any(|line| line.contains("read interrupted") || line.contains("unreadable"))
             );
-            assert!(!rows.warnings.join("\n").contains("SECRET_CANARY"));
+            assert!(
+                !rows
+                    .diagnostics
+                    .warnings(&shared)
+                    .join("\n")
+                    .contains("SECRET_CANARY")
+            );
         }
     }
 
@@ -522,18 +550,24 @@ mod diagnostic_tests {
             })
             .unwrap();
 
-        assert_eq!(rows.rows.len(), 1, "{:?}", rows.warnings);
+        assert_eq!(
+            rows.rows.len(),
+            1,
+            "{:?}",
+            rows.diagnostics.warnings(&shared)
+        );
         assert_eq!(rows.rows[0].input_tokens, 40);
         assert_eq!(rows.rows[0].output_tokens, 5);
         assert_eq!(rows.rows[0].total_tokens, 45);
         assert!(
-            rows.warnings
+            rows.diagnostics
+                .warnings(&shared)
                 .iter()
                 .any(|line| { line == "WARN  codex: skipped 2 records in 1 input (invalid data)" }),
             "{:?}",
-            rows.warnings
+            rows.diagnostics.warnings(&shared)
         );
-        let warnings = rows.warnings.join("\n");
+        let warnings = rows.diagnostics.warnings(&shared).join("\n");
         assert!(warnings.contains("headless.jsonl:1:"), "{warnings}");
         assert!(warnings.contains("headless.jsonl:2:"), "{warnings}");
         assert!(!warnings.contains("SECRET_CANARY"), "{warnings}");

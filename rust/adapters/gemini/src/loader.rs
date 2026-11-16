@@ -9,9 +9,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_log_files(cx.diagnostics)?;
-    let pricing = cx
-        .pricing
-        .ok_or_else(|| crate::cli_error("Gemini pricing was not supplied"))?;
+    let pricing = cx.pipeline_pricing()?;
     let mut events =
         read_units_flat(
             &files,

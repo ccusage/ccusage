@@ -1,6 +1,6 @@
 use std::{collections::HashSet, env, path::PathBuf};
 
-use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_adapter_common::collect_files_matching_diagnosed;
 use ccusage_core::Diagnostics;
 
 use crate::Result;
@@ -37,9 +37,12 @@ fn paths() -> Result<Vec<PathBuf>> {
 /// Discovers all `.json` and `.jsonl` log files across known directories.
 pub(super) fn discover_log_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
+    let is_log = |path: &std::path::Path| {
+        path.extension()
+            .is_some_and(|extension| extension == "json" || extension == "jsonl")
+    };
     for path in paths()? {
-        collect_files_with_extension_diagnosed(&path, "json", &mut files, diagnostics);
-        collect_files_with_extension_diagnosed(&path, "jsonl", &mut files, diagnostics);
+        collect_files_matching_diagnosed(&path, &is_log, &mut files, diagnostics);
     }
     files.sort();
     files.dedup();

@@ -39,7 +39,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
             model_breakdowns: Vec::new(),
         }],
         detected: true,
-        warnings: Vec::new(),
+        diagnostics: Diagnostics::new(agent),
     }
 }
 
@@ -899,7 +899,8 @@ fn focused_opencode_input(
     kind: AgentReportKind,
     include_claude_agent: bool,
 ) -> u64 {
-    let mut entries = loader::load_opencode_entries(shared, kind, include_claude_agent).unwrap();
+    let (mut entries, _) =
+        loader::load_opencode_entries(shared, kind, include_claude_agent).unwrap();
     filter_loaded_entries_by_date(&mut entries, shared);
     entries
         .iter()
@@ -959,6 +960,34 @@ fn focused_opencode_reports_leave_claude_agent_turns_to_claude() {
             "{kind:?}"
         );
     }
+}
+
+#[test]
+fn focused_opencode_reports_what_the_claude_cross_check_skipped() {
+    let fixture = fs_fixture!({});
+    write_claude_agent_fixture(&fixture);
+    // The transcript of `claude-native-missing` is unreadable, so OpenCode
+    // keeps its copy of that session's turns and must say why.
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-missing.jsonl",
+        r#"{"timestamp":"2099-01-02T00:00:00Z","message":{"usage":{"input_tokens":"bad"}}}"#,
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990101", "20990103");
+
+    let (_, claude_diagnostics) =
+        loader::load_opencode_entries(&shared, AgentReportKind::Daily, false).unwrap();
+    let (_, included) =
+        loader::load_opencode_entries(&shared, AgentReportKind::Daily, true).unwrap();
+
+    assert_eq!(
+        claude_diagnostics.unwrap().warnings(&shared),
+        ["WARN  claude: skipped 1 record in 1 input (invalid data)"]
+    );
+    assert!(
+        included.is_none(),
+        "no cross-check runs, so nothing to report"
+    );
 }
 
 #[test]
@@ -2679,7 +2708,7 @@ fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
         fixture.path("antigravity").into_os_string(),
     );
     let shared = fixture_shared("20250615", "20250615");
-    let expected = vec!["WARN  antigravity: skipped 1 input (unreadable)".to_string()];
+    let expected = vec!["WARN  antigravity: skipped 1 input (invalid data)".to_string()];
 
     let rows = loader::load_rows(
         AgentReportKind::Daily,
@@ -2696,7 +2725,56 @@ fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
     )
     .unwrap();
 
+    let warnings = |diagnostics: &[Diagnostics]| {
+        diagnostics
+            .iter()
+            .flat_map(|diagnostics| diagnostics.warnings(&shared))
+            .collect::<Vec<_>>()
+    };
     assert!(rows.rows.is_empty());
-    assert_eq!(rows.warnings, expected);
-    assert_eq!(sections.warnings, expected);
+    assert_eq!(warnings(&rows.diagnostics), expected);
+    assert_eq!(warnings(&sections.diagnostics), expected);
+}
+
+#[test]
+fn sections_report_one_skip_count_when_their_loads_read_different_files() {
+    let good = r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#;
+    let bad = r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"bad"}}}"#;
+    let fixture = fs_fixture!({
+        "claude/projects/p/new.jsonl": [good, bad].join("\n"),
+        "claude/projects/p/old.jsonl": [bad, bad].join("\n"),
+    });
+    // The daily load skips a transcript last written before `--since` without
+    // reading it; the session load reads every transcript.
+    set_file_modified(
+        &fixture.path("claude/projects/p/old.jsonl"),
+        "2001-01-01T00:00:00Z",
+    );
+    let _env = isolated_agent_env(
+        &fixture,
+        "CLAUDE_CONFIG_DIR",
+        fixture.path("claude").into_os_string(),
+    );
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        ..fixture_shared("20100101", "20991231")
+    };
+
+    let sections = loader::load_sections(
+        &[AgentReportKind::Daily, AgentReportKind::Session],
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+
+    let warnings = sections
+        .diagnostics
+        .iter()
+        .flat_map(|diagnostics| diagnostics.warnings(&shared))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        warnings,
+        ["WARN  claude: skipped 3 records in 2 inputs (invalid data)"]
+    );
 }

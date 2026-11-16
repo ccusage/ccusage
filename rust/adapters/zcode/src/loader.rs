@@ -2,7 +2,7 @@ use std::{collections::HashSet, path::Path};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use ccusage_adapter_common::{read_units, source::LoadContext, units::UnitError};
+use ccusage_adapter_common::{SqliteStage, read_units, source::LoadContext, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log};
@@ -48,18 +48,23 @@ impl SchemaVersion {
     }
 }
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
+    pricing: &crate::PricingMap,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &crate::SOURCE,
         shared,
         ccusage_adapter_common::source::SourceOptions::default(),
         Some(pricing),
     )
+    .map(|(entries, _)| entries)
 }
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.expect("ZCode uses pipeline pricing");
+    let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let db_paths = db_paths(shared)?;
     let loaded = read_units(&db_paths, shared.single_thread, cx.diagnostics, |db_path| {
@@ -92,11 +97,9 @@ fn load_entries_from_database(
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let connection =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|_| {
-                UnitError::new(SkipKind::Unreadable, "ZCode database could not be opened")
-            })?;
+            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
-    if connection.execute("PRAGMA busy_timeout = 5000").is_err() {
+    if let Err(error) = connection.execute("PRAGMA busy_timeout = 5000") {
         debug_log(
             shared,
             format!(
@@ -104,12 +107,9 @@ fn load_entries_from_database(
                 db_path.display()
             ),
         );
-        return Err(UnitError::new(
-            SkipKind::Unreadable,
-            "ZCode database setup failed",
-        ));
+        return Err(UnitError::sqlite(SqliteStage::Setup, error.code));
     }
-    if connection.execute("PRAGMA query_only = ON").is_err() {
+    if let Err(error) = connection.execute("PRAGMA query_only = ON") {
         debug_log(
             shared,
             format!(
@@ -117,10 +117,7 @@ fn load_entries_from_database(
                 db_path.display()
             ),
         );
-        return Err(UnitError::new(
-            SkipKind::Unreadable,
-            "ZCode database setup failed",
-        ));
+        return Err(UnitError::sqlite(SqliteStage::Setup, error.code));
     }
 
     let schema = read_schema(&connection, db_path, shared)?;
@@ -171,13 +168,7 @@ fn load_entries_from_database(
             shared,
             format!("Failed to query ZCode database: {}", db_path.display()),
         );
-        let kind = database_prepare_error_kind(error.code);
-        let detail = if kind == SkipKind::InvalidData {
-            "unsupported ZCode database schema"
-        } else {
-            "ZCode usage query could not be read"
-        };
-        UnitError::new(kind, detail)
+        UnitError::sqlite(SqliteStage::Setup, error.code)
     })?;
 
     let mut entries = Vec::new();
@@ -186,15 +177,7 @@ fn load_entries_from_database(
         match statement.next() {
             Ok(sqlite::State::Row) => {
                 row_number = row_number.saturating_add(1);
-                let Some(row) = read_usage_row(&statement) else {
-                    diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "completed ZCode usage row has unsupported values",
-                    ));
-                    continue;
-                };
+                let row = read_usage_row(&statement);
                 match row_to_entry(row, tz, shared.mode, pricing, &shared.pricing_overrides) {
                     Ok(Some(entry)) => entries.push(entry),
                     Ok(None) => {}
@@ -202,7 +185,13 @@ fn load_entries_from_database(
                         db_path,
                         row_number,
                         SkipKind::InvalidData,
-                        "completed ZCode usage row has an invalid identity or timestamp",
+                        "completed ZCode usage row has no id, session id or model",
+                    )),
+                    Err(RowRejection::InvalidTimestamp) => diagnostics.record(Skip::record(
+                        db_path,
+                        row_number,
+                        SkipKind::InvalidTimestamp,
+                        "completed ZCode usage row has an invalid start time",
                     )),
                 }
             }
@@ -212,11 +201,7 @@ fn load_entries_from_database(
                     shared,
                     format!("Failed to read ZCode database: {}", db_path.display()),
                 );
-                diagnostics.record(Skip::unit(
-                    db_path,
-                    database_step_error_kind(error.code),
-                    "ZCode database read stopped after a row failure",
-                ));
+                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
                 break;
             }
         }
@@ -249,10 +234,7 @@ fn read_schema(
                 details.join("; ")
             ),
         );
-        return Err(UnitError::new(
-            SkipKind::InvalidData,
-            "unsupported ZCode database schema",
-        ));
+        return Err(UnitError::unsupported_schema());
     }
 
     Ok(Schema {
@@ -276,31 +258,10 @@ fn table_columns(
     // LIMIT 0 obtains column metadata without materializing any row values,
     // including prompt or content fields that may be present in future schemas.
     let query = format!("SELECT * FROM \"{table}\" LIMIT 0");
-    let statement = connection.prepare(query).map_err(|error| {
-        let kind = database_prepare_error_kind(error.code);
-        let detail = if kind == SkipKind::InvalidData {
-            "unsupported ZCode database schema"
-        } else {
-            "ZCode database schema could not be read"
-        };
-        UnitError::new(kind, detail)
-    })?;
+    let statement = connection
+        .prepare(query)
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     Ok(statement.column_names().iter().cloned().collect())
-}
-
-fn database_step_error_kind(code: Option<isize>) -> SkipKind {
-    match database_prepare_error_kind(code) {
-        SkipKind::InvalidData => SkipKind::InvalidData,
-        _ => SkipKind::ReadInterrupted,
-    }
-}
-
-fn database_prepare_error_kind(code: Option<isize>) -> SkipKind {
-    if matches!(code.map(|code| code & 0xff), Some(1 | 17)) {
-        SkipKind::InvalidData
-    } else {
-        SkipKind::Unreadable
-    }
 }
 
 fn missing_columns(columns: &HashSet<String>, required: &[&str]) -> Vec<String> {
@@ -311,21 +272,25 @@ fn missing_columns(columns: &HashSet<String>, required: &[&str]) -> Vec<String> 
         .collect()
 }
 
-fn read_usage_row(statement: &sqlite::Statement<'_>) -> Option<ZcodeUsageRow> {
-    Some(ZcodeUsageRow {
-        id: statement.read::<String, _>(0).ok()?,
-        session_id: statement.read::<String, _>(1).ok()?,
-        started_at: read_timestamp_ms(statement, 2)?,
-        model_id: statement.read::<String, _>(3).ok()?,
+fn read_usage_row(statement: &sqlite::Statement<'_>) -> ZcodeUsageRow {
+    ZcodeUsageRow {
+        id: read_text_column(statement, 0),
+        session_id: read_text_column(statement, 1),
+        started_at: statement.read::<i64, _>(2).unwrap_or(0),
+        model_id: read_text_column(statement, 3),
         input_tokens: read_token_column(statement, 4),
         output_tokens: read_token_column(statement, 5),
         cache_creation_input_tokens: read_token_column(statement, 6),
         cache_read_input_tokens: read_token_column(statement, 7),
         computed_total_tokens: read_token_column(statement, 8),
-        provider_id: statement.read::<Option<String>, _>(9).ok().flatten(),
-        directory: statement.read::<Option<String>, _>(10).ok().flatten(),
-        version: statement.read::<Option<String>, _>(11).ok().flatten(),
-    })
+        provider_id: read_text_column(statement, 9),
+        directory: read_text_column(statement, 10),
+        version: read_text_column(statement, 11),
+    }
+}
+
+fn read_text_column(statement: &sqlite::Statement<'_>, index: usize) -> Option<String> {
+    statement.read::<Option<String>, _>(index).ok().flatten()
 }
 
 fn read_token_column(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
@@ -342,15 +307,6 @@ fn read_token_column(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
             })
         })
         .unwrap_or(0)
-}
-
-fn read_timestamp_ms(statement: &sqlite::Statement<'_>, index: usize) -> Option<i64> {
-    if let Ok(value) = statement.read::<i64, _>(index) {
-        return Some(value);
-    }
-    let value = statement.read::<f64, _>(index).ok()?;
-    (value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64)
-        .then_some(value.round() as i64)
 }
 
 #[cfg(test)]
@@ -514,16 +470,26 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &shared,
+            ccusage_adapter_common::source::SourceOptions::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]
-    fn separates_unreadable_databases_from_unsupported_schemas() {
+    fn separates_invalid_databases_from_unsupported_schemas() {
         let fixture = fs_fixture!({"broken.db": "SECRET_CANARY"});
-        sqlite::open(fixture.path("unsupported.db")).unwrap();
+        sqlite::open(fixture.path("unsupported.db"))
+            .unwrap()
+            .execute("CREATE TABLE other (id TEXT)")
+            .unwrap();
         let diagnostics = Diagnostics::new("zcode");
         let shared = SharedArgs::default();
         let pricing = PricingMap::load_embedded();
@@ -543,8 +509,8 @@ mod tests {
         );
 
         assert!(loaded.iter().all(Option::is_none));
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }
 
     #[test]
@@ -570,29 +536,6 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-    }
-
-    #[test]
-    fn classifies_usage_query_prepare_failures_by_sqlite_code() {
-        for code in [Some(1), Some(17), Some(273)] {
-            assert_eq!(database_step_error_kind(code), SkipKind::InvalidData);
-        }
-        for code in [Some(5), Some(6), Some(10), None] {
-            assert_eq!(database_step_error_kind(code), SkipKind::ReadInterrupted);
-        }
-        assert_eq!(database_prepare_error_kind(Some(1)), SkipKind::InvalidData);
-        assert_eq!(database_prepare_error_kind(Some(17)), SkipKind::InvalidData);
-        assert_eq!(
-            database_prepare_error_kind(Some(273)),
-            SkipKind::InvalidData
-        );
-        assert_eq!(
-            database_prepare_error_kind(Some(257)),
-            SkipKind::InvalidData
-        );
-        for code in [Some(5), Some(6), Some(10), Some(26), None] {
-            assert_eq!(database_prepare_error_kind(code), SkipKind::Unreadable);
-        }
     }
 
     #[test]
@@ -638,6 +581,13 @@ mod tests {
             [100, 10, 15, 25, 110],
         );
         insert_usage_record(&db, "zero-token", "session-1", 0, "", [0; 5]);
+        db.execute(
+            "INSERT INTO model_usage
+             (id, session_id, started_at, model_id, status, input_tokens, output_tokens)
+             VALUES ('null-model', 'session-1', 1786909042670, NULL, 'completed', 100, 10),
+                    ('zero-token-null-identity', NULL, NULL, NULL, 'completed', 0, 0)",
+        )
+        .unwrap();
         drop(db);
 
         let _home = EnvVarGuard::set(super::super::paths::ZCODE_HOME_ENV, fixture.root());
@@ -663,6 +613,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("healthy"));
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 4);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
         let warnings = diagnostics
             .warnings(&SharedArgs {
                 debug: true,

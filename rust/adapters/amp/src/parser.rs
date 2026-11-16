@@ -95,20 +95,22 @@ struct ThreadUnit<'a> {
 }
 
 impl ThreadUnit<'_> {
-    /// Parses a record's timestamp, recording a record whose timestamp the
-    /// report cannot place on a day. `record` is its 1-based position.
-    fn timestamp(&self, record: usize, text: Option<&str>) -> Option<TimestampMs> {
-        let timestamp = text.and_then(crate::parse_ts_timestamp);
-        if timestamp.is_none() {
-            self.diagnostics.record(Skip::record(
-                self.path,
-                u32::try_from(record).unwrap_or(u32::MAX),
-                SkipKind::InvalidTimestamp,
-                "missing or unsupported timestamp",
-            ));
-        }
-        timestamp
+    /// Records the record at `index` whose timestamp the report cannot place
+    /// on a day.
+    fn invalid_timestamp(&self, index: usize) {
+        self.diagnostics.record(Skip::record(
+            self.path,
+            Skip::line_number(index),
+            SkipKind::InvalidTimestamp,
+            "missing or unsupported timestamp",
+        ));
     }
+}
+
+/// A record's timestamp text together with the instant it names, or `None`
+/// when the report cannot place it on a day.
+fn placed_timestamp(text: String) -> Option<(String, TimestampMs)> {
+    crate::parse_ts_timestamp(&text).map(|timestamp| (text, timestamp))
 }
 
 /// Reads one thread file without reporting what it skipped; the loader goes
@@ -149,10 +151,6 @@ fn parse_thread(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    if content.iter().all(u8::is_ascii_whitespace) {
-        // A file Amp has created but not written yet holds no usage to lose.
-        return Ok(Vec::new());
-    }
     let thread = serde_json::from_slice::<AmpThread>(content)?;
     let Some(thread_id) = thread.id else {
         if thread
@@ -235,16 +233,17 @@ fn parse_ledger_events(
         let Some(model) = event.model.clone() else {
             unit.diagnostics.record(Skip::record(
                 unit.path,
-                u32::try_from(index + 1).unwrap_or(u32::MAX),
+                Skip::line_number(index),
                 SkipKind::InvalidData,
                 "Amp usage record has no model",
             ));
             continue;
         };
-        let Some(timestamp) = unit.timestamp(index + 1, event.timestamp.as_deref()) else {
+        let Some((timestamp_text, timestamp)) = event.timestamp.clone().and_then(placed_timestamp)
+        else {
+            unit.invalid_timestamp(index);
             continue;
         };
-        let timestamp_text = event.timestamp.clone().unwrap();
         let data = UsageEntry {
             session_id: Some(thread_id.to_string()),
             timestamp: timestamp_text,
@@ -342,21 +341,19 @@ fn parse_message_usage(
         else {
             unit.diagnostics.record(Skip::record(
                 unit.path,
-                u32::try_from(index + 1).unwrap_or(u32::MAX),
+                Skip::line_number(index),
                 SkipKind::InvalidData,
                 "Amp usage record has no model",
             ));
             continue;
         };
-        let parsed_timestamp =
-            |text: String| crate::parse_ts_timestamp(&text).map(|timestamp| (text, timestamp));
         let timestamp = non_empty_json_string(usage.get("timestamp"))
-            .and_then(parsed_timestamp)
+            .and_then(placed_timestamp)
             .or_else(|| {
-                non_empty_json_string(message.timestamp.as_ref()).and_then(parsed_timestamp)
+                non_empty_json_string(message.timestamp.as_ref()).and_then(placed_timestamp)
             });
         let Some((timestamp_text, timestamp)) = timestamp else {
-            unit.timestamp(index + 1, None);
+            unit.invalid_timestamp(index);
             continue;
         };
         let message_id = message.message_id.as_ref().and_then(|id| {
@@ -542,18 +539,40 @@ mod tests {
     }
 
     #[test]
-    fn fails_content_that_is_not_a_thread_and_accepts_an_unwritten_file() {
+    fn fails_content_that_is_not_a_thread() {
         let diagnostics = Diagnostics::new("amp");
 
         assert!(parse(&LEDGER_THREAD.as_bytes()[..80], &diagnostics).is_err());
         assert!(parse(b"7", &diagnostics).is_err());
-        assert!(parse(b"", &diagnostics).unwrap().is_empty());
-        assert!(parse(b"\n", &diagnostics).unwrap().is_empty());
         assert!(
             parse(br#"{"messages":[]}"#, &diagnostics)
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_thread_file_not_written_yet_is_not_reported_as_skipped() {
+        let fixture = fs_fixture!({"threads/T-new.json": ""});
+        let diagnostics = Diagnostics::new("amp");
+
+        let loaded = ccusage_adapter_common::read_units(
+            &[fixture.path("threads/T-new.json")],
+            true,
+            &diagnostics,
+            |file| {
+                read_thread(
+                    file,
+                    &jiff::tz::TimeZone::UTC,
+                    CostMode::Auto,
+                    None,
+                    &diagnostics,
+                )
+            },
+        );
+
+        assert!(loaded[0].is_none());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
     }
 
     #[test]
