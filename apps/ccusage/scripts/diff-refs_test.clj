@@ -91,23 +91,40 @@
         (is (= (into args ["--until" "20260228"]) (args-of real id)) id)))))
 
 (deftest environments
-  (let [fixture (babashka.fs/create-temp-dir {:prefix "ccusage-diff-fixture."})]
-    (try
-      (babashka.fs/create-dirs (path fixture "claude"))
-      (babashka.fs/create-dirs (path fixture "amp"))
-      (spit (path fixture "codex") "a file is not an agent directory")
-      (let [env (hermetic-env (str fixture) "/e")]
-        (is (true? (:clean? env)))
-        (is (= {"HOME" "/e" "XDG_CACHE_HOME" "/e/.cache" "XDG_CONFIG_HOME" "/e/.config" "XDG_DATA_HOME" "/e/.local/share"
-                "CLAUDE_CONFIG_DIR" (path fixture "claude") "AMP_DATA_DIR" (path fixture "amp")
-                "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"}
-               (:vars env)))
-        (testing "nothing from the caller leaks into a hermetic run"
-          (is (= (:vars env) (process-env env {"CODEX_HOME" "/real" "PATH" "/bin"})))))
-      (finally (babashka.fs/delete-tree fixture))))
+  (let [env (golden-env {"cwd" "/f/cwd"
+                         "env" {"HOME" "/f/home" "CLAUDE_CONFIG_DIR" "/f/claude,/f/opencode/claude"
+                                "LOG_LEVEL" "0" "COLUMNS" "200" "CCUSAGE_TEST_NOW" "2026-01-02T12:00:00Z"}})]
+    (is (true? (:clean? env)))
+    (testing "the golden environment at the default log level"
+      (is (= {"HOME" "/f/home" "CLAUDE_CONFIG_DIR" "/f/claude,/f/opencode/claude"
+              "CCUSAGE_TEST_NOW" "2026-01-02T12:00:00Z" "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"}
+             (:vars env))))
+    (testing "nothing from the caller leaks into a fixture run"
+      (is (= (:vars env) (process-env env {"CODEX_HOME" "/real" "PATH" "/bin"})))))
   (testing "a real run inherits the caller's environment at the default log level"
     (is (= {"HOME" "/h" "CODEX_HOME" "/real" "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"}
            (process-env (real-env) {"HOME" "/h" "CODEX_HOME" "/real" "LOG_LEVEL" "0" "COLUMNS" "80"})))))
+
+(deftest golden-fixtures
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-fixture."})
+        exports (atom [])]
+    (try
+      (with-redefs [export-golden-fixture! (fn [_ target]
+                                             (swap! exports conj target)
+                                             (spit (path target fixture-manifest) "{\"cwd\": \"/c\", \"env\": {}}"))]
+        (testing "a missing or empty directory is exported into, an exported one reused"
+          (is (= {"cwd" "/c" "env" {}} (prepare-golden-fixture! "/repo" (path dir "new"))))
+          (is (= {"cwd" "/c" "env" {}} (prepare-golden-fixture! "/repo" (path dir "new"))))
+          (babashka.fs/create-dirs (path dir "empty"))
+          (prepare-golden-fixture! "/repo" (path dir "empty"))
+          (is (= [(path dir "new") (path dir "empty")] @exports)))
+        (testing "a directory holding something else is never written into"
+          (babashka.fs/create-dirs (path dir "unrelated"))
+          (spit (path dir "unrelated" "notes") "keep")
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"is not a golden fixture"
+                                (prepare-golden-fixture! "/repo" (path dir "unrelated"))))
+          (is (= 2 (count @exports)))))
+      (finally (babashka.fs/delete-tree dir)))))
 
 (defn- run [exit out err] {:exit exit :out (.getBytes out) :err (.getBytes err)})
 
@@ -144,6 +161,9 @@
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-e2e."})
         script (fn [name body] (stub-binary dir name (str "[ \"$1\" = --help ] && printf 'COMMANDS:\\n  daily  Show\\n  weekly  Show\\n' && exit 0\n"
                                                             "[ \"$2\" = --help ] && exit 0\n" body)))
+        fixture (doto (path dir "fixture")
+                  babashka.fs/create-dirs
+                  (-> (path fixture-manifest) (spit (str "{\"cwd\": \"" dir "\", \"env\": {}, \"window\": {\"since\": \"20251231\", \"until\": \"20260101\"}}"))))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
         rejected (script "rejected" "echo 'unsupported report arguments' >&2; exit 2")
         unlaunchable (doto (script "unlaunchable" "echo unused")
@@ -157,7 +177,7 @@
         flaky (script "flaky" (str "n=0; if [ -f " (path dir "calls") " ]; then read -r n < " (path dir "calls")
                                    "; fi; n=$((n + 1)); echo \"$n\" > " (path dir "calls") "; echo \"$n\""))
         compare (fn [bins allow-stderr-diff]
-                  (compare-command! bins (hermetic-env nil (str dir)) (str dir) (str dir) allow-stderr-diff
+                  (compare-command! bins (golden-env {"env" {}}) (str dir) (str dir) allow-stderr-diff
                                     {:id "daily--json" :json? true :args ["daily"]}))]
     (try
       (testing "identical output leaves nothing behind"
@@ -168,7 +188,7 @@
         (let [output-dir (path dir "rejected-reports")
               status (atom nil)
               output (with-out-str
-                       (reset! status (diff-main rejected rejected "--output-dir" output-dir)))]
+                       (reset! status (diff-main rejected rejected "--fixture" fixture "--output-dir" output-dir)))]
           (is (= 2 @status))
           (is (not (re-find #"(?m)^PASS\s" output)))
           (is (re-find #"(?m)^ERROR\s" output))
@@ -176,7 +196,7 @@
                  (slurp (path output-dir "daily--json" "base-1.stderr"))))))
       (testing "a command execution exception is an inconclusive comparison"
         (let [entry (expand (path script-dir "diff-refs.bb"))
-              result (run-process [entry "--output-dir" (path dir "unlaunchable-reports") unlaunchable stable])]
+              result (run-process [entry "--fixture" fixture "--output-dir" (path dir "unlaunchable-reports") unlaunchable stable])]
           (is (= 2 (:exit result)))
           (is (re-find #"(?m)^ERROR\s" (:out result)))
           (is (not (re-find #"(?m)^FAIL\s" (:out result))))
@@ -189,7 +209,7 @@
         (let [output-dir (path dir "mixed-results")
               _ (babashka.fs/create-dirs output-dir)
               _ (spit (path output-dir "daily--json") "blocks a command output directory")
-              result (run-process [(expand (path script-dir "diff-refs.bb")) "--output-dir" output-dir stable mixed-head])]
+              result (run-process [(expand (path script-dir "diff-refs.bb")) "--fixture" fixture "--output-dir" output-dir stable mixed-head])]
           (is (= 2 (:exit result)))
           (is (re-find #"(?m)^ERROR\s" (:out result)))
           (is (re-find #"(?m)^FAIL\s" (:out result)))))
@@ -227,6 +247,7 @@
         status (atom nil)]
     (try
       (with-redefs [resolve-variants (fn [& _] [{:bin "base"} {:bin "head"}])
+                    prepare-golden-fixture! (fn [& _] {"cwd" (str dir) "env" {}})
                     report-commands (fn [_] ["daily"])
                     run-all! (fn [& _] [{:status :unstable :args ["daily"]}])
                     write-progress (fn [_])]
