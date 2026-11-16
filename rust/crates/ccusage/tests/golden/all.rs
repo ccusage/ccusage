@@ -1,35 +1,16 @@
 //! Unified reports (`ccusage daily|weekly|monthly|session` without an agent
 //! name) over every agent's seed in one fixture root.
 
-use std::{collections::BTreeMap, path::PathBuf};
-
 use ccusage_test_support::Fixture;
 
-use crate::golden::{AgentMatrix, Case, NARROW_COLUMNS, assert_case, shared_variants};
+use crate::golden::{AgentMatrix, Case, NARROW_COLUMNS, assert_case, seed_all, shared_variants};
 
 const UNIFIED_KINDS: [&str; 4] = ["daily", "weekly", "monthly", "session"];
 
 pub fn run(agents: &[AgentMatrix]) {
     let fixture = Fixture::new();
     let root = fixture.root();
-
-    // Seeds write to disjoint directories but may name the same variable (the
-    // OpenCode seed adds a Claude store of its own); every such variable is a
-    // comma-separated list, so the values are joined.
-    let mut joined: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
-    for matrix in agents {
-        for (name, path) in (matrix.seed)(root) {
-            joined
-                .entry(name)
-                .or_default()
-                .push(path.to_string_lossy().into_owned());
-        }
-    }
-    let seeded: Vec<(&'static str, PathBuf)> = joined
-        .into_iter()
-        .map(|(name, paths)| (name, PathBuf::from(paths.join(","))))
-        .collect();
-
+    let seeded = seed_all(agents, root);
     for case in &cases() {
         assert_case("all", root, &seeded, case);
     }

@@ -1,4 +1,4 @@
-//! Golden matrix over the release binary: one test per agent, the unified
+//! Golden matrix over the `ccusage` binary: one test per agent, the unified
 //! reports over every agent at once, and a guard that fails when the CLI
 //! accepts an (agent, report) pair nothing here snapshots.
 //!
@@ -63,6 +63,65 @@ agent_matrix! {
 #[test]
 fn all_agents_unified() {
     golden::all::run(AGENTS);
+}
+
+/// Entry point for `diff-refs.bb`, which compares two refs over the golden
+/// seeds instead of an empty store.
+#[test]
+#[ignore = "writes into CCUSAGE_GOLDEN_FIXTURE_DIR; run by diff-refs.bb"]
+fn export_golden_fixture() {
+    let dir = std::env::var_os("CCUSAGE_GOLDEN_FIXTURE_DIR")
+        .expect("CCUSAGE_GOLDEN_FIXTURE_DIR names the directory to export into");
+    golden::export_fixture(AGENTS, std::path::Path::new(&dir));
+}
+
+#[test]
+fn exported_fixture_replays_the_unified_report() {
+    let fixture = Fixture::new();
+    let root = fixture.root();
+    golden::export_fixture(AGENTS, root);
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join(golden::FIXTURE_MANIFEST)).unwrap())
+            .unwrap();
+    let env = manifest["env"].as_object().unwrap();
+    for name in golden::AGENT_HOME_ENV_VARS {
+        assert!(
+            env.contains_key(name),
+            "{name} is missing from the manifest"
+        );
+    }
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
+        .env_clear()
+        .envs(
+            env.iter()
+                .map(|(name, value)| (name, value.as_str().unwrap())),
+        )
+        .current_dir(manifest["cwd"].as_str().unwrap())
+        .args(["daily", "--offline", "--json", "--by-agent"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let reported: BTreeSet<&str> = report["daily"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|day| day["agents"].as_array().unwrap())
+        .map(|agent| agent["agent"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        reported,
+        AGENTS.iter().map(|matrix| matrix.agent).collect(),
+        "every agent's seed is visible through the exported environment"
+    );
+    assert_eq!(manifest["window"]["since"], golden::WINDOW_SINCE);
+    assert_eq!(manifest["window"]["until"], golden::WINDOW_UNTIL);
 }
 
 #[test]
@@ -147,6 +206,23 @@ fn every_accepted_agent_report_is_in_the_matrix() {
          a new agent needs a seed in tests/golden and an entry there"
     );
 
+    // diff-refs.bb builds its command list from these help pages, so they
+    // must name exactly the reports the parser accepts.
+    for matrix in AGENTS {
+        let listed: BTreeSet<String> = help_commands(&run(&[matrix.agent, "--help"]).stdout)
+            .into_iter()
+            .collect();
+        assert_eq!(
+            listed,
+            golden::report_kinds(matrix.agent)
+                .iter()
+                .map(|kind| (*kind).to_string())
+                .collect(),
+            "`ccusage {} --help` lists different reports than golden::report_kinds",
+            matrix.agent
+        );
+    }
+
     let mut uncovered = Vec::new();
     for matrix in AGENTS {
         let snapshotted: BTreeSet<&str> = agent_cases(matrix.agent, matrix.extras, root)
@@ -162,15 +238,8 @@ fn every_accepted_agent_report_is_in_the_matrix() {
             if snapshotted.contains(kind) {
                 continue;
             }
-            let case = Case::new(
-                kind,
-                UNSUPPORTED_VARIANT,
-                &[matrix.agent, kind, "--offline", "--json"],
-            );
-            let probe = run_case(root, &[], &case);
-            if probe.exit == "2" {
-                golden::assert_outcome(matrix.agent, root, &case, probe);
-            } else {
+            let probe = run(&[matrix.agent, kind, "--offline", "--json"]);
+            if probe.exit != "2" {
                 uncovered.push(format!("{} {kind}", matrix.agent));
             }
         }

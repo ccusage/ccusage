@@ -27,7 +27,7 @@ use crate::{
     format_remaining_time, format_rfc3339_millis, group_project_output, identify_session_blocks,
     load_daily_summaries, load_entries, load_entries_since, load_entries_since_with_diagnostics,
     print_active_block_detail, print_blocks_table, print_json_or_jq, print_usage_table,
-    session_summary_json, sort_blocks, sort_summaries, summarize_by_key,
+    session_summary_json, sort_blocks, sort_summaries, sum_costs, summarize_by_key,
     summarize_summaries_by_bucket, summary_json, totals_json, utc_now, wants_json,
 };
 
@@ -456,13 +456,15 @@ fn render_statusline(
     let today_shared = statusline_today_shared(args, shared, utc_now());
     let today_cost = load_entries_since_with_diagnostics(&today_shared, None, diagnostics)
         .map(|entries| {
-            entries
-                .iter()
-                .filter(|entry| {
-                    entry.date.replace('-', "") == today_shared.since.as_deref().unwrap_or_default()
-                })
-                .map(|entry| entry.cost)
-                .sum::<f64>()
+            sum_costs(
+                entries
+                    .iter()
+                    .filter(|entry| {
+                        entry.date.replace('-', "")
+                            == today_shared.since.as_deref().unwrap_or_default()
+                    })
+                    .map(|entry| entry.cost),
+            )
         })
         .unwrap_or(0.0);
 
@@ -691,16 +693,15 @@ fn calculate_session_cost(
     shared: &SharedArgs,
     diagnostics: &Diagnostics,
 ) -> Result<f64> {
-    Ok(
+    Ok(sum_costs(
         load_entries_since_with_diagnostics(shared, None, diagnostics)?
             .into_iter()
             .filter(|entry| {
                 entry.data.session_id.as_deref() == Some(session_id)
                     || entry.session_id.as_ref() == session_id
             })
-            .map(|entry| entry.cost)
-            .sum(),
-    )
+            .map(|entry| entry.cost),
+    ))
 }
 
 fn format_statusline_context(

@@ -101,6 +101,12 @@ impl IsoDate {
 }
 
 pub fn utc_now() -> TimestampMs {
+    #[cfg(feature = "test-clock")]
+    if let Some(now) = std::env::var_os("CCUSAGE_TEST_NOW") {
+        let now = now.to_string_lossy();
+        return parse_ts_timestamp(&now)
+            .unwrap_or_else(|| panic!("CCUSAGE_TEST_NOW is not an RFC 3339 instant: {now}"));
+    }
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
