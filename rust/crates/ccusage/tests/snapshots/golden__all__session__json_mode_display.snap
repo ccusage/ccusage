@@ -3237,6 +3237,38 @@ exit: 0
       "totalTokens": 44
     },
     {
+      "agent": "dsh",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "inputTokens": 2100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro",
+        "deepseek-flash"
+      ],
+      "outputTokens": 310,
+      "period": "fork-beta",
+      "totalCost": 0,
+      "totalTokens": 5410
+    },
+    {
       "agent": "openclaw",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -4580,6 +4612,56 @@ exit: 0
       "totalTokens": 7038
     },
     {
+      "agent": "dsh",
+      "cacheCreationTokens": 1440,
+      "cacheReadTokens": 30000,
+      "inputTokens": 22520,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "cost": 0.0,
+          "inputTokens": 1380,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 822
+        },
+        {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 26000,
+          "cost": 0.0,
+          "inputTokens": 2050,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 543
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 90,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "anthropic/claude-sonnet-4.5",
+        "deepseek-v4-pro",
+        "deepseek-flash",
+        "unknown"
+      ],
+      "outputTokens": 2175,
+      "period": "sess-alpha",
+      "totalCost": 0,
+      "totalTokens": 56385
+    },
+    {
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 104080,
@@ -4633,6 +4715,29 @@ exit: 0
       "totalTokens": 410249
     },
     {
+      "agent": "dsh",
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 6000,
+      "inputTokens": 2700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 6000,
+          "cost": 0.0,
+          "inputTokens": 2700,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 590
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro"
+      ],
+      "outputTokens": 590,
+      "period": "sess-beta",
+      "totalCost": 0,
+      "totalTokens": 9590
+    },
+    {
       "agent": "claude",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 2500,
@@ -4683,6 +4788,52 @@ exit: 0
       "period": "sess-d",
       "totalCost": 0,
       "totalTokens": 300
+    },
+    {
+      "agent": "dsh",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 3000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        }
+      ],
+      "modelsUsed": [
+        "dsh-mystery-1"
+      ],
+      "outputTokens": 700,
+      "period": "sess-deep",
+      "totalCost": 0,
+      "totalTokens": 3700
+    },
+    {
+      "agent": "dsh",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "unknown",
+          "outputTokens": 81
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 81,
+      "period": "sess-legacy",
+      "totalCost": 0,
+      "totalTokens": 581
     },
     {
       "agent": "pi",
@@ -5292,12 +5443,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 15675,
-    "cacheReadTokens": 1283917,
-    "inputTokens": 1325013,
-    "outputTokens": 64600,
+    "cacheCreationTokens": 17415,
+    "cacheReadTokens": 1322917,
+    "inputTokens": 1355833,
+    "outputTokens": 68456,
     "totalCost": 26.382713250000016,
-    "totalTokens": 2692392,
+    "totalTokens": 2768058,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

@@ -6,12 +6,12 @@ exit: 0
 --- stdout ---
 {
   "totals": {
-    "cacheCreationTokens": 6211,
-    "cacheReadTokens": 642944,
-    "inputTokens": 1144049,
-    "outputTokens": 34192,
-    "totalCost": 15.048687040000003,
-    "totalTokens": 1828808,
+    "cacheCreationTokens": 7651,
+    "cacheReadTokens": 666944,
+    "inputTokens": 1169389,
+    "outputTokens": 37007,
+    "totalCost": 15.065042200000002,
+    "totalTokens": 1882653,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -24,6 +24,7 @@ exit: 0
       "codex-mystery-1",
       "copilot-mystery-1",
       "droid-mystery-1",
+      "dsh-mystery-1",
       "gemini-mystery-1",
       "goose-mystery-1",
       "gpt-unknown",
@@ -42,9 +43,9 @@ exit: 0
   "weekly": [
     {
       "agent": "all",
-      "cacheCreationTokens": 6211,
-      "cacheReadTokens": 642944,
-      "inputTokens": 1144049,
+      "cacheCreationTokens": 7651,
+      "cacheReadTokens": 666944,
+      "inputTokens": 1169389,
       "metadata": {
         "agents": [
           "amp",
@@ -55,6 +56,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -152,10 +154,10 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.32,
-          "inputTokens": 385,
+          "inputTokens": 475,
           "missingPricing": true,
           "modelName": "unknown",
-          "outputTokens": 59,
+          "outputTokens": 69,
           "storedCost": 0.32
         },
         {
@@ -242,6 +244,14 @@ exit: 0
           "outputTokens": 957
         },
         {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 0,
+          "cost": 0.010530000000000003,
+          "inputTokens": 400,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 562
+        },
+        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 1200,
           "cost": 0.006872,
@@ -291,6 +301,14 @@ exit: 0
           "outputTokens": 695
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0033299999999999996,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
           "cost": 0.0030600000000000002,
@@ -306,6 +324,14 @@ exit: 0
           "inputTokens": 940,
           "modelName": "gemini-3.5-flash-high",
           "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 24000,
+          "cost": 0.0024951599999999997,
+          "inputTokens": 2850,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 743
         },
         {
           "cacheCreationTokens": 0,
@@ -501,6 +527,15 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "missingPricing": true,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 500,
           "cost": 0.0,
           "inputTokens": 250,
@@ -604,6 +639,7 @@ exit: 0
         "[pi] pi-mystery-1",
         "amp-mystery-1",
         "anthropic/claude-sonnet-4",
+        "anthropic/claude-sonnet-4.5",
         "antigravity-mystery-1",
         "claude-haiku-4-5-20251001",
         "claude-opus-4-20250514",
@@ -612,7 +648,10 @@ exit: 0
         "codebuff-mystery-1",
         "codex-mystery-1",
         "copilot-mystery-1",
+        "deepseek-flash",
+        "deepseek-v4-pro",
         "droid-mystery-1",
+        "dsh-mystery-1",
         "gemini-2-5-pro",
         "gemini-2.5-flash",
         "gemini-2.5-pro",
@@ -651,10 +690,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 34192,
+      "outputTokens": 37007,
       "period": "2025-12-29",
-      "totalCost": 15.048687040000003,
-      "totalTokens": 1828808
+      "totalCost": 15.065042200000002,
+      "totalTokens": 1882653
     }
   ]
 }

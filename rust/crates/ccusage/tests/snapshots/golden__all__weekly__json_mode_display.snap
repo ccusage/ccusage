@@ -6,12 +6,12 @@ exit: 0
 --- stdout ---
 {
   "totals": {
-    "cacheCreationTokens": 14975,
-    "cacheReadTokens": 1273317,
-    "inputTokens": 1314097,
-    "outputTokens": 54690,
+    "cacheCreationTokens": 16715,
+    "cacheReadTokens": 1312317,
+    "inputTokens": 1344917,
+    "outputTokens": 58546,
     "totalCost": 24.718788249999996,
-    "totalTokens": 2660246,
+    "totalTokens": 2735912,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",
@@ -92,7 +92,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1264,
       "cacheReadTokens": 1093,
-      "inputTokens": 7083,
+      "inputTokens": 7583,
       "metadata": {
         "agents": [
           "amp",
@@ -103,6 +103,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -193,6 +194,14 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "unknown",
+          "outputTokens": 81
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 50
@@ -235,18 +244,19 @@ exit: 0
         "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
-        "kimi-k2-thinking"
+        "kimi-k2-thinking",
+        "unknown"
       ],
-      "outputTokens": 1629,
+      "outputTokens": 1710,
       "period": "2025-12-22",
       "totalCost": 3.8191624999999996,
-      "totalTokens": 11099
+      "totalTokens": 11680
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 13711,
-      "cacheReadTokens": 1270224,
-      "inputTokens": 1305981,
+      "cacheCreationTokens": 15451,
+      "cacheReadTokens": 1309224,
+      "inputTokens": 1336301,
       "metadata": {
         "agents": [
           "amp",
@@ -257,6 +267,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -364,9 +375,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.52,
-          "inputTokens": 488,
+          "inputTokens": 578,
           "modelName": "unknown",
-          "outputTokens": 100
+          "outputTokens": 110
         },
         {
           "cacheCreationTokens": 0,
@@ -629,6 +640,38 @@ exit: 0
           "outputTokens": 345
         },
         {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "cost": 0.0,
+          "inputTokens": 1380,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 822
+        },
+        {
+          "cacheCreationTokens": 1500,
+          "cacheReadTokens": 32000,
+          "cost": 0.0,
+          "inputTokens": 5350,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 1193
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 633,
           "cost": 0.0,
@@ -880,6 +923,7 @@ exit: 0
         "[pi] pi-mystery-1",
         "amp-mystery-1",
         "anthropic/claude-sonnet-4",
+        "anthropic/claude-sonnet-4.5",
         "antigravity-mystery-1",
         "claude-haiku-4-5-20251001",
         "claude-haiku-4.5",
@@ -891,9 +935,12 @@ exit: 0
         "codebuff-unknown",
         "codex-mystery-1",
         "copilot-mystery-1",
+        "deepseek-flash",
         "deepseek-v4-flash",
+        "deepseek-v4-pro",
         "devstral-medium-latest",
         "droid-mystery-1",
+        "dsh-mystery-1",
         "gemini-2-5-pro",
         "gemini-2.5-flash",
         "gemini-2.5-pro",
@@ -938,10 +985,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 52552,
+      "outputTokens": 56327,
       "period": "2025-12-29",
       "totalCost": 20.899625749999995,
-      "totalTokens": 2645605
+      "totalTokens": 2720690
     },
     {
       "agent": "all",

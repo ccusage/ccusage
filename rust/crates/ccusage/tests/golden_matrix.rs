@@ -58,6 +58,7 @@ agent_matrix! {
     grok => golden::no_extras,
     zcode => golden::no_extras,
     cline => golden::no_extras,
+    dsh => golden::no_extras,
 }
 
 #[test]

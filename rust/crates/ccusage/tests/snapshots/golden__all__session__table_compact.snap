@@ -162,6 +162,11 @@ exit: 0
 │          │                    │ - sonnet-4                │            │           │             │
 │          │                    │ - zcode-mystery-1         │            │           │             │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ sess-al… │ DeepSeek Harness   │ - deepseek-flash          │     22,520 │     2,175 │       $0.02 │
+│          │                    │ - deepseek-v4-pro         │            │           │             │
+│          │                    │ - sonnet-4.5              │            │           │             │
+│          │                    │ - unknown                 │            │           │             │
+├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ p-opus-… │ Hermes             │ - opus-4                  │        600 │       100 │       $0.02 │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ cli:cli… │ Cline              │ - devstral-medium-latest  │      2,200 │       620 │       $0.02 │
@@ -298,6 +303,8 @@ exit: 0
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ lab-zer… │ pi-agent           │ - [pi] gpt-5              │      1,000 │       100 │       $0.00 │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ sess-be… │ DeepSeek Harness   │ - deepseek-v4-pro         │      2,700 │       590 │       $0.00 │
+├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ rollout… │ Codex              │ - gpt-5-codex             │        600 │       100 │       $0.00 │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ z        │ Kimi               │ - gpt-5                   │        500 │       100 │       $0.00 │
@@ -337,6 +344,9 @@ exit: 0
 │ ses-v2-… │ OpenCode           │ - opus-4                  │         40 │         4 │       $0.00 │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ ses-v2-… │ OpenCode           │ - opus-4                  │         33 │         3 │       $0.00 │
+├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ fork-be… │ DeepSeek Harness   │ - deepseek-flash          │      2,100 │       310 │       $0.00 │
+│          │                    │ - deepseek-v4-pro         │            │           │             │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ b-morni… │ Hermes             │ - haiku-4-5               │        250 │        40 │       $0.00 │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
@@ -456,12 +466,16 @@ exit: 0
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ ses-leg… │ OpenCode           │ - opencode-mystery-1      │         70 │         7 │       $0.00 │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ sess-de… │ DeepSeek Harness   │ - dsh-mystery-1           │      3,000 │       700 │       $0.00 │
+├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ sess-le… │ DeepSeek Harness   │ - unknown                 │        500 │        81 │       $0.00 │
+├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ session… │ Antigravity        │ - antigravity-model-77    │        110 │        55 │       $0.00 │
 │          │                    │ - gemini-internal-model   │            │           │             │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
 │ trace-o… │ GitHub Copilot CLI │ - unknown                 │         40 │         4 │       $0.00 │
 ├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
-│ Total    │                    │                           │  1,326,013 │    64,700 │      $30.31 │
+│ Total    │                    │                           │  1,356,833 │    68,556 │      $30.34 │
 └──────────┴────────────────────┴───────────────────────────┴────────────┴───────────┴─────────────┘
 
 --- stderr ---
@@ -479,6 +493,7 @@ WARN  Missing embedded pricing for codebuff-mystery-1; cost excludes this model.
 WARN  Missing embedded pricing for codex-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for copilot-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for droid-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for dsh-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for gemini-internal-model; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for gemini-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for goose-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
