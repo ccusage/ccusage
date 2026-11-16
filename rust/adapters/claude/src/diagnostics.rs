@@ -155,18 +155,14 @@ mod tests {
     #[test]
     fn a_usage_line_still_being_written_is_not_a_skip() {
         let diagnostics = Diagnostics::new("claude");
-        let content = br#"{"message":{"usage":{"input_tokens":10}}}
+        let text = r#"{"message":{"usage":{"input_tokens":10}}}
 {"message":{"usage":{"input_tok"#;
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.write_file("session.jsonl", text);
+        let content = text.as_bytes();
         let line = &content[content.iter().position(|byte| *byte == b'\n').unwrap() + 1..];
 
-        rejected(
-            Path::new("session.jsonl"),
-            content,
-            1,
-            line,
-            &diagnostics,
-            false,
-        );
+        rejected(&path, content, 1, line, &diagnostics, false);
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
     }
