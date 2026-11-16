@@ -51,7 +51,7 @@ pub fn summarize_entries(
             Ok(summarize_summaries_by_bucket(
                 &daily,
                 BucketKind::Weekly,
-                WeekDay::Sunday,
+                WeekDay::Monday,
             ))
         }
     }
@@ -100,5 +100,31 @@ mod tests {
                 report_from_rows(&rows, kind)
             );
         }
+    }
+
+    #[test]
+    fn weeks_start_on_monday_like_the_last_window() {
+        let fixture = fs_fixture!({
+            "sessions/p/s/session.v4.jsonl": concat!(
+                r#"{"type":"session","version":4,"id":"s","createdAt":1794744000000}"#, "\n",
+                r#"{"type":"request/context","seq":1,"time":1794744000000,"data":{"provider":"deepseek-official","model":"deepseek-v4-pro"}}"#, "\n",
+                r#"{"type":"assistant/message","seq":2,"time":1794744000000,"data":{"usage":{"inputTokens":1,"outputTokens":1}}}"#, "\n",
+                r#"{"type":"assistant/message","seq":3,"time":1794830400000,"data":{"usage":{"inputTokens":1,"outputTokens":1}}}"#, "\n",
+            ),
+        });
+        let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, fixture.root());
+        let shared = SharedArgs {
+            timezone: Some("UTC".to_string()),
+            offline: true,
+            ..SharedArgs::default()
+        };
+        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+
+        let rows = summarize_entries(&entries, AgentReportKind::Weekly).unwrap();
+        let weeks = rows
+            .iter()
+            .map(|row| row.week.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(weeks, [Some("2026-11-09"), Some("2026-11-16")]);
     }
 }

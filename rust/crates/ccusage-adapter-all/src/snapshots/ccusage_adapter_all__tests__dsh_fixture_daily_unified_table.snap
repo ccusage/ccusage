@@ -25,7 +25,7 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "600",
         "17,000",
         "19,620",
-        "$0.01"
+        "$0.00"
       ],
       "kind": "row"
     },
@@ -39,7 +39,7 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "600",
         "17,000",
         "19,620",
-        "$0.01"
+        "$0.00"
       ],
       "kind": "agent-breakdown"
     },
@@ -137,7 +137,7 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "2,600",
         "22,000",
         "50,170",
-        "$0.04"
+        "$0.03"
       ],
       "kind": "total"
     }

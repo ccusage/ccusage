@@ -330,11 +330,13 @@ pub(super) fn dsh_entry_to_loaded(
 
 /// dsh's first-party providers are DeepSeek's API-key and account routes; any
 /// other provider id comes from pi-ai and is tried as a models.dev provider.
+///
+/// First-party routes try the bare model id first because shared pricing keys
+/// DeepSeek's time-of-day schedule on the direct model id.
 fn model_candidates(provider: Option<&str>, model: &str) -> Vec<String> {
-    let provider = match provider {
-        Some("deepseek-official" | "deepseek-account") => Some("deepseek"),
-        other => other,
-    };
+    if let Some("deepseek-official" | "deepseek-account") = provider {
+        return vec![model.to_string(), format!("deepseek/{model}")];
+    }
     let mut candidates = Vec::new();
     if let Some(provider) = provider
         && !model.starts_with(&format!("{provider}/"))
@@ -437,10 +439,17 @@ mod tests {
     }
 
     #[test]
-    fn prefers_provider_qualified_pricing_candidates() {
+    fn orders_pricing_candidates_by_route() {
         assert_eq!(
             model_candidates(Some("deepseek-official"), "deepseek-v4-pro"),
-            ["deepseek/deepseek-v4-pro", "deepseek-v4-pro"]
+            ["deepseek-v4-pro", "deepseek/deepseek-v4-pro"]
+        );
+        assert_eq!(
+            model_candidates(Some("openrouter"), "deepseek/deepseek-v4-flash"),
+            [
+                "openrouter/deepseek/deepseek-v4-flash",
+                "deepseek/deepseek-v4-flash"
+            ]
         );
         assert_eq!(
             model_candidates(Some("openrouter"), "openrouter/auto"),
@@ -474,5 +483,37 @@ mod tests {
             assert!(loaded.cost > 0.0, "{model} should be priced");
             assert_eq!(loaded.missing_pricing_model, None);
         }
+    }
+
+    #[test]
+    fn applies_the_deepseek_time_of_day_schedule_to_first_party_routes() {
+        let pricing = PricingMap::load_embedded();
+        let cost_at = |millis: i64| {
+            let entry = DshUsageEntry {
+                timestamp: TimestampMs::from_millis(millis),
+                session_id: "sid".to_string(),
+                cwd: None,
+                seq: Some(1),
+                provider: Some("deepseek-official".to_string()),
+                model: "deepseek-v4-pro".to_string(),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000_000,
+                    output_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                    speed: None,
+                    cache_creation: None,
+                },
+                extra_total_tokens: 0,
+            };
+            dsh_entry_to_loaded(entry, None, CostMode::Auto, &pricing).cost
+        };
+        // Tuesday 2026-11-17 02:00Z is a peak window and 12:00Z is off-peak.
+        let peak = cost_at(1_794_880_800_000);
+        let off_peak = cost_at(1_794_916_800_000);
+        assert!(
+            (peak - off_peak * 2.0).abs() < 1e-9,
+            "peak {peak} should be twice off-peak {off_peak}"
+        );
     }
 }
