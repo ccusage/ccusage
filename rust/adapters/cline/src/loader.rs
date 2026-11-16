@@ -49,9 +49,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
             .copied()
             .expect("discovered Cline file has source metadata");
         super::parser::read_file(source, shared.mode, pricing, timezone)
-    })
-    .into_iter()
-    .collect::<Vec<_>>();
+    });
     entries.sort_by(|left, right| {
         left.timestamp
             .cmp(&right.timestamp)
