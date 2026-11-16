@@ -15,7 +15,7 @@ use crate::{
     cli_error, color, format_breakdown_model_label, format_currency, format_models_multiline,
     format_number, json_float,
     output::strip_cost_json,
-    print_box_title, should_use_compact_layout, unpriced_models,
+    print_box_title, should_use_compact_layout, sum_costs, unpriced_models,
 };
 
 use super::types::AllRow;
@@ -193,7 +193,7 @@ fn totals_json(rows: &[AllRow]) -> Value {
             .iter()
             .map(|row| row.total_tokens)
             .fold(0, u64::saturating_add),
-        "totalCost": json_float(rows.iter().map(|row| row.total_cost).sum::<f64>()),
+        "totalCost": json_float(sum_costs(rows.iter().map(|row| row.total_cost))),
     });
     attach_unpriced_models(
         &mut totals,

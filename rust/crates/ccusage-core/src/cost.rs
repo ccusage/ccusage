@@ -214,9 +214,23 @@ pub fn tiered_cost(tokens: u64, base: f64, above: Option<f64>, threshold: u64) -
     tokens as f64 * base
 }
 
+/// Adds up costs starting from `+0.0`. `Iterator::sum` for `f64` starts from
+/// `-0.0`, so an empty selection would print as `$-0.00` and `-0.0` in JSON.
+pub fn sum_costs(costs: impl IntoIterator<Item = f64>) -> f64 {
+    costs.into_iter().fold(0.0, |total, cost| total + cost)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_cost_sum_is_positive_zero() {
+        let total = sum_costs(std::iter::empty());
+        assert_eq!(total.to_bits(), 0.0_f64.to_bits());
+        assert_eq!(crate::format_currency(total), "$0.00");
+        assert_eq!(sum_costs([0.25, 0.5]), 0.75);
+    }
 
     #[test]
     fn zero_rate_pricing_is_not_missing_pricing() {

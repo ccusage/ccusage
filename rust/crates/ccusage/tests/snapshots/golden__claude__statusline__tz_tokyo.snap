@@ -4,6 +4,6 @@ description: COLUMNS=200 ccusage claude statusline --offline --no-cache --timezo
 ---
 exit: 0
 --- stdout ---
-🤖 Sonnet 4 (high) | 💰 $1.23 session / $-0.00 today / No active block | 🧠 50,000 (25%)
+🤖 Sonnet 4 (high) | 💰 $1.23 session / $0.00 today / No active block | 🧠 50,000 (25%)
 
 --- stderr ---
