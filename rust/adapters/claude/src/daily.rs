@@ -68,6 +68,8 @@ pub(super) fn load_daily_summaries_inner(
     let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
     // exactly as an unbounded load would. The first file with an entry settles it.
+    // Those files are not part of the report, so what this probe skips is not
+    // reported either.
     let detected = !summaries.is_empty()
         || pruned.iter().any(|file| {
             read_daily_usage_file_with_diagnostics(
@@ -75,7 +77,7 @@ pub(super) fn load_daily_summaries_inner(
                 tz.as_ref(),
                 shared.mode,
                 pricing.as_ref(),
-                diagnostics,
+                &Diagnostics::new("claude"),
             )
             .entries
             .iter()
@@ -810,6 +812,42 @@ mod tests {
             [(Arc::from("session-a"), "2026-01-02".to_string())]
         );
         assert_eq!(daily.summaries[0].input_tokens, 130);
+    }
+
+    #[test]
+    fn detecting_usage_in_files_outside_the_window_records_no_skips() {
+        let fixture = fs_fixture!({
+            "projects/project-a/old.jsonl": [
+                r#"{"timestamp":"2001-01-01T00:00:00.000Z","message":{"usage":{"input_tokens":"bad"}}}"#,
+                r#"{"timestamp":"2001-01-01T00:00:00.000Z","sessionId":"old","requestId":"req-old","message":{"id":"msg-old","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+            ]
+            .join("\n"),
+        });
+        std::fs::File::options()
+            .write(true)
+            .open(fixture.path("projects/project-a/old.jsonl"))
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(978_307_200))
+            .unwrap();
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            since: Some("20260101".to_string()),
+            timezone: Some("UTC".to_string()),
+            single_thread: true,
+            ..SharedArgs::default()
+        };
+        let diagnostics = ccusage_core::Diagnostics::new("claude");
+
+        let daily =
+            load_daily_summaries_inner(&shared, None, false, session_days, &diagnostics).unwrap();
+
+        assert!(daily.summaries.is_empty());
+        assert!(daily.detected);
+        assert!(diagnostics.warnings(&shared).is_empty());
     }
 
     #[test]
