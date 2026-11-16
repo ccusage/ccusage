@@ -177,15 +177,7 @@ fn load_entries_from_database(
         match statement.next() {
             Ok(sqlite::State::Row) => {
                 row_number = row_number.saturating_add(1);
-                let Some(row) = read_usage_row(&statement) else {
-                    diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "completed ZCode usage row has unsupported values",
-                    ));
-                    continue;
-                };
+                let row = read_usage_row(&statement);
                 match row_to_entry(row, tz, shared.mode, pricing, &shared.pricing_overrides) {
                     Ok(Some(entry)) => entries.push(entry),
                     Ok(None) => {}
@@ -193,7 +185,13 @@ fn load_entries_from_database(
                         db_path,
                         row_number,
                         SkipKind::InvalidData,
-                        "completed ZCode usage row has an invalid identity or timestamp",
+                        "completed ZCode usage row has no id, session id or model",
+                    )),
+                    Err(RowRejection::InvalidTimestamp) => diagnostics.record(Skip::record(
+                        db_path,
+                        row_number,
+                        SkipKind::InvalidTimestamp,
+                        "completed ZCode usage row has an invalid start time",
                     )),
                 }
             }
@@ -274,21 +272,25 @@ fn missing_columns(columns: &HashSet<String>, required: &[&str]) -> Vec<String> 
         .collect()
 }
 
-fn read_usage_row(statement: &sqlite::Statement<'_>) -> Option<ZcodeUsageRow> {
-    Some(ZcodeUsageRow {
-        id: statement.read::<String, _>(0).ok()?,
-        session_id: statement.read::<String, _>(1).ok()?,
-        started_at: read_timestamp_ms(statement, 2)?,
-        model_id: statement.read::<String, _>(3).ok()?,
+fn read_usage_row(statement: &sqlite::Statement<'_>) -> ZcodeUsageRow {
+    ZcodeUsageRow {
+        id: read_text_column(statement, 0),
+        session_id: read_text_column(statement, 1),
+        started_at: statement.read::<i64, _>(2).unwrap_or(0),
+        model_id: read_text_column(statement, 3),
         input_tokens: read_token_column(statement, 4),
         output_tokens: read_token_column(statement, 5),
         cache_creation_input_tokens: read_token_column(statement, 6),
         cache_read_input_tokens: read_token_column(statement, 7),
         computed_total_tokens: read_token_column(statement, 8),
-        provider_id: statement.read::<Option<String>, _>(9).ok().flatten(),
-        directory: statement.read::<Option<String>, _>(10).ok().flatten(),
-        version: statement.read::<Option<String>, _>(11).ok().flatten(),
-    })
+        provider_id: read_text_column(statement, 9),
+        directory: read_text_column(statement, 10),
+        version: read_text_column(statement, 11),
+    }
+}
+
+fn read_text_column(statement: &sqlite::Statement<'_>, index: usize) -> Option<String> {
+    statement.read::<Option<String>, _>(index).ok().flatten()
 }
 
 fn read_token_column(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
@@ -305,15 +307,6 @@ fn read_token_column(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
             })
         })
         .unwrap_or(0)
-}
-
-fn read_timestamp_ms(statement: &sqlite::Statement<'_>, index: usize) -> Option<i64> {
-    if let Ok(value) = statement.read::<i64, _>(index) {
-        return Some(value);
-    }
-    let value = statement.read::<f64, _>(index).ok()?;
-    (value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64)
-        .then_some(value.round() as i64)
 }
 
 #[cfg(test)]
@@ -580,6 +573,13 @@ mod tests {
             [100, 10, 15, 25, 110],
         );
         insert_usage_record(&db, "zero-token", "session-1", 0, "", [0; 5]);
+        db.execute(
+            "INSERT INTO model_usage
+             (id, session_id, started_at, model_id, status, input_tokens, output_tokens)
+             VALUES ('null-model', 'session-1', 1786909042670, NULL, 'completed', 100, 10),
+                    ('zero-token-null-identity', NULL, NULL, NULL, 'completed', 0, 0)",
+        )
+        .unwrap();
         drop(db);
 
         let _home = EnvVarGuard::set(super::super::paths::ZCODE_HOME_ENV, fixture.root());
@@ -605,6 +605,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("healthy"));
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 4);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
         let warnings = diagnostics
             .warnings(&SharedArgs {
                 debug: true,

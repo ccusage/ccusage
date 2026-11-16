@@ -10,10 +10,10 @@ use crate::{
 };
 
 pub(super) struct ZcodeUsageRow {
-    pub(super) id: String,
-    pub(super) session_id: String,
+    pub(super) id: Option<String>,
+    pub(super) session_id: Option<String>,
     pub(super) started_at: i64,
-    pub(super) model_id: String,
+    pub(super) model_id: Option<String>,
     pub(super) provider_id: Option<String>,
     pub(super) input_tokens: u64,
     pub(super) output_tokens: u64,
@@ -27,6 +27,7 @@ pub(super) struct ZcodeUsageRow {
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum RowRejection {
     InvalidIdentity,
+    InvalidTimestamp,
 }
 
 pub(super) fn row_to_entry(
@@ -56,15 +57,18 @@ pub(super) fn row_to_entry(
     if total_usage_tokens(usage) == 0 && extra_total_tokens == 0 {
         return Ok(None);
     }
-    if row.id.trim().is_empty()
-        || row.session_id.trim().is_empty()
-        || row.model_id.trim().is_empty()
-        || row.started_at <= 0
-    {
+    let (Some(id), Some(session_id), Some(raw_model)) = (
+        non_blank(row.id),
+        non_blank(row.session_id),
+        non_blank(row.model_id),
+    ) else {
         return Err(RowRejection::InvalidIdentity);
+    };
+    if row.started_at <= 0 {
+        return Err(RowRejection::InvalidTimestamp);
     }
 
-    let raw_model = row.model_id.trim().to_string();
+    let raw_model = raw_model.trim().to_string();
     let cost_model = pricing_model(
         &raw_model,
         row.provider_id.as_deref(),
@@ -116,13 +120,13 @@ pub(super) fn row_to_entry(
 
     Ok(Some(LoadedEntry {
         data: UsageEntry {
-            session_id: Some(row.session_id.clone()),
+            session_id: Some(session_id.clone()),
             timestamp: format_rfc3339_millis(timestamp),
             version: row.version,
             message: UsageMessage {
                 usage,
                 model: Some(raw_model.clone()),
-                id: Some(row.id),
+                id: Some(id),
             },
             cost_usd: None,
             request_id: None,
@@ -132,7 +136,7 @@ pub(super) fn row_to_entry(
         date: format_date_tz(timestamp, tz),
         timestamp,
         project: Arc::from("zcode"),
-        session_id: Arc::from(row.session_id),
+        session_id: Arc::from(session_id),
         project_path: Arc::from(project_path),
         cost,
         extra_total_tokens,
@@ -143,6 +147,10 @@ pub(super) fn row_to_entry(
         missing_pricing_model,
         stored_cost: None,
     }))
+}
+
+fn non_blank(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.trim().is_empty())
 }
 
 fn pricing_candidates(raw_model: &str, provider_id: Option<&str>) -> Vec<String> {
@@ -216,10 +224,10 @@ mod tests {
 
     fn row() -> ZcodeUsageRow {
         ZcodeUsageRow {
-            id: "usage-1".to_string(),
-            session_id: "session-1".to_string(),
+            id: Some("usage-1".to_string()),
+            session_id: Some("session-1".to_string()),
             started_at: 1_786_909_042_666,
-            model_id: "GLM-5.3".to_string(),
+            model_id: Some("GLM-5.3".to_string()),
             provider_id: Some("builtin:zai-coding-plan".to_string()),
             input_tokens: 100,
             output_tokens: 10,
@@ -265,7 +273,7 @@ mod tests {
             for model in ["GLM-5.3", "GLM-5.3-Flash"] {
                 let mut row = row();
                 row.provider_id = Some(provider.to_string());
-                row.model_id = model.to_string();
+                row.model_id = Some(model.to_string());
                 let entry = row_to_entry(
                     row,
                     Some(&JiffTimeZone::UTC),
@@ -298,7 +306,7 @@ mod tests {
 
         let mut custom = row();
         custom.provider_id = Some("847d13c9-0568-4f2f-818e-8bd498e5d920".to_string());
-        custom.model_id = "deepseek-v4-flash".to_string();
+        custom.model_id = Some("deepseek-v4-flash".to_string());
         let custom = row_to_entry(
             custom,
             Some(&JiffTimeZone::UTC),
@@ -339,7 +347,7 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let priced = |model: &str| {
             let mut row = row();
-            row.model_id = model.to_string();
+            row.model_id = Some(model.to_string());
             row_to_entry(
                 row,
                 Some(&JiffTimeZone::UTC),
@@ -366,7 +374,7 @@ mod tests {
     fn honors_raw_model_overrides_for_custom_providers() {
         let mut row = row();
         row.provider_id = Some("847d13c9-0568-4f2f-818e-8bd498e5d920".to_string());
-        row.model_id = "deepseek-v4-flash".to_string();
+        row.model_id = Some("deepseek-v4-flash".to_string());
         let mut overrides = BTreeMap::new();
         overrides.insert(
             "deepseek-v4-flash".to_string(),
@@ -411,31 +419,32 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_identity_or_timestamp() {
-        let mut invalid_row = row();
-        invalid_row.id.clear();
-        assert!(
+    fn rejects_missing_identity_and_invalid_timestamp_separately() {
+        let reject = |row: ZcodeUsageRow| {
             row_to_entry(
-                invalid_row,
+                row,
                 Some(&JiffTimeZone::UTC),
                 CostMode::Display,
                 &PricingMap::default(),
                 &BTreeMap::new(),
             )
-            .is_err()
-        );
+            .err()
+        };
+        let blank_id = ZcodeUsageRow {
+            id: Some(" ".to_string()),
+            ..row()
+        };
+        let null_model = ZcodeUsageRow {
+            model_id: None,
+            ..row()
+        };
+        let zero_timestamp = ZcodeUsageRow {
+            started_at: 0,
+            ..row()
+        };
 
-        let mut invalid_row = row();
-        invalid_row.started_at = 0;
-        assert!(
-            row_to_entry(
-                invalid_row,
-                Some(&JiffTimeZone::UTC),
-                CostMode::Display,
-                &PricingMap::default(),
-                &BTreeMap::new(),
-            )
-            .is_err()
-        );
+        assert_eq!(reject(blank_id), Some(RowRejection::InvalidIdentity));
+        assert_eq!(reject(null_model), Some(RowRejection::InvalidIdentity));
+        assert_eq!(reject(zero_timestamp), Some(RowRejection::InvalidTimestamp));
     }
 }
