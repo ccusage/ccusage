@@ -101,139 +101,6 @@ const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
 // suffixes are treated as distinct model versions.
 const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 
-/// Identifies the upstream document whose schema a pricing response must use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PricingEndpoint {
-    LiteLlm,
-    ModelsDev,
-}
-
-impl PricingEndpoint {
-    /// Returns the pricing endpoint represented by a fetch URL.
-    pub fn for_url(url: &str) -> Option<Self> {
-        match url {
-            LITELLM_PRICING_URL => Some(Self::LiteLlm),
-            MODELS_DEV_API_URL => Some(Self::ModelsDev),
-            _ => None,
-        }
-    }
-
-    /// Returns whether a body contains at least one entry the endpoint loader can use.
-    pub fn validates(self, json: &str) -> bool {
-        match self {
-            Self::LiteLlm => litellm_json_has_loader_usable_entry(json),
-            Self::ModelsDev => models_dev_json_has_loader_usable_entry(json),
-        }
-    }
-
-    /// Returns whether a body has a non-empty pricing shape for this endpoint.
-    pub fn validates_shape(self, json: &str) -> bool {
-        let Ok(Value::Object(entries)) = serde_json::from_str::<Value>(json) else {
-            return false;
-        };
-
-        match self {
-            Self::LiteLlm => entries.values().any(litellm_entry_has_required_cost),
-            Self::ModelsDev => models_dev_object_has_required_shape(&entries),
-        }
-    }
-}
-
-fn litellm_json_has_loader_usable_entry(json: &str) -> bool {
-    let Ok(Value::Object(entries)) = serde_json::from_str::<Value>(json) else {
-        return false;
-    };
-    entries
-        .values()
-        .any(|value| parse_litellm_pricing(value.clone()).is_some())
-}
-
-fn models_dev_json_has_loader_usable_entry(json: &str) -> bool {
-    let Some(raw) = parse_models_dev_json(json) else {
-        return false;
-    };
-    let rules = models_dev_catalog_rules();
-    match raw {
-        ModelsDevJson::Providers(providers) => providers.values().any(|provider| {
-            provider
-                .models
-                .iter()
-                .any(|(model_key, model)| models_dev_usable_cost(rules, model_key, model).is_some())
-        }),
-        ModelsDevJson::Models(models) => models
-            .iter()
-            .any(|(model_key, model)| models_dev_usable_cost(rules, model_key, model).is_some()),
-    }
-}
-
-fn litellm_entry_has_required_cost(value: &Value) -> bool {
-    let Some(entry) = value.as_object() else {
-        return false;
-    };
-    let full = entry
-        .get("input_cost_per_token")
-        .is_some_and(Value::is_number)
-        && entry
-            .get("output_cost_per_token")
-            .is_some_and(Value::is_number);
-    let compact = entry.get("i").is_some_and(Value::is_number)
-        && entry.get("o").is_some_and(Value::is_number);
-    full || compact
-}
-
-fn models_dev_object_has_required_shape(entries: &serde_json::Map<String, Value>) -> bool {
-    if entries.values().any(models_dev_entry_has_models_field) {
-        return entries.values().all(models_dev_provider_has_required_shape)
-            && entries.values().any(models_dev_provider_has_required_cost);
-    }
-    entries.values().all(models_dev_entry_has_required_cost)
-        && entries.values().any(models_dev_entry_has_nonzero_cost)
-}
-
-fn models_dev_provider_has_required_shape(value: &Value) -> bool {
-    let Some(provider) = value.as_object() else {
-        return false;
-    };
-    let Some(models) = provider.get("models").and_then(Value::as_object) else {
-        return false;
-    };
-    models.values().all(Value::is_object)
-}
-
-fn models_dev_provider_has_required_cost(value: &Value) -> bool {
-    value
-        .as_object()
-        .and_then(|provider| provider.get("models"))
-        .and_then(Value::as_object)
-        .is_some_and(|models| models.values().any(models_dev_model_has_required_cost))
-}
-
-fn models_dev_model_has_required_cost(value: &Value) -> bool {
-    value
-        .as_object()
-        .and_then(|model| model.get("cost"))
-        .and_then(Value::as_object)
-        .is_some_and(models_dev_cost_has_required_rates)
-}
-
-fn models_dev_entry_has_nonzero_cost(value: &Value) -> bool {
-    value
-        .as_object()
-        .and_then(|entry| entry.get("cost"))
-        .and_then(Value::as_object)
-        .is_some_and(models_dev_cost_has_required_rates)
-}
-
-fn models_dev_cost_has_required_rates(cost: &serde_json::Map<String, Value>) -> bool {
-    let Some(input) = cost.get("input").and_then(Value::as_f64) else {
-        return false;
-    };
-    let Some(output) = cost.get("output").and_then(Value::as_f64) else {
-        return false;
-    };
-    input != 0.0 || output != 0.0
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Pricing {
     pub input: f64,
@@ -1101,27 +968,11 @@ impl PricingMap {
     fn load_base(offline: bool, log: bool) -> Self {
         let mut map = Self::load_embedded();
         if !offline {
-            let fetch_result = crate::progress::track_status(
+            crate::progress::track_status(
                 log && crate::progress::usage_load_output_is_tty(),
                 "Refreshing model pricing from LiteLLM...",
-                fetch_pricing_json,
+                || map.refresh_litellm(fetch_pricing_json),
             );
-
-            match fetch_result {
-                Ok(json) => {
-                    let loaded_count = map.load_json(&json);
-                    if loaded_count == 0 && should_log_pricing_refresh_details() {
-                        eprintln!("WARN  Failed to parse LiteLLM pricing; using embedded pricing.");
-                    }
-                }
-                Err(error) => {
-                    if should_log_pricing_refresh_details() {
-                        eprintln!(
-                            "WARN  Failed to fetch LiteLLM pricing ({error}); using embedded pricing."
-                        );
-                    }
-                }
-            }
         }
 
         // A live LiteLLM refresh replaces whole entries, so re-apply the
@@ -1154,6 +1005,31 @@ impl PricingMap {
         };
         map.apply_overrides(overrides);
         map
+    }
+
+    fn refresh_litellm<F>(&mut self, fetch_json: F)
+    where
+        F: FnOnce(&mut dyn FnMut(&str) -> bool) -> std::io::Result<()>,
+    {
+        let mut loaded_count = 0;
+        let fetched = fetch_json(&mut |json| {
+            loaded_count = self.load_json(json);
+            loaded_count > 0
+        });
+        if !should_log_pricing_refresh_details() {
+            return;
+        }
+        match fetched {
+            Ok(()) if loaded_count == 0 => {
+                eprintln!("WARN  Failed to parse LiteLLM pricing; using embedded pricing.");
+            }
+            Ok(()) => {}
+            Err(error) => {
+                eprintln!(
+                    "WARN  Failed to fetch LiteLLM pricing ({error}); using embedded pricing."
+                );
+            }
+        }
     }
 
     pub fn load_json(&mut self, json: &str) -> usize {
@@ -2587,7 +2463,7 @@ fn load_models_dev_pricing_once<F>(
     fetch_json: F,
 ) -> Option<&PricingMap>
 where
-    F: FnOnce() -> std::io::Result<String>,
+    F: FnOnce(&mut dyn FnMut(&str) -> bool) -> std::io::Result<()>,
 {
     cell.get_or_init(|| load_models_dev_pricing(fetch_json))
         .as_ref()
@@ -2610,42 +2486,49 @@ fn embedded_models_dev_pricing() -> &'static PricingMap {
 
 fn load_models_dev_pricing<F>(fetch_json: F) -> Option<PricingMap>
 where
-    F: FnOnce() -> std::io::Result<String>,
+    F: FnOnce(&mut dyn FnMut(&str) -> bool) -> std::io::Result<()>,
 {
-    let json = match fetch_json() {
-        Ok(json) => json,
+    let mut map = PricingMap::default();
+    let mut loaded = false;
+    let fetched = fetch_json(&mut |json| {
+        loaded = map
+            .load_models_dev_json_missing(json)
+            .is_some_and(|loaded_count| loaded_count > 0);
+        loaded
+    });
+    match fetched {
+        Ok(()) if loaded => Some(map),
+        Ok(()) => {
+            if should_log_pricing_refresh_details() {
+                eprintln!("WARN  Failed to parse models.dev pricing; using LiteLLM pricing.");
+            }
+            None
+        }
         Err(error) => {
             if should_log_pricing_refresh_details() {
                 eprintln!(
                     "WARN  Failed to fetch models.dev pricing ({error}); using LiteLLM pricing."
                 );
             }
-            return None;
+            None
         }
-    };
-    let mut map = PricingMap::default();
-    if map
-        .load_models_dev_json_missing(&json)
-        .is_none_or(|loaded_count| loaded_count == 0)
-    {
-        if should_log_pricing_refresh_details() {
-            eprintln!("WARN  Failed to parse models.dev pricing; using LiteLLM pricing.");
-        }
-        return None;
     }
-    Some(map)
 }
 
-fn fetch_pricing_json() -> std::io::Result<String> {
-    fetch_json_url(LITELLM_PRICING_URL)
+fn fetch_pricing_json(load: &mut dyn FnMut(&str) -> bool) -> std::io::Result<()> {
+    fetch_json_url(LITELLM_PRICING_URL, load)
 }
 
-fn fetch_models_dev_json() -> std::io::Result<String> {
-    fetch_json_url(MODELS_DEV_API_URL)
+fn fetch_models_dev_json(load: &mut dyn FnMut(&str) -> bool) -> std::io::Result<()> {
+    fetch_json_url(MODELS_DEV_API_URL, load)
 }
 
-/// Fetches a JSON document over HTTP for the pricing refresh.
-pub type JsonFetcher = fn(&str) -> std::io::Result<String>;
+/// Fetches a pricing document over HTTP and hands its body to `load`.
+///
+/// `load` returns whether the body priced at least one model. That is the only
+/// validation a body gets, so a fetcher that caches responses must keep only
+/// bodies `load` accepted, and drop a cached body it rejects.
+pub type JsonFetcher = fn(&str, &mut dyn FnMut(&str) -> bool) -> std::io::Result<()>;
 
 static JSON_FETCHER: OnceLock<JsonFetcher> = OnceLock::new();
 
@@ -2659,19 +2542,19 @@ pub fn set_json_fetcher(fetcher: JsonFetcher) {
     let _ = JSON_FETCHER.set(fetcher);
 }
 
-fn fetch_json_url(url: &str) -> std::io::Result<String> {
+fn fetch_json_url(url: &str, load: &mut dyn FnMut(&str) -> bool) -> std::io::Result<()> {
     let Some(fetch) = JSON_FETCHER.get() else {
         return Err(std::io::Error::other(
             "no HTTP client installed for pricing refresh",
         ));
     };
-    fetch(url)
+    fetch(url, load)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        EMBEDDED_PREWARM, Fuzzy, Pricing, PricingEndpoint, PricingMap, build_time_models_dev_json,
+        EMBEDDED_PREWARM, Fuzzy, Pricing, PricingMap, build_time_models_dev_json,
         build_time_pricing_json, embedded_models_dev_pricing, long_context_split_threshold,
         model_without_date_suffix, prewarm_embedded,
     };
@@ -3013,30 +2896,71 @@ mod tests {
     }
 
     #[test]
-    fn validates_pricing_documents_per_endpoint() {
+    fn each_pricing_loader_loads_only_its_own_document() {
         let litellm =
             r#"{"gpt-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
         let models_dev =
             r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
-        let zero_loaded_models_dev = r#"{"openai":{"models":{"unpriced":{"modalities":{"input":[],"output":["text"]},"cost":{"input":1.0,"output":2.0}}}}}"#;
 
-        assert!(PricingEndpoint::LiteLlm.validates(litellm));
-        assert!(PricingEndpoint::LiteLlm.validates(r#"{"gpt-test":{"i":1.0,"o":2.0}}"#));
-        assert!(!PricingEndpoint::LiteLlm.validates(models_dev));
-        assert!(PricingEndpoint::ModelsDev.validates_shape(models_dev));
-        assert!(PricingEndpoint::ModelsDev.validates(models_dev));
-        assert!(!PricingEndpoint::ModelsDev.validates(litellm));
-        assert!(!PricingEndpoint::ModelsDev.validates("{}"));
-        assert!(!PricingEndpoint::ModelsDev.validates_shape(
-            r#"{"openai":{"models":{"free":{"cost":{"input":0.0,"output":0.0}}}}}"#
-        ));
-        assert!(PricingEndpoint::ModelsDev.validates_shape(zero_loaded_models_dev));
-        assert!(!PricingEndpoint::ModelsDev.validates(zero_loaded_models_dev));
-        let mut pricing = PricingMap::default();
+        assert_eq!(PricingMap::default().load_json(litellm), 1);
+        assert_eq!(PricingMap::default().load_json(models_dev), 0);
         assert_eq!(
-            pricing.load_models_dev_json_missing(zero_loaded_models_dev),
-            Some(0)
+            PricingMap::default().load_models_dev_json_missing(models_dev),
+            Some(1)
         );
+        assert_eq!(
+            PricingMap::default().load_models_dev_json_missing(litellm),
+            None
+        );
+    }
+
+    #[test]
+    fn accepts_a_fetched_models_dev_body_only_when_it_prices_a_model() {
+        let models_dev =
+            r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
+        let litellm =
+            r#"{"gpt-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
+        let free = r#"{"openai":{"models":{"free":{"cost":{"input":0.0,"output":0.0}}}}}"#;
+        let asset_priced = r#"{"openai":{"models":{"unpriced":{"modalities":{"input":[],"output":["text"]},"cost":{"input":1.0,"output":2.0}}}}}"#;
+
+        for (body, expected) in [
+            (models_dev, true),
+            (litellm, false),
+            ("{}", false),
+            (free, false),
+            (asset_priced, false),
+        ] {
+            let mut accepted = None;
+            let pricing = super::load_models_dev_pricing(|load| {
+                accepted = Some(load(body));
+                Ok(())
+            });
+            assert_eq!(accepted, Some(expected), "{body}");
+            assert_eq!(pricing.is_some(), expected, "{body}");
+        }
+    }
+
+    #[test]
+    fn accepts_a_fetched_litellm_body_only_when_it_prices_a_model() {
+        let litellm =
+            r#"{"gpt-fetched":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
+        let models_dev =
+            r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
+
+        for (body, expected) in [(litellm, true), (models_dev, false), ("{}", false)] {
+            let mut pricing = PricingMap::default();
+            let mut accepted = None;
+            pricing.refresh_litellm(|load| {
+                accepted = Some(load(body));
+                Ok(())
+            });
+            assert_eq!(accepted, Some(expected), "{body}");
+            assert_eq!(
+                pricing.find_exact("gpt-fetched").is_some(),
+                expected,
+                "{body}"
+            );
+        }
     }
 
     #[test]
@@ -3737,19 +3661,17 @@ mod tests {
         let cell = std::sync::OnceLock::new();
         let attempts = AtomicUsize::new(0);
 
-        let failed = super::load_models_dev_pricing_once(&cell, || {
+        let failed = super::load_models_dev_pricing_once(&cell, |_| {
             attempts.fetch_add(1, Ordering::Relaxed);
             Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 "temporary failure",
             ))
         });
-        let later = super::load_models_dev_pricing_once(&cell, || {
+        let later = super::load_models_dev_pricing_once(&cell, |load| {
             attempts.fetch_add(1, Ordering::Relaxed);
-            Ok(
-                r#"{"openai":{"models":{"gpt-late":{"cost":{"input":1.0,"output":2.0}}}}}"#
-                    .to_string(),
-            )
+            load(r#"{"openai":{"models":{"gpt-late":{"cost":{"input":1.0,"output":2.0}}}}}"#);
+            Ok(())
         });
 
         assert!(failed.is_none());
@@ -3760,8 +3682,9 @@ mod tests {
     #[test]
     fn keeps_the_models_dev_pricing_its_one_attempt_loaded() {
         let cell = std::sync::OnceLock::new();
-        let loaded = super::load_models_dev_pricing_once(&cell, || {
-            Ok(r#"{
+        let loaded = super::load_models_dev_pricing_once(&cell, |load| {
+            load(
+                r#"{
                 "openai": {
                     "id": "openai",
                     "name": "OpenAI",
@@ -3779,8 +3702,9 @@ mod tests {
                         }
                     }
                 }
-            }"#
-            .to_string())
+            }"#,
+            );
+            Ok(())
         })
         .expect("a usable models.dev body should load");
 
@@ -3794,7 +3718,7 @@ mod tests {
             Some(42)
         );
         assert!(
-            super::load_models_dev_pricing_once(&cell, || {
+            super::load_models_dev_pricing_once(&cell, |_| {
                 Err(std::io::Error::other("must not fetch again"))
             })
             .is_some()
