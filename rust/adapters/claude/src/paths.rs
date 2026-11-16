@@ -323,7 +323,7 @@ mod tests {
 
     use ccusage_test_support::fs_fixture;
 
-    use super::split_files_before_since;
+    use super::{extract_session_parts, split_files_before_since};
     use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs, parse_ts_timestamp};
 
     fn set_file_modified(path: &Path, timestamp: TimestampMs) {
@@ -495,6 +495,16 @@ mod tests {
 
         assert_eq!(split.kept, [live_agent, live, other_root_copy]);
         assert_eq!(split.pruned, [stale_agent]);
+    }
+
+    #[test]
+    fn extracts_parent_session_from_claude_workflow_run_path() {
+        let (session_id, project_path) = extract_session_parts(Path::new(
+            "/home/me/.claude/projects/project-a/session-a/subagents/workflows/wf_1/agent-a.jsonl",
+        ));
+
+        assert_eq!(session_id, "session-a");
+        assert_eq!(project_path, "project-a");
     }
 
     #[test]
