@@ -3344,8 +3344,11 @@ mod tests {
                 ..Default::default()
             };
             let diagnostics = Diagnostics::new("codex");
-            let (groups, _) = crate::aggregate::load_groups_from_directory_with_diagnostics(
-                &fixture.path("sessions"),
+            let (groups, _) = crate::aggregate::load_groups_from_sources_with_diagnostics(
+                &[CodexUsageSource::new_for_test(
+                    fixture.path("sessions"),
+                    fixture.path("sessions"),
+                )],
                 &shared,
                 ccusage_core::cli::AgentReportKind::Daily,
                 &diagnostics,
@@ -3433,8 +3436,11 @@ mod tests {
             assert_eq!(parent_reads, 1);
 
             let diagnostics = Diagnostics::new("codex");
-            let (groups, _) = crate::aggregate::load_groups_from_directory_with_diagnostics(
-                &fixture.path("sessions"),
+            let (groups, _) = crate::aggregate::load_groups_from_sources_with_diagnostics(
+                &[CodexUsageSource::new_for_test(
+                    fixture.path("sessions"),
+                    fixture.path("sessions"),
+                )],
                 &shared,
                 ccusage_core::cli::AgentReportKind::Daily,
                 &diagnostics,

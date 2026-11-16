@@ -15,8 +15,7 @@ use crate::{
     CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, Result,
     cli::{AgentReportKind, SharedArgs, WeekDay},
     fast::{FxHashMap, FxHashSet},
-    format_date_tz, merge_codex_service_tiers, parse_ts_timestamp, resolve_tz, wants_json,
-    week_start,
+    format_date_tz, merge_codex_service_tiers, parse_ts_timestamp, resolve_tz, week_start,
 };
 
 use super::{
@@ -118,11 +117,6 @@ struct CodexCompactionEvent {
 type CodexDedupeMap = FxHashMap<CodexEventKey, CodexDedupeRecord>;
 type CodexDedupeShards = [Mutex<CodexDedupeMap>];
 
-struct CodexAggregation {
-    groups: BTreeMap<String, CodexGroup>,
-    seen: CodexDedupeMap,
-}
-
 /// How a run tells which rollouts replayed a parent's history.
 #[derive(Clone, Copy)]
 enum CodexReplay<'a> {
@@ -191,7 +185,7 @@ pub fn load_groups(
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let diagnostics = Diagnostics::new("codex");
-    let (groups, _) = load_groups_with_diagnostics(shared, kind, wants_json(shared), &diagnostics)?;
+    let (groups, _) = load_groups_with_diagnostics(shared, kind, &diagnostics)?;
     diagnostics.emit(shared);
     Ok(groups)
 }
@@ -199,22 +193,17 @@ pub fn load_groups(
 pub(super) fn load_groups_with_diagnostics(
     shared: &SharedArgs,
     kind: AgentReportKind,
-    multi_source_driver: bool,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
-    let sources = paths::codex_usage_sources()?;
-    if sources.len() == 1 && !multi_source_driver {
-        return load_groups_from_directory_with_diagnostics(
-            &sources[0].dir,
-            shared,
-            kind,
-            diagnostics,
-        );
-    }
-    load_groups_from_sources_with_diagnostics(&sources, shared, kind, diagnostics)
+    load_groups_from_sources_with_diagnostics(
+        &paths::codex_usage_sources()?,
+        shared,
+        kind,
+        diagnostics,
+    )
 }
 
-fn load_groups_from_sources_with_diagnostics(
+pub(super) fn load_groups_from_sources_with_diagnostics(
     sources: &[paths::CodexUsageSource],
     shared: &SharedArgs,
     kind: AgentReportKind,
@@ -237,29 +226,6 @@ fn load_groups_from_sources_with_diagnostics(
         .collect::<Vec<_>>();
     aggregate_file_groups(&selected_files, &all_files, shared, kind, diagnostics)
         .map(|groups| (groups, detected))
-}
-
-pub(super) fn load_groups_from_directory_with_diagnostics(
-    sessions_dir: &Path,
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-    diagnostics: &Diagnostics,
-) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
-    let all_files = paths::collect_codex_usage_files(sessions_dir, diagnostics);
-    let detected = !all_files.is_empty();
-    let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
-    if shared.single_thread {
-        return aggregate_files_local(sessions_dir, &files, &all_files, shared, kind, diagnostics)
-            .map(|groups| (groups, detected));
-    }
-    aggregate_file_groups(
-        &[(sessions_dir, files.as_slice())],
-        &[(sessions_dir, all_files.as_slice())],
-        shared,
-        kind,
-        diagnostics,
-    )
-    .map(|groups| (groups, detected))
 }
 
 /// Aggregates `selected` against the replay history of `available`, the
@@ -456,92 +422,6 @@ fn visit_run_file(
     }
 }
 
-fn aggregate_files_local(
-    sessions_dir: &Path,
-    files: &[PathBuf],
-    all_files: &[PathBuf],
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-    diagnostics: &Diagnostics,
-) -> Result<BTreeMap<String, CodexGroup>> {
-    let bounded_plan = has_date_bounds(shared).then(|| {
-        CodexReplayPlan::for_bounded_files(
-            [(sessions_dir, files)],
-            [(sessions_dir, all_files)],
-            shared.single_thread,
-            diagnostics,
-        )
-    });
-    let run = CodexAggregateRun {
-        sessions_dir,
-        files,
-        shared,
-        kind,
-        replay: bounded_plan
-            .as_ref()
-            .map_or(CodexReplay::Discover, CodexReplay::Planned),
-        selection: None,
-        file_offset: 0,
-        diagnostics,
-    };
-    let (mut aggregation, metadata) = aggregate_files_local_with_seen(&run, None)?;
-    if matches!(run.replay, CodexReplay::Discover) {
-        let (forks, metadata) = fork_indexes(files.len(), metadata);
-        let plan = CodexReplayPlan::with_metadata(
-            [(sessions_dir, all_files)],
-            metadata,
-            true,
-            run.diagnostics,
-        );
-        let fork_run = CodexAggregateRun {
-            replay: CodexReplay::Planned(&plan),
-            selection: Some(&forks),
-            ..run
-        };
-        aggregation = aggregate_files_local_with_seen(&fork_run, Some(aggregation))?.0;
-    }
-    let CodexAggregation { mut groups, seen } = aggregation;
-    apply_recorded_usage_entries(&mut groups, seen.iter(), shared, kind);
-    Ok(groups)
-}
-
-fn aggregate_files_local_with_seen(
-    run: &CodexAggregateRun<'_>,
-    aggregation: Option<CodexAggregation>,
-) -> Result<(CodexAggregation, CodexFileMetadata)> {
-    let mut aggregation = aggregation.unwrap_or_else(|| CodexAggregation {
-        groups: BTreeMap::new(),
-        seen: FxHashMap::default(),
-    });
-    let mut metadata = Vec::new();
-    let timezone = resolve_tz(run.shared.timezone.as_deref());
-    for index in run.file_indexes() {
-        aggregate_file_local(run, index, &timezone, &mut aggregation, &mut metadata)?;
-    }
-    Ok((aggregation, metadata))
-}
-
-fn aggregate_file_local(
-    run: &CodexAggregateRun<'_>,
-    file_index: usize,
-    timezone: &JiffTimeZone,
-    aggregation: &mut CodexAggregation,
-    metadata: &mut CodexFileMetadata,
-) -> Result<()> {
-    let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-    let add = |event: &CodexTokenUsageEvent| {
-        add_event_to_groups_local(
-            event,
-            run.kind,
-            timezone,
-            run.shared,
-            aggregation,
-            &mut provenance,
-        )
-    };
-    visit_run_file(run, file_index, metadata, add)
-}
-
 fn add_event_to_groups(
     event: &CodexTokenUsageEvent,
     kind: AgentReportKind,
@@ -568,43 +448,6 @@ fn add_event_to_groups(
         timezone,
         shared,
         groups,
-    )
-}
-
-fn add_event_to_groups_local(
-    event: &CodexTokenUsageEvent,
-    kind: AgentReportKind,
-    timezone: &JiffTimeZone,
-    shared: &SharedArgs,
-    aggregation: &mut CodexAggregation,
-    provenance: &mut CodexEventProvenance,
-) -> Result<()> {
-    let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
-        return Ok(());
-    };
-    let model = crate::model_aliases::resolve_model_name(model);
-    let timestamp = parse_ts_timestamp(&event.timestamp)
-        .ok_or_else(|| crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp)))?;
-    let key = provenance.event_key(event, timestamp, model.as_ref(), kind);
-    if !insert_dedupe_record(
-        &mut aggregation.seen,
-        key,
-        event,
-        model.as_ref(),
-        kind,
-        timestamp,
-        provenance.file_index,
-    ) {
-        return Ok(());
-    }
-    add_deduped_event_to_groups(
-        event,
-        model.as_ref(),
-        timestamp,
-        kind,
-        timezone,
-        shared,
-        &mut aggregation.groups,
     )
 }
 
@@ -1170,13 +1013,14 @@ pub(super) fn load_groups_from_directory(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    load_groups_from_directory_with_diagnostics(
-        sessions_dir,
+    load_groups_from_sources(
+        &[paths::CodexUsageSource::new_for_test(
+            sessions_dir.to_path_buf(),
+            sessions_dir.to_path_buf(),
+        )],
         shared,
         kind,
-        &Diagnostics::new("codex"),
     )
-    .map(|(groups, _)| groups)
 }
 
 #[cfg(test)]

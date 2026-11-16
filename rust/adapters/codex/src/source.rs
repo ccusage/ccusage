@@ -62,12 +62,7 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
         .expect("Codex pricing is available");
     let speed = resolve_codex_speed(request.options.codex_speed);
 
-    let (groups, detected) = load_groups_with_diagnostics(
-        shared,
-        request.kind,
-        request.multi_source_driver,
-        &diagnostics,
-    )?;
+    let (groups, detected) = load_groups_with_diagnostics(shared, request.kind, &diagnostics)?;
     let rows = groups
         .iter()
         .map(|(period, group)| unified_row_from_group(period, group, pricing, speed, shared.mode))
