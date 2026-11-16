@@ -29,7 +29,11 @@ pub fn load_codex_events_from_directory(
 ) -> Result<Vec<CodexTokenUsageEvent>> {
     let diagnostics = &Diagnostics::new("codex");
     let files = collect_codex_usage_files(sessions_dir, diagnostics);
-    let replay_plan = CodexReplayPlan::new([(sessions_dir, files.as_slice())], single_thread);
+    let replay_plan = CodexReplayPlan::new(
+        [(sessions_dir, files.as_slice())],
+        single_thread,
+        diagnostics,
+    );
     let events = dedupe_codex_events(read_codex_events_from_files(
         sessions_dir,
         &files,
@@ -97,8 +101,11 @@ fn load_codex_events_from_sources_with_files(
             return load_codex_events_from_directory_with_shared(&source.dir, shared, diagnostics);
         }
         let files = collect_codex_usage_files(&source.dir, diagnostics);
-        let replay_plan =
-            CodexReplayPlan::new([(source.dir.as_path(), files.as_slice())], single_thread);
+        let replay_plan = CodexReplayPlan::new(
+            [(source.dir.as_path(), files.as_slice())],
+            single_thread,
+            diagnostics,
+        );
         let events = dedupe_codex_events(read_codex_events_from_files(
             &source.dir,
             &files,
@@ -138,6 +145,7 @@ fn load_codex_events_from_sources_with_files(
                 .iter()
                 .map(|group| (group.dir.as_path(), group.files.as_slice())),
             single_thread,
+            diagnostics,
         )
     };
     let mut events_by_file = Vec::new();
@@ -169,7 +177,11 @@ fn load_codex_events_from_directory_with_shared(
             diagnostics,
         )
     } else {
-        CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
+        CodexReplayPlan::new(
+            [(sessions_dir, all_files.as_slice())],
+            shared.single_thread,
+            diagnostics,
+        )
     };
     let events = dedupe_codex_events(read_codex_events_from_files(
         sessions_dir,
@@ -3230,6 +3242,35 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(parent_usage_reads, vec![parent]);
+    }
+
+    #[test]
+    fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+                r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"#.to_string(),
+                replay_token_count("2025-01-01T08:02:00.000Z", 120),
+            ].join("\n") + "\n",
+            "sessions/2025/01/02/child.jsonl": [
+                replay_metadata("2025-01-02T08:00:00.000Z", "child", Some("parent")),
+                replay_token_count("2025-01-02T08:00:00.000Z", 120),
+            ].join("\n") + "\n",
+        });
+        let sessions = fixture.path("sessions");
+        let parent = fixture.path("sessions/2025/01/01/parent.jsonl");
+        let child = fixture.path("sessions/2025/01/02/child.jsonl");
+        let files = vec![parent.clone(), child];
+        let diagnostics = Diagnostics::new("codex");
+
+        let plan =
+            CodexReplayPlan::new([(sessions.as_path(), files.as_slice())], true, &diagnostics);
+
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        let _ = read_codex_events_from_files(&sessions, &files, true, &plan, &diagnostics);
+        let _ = CodexReplayPlan::new([(sessions.as_path(), files.as_slice())], true, &diagnostics);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
     }
 
     #[test]

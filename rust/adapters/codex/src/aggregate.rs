@@ -188,6 +188,7 @@ fn load_groups_from_sources_with_diagnostics(
                 .iter()
                 .map(|group| (group.dir.as_path(), group.files.as_slice())),
             shared.single_thread,
+            diagnostics,
         )
     };
     let mut groups = BTreeMap::new();
@@ -235,7 +236,11 @@ pub(super) fn load_groups_from_directory_with_diagnostics(
             diagnostics,
         )
     } else {
-        CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
+        CodexReplayPlan::new(
+            [(sessions_dir, all_files.as_slice())],
+            shared.single_thread,
+            diagnostics,
+        )
     };
     let run = CodexAggregateRun {
         sessions_dir,

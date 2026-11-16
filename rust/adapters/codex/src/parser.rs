@@ -300,35 +300,7 @@ pub(super) fn visit_codex_session_file(
         fork_replay,
         None,
         visit,
-        None,
-    )
-}
-
-/// Visits usage while optionally retaining matched compaction identities,
-/// including requests already covered by cumulative usage in a parent log.
-pub(super) fn visit_codex_session_file_with_compaction_history(
-    sessions_dir: &Path,
-    path: &Path,
-    fork_replay: Option<CodexForkReplay<'_>>,
-    compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-    diagnostics: Option<&Diagnostics>,
-) -> Result<()> {
-    let quiet;
-    let diagnostics = match diagnostics {
-        Some(diagnostics) => diagnostics,
-        None => {
-            quiet = Diagnostics::new("codex");
-            &quiet
-        }
-    };
-    visit_codex_session_file_inner(
-        sessions_dir,
-        path,
-        fork_replay,
-        compaction_history,
-        visit,
-        diagnostics,
+        &Diagnostics::new("codex"),
     )
 }
 
@@ -339,10 +311,19 @@ pub(super) fn visit_codex_session_file_with_diagnostics(
     visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
     diagnostics: &Diagnostics,
 ) -> Result<()> {
-    visit_codex_session_file_inner(sessions_dir, path, fork_replay, None, visit, diagnostics)
+    visit_codex_session_file_with_compaction_history(
+        sessions_dir,
+        path,
+        fork_replay,
+        None,
+        visit,
+        diagnostics,
+    )
 }
 
-fn visit_codex_session_file_inner(
+/// Visits usage while optionally retaining matched compaction identities,
+/// including requests already covered by cumulative usage in a parent log.
+pub(super) fn visit_codex_session_file_with_compaction_history(
     sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
