@@ -42,11 +42,13 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
                 SkipKind::Unreadable,
                 "Antigravity database could not be read",
             )),
-            SkippedDatabase::Uninitialized(_) => {
-                if let Some(warning) = skipped_database_message(cx.shared, database) {
-                    cx.diagnostics.push_line(warning);
-                }
-            }
+            SkippedDatabase::Uninitialized(path) => cx.diagnostics.debug_note(
+                path,
+                format!(
+                    "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
+                    path.display()
+                ),
+            ),
         }
     }
     Ok(entries)
