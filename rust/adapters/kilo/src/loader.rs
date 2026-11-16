@@ -12,9 +12,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
-    let pricing = cx
-        .pricing
-        .ok_or_else(|| crate::cli_error("Kilo pricing was not supplied"))?;
+    let pricing = cx.pipeline_pricing()?;
     // Load each database in parallel (a fresh read-only connection per DB), then
     // run the sequential id dedup over the original path order so the surviving
     // record per id matches the single-threaded read.

@@ -10,7 +10,7 @@ use super::{
 };
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.expect("Antigravity uses pipeline pricing");
+    let pricing = cx.pipeline_pricing()?;
     let mut events = Vec::new();
     for database_path in conversation_db_paths(cx.diagnostics)? {
         match parse_sqlite_file(&database_path) {

@@ -32,7 +32,7 @@ pub(crate) fn load_entries(
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.expect("Cline uses pipeline pricing");
+    let pricing = cx.pipeline_pricing()?;
     let sources = discover_files(cx.diagnostics)?;
     let timezone = Some(cx.window.timezone());
     let files = sources

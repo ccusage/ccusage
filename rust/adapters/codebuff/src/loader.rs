@@ -25,9 +25,7 @@ pub(crate) fn load_entries(
 }
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx
-        .pricing
-        .ok_or_else(|| crate::cli_error("Codebuff needs pricing from the report pipeline"))?;
+    let pricing = cx.pipeline_pricing()?;
     let tz = Some(cx.window.timezone());
     let mut files = discover_chat_files(cx.diagnostics)?;
     files.sort();

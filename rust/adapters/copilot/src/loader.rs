@@ -26,7 +26,7 @@ use crate::{
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.expect("Copilot uses pipeline pricing");
+    let pricing = cx.pipeline_pricing()?;
     let tz = Some(cx.window.timezone());
     let sources = super::paths::paths(cx.diagnostics)?;
     let source_kinds = sources
