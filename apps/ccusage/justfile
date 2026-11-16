@@ -5,21 +5,9 @@
 default:
     @just --list
 
-# Verify native binary glue for the published package.
-build: build-package
-
-build-package:
-    just ensure-native-binary
-    publint
-
-prepack:
-    just build-package
-
-build-rust:
-    cargo build --manifest-path ../../rust/Cargo.toml --release --bin ccusage
-
-ensure-native-binary:
-    scripts/ensure-native-binary.nu
+# Lint the published package manifest.
+build:
+    pnpm run build
 
 generate-schema:
     cargo run --quiet --manifest-path ../../rust/Cargo.toml -p ccusage-config --bin generate-config-schema -- config-schema.json
