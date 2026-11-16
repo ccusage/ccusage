@@ -26,11 +26,15 @@ enum PrefilterMode {
 /// A marker is JSON text read from its first byte: bytes inside double quotes,
 /// or every byte of a marker that does not start with one, are string content,
 /// which JSON lets a writer spell as an escape such as `\/`. A line that holds
-/// a marker only in escaped form is still admitted. Only a line that misses a
-/// marker verbatim and holds a backslash pays for more than the `memmem` scans.
+/// a marker only in escaped form is still admitted. A line that misses a marker
+/// verbatim pays one more scan, for an escape that can spell a marker byte, and
+/// only a line that holds such an escape pays for more.
 pub struct LinePrefilter {
     markers: SmallVec<[Marker; 4]>,
     escapable: u128,
+    /// Whether a marker byte can be spelled by a two-byte escape such as `\/`,
+    /// not only by a `\u` escape.
+    short_escapable: bool,
     mode: PrefilterMode,
 }
 
@@ -60,9 +64,13 @@ impl LinePrefilter {
             .map(|marker| Marker::new(marker))
             .collect::<SmallVec<[Marker; 4]>>();
         let escapable = markers.iter().fold(0, |set, marker| set | marker.escapable);
+        let short_escapable = SHORT_ESCAPE_BYTES
+            .iter()
+            .any(|&byte| escapable >> byte & 1 == 1);
         Self {
             markers,
             escapable,
+            short_escapable,
             mode,
         }
     }
@@ -77,7 +85,7 @@ impl LinePrefilter {
                     return true;
                 }
             } else if matches!(self.mode, PrefilterMode::All)
-                && !*has_escape.get_or_insert_with(|| memchr(b'\\', line).is_some())
+                && !*has_escape.get_or_insert_with(|| self.next_escape(line, 0).is_some())
             {
                 return false;
             } else {
@@ -99,8 +107,7 @@ impl LinePrefilter {
 
     fn spells_escaped(&self, line: &[u8], mut pending: u64, all: bool) -> bool {
         let mut from = 0;
-        while let Some(offset) = memchr(b'\\', &line[from..]) {
-            let start = from + offset;
+        while let Some(start) = self.next_escape(line, from) {
             let (decoded, len) = decode_escape(&line[start..]);
             from = start + len;
             let Some(byte) = decoded.filter(|&byte| self.escapable >> byte & 1 == 1) else {
@@ -117,7 +124,39 @@ impl LinePrefilter {
         }
         false
     }
+
+    /// The start of the next escape at or after `from` that can spell a marker
+    /// byte. Tool output is full of `\n`, `\"` and `\\` escapes, so when only a
+    /// unicode escape can spell a marker byte the search jumps between `\u00`
+    /// escapes instead of stopping at every backslash.
+    fn next_escape(&self, line: &[u8], mut from: usize) -> Option<usize> {
+        if self.short_escapable {
+            return memchr(b'\\', &line[from..]).map(|offset| from + offset);
+        }
+        loop {
+            let start = from + ASCII_UNICODE_ESCAPE.find(&line[from..])?;
+            // `\u` starts an escape only when the backslashes before it are
+            // themselves escaped in pairs.
+            let preceding = line[..start]
+                .iter()
+                .rev()
+                .take_while(|&&byte| byte == b'\\')
+                .count();
+            if preceding % 2 == 0 {
+                return Some(start);
+            }
+            from = start + 2;
+        }
+    }
 }
+
+/// Bytes a two-byte JSON escape decodes to.
+const SHORT_ESCAPE_BYTES: [u8; 8] = [b'"', b'\\', b'/', 0x08, 0x0c, b'\n', b'\r', b'\t'];
+
+/// The start of every `\u` escape that decodes to an ASCII byte, the only ones
+/// that can spell a marker byte.
+static ASCII_UNICODE_ESCAPE: std::sync::LazyLock<Finder<'static>> =
+    std::sync::LazyLock::new(|| Finder::new(br"\u00"));
 
 struct Marker {
     finder: Finder<'static>,
@@ -390,6 +429,25 @@ mod tests {
 
         assert!(prefilter.matches(br#"{"a\/b":1,"c\/d":2,"e":3}"#));
         assert!(!prefilter.matches(br#"{"a\/b":1,"e":3}"#));
+    }
+
+    #[test]
+    fn line_prefilter_reads_a_unicode_escape_only_after_paired_backslashes() {
+        let prefilter = LinePrefilter::all(&[br#""usage":{"#]);
+
+        assert!(prefilter.matches(br#"{"n":"\\","us\u0061ge":{}}"#));
+        assert!(prefilter.matches(br#"{"n":"\\\\","us\u0061ge":{}}"#));
+        assert!(!prefilter.matches(br#"{"us\\u0061ge":{}}"#));
+        assert!(!prefilter.matches(br#"{"n":"\n\"\t","x":{}}"#));
+    }
+
+    #[test]
+    fn line_prefilter_follows_short_escapes_when_a_marker_holds_a_slash() {
+        let prefilter = LinePrefilter::any(&[b"a/b"]);
+
+        assert!(prefilter.matches(br#"{"t":"\n a\/b"}"#));
+        assert!(prefilter.matches(br#"{"t":"a\u002fb"}"#));
+        assert!(!prefilter.matches(br#"{"t":"a\\/b"}"#));
     }
 
     #[test]
