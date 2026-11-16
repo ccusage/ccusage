@@ -152,13 +152,13 @@ fn load_deduped_daily_entries(
     // Dedup keeps the first copy it meets, so files are folded in listing order.
     loaded_files.sort_by_cached_key(|(path, _)| usage_file_order(path));
 
-    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
-    let mut deduped = Vec::with_capacity(
-        loaded_files
-            .iter()
-            .map(|(_, file)| file.entries.len())
-            .sum(),
-    );
+    let entry_count = loaded_files
+        .iter()
+        .map(|(_, file)| file.entries.len())
+        .sum();
+    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
+        FxHashMap::with_capacity_and_hasher(entry_count, Default::default());
+    let mut deduped = Vec::with_capacity(entry_count);
     let mut copies = Vec::new();
     for (_, loaded_file) in loaded_files {
         for entry in loaded_file.entries {
@@ -207,10 +207,14 @@ fn summarize_daily_entries(
 
     let mut groups = BTreeMap::<String, DailyAccumulator>::new();
     for entry in deduped {
-        groups
-            .entry(entry.date.clone())
-            .or_default()
-            .add_entry(entry);
+        if let Some(group) = groups.get_mut(entry.date.as_str()) {
+            group.add_entry(entry);
+        } else {
+            groups
+                .entry(entry.date.clone())
+                .or_default()
+                .add_entry(entry);
+        }
     }
     groups
         .into_iter()
@@ -674,15 +678,16 @@ impl DailyAccumulator {
         self.counts.add_usage(entry.usage);
         self.cost += entry.cost;
         if let Some(model) = &entry.model {
-            let model = crate::model_aliases::resolve_model_name(model).into_owned();
-            let index = if let Some(index) = self.breakdown_indexes.get(model.as_str()) {
+            let model = crate::model_aliases::resolve_model_name(model);
+            let index = if let Some(index) = self.breakdown_indexes.get(model.as_ref()) {
                 *index
             } else {
+                let model = model.into_owned();
                 let index = self.breakdowns.len();
                 self.breakdown_indexes.insert(model.clone(), index);
                 self.models.push(model.clone());
                 self.breakdowns.push(ModelBreakdown {
-                    model_name: model.clone(),
+                    model_name: model,
                     ..ModelBreakdown::default()
                 });
                 index

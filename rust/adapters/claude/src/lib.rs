@@ -330,9 +330,9 @@ fn load_entries_inner(
         ),
     );
 
-    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
-    let mut deduped: Vec<LoadedEntry> =
-        Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
+    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
+        FxHashMap::with_capacity_and_hasher(loaded_entry_count, Default::default());
+    let mut deduped: Vec<LoadedEntry> = Vec::with_capacity(loaded_entry_count);
     let mut copies = Vec::new();
     for loaded_file in loaded_files {
         for entry in loaded_file.entries {
