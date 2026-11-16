@@ -11,6 +11,7 @@ use std::{
 };
 
 use ccusage_adapter_common::collect_files_matching;
+use ccusage_core::Diagnostics;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
 
 use crate::{
@@ -85,9 +86,9 @@ pub(super) struct CodexUsageFileGroup {
     pub(super) files: Vec<PathBuf>,
 }
 
-pub(super) fn collect_codex_usage_files(dir: &Path) -> Vec<PathBuf> {
+pub(super) fn collect_codex_usage_files(dir: &Path, diagnostics: &Diagnostics) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    collect_files_matching(dir, &is_rollout_file, &mut files);
+    collect_files_matching(dir, &is_rollout_file, &mut files, diagnostics);
     files.sort();
     // Sorting puts `x.jsonl` before `x.jsonl.zst`. Codex also prefers the plain
     // copy: resuming a compressed rollout restores it before removing the `.zst`.
@@ -98,11 +99,12 @@ pub(super) fn collect_codex_usage_files(dir: &Path) -> Vec<PathBuf> {
 
 pub(super) fn collect_deduped_codex_usage_files(
     sources: &[CodexUsageSource],
+    diagnostics: &Diagnostics,
 ) -> Vec<CodexUsageFileGroup> {
     let mut seen = FxHashSet::default();
     let mut groups = Vec::new();
     for source in sources {
-        let files = collect_codex_usage_files(&source.dir)
+        let files = collect_codex_usage_files(&source.dir, diagnostics)
             .into_iter()
             .filter(|file| seen.insert(codex_usage_file_key(source, file)))
             .collect::<Vec<_>>();
@@ -332,7 +334,7 @@ mod tests {
         let _ = fixture.write_file("codex/archived_sessions/archive-only.jsonl", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
-        let groups = collect_deduped_codex_usage_files(&sources);
+        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
 
         assert_eq!(
             groups,
@@ -361,7 +363,7 @@ mod tests {
         let _ = fixture.write_file("codex/archived_sessions/archived.jsonl.zst", "");
 
         let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
-        let groups = collect_deduped_codex_usage_files(&sources);
+        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
 
         assert_eq!(
             groups,
@@ -391,7 +393,7 @@ mod tests {
 
         let sources =
             codex_usage_sources_from_homes(vec![fixture.path("work"), fixture.path("personal")]);
-        let groups = collect_deduped_codex_usage_files(&sources);
+        let groups = collect_deduped_codex_usage_files(&sources, &Diagnostics::new("codex"));
 
         assert_eq!(
             groups,

@@ -3,9 +3,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use ccusage_adapter_common::{
-    collect_files_with_extension_diagnosed, read_units, source::LoadContext,
-};
+use ccusage_adapter_common::{collect_files_with_extension, read_units, source::LoadContext};
 
 use crate::{LoadedEntry, Result};
 
@@ -68,7 +66,7 @@ fn load_entries_for_context(
     let mut loaded_files = Vec::new();
     for path in paths {
         let mut files = Vec::new();
-        collect_files_with_extension_diagnosed(path, "jsonl", &mut files, cx.diagnostics);
+        collect_files_with_extension(path, "jsonl", &mut files, cx.diagnostics);
         // pi-subagents writes derived debug transcripts under a
         // `subagent-artifacts/` directory inside the sessions tree. They are
         // pure copies of calls already recorded in the primary session files

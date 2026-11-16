@@ -4,7 +4,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
 
 use crate::Result;
@@ -46,12 +46,7 @@ pub(super) fn discover_wire_files(diagnostics: &Diagnostics) -> Result<Vec<PathB
     for kimi_path in paths()? {
         let sessions_path = kimi_path.join(KIMI_SESSIONS_DIR_NAME);
         let mut candidates = Vec::new();
-        collect_files_with_extension_diagnosed(
-            &sessions_path,
-            "jsonl",
-            &mut candidates,
-            diagnostics,
-        );
+        collect_files_with_extension(&sessions_path, "jsonl", &mut candidates, diagnostics);
         files.extend(
             candidates
                 .into_iter()

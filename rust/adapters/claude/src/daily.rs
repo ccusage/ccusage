@@ -36,8 +36,11 @@ pub(super) fn load_daily_summaries_inner(
     diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
     let paths = claude_paths()?;
-    let SinceFiles { kept, pruned } =
-        split_files_before_since(usage_files(&paths, project_filter), shared, utc_now());
+    let SinceFiles { kept, pruned } = split_files_before_since(
+        usage_files(&paths, project_filter, diagnostics),
+        shared,
+        utc_now(),
+    );
     if kept.is_empty() && pruned.is_empty() {
         return Ok(DailySummaries {
             summaries: Vec::new(),

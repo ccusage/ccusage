@@ -1,7 +1,7 @@
 use std::{collections::HashSet, env, fs, path::PathBuf};
 
 use crate::Result;
-use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 pub const COPILOT_OTEL_FILE_EXPORTER_PATH_ENV: &str = "COPILOT_OTEL_FILE_EXPORTER_PATH";
@@ -25,7 +25,7 @@ pub(super) fn paths(diagnostics: &Diagnostics) -> Result<Vec<CopilotSourceFile>>
     if let Some(copilot_root) = copilot_root() {
         let otel_dir = copilot_root.join("otel");
         let mut otel_files = Vec::new();
-        collect_files_with_extension_diagnosed(&otel_dir, "jsonl", &mut otel_files, diagnostics);
+        collect_files_with_extension(&otel_dir, "jsonl", &mut otel_files, diagnostics);
         for path in otel_files {
             add_file(&mut files, &mut seen, CopilotSourceKind::Otel, path);
         }

@@ -195,7 +195,7 @@ fn load_entries_from_directory_parts(
 
     let messages_dir = opencode_dir.join("storage").join("message");
     let mut files = Vec::new();
-    collect_files_with_extension(&messages_dir, "json", &mut files);
+    collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
 
     // Skip files the DB pass already covered. Message files are stored as
     // `storage/message/<sessionID>/<messageID>.json`, so the file stem is the
@@ -1406,6 +1406,36 @@ mod tests {
             .join("\n");
         assert!(warnings.contains("database schema is not supported"));
         assert!(!warnings.contains("no such table"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_message_directory_is_reported() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use ccusage_core::{Diagnostics, SkipKind};
+
+        let fixture = ccusage_test_support::fs_fixture!({
+            "storage/message/blocked/m.json": "{}",
+        });
+        let blocked = fixture.path("storage/message/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            ..Default::default()
+        };
+        let diagnostics = Diagnostics::new("opencode");
+        let loaded =
+            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        loaded.unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[test]

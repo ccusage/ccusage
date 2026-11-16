@@ -42,7 +42,7 @@ pub(super) fn discover_files(diagnostics: &Diagnostics) -> Result<Vec<SourceFile
                 })
             };
             let dir = root.join(relative_root);
-            ccusage_adapter_common::collect_files_matching_diagnosed(
+            ccusage_adapter_common::collect_files_matching(
                 &dir,
                 &matches,
                 &mut candidates,

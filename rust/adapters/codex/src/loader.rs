@@ -28,7 +28,7 @@ pub fn load_codex_events_from_directory(
     single_thread: bool,
 ) -> Result<Vec<CodexTokenUsageEvent>> {
     let diagnostics = &Diagnostics::new("codex");
-    let files = collect_codex_usage_files(sessions_dir);
+    let files = collect_codex_usage_files(sessions_dir, diagnostics);
     let replay_plan = CodexReplayPlan::new([(sessions_dir, files.as_slice())], single_thread);
     let events = dedupe_codex_events(read_codex_events_from_files(
         sessions_dir,
@@ -96,7 +96,7 @@ fn load_codex_events_from_sources_with_files(
         if let Some(shared) = shared {
             return load_codex_events_from_directory_with_shared(&source.dir, shared, diagnostics);
         }
-        let files = collect_codex_usage_files(&source.dir);
+        let files = collect_codex_usage_files(&source.dir, diagnostics);
         let replay_plan =
             CodexReplayPlan::new([(source.dir.as_path(), files.as_slice())], single_thread);
         let events = dedupe_codex_events(read_codex_events_from_files(
@@ -109,7 +109,7 @@ fn load_codex_events_from_sources_with_files(
         return Ok((events, !files.is_empty()));
     }
 
-    let groups = collect_deduped_codex_usage_files(sources);
+    let groups = collect_deduped_codex_usage_files(sources, diagnostics);
     let detected_before_filter = groups.iter().any(|group| !group.files.is_empty());
     let files_by_group = groups
         .iter()
@@ -159,7 +159,7 @@ fn load_codex_events_from_directory_with_shared(
     shared: &SharedArgs,
     diagnostics: &Diagnostics,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
-    let all_files = collect_codex_usage_files(sessions_dir);
+    let all_files = collect_codex_usage_files(sessions_dir, diagnostics);
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
     let replay_plan = if has_date_bounds(shared) {
         CodexReplayPlan::for_bounded_files(

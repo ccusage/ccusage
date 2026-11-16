@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::Result;
-use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
 
 const QWEN_DATA_DIR_ENV: &str = "QWEN_DATA_DIR";
@@ -39,7 +39,7 @@ pub(super) fn discover_chat_files(diagnostics: &Diagnostics) -> Result<Vec<PathB
             continue;
         }
         let mut root_files = Vec::new();
-        collect_files_with_extension_diagnosed(&projects, "jsonl", &mut root_files, diagnostics);
+        collect_files_with_extension(&projects, "jsonl", &mut root_files, diagnostics);
         root_files.retain(|file| is_chat_file(&projects, file));
         files.extend(root_files);
     }

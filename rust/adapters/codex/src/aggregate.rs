@@ -164,7 +164,7 @@ fn load_groups_from_sources_with_diagnostics(
     kind: AgentReportKind,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
-    let file_groups = paths::collect_deduped_codex_usage_files(sources);
+    let file_groups = paths::collect_deduped_codex_usage_files(sources, diagnostics);
     let detected = file_groups.iter().any(|group| !group.files.is_empty());
     let files_by_group = file_groups
         .iter()
@@ -224,7 +224,7 @@ pub(super) fn load_groups_from_directory_with_diagnostics(
     kind: AgentReportKind,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
-    let all_files = paths::collect_codex_usage_files(sessions_dir);
+    let all_files = paths::collect_codex_usage_files(sessions_dir, diagnostics);
     let detected = !all_files.is_empty();
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
     let replay_plan = if shared.since.is_some() || shared.until.is_some() {

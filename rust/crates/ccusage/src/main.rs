@@ -213,7 +213,11 @@ mod tests {
         let parent_file = fixture.path("projects/project1/session-a.jsonl");
         let subagent_file = fixture.path("projects/project1/session-a/subagents/agent-a.jsonl");
 
-        let files = adapter::claude::usage_files(&[fixture.root().to_path_buf()], None);
+        let files = adapter::claude::usage_files(
+            &[fixture.root().to_path_buf()],
+            None,
+            &ccusage_core::Diagnostics::new("claude"),
+        );
 
         assert_eq!(files, vec![parent_file, subagent_file]);
     }

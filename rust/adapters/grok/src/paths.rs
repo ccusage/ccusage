@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::Result;
-use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
 
 /// Official Grok CLI home override (single root).
@@ -37,7 +37,7 @@ pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<Gr
         let sessions = root.join("sessions");
         if sessions.is_dir() {
             let mut updates = Vec::new();
-            collect_files_with_extension_diagnosed(&sessions, "jsonl", &mut updates, diagnostics);
+            collect_files_with_extension(&sessions, "jsonl", &mut updates, diagnostics);
             updates.retain(|path| {
                 path.file_name().and_then(|name| name.to_str()) == Some("updates.jsonl")
             });

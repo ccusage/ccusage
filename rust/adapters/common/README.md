@@ -35,10 +35,8 @@ layers.
 ## Public surface
 
 - `report::print_table_for_agent`
-- `collect_usage_files`
-- `collect_files_with_extension`
-- `collect_files_matching`
-- `collect_files_with_extension_diagnosed` and `collect_files_matching_diagnosed`
+- `collect_files_with_extension` and `collect_files_matching`, which record
+  directories they cannot read in a `Diagnostics`
 - `filter_loaded_entries_by_date`
 - `filter_session_summaries_by_last_activity`
 - `chunk_file_indexes_by_size`
