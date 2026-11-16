@@ -131,7 +131,6 @@ dependencies = [
  "ccusage-adapter-kilo",
  "ccusage-adapter-kimi",
  "ccusage-adapter-openclaw",
- "ccusage-adapter-opencode",
  "ccusage-adapter-pi",
  "ccusage-adapter-qwen",
  "ccusage-adapter-zcode",

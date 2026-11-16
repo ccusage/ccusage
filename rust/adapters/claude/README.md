@@ -30,15 +30,11 @@ Statusline reads share caller-owned diagnostics and emit warnings once after ren
 
 ## Public surface
 
-- `paths::timestamp_from_line`
-- `paths::claude_paths`
-- `paths::extract_project`
-- `paths::extract_session_parts`
-- `paths::usage_files`
+- `SOURCE`
 - `load_entries`
+- `load_entries_since`
 - `load_entries_since_with_diagnostics`
 - `load_daily_summaries`
-- `usage_limit_reset_time_from_line`
 
 ## Depends on
 

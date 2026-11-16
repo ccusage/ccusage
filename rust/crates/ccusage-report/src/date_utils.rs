@@ -13,15 +13,6 @@ pub fn format_date(timestamp: TimestampMs, timezone: Option<&str>) -> String {
     format_date_tz(timestamp, &resolve_tz(timezone))
 }
 
-#[doc(hidden)]
-pub fn format_utc_minute(timestamp: TimestampMs) -> String {
-    let parts = timestamp.utc_parts();
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}",
-        parts.year, parts.month, parts.day, parts.hour, parts.minute
-    )
-}
-
 pub fn format_utc_second(timestamp: TimestampMs) -> String {
     let parts = timestamp.utc_parts();
     format!(
@@ -57,7 +48,19 @@ pub fn am_pm(hour: u32) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::is_valid_timezone;
+    use ccusage_core::{format_rfc3339_millis, parse_ts_timestamp};
+
+    use super::{format_date, format_utc_second, is_valid_timezone};
+
+    #[test]
+    fn formats_dates_with_timezone() {
+        let timestamp = parse_ts_timestamp("2024-08-04T23:30:00.000Z").unwrap();
+
+        assert_eq!(format_date(timestamp, Some("UTC")), "2024-08-04");
+        assert_eq!(format_date(timestamp, Some("Asia/Tokyo")), "2024-08-05");
+        assert_eq!(format_utc_second(timestamp), "2024-08-04 23:30:00");
+        assert_eq!(format_rfc3339_millis(timestamp), "2024-08-04T23:30:00.000Z");
+    }
 
     #[test]
     fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {

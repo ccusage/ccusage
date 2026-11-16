@@ -5,17 +5,15 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use memchr::memmem;
 use serde::Deserialize;
 
 use crate::{
-    Diagnostics, MILLIS_PER_DAY, Result,
+    Diagnostics, MILLIS_PER_DAY, Result, TimestampMs,
     cli::SharedArgs,
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet, LinePrefilter},
     home, resolve_tz,
 };
-use crate::{TimestampMs, parse_ts_timestamp};
 use ccusage_adapter_common::visit_usage_files as visit_usage_files_in;
 
 pub fn claude_paths() -> Result<Vec<PathBuf>> {
@@ -38,7 +36,7 @@ pub fn claude_paths() -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-pub fn usage_files(
+pub(crate) fn usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
     diagnostics: &Diagnostics,
@@ -252,19 +250,6 @@ pub(super) fn is_project_path_segment(value: &str) -> bool {
         && !value.contains('\\')
 }
 
-#[doc(hidden)]
-pub fn timestamp_from_line(line: &str) -> Option<TimestampMs> {
-    timestamp_from_line_bytes(line.as_bytes())
-}
-
-fn timestamp_from_line_bytes(line: &[u8]) -> Option<TimestampMs> {
-    let marker = br#""timestamp":""#;
-    let start = memmem::find(line, marker)? + marker.len();
-    let end = memchr::memchr(b'"', &line[start..])? + start;
-    let timestamp = std::str::from_utf8(&line[start..end]).ok()?;
-    parse_ts_timestamp(timestamp)
-}
-
 pub fn extract_project(path: &Path) -> String {
     let mut saw_projects = false;
     for part in path
@@ -437,6 +422,28 @@ mod tests {
 
         assert_eq!(files, [fixture.path("projects/healthy/s.jsonl")]);
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+    }
+
+    #[test]
+    fn lists_a_parent_transcript_before_its_subagent_transcripts() {
+        let fixture = fs_fixture!({
+            "projects/project1/session-a.jsonl": "",
+            "projects/project1/session-a/subagents/agent-a.jsonl": "",
+        });
+
+        let files = super::usage_files(
+            &[fixture.root().to_path_buf()],
+            None,
+            &crate::Diagnostics::new("claude"),
+        );
+
+        assert_eq!(
+            files,
+            [
+                fixture.path("projects/project1/session-a.jsonl"),
+                fixture.path("projects/project1/session-a/subagents/agent-a.jsonl"),
+            ]
+        );
     }
 
     #[test]

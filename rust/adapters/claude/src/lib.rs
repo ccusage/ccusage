@@ -3,6 +3,8 @@ use ccusage_core::*;
 
 mod daily;
 mod diagnostics;
+#[cfg(test)]
+mod load_tests;
 mod paths;
 mod source;
 
@@ -31,12 +33,9 @@ use crate::{
     resolve_tz, stored_cost_for_mode,
 };
 
-#[doc(hidden)]
-pub use paths::timestamp_from_line;
-pub use paths::usage_files;
 pub(crate) use paths::{
     claude_paths, extract_project, extract_session_parts, split_files_before_since,
-    usage_file_order, visit_usage_files,
+    usage_file_order, usage_files, visit_usage_files,
 };
 
 struct DedupeIndex {
@@ -56,7 +55,7 @@ pub fn load_entries(shared: &SharedArgs, project_filter: Option<&str>) -> Result
 
 /// Loads every deduplicated Claude usage entry like [`load_entries`], keeping
 /// the sessions of the copies dedup merged into them.
-pub fn load_deduped_entries(
+pub(crate) fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<DedupedEntries> {
@@ -91,8 +90,8 @@ pub(crate) fn load_deduped_entries_with_progress(
 /// them from other sessions, such as a resumed or forked transcript repeating
 /// a turn.
 #[derive(Default)]
-pub struct DedupedEntries {
-    pub entries: Vec<LoadedEntry>,
+pub(crate) struct DedupedEntries {
+    pub(crate) entries: Vec<LoadedEntry>,
     /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
@@ -100,7 +99,7 @@ pub struct DedupedEntries {
 impl DedupedEntries {
     /// Main-thread days of the entries `is_counted` keeps, by recorded session ID. As in
     /// the daily loader, a merged copy's session counts on the day its survivor does.
-    pub fn main_thread_session_days(
+    pub(crate) fn main_thread_session_days(
         &self,
         is_counted: impl Fn(&LoadedEntry) -> bool,
     ) -> SessionDays {
@@ -205,26 +204,6 @@ pub struct DailySummaries {
     /// Session days of the summarized main-thread entries, possibly missing
     /// dates before `since`.
     pub session_days: SessionDays,
-}
-
-/// Loads daily Claude summaries like [`load_daily_summaries`], reports
-/// whether Claude usage was detected independently of the date window, and
-/// collects the summarized session days.
-pub fn load_daily_summaries_with_detection(
-    shared: &SharedArgs,
-    project_filter: Option<&str>,
-    group_by_project: bool,
-) -> Result<DailySummaries> {
-    let diagnostics = Diagnostics::new("claude");
-    let loaded = load_daily_summaries_with_detection_progress(
-        shared,
-        project_filter,
-        group_by_project,
-        ProgressOwner::Source,
-        &diagnostics,
-    )?;
-    diagnostics.emit(shared);
-    Ok(loaded)
 }
 
 /// Loads daily summaries with progress owned by the caller or source.
@@ -719,16 +698,6 @@ fn push_deduped_session_alias(
     }
 }
 
-#[cfg(test)]
-fn read_usage_file(
-    path: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> LoadedFile {
-    read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
-}
-
 fn read_usage_file_with_diagnostics(
     path: &Path,
     tz: &JiffTimeZone,
@@ -1124,14 +1093,6 @@ fn consume_ascii_digits(bytes: &[u8], index: &mut usize) -> bool {
     *index > start
 }
 
-#[doc(hidden)]
-pub fn usage_limit_reset_time_from_line(
-    line: &str,
-    is_api_error_message: Option<bool>,
-) -> Option<TimestampMs> {
-    usage_limit_reset_time_from_line_bytes(line.as_bytes(), is_api_error_message)
-}
-
 fn usage_limit_reset_time_from_line_bytes(
     line: &[u8],
     is_api_error_message: Option<bool>,
@@ -1167,14 +1128,45 @@ mod tests {
     use super::{
         deserialize_usage_line, extract_session_parts, has_unsupported_null_field,
         load_deduped_entries, may_have_unsupported_null_field, paths::is_project_path_segment,
-        push_deduped_entry, read_usage_file, usage_files,
+        push_deduped_entry, read_usage_file_with_diagnostics, usage_files,
+        usage_limit_reset_time_from_line_bytes,
     };
     use crate::{
-        LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw, UsageEntry,
-        UsageMessage,
+        Diagnostics, LoadedEntry, LoadedFile, ModelBreakdown, PricingMap, Speed, TimestampMs,
+        TokenUsageRaw, UsageEntry, UsageMessage,
         cli::{CostMode, SharedArgs},
+        format_rfc3339_millis,
     };
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use jiff::tz::TimeZone as JiffTimeZone;
+
+    fn read_usage_file(
+        path: &Path,
+        tz: &JiffTimeZone,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> LoadedFile {
+        read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+    }
+
+    #[test]
+    fn extracts_usage_limit_reset_time_from_raw_line() {
+        let line = br#"{"timestamp":"2025-01-10T10:00:00.000Z","isApiErrorMessage":true,"message":{"content":[{"text":"Claude AI usage limit reached|1736503200 remaining"}],"usage":{"input_tokens":0,"output_tokens":0}}}"#;
+        let reset_time = usage_limit_reset_time_from_line_bytes(line, Some(true)).unwrap();
+
+        assert_eq!(
+            format_rfc3339_millis(reset_time),
+            "2025-01-10T10:00:00.000Z"
+        );
+        assert!(usage_limit_reset_time_from_line_bytes(line, Some(false)).is_none());
+        assert!(
+            usage_limit_reset_time_from_line_bytes(
+                br#"{"message":{"content":[{"text":"Claude AI usage limit reached|0"}]}}"#,
+                Some(true)
+            )
+            .is_none()
+        );
+    }
 
     pub(crate) const SYNTHETIC_NULL_SPEED_LINE: &str = r#"{"timestamp":"2026-01-02T10:00:01.000Z","sessionId":"session-a","isApiErrorMessage":true,"message":{"id":"msg-synthetic","model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"service_tier":null,"speed":null}}}"#;
 

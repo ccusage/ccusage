@@ -320,16 +320,6 @@ struct DailyUsageMessage {
     id: Option<String>,
 }
 
-#[cfg(test)]
-fn read_daily_usage_file(
-    path: &Path,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> DailyLoadedFile {
-    read_daily_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
-}
-
 fn read_daily_usage_file_with_diagnostics(
     path: &Path,
     tz: &JiffTimeZone,
@@ -732,17 +722,27 @@ impl DailyAccumulator {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{path::Path, sync::Arc};
 
     use super::{
-        DailyLoadedEntry, load_daily_summaries_inner, push_deduped_daily_entry,
-        read_daily_usage_file, session_days,
+        DailyLoadedEntry, DailyLoadedFile, load_daily_summaries_inner, push_deduped_daily_entry,
+        read_daily_usage_file_with_diagnostics, session_days,
     };
     use crate::{
-        TimestampMs, TokenUsageRaw,
+        Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
         cli::{CostMode, SharedArgs},
     };
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use jiff::tz::TimeZone as JiffTimeZone;
+
+    fn read_daily_usage_file(
+        path: &Path,
+        tz: &JiffTimeZone,
+        mode: CostMode,
+        pricing: Option<&PricingMap>,
+    ) -> DailyLoadedFile {
+        read_daily_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
+    }
 
     #[test]
     fn null_contract_rejections_claude_code_writes_stay_quiet() {
