@@ -41,7 +41,7 @@ impl UnitError {
                 SkipKind::Invariant,
                 "database schema changed while reading; earlier rows were kept",
             ),
-            Some(1 | 17) => (SkipKind::Invariant, "database schema is not supported"),
+            Some(1 | 17) => return Self::unsupported_schema(),
             Some(11 | 26) if kept => (
                 SkipKind::InvalidData,
                 "database is corrupt or invalid; earlier rows were kept",
@@ -54,6 +54,13 @@ impl UnitError {
             _ => (SkipKind::Unreadable, "database could not be read"),
         };
         Self::new(kind, detail)
+    }
+
+    /// A database whose tables or columns are not the ones the loader reads,
+    /// found before running a statement; the same cause [`Self::sqlite`]
+    /// names for a statement that does not prepare.
+    pub fn unsupported_schema() -> Self {
+        Self::new(SkipKind::Invariant, "database schema is not supported")
     }
 
     /// Records this failure of `unit`. A reader that keeps what it read
