@@ -1,7 +1,7 @@
 use std::{collections::HashSet, env, fs, path::PathBuf};
 
 use crate::Result;
-use ccusage_adapter_common::collect_files_with_extension;
+use ccusage_adapter_common::{collect_files_with_extension, dir_entries};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 pub const COPILOT_OTEL_FILE_EXPORTER_PATH_ENV: &str = "COPILOT_OTEL_FILE_EXPORTER_PATH";
@@ -30,42 +30,20 @@ pub(super) fn paths(diagnostics: &Diagnostics) -> Result<Vec<CopilotSourceFile>>
             add_file(&mut files, &mut seen, CopilotSourceKind::Otel, path);
         }
         let session_state_dir = copilot_root.join("session-state");
-        match fs::metadata(&session_state_dir) {
-            Ok(metadata) if metadata.is_dir() => match fs::read_dir(&session_state_dir) {
-                Ok(entries) => {
-                    for entry in entries {
-                        let Ok(entry) = entry else {
-                            record_discovery_failure(diagnostics, &session_state_dir);
-                            continue;
-                        };
-                        let Ok(file_type) = entry.file_type() else {
-                            record_discovery_failure(diagnostics, &entry.path());
-                            continue;
-                        };
-                        if !file_type.is_dir() {
-                            continue;
-                        }
-                        let path = entry.path().join("events.jsonl");
-                        match fs::metadata(&path) {
-                            Ok(metadata) if metadata.is_file() => add_file(
-                                &mut files,
-                                &mut seen,
-                                CopilotSourceKind::SessionState,
-                                path,
-                            ),
-                            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                                record_discovery_failure(diagnostics, &path)
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Err(_) => record_discovery_failure(diagnostics, &session_state_dir),
-            },
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                record_discovery_failure(diagnostics, &session_state_dir);
+        for (session, file_type) in dir_entries(&session_state_dir, diagnostics) {
+            if !file_type.is_dir() {
+                continue;
             }
-            _ => {}
+            let path = session.join("events.jsonl");
+            match fs::metadata(&path) {
+                Ok(metadata) if metadata.is_file() => {
+                    add_file(&mut files, &mut seen, CopilotSourceKind::SessionState, path)
+                }
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    record_discovery_failure(diagnostics, &path)
+                }
+                _ => {}
+            }
         }
     }
     if let Some(path) = copilot_exporter_path() {
