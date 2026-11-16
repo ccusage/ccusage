@@ -629,14 +629,17 @@ fn filtered_pi_format_agent_rows(
 /// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
 /// source counts are left to it unless `include_claude_agent` is set, so the
 /// focused reports add up to the unified one.
+///
+/// Also returns what the Claude load skipped, if it ran: a skipped transcript
+/// leaves its turns to OpenCode, so the skip changes these totals too.
 pub(super) fn load_opencode_entries(
     shared: &SharedArgs,
     kind: AgentReportKind,
     include_claude_agent: bool,
-) -> Result<Vec<LoadedEntry>> {
+) -> Result<(Vec<LoadedEntry>, Option<Diagnostics>)> {
     let entries = opencode::load_entries_with_native_sessions(shared, kind)?;
     if include_claude_agent || entries.iter().all(|(_, session)| session.is_none()) {
-        return Ok(entries.into_iter().map(|(entry, _)| entry).collect());
+        return Ok((entries.into_iter().map(|(entry, _)| entry).collect(), None));
     }
     let claude_shared = SharedArgs {
         json: true,
@@ -657,7 +660,10 @@ pub(super) fn load_opencode_entries(
     let claude_counted = claude_rows
         .claude_counted
         .ok_or_else(|| crate::cli_error("Claude source did not return counted usage"))?;
-    Ok(claude_counted.retain_uncounted(entries))
+    Ok((
+        claude_counted.retain_uncounted(entries),
+        Some(claude_rows.diagnostics),
+    ))
 }
 
 /// Retains the daily summaries inside the requested date bounds.

@@ -899,7 +899,8 @@ fn focused_opencode_input(
     kind: AgentReportKind,
     include_claude_agent: bool,
 ) -> u64 {
-    let mut entries = loader::load_opencode_entries(shared, kind, include_claude_agent).unwrap();
+    let (mut entries, _) =
+        loader::load_opencode_entries(shared, kind, include_claude_agent).unwrap();
     filter_loaded_entries_by_date(&mut entries, shared);
     entries
         .iter()
@@ -959,6 +960,34 @@ fn focused_opencode_reports_leave_claude_agent_turns_to_claude() {
             "{kind:?}"
         );
     }
+}
+
+#[test]
+fn focused_opencode_reports_what_the_claude_cross_check_skipped() {
+    let fixture = fs_fixture!({});
+    write_claude_agent_fixture(&fixture);
+    // The transcript of `claude-native-missing` is unreadable, so OpenCode
+    // keeps its copy of that session's turns and must say why.
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-missing.jsonl",
+        r#"{"timestamp":"2099-01-02T00:00:00Z","message":{"usage":{"input_tokens":"bad"}}}"#,
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990101", "20990103");
+
+    let (_, claude_diagnostics) =
+        loader::load_opencode_entries(&shared, AgentReportKind::Daily, false).unwrap();
+    let (_, included) =
+        loader::load_opencode_entries(&shared, AgentReportKind::Daily, true).unwrap();
+
+    assert_eq!(
+        claude_diagnostics.unwrap().warnings(&shared),
+        ["WARN  claude: skipped 1 record in 1 input (invalid data)"]
+    );
+    assert!(
+        included.is_none(),
+        "no cross-check runs, so nothing to report"
+    );
 }
 
 #[test]
