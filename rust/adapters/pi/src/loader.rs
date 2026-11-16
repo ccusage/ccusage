@@ -7,7 +7,10 @@ use ccusage_adapter_common::{collect_files_with_extension, read_units, source::L
 
 use crate::{LoadedEntry, Result};
 
-use super::{parser, paths};
+use super::{
+    parser::{self, ParentSession},
+    paths,
+};
 
 #[cfg(test)]
 pub(crate) fn load_entries(
@@ -43,15 +46,6 @@ pub(crate) fn load_named_store_entries(
 enum PiLoadScope<'a> {
     Default,
     Named { store_name: &'a str },
-}
-
-impl<'a> PiLoadScope<'a> {
-    fn store_name(self) -> &'a str {
-        match self {
-            Self::Default => "pi",
-            Self::Named { store_name } => store_name,
-        }
-    }
 }
 
 fn load_entries_for_context(
@@ -117,11 +111,7 @@ fn load_entries_for_context(
             .into_iter()
             .skip(replay_plan.skip_prefix(index))
         {
-            let id = match scope {
-                PiLoadScope::Default => parser::entry_id(&entry),
-                PiLoadScope::Named { .. } => parser::entry_id_for_store(scope.store_name(), &entry),
-            };
-            if seen.insert(id) {
+            if seen.insert(parser::entry_id(&entry)) {
                 entries.push(entry);
             }
         }
@@ -158,7 +148,7 @@ impl PiReplayPlan {
                 invalid_lineage.insert(index);
                 continue;
             };
-            if header.timestamp.is_none() || header.parent_session_is_malformed {
+            if header.timestamp.is_none() || header.parent_session == ParentSession::Malformed {
                 invalid_lineage.insert(index);
             }
         }
@@ -168,7 +158,7 @@ impl PiReplayPlan {
             let Some(header) = data.as_ref().and_then(|data| data.header.as_ref()) else {
                 continue;
             };
-            let Some(parent_path) = header.parent_session.as_ref() else {
+            let ParentSession::Path(parent_path) = &header.parent_session else {
                 continue;
             };
             let Some(fork_timestamp) = header.timestamp else {

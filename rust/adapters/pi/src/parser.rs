@@ -26,15 +26,36 @@ struct PiLine {
     r#type: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     timestamp: Option<String>,
-    #[serde(
-        rename = "parentSession",
-        default,
-        deserialize_with = "jsonl::non_empty_string"
-    )]
-    parent_session: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     id: Option<String>,
     message: Option<PiMessage>,
+}
+
+/// The first line of a pi session file.
+#[derive(Debug, Deserialize)]
+struct PiHeaderLine {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    r#type: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    timestamp: Option<String>,
+    #[serde(rename = "parentSession", default)]
+    parent_session: ParentSession,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) enum ParentSession {
+    #[default]
+    Absent,
+    Malformed,
+    Path(PathBuf),
+}
+
+impl<'de> Deserialize<'de> for ParentSession {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        Ok(ccusage_core::non_empty_json_string(Some(&value))
+            .map_or(Self::Malformed, |path| Self::Path(PathBuf::from(path))))
+    }
 }
 
 /// The link fields carried by every tree-format pi session entry.
@@ -83,8 +104,6 @@ struct PiUsage {
         deserialize_with = "jsonl::lenient_u64"
     )]
     total_tokens: u64,
-    // A non-object `cost` previously left display cost absent without dropping
-    // the record, so deserialize it leniently instead of failing the line.
     #[serde(default, deserialize_with = "jsonl::lenient_object")]
     cost: Option<PiCost>,
 }
@@ -98,8 +117,7 @@ struct PiCost {
 
 #[derive(Debug, Clone)]
 pub(crate) struct PiSessionHeader {
-    pub(crate) parent_session: Option<PathBuf>,
-    pub(crate) parent_session_is_malformed: bool,
+    pub(crate) parent_session: ParentSession,
     pub(crate) timestamp: Option<crate::TimestampMs>,
 }
 
@@ -585,15 +603,9 @@ fn replay_billed_cost_bits(mode: CostMode, cost: f64) -> Option<u64> {
 
 fn parse_session_header(content: &[u8]) -> Option<PiSessionHeader> {
     let first_line = content.split(|byte| *byte == b'\n').next()?;
-    let value = serde_json::from_slice::<serde_json::Value>(first_line).ok()?;
-    let header = serde_json::from_value::<PiLine>(value.clone()).ok()?;
+    let header = serde_json::from_slice::<PiHeaderLine>(first_line).ok()?;
     (header.r#type.as_deref() == Some("session")).then(|| PiSessionHeader {
-        parent_session: header.parent_session.map(PathBuf::from),
-        parent_session_is_malformed: value.get("parentSession").is_some_and(|parent| {
-            !parent
-                .as_str()
-                .is_some_and(|parent| !parent.trim().is_empty())
-        }),
+        parent_session: header.parent_session,
         timestamp: header
             .timestamp
             .as_deref()
@@ -660,10 +672,6 @@ fn extract_project_for_store(path: &Path, store_root: &Path) -> String {
         return project.as_os_str().to_string_lossy().into_owned();
     }
     extract_project(path)
-}
-
-pub(crate) fn entry_id(entry: &LoadedEntry) -> String {
-    entry_id_for_store("pi", entry)
 }
 
 fn calculate_store_cost(
@@ -778,26 +786,32 @@ fn store_pricing_at(
         .or_else(|| raw_model.and_then(|model| pricing.find_at(model, timestamp)))
 }
 
-pub(crate) fn entry_id_for_store(store_name: &str, entry: &LoadedEntry) -> String {
-    [
-        store_name,
-        entry.project.as_ref(),
-        entry.session_id.as_ref(),
-        entry.data.timestamp.as_str(),
-        entry.model.as_deref().unwrap_or_default(),
-        &entry.data.message.usage.input_tokens.to_string(),
-        &entry.data.message.usage.output_tokens.to_string(),
-        &entry
-            .data
-            .message
-            .usage
-            .cache_creation_input_tokens
-            .to_string(),
-        &entry.data.message.usage.cache_read_input_tokens.to_string(),
-        &entry.extra_total_tokens.to_string(),
-        &entry.cost.to_string(),
-    ]
-    .join(":")
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub(crate) struct PiEntryId {
+    project: Arc<str>,
+    session_id: Arc<str>,
+    timestamp: String,
+    model: Option<String>,
+    tokens: [u64; 5],
+    cost_bits: u64,
+}
+
+pub(crate) fn entry_id(entry: &LoadedEntry) -> PiEntryId {
+    let usage = entry.data.message.usage;
+    PiEntryId {
+        project: Arc::clone(&entry.project),
+        session_id: Arc::clone(&entry.session_id),
+        timestamp: entry.data.timestamp.clone(),
+        model: entry.model.clone(),
+        tokens: [
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_creation_input_tokens,
+            usage.cache_read_input_tokens,
+            entry.extra_total_tokens,
+        ],
+        cost_bits: entry.cost.to_bits(),
+    }
 }
 
 #[cfg(test)]
@@ -1237,7 +1251,27 @@ mod tests {
         .pop()
         .unwrap();
 
-        assert_ne!(entry_id(&pi), entry_id_for_store("omp", &omp));
+        assert_ne!(entry_id(&pi), entry_id(&omp));
+    }
+
+    #[test]
+    fn classifies_the_parent_session_of_a_header() {
+        let header = |parent: &str| {
+            let line =
+                format!(r#"{{"type":"session","timestamp":"2026-01-01T00:00:00.000Z"{parent}}}"#);
+            parse_session_header(line.as_bytes())
+                .unwrap()
+                .parent_session
+        };
+
+        assert_eq!(header(""), ParentSession::Absent);
+        assert_eq!(header(r#","parentSession":null"#), ParentSession::Malformed);
+        assert_eq!(header(r#","parentSession":5"#), ParentSession::Malformed);
+        assert_eq!(header(r#","parentSession":"  ""#), ParentSession::Malformed);
+        assert_eq!(
+            header(r#","parentSession":" /a/b.jsonl ""#),
+            ParentSession::Path(PathBuf::from("/a/b.jsonl"))
+        );
     }
 
     #[test]
