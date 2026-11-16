@@ -25,6 +25,52 @@ impl UnitError {
             detail: detail.into(),
         }
     }
+
+    /// Classifies a failed SQLite call by its result code, so every database
+    /// source names the same cause the same way.
+    ///
+    /// A statement the database cannot run (`SQLITE_ERROR`, `SQLITE_SCHEMA`)
+    /// means its schema is not the one the loader reads; a corrupt file or one
+    /// that is not a database at all is invalid data; anything else, such as a
+    /// lock or an I/O error, left the database unreadable, or interrupted a
+    /// read whose earlier rows are kept.
+    pub fn sqlite(stage: SqliteStage, code: Option<isize>) -> Self {
+        let kept = stage == SqliteStage::Rows;
+        let (kind, detail) = match code.map(|code| code & 0xff) {
+            Some(1 | 17) if kept => (
+                SkipKind::Invariant,
+                "database schema changed while reading; earlier rows were kept",
+            ),
+            Some(1 | 17) => (SkipKind::Invariant, "database schema is not supported"),
+            Some(11 | 26) if kept => (
+                SkipKind::InvalidData,
+                "database is corrupt or invalid; earlier rows were kept",
+            ),
+            Some(11 | 26) => (SkipKind::InvalidData, "database is corrupt or invalid"),
+            _ if kept => (
+                SkipKind::ReadInterrupted,
+                "database read stopped early; earlier rows were kept",
+            ),
+            _ => (SkipKind::Unreadable, "database could not be read"),
+        };
+        Self::new(kind, detail)
+    }
+
+    /// Records this failure of `unit`. A reader that keeps what it read
+    /// before the failure calls this itself; [`read_units`] calls it for a
+    /// unit that failed as a whole.
+    pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
+        diagnostics.record(Skip::unit(unit, self.kind, self.detail));
+    }
+}
+
+/// How far reading a database got when a SQLite call failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SqliteStage {
+    /// Opening the database or preparing a statement, before any row is kept.
+    Setup,
+    /// Stepping through rows, keeping the ones read before the failure.
+    Rows,
 }
 
 impl fmt::Display for UnitError {
@@ -101,8 +147,7 @@ where
     read_files_parallel(files, single_thread, |file| match read(file) {
         Ok(value) => Some(value),
         Err(error) => {
-            let UnitError { kind, detail } = error.into();
-            diagnostics.record(Skip::unit(file, kind, detail));
+            error.into().record(file, diagnostics);
             None
         }
     })
@@ -135,7 +180,7 @@ mod tests {
     use ccusage_core::{Diagnostics, Result, SkipKind, cli_error};
     use ccusage_test_support::Fixture;
 
-    use super::{UnitError, read_units, read_units_flat};
+    use super::{SqliteStage, UnitError, read_units, read_units_flat};
 
     fn numbers(path: &Path) -> Result<Vec<u32>> {
         let content = fs::read_to_string(path)?;
@@ -257,6 +302,35 @@ mod tests {
         assert!(error.detail.contains("column"));
         assert!(!error.detail.contains("SECRET_CANARY"));
         assert_eq!(error.to_string(), error.detail.as_str());
+    }
+
+    #[test]
+    fn sqlite_failures_are_classified_by_primary_result_code() {
+        for (code, setup, rows) in [
+            (Some(1), SkipKind::Invariant, SkipKind::Invariant),
+            (Some(17), SkipKind::Invariant, SkipKind::Invariant),
+            (Some(273), SkipKind::Invariant, SkipKind::Invariant),
+            (Some(11), SkipKind::InvalidData, SkipKind::InvalidData),
+            (Some(26), SkipKind::InvalidData, SkipKind::InvalidData),
+            (Some(267), SkipKind::InvalidData, SkipKind::InvalidData),
+            (Some(5), SkipKind::Unreadable, SkipKind::ReadInterrupted),
+            (Some(6), SkipKind::Unreadable, SkipKind::ReadInterrupted),
+            (Some(10), SkipKind::Unreadable, SkipKind::ReadInterrupted),
+            (Some(14), SkipKind::Unreadable, SkipKind::ReadInterrupted),
+            (Some(261), SkipKind::Unreadable, SkipKind::ReadInterrupted),
+            (None, SkipKind::Unreadable, SkipKind::ReadInterrupted),
+        ] {
+            assert_eq!(
+                UnitError::sqlite(SqliteStage::Setup, code).kind,
+                setup,
+                "setup {code:?}"
+            );
+            assert_eq!(
+                UnitError::sqlite(SqliteStage::Rows, code).kind,
+                rows,
+                "rows {code:?}"
+            );
+        }
     }
 
     #[test]
