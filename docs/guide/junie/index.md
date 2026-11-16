@@ -55,7 +55,7 @@ ccusage counts only `LlmResponseMetadataEvent` events. Each entry in an event's 
 | `cacheCreateTokens` | Cache creation tokens |
 | `cost`              | Recorded cost         |
 
-Requests are dated by the event's `timestampMs`. Older Junie builds wrote usage events without `timestampMs`; those requests are dated by the session's `createdAt` in `index.jsonl`, and skipped when the session has no index entry. Entries without a model, or with every token counter at zero, are skipped.
+Requests are dated by the event's `timestampMs`. Older Junie builds wrote usage events without `timestampMs`; those requests are dated by the session's `createdAt` in `index.jsonl`, and skipped when the session has no index entry or its entry has no usable `createdAt`. Entries without a model, or with every token counter at zero, are skipped.
 
 `auto` uses Junie's recorded cost when present and calculates from token counts when it is missing. `display` uses recorded costs only, while `calculate` estimates cost from token counts using known pricing. A model without known pricing remains visible; when calculation is needed, ccusage shows a missing-pricing warning.
 
