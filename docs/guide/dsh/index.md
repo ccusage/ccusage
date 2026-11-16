@@ -27,7 +27,7 @@ By default, ccusage reads session logs from:
 ~/.dsh/sessions/<project>/<session-id>/session.v<N>.jsonl
 ```
 
-Either file can also be zstd-compressed with a `.zstd` suffix. A compressed log that is still being written can end in an incomplete frame; ccusage reads the complete part and skips the rest.
+Either file can also be zstd-compressed with a `.zstd` suffix. A compressed log that is still being written can end in an incomplete frame; ccusage reads the complete part and skips the rest. A log left that way for more than a minute, or one with a corrupt frame, is reported in a skipped-input warning, and its complete part still counts (see [Debug Options](/guide/cli-options#debug-options)).
 
 DeepSeek Harness keeps older log generations next to the newest one after it migrates a session to a new format. ccusage reads only the newest generation in each session directory, so the same requests are not counted twice.
 
