@@ -12,12 +12,13 @@ catalogs:
     vitepress-plugin-group-icons: ^1.8.1
     vitepress-plugin-llms: ^1.14.0
   telemetry:
+    '@cloudflare/vite-plugin': ^2.0.0-beta.v.2
     '@cloudflare/workers-types': ^5.20261018.1
     '@hono/zod-validator': ^0.9.1
+    cf: ^1.0.0-beta.18
     hono: ^4.13.13
     json-schema-to-ts: ^3.1.1
     vite: ^8.3.4
-    void: ^1.2.1
     zod: ^4.6.7
   types:
     '@types/node': ^24.19.2

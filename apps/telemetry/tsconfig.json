@@ -14,5 +14,5 @@
 		"erasableSyntaxOnly": true,
 		"skipLibCheck": true
 	},
-	"include": ["src/**/*.ts", "routes/**/*.ts", "crons/**/*.ts", "void.config.ts", "vite.config.ts"]
+	"include": ["src/**/*.ts", "cloudflare.config.ts", "vite.config.ts"]
 }
