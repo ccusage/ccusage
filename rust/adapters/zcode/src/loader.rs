@@ -2,7 +2,9 @@ use std::{collections::HashSet, path::Path};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use ccusage_adapter_common::{read_units, source::LoadContext, units::UnitError};
+use ccusage_adapter_common::{
+    SqliteStage, read_units, source::LoadContext, units::UnitError,
+};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log};
@@ -92,11 +94,9 @@ fn load_entries_from_database(
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let connection =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|_| {
-                UnitError::new(SkipKind::Unreadable, "ZCode database could not be opened")
-            })?;
+            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
-    if connection.execute("PRAGMA busy_timeout = 5000").is_err() {
+    if let Err(error) = connection.execute("PRAGMA busy_timeout = 5000") {
         debug_log(
             shared,
             format!(
@@ -104,12 +104,9 @@ fn load_entries_from_database(
                 db_path.display()
             ),
         );
-        return Err(UnitError::new(
-            SkipKind::Unreadable,
-            "ZCode database setup failed",
-        ));
+        return Err(UnitError::sqlite(SqliteStage::Setup, error.code));
     }
-    if connection.execute("PRAGMA query_only = ON").is_err() {
+    if let Err(error) = connection.execute("PRAGMA query_only = ON") {
         debug_log(
             shared,
             format!(
@@ -117,10 +114,7 @@ fn load_entries_from_database(
                 db_path.display()
             ),
         );
-        return Err(UnitError::new(
-            SkipKind::Unreadable,
-            "ZCode database setup failed",
-        ));
+        return Err(UnitError::sqlite(SqliteStage::Setup, error.code));
     }
 
     let schema = read_schema(&connection, db_path, shared)?;
@@ -171,13 +165,7 @@ fn load_entries_from_database(
             shared,
             format!("Failed to query ZCode database: {}", db_path.display()),
         );
-        let kind = database_prepare_error_kind(error.code);
-        let detail = if kind == SkipKind::InvalidData {
-            "unsupported ZCode database schema"
-        } else {
-            "ZCode usage query could not be read"
-        };
-        UnitError::new(kind, detail)
+        UnitError::sqlite(SqliteStage::Setup, error.code)
     })?;
 
     let mut entries = Vec::new();
@@ -212,11 +200,7 @@ fn load_entries_from_database(
                     shared,
                     format!("Failed to read ZCode database: {}", db_path.display()),
                 );
-                diagnostics.record(Skip::unit(
-                    db_path,
-                    database_step_error_kind(error.code),
-                    "ZCode database read stopped after a row failure",
-                ));
+                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
                 break;
             }
         }
@@ -250,7 +234,7 @@ fn read_schema(
             ),
         );
         return Err(UnitError::new(
-            SkipKind::InvalidData,
+            SkipKind::Invariant,
             "unsupported ZCode database schema",
         ));
     }
@@ -276,31 +260,10 @@ fn table_columns(
     // LIMIT 0 obtains column metadata without materializing any row values,
     // including prompt or content fields that may be present in future schemas.
     let query = format!("SELECT * FROM \"{table}\" LIMIT 0");
-    let statement = connection.prepare(query).map_err(|error| {
-        let kind = database_prepare_error_kind(error.code);
-        let detail = if kind == SkipKind::InvalidData {
-            "unsupported ZCode database schema"
-        } else {
-            "ZCode database schema could not be read"
-        };
-        UnitError::new(kind, detail)
-    })?;
+    let statement = connection
+        .prepare(query)
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     Ok(statement.column_names().iter().cloned().collect())
-}
-
-fn database_step_error_kind(code: Option<isize>) -> SkipKind {
-    match database_prepare_error_kind(code) {
-        SkipKind::InvalidData => SkipKind::InvalidData,
-        _ => SkipKind::ReadInterrupted,
-    }
-}
-
-fn database_prepare_error_kind(code: Option<isize>) -> SkipKind {
-    if matches!(code.map(|code| code & 0xff), Some(1 | 17)) {
-        SkipKind::InvalidData
-    } else {
-        SkipKind::Unreadable
-    }
 }
 
 fn missing_columns(columns: &HashSet<String>, required: &[&str]) -> Vec<String> {
@@ -521,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn separates_unreadable_databases_from_unsupported_schemas() {
+    fn separates_invalid_databases_from_unsupported_schemas() {
         let fixture = fs_fixture!({"broken.db": "SECRET_CANARY"});
         sqlite::open(fixture.path("unsupported.db")).unwrap();
         let diagnostics = Diagnostics::new("zcode");
@@ -535,8 +498,8 @@ mod tests {
         );
 
         assert!(loaded.iter().all(Option::is_none));
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }
 
     #[test]
@@ -562,29 +525,6 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-    }
-
-    #[test]
-    fn classifies_usage_query_prepare_failures_by_sqlite_code() {
-        for code in [Some(1), Some(17), Some(273)] {
-            assert_eq!(database_step_error_kind(code), SkipKind::InvalidData);
-        }
-        for code in [Some(5), Some(6), Some(10), None] {
-            assert_eq!(database_step_error_kind(code), SkipKind::ReadInterrupted);
-        }
-        assert_eq!(database_prepare_error_kind(Some(1)), SkipKind::InvalidData);
-        assert_eq!(database_prepare_error_kind(Some(17)), SkipKind::InvalidData);
-        assert_eq!(
-            database_prepare_error_kind(Some(273)),
-            SkipKind::InvalidData
-        );
-        assert_eq!(
-            database_prepare_error_kind(Some(257)),
-            SkipKind::InvalidData
-        );
-        for code in [Some(5), Some(6), Some(10), Some(26), None] {
-            assert_eq!(database_prepare_error_kind(code), SkipKind::Unreadable);
-        }
     }
 
     #[test]
