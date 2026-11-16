@@ -3,10 +3,6 @@ mod report;
 mod sources;
 mod types;
 
-#[cfg(test)]
-use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
-#[cfg(test)]
-use ccusage_adapter_common::filter_loaded_entries_by_date;
 use ccusage_core::*;
 
 mod adapter {
@@ -118,18 +114,6 @@ fn requested_sections(
     }
     requested
 }
-
-#[cfg(test)]
-use ccusage_adapter_common::rows::UnifiedRow;
-#[cfg(test)]
-use loader::{aggregate_rows, codex_group_row, load_agent_rows_parallel, load_rows, load_sections};
-#[cfg(test)]
-use report::{
-    all_report_title, all_table_columns, all_table_row, report_json, report_json_with_agents,
-    sections_report_json,
-};
-#[cfg(test)]
-use types::{AgentLoadSpec, AgentRows};
 
 #[cfg(test)]
 mod tests;

@@ -9,9 +9,12 @@ layers.
 - file discovery by extension, including the JSONL helper most adapters use.
 - `chunk_file_indexes_by_size` — size-balanced work splitting, so one large file
   does not leave workers idle.
-- `read_files_parallel` — ordered parallel reads: results come back in file order,
-  so output does not depend on worker scheduling, and `--single-thread` collapses
-  to a plain sequential read.
+- `read_files_parallel` and `map_parallel` — ordered parallel reads: results
+  come back in input order, so output does not depend on worker scheduling, a
+  worker's panic reaches the caller, and `--single-thread` collapses to a plain
+  sequential read. `worker_count` is the one rule for how many workers run.
+- `timestamps` — a file's mtime, and an epoch number whose unit the source
+  does not fix.
 - `units::read_units` and `read_units_flat` — `read_files_parallel` with fault
   isolation: a unit whose read fails is recorded in the load's `Diagnostics`
   and the rest of the report goes on, so no call site writes its own skip.
@@ -25,8 +28,6 @@ layers.
 - `rows` and `claims` — the row a source hands the unified report, and the
   record of what the Claude source counted that OpenCode must not count again.
 - `filter_loaded_entries_by_date` — the shared `--since`/`--until` filter.
-- `filter_session_summaries_by_last_activity` — the same window applied to
-  session summaries by the local day of their last activity.
 - `jsonl` — the streaming JSONL parsing helpers, including diagnostics for
   selected records that fail to decode without discarding later records.
 - `report::print_table_for_agent` — the usage table for adapters whose rows are
@@ -36,13 +37,13 @@ layers.
 
 - `report::print_table_for_agent`
 - `collect_files_with_extension`, `collect_files_matching`,
-  `visit_files_matching`, `visit_usage_files` and `dir_entries`, which record
-  directories, entries and file types they cannot read in a `Diagnostics`
+  `visit_usage_files` and `dir_entries`, which record directories, entries
+  and file types they cannot read in a `Diagnostics`
 - `read_discovered_files`
 - `filter_loaded_entries_by_date`
-- `filter_session_summaries_by_last_activity`
 - `chunk_file_indexes_by_size`
-- `read_files_parallel`
+- `read_files_parallel`, `map_parallel`, `Split` and `worker_count`
+- `timestamps::file_mtime` and `timestamps::epoch_secs_or_millis`
 - `units::read_units`
 - `units::read_units_flat`
 - `units::UnitError`

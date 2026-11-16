@@ -5,9 +5,7 @@ use std::{
     thread,
 };
 
-use ccusage_core::{
-    Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, UsageSummary, cli::SharedArgs,
-};
+use ccusage_core::{Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::SharedArgs};
 
 pub mod claims;
 pub mod jsonl;
@@ -21,6 +19,7 @@ pub mod source;
 mod test_source;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+pub mod timestamps;
 pub mod units;
 
 pub use report::print_table_for_agent;
@@ -67,7 +66,7 @@ pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics
 
 /// Like [`collect_files_matching`], but hands each file to `visit` as the walk
 /// finds it, so reading can start before the walk ends.
-pub fn visit_files_matching(
+fn visit_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
     visit: &mut dyn FnMut(PathBuf),
@@ -132,24 +131,22 @@ pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &Sh
     pipeline::retain_entries_in(entries, &ReportWindow::from_shared(shared));
 }
 
-/// Keeps the sessions whose last activity falls on a day inside the
-/// `--since`/`--until` window, with the day taken in the report timezone the
-/// same way `LoadedEntry::date` is.
-pub fn filter_session_summaries_by_last_activity(
-    rows: &mut Vec<UsageSummary>,
-    shared: &SharedArgs,
-) {
-    pipeline::retain_sessions_last_active_in(rows, &ReportWindow::from_shared(shared));
-}
-
 pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<Vec<usize>> {
     // Callers derive the count from available_parallelism, which can be 0 for a
     // caller that clamps against an empty file list; one chunk still returns
     // every index rather than indexing an empty vector.
     let chunk_count = chunk_count.max(1);
-    let mut weighted_indexes = Vec::with_capacity(files.len());
-    for (index, file) in files.iter().enumerate() {
-        let size = fs::metadata(file).map_or(0, |metadata| metadata.len());
+    chunk_indexes_by_size(files, PathBuf::as_path, chunk_count)
+}
+
+fn chunk_indexes_by_size<I>(
+    items: &[I],
+    path: fn(&I) -> &Path,
+    chunk_count: usize,
+) -> Vec<Vec<usize>> {
+    let mut weighted_indexes = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let size = fs::metadata(path(item)).map_or(0, |metadata| metadata.len());
         weighted_indexes.push((index, size));
     }
     weighted_indexes.sort_unstable_by(|a, b| match b.1.cmp(&a.1) {
@@ -176,49 +173,91 @@ pub fn chunk_file_indexes_by_size(files: &[PathBuf], chunk_count: usize) -> Vec<
         .collect()
 }
 
+/// How many workers to run over `items` units of work: one for
+/// `--single-thread`, otherwise the available parallelism, never more than
+/// there are items and never zero.
+pub fn worker_count(single_thread: bool, items: usize) -> usize {
+    if single_thread || items <= 1 {
+        return 1;
+    }
+    thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(items)
+}
+
+/// How [`map_parallel`] splits items between workers.
+pub enum Split<I> {
+    /// Balances the sizes of the files the items name, so one large file does
+    /// not leave the other workers idle.
+    BySize(fn(&I) -> &Path),
+    /// Gives each worker the same number of items, for work whose cost does
+    /// not grow with file size.
+    ByCount,
+}
+
+/// Applies `map` to every item, on up to [`worker_count`] threads, and
+/// returns the results in item order.
+pub fn map_parallel<I, T, F>(items: &[I], single_thread: bool, split: Split<I>, map: F) -> Vec<T>
+where
+    I: Sync,
+    T: Send,
+    F: Fn(&I) -> T + Sync,
+{
+    let workers = worker_count(single_thread, items.len());
+    if workers == 1 {
+        return items.iter().map(map).collect();
+    }
+    let chunks = match split {
+        Split::BySize(path) => chunk_indexes_by_size(items, path, workers),
+        Split::ByCount => {
+            let chunk_size = items.len().div_ceil(workers);
+            (0..items.len())
+                .collect::<Vec<_>>()
+                .chunks(chunk_size)
+                .map(<[usize]>::to_vec)
+                .collect()
+        }
+    };
+    let map = &map;
+    let mut results = thread::scope(|scope| {
+        chunks
+            .into_iter()
+            .map(|chunk| {
+                scope.spawn(move || {
+                    chunk
+                        .into_iter()
+                        .map(|index| (index, map(&items[index])))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flat_map(join_worker)
+            .collect::<Vec<_>>()
+    });
+    results.sort_unstable_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, result)| result).collect()
+}
+
+/// A worker's results, or its panic carried on into the caller.
+fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
+    handle
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
 /// Reads `files` by applying `read` to each path and returns results in file order.
 pub fn read_files_parallel<T, F>(files: &[PathBuf], single_thread: bool, read: F) -> Vec<T>
 where
     T: Send,
     F: Fn(&Path) -> T + Sync,
 {
-    let worker_count = if single_thread {
-        1
-    } else {
-        thread::available_parallelism()
-            .map(usize::from)
-            .unwrap_or(1)
-            .min(files.len())
-    };
-    if worker_count <= 1 {
-        return files.iter().map(|file| read(file.as_path())).collect();
-    }
-
-    let chunks = chunk_file_indexes_by_size(files, worker_count);
-    let read = &read;
-    thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(chunks.len());
-        for chunk in chunks {
-            handles.push(scope.spawn(move || {
-                chunk
-                    .into_iter()
-                    .map(|index| (index, read(files[index].as_path())))
-                    .collect::<Vec<_>>()
-            }));
-        }
-        let mut results: Vec<Option<T>> = Vec::with_capacity(files.len());
-        results.resize_with(files.len(), || None);
-        for (index, value) in handles
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("file read worker panicked"))
-        {
-            results[index] = Some(value);
-        }
-        results
-            .into_iter()
-            .map(|value| value.expect("file read worker returned every file"))
-            .collect()
-    })
+    map_parallel(
+        files,
+        single_thread,
+        Split::BySize(PathBuf::as_path),
+        |file| read(file),
+    )
 }
 
 /// Reads files as `discover` yields them and returns each with its result,
@@ -271,136 +310,18 @@ where
             let _ = sender.send(path);
         });
         drop(sender);
-        workers
-            .into_iter()
-            .flat_map(|worker| worker.join().expect("file read worker panicked"))
-            .collect()
+        workers.into_iter().flat_map(join_worker).collect()
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use ccusage_core::{UsageSummary, cli::SharedArgs};
     use ccusage_test_support::Fixture;
 
     use super::{
-        chunk_file_indexes_by_size, collect_files_matching,
-        filter_session_summaries_by_last_activity, read_files_parallel,
+        Split, chunk_file_indexes_by_size, collect_files_matching, map_parallel,
+        read_files_parallel, worker_count,
     };
-
-    fn session_summary(session_id: &str, last_activity: &str) -> UsageSummary {
-        UsageSummary {
-            date: None,
-            month: None,
-            week: None,
-            session_id: Some(session_id.to_string()),
-            project_path: None,
-            last_activity: Some(last_activity.to_string()),
-            first_activity: None,
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_creation_tokens: 0,
-            cache_read_tokens: 0,
-            extra_total_tokens: 0,
-            total_cost: 0.0,
-            credits: None,
-            message_count: None,
-            models_used: Vec::new(),
-            model_breakdowns: Vec::new(),
-            project: None,
-            versions: None,
-        }
-    }
-
-    fn filtered_session_ids(shared: &SharedArgs) -> Vec<String> {
-        let mut rows = vec![
-            session_summary("before", "2026-02-22T23:59:59.000Z"),
-            session_summary("start-of-day", "2026-02-23T00:00:00.000Z"),
-            session_summary("end-of-day", "2026-02-23T23:59:59.999Z"),
-            session_summary("after", "2026-02-24T00:00:00.000Z"),
-        ];
-        filter_session_summaries_by_last_activity(&mut rows, shared);
-        rows.into_iter().filter_map(|row| row.session_id).collect()
-    }
-
-    #[test]
-    fn session_window_bounds_are_inclusive_of_the_whole_day() {
-        let shared = SharedArgs {
-            since: Some("20260223".to_string()),
-            until: Some("20260223".to_string()),
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        };
-
-        assert_eq!(
-            filtered_session_ids(&shared),
-            ["start-of-day", "end-of-day"]
-        );
-    }
-
-    #[test]
-    fn session_window_takes_the_day_in_the_report_timezone() {
-        // Asia/Tokyo is UTC+9, so the window shifts nine hours earlier in UTC.
-        let shared = SharedArgs {
-            since: Some("20260223".to_string()),
-            until: Some("20260223".to_string()),
-            timezone: Some("Asia/Tokyo".to_string()),
-            ..SharedArgs::default()
-        };
-
-        assert_eq!(filtered_session_ids(&shared), ["before", "start-of-day"]);
-    }
-
-    #[test]
-    fn session_window_with_only_until_keeps_everything_through_that_day() {
-        let shared = SharedArgs {
-            until: Some("20260223".to_string()),
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        };
-
-        assert_eq!(
-            filtered_session_ids(&shared),
-            ["before", "start-of-day", "end-of-day"]
-        );
-    }
-
-    #[test]
-    fn session_window_with_only_since_keeps_everything_from_that_day() {
-        let shared = SharedArgs {
-            since: Some("20260223".to_string()),
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        };
-
-        assert_eq!(
-            filtered_session_ids(&shared),
-            ["start-of-day", "end-of-day", "after"]
-        );
-    }
-
-    #[test]
-    fn session_window_drops_rows_without_a_parseable_last_activity() {
-        let missing = UsageSummary {
-            last_activity: None,
-            ..session_summary("missing", "")
-        };
-        let unparsable = session_summary("unparsable", "2026-02-23");
-        for shared in [
-            SharedArgs {
-                since: Some("20260101".to_string()),
-                ..SharedArgs::default()
-            },
-            SharedArgs {
-                until: Some("20991231".to_string()),
-                ..SharedArgs::default()
-            },
-        ] {
-            let mut rows = vec![missing.clone(), unparsable.clone()];
-            filter_session_summaries_by_last_activity(&mut rows, &shared);
-            assert!(rows.is_empty(), "{:?}/{:?}", shared.since, shared.until);
-        }
-    }
 
     #[test]
     fn collects_nested_files_accepted_by_the_predicate() {
@@ -502,5 +423,36 @@ mod tests {
         let empty: Vec<std::path::PathBuf> = Vec::new();
 
         assert!(read_files_parallel(&empty, false, |_| 0_u8).is_empty());
+    }
+
+    #[test]
+    fn count_split_keeps_item_order() {
+        let items = Vec::from_fn(1000, |index| index);
+
+        for single_thread in [true, false] {
+            assert_eq!(
+                map_parallel(&items, single_thread, Split::ByCount, |item| item * 2),
+                Vec::from_fn(1000, |index| index * 2),
+                "single_thread={single_thread}"
+            );
+        }
+    }
+
+    #[test]
+    fn worker_count_is_one_for_a_single_thread_or_at_most_one_item() {
+        assert_eq!(worker_count(true, 100), 1);
+        assert_eq!(worker_count(false, 0), 1);
+        assert_eq!(worker_count(false, 1), 1);
+        assert!((1..=3).contains(&worker_count(false, 3)));
+    }
+
+    #[test]
+    #[should_panic(expected = "worker failed")]
+    fn a_worker_panic_reaches_the_caller() {
+        let items = Vec::from_fn(64, |index| index);
+
+        map_parallel(&items, false, Split::ByCount, |item| {
+            assert_ne!(*item, 7, "worker failed");
+        });
     }
 }

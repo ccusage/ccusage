@@ -12,14 +12,27 @@ use std::{
 
 use serde_json::{Value, json};
 
+use std::collections::BTreeMap;
+
 use super::*;
 use crate::{
-    Align, CodexGroup, CodexModelUsage, ModelBreakdown, PricingMap,
+    Align, ModelBreakdown, PricingMap,
     cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs, SourceArgs, WeekDay},
-    loader::NO_SOURCES,
+    loader::{aggregate_rows, load_agent_rows_parallel, load_rows, load_sections},
     model_aliases::set_model_aliases_for_tests,
+    report::{
+        all_report_title, all_table_columns, all_table_row, report_json_with_agents,
+        sections_report_json,
+    },
+    types::{AgentLoadSpec, AgentRows},
 };
+use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
+use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::UnifiedRow};
 use ccusage_test_support::{EnvVarsGuard, fs_fixture, zcode::create_fixture};
+
+/// No per-source options, which is how the tests that do not exercise them
+/// call the loader.
+pub(crate) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
 
 fn test_agent_rows(agent: &'static str) -> AgentRows {
     AgentRows {
@@ -146,9 +159,9 @@ fn saturates_unified_daily_and_weekly_reports_for_extreme_counters() {
         extreme_all_row("2099-01-03", 1),
     ];
     let daily_rows = aggregate_rows(rows.clone(), AgentReportKind::Daily, WeekDay::Monday);
-    let daily_report = report_json(&daily_rows, AgentReportKind::Daily);
+    let daily_report = report_json_with_agents(&daily_rows, AgentReportKind::Daily, false);
     let weekly_rows = aggregate_rows(rows, AgentReportKind::Weekly, WeekDay::Monday);
-    let weekly_report = report_json(&weekly_rows, AgentReportKind::Weekly);
+    let weekly_report = report_json_with_agents(&weekly_rows, AgentReportKind::Weekly, false);
 
     for report in [daily_report, weekly_report] {
         for key in [
@@ -349,7 +362,7 @@ fn renders_all_report_json_with_period_and_agent_metadata() {
         model_breakdowns: Vec::new(),
     }];
 
-    let report = report_json(&rows, AgentReportKind::Daily);
+    let report = report_json_with_agents(&rows, AgentReportKind::Daily, false);
 
     assert_eq!(report["daily"][0]["period"], "2026-01-02");
     assert_eq!(report["daily"][0]["agent"], "all");
@@ -400,7 +413,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
         ],
     };
 
-    let report = report_json(std::slice::from_ref(&row), AgentReportKind::Daily);
+    let report = report_json_with_agents(std::slice::from_ref(&row), AgentReportKind::Daily, false);
     assert_eq!(report["totals"]["unpricedModels"], json!(["new-model"]));
     assert_eq!(
         report["daily"][0]["modelBreakdowns"][0]["missingPricing"],
@@ -464,7 +477,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
     );
 
     row.model_breakdowns.remove(0);
-    let report = report_json(std::slice::from_ref(&row), AgentReportKind::Daily);
+    let report = report_json_with_agents(std::slice::from_ref(&row), AgentReportKind::Daily, false);
     assert!(report["totals"].get("unpricedModels").is_none());
 }
 
@@ -588,7 +601,7 @@ fn omits_by_agent_json_breakdowns_by_default() {
         WeekDay::Monday,
     );
 
-    let report = report_json(&rows, AgentReportKind::Daily);
+    let report = report_json_with_agents(&rows, AgentReportKind::Daily, false);
 
     assert!(report["daily"][0].get("agents").is_none());
 }
@@ -637,22 +650,23 @@ fn renders_multi_section_json_with_command_totals() {
     ];
 
     let report = sections_report_json(&sections, AgentReportKind::Daily, false);
+    let value = serde_json::to_value(&report).unwrap();
 
     assert_eq!(
-        report.get("daily").unwrap(),
-        &report_json(&daily_rows, AgentReportKind::Daily)["daily"]
+        value["daily"],
+        report_json_with_agents(&daily_rows, AgentReportKind::Daily, false)["daily"]
     );
     assert_eq!(
-        report.get("monthly").unwrap(),
-        &report_json(&monthly_rows, AgentReportKind::Monthly)["monthly"]
+        value["monthly"],
+        report_json_with_agents(&monthly_rows, AgentReportKind::Monthly, false)["monthly"]
     );
     assert_eq!(
-        report.get("session").unwrap(),
-        &report_json(&session_rows, AgentReportKind::Session)["session"]
+        value["session"],
+        report_json_with_agents(&session_rows, AgentReportKind::Session, false)["session"]
     );
     assert_eq!(
-        report.get("totals").unwrap(),
-        &report_json(&daily_rows, AgentReportKind::Daily)["totals"]
+        value["totals"],
+        report_json_with_agents(&daily_rows, AgentReportKind::Daily, false)["totals"]
     );
     insta::assert_snapshot!(serde_json::to_string_pretty(&report).unwrap());
 }
@@ -734,7 +748,7 @@ fn unified_sessions_sort_by_cost_in_json_and_table() {
             WeekDay::Monday,
         )
         .unwrap();
-        let report = report_json(&result.rows, AgentReportKind::Session);
+        let report = report_json_with_agents(&result.rows, AgentReportKind::Session, false);
         let ids: Vec<_> = report["session"]
             .as_array()
             .unwrap()
@@ -848,7 +862,7 @@ fn unified_totals(
     sources: &std::collections::BTreeMap<String, SourceArgs>,
 ) -> Value {
     let result = load_rows(kind, shared, sources, WeekDay::Monday).unwrap();
-    report_json(&result.rows, kind)["totals"].clone()
+    report_json_with_agents(&result.rows, kind, false)["totals"].clone()
 }
 
 #[test]
@@ -886,7 +900,7 @@ fn unified_reports_count_claude_agent_sessions_once() {
 
     for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
         let result = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
-        let totals = &report_json(&result.rows, kind)["totals"];
+        let totals = &report_json_with_agents(&result.rows, kind, false)["totals"];
 
         assert_eq!(totals["inputTokens"], 127, "{kind:?}");
         assert_eq!(totals["totalCost"], 1.5, "{kind:?}");
@@ -1817,15 +1831,15 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
 
     insta::assert_json_snapshot!(
         "zcode_fixture_daily_json",
-        report_json(&daily.rows, AgentReportKind::Daily)
+        report_json_with_agents(&daily.rows, AgentReportKind::Daily, false)
     );
     insta::assert_json_snapshot!(
         "zcode_fixture_monthly_json",
-        report_json(&monthly.rows, AgentReportKind::Monthly)
+        report_json_with_agents(&monthly.rows, AgentReportKind::Monthly, false)
     );
     insta::assert_json_snapshot!(
         "zcode_fixture_session_json",
-        report_json(&session.rows, AgentReportKind::Session)
+        report_json_with_agents(&session.rows, AgentReportKind::Session, false)
     );
     insta::assert_snapshot!(
         "zcode_fixture_daily_table",
@@ -1913,7 +1927,7 @@ fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
 
         insta::assert_json_snapshot!(
             format!("cline_fixture_{kind:?}_unified_json").to_lowercase(),
-            report_json(&result.rows, kind)
+            report_json_with_agents(&result.rows, kind, false)
         );
         insta::assert_snapshot!(
             format!("cline_fixture_{kind:?}_unified_table").to_lowercase(),
@@ -2088,7 +2102,7 @@ fn table_snapshot(
             }
         }
     }
-    let totals = report_json(rows, kind)["totals"].clone();
+    let totals = report_json_with_agents(rows, kind, false)["totals"].clone();
     let total_row = UnifiedRow {
         period: "Total".to_string(),
         agent: "all",
@@ -2113,7 +2127,7 @@ fn table_snapshot(
     }));
 
     json!({
-        "title": all_report_title(kind, rows, detected_agents),
+        "title": all_report_title(kind, detected_agents),
         "headers": headers,
         "rows": rendered_rows,
     })
@@ -2258,7 +2272,12 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
             AgentReportKind::Weekly | AgentReportKind::Monthly => unreachable!(),
         };
         let section_rows = load_sections(&sections, shared, &NO_SOURCES, WeekDay::Monday).unwrap();
-        let report = sections_report_json(&section_rows.sections, command_kind, false);
+        let report = serde_json::to_value(sections_report_json(
+            &section_rows.sections,
+            command_kind,
+            false,
+        ))
+        .unwrap();
 
         for section_kind in [
             AgentReportKind::Daily,
@@ -2267,7 +2286,7 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
             AgentReportKind::Session,
         ] {
             let standalone = load_rows(section_kind, shared, &NO_SOURCES, WeekDay::Monday).unwrap();
-            let standalone_report = report_json(&standalone.rows, section_kind);
+            let standalone_report = report_json_with_agents(&standalone.rows, section_kind, false);
             let key = match section_kind {
                 AgentReportKind::Daily => "daily",
                 AgentReportKind::Weekly => "weekly",
@@ -2275,8 +2294,7 @@ fn assert_daily_family_and_session_sections_match_standalone(shared: &SharedArgs
                 AgentReportKind::Session => "session",
             };
             assert_eq!(
-                report.get(key).unwrap(),
-                &standalone_report[key],
+                report[key], standalone_report[key],
                 "{command_kind:?} invocation should match standalone {section_kind:?}"
             );
         }
@@ -2325,7 +2343,7 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
             ..CodexModelUsage::default()
         },
     );
-    let row = codex_group_row(
+    let row = adapter::codex::unified_row_from_group(
         "2026-01-02",
         &group,
         &PricingMap::default(),
@@ -2384,7 +2402,7 @@ fn includes_codex_model_breakdowns_in_all_rows() {
         },
     );
 
-    let row = codex_group_row(
+    let row = adapter::codex::unified_row_from_group(
         "2026-01-02",
         &group,
         &pricing,
@@ -2411,7 +2429,7 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
             ..CodexModelUsage::default()
         },
     );
-    let row = codex_group_row(
+    let row = adapter::codex::unified_row_from_group(
         "2026-01-02",
         &group,
         &PricingMap::default(),
@@ -2419,7 +2437,7 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
         CostMode::Display,
     );
 
-    let report = report_json(&[row], AgentReportKind::Daily);
+    let report = report_json_with_agents(&[row], AgentReportKind::Daily, false);
 
     assert!(report["totals"].get("unpricedModels").is_none());
     assert!(
@@ -2556,36 +2574,6 @@ fn displays_total_tokens_including_extra_tokens() {
 }
 
 #[test]
-fn report_title_uses_detected_agents_even_when_filtered_rows_are_sparse() {
-    let rows = vec![UnifiedRow {
-        period: "2026-01-02".to_string(),
-        agent: "all",
-        models_used: vec!["gpt-5".to_string()],
-        input_tokens: 100,
-        output_tokens: 20,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 10,
-        total_tokens: 120,
-        total_cost: 0.01,
-        metadata: None,
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    }];
-
-    let title = all_report_title(
-        AgentReportKind::Daily,
-        &rows,
-        &["amp", "claude", "codex", "opencode", "pi"],
-    );
-
-    assert_eq!(
-        title,
-        "Coding (Agent) CLI Usage Report - Daily\nDetected: Amp, Claude, Codex, OpenCode, pi-agent"
-    );
-}
-
-#[test]
 fn all_table_rows_match_main_agent_breakdown_display() {
     let row = UnifiedRow {
         period: "2026-01-02".to_string(),
@@ -2634,25 +2622,16 @@ fn all_table_rows_match_main_agent_breakdown_display() {
 
 #[test]
 fn all_report_title_lists_detected_agents() {
-    let row = UnifiedRow {
-        period: "2026-01-02".to_string(),
-        agent: "all",
-        models_used: Vec::new(),
-        input_tokens: 0,
-        output_tokens: 0,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 0,
-        total_tokens: 0,
-        total_cost: 0.0,
-        metadata: None,
-        metadata_agents: Some(vec!["claude", "codex"]),
-        agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    };
-
     assert_eq!(
-        all_report_title(AgentReportKind::Daily, &[row], &[]),
-        "Coding (Agent) CLI Usage Report - Daily\nDetected: Claude, Codex"
+        all_report_title(
+            AgentReportKind::Daily,
+            &["pi", "codex", "amp", "claude", "opencode"],
+        ),
+        "Coding (Agent) CLI Usage Report - Daily\nDetected: Amp, Claude, Codex, OpenCode, pi-agent"
+    );
+    assert_eq!(
+        all_report_title(AgentReportKind::Session, &[]),
+        "Coding (Agent) CLI Usage Report - Session\nDetected: None"
     );
 }
 
@@ -2804,7 +2783,7 @@ fn dsh_fixture_reports_all_kinds_through_unified_json_and_tables() {
         assert_eq!(result.detected_agents, ["dsh"]);
         insta::assert_json_snapshot!(
             format!("dsh_fixture_{kind:?}_unified_json").to_lowercase(),
-            report_json(&result.rows, kind)
+            report_json_with_agents(&result.rows, kind, false)
         );
         insta::assert_snapshot!(
             format!("dsh_fixture_{kind:?}_unified_table").to_lowercase(),

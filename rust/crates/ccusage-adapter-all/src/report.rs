@@ -20,11 +20,6 @@ use crate::{
 
 use ccusage_adapter_common::rows::UnifiedRow;
 
-#[cfg(test)]
-pub(super) fn report_json(rows: &[UnifiedRow], kind: AgentReportKind) -> Value {
-    report_json_with_agents(rows, kind, false)
-}
-
 pub(super) fn report_json_with_agents(
     rows: &[UnifiedRow],
     kind: AgentReportKind,
@@ -103,13 +98,6 @@ pub(super) struct OrderedJsonMap {
 }
 
 impl OrderedJsonMap {
-    #[cfg(test)]
-    pub(super) fn get(&self, key: &str) -> Option<&Value> {
-        self.fields
-            .iter()
-            .find_map(|(field, value)| (*field == key).then_some(value))
-    }
-
     fn strip_costs(&mut self) {
         for (_, value) in &mut self.fields {
             strip_cost_json(value);
@@ -217,7 +205,7 @@ pub(super) fn print_table(
     shared: &SharedArgs,
     detected_agents: &[&'static str],
 ) -> Result<()> {
-    print_box_title(&all_report_title(kind, rows, detected_agents), shared);
+    print_box_title(&all_report_title(kind, detected_agents), shared);
     if rows.is_empty() {
         eprintln!("No usage data found.");
         return Ok(());
@@ -366,11 +354,7 @@ fn all_rows_as_usage_summaries(rows: &[UnifiedRow]) -> Vec<UsageSummary> {
         .collect()
 }
 
-pub(super) fn all_report_title(
-    kind: AgentReportKind,
-    rows: &[UnifiedRow],
-    detected_agents: &[&'static str],
-) -> String {
+pub(super) fn all_report_title(kind: AgentReportKind, detected_agents: &[&'static str]) -> String {
     format!(
         "Coding (Agent) CLI Usage Report - {}\nDetected: {}",
         match kind {
@@ -379,26 +363,12 @@ pub(super) fn all_report_title(
             AgentReportKind::Monthly => "Monthly",
             AgentReportKind::Session => "Session",
         },
-        detected_agent_labels(rows, detected_agents)
+        detected_agent_labels(detected_agents)
     )
 }
 
-fn detected_agent_labels(rows: &[UnifiedRow], detected_agents: &[&'static str]) -> String {
-    let mut agents = BTreeSet::new();
-    if detected_agents.is_empty() {
-        for row in rows {
-            if let Some(metadata_agents) = row.metadata_agents.as_ref() {
-                agents.extend(metadata_agents.iter().copied());
-            } else if row.agent != "all" {
-                agents.insert(row.agent);
-            }
-            if let Some(breakdowns) = row.agent_breakdowns.as_ref() {
-                agents.extend(breakdowns.iter().map(|breakdown| breakdown.agent));
-            }
-        }
-    } else {
-        agents.extend(detected_agents.iter().copied());
-    }
+fn detected_agent_labels(detected_agents: &[&'static str]) -> String {
+    let agents = detected_agents.iter().copied().collect::<BTreeSet<_>>();
     if agents.is_empty() {
         return "None".to_string();
     }

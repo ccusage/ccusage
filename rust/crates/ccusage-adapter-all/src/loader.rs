@@ -5,9 +5,6 @@ use std::{
     thread,
 };
 
-#[cfg(test)]
-use serde_json::json;
-
 use ccusage_adapter_common::{
     claims::ClaudeCounted,
     rows::UnifiedRow,
@@ -22,13 +19,6 @@ use crate::{
     cli::{AgentReportKind, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
 };
 
-#[cfg(test)]
-use crate::{
-    CodexGroup, UsageSummary, adapter::codex, cli::CodexSpeed, filter_loaded_entries_by_date,
-};
-#[cfg(test)]
-use ccusage_adapter_common::rows::summary_rows;
-
 use super::{
     report::sort_rows,
     sources::SOURCES,
@@ -37,11 +27,6 @@ use super::{
         LoadedAgentRows,
     },
 };
-
-/// No per-source options, which is how the tests that do not exercise them
-/// call the loader.
-#[cfg(test)]
-pub(super) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
 
 pub(super) fn load_rows(
     kind: AgentReportKind,
@@ -552,41 +537,6 @@ fn agent_rows(rows: SourceRows) -> AgentRows {
     }
 }
 
-#[cfg(test)]
-fn load_pi_format_agent_rows(
-    custom_path: Option<&str>,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Result<AgentRows> {
-    pi::SOURCE
-        .unified_rows(&UnifiedRequest {
-            kind,
-            shared,
-            options: SourceOptions {
-                pi_path: custom_path,
-                ..SourceOptions::default()
-            },
-            pricing: Some(pricing),
-            progress: ProgressOwner::Caller,
-            multi_source_driver: true,
-            claude_counted: None,
-        })
-        .map(agent_rows)
-}
-
-#[cfg(test)]
-fn load_named_pi_store_rows(
-    agent: &'static str,
-    store_path: &str,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Result<AgentRows> {
-    let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
-    load_source_result(&store, kind, shared, None, Some(pricing), None).map(agent_rows)
-}
-
 /// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
 /// source counts are left to it unless `include_claude_agent` is set, so the
 /// focused reports add up to the unified one.
@@ -627,39 +577,12 @@ pub(super) fn load_opencode_entries(
     ))
 }
 
-/// Retains the daily summaries inside the requested date bounds.
-#[cfg(test)]
-fn filter_daily_summaries_by_date(rows: &mut Vec<UsageSummary>, shared: &SharedArgs) {
-    if shared.since.is_none() && shared.until.is_none() {
-        return;
-    }
-    rows.retain(|row| {
-        let date = row.date.as_deref().unwrap_or_default().replace('-', "");
-        shared.since.as_ref().is_none_or(|since| &date >= since)
-            && shared.until.as_ref().is_none_or(|until| &date <= until)
-    });
-}
-
 fn needs_daily_family(kinds: &[AgentReportKind]) -> bool {
     kinds.iter().any(|kind| *kind != AgentReportKind::Session)
 }
 
 fn needs_session(kinds: &[AgentReportKind]) -> bool {
     kinds.contains(&AgentReportKind::Session)
-}
-
-#[cfg(test)]
-pub(super) fn codex_group_row<S>(
-    period: &str,
-    group: &CodexGroup,
-    pricing: &PricingMap,
-    speed: S,
-    mode: CostMode,
-) -> UnifiedRow
-where
-    S: Into<codex::CodexSpeedPolicy> + Copy,
-{
-    codex::unified_row_from_group(period, group, pricing, speed, mode)
 }
 
 pub(super) fn aggregate_rows(
@@ -691,9 +614,47 @@ pub(super) fn aggregate_rows(
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+    use crate::{UsageSummary, adapter::codex, cli::CodexSpeed, tests::NO_SOURCES};
+    use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
+    use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::summary_rows};
     use ccusage_cli::NamedPiStore;
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+
+    fn load_pi_format_agent_rows(
+        custom_path: Option<&str>,
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+        pricing: &PricingMap,
+    ) -> Result<AgentRows> {
+        pi::SOURCE
+            .unified_rows(&UnifiedRequest {
+                kind,
+                shared,
+                options: SourceOptions {
+                    pi_path: custom_path,
+                    ..SourceOptions::default()
+                },
+                pricing: Some(pricing),
+                progress: ProgressOwner::Caller,
+                multi_source_driver: true,
+                claude_counted: None,
+            })
+            .map(agent_rows)
+    }
+
+    fn load_named_pi_store_rows(
+        agent: &'static str,
+        store_path: &str,
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+        pricing: &PricingMap,
+    ) -> Result<AgentRows> {
+        let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
+        load_source_result(&store, kind, shared, None, Some(pricing), None).map(agent_rows)
+    }
 
     fn usage_summary(date: &str, input_tokens: u64) -> UsageSummary {
         UsageSummary {
@@ -1023,26 +984,6 @@ mod tests {
     }
 
     #[test]
-    fn filters_daily_summaries_with_compact_date_bounds() {
-        let mut rows = vec![
-            usage_summary("2026-01-01", 10),
-            usage_summary("2026-01-02", 20),
-            usage_summary("2026-01-03", 30),
-        ];
-        let shared = SharedArgs {
-            since: Some("20260102".to_string()),
-            until: Some("20260102".to_string()),
-            ..SharedArgs::default()
-        };
-
-        filter_daily_summaries_by_date(&mut rows, &shared);
-
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].date.as_deref(), Some("2026-01-02"));
-        assert_eq!(rows[0].input_tokens, 20);
-    }
-
-    #[test]
     fn unified_row_matches_focused_cost_for_mixed_recorded_tiers() {
         let mut pricing = PricingMap::default();
         pricing.load_json(
@@ -1054,7 +995,7 @@ mod tests {
                 }
             }"#,
         );
-        let usage = crate::CodexModelUsage {
+        let usage = CodexModelUsage {
             input_tokens: 30,
             total_tokens: 30,
             recorded_standard_usage: codex::CodexUsageBucket {
@@ -1065,7 +1006,7 @@ mod tests {
                 input_tokens: 10,
                 ..codex::CodexUsageBucket::default()
             },
-            ..crate::CodexModelUsage::default()
+            ..CodexModelUsage::default()
         };
         let mut group = CodexGroup {
             input_tokens: 30,
@@ -1076,7 +1017,13 @@ mod tests {
         let speed = codex::CodexSpeedPolicy::Auto(codex::CodexServiceTier::Standard);
 
         let focused_cost = codex::calculate_group_cost(&group, &pricing, speed);
-        let unified = codex_group_row("2026-07-22", &group, &pricing, speed, CostMode::Calculate);
+        let unified = codex::unified_row_from_group(
+            "2026-07-22",
+            &group,
+            &pricing,
+            speed,
+            CostMode::Calculate,
+        );
 
         assert!((focused_cost - 40e-6).abs() < f64::EPSILON);
         assert!((unified.total_cost - focused_cost).abs() < f64::EPSILON);
@@ -1086,7 +1033,7 @@ mod tests {
     #[test]
     fn unified_row_reports_codex_cache_write_tokens_and_cost() {
         let pricing = PricingMap::load_embedded();
-        let usage = crate::CodexModelUsage {
+        let usage = CodexModelUsage {
             input_tokens: 935_040,
             cached_input_tokens: 875_306,
             cache_creation_tokens: 57_610,
@@ -1096,7 +1043,7 @@ mod tests {
             long_context_cached_input_tokens: 875_306,
             long_context_cache_creation_tokens: 57_610,
             long_context_output_tokens: 11_150,
-            ..crate::CodexModelUsage::default()
+            ..CodexModelUsage::default()
         };
         let mut group = CodexGroup {
             input_tokens: 935_040,
@@ -1108,7 +1055,7 @@ mod tests {
         };
         group.models.insert("gpt-5.6-terra".to_string(), usage);
 
-        let row = codex_group_row(
+        let row = codex::unified_row_from_group(
             "2026-08-20",
             &group,
             &pricing,

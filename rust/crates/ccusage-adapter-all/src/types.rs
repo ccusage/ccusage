@@ -99,8 +99,11 @@ impl AllAccumulator {
             breakdown.period = period.clone();
         }
         agent_breakdowns.sort_by(|a, b| a.agent.cmp(b.agent));
-        let mut model_breakdowns = aggregate_model_breakdowns(&agent_breakdowns);
-        model_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        let model_breakdowns = merge_by_model(
+            agent_breakdowns
+                .iter()
+                .flat_map(|breakdown| &breakdown.model_breakdowns),
+        );
         UnifiedRow {
             period,
             agent: "all",
@@ -133,46 +136,27 @@ fn merge_agent_breakdown(target: &mut UnifiedRow, source: UnifiedRow) {
     let mut models: BTreeSet<String> = target.models_used.drain(..).collect();
     models.extend(source.models_used);
     target.models_used = models.into_iter().collect();
-    target.model_breakdowns =
-        merge_model_breakdowns(target.model_breakdowns.drain(..), source.model_breakdowns);
+    target.model_breakdowns = merge_by_model(
+        target
+            .model_breakdowns
+            .iter()
+            .chain(&source.model_breakdowns),
+    );
 }
 
-fn merge_model_breakdowns(
-    existing: impl IntoIterator<Item = ModelBreakdown>,
-    additional: impl IntoIterator<Item = ModelBreakdown>,
-) -> Vec<ModelBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
+fn merge_by_model<'a>(items: impl IntoIterator<Item = &'a ModelBreakdown>) -> Vec<ModelBreakdown> {
+    let mut indexes = FxHashMap::<&str, usize>::default();
     let mut breakdowns: Vec<ModelBreakdown> = Vec::new();
-    for item in existing.into_iter().chain(additional) {
-        let index = *indexes.entry(item.model_name.clone()).or_insert_with(|| {
-            let i = breakdowns.len();
+    for item in items {
+        let index = *indexes.entry(&item.model_name).or_insert_with(|| {
             breakdowns.push(ModelBreakdown {
                 model_name: item.model_name.clone(),
                 ..ModelBreakdown::default()
             });
-            i
+            breakdowns.len() - 1
         });
-        breakdowns[index].merge(&item);
+        breakdowns[index].merge(item);
     }
     breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-    breakdowns
-}
-
-fn aggregate_model_breakdowns(rows: &[UnifiedRow]) -> Vec<ModelBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<ModelBreakdown> = Vec::new();
-    for row in rows {
-        for item in &row.model_breakdowns {
-            let index = *indexes.entry(item.model_name.clone()).or_insert_with(|| {
-                let i = breakdowns.len();
-                breakdowns.push(ModelBreakdown {
-                    model_name: item.model_name.clone(),
-                    ..ModelBreakdown::default()
-                });
-                i
-            });
-            breakdowns[index].merge(item);
-        }
-    }
     breakdowns
 }

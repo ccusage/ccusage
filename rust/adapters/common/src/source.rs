@@ -152,11 +152,6 @@ pub enum WindowMode {
     /// every entry and keeps the sessions whose last activity is inside the
     /// window, so a kept session shows its whole usage.
     SessionLastActivity,
-    /// The loader already narrowed to the window as it read, as a hint; the
-    /// pipeline still drops entries outside it like [`Entries`](Self::Entries).
-    /// Loaded entries therefore say nothing about whether the source has data,
-    /// which is what [`Detection::NonEmptyOrHasData`] is for.
-    LoaderApplied,
 }
 
 /// How the unified report decides that a source is present.
@@ -255,7 +250,9 @@ pub trait EntrySource: Sync {
 
     /// Loads every entry, sorted the way the adapter's reports expect. The
     /// pipeline shows progress and applies the date window, so the loader does
-    /// neither, apart from [`WindowMode::LoaderApplied`] narrowing.
+    /// neither. A loader that narrows to [`LoadContext::window`] as it reads
+    /// can return nothing while the source has data, which is what
+    /// [`Detection::NonEmptyOrHasData`] is for.
     fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>>;
 
     fn summarize(

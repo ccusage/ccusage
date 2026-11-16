@@ -166,11 +166,11 @@ mod tests {
     use serde_json::json;
 
     use ccusage_core::{
-        PricingMap,
+        PricingMap, ReportWindow, UsageSummary,
         cli::{AgentCommandArgs, AgentReportKind, SharedArgs, SortOrder},
     };
 
-    use super::{focused_rows, unified_rows};
+    use super::{focused_rows, retain_sessions_last_active_in, unified_rows};
     use crate::{
         source::{
             Detection, EntryDescriptor, ProgressOwner, SourceOptions, UnifiedRequest, UsageSource,
@@ -338,7 +338,6 @@ mod tests {
         let absent = Fake::new(descriptor(), Vec::new());
         let narrowed_by_its_loader = Fake::new(
             EntryDescriptor {
-                window: WindowMode::LoaderApplied,
                 detection: Detection::NonEmptyOrHasData(|| true),
                 ..descriptor()
             },
@@ -453,5 +452,119 @@ mod tests {
                 .len(),
             3
         );
+    }
+
+    fn session_summary(session_id: &str, last_activity: &str) -> UsageSummary {
+        UsageSummary {
+            date: None,
+            month: None,
+            week: None,
+            session_id: Some(session_id.to_string()),
+            project_path: None,
+            last_activity: Some(last_activity.to_string()),
+            first_activity: None,
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            extra_total_tokens: 0,
+            total_cost: 0.0,
+            credits: None,
+            message_count: None,
+            models_used: Vec::new(),
+            model_breakdowns: Vec::new(),
+            project: None,
+            versions: None,
+        }
+    }
+
+    fn filtered_session_ids(shared: &SharedArgs) -> Vec<String> {
+        let mut rows = vec![
+            session_summary("before", "2026-02-22T23:59:59.000Z"),
+            session_summary("start-of-day", "2026-02-23T00:00:00.000Z"),
+            session_summary("end-of-day", "2026-02-23T23:59:59.999Z"),
+            session_summary("after", "2026-02-24T00:00:00.000Z"),
+        ];
+        retain_sessions_last_active_in(&mut rows, &ReportWindow::from_shared(shared));
+        rows.into_iter().filter_map(|row| row.session_id).collect()
+    }
+
+    #[test]
+    fn session_window_bounds_are_inclusive_of_the_whole_day() {
+        let shared = SharedArgs {
+            since: Some("20260223".to_string()),
+            until: Some("20260223".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_eq!(
+            filtered_session_ids(&shared),
+            ["start-of-day", "end-of-day"]
+        );
+    }
+
+    #[test]
+    fn session_window_takes_the_day_in_the_report_timezone() {
+        // Asia/Tokyo is UTC+9, so the window shifts nine hours earlier in UTC.
+        let shared = SharedArgs {
+            since: Some("20260223".to_string()),
+            until: Some("20260223".to_string()),
+            timezone: Some("Asia/Tokyo".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_eq!(filtered_session_ids(&shared), ["before", "start-of-day"]);
+    }
+
+    #[test]
+    fn session_window_with_only_until_keeps_everything_through_that_day() {
+        let shared = SharedArgs {
+            until: Some("20260223".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_eq!(
+            filtered_session_ids(&shared),
+            ["before", "start-of-day", "end-of-day"]
+        );
+    }
+
+    #[test]
+    fn session_window_with_only_since_keeps_everything_from_that_day() {
+        let shared = SharedArgs {
+            since: Some("20260223".to_string()),
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+
+        assert_eq!(
+            filtered_session_ids(&shared),
+            ["start-of-day", "end-of-day", "after"]
+        );
+    }
+
+    #[test]
+    fn session_window_drops_rows_without_a_parseable_last_activity() {
+        let missing = UsageSummary {
+            last_activity: None,
+            ..session_summary("missing", "")
+        };
+        let unparsable = session_summary("unparsable", "2026-02-23");
+        for shared in [
+            SharedArgs {
+                since: Some("20260101".to_string()),
+                ..SharedArgs::default()
+            },
+            SharedArgs {
+                until: Some("20991231".to_string()),
+                ..SharedArgs::default()
+            },
+        ] {
+            let mut rows = vec![missing.clone(), unparsable.clone()];
+            retain_sessions_last_active_in(&mut rows, &ReportWindow::from_shared(&shared));
+            assert!(rows.is_empty(), "{:?}/{:?}", shared.since, shared.until);
+        }
     }
 }

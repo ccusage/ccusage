@@ -61,23 +61,7 @@ pub fn records<'data, T>(
 where
     T: DeserializeOwned + 'data,
 {
-    try_records(content, prefilter).filter_map(|(_, record)| record.ok())
-}
-
-/// Like [`records`], but keeps the lines that pass the prefilter and then fail
-/// to deserialize, each with its 1-based line number.
-///
-/// The prefilter selects possible records; it does not prove a record carries
-/// usage. A caller decides how to classify a decoding failure.
-pub fn try_records<'data, T>(
-    content: &'data [u8],
-    prefilter: Option<&'data LinePrefilter>,
-) -> impl Iterator<Item = (u32, serde_json::Result<T>)> + 'data
-where
-    T: DeserializeOwned + 'data,
-{
-    selected_lines(content, prefilter)
-        .map(|(number, line)| (number, serde_json::from_slice::<T>(line)))
+    selected_lines(content, prefilter).filter_map(|(_, line)| serde_json::from_slice(line).ok())
 }
 
 fn selected_lines<'data>(
@@ -667,7 +651,7 @@ mod tests {
     use super::{
         FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
         lenient_object, lenient_u64, lenient_vec, non_empty_string, records,
-        records_with_diagnostics, records_with_usage_diagnostics, try_records,
+        records_with_diagnostics, records_with_usage_diagnostics,
     };
     use ccusage_core::fast::LinePrefilter;
 
@@ -699,18 +683,6 @@ mod tests {
                 },
             ]
         );
-    }
-
-    #[test]
-    fn try_records_numbers_the_marked_lines_that_do_not_decode() {
-        let content = b"{\"model\":\"a\",\"tokens\":1}\n{\"other\":true}\n\n{\"model\":\"b\",\"tok";
-        let prefilter = LinePrefilter::all(&[b"model"]);
-
-        let parsed = try_records::<Record>(content, Some(&prefilter))
-            .map(|(line, record)| (line, record.ok().map(|record| record.tokens)))
-            .collect::<Vec<_>>();
-
-        assert_eq!(parsed, [(1, Some(1)), (4, None)]);
     }
 
     const CUT_LAST_LINE: &str = "{\"tokens\":1}\n{\"tokens\":2,\"mod";
