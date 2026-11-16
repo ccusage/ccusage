@@ -1,4 +1,4 @@
-//! Golden matrix: freezes what the release binary prints for every agent
+//! Golden matrix: freezes what the `ccusage` binary prints for every agent
 //! across every report kind and a fixed set of flag variants, plus the unified
 //! reports over all agents at once.
 //!

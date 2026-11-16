@@ -1,4 +1,4 @@
-//! Golden matrix over the release binary: one test per agent, the unified
+//! Golden matrix over the `ccusage` binary: one test per agent, the unified
 //! reports over every agent at once, and a guard that fails when the CLI
 //! accepts an (agent, report) pair nothing here snapshots.
 //!
