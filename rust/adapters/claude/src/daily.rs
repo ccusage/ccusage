@@ -9,8 +9,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
-    UsageSummary, calculate_cost_for_usage_at,
+    IteratedTokenUsage, ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts,
+    TokenUsageRaw, UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, LinePrefilter, suffix_string},
     format_date_tz, missing_pricing_model_for_usage, parse_ts_timestamp, stored_cost_for_mode,
@@ -285,9 +285,13 @@ struct DailyAgentProgressEntry {
 
 impl DailyAgentProgressEntry {
     fn into_entry(self) -> DailyUsageEntry {
+        let mut message = self.data.message.message;
+        // Advisor turns are read from the line's top-level `message`, not
+        // from this nested one, so only the line can rule them out.
+        message.usage.has_advisor_iteration = true;
         DailyUsageEntry {
             timestamp: self.data.message.timestamp,
-            message: self.data.message.message,
+            message,
             version: None,
             session_id: self.session_id,
             cost_usd: self.data.message.cost_usd,
@@ -315,7 +319,7 @@ struct DailyAgentProgressMessage {
 
 #[derive(Debug, Deserialize)]
 struct DailyUsageMessage {
-    usage: TokenUsageRaw,
+    usage: IteratedTokenUsage,
     model: Option<String>,
     id: Option<String>,
 }
@@ -372,7 +376,10 @@ fn read_daily_usage_file_with_diagnostics(
             super::diagnostics::rejected(path, current, diagnostics, true);
             return;
         }
-        let usage = data.message.usage;
+        let IteratedTokenUsage {
+            usage,
+            has_advisor_iteration,
+        } = data.message.usage;
         let cost = calculate_cost_for_usage_at(
             data.message.model.as_deref(),
             usage,
@@ -420,6 +427,9 @@ fn read_daily_usage_file_with_diagnostics(
             request_id: data.request_id,
             is_sidechain: data.is_sidechain,
         });
+        if !has_advisor_iteration {
+            return;
+        }
         for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
             let parent = &loaded_file.entries[parent_index];
             let missing_pricing_model = missing_pricing_model_for_usage(
@@ -1270,6 +1280,24 @@ mod tests {
     fn reads_daily_usage_and_advisor_iterations_under_escaped_keys() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"main-model","us\u0061ge":{"input_tokens":100,"output_tokens":1,"iterations":[{"type":"advisor\u005fmessage","model":"advisor-model","input_tokens":10,"output_tokens":2}]}}}"#,
+        });
+
+        let loaded = read_daily_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[0].usage.input_tokens, 100);
+        assert_eq!(loaded.entries[1].usage.input_tokens, 10);
+    }
+
+    #[test]
+    fn reads_top_level_advisor_iterations_beside_an_agent_progress_record() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"sessionId":"session-a","message":{"usage":{"input_tokens":5,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"data":{"message":{"timestamp":"2026-05-22T02:34:40.000Z","requestId":"req-a","message":{"id":"msg-a","model":"main-model","usage":{"input_tokens":100,"output_tokens":1}}}}}"#,
         });
 
         let loaded = read_daily_usage_file(
