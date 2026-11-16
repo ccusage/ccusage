@@ -147,6 +147,23 @@ fn every_accepted_agent_report_is_in_the_matrix() {
          a new agent needs a seed in tests/golden and an entry there"
     );
 
+    // diff-refs.bb builds its command list from these help pages, so they
+    // must name exactly the reports the parser accepts.
+    for matrix in AGENTS {
+        let listed: BTreeSet<String> = help_commands(&run(&[matrix.agent, "--help"]).stdout)
+            .into_iter()
+            .collect();
+        assert_eq!(
+            listed,
+            golden::report_kinds(matrix.agent)
+                .iter()
+                .map(|kind| (*kind).to_string())
+                .collect(),
+            "`ccusage {} --help` lists different reports than golden::report_kinds",
+            matrix.agent
+        );
+    }
+
     let mut uncovered = Vec::new();
     for matrix in AGENTS {
         let snapshotted: BTreeSet<&str> = agent_cases(matrix.agent, matrix.extras, root)
