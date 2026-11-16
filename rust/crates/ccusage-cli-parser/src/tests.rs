@@ -580,6 +580,35 @@ fn parses_inline_unified_sections_value() {
 }
 
 #[test]
+fn rejects_an_inline_value_on_a_switch() {
+    for (args, flag) in [
+        (&["ccusage", "--offline=false"][..], "--offline"),
+        (&["ccusage", "daily", "--json=false"][..], "--json"),
+        (
+            &["ccusage", "daily", "--json=false", "--since", "20260101"][..],
+            "--json",
+        ),
+        (&["ccusage", "--by-agent=no", "daily"][..], "--by-agent"),
+        (&["ccusage", "daily", "--all=yes"][..], "--all"),
+        (
+            &["ccusage", "claude", "blocks", "--active=yes"][..],
+            "--active",
+        ),
+        (&["ccusage", "statusline", "--cache=false"][..], "--cache"),
+        (
+            &["ccusage", "opencode", "--include-claude-agent=1"][..],
+            "--include-claude-agent",
+        ),
+    ] {
+        assert_eq!(
+            parse_error(args),
+            format!("{flag} does not take a value"),
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
 fn ignores_empty_unified_section_tokens() {
     let cli = parse(&["ccusage", "daily", "--sections", "daily,,monthly,"]);
     let Some(Command::All(args)) = cli.command else {

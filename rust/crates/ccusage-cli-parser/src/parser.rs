@@ -122,9 +122,7 @@ impl Cli {
                 root_all_options,
             )?),
         };
-        if let Some(extra) = parser.next() {
-            return Err(format!("Unexpected argument '{extra}'"));
-        }
+        parser.finish()?;
         if let Some(message) = last_option_error(command.as_ref(), &shared) {
             return Err(message);
         }
@@ -341,8 +339,8 @@ fn parse_unified_report_arg(
     sections: &mut Option<Vec<AgentReportKind>>,
     by_agent: &mut bool,
 ) -> Result<Option<&'static str>, String> {
-    if matches!(parser.peek(), Some("--all")) {
-        parser.next();
+    if matches!(parser.peek_name(), Some("--all")) {
+        parser.next_flag()?;
         return Ok(Some("--all"));
     }
     if matches!(parser.peek_name(), Some("--sections")) {
@@ -350,8 +348,8 @@ fn parse_unified_report_arg(
         *sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
         return Ok(Some("--sections"));
     }
-    if matches!(parser.peek(), Some("--by-agent")) {
-        parser.next();
+    if matches!(parser.peek_name(), Some("--by-agent")) {
+        parser.next_flag()?;
         *by_agent = true;
         return Ok(Some("--by-agent"));
     }
