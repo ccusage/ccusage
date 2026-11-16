@@ -36,6 +36,18 @@ impl UnitError {
         }
     }
 
+    /// A unit that ends part-way through what its format promises, such as a
+    /// compressed stream cut inside a frame, described by `detail`. Like a
+    /// truncated JSON document, it reads as still being written while the
+    /// unit was modified within [`IN_PROGRESS_WINDOW`], and is skipped as
+    /// invalid data after; see [`Self::record`].
+    pub fn unfinished(detail: impl Into<String>) -> Self {
+        Self {
+            fault: Fault::Unfinished,
+            detail: detail.into(),
+        }
+    }
+
     /// Classifies a failed SQLite call by its result code, so every database
     /// source names the same cause the same way.
     ///
@@ -486,6 +498,37 @@ pub(crate) mod tests {
             "{warnings}"
         );
         assert!(!warnings.contains("still being written"), "{warnings}");
+    }
+
+    #[test]
+    fn an_unfinished_unit_is_noted_while_written_and_skipped_once_left_alone() {
+        let fixture = Fixture::new();
+        let fresh = fixture.write_file("fresh.zst", "frame");
+        let stale = fixture.write_file("stale.zst", "frame");
+        age_past_write_window(&stale);
+        let diagnostics = Diagnostics::new("test");
+
+        for unit in [&fresh, &stale] {
+            UnitError::unfinished("stream ends inside a frame").record(unit, &diagnostics);
+        }
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let debug = SharedArgs {
+            debug: true,
+            ..SharedArgs::default()
+        };
+        let warnings = diagnostics.warnings(&debug).join("\n");
+        assert!(
+            warnings.contains(&format!(
+                "test: {}: incomplete, read as still being written",
+                fresh.display()
+            )),
+            "{warnings}"
+        );
+        assert!(
+            warnings.contains(&format!("{}: stream ends inside a frame", stale.display())),
+            "{warnings}"
+        );
     }
 
     #[test]

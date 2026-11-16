@@ -247,6 +247,18 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         &format!("{BETA}/{resumed}.jsonl"),
         &[
             copied_turn(resumed),
+            // An advisor turn: the top-level cache-write split covers only the
+            // first `message` iteration, and the second one's 5-minute writes
+            // appear only in `iterations`.
+            entry(
+                "2026-01-01T03:00:00.000Z",
+                resumed,
+                Some("req-c0"),
+                "msg_c0",
+                SONNET,
+                r#""input_tokens":4,"output_tokens":50,"cache_creation_input_tokens":1250,"cache_read_input_tokens":3000,"cache_creation":{"ephemeral_1h_input_tokens":1000,"ephemeral_5m_input_tokens":0},"iterations":[{"type":"message","input_tokens":2,"output_tokens":20,"cache_read_input_tokens":1000,"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":1000}},{"type":"advisor_message","model":"claude-opus-5","input_tokens":2000,"output_tokens":300,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},{"type":"message","input_tokens":2,"output_tokens":30,"cache_read_input_tokens":2000,"cache_creation_input_tokens":250,"cache_creation":{"ephemeral_5m_input_tokens":250,"ephemeral_1h_input_tokens":0}}]"#,
+                "",
+            ),
             entry(
                 "2026-01-02T11:00:00.000Z",
                 resumed,

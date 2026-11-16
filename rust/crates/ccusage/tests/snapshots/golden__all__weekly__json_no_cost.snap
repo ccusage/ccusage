@@ -6,11 +6,11 @@ exit: 0
 --- stdout ---
 {
   "totals": {
-    "cacheCreationTokens": 14975,
-    "cacheReadTokens": 1273317,
-    "inputTokens": 1315997,
-    "outputTokens": 54880,
-    "totalTokens": 2662336,
+    "cacheCreationTokens": 18065,
+    "cacheReadTokens": 1316617,
+    "inputTokens": 1349391,
+    "outputTokens": 59241,
+    "totalTokens": 2746731,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -26,6 +26,7 @@ exit: 0
       "codex-mystery-1",
       "copilot-mystery-1",
       "droid-mystery-1",
+      "dsh-mystery-1",
       "gemini-internal-model",
       "gemini-mystery-1",
       "goose-mystery-1",
@@ -109,7 +110,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1264,
       "cacheReadTokens": 1093,
-      "inputTokens": 8083,
+      "inputTokens": 8583,
       "metadata": {
         "agents": [
           "amp",
@@ -120,6 +121,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -143,6 +145,13 @@ exit: 0
           "outputTokens": 281
         },
         {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
+          "inputTokens": 550,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 225
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 2010,
@@ -155,13 +164,6 @@ exit: 0
           "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 500
-        },
-        {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 200,
-          "inputTokens": 550,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 225
         },
         {
           "cacheCreationTokens": 0,
@@ -217,6 +219,14 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
+          "inputTokens": 500,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 81
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
           "inputTokens": 11,
           "missingPricing": true,
           "modelName": "[openclaw] unknown",
@@ -244,17 +254,18 @@ exit: 0
         "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
-        "kimi-k2-thinking"
+        "kimi-k2-thinking",
+        "unknown"
       ],
-      "outputTokens": 1729,
+      "outputTokens": 1810,
       "period": "2025-12-22",
-      "totalTokens": 12199
+      "totalTokens": 12780
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 13711,
-      "cacheReadTokens": 1270224,
-      "inputTokens": 1306881,
+      "cacheCreationTokens": 16801,
+      "cacheReadTokens": 1313524,
+      "inputTokens": 1339775,
       "metadata": {
         "agents": [
           "amp",
@@ -265,6 +276,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -282,9 +294,9 @@ exit: 0
         {
           "cacheCreationTokens": 1670,
           "cacheReadTokens": 58800,
-          "inputTokens": 11893,
+          "inputTokens": 11943,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 4465
+          "outputTokens": 4470
         },
         {
           "cacheCreationTokens": 601,
@@ -294,20 +306,21 @@ exit: 0
           "outputTokens": 1216
         },
         {
-          "cacheCreationTokens": 5090,
-          "cacheReadTokens": 104220,
-          "inputTokens": 31074,
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 6440,
+          "cacheReadTokens": 108220,
+          "inputTokens": 31478,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 9611
+          "outputTokens": 9751
         },
         {
           "cacheCreation1hTokens": 400,
           "cacheCreationTokens": 1400,
           "cacheReadTokens": 38050,
-          "inputTokens": 16644,
+          "inputTokens": 15944,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 4239
+          "outputTokens": 4169
         },
         {
           "cacheCreationTokens": 200,
@@ -339,10 +352,10 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 36135,
-          "inputTokens": 18630,
+          "cacheReadTokens": 36335,
+          "inputTokens": 19030,
           "modelName": "gpt-5",
-          "outputTokens": 5283
+          "outputTokens": 5343
         },
         {
           "cacheCreationTokens": 0,
@@ -369,10 +382,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "inputTokens": 488,
+          "inputTokens": 578,
           "missingPricing": true,
           "modelName": "unknown",
-          "outputTokens": 100
+          "outputTokens": 110
         },
         {
           "cacheCreationTokens": 0,
@@ -383,10 +396,10 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 102700,
-          "inputTokens": 305532,
+          "cacheReadTokens": 102800,
+          "inputTokens": 305952,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 3025
+          "outputTokens": 3095
         },
         {
           "cacheCreationTokens": 0,
@@ -424,6 +437,28 @@ exit: 0
           "inputTokens": 2033,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 929
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 130
+        },
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "inputTokens": 1380,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 822
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 900,
@@ -481,6 +516,20 @@ exit: 0
           "inputTokens": 200,
           "modelName": "claude-opus-5-fast",
           "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 1500,
+          "cacheReadTokens": 32000,
+          "inputTokens": 5350,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 1193
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
         },
         {
           "cacheCreationTokens": 50,
@@ -699,14 +748,6 @@ exit: 0
           "outputTokens": 30
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 900,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 130
-        },
-        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 500,
           "inputTokens": 300,
@@ -729,6 +770,14 @@ exit: 0
           "missingPricing": true,
           "modelName": "gpt-unknown",
           "outputTokens": 345
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 3000,
+          "missingPricing": true,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
         },
         {
           "cacheCreationTokens": 0,
@@ -835,10 +884,12 @@ exit: 0
         "[pi] pi-mystery-1",
         "amp-mystery-1",
         "anthropic/claude-sonnet-4",
+        "anthropic/claude-sonnet-4.5",
         "antigravity-mystery-1",
         "claude-haiku-4-5-20251001",
         "claude-haiku-4.5",
         "claude-opus-4-20250514",
+        "claude-opus-5",
         "claude-opus-5-fast",
         "claude-sonnet-4-20250514",
         "cline-mystery-1",
@@ -846,9 +897,12 @@ exit: 0
         "codebuff-unknown",
         "codex-mystery-1",
         "copilot-mystery-1",
+        "deepseek-flash",
         "deepseek-v4-flash",
+        "deepseek-v4-pro",
         "devstral-medium-latest",
         "droid-mystery-1",
+        "dsh-mystery-1",
         "gemini-2-5-pro",
         "gemini-2.5-flash",
         "gemini-2.5-pro",
@@ -893,9 +947,9 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 52642,
+      "outputTokens": 56922,
       "period": "2025-12-29",
-      "totalTokens": 2646595
+      "totalTokens": 2730409
     },
     {
       "agent": "all",

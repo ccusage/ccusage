@@ -66,16 +66,16 @@ exit: 0
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 102000,
-      "inputTokens": 301052,
+      "cacheReadTokens": 102100,
+      "inputTokens": 301472,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 100000,
+          "cacheReadTokens": 100100,
           "cost": 0.0,
-          "inputTokens": 300232,
+          "inputTokens": 300652,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 2074
+          "outputTokens": 2144
         },
         {
           "cacheCreationTokens": 0,
@@ -100,18 +100,18 @@ exit: 0
         "unknown"
       ],
       "month": "2026-01",
-      "outputTokens": 2234,
+      "outputTokens": 2304,
       "totalCost": 0.0,
-      "totalTokens": 405353
+      "totalTokens": 405943
     }
   ],
   "totals": {
     "cacheCreationTokens": 0,
-    "cacheReadTokens": 105360,
-    "inputTokens": 308095,
-    "outputTokens": 4265,
+    "cacheReadTokens": 105460,
+    "inputTokens": 308515,
+    "outputTokens": 4335,
     "totalCost": 0.0,
-    "totalTokens": 418037
+    "totalTokens": 418627
   }
 }
 

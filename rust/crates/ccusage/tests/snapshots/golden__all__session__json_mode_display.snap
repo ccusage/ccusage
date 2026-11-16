@@ -427,6 +427,50 @@ exit: 0
       "totalTokens": 17776
     },
     {
+      "agent": "copilot",
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 1200,
+      "inputTokens": 1800,
+      "metadata": {
+        "lastActivity": "2026-01-02T08:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.4,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 1200,
+          "cost": 0.35,
+          "inputTokens": 1500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 700
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "unknown",
+        "copilot-mystery-1"
+      ],
+      "outputTokens": 770,
+      "period": "session-alpha",
+      "totalCost": 0.8000000000000002,
+      "totalTokens": 4070
+    },
+    {
       "agent": "kilo",
       "cacheCreationTokens": 300,
       "cacheReadTokens": 6500,
@@ -797,47 +841,29 @@ exit: 0
     },
     {
       "agent": "copilot",
-      "cacheCreationTokens": 300,
-      "cacheReadTokens": 1200,
-      "inputTokens": 1800,
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 200,
+      "inputTokens": 300,
       "metadata": {
-        "lastActivity": "2026-01-02T08:00:00.000Z"
+        "lastActivity": "2025-12-27T22:00:00.000Z"
       },
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
           "cost": 0.4,
-          "inputTokens": 0,
-          "modelName": "unknown",
-          "outputTokens": 0
-        },
-        {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 1200,
-          "cost": 0.0,
-          "inputTokens": 1500,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 700
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 300,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 150
         }
       ],
       "modelsUsed": [
-        "claude-sonnet-4-20250514",
-        "unknown",
-        "copilot-mystery-1"
+        "claude-opus-4-20250514"
       ],
-      "outputTokens": 770,
-      "period": "session-alpha",
+      "outputTokens": 150,
+      "period": "session-delta",
       "totalCost": 0.4,
-      "totalTokens": 4070
+      "totalTokens": 750
     },
     {
       "agent": "opencode",
@@ -1315,6 +1341,59 @@ exit: 0
       "period": "sess-alpha-fork",
       "totalCost": 0.03,
       "totalTokens": 8800
+    },
+    {
+      "agent": "copilot",
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 1200,
+      "inputTokens": 1050,
+      "metadata": {
+        "lastActivity": "2026-01-02T09:30:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 1000,
+          "cost": 0.03,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0,
+          "inputTokens": 400,
+          "modelName": "gpt-5",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 50,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 5
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 200,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 20
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 175,
+      "period": "session-eta",
+      "totalCost": 0.03,
+      "totalTokens": 2525
     },
     {
       "agent": "openclaw",
@@ -2964,7 +3043,7 @@ exit: 0
       "agent": "copilot",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 1800,
+      "inputTokens": 900,
       "metadata": {
         "lastActivity": "2026-01-02T15:00:00.000Z"
       },
@@ -2973,18 +3052,18 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 1800,
+          "inputTokens": 900,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 180
+          "outputTokens": 90
         }
       ],
       "modelsUsed": [
         "claude-opus-4-20250514"
       ],
-      "outputTokens": 180,
+      "outputTokens": 90,
       "period": "conv-export",
       "totalCost": 0,
-      "totalTokens": 1980
+      "totalTokens": 990
     },
     {
       "agent": "copilot",
@@ -3209,6 +3288,38 @@ exit: 0
       "period": "fallback-gggg7777",
       "totalCost": 0,
       "totalTokens": 44
+    },
+    {
+      "agent": "dsh",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "inputTokens": 2100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro",
+        "deepseek-flash"
+      ],
+      "outputTokens": 310,
+      "period": "fork-beta",
+      "totalCost": 0,
+      "totalTokens": 5410
     },
     {
       "agent": "openclaw",
@@ -4554,6 +4665,56 @@ exit: 0
       "totalTokens": 7038
     },
     {
+      "agent": "dsh",
+      "cacheCreationTokens": 1440,
+      "cacheReadTokens": 30000,
+      "inputTokens": 22520,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "cost": 0.0,
+          "inputTokens": 1380,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 822
+        },
+        {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 26000,
+          "cost": 0.0,
+          "inputTokens": 2050,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 543
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 90,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "anthropic/claude-sonnet-4.5",
+        "deepseek-v4-pro",
+        "deepseek-flash",
+        "unknown"
+      ],
+      "outputTokens": 2175,
+      "period": "sess-alpha",
+      "totalCost": 0,
+      "totalTokens": 56385
+    },
+    {
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 104080,
@@ -4607,14 +4768,54 @@ exit: 0
       "totalTokens": 410249
     },
     {
+      "agent": "dsh",
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 6000,
+      "inputTokens": 2700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 6000,
+          "cost": 0.0,
+          "inputTokens": 2700,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 590
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro"
+      ],
+      "outputTokens": 590,
+      "period": "sess-beta",
+      "totalCost": 0,
+      "totalTokens": 9590
+    },
+    {
       "agent": "claude",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 150,
+      "cacheCreationTokens": 1250,
+      "cacheReadTokens": 5500,
+      "inputTokens": 2154,
       "metadata": {
         "lastActivity": "2026-01-02T11:00:00.000Z"
       },
       "modelBreakdowns": [
+        {
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1250,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 4,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
+        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2500,
@@ -4625,12 +4826,14 @@ exit: 0
         }
       ],
       "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-5",
         "claude-opus-4-20250514"
       ],
-      "outputTokens": 600,
+      "outputTokens": 950,
       "period": "sess-beta-2",
       "totalCost": 0,
-      "totalTokens": 3250
+      "totalTokens": 9854
     },
     {
       "agent": "qwen",
@@ -4657,6 +4860,78 @@ exit: 0
       "period": "sess-d",
       "totalCost": 0,
       "totalTokens": 300
+    },
+    {
+      "agent": "dsh",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 3000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        }
+      ],
+      "modelsUsed": [
+        "dsh-mystery-1"
+      ],
+      "outputTokens": 700,
+      "period": "sess-deep",
+      "totalCost": 0,
+      "totalTokens": 3700
+    },
+    {
+      "agent": "qwen",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "inputTokens": 420,
+      "metadata": {
+        "lastActivity": "2026-01-01T10:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0,
+          "inputTokens": 420,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "qwen3-coder-plus"
+      ],
+      "outputTokens": 70,
+      "period": "sess-e",
+      "totalCost": 0,
+      "totalTokens": 590
+    },
+    {
+      "agent": "dsh",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "unknown",
+          "outputTokens": 81
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 81,
+      "period": "sess-legacy",
+      "totalCost": 0,
+      "totalTokens": 581
     },
     {
       "agent": "pi",
@@ -4869,32 +5144,6 @@ exit: 0
       "period": "session-delta",
       "totalCost": 0,
       "totalTokens": 165
-    },
-    {
-      "agent": "copilot",
-      "cacheCreationTokens": 100,
-      "cacheReadTokens": 200,
-      "inputTokens": 300,
-      "metadata": {
-        "lastActivity": "2025-12-27T22:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 200,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "claude-opus-4-20250514"
-      ],
-      "outputTokens": 150,
-      "period": "session-delta",
-      "totalCost": 0,
-      "totalTokens": 750
     },
     {
       "agent": "copilot",
@@ -5292,12 +5541,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 15675,
-    "cacheReadTokens": 1283917,
-    "inputTokens": 1325913,
-    "outputTokens": 64690,
-    "totalCost": 25.582713250000015,
-    "totalTokens": 2693382,
+    "cacheCreationTokens": 18765,
+    "cacheReadTokens": 1327217,
+    "inputTokens": 1359307,
+    "outputTokens": 69051,
+    "totalCost": 26.412713250000017,
+    "totalTokens": 2777777,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",
