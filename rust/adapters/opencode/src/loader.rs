@@ -1,5 +1,5 @@
 use ccusage_adapter_common::{
-    SqliteStage, jsonl, read_units_flat,
+    SqliteStage, dir_entries, jsonl, read_units_flat,
     units::{UnitError, decode_json},
 };
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -161,7 +161,7 @@ fn load_entries_from_directory_parts(
     let mut compaction_entries = Vec::new();
     let mut seen = HashSet::new();
     let mut aggregate_entries = Vec::new();
-    if let Some(db_path) = db_path(opencode_dir) {
+    if let Some(db_path) = db_path(opencode_dir, diagnostics) {
         let database_entries = load_entries_from_database(
             &DatabaseLoadContext {
                 db_path: &db_path,
@@ -241,7 +241,7 @@ fn load_entries_from_directory_parts(
 /// install full of logs. Stops at the first message file rather than collecting
 /// them all, so this stays cheap next to a large legacy dump.
 pub(crate) fn has_source(opencode_dir: &Path) -> bool {
-    if db_path(opencode_dir).is_some() {
+    if db_path(opencode_dir, &Diagnostics::new("opencode")).is_some() {
         return true;
     }
     has_json_file(&opencode_dir.join("storage").join("message"))
@@ -269,15 +269,14 @@ fn has_json_file(dir: &Path) -> bool {
     })
 }
 
-fn db_path(opencode_dir: &Path) -> Option<PathBuf> {
+fn db_path(opencode_dir: &Path, diagnostics: &Diagnostics) -> Option<PathBuf> {
     let default_path = opencode_dir.join("opencode.db");
     if default_path.is_file() {
         return Some(default_path);
     }
-    let mut candidates = fs::read_dir(opencode_dir)
-        .ok()?
-        .filter_map(std::result::Result::ok)
-        .map(|entry| entry.path())
+    let mut candidates = dir_entries(opencode_dir, diagnostics)
+        .into_iter()
+        .map(|(path, _)| path)
         .filter(|path| {
             path.is_file()
                 && path
@@ -1430,6 +1429,35 @@ mod tests {
         let loaded =
             super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics);
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        loaded.unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_data_directory_that_cannot_be_listed_for_databases_is_reported() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use ccusage_core::{Diagnostics, SkipKind};
+
+        let fixture = ccusage_test_support::fs_fixture!({
+            "data/storage/message/s/m.json": "{}",
+        });
+        let data = fixture.path("data");
+        fs::set_permissions(&data, fs::Permissions::from_mode(0o300)).unwrap();
+        let denied = fs::read_dir(&data).is_err();
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            ..Default::default()
+        };
+        let diagnostics = Diagnostics::new("opencode");
+        let loaded = super::load_entries_from_directory_parts(&data, &shared, false, &diagnostics);
+        fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
         loaded.unwrap();
         if !denied {
             return;
