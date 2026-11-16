@@ -1,10 +1,10 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{LoadedEntry, Result};
 use ccusage_adapter_common::{read_units, source::LoadContext};
 
 use super::{
-    parser::{entry_id, migration_id, parse_session_file},
+    parser::{content_id, migration_id, parse_session_file},
     paths::{collect_session_files, paths},
     sqlite::collect_sqlite_entries,
 };
@@ -42,7 +42,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         });
         for file_entries in loaded.into_iter().flatten() {
             for entry in file_entries {
-                if seen.insert(entry_id(&entry)) {
+                if seen.insert(content_id(&entry)) {
                     entries.push(entry);
                 }
             }
@@ -50,13 +50,12 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     }
     for entry in sqlite_entries {
         if let Some(message_id) = entry.data.message.id.clone() {
-            let sqlite_id = format!("openclaw:{}:{message_id}", entry.session_id);
-            if sqlite_ids.insert(sqlite_id) {
+            if sqlite_ids.insert((Arc::clone(&entry.session_id), message_id.clone())) {
                 // A migrated JSONL duplicate carries no stable id, but it
                 // still shares the session, timestamp, model, and usage. Its
                 // cost can differ, so compare the migration identity without
                 // cost and keep the provider-billed SQLite row.
-                let content_id = entry_id(&entry);
+                let content_id = content_id(&entry);
                 let migration_key = migration_id(&entry);
                 if let Some(position) = entries.iter().position(|existing| {
                     existing.session_id == entry.session_id
@@ -73,7 +72,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
                     entries.push(entry);
                 }
             }
-        } else if seen.insert(entry_id(&entry)) {
+        } else if seen.insert(content_id(&entry)) {
             entries.push(entry);
         }
     }
@@ -83,16 +82,11 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use ccusage_core::{PricingMap, cli::SharedArgs};
     use ccusage_test_support::fs_fixture;
 
-    static OPENCLAW_DIR_LOCK: Mutex<()> = Mutex::new(());
-
     #[test]
     fn loads_assistant_usage_and_uses_model_change_events() {
-        let _guard = OPENCLAW_DIR_LOCK.lock().unwrap();
         let fixture = fs_fixture!({
             "agents/main/sessions/abc.jsonl": [
                 r#"{"type":"model_change","provider":"openai-codex","modelId":"gpt-5.2"}"#,
@@ -123,7 +117,6 @@ mod tests {
 
     #[test]
     fn deduplicates_repeated_openclaw_records() {
-        let _guard = OPENCLAW_DIR_LOCK.lock().unwrap();
         let line = r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1,"output":1,"totalTokens":2},"timestamp":1769753935279}}"#;
         let fixture = fs_fixture!({
             "agents/main/sessions/session.jsonl": format!("{line}\n{line}\n"),
@@ -136,7 +129,6 @@ mod tests {
 
     #[test]
     fn calculates_cost_from_pricing_overrides() {
-        let _guard = OPENCLAW_DIR_LOCK.lock().unwrap();
         let fixture = fs_fixture!({
             "agents/main/sessions/abc.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1000,"output":500,"cost":{"total":0.99}},"timestamp":1769753935279}}"#,
         });
@@ -166,7 +158,6 @@ mod tests {
 
     #[test]
     fn loads_sqlite_usage_when_no_jsonl_sessions_exist() {
-        let _guard = OPENCLAW_DIR_LOCK.lock().unwrap();
         let fixture = fs_fixture!({});
         let db_path = fixture.path("agents/main/agent/openclaw-agent.sqlite");
         std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
@@ -212,7 +203,6 @@ mod tests {
 
     #[test]
     fn prefers_sqlite_over_migrated_jsonl_duplicates() {
-        let _guard = OPENCLAW_DIR_LOCK.lock().unwrap();
         let line = r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20,"cost":{"total":0.50}},"timestamp":1769753935279}}"#;
         let fixture = fs_fixture!({
             "agents/main/sessions/session.jsonl": format!("{line}\n"),

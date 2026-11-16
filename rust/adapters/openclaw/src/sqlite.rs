@@ -4,7 +4,7 @@ use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use super::parser::{OpenClawLine, parse_transcript_message, sqlite_entry_to_loaded};
+use super::parser::{OpenClawLine, TranscriptReader, entry_to_loaded};
 use crate::{LoadedEntry, PricingMap, TimestampMs, cli::CostMode};
 
 /// One per-agent SQLite store (`agents/<agentId>/agent/openclaw-agent.sqlite`).
@@ -130,13 +130,8 @@ fn read_agent_database(
             return Vec::new();
         }
     };
-    // Model/provider tracking is per session in the JSONL path (state resets
-    // per file). SQLite rows arrive in session order, so track the current
-    // session and reset the tracked model/provider on session boundaries.
     let prefilter = super::parser::record_prefilter();
-    let mut current_session: Option<String> = None;
-    let mut current_model: Option<String> = None;
-    let mut current_provider: Option<String> = None;
+    let mut session: Option<TranscriptReader> = None;
     let mut entries = Vec::new();
     let mut row_number = 0_u32;
     loop {
@@ -152,11 +147,10 @@ fn read_agent_database(
                     ));
                     continue;
                 };
-                if current_session.as_deref() != Some(&session_id) {
-                    current_session = Some(session_id.clone());
-                    current_model = None;
-                    current_provider = None;
-                }
+                let reader = match session.take() {
+                    Some(reader) if reader.session_id() == session_id => session.insert(reader),
+                    _ => session.insert(TranscriptReader::sqlite(session_id)),
+                };
                 let created_at = statement
                     .read::<i64, _>(3)
                     .or_else(|_| {
@@ -187,32 +181,15 @@ fn read_agent_database(
                 ) else {
                     continue;
                 };
-                super::parser::record_message_error(
+                if let Some(entry) = reader.read(
                     &record,
                     &database.path,
                     row_number,
-                    diagnostics,
-                );
-                if super::parser::is_model_change(&record) {
-                    let (model, provider) = super::parser::model_change_source(&record);
-                    if let Some(model) = model {
-                        current_model = Some(model);
-                    }
-                    if let Some(provider) = provider {
-                        current_provider = Some(provider);
-                    }
-                    continue;
-                }
-                let Some((entry, message_id)) = parse_transcript_message(
-                    &record,
-                    &session_id,
-                    current_model.as_deref(),
-                    current_provider.as_deref(),
                     fallback_timestamp,
-                ) else {
-                    continue;
-                };
-                entries.push(sqlite_entry_to_loaded(entry, message_id, tz, mode, pricing));
+                    diagnostics,
+                ) {
+                    entries.push(entry_to_loaded(entry, tz, mode, pricing));
+                }
             }
             Ok(sqlite::State::Done) => break,
             Err(error) => {
@@ -433,6 +410,53 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+    }
+
+    #[test]
+    fn tracks_the_model_per_session() {
+        let fixture = fs_fixture!({});
+        let db_path = sqlite_root(&fixture);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        create_agent_db(
+            &db_path,
+            &[
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai"}"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                ),
+                (
+                    "session-b",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","usage":{"input":30,"output":40}}}"#,
+                ),
+            ],
+        );
+
+        let entries = read_agent_database(
+            &AgentDatabase { path: db_path },
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            None,
+            &diagnostics(),
+        );
+
+        let models = entries
+            .iter()
+            .map(|entry| (entry.session_id.as_ref(), entry.model.as_deref()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            models,
+            [
+                ("session-a", Some("[openclaw] gpt-5.2")),
+                ("session-b", Some("[openclaw] unknown")),
+            ]
+        );
     }
 
     #[test]

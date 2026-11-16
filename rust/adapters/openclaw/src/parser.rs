@@ -27,7 +27,7 @@ pub(super) struct OpenClawLine {
     id: Option<String>,
     #[serde(rename = "customType", default)]
     custom_type: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_model_source")]
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     data: Option<OpenClawModelSource>,
     #[serde(
         rename = "modelId",
@@ -77,7 +77,7 @@ where
     }
 }
 
-pub(super) fn record_message_error(
+fn record_message_error(
     record: &OpenClawLine,
     path: &Path,
     number: u32,
@@ -99,25 +99,6 @@ pub(super) fn record_message_error(
     ));
 }
 
-/// Deserialize the `data` block of a model-change record, mirroring the
-/// historical `Value::as_object` navigation: only JSON objects yield a source,
-/// while any other shape (or a missing key) becomes `None` instead of failing
-/// the whole line.
-fn deserialize_model_source<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<OpenClawModelSource>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<Value>::deserialize(deserializer)?;
-    Ok(value.and_then(|value| {
-        value
-            .is_object()
-            .then(|| serde_json::from_value(value).ok())
-            .flatten()
-    }))
-}
-
 /// Model/provider fields carried either at the root of a `model_change` record
 /// or nested under its `data` key.
 #[derive(Debug, Default, Deserialize)]
@@ -135,12 +116,6 @@ struct OpenClawModelSource {
 }
 
 /// Assistant message payload carrying token usage and per-message metadata.
-///
-/// This is also the shape OpenClaw persists inside SQLite `transcript_events`
-/// rows: each row's `event_json` is a transcript record whose nested `message`
-/// carries `role`, `usage`, and the model/provider labels. The SQLite reader in
-/// `sqlite.rs` reuses this struct by parsing `event_json` into an
-/// [`OpenClawLine`], so changes here apply to both the JSONL and SQLite paths.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawMessage {
     #[serde(default)]
@@ -180,25 +155,8 @@ struct OpenClawUsage {
         deserialize_with = "jsonl::lenient_u64"
     )]
     total_tokens: u64,
-    #[serde(default, deserialize_with = "deserialize_cost")]
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     cost: Option<OpenClawCost>,
-}
-
-/// Deserialize the `cost` block, mirroring the historical
-/// `usage.get("cost").and_then(|cost| cost.get("total"))` navigation: only JSON
-/// objects yield a cost, while any other shape (or a missing key) becomes `None`
-/// instead of failing the whole line.
-fn deserialize_cost<'de, D>(deserializer: D) -> std::result::Result<Option<OpenClawCost>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<Value>::deserialize(deserializer)?;
-    Ok(value.and_then(|value| {
-        value
-            .is_object()
-            .then(|| serde_json::from_value(value).ok())
-            .flatten()
-    }))
 }
 
 /// Precomputed cost block carried alongside OpenClaw usage.
@@ -222,6 +180,69 @@ pub(super) struct OpenClawEntry {
     cache_read_tokens: u64,
     total_tokens: u64,
     cost: Option<f64>,
+    event_id: Option<String>,
+}
+
+pub(super) struct TranscriptReader {
+    session_id: String,
+    keeps_event_ids: bool,
+    model: Option<String>,
+    provider: Option<String>,
+}
+
+impl TranscriptReader {
+    fn jsonl(session_id: String) -> Self {
+        Self::new(session_id, false)
+    }
+
+    pub(super) fn sqlite(session_id: String) -> Self {
+        Self::new(session_id, true)
+    }
+
+    fn new(session_id: String, keeps_event_ids: bool) -> Self {
+        Self {
+            session_id,
+            keeps_event_ids,
+            model: None,
+            provider: None,
+        }
+    }
+
+    pub(super) fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    pub(super) fn read(
+        &mut self,
+        record: &OpenClawLine,
+        unit: &Path,
+        number: u32,
+        fallback_timestamp: TimestampMs,
+        diagnostics: &Diagnostics,
+    ) -> Option<OpenClawEntry> {
+        record_message_error(record, unit, number, diagnostics);
+        if is_model_change(record) {
+            let (model, provider) = model_change_source(record);
+            if model.is_some() {
+                self.model = model;
+            }
+            if provider.is_some() {
+                self.provider = provider;
+            }
+            return None;
+        }
+        let mut entry = parse_transcript_message(
+            record,
+            &self.session_id,
+            self.model.as_deref(),
+            self.provider.as_deref(),
+            fallback_timestamp,
+        )?;
+        if !self.keeps_event_ids {
+            entry.event_id = None;
+        }
+        Some(entry)
+    }
 }
 
 pub(super) fn parse_session_file(
@@ -231,48 +252,29 @@ pub(super) fn parse_session_file(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let session_id = extract_session_id(path);
+    let mut reader = TranscriptReader::jsonl(extract_session_id(path));
     let fallback_timestamp = file_modified_timestamp(path);
     let content = fs::read(path).map_err(UnitError::from)?;
     let prefilter = record_prefilter();
-    let mut current_model = None::<String>;
-    let mut current_provider = None::<String>;
-    let mut entries = Vec::new();
-    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<OpenClawLine>(
-        &content,
-        Some(&prefilter),
-        path,
-        diagnostics,
-        is_usage_envelope,
-    ) {
-        record_message_error(&record, path, number, diagnostics);
-        if is_model_change(&record) {
-            let (model, provider) = model_change_source(&record);
-            if let Some(model) = model {
-                current_model = Some(model);
-            }
-            if let Some(provider) = provider {
-                current_provider = Some(provider);
-            }
-            continue;
-        }
-        if let Some(entry) = parse_message_entry(
-            &record,
-            &session_id,
-            current_model.as_deref(),
-            current_provider.as_deref(),
-            fallback_timestamp,
-        ) {
-            entries.push(openclaw_entry_to_loaded(entry, tz, mode, pricing));
-        }
-    }
-    Ok(entries)
+    Ok(
+        jsonl::numbered_records_with_usage_diagnostics::<OpenClawLine>(
+            &content,
+            Some(&prefilter),
+            path,
+            diagnostics,
+            is_usage_envelope,
+        )
+        .filter_map(|(number, record)| {
+            reader.read(&record, path, number, fallback_timestamp, diagnostics)
+        })
+        .map(|entry| entry_to_loaded(entry, tz, mode, pricing))
+        .collect(),
+    )
 }
 
 /// Admits the records a transcript reader needs before JSON parsing: the
 /// model-tracking records (`model_change`/`model-snapshot`) and assistant
-/// records carrying `usage`. The JSONL and SQLite readers share it so both
-/// select the same records.
+/// records carrying `usage`.
 pub(super) fn record_prefilter() -> LinePrefilter {
     LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#])
 }
@@ -290,7 +292,7 @@ pub(super) fn is_usage_envelope(value: &Value) -> bool {
             .is_some()
 }
 
-pub(super) fn is_model_change(record: &OpenClawLine) -> bool {
+fn is_model_change(record: &OpenClawLine) -> bool {
     if record.r#type.as_deref() == Some("model_change") {
         return true;
     }
@@ -299,9 +301,8 @@ pub(super) fn is_model_change(record: &OpenClawLine) -> bool {
 }
 
 /// Model/provider carried by a `model_change`/`model-snapshot` record, either
-/// at the root or nested under its `data` key. Shared by the JSONL file reader
-/// and the SQLite transcript reader so both track the active model identically.
-pub(super) fn model_change_source(record: &OpenClawLine) -> (Option<String>, Option<String>) {
+/// at the root or nested under its `data` key.
+fn model_change_source(record: &OpenClawLine) -> (Option<String>, Option<String>) {
     let (source_model_id, source_model, source_provider) = match record.data.as_ref() {
         Some(source) => (
             source.model_id.clone(),
@@ -317,37 +318,13 @@ pub(super) fn model_change_source(record: &OpenClawLine) -> (Option<String>, Opt
     (source_model_id.or(source_model), source_provider)
 }
 
-fn parse_message_entry(
+fn parse_transcript_message(
     record: &OpenClawLine,
     session_id: &str,
     current_model: Option<&str>,
     current_provider: Option<&str>,
     fallback_timestamp: TimestampMs,
 ) -> Option<OpenClawEntry> {
-    parse_transcript_message(
-        record,
-        session_id,
-        current_model,
-        current_provider,
-        fallback_timestamp,
-    )
-    .map(|(entry, _)| entry)
-}
-
-/// Parse one transcript record into usage plus its stable identity.
-///
-/// The identity is the event `id` when present; JSONL-era records predate
-/// stable ids, so those return `None` and the loader falls back to its
-/// content-based entry id. SQLite-era rows always carry an `id` (the insert
-/// path generates one when the caller omits it), which the loader uses to
-/// prefer SQLite rows over migrated JSONL duplicates of the same event.
-pub(super) fn parse_transcript_message(
-    record: &OpenClawLine,
-    session_id: &str,
-    current_model: Option<&str>,
-    current_provider: Option<&str>,
-    fallback_timestamp: TimestampMs,
-) -> Option<(OpenClawEntry, Option<String>)> {
     if record.r#type.as_deref() != Some("message") {
         return None;
     }
@@ -386,7 +363,7 @@ pub(super) fn parse_transcript_message(
         .provider
         .clone()
         .or_else(|| current_provider.map(str::to_string));
-    let entry = OpenClawEntry {
+    Some(OpenClawEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
         session_id: session_id.to_string(),
@@ -399,40 +376,15 @@ pub(super) fn parse_transcript_message(
         cache_read_tokens: raw_usage.cache_read_input_tokens,
         total_tokens,
         cost: usage.cost.as_ref().and_then(|cost| cost.total),
-    };
-    let message_id = transcript_event_id(record);
-    Some((entry, message_id))
+        event_id: record.id.clone(),
+    })
 }
 
-fn transcript_event_id(record: &OpenClawLine) -> Option<String> {
-    record.id.clone().filter(|id| !id.trim().is_empty())
-}
-
-fn openclaw_entry_to_loaded(
+pub(super) fn entry_to_loaded(
     entry: OpenClawEntry,
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> LoadedEntry {
-    openclaw_entry_to_loaded_inner(entry, tz, mode, pricing, None)
-}
-
-pub(super) fn sqlite_entry_to_loaded(
-    entry: OpenClawEntry,
-    message_id: Option<String>,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> LoadedEntry {
-    openclaw_entry_to_loaded_inner(entry, tz, mode, pricing, message_id)
-}
-
-fn openclaw_entry_to_loaded_inner(
-    entry: OpenClawEntry,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    message_id: Option<String>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: entry.input_tokens,
@@ -449,7 +401,7 @@ fn openclaw_entry_to_loaded_inner(
         message: UsageMessage {
             usage,
             model: Some(entry.model.clone()),
-            id: message_id,
+            id: entry.event_id,
         },
         cost_usd: entry.cost,
         request_id: None,
@@ -545,28 +497,45 @@ fn file_modified_timestamp(path: &Path) -> TimestampMs {
         .unwrap_or(TimestampMs::UNIX_EPOCH)
 }
 
-pub(super) fn entry_id(entry: &LoadedEntry) -> String {
-    format!("{}:{}", migration_id(entry), entry.cost)
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct ContentId {
+    migration: MigrationId,
+    cost_bits: u64,
+}
+
+pub(super) fn content_id(entry: &LoadedEntry) -> ContentId {
+    ContentId {
+        migration: migration_id(entry),
+        cost_bits: entry.cost.to_bits(),
+    }
 }
 
 /// Identity shared by a legacy JSONL event and its migrated SQLite copy.
 ///
 /// SQLite can carry a corrected provider-billed cost, so cost must not prevent
 /// the migrated copy from replacing the legacy event.
-pub(super) fn migration_id(entry: &LoadedEntry) -> String {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct MigrationId {
+    session_id: Arc<str>,
+    timestamp: String,
+    model: Option<String>,
+    tokens: [u64; 5],
+}
+
+pub(super) fn migration_id(entry: &LoadedEntry) -> MigrationId {
     let usage = entry.data.message.usage;
-    [
-        "openclaw".to_string(),
-        entry.session_id.to_string(),
-        entry.data.timestamp.clone(),
-        entry.model.clone().unwrap_or_default(),
-        usage.input_tokens.to_string(),
-        usage.output_tokens.to_string(),
-        usage.cache_creation_input_tokens.to_string(),
-        usage.cache_read_input_tokens.to_string(),
-        entry.extra_total_tokens.to_string(),
-    ]
-    .join(":")
+    MigrationId {
+        session_id: Arc::clone(&entry.session_id),
+        timestamp: entry.data.timestamp.clone(),
+        model: entry.model.clone(),
+        tokens: [
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_creation_input_tokens,
+            usage.cache_read_input_tokens,
+            entry.extra_total_tokens,
+        ],
+    }
 }
 
 #[cfg(test)]
@@ -726,7 +695,8 @@ mod tests {
         }))
         .unwrap();
         let entry =
-            parse_message_entry(&record, "session-a", None, None, TimestampMs::UNIX_EPOCH).unwrap();
+            parse_transcript_message(&record, "session-a", None, None, TimestampMs::UNIX_EPOCH)
+                .unwrap();
 
         assert_eq!(entry.output_tokens, 222);
         assert_eq!(entry.total_tokens, 222);
