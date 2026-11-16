@@ -119,6 +119,21 @@ pub enum CodexServiceTier {
     Ultrafast,
 }
 
+impl CodexServiceTier {
+    pub(crate) fn from_codex_name(name: &str) -> Option<Self> {
+        match name {
+            // Both spellings mean non-priority pricing and occur in the same Codex
+            // version on the same day; which one is written depends on the client
+            // (Codex Desktop writes "standard"), not on the CLI version.
+            "default" | "standard" => Some(Self::Standard),
+            "fast" | "priority" => Some(Self::Fast),
+            "flex" => Some(Self::Flex),
+            "ultrafast" => Some(Self::Ultrafast),
+            _ => None,
+        }
+    }
+}
+
 pub const fn merge_codex_service_tiers(
     current: Option<CodexServiceTier>,
     incoming: Option<CodexServiceTier>,

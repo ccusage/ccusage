@@ -667,7 +667,7 @@ fn visit_codex_session_entry(
             .as_ref()
             .and_then(|settings| settings.service_tier.as_deref())
         {
-            *current_service_tier = codex_service_tier(recorded);
+            *current_service_tier = CodexServiceTier::from_codex_name(recorded);
         }
         return Ok(());
     }
@@ -856,19 +856,6 @@ fn visit_codex_exec_usage_event(
         is_fallback_model,
         service_tier: None,
     })
-}
-
-fn codex_service_tier(value: &str) -> Option<CodexServiceTier> {
-    match value {
-        // Both spellings mean non-priority pricing and occur in the same Codex
-        // version on the same day; which one is written depends on the client
-        // (Codex Desktop writes "standard"), not on the CLI version.
-        "default" | "standard" => Some(CodexServiceTier::Standard),
-        "fast" | "priority" => Some(CodexServiceTier::Fast),
-        "flex" => Some(CodexServiceTier::Flex),
-        "ultrafast" => Some(CodexServiceTier::Ultrafast),
-        _ => None,
-    }
 }
 
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
@@ -1645,7 +1632,7 @@ mod tests {
             ("", None),
         ] {
             assert_eq!(
-                codex_service_tier(value),
+                CodexServiceTier::from_codex_name(value),
                 expected,
                 "unexpected tier for {value:?}"
             );
