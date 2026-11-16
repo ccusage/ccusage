@@ -9,6 +9,8 @@ use ccusage_core::fast::LineReader;
 /// Matches zstd's preferred input size, so a whole rollout streams in
 /// block-sized reads.
 pub(super) const READ_BUFFER_SIZE: usize = 128 * 1024;
+/// Enough for a typical `session_meta` line without decompressing much past it.
+pub(super) const PROBE_BUFFER_SIZE: usize = 16 * 1024;
 
 type RolloutLines = LineReader<Box<dyn Read>>;
 

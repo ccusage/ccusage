@@ -16,7 +16,7 @@ use super::{
     parser::{
         CodexForkReplay, codex_value_timestamp, visit_codex_session_file_with_compaction_history,
     },
-    reader::{READ_BUFFER_SIZE, open_rollout_lines},
+    reader::{PROBE_BUFFER_SIZE, open_rollout_lines},
 };
 
 #[cfg(test)]
@@ -428,7 +428,7 @@ struct CodexSessionMetadata {
 
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     observe_metadata_probe(path);
-    let Ok((mut lines, _)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
+    let Ok((mut lines, _)) = open_rollout_lines(path, PROBE_BUFFER_SIZE) else {
         return CodexSessionMetadata::default();
     };
     let Ok(Some(line)) = lines.next_line() else {
