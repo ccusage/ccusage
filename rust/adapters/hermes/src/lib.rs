@@ -31,10 +31,6 @@ impl EntrySource for Hermes {
         report::summarize_entries(entries, kind)
     }
 
-    fn sort_key<'a>(&self, row: &'a UsageSummary) -> &'a str {
-        summary_period(row)
-    }
-
     fn report_json(&self, rows: &[UsageSummary], kind: AgentReportKind) -> Value {
         report::report_from_rows(rows, kind)
     }
