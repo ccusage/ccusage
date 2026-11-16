@@ -124,7 +124,7 @@ mod diagnostic_tests {
             rows.diagnostics
                 .warnings(&shared)
                 .iter()
-                .any(|line| line.contains("unreadable")),
+                .any(|line| line.contains("opencode.db: database is corrupt or invalid")),
             "{:?}",
             rows.diagnostics.warnings(&shared)
         );
