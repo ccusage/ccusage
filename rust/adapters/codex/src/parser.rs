@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    reader::{open_rollout_reader, uncompressed_rollout_path},
+    reader::{READ_BUFFER_SIZE, open_rollout_lines, uncompressed_rollout_path},
     types::{
         CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
         CodexSessionLogEntry, CodexTimestamp, CodexUsageCandidate,
@@ -133,23 +133,18 @@ const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
 /// history it did not spend; one that pauses between them was recording its own
 /// turns from the start.
 fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
-    let Ok((mut reader, _)) = open_rollout_reader(path) else {
+    let Ok((mut lines, _)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
         return None;
     };
-    let mut line = Vec::new();
     let mut first: Option<TimestampMs> = None;
     let mut session_start = None;
 
     loop {
-        line.clear();
-        let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
+        let Ok(Some(line)) = lines.next_line() else {
             return None;
         };
-        if bytes_read == 0 {
-            return None;
-        }
-        if memchr::memmem::find(&line, b"session_meta").is_some()
-            && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line)
+        if memchr::memmem::find(line, b"session_meta").is_some()
+            && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(line)
             && value.entry_type.as_deref() == Some("session_meta")
         {
             if session_start.is_none() {
@@ -158,10 +153,10 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
             }
             continue;
         }
-        let Some(CodexLineKind::Session) = codex_line_usage_kind(&line) else {
+        let Some(CodexLineKind::Session) = codex_line_usage_kind(line) else {
             continue;
         };
-        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) else {
+        let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(line) else {
             continue;
         };
         let info = value.payload.as_ref().and_then(|payload| {
@@ -334,7 +329,7 @@ fn visit_codex_session_file_inner(
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
     diagnostics: &Diagnostics,
 ) -> Result<()> {
-    let Ok((mut reader, opened_path)) = open_rollout_reader(path) else {
+    let Ok((mut lines, opened_path)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
         diagnostics.record(Skip::unit(
             path,
             SkipKind::Unreadable,
@@ -342,7 +337,6 @@ fn visit_codex_session_file_inner(
         ));
         return Ok(());
     };
-    let mut line = Vec::new();
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
     if compaction_history.is_some() {
@@ -363,27 +357,27 @@ fn visit_codex_session_file_inner(
 
     let mut line_number = 0_u32;
     loop {
-        line.clear();
-        let Ok(bytes_read) = reader.read_until(b'\n', &mut line) else {
-            diagnostics.record(Skip::unit(
-                path,
-                SkipKind::ReadInterrupted,
-                "rollout read failed",
-            ));
-            break;
+        let line = match lines.next_line() {
+            Ok(Some(line)) => line,
+            Ok(None) => break,
+            Err(_) => {
+                diagnostics.record(Skip::unit(
+                    path,
+                    SkipKind::ReadInterrupted,
+                    "rollout read failed",
+                ));
+                break;
+            }
         };
-        if bytes_read == 0 {
-            break;
-        }
         line_number = line_number.saturating_add(1);
-        let Some(line_kind) = codex_line_usage_kind(&line) else {
+        let Some(line_kind) = codex_line_usage_kind(line) else {
             continue;
         };
         // Type names inside headless data can pass the substring scan; only
         // the decoded envelope selects session accounting. Every other line
         // takes the one headless path below, however the session decode went.
         if matches!(line_kind, CodexLineKind::Session) {
-            match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
+            match serde_json::from_slice::<CodexSessionLogEntry<'_>>(line) {
                 Ok(value)
                     if is_session_usage_type(
                         value.entry_type.as_deref(),
@@ -411,11 +405,11 @@ fn visit_codex_session_file_inner(
                 }
                 Ok(_) => {}
                 Err(error) => {
-                    if !has_headless_envelope(&line) {
+                    if !has_headless_envelope(line) {
                         record_decode_failure(
                             path,
                             line_number,
-                            &line,
+                            line,
                             error,
                             diagnostics,
                             Some(&mut state.previous_totals),
@@ -425,7 +419,7 @@ fn visit_codex_session_file_inner(
                 }
             }
         }
-        if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
+        if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(line) {
             add_codex_exec_event(
                 &session_id,
                 &value,
@@ -442,7 +436,7 @@ fn visit_codex_session_file_inner(
         } else {
             add_codex_exec_event_from_value(
                 &session_id,
-                &line,
+                line,
                 &fallback_timestamp,
                 &mut state.current_model,
                 &mut state.current_model_is_fallback,

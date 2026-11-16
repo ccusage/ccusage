@@ -1,10 +1,16 @@
 use std::{
     fs::File,
-    io::{self, BufRead, BufReader},
+    io::{self, BufReader, Read},
     path::{Path, PathBuf},
 };
 
-const READ_BUFFER_SIZE: usize = 128 * 1024;
+use ccusage_core::fast::LineReader;
+
+/// Matches zstd's preferred input size, so a whole rollout streams in
+/// block-sized reads.
+pub(super) const READ_BUFFER_SIZE: usize = 128 * 1024;
+
+type RolloutLines = LineReader<Box<dyn Read>>;
 
 pub(super) fn is_rollout_file(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "jsonl") || is_compressed_rollout(path)
@@ -28,15 +34,20 @@ pub(super) fn uncompressed_rollout_path(path: &Path) -> PathBuf {
     }
 }
 
-pub(super) fn open_rollout_reader(path: &Path) -> io::Result<(Box<dyn BufRead>, PathBuf)> {
-    match open_encoded_rollout(path) {
+/// Opens the rollout's lines through windows of `buffer_size` bytes.
+pub(super) fn open_rollout_lines(
+    path: &Path,
+    buffer_size: usize,
+) -> io::Result<(RolloutLines, PathBuf)> {
+    let (reader, opened) = match open_encoded_rollout(path, buffer_size) {
         // Codex may compress or restore the rollout between discovery and this open.
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let other = other_encoding_path(path);
-            Ok((open_encoded_rollout(&other)?, other))
+            (open_encoded_rollout(&other, buffer_size)?, other)
         }
-        result => Ok((result?, path.to_path_buf())),
-    }
+        result => (result?, path.to_path_buf()),
+    };
+    Ok((LineReader::with_capacity(buffer_size, reader), opened))
 }
 
 fn other_encoding_path(path: &Path) -> PathBuf {
@@ -49,16 +60,14 @@ fn other_encoding_path(path: &Path) -> PathBuf {
     }
 }
 
-fn open_encoded_rollout(path: &Path) -> io::Result<Box<dyn BufRead>> {
+fn open_encoded_rollout(path: &Path, buffer_size: usize) -> io::Result<Box<dyn Read>> {
     let file = File::open(path)?;
     if is_compressed_rollout(path) {
-        let decoder = zstd::stream::read::Decoder::new(file)?;
-        Ok(Box::new(BufReader::with_capacity(
-            READ_BUFFER_SIZE,
-            decoder,
-        )))
+        Ok(Box::new(zstd::stream::read::Decoder::with_buffer(
+            BufReader::with_capacity(buffer_size, file),
+        )?))
     } else {
-        Ok(Box::new(BufReader::with_capacity(READ_BUFFER_SIZE, file)))
+        Ok(Box::new(file))
     }
 }
 

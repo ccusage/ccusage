@@ -16,7 +16,7 @@ use super::{
     parser::{
         CodexForkReplay, codex_value_timestamp, visit_codex_session_file_with_compaction_history,
     },
-    reader::open_rollout_reader,
+    reader::{READ_BUFFER_SIZE, open_rollout_lines},
 };
 
 #[cfg(test)]
@@ -428,17 +428,16 @@ struct CodexSessionMetadata {
 
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     observe_metadata_probe(path);
-    let Ok((mut reader, _)) = open_rollout_reader(path) else {
+    let Ok((mut lines, _)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
         return CodexSessionMetadata::default();
     };
-    let mut line = String::new();
-    let Ok(bytes_read) = reader.read_line(&mut line) else {
+    let Ok(Some(line)) = lines.next_line() else {
         return CodexSessionMetadata::default();
     };
-    if bytes_read == 0 {
+    let Ok(line) = std::str::from_utf8(line) else {
         return CodexSessionMetadata::default();
-    }
-    let Ok(value) = serde_json::from_str::<Value>(&line) else {
+    };
+    let Ok(value) = serde_json::from_str::<Value>(line) else {
         return CodexSessionMetadata::default();
     };
     let payload = (value.get("type").and_then(Value::as_str) == Some("session_meta"))
