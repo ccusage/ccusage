@@ -351,15 +351,15 @@ pub(crate) fn run_statusline(args: StatuslineArgs) -> Result<()> {
         mark_statusline_cache_updating(&cache_path, &hook, current_mtime, initial_cache.as_ref());
     }
 
-    let mut diagnostics = StatuslineDiagnostics::default();
-    let statusline_result = render_statusline(&hook, &args, &shared, &mut diagnostics);
+    // Every load records into one Diagnostics, so a skip that several windows
+    // read is reported once.
+    let diagnostics = Diagnostics::new("claude");
+    let statusline_result = render_statusline(&hook, &args, &shared, &diagnostics);
     let shared = SharedArgs {
         debug: args.debug,
         ..shared
     };
-    for warning in diagnostics.warnings(&shared) {
-        eprintln!("{warning}");
-    }
+    diagnostics.emit(&shared);
     match statusline_result {
         Ok(statusline) => {
             println!("{statusline}");
@@ -425,36 +425,11 @@ fn format_model_segment(model_label: &str, effort: Option<&HookEffort>) -> Strin
     }
 }
 
-#[derive(Default)]
-struct StatuslineDiagnostics {
-    widest_since: Option<String>,
-    widest: Option<Diagnostics>,
-}
-
-impl StatuslineDiagnostics {
-    fn load_entries(&mut self, shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
-        let diagnostics = Diagnostics::new("claude");
-        let result = load_entries_since_with_diagnostics(shared, None, &diagnostics);
-        // Wider reads include earlier windows; report their skips once.
-        if self.widest.is_none() || shared.since <= self.widest_since {
-            self.widest_since = shared.since.clone();
-            self.widest = Some(diagnostics);
-        }
-        result
-    }
-
-    fn warnings(&self, shared: &SharedArgs) -> Vec<String> {
-        self.widest
-            .as_ref()
-            .map_or_else(Vec::new, |diagnostics| diagnostics.warnings(shared))
-    }
-}
-
 fn render_statusline(
     hook: &StatuslineHook,
     args: &StatuslineArgs,
     shared: &SharedArgs,
-    diagnostics: &mut StatuslineDiagnostics,
+    diagnostics: &Diagnostics,
 ) -> Result<String> {
     let session_cost = match args.cost_source {
         CostSource::Cc => hook.cost.as_ref().map(|cost| cost.total_cost_usd),
@@ -479,8 +454,7 @@ fn render_statusline(
     };
 
     let today_shared = statusline_today_shared(args, shared, utc_now());
-    let today_cost = diagnostics
-        .load_entries(&today_shared)
+    let today_cost = load_entries_since_with_diagnostics(&today_shared, None, diagnostics)
         .map(|entries| {
             entries
                 .iter()
@@ -609,13 +583,14 @@ fn load_statusline_active_block(
     args: &StatuslineArgs,
     shared: &SharedArgs,
     now: TimestampMs,
-    diagnostics: &mut StatuslineDiagnostics,
+    diagnostics: &Diagnostics,
 ) -> Option<SessionBlock> {
     let session_ms = (DEFAULT_SESSION_DURATION_HOURS * MILLIS_PER_HOUR as f64) as i64;
     for lookback_days in STATUSLINE_BLOCK_LOOKBACK_DAYS {
         let window_shared = statusline_block_shared(args, shared, now, lookback_days);
         let since = window_shared.since.clone().unwrap_or_default();
-        let mut entries = diagnostics.load_entries(&window_shared).ok()?;
+        let mut entries =
+            load_entries_since_with_diagnostics(&window_shared, None, diagnostics).ok()?;
         // Entries dated before the window may come from partially skipped
         // sessions; only the ones inside it are complete.
         entries.retain(|entry| entry.date.replace('-', "") >= since);
@@ -634,7 +609,7 @@ fn load_statusline_active_block(
             BlockAnchor::NeedsFullHistory => break,
         }
     }
-    find_active_block(diagnostics.load_entries(shared).ok()?)
+    find_active_block(load_entries_since_with_diagnostics(shared, None, diagnostics).ok()?)
 }
 
 fn find_active_block(entries: Vec<LoadedEntry>) -> Option<SessionBlock> {
@@ -714,17 +689,18 @@ fn statusline_block_shared(
 fn calculate_session_cost(
     session_id: &str,
     shared: &SharedArgs,
-    diagnostics: &mut StatuslineDiagnostics,
+    diagnostics: &Diagnostics,
 ) -> Result<f64> {
-    Ok(diagnostics
-        .load_entries(shared)?
-        .into_iter()
-        .filter(|entry| {
-            entry.data.session_id.as_deref() == Some(session_id)
-                || entry.session_id.as_ref() == session_id
-        })
-        .map(|entry| entry.cost)
-        .sum())
+    Ok(
+        load_entries_since_with_diagnostics(shared, None, diagnostics)?
+            .into_iter()
+            .filter(|entry| {
+                entry.data.session_id.as_deref() == Some(session_id)
+                    || entry.session_id.as_ref() == session_id
+            })
+            .map(|entry| entry.cost)
+            .sum(),
+    )
 }
 
 fn format_statusline_context(
@@ -1167,9 +1143,7 @@ mod tests {
             }),
             effort: None,
         };
-        let output =
-            render_statusline(&hook, &args, &shared, &mut StatuslineDiagnostics::default())
-                .unwrap();
+        let output = render_statusline(&hook, &args, &shared, &Diagnostics::new("claude")).unwrap();
         assert!(output.contains("💰 $0.40 session"), "{output}");
     }
 
