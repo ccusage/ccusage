@@ -1,50 +1,31 @@
 use std::collections::HashSet;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use ccusage_adapter_common::{read_units, source::LoadContext};
+
+use crate::{LoadedEntry, Result};
 
 use super::{
     parser::{dsh_entry_key, dsh_entry_to_loaded, read_session_file},
     paths::discover_session_files,
 };
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("DeepSeek Harness"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
-    )
-}
-
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let files = discover_session_files(&crate::Diagnostics::new("dsh"))?;
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_session_file(file).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to read DeepSeek Harness session {}: {error}",
-                    file.display()
-                ),
-            );
-            Vec::new()
-        })
+pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let files = discover_session_files(cx.diagnostics)?;
+    let pricing = cx.pipeline_pricing()?;
+    let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
+        read_session_file(file)
     });
     // The same session can be reachable from more than one DSH_HOME root.
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
-    for file_entries in loaded {
-        for entry in file_entries {
-            if seen.insert(dsh_entry_key(&entry)) {
-                entries.push(dsh_entry_to_loaded(
-                    entry,
-                    tz.as_ref(),
-                    shared.mode,
-                    pricing,
-                ));
-            }
+    for entry in loaded.into_iter().flatten().flatten() {
+        if seen.insert(dsh_entry_key(&entry)) {
+            entries.push(dsh_entry_to_loaded(
+                entry,
+                Some(cx.window.timezone()),
+                cx.shared.mode,
+                pricing,
+            ));
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);
@@ -56,7 +37,7 @@ mod tests {
     use std::fs;
 
     use super::super::paths::DSH_HOME_ENV;
-    use super::*;
+    use ccusage_core::{PricingMap, cli::SharedArgs};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
 
     const SESSION: &str = concat!(
@@ -92,7 +73,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, _) = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-07-25");
@@ -113,7 +94,8 @@ mod tests {
         let value = format!("{},{}", first.root().display(), second.root().display());
         let _cleanup = EnvVarGuard::set(DSH_HOME_ENV, &value);
 
-        let entries = load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
+        let (entries, _) =
+            crate::load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
 
         assert_eq!(entries.len(), 1);
     }

@@ -6,7 +6,7 @@ use crate::{
     summarize_by_key, summarize_summaries_by_bucket, totals_json,
 };
 
-pub fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
+pub(crate) fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
     let rows_json = rows
         .iter()
         .map(|row| ccusage_core::agent_summary_json(row, kind, false))
@@ -17,7 +17,7 @@ pub fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> 
     })
 }
 
-pub fn summarize_entries(
+pub(crate) fn summarize_entries(
     entries: &[LoadedEntry],
     kind: AgentReportKind,
 ) -> Result<Vec<crate::UsageSummary>> {
@@ -86,7 +86,7 @@ mod tests {
             offline: true,
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, _) = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
 
         for kind in [
             AgentReportKind::Daily,
@@ -118,7 +118,7 @@ mod tests {
             offline: true,
             ..SharedArgs::default()
         };
-        let entries = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
+        let (entries, _) = crate::load_entries(&shared, &PricingMap::load_embedded()).unwrap();
 
         let rows = summarize_entries(&entries, AgentReportKind::Weekly).unwrap();
         let weeks = rows

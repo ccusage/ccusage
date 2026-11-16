@@ -171,4 +171,4 @@ exit: 0
 }
 
 --- stderr ---
-Failed to read DeepSeek Harness session [ROOT]/dsh/home-a/sessions/bad/corrupt/session.v4.jsonl.zstd: Unknown frame descriptor
+dsh: unreadable: [ROOT]/dsh/home-a/sessions/bad/corrupt/session.v4.jsonl.zstd: I/O error (Other)

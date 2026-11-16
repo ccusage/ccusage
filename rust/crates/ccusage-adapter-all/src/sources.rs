@@ -1,11 +1,11 @@
 use ccusage_adapter_common::source::UsageSource;
 
 use crate::adapter::{
-    amp, antigravity, claude, cline, codebuff, codex, copilot, droid, gemini, goose, grok, hermes,
-    kilo, kimi, openclaw, opencode, pi, qwen, zcode,
+    amp, antigravity, claude, cline, codebuff, codex, copilot, droid, dsh, gemini, goose, grok,
+    hermes, kilo, kimi, openclaw, opencode, pi, qwen, zcode,
 };
 
-pub(super) static SOURCES: [&dyn UsageSource; 19] = [
+pub(super) static SOURCES: [&dyn UsageSource; 20] = [
     &claude::SOURCE,
     &codex::SOURCE,
     &opencode::SOURCE,
@@ -25,6 +25,7 @@ pub(super) static SOURCES: [&dyn UsageSource; 19] = [
     &grok::SOURCE,
     &zcode::SOURCE,
     &cline::SOURCE,
+    &dsh::SOURCE,
 ];
 
 #[cfg(test)]

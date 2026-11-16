@@ -9,11 +9,11 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::byte_lines,
     format_date_tz, missing_pricing_model_for_candidates,
 };
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{UnitError, jsonl};
 
 use super::paths::is_compressed;
 
@@ -158,7 +158,7 @@ pub(super) struct DshUsageEntry {
     extra_total_tokens: u64,
 }
 
-pub(super) fn read_session_file(path: &Path) -> Result<Vec<DshUsageEntry>> {
+pub(super) fn read_session_file(path: &Path) -> Result<Vec<DshUsageEntry>, UnitError> {
     let content = read_session_bytes(path)?;
     Ok(parse_session(&content, path))
 }

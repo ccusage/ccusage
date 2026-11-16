@@ -4,7 +4,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{Diagnostics, Result, collect_files_matching};
+use ccusage_adapter_common::collect_files_matching;
+
+use crate::{Diagnostics, Result};
 
 pub(super) const DSH_HOME_ENV: &str = "DSH_HOME";
 const DSH_HOME_DIR_NAME: &str = ".dsh";
