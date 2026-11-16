@@ -85,8 +85,6 @@ struct GrokUsage {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     reasoning_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    total_tokens: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     cost_usd_ticks: u64,
     #[serde(default)]
     model_usage: Option<HashMap<String, GrokModelUsage>>,
@@ -105,8 +103,6 @@ struct GrokModelUsage {
     cache_creation_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     reasoning_tokens: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    total_tokens: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     cost_usd_ticks: u64,
 }
@@ -214,6 +210,7 @@ pub(super) fn parse_session_files(
 ) -> Result<Vec<LoadedEntry>> {
     let diagnostics = Diagnostics::new("grok");
     parse_session_files_with_diagnostics(files, tz, mode, pricing, &diagnostics)
+        .map(|entries| entries.into_iter().map(|(_, entry)| entry).collect())
         .map_err(|error| crate::cli_error(error.to_string()))
 }
 
@@ -223,7 +220,7 @@ pub(super) fn parse_session_files_with_diagnostics(
     mode: CostMode,
     pricing: &PricingMap,
     diagnostics: &Diagnostics,
-) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
+) -> std::result::Result<Vec<(GrokDedupeKey, LoadedEntry)>, UnitError> {
     let meta = load_session_meta(files, diagnostics);
     let content = fs::read(&files.updates)?;
     let prefilter = LinePrefilter::all(&[br#""turn_completed""#]);
@@ -283,7 +280,7 @@ pub(super) fn parse_session_files_with_diagnostics(
                 cache_creation: None,
             };
 
-            let dedupe_key = dedupe_key(
+            let dedupe_key = GrokDedupeKey::new(
                 event_id.as_deref(),
                 &session_id,
                 timestamp_ms,
@@ -291,7 +288,7 @@ pub(super) fn parse_session_files_with_diagnostics(
                 usage_raw,
                 reasoning_tokens,
             );
-            if !seen.insert(dedupe_key) {
+            if !seen.insert(dedupe_key.clone()) {
                 continue;
             }
 
@@ -325,27 +322,29 @@ pub(super) fn parse_session_files_with_diagnostics(
                 is_api_error_message: None,
                 is_sidechain: None,
             };
-            entries.push(LoadedEntry {
-                data,
-                timestamp: timestamp_ms,
-                date: format_date_tz(timestamp_ms, tz),
-                project: Arc::from("grok"),
-                session_id: Arc::from(session_id.clone()),
-                project_path: Arc::from(meta.project_path.as_str()),
-                cost,
-                credits: None,
-                model: Some(display_model),
-                message_count: None,
-                usage_limit_reset_time: None,
-                missing_pricing_model,
-                // Grok reports `totalTokens == inputTokens + outputTokens`, so its
-                // reasoning tokens are already a subset of the output count. Adding
-                // them to `extra_total_tokens` would bill them into the grand total a
-                // second time.
-                extra_total_tokens: 0,
-                stored_cost: stored_cost_for_mode(cost_usd, mode),
-            });
-            let _ = model_usage.total_tokens;
+            entries.push((
+                dedupe_key,
+                LoadedEntry {
+                    data,
+                    timestamp: timestamp_ms,
+                    date: format_date_tz(timestamp_ms, tz),
+                    project: Arc::from("grok"),
+                    session_id: Arc::from(session_id.clone()),
+                    project_path: Arc::from(meta.project_path.as_str()),
+                    cost,
+                    credits: None,
+                    model: Some(display_model),
+                    message_count: None,
+                    usage_limit_reset_time: None,
+                    missing_pricing_model,
+                    // Grok reports `totalTokens == inputTokens + outputTokens`, so its
+                    // reasoning tokens are already a subset of the output count. Adding
+                    // them to `extra_total_tokens` would bill them into the grand total a
+                    // second time.
+                    extra_total_tokens: 0,
+                    stored_cost: stored_cost_for_mode(cost_usd, mode),
+                },
+            ));
         }
     }
 
@@ -399,7 +398,6 @@ fn model_usage_rows(
             cached_read_tokens: usage.cached_read_tokens,
             cache_creation_tokens: usage.cache_creation_tokens,
             reasoning_tokens: usage.reasoning_tokens,
-            total_tokens: usage.total_tokens,
             cost_usd_ticks: usage.cost_usd_ticks,
         },
     )]
@@ -488,25 +486,51 @@ fn value_as_i64(value: &Value) -> Option<i64> {
         .or_else(|| value.as_f64().map(|n| n as i64))
 }
 
-fn dedupe_key(
-    event_id: Option<&str>,
-    session_id: &str,
-    timestamp: TimestampMs,
-    model: &str,
-    usage: TokenUsageRaw,
-    reasoning: u64,
-) -> String {
-    if let Some(event_id) = event_id {
-        return format!("{event_id}|{model}");
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) enum GrokDedupeKey {
+    Event(GrokEventKey),
+    Content {
+        session_id: String,
+        timestamp: TimestampMs,
+        model: String,
+        tokens: [u64; 5],
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct GrokEventKey {
+    event_id: String,
+    model: String,
+}
+
+impl GrokDedupeKey {
+    fn new(
+        event_id: Option<&str>,
+        session_id: &str,
+        timestamp: TimestampMs,
+        model: &str,
+        usage: TokenUsageRaw,
+        reasoning: u64,
+    ) -> Self {
+        if let Some(event_id) = event_id {
+            return Self::Event(GrokEventKey {
+                event_id: event_id.to_string(),
+                model: model.to_string(),
+            });
+        }
+        Self::Content {
+            session_id: session_id.to_string(),
+            timestamp,
+            model: model.to_string(),
+            tokens: [
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_read_input_tokens,
+                usage.cache_creation_input_tokens,
+                reasoning,
+            ],
+        }
     }
-    format!(
-        "{session_id}|{}|{model}|{}|{}|{}|{}|{reasoning}",
-        timestamp.as_millis(),
-        usage.input_tokens,
-        usage.output_tokens,
-        usage.cache_read_input_tokens,
-        usage.cache_creation_input_tokens,
-    )
 }
 
 #[cfg(test)]
@@ -988,7 +1012,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].project_path.as_ref(), "proj");
+        assert_eq!(entries[0].1.project_path.as_ref(), "proj");
         assert!(
             diagnostics
                 .warnings(&crate::cli::SharedArgs::default())
