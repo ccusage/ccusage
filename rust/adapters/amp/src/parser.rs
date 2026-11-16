@@ -149,10 +149,6 @@ fn parse_thread(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    if content.iter().all(u8::is_ascii_whitespace) {
-        // A file Amp has created but not written yet holds no usage to lose.
-        return Ok(Vec::new());
-    }
     let thread = serde_json::from_slice::<AmpThread>(content)?;
     let Some(thread_id) = thread.id else {
         if thread
@@ -536,18 +532,32 @@ mod tests {
     }
 
     #[test]
-    fn fails_content_that_is_not_a_thread_and_accepts_an_unwritten_file() {
+    fn fails_content_that_is_not_a_thread() {
         let diagnostics = Diagnostics::new("amp");
 
         assert!(parse(&LEDGER_THREAD.as_bytes()[..80], &diagnostics).is_err());
         assert!(parse(b"7", &diagnostics).is_err());
-        assert!(parse(b"", &diagnostics).unwrap().is_empty());
-        assert!(parse(b"\n", &diagnostics).unwrap().is_empty());
         assert!(
             parse(br#"{"messages":[]}"#, &diagnostics)
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_thread_file_not_written_yet_is_not_reported_as_skipped() {
+        let fixture = fs_fixture!({"threads/T-new.json": ""});
+        let diagnostics = Diagnostics::new("amp");
+
+        let loaded = ccusage_adapter_common::read_units(
+            &[fixture.path("threads/T-new.json")],
+            true,
+            &diagnostics,
+            |file| read_thread(file, None, CostMode::Auto, None, &diagnostics),
+        );
+
+        assert!(loaded[0].is_none());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
     }
 
     #[test]
