@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
@@ -81,17 +81,95 @@ impl Skip {
     }
 }
 
+/// The skips of one kind. A skip is identified by its unit and line, so
+/// recording or merging the same one twice counts it once.
 #[derive(Default)]
 struct Tally {
-    skips: u64,
-    records: u64,
-    units: BTreeMap<PathBuf, bool>,
+    units: BTreeMap<PathBuf, UnitSkips>,
     samples: Vec<Skip>,
+}
+
+#[derive(Default)]
+struct UnitSkips {
+    whole: bool,
+    records: BTreeSet<u32>,
+}
+
+impl Tally {
+    fn count(&mut self, unit: &Path, line: Option<u32>) {
+        if !self.units.contains_key(unit) {
+            self.units.insert(unit.to_path_buf(), UnitSkips::default());
+        }
+        let skips = self.units.get_mut(unit).expect("unit was just inserted");
+        match line {
+            Some(line) => {
+                skips.records.insert(line);
+            }
+            None => skips.whole = true,
+        }
+    }
+
+    /// Keeps the first skips by unit, line and detail, so `--debug` lists the
+    /// same ones whatever order parallel readers record them in.
+    fn sample(&mut self, skip: Skip) {
+        if let Some(sample) = self
+            .samples
+            .iter_mut()
+            .find(|sample| sample.unit == skip.unit && sample.line == skip.line)
+        {
+            if sample_order(&skip, sample).is_lt() {
+                *sample = skip;
+            }
+            return;
+        }
+        if self.samples.len() < SAMPLES_PER_KIND
+            || self
+                .samples
+                .last()
+                .is_some_and(|sample| sample_order(&skip, sample).is_lt())
+        {
+            self.samples.push(skip);
+            self.samples.sort_by(sample_order);
+            self.samples.truncate(SAMPLES_PER_KIND);
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        for (unit, skips) in &other.units {
+            if skips.whole {
+                self.count(unit, None);
+            }
+            for line in &skips.records {
+                self.count(unit, Some(*line));
+            }
+        }
+        self.samples.extend(other.samples.iter().cloned());
+        self.samples.sort_by(sample_order);
+        self.samples
+            .dedup_by(|right, left| left.unit == right.unit && left.line == right.line);
+        self.samples.truncate(SAMPLES_PER_KIND);
+    }
+
+    fn records(&self) -> u64 {
+        self.units
+            .values()
+            .map(|skips| skips.records.len() as u64)
+            .sum()
+    }
+
+    fn whole_units(&self) -> u64 {
+        self.units.values().filter(|skips| skips.whole).count() as u64
+    }
+
+    fn skips(&self) -> u64 {
+        self.whole_units() + self.records()
+    }
 }
 
 #[derive(Default)]
 struct State {
     lines: Vec<String>,
+    notes: BTreeMap<PathBuf, String>,
     tallies: [Tally; SkipKind::ALL.len()],
 }
 
@@ -123,28 +201,16 @@ impl Diagnostics {
         }
     }
 
+    /// The agent id the warnings name.
+    pub fn source(&self) -> &'static str {
+        self.source
+    }
+
     pub fn record(&self, skip: Skip) {
         let mut state = self.state();
         let tally = &mut state.tallies[skip.kind as usize];
-        tally.skips += 1;
-        if skip.line.is_some() {
-            tally.records += 1;
-        }
-        if let Some(whole_input) = tally.units.get_mut(&skip.unit) {
-            *whole_input |= skip.line.is_none();
-        } else {
-            tally.units.insert(skip.unit.clone(), skip.line.is_none());
-        }
-        if tally.samples.len() < SAMPLES_PER_KIND
-            || tally
-                .samples
-                .last()
-                .is_some_and(|sample| sample_order(&skip, sample).is_lt())
-        {
-            tally.samples.push(skip);
-            tally.samples.sort_by(sample_order);
-            tally.samples.truncate(SAMPLES_PER_KIND);
-        }
+        tally.count(&skip.unit, skip.line);
+        tally.sample(skip);
     }
 
     /// Adds a warning line a source already words and gates itself, printed
@@ -153,9 +219,46 @@ impl Diagnostics {
         self.state().lines.push(line.into());
     }
 
-    /// How many skips of `kind` were recorded.
+    /// Notes something about `unit` that is not a skip, worded by the source
+    /// and printed as-is under `--debug` only.
+    pub fn debug_note(&self, unit: &Path, note: impl Into<String>) {
+        self.state()
+            .notes
+            .entry(unit.to_path_buf())
+            .or_insert_with(|| note.into());
+    }
+
+    /// Adds what `other` recorded for the same source, as when one report
+    /// loads a source more than once: a skip both recorded counts once.
+    pub fn merge(&self, other: &Self) {
+        debug_assert_eq!(self.source, other.source);
+        if std::ptr::eq(self, other) {
+            return;
+        }
+        let other = other.state();
+        let mut state = self.state();
+        state.lines.extend(other.lines.iter().cloned());
+        for (unit, note) in &other.notes {
+            state
+                .notes
+                .entry(unit.clone())
+                .or_insert_with(|| note.clone());
+        }
+        for (tally, other) in state.tallies.iter_mut().zip(&other.tallies) {
+            tally.merge(other);
+        }
+    }
+
+    /// How many distinct skips of `kind` were recorded.
     pub fn skipped(&self, kind: SkipKind) -> u64 {
-        self.state().tallies[kind as usize].skips
+        self.state().tallies[kind as usize].skips()
+    }
+
+    /// Prints [`warnings`](Self::warnings) to stderr.
+    pub fn emit(&self, shared: &SharedArgs) {
+        for warning in self.warnings(shared) {
+            eprintln!("{warning}");
+        }
     }
 
     /// The lines to print on stderr once the load's progress output stopped:
@@ -168,8 +271,11 @@ impl Diagnostics {
     fn render(&self, warn: bool, debug: bool) -> Vec<String> {
         let state = self.state();
         let mut lines = state.lines.clone();
+        if debug {
+            lines.extend(state.notes.values().cloned());
+        }
         for (kind, tally) in SkipKind::ALL.into_iter().zip(&state.tallies) {
-            if tally.skips == 0 {
+            if tally.units.is_empty() {
                 continue;
             }
             if warn && (kind != SkipKind::UndecodedUsage || debug) {
@@ -177,7 +283,7 @@ impl Diagnostics {
             }
             if debug {
                 lines.extend(tally.samples.iter().map(|skip| self.sample_line(skip)));
-                let unlisted = tally.skips - tally.samples.len() as u64;
+                let unlisted = tally.skips() - tally.samples.len() as u64;
                 if unlisted > 0 {
                     lines.push(format!(
                         "{}: {}: {unlisted} more not listed",
@@ -195,16 +301,17 @@ impl Diagnostics {
 
     fn summary_line(&self, kind: SkipKind, tally: &Tally) -> String {
         let inputs = counted(tally.units.len() as u64, "input");
-        let whole_inputs = tally.units.values().filter(|whole| **whole).count() as u64;
-        let skipped = if tally.records == 0 {
+        let whole_inputs = tally.whole_units();
+        let records = tally.records();
+        let skipped = if records == 0 {
             inputs
         } else if whole_inputs == 0 {
-            format!("{} in {inputs}", counted(tally.records, "record"))
+            format!("{} in {inputs}", counted(records, "record"))
         } else {
             format!(
                 "{} and {} in {inputs}",
                 counted(whole_inputs, "input"),
-                counted(tally.records, "record")
+                counted(records, "record")
             )
         };
         format!(
@@ -324,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn mixed_skips_count_distinct_whole_units_without_changing_skip_totals() {
+    fn a_skip_recorded_twice_counts_once() {
         let diagnostics = Diagnostics::new("test");
         diagnostics.record(Skip::unit(
             Path::new("/logs/broken.json"),
@@ -336,17 +443,72 @@ mod tests {
             SkipKind::InvalidData,
             "could not parse JSON",
         ));
-        diagnostics.record(Skip::record(
-            Path::new("/logs/partial.jsonl"),
-            3,
-            SkipKind::InvalidData,
-            "malformed JSON",
-        ));
+        diagnostics.record(invalid_timestamp("/logs/partial.jsonl", 3));
+        diagnostics.record(invalid_timestamp("/logs/partial.jsonl", 3));
 
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 3);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
         assert_eq!(
-            diagnostics.render(true, false),
-            ["WARN  test: skipped 1 input and 1 record in 2 inputs (invalid data)"]
+            diagnostics.render(true, true),
+            [
+                "WARN  test: skipped 1 record in 1 input (invalid timestamp)",
+                "test: invalid timestamp: /logs/partial.jsonl:3: timestamp 'soon'",
+                "WARN  test: skipped 1 input (invalid data)",
+                "test: invalid data: /logs/broken.json: could not parse JSON",
+            ]
+        );
+    }
+
+    #[test]
+    fn merging_two_loads_of_one_source_counts_each_skip_once() {
+        let narrow = Diagnostics::new("claude");
+        narrow.record(invalid_timestamp("/logs/new.jsonl", 2));
+        let wide = Diagnostics::new("claude");
+        wide.record(invalid_timestamp("/logs/new.jsonl", 2));
+        wide.record(invalid_timestamp("/logs/old.jsonl", 1));
+        wide.record(invalid_timestamp("/logs/old.jsonl", 5));
+
+        narrow.merge(&wide);
+
+        assert_eq!(narrow.skipped(SkipKind::InvalidTimestamp), 3);
+        assert_eq!(
+            narrow.render(true, true),
+            [
+                "WARN  claude: skipped 3 records in 2 inputs (invalid timestamp)",
+                "claude: invalid timestamp: /logs/new.jsonl:2: timestamp 'soon'",
+                "claude: invalid timestamp: /logs/old.jsonl:1: timestamp 'soon'",
+                "claude: invalid timestamp: /logs/old.jsonl:5: timestamp 'soon'",
+            ]
+        );
+    }
+
+    #[test]
+    fn merging_keeps_the_first_samples_by_position() {
+        let left = Diagnostics::new("test");
+        let right = Diagnostics::new("test");
+        for line in 1..=SAMPLES_PER_KIND as u32 {
+            left.record(invalid_timestamp("/logs/b.jsonl", line));
+            right.record(invalid_timestamp("/logs/a.jsonl", line));
+        }
+
+        left.merge(&right);
+        let lines = left.render(true, true);
+
+        assert_eq!(
+            lines[0],
+            format!(
+                "WARN  test: skipped {} records in 2 inputs (invalid timestamp)",
+                2 * SAMPLES_PER_KIND
+            )
+        );
+        assert!(
+            lines[1..=SAMPLES_PER_KIND]
+                .iter()
+                .all(|line| line.contains("/logs/a.jsonl:"))
+        );
+        assert_eq!(
+            lines[lines.len() - 1],
+            format!("test: invalid timestamp: {SAMPLES_PER_KIND} more not listed")
         );
     }
 
@@ -375,7 +537,7 @@ mod tests {
     #[test]
     fn rendered_diagnostics_escape_terminal_controls_in_dynamic_text() {
         let diagnostics = Diagnostics::new("test");
-        diagnostics.push_line("WARN  source path \u{1b}[2J");
+        diagnostics.debug_note(Path::new("/data/a.db"), "source path \u{1b}[2J");
         diagnostics.record(Skip::unit(
             Path::new("/logs/bad\u{1b}[2J.json"),
             SkipKind::InvalidData,
@@ -385,7 +547,7 @@ mod tests {
         assert_eq!(
             diagnostics.render(true, true),
             [
-                r"WARN  source path \u{1b}[2J",
+                r"source path \u{1b}[2J",
                 "WARN  test: skipped 1 input (invalid data)",
                 r"test: invalid data: /logs/bad\u{1b}[2J.json: invalid \u{1b}[31m JSON",
             ]
@@ -462,14 +624,15 @@ mod tests {
         .map(|(unit, line, detail)| {
             Skip::record(Path::new(unit), line, SkipKind::InvalidData, detail)
         });
+        // The two skips of a.jsonl:2 are one record; its first detail is listed.
         let expected = [
-            "WARN  test: skipped 8 records in 5 inputs (invalid data)",
+            "WARN  test: skipped 7 records in 5 inputs (invalid data)",
             "test: invalid data: /logs/a.jsonl:1: a-one",
             "test: invalid data: /logs/a.jsonl:2: a-alpha",
-            "test: invalid data: /logs/a.jsonl:2: a-beta",
             "test: invalid data: /logs/a.jsonl:4: a-four",
             "test: invalid data: /logs/b.jsonl:2: b-two",
-            "test: invalid data: 3 more not listed",
+            "test: invalid data: /logs/c.jsonl:1: c-one",
+            "test: invalid data: 2 more not listed",
         ];
         let orders = [
             [0, 1, 2, 3, 4, 5, 6, 7],
@@ -483,31 +646,36 @@ mod tests {
                 diagnostics.record(skips[index].clone());
             }
 
-            assert_eq!(
-                diagnostics.skipped(SkipKind::InvalidData),
-                skips.len() as u64
-            );
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 7);
             assert_eq!(diagnostics.render(true, true), expected);
         }
     }
 
     #[test]
-    fn source_worded_lines_pass_through_before_the_aggregated_ones() {
+    fn debug_notes_come_first_and_only_under_debug() {
         let diagnostics = Diagnostics::new("antigravity");
         diagnostics.record(invalid_timestamp("/data/a.db", 1));
-        diagnostics.push_line("WARN  Skipping unreadable Antigravity database '/data/b.db': boom");
+        diagnostics.debug_note(
+            Path::new("/data/b.db"),
+            "Skipping empty database '/data/b.db'",
+        );
+        let again = Diagnostics::new("antigravity");
+        again.debug_note(
+            Path::new("/data/b.db"),
+            "Skipping empty database '/data/b.db'",
+        );
+        diagnostics.merge(&again);
 
         assert_eq!(
             diagnostics.render(true, false),
-            [
-                "WARN  Skipping unreadable Antigravity database '/data/b.db': boom",
-                "WARN  antigravity: skipped 1 record in 1 input (invalid timestamp)",
-            ]
+            ["WARN  antigravity: skipped 1 record in 1 input (invalid timestamp)"]
         );
         assert_eq!(
-            diagnostics.render(false, false),
-            ["WARN  Skipping unreadable Antigravity database '/data/b.db': boom"],
-            "the source gated its own line already"
+            diagnostics.render(false, true),
+            [
+                "Skipping empty database '/data/b.db'",
+                "antigravity: invalid timestamp: /data/a.db:1: timestamp 'soon'",
+            ]
         );
     }
 }
