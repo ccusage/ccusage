@@ -16,53 +16,35 @@ const DEFAULT_ANTIGRAVITY_ROOTS: [&str; 6] = [
     ".config/antigravity",
 ];
 
-/// Resolves the Antigravity data roots. The flag is true when the roots come
-/// from the `ANTIGRAVITY_DATA_DIR` override rather than the default home roots.
-fn resolve_roots() -> (Vec<PathBuf>, bool) {
+fn conversation_dirs() -> Vec<PathBuf> {
     if let Ok(value) = env::var(ANTIGRAVITY_DATA_DIR_ENV) {
-        return (
-            value
-                .split(',')
-                .map(str::trim)
-                .filter(|path| !path.is_empty())
-                .map(PathBuf::from)
-                .collect(),
-            true,
-        );
+        return value
+            .split(',')
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(|root| custom_conversation_dir(PathBuf::from(root)))
+            .collect();
     }
 
-    (
-        crate::home::home_dir()
-            .into_iter()
-            .flat_map(|home| {
-                DEFAULT_ANTIGRAVITY_ROOTS
-                    .into_iter()
-                    .map(move |root| home.join(root))
-            })
-            .collect(),
-        false,
-    )
+    crate::home::home_dir()
+        .into_iter()
+        .flat_map(|home| {
+            DEFAULT_ANTIGRAVITY_ROOTS
+                .into_iter()
+                .map(move |root| home.join(root).join("conversations"))
+        })
+        .collect()
 }
 
-fn conversation_dir(root: PathBuf) -> PathBuf {
+fn custom_conversation_dir(root: PathBuf) -> PathBuf {
     let nested = root.join("conversations");
     if nested.is_dir() { nested } else { root }
 }
 
 pub(super) fn conversation_db_paths(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
-    let (roots, custom_root) = resolve_roots();
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
-    for root in roots {
-        // Default roots must contain `conversations/`; otherwise a fresh install
-        // with only `conversation_summaries.db` at the root would abort the
-        // whole report with `no such table: gen_metadata`. Custom
-        // `ANTIGRAVITY_DATA_DIR` entries keep the fallback so a directory can
-        // be either a data root or the conversation directory itself.
-        if !custom_root && !root.join("conversations").is_dir() {
-            continue;
-        }
-        let dir = conversation_dir(root);
+    for dir in conversation_dirs() {
         let mut files = Vec::new();
         collect_files_with_extension(&dir, "db", &mut files, diagnostics);
         for path in files {
