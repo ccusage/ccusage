@@ -184,9 +184,8 @@ pub fn calculate_codex_model_cost(
     model: &str,
     usage: &CodexModelUsage,
     pricing: &PricingMap,
-    speed: impl Into<CodexSpeedPolicy>,
+    speed: CodexSpeedPolicy,
 ) -> f64 {
-    let speed = speed.into();
     if !usage.timestamped_usage.is_empty() {
         return sum_costs(usage.timestamped_usage.iter().filter_map(
             |(timestamp, timestamped_usage)| {
@@ -393,11 +392,11 @@ fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricin
         + long_output as f64 * long_output_rate
 }
 
-pub fn calculate_group_cost<S>(group: &CodexGroup, pricing: &PricingMap, speed: S) -> f64
-where
-    S: Into<CodexSpeedPolicy> + Copy,
-{
-    let speed = speed.into();
+pub fn calculate_group_cost(
+    group: &CodexGroup,
+    pricing: &PricingMap,
+    speed: CodexSpeedPolicy,
+) -> f64 {
     sum_costs(
         group
             .models

@@ -968,8 +968,7 @@ mod tests {
     use serde_json::json;
 
     use crate::{
-        CodexModelUsage, PricingMap,
-        cli::CodexSpeed,
+        CodexModelUsage, CodexSpeedPolicy, PricingMap,
         model_aliases::set_model_aliases_for_tests,
         paths::CodexUsageSource,
         test_support::{directory_source, load_groups_from_directory, load_groups_from_sources},
@@ -1377,7 +1376,7 @@ mod tests {
                 costs.push(crate::calculate_group_cost(
                     group,
                     &pricing,
-                    CodexSpeed::Auto,
+                    CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
                 ));
             }
         }

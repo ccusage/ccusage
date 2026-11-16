@@ -2,9 +2,9 @@ use ccusage_test_support::fs_fixture;
 use serde_json::{Value, json};
 
 use crate::{
-    PricingMap,
+    CodexSpeedPolicy, PricingMap,
     aggregate::aggregate_events,
-    cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs},
+    cli::{AgentReportKind, CostMode, SharedArgs},
     parser::{CodexForkReplay, visit_codex_session_file_with_diagnostics},
     report::report_from_groups,
     test_support::load_groups_from_directory,
@@ -199,7 +199,7 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
             &expected_groups,
             kind,
             &pricing,
-            CodexSpeed::Auto.into(),
+            CodexSpeedPolicy::Auto(Standard),
             CostMode::Auto,
         );
         assert_eq!(expected["totals"]["totalTokens"], 320);
@@ -214,7 +214,7 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
                 &groups,
                 kind,
                 &pricing,
-                CodexSpeed::Auto.into(),
+                CodexSpeedPolicy::Auto(Standard),
                 CostMode::Auto,
             );
             assert_eq!(actual, expected);
