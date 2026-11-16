@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::{BTreeMap, HashMap};
 
 use serde::Deserialize;
@@ -1612,9 +1610,6 @@ mod tests {
 
     #[test]
     fn snapshots_schema_agent_specific_option_edges() {
-        if running_in_schema_generator_test_binary() {
-            return;
-        }
         let schema = generated_schema();
 
         insta::assert_json_snapshot!(json!({
@@ -1632,19 +1627,6 @@ mod tests {
             "zcodeDefaults": schema_node(&schema, &["zcode", "defaults"]),
             "clineWeekly": schema_node(&schema, &["cline", "commands", "weekly"]),
         }));
-    }
-
-    fn running_in_schema_generator_test_binary() -> bool {
-        std::env::current_exe()
-            .ok()
-            .and_then(|path| {
-                path.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-            })
-            .is_some_and(|name| {
-                name.starts_with("generate_config_schema")
-                    || name.starts_with("generate-config-schema")
-            })
     }
 
     fn generated_schema() -> Value {

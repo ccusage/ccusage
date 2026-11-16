@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
-};
+use std::collections::{BTreeMap, HashMap};
 
 pub enum Command {
     All(AgentCommandArgs),
@@ -53,7 +50,6 @@ pub struct SharedArgs {
     pub no_color: bool,
     pub timezone: Option<String>,
     pub jq: Option<String>,
-    pub config: Option<PathBuf>,
     pub compact: bool,
     pub single_thread: bool,
     pub no_cost: bool,
@@ -166,7 +162,6 @@ pub struct StatuslineArgs {
     pub context_low_threshold: u8,
     pub context_medium_threshold: u8,
     pub timezone: Option<String>,
-    pub config: Option<PathBuf>,
     pub debug: bool,
     pub model_label_aliases: HashMap<String, String>,
     pub pricing_overrides: BTreeMap<String, PricingOverride>,
@@ -255,7 +250,6 @@ impl Default for StatuslineArgs {
             context_low_threshold: 50,
             context_medium_threshold: 80,
             timezone: None,
-            config: None,
             debug: false,
             model_label_aliases: HashMap::new(),
             pricing_overrides: BTreeMap::new(),

@@ -131,7 +131,6 @@ fn shared_snapshot(shared: &SharedArgs) -> Value {
         "noColor": shared.no_color,
         "timezone": shared.timezone.as_deref(),
         "jq": shared.jq.as_deref(),
-        "config": shared.config.as_ref().map(|path| path.to_string_lossy().to_string()),
         "compact": shared.compact,
         "singleThread": shared.single_thread,
     })
@@ -188,7 +187,6 @@ fn command_snapshot(command: Option<Command>) -> Value {
             "refreshInterval": args.refresh_interval,
             "contextLowThreshold": args.context_low_threshold,
             "contextMediumThreshold": args.context_medium_threshold,
-            "config": args.config.as_ref().map(|path| path.to_string_lossy().to_string()),
             "debug": args.debug,
         }),
         Some(Command::Codex(args)) => agent_command_snapshot("codex", args),
@@ -860,7 +858,6 @@ fn root_help_lists_command_descriptions_and_follow_up_help_commands() {
 #[test]
 fn contextual_codex_help_lists_speed_choices() {
     let help = help_text_for_args(&[
-        "ccusage".to_string(),
         "codex".to_string(),
         "daily".to_string(),
         "--help".to_string(),
@@ -873,40 +870,14 @@ fn contextual_codex_help_lists_speed_choices() {
 
 #[test]
 fn contextual_codex_session_help_lists_id_option() {
-    let help = help_text_for_args(&[
-        "ccusage".to_string(),
-        "codex".to_string(),
-        "session".to_string(),
-    ]);
+    let help = help_text_for_args(&["codex".to_string(), "session".to_string()]);
 
     assert!(help.contains("-i, --id <id>"));
 }
 
 #[test]
-fn contextual_help_strips_path_like_program_name() {
-    let help = help_text_for_args(&[
-        "/usr/local/bin/ccusage".to_string(),
-        "codex".to_string(),
-        "daily".to_string(),
-    ]);
-
-    assert!(help.contains("USAGE:\n  ccusage codex daily <OPTIONS>"));
-}
-
-#[test]
-fn contextual_help_strips_windows_program_name() {
-    let help = help_text_for_args(&[
-        "C:\\Tools\\ccusage.exe".to_string(),
-        "codex".to_string(),
-        "daily".to_string(),
-    ]);
-
-    assert!(help.contains("USAGE:\n  ccusage codex daily <OPTIONS>"));
-}
-
-#[test]
 fn contextual_agent_help_lists_agent_subcommands() {
-    let help = help_text_for_args(&["ccusage".to_string(), "claude".to_string()]);
+    let help = help_text_for_args(&["claude".to_string()]);
 
     assert!(help.contains("USAGE:\n  ccusage claude <COMMANDS>"));
     assert!(help.contains("daily       Show usage report grouped by date"));
@@ -917,7 +888,7 @@ fn contextual_agent_help_lists_agent_subcommands() {
 
 #[test]
 fn contextual_all_agent_help_lists_color_options() {
-    let help = help_text_for_args(&["ccusage".to_string(), "daily".to_string()]);
+    let help = help_text_for_args(&["daily".to_string()]);
 
     assert!(help.contains("--color"));
     assert!(help.contains("--no-color"));
@@ -925,19 +896,19 @@ fn contextual_all_agent_help_lists_color_options() {
 
 #[test]
 fn contextual_root_session_help_lists_id_option() {
-    let help = help_text_for_args(&["ccusage".to_string(), "session".to_string()]);
+    let help = help_text_for_args(&["session".to_string()]);
 
     assert!(help.contains("--id"));
 }
 
 #[test]
 fn contextual_root_weekly_help_lists_start_of_week_option() {
-    let help = help_text_for_args(&["ccusage".to_string(), "weekly".to_string()]);
+    let help = help_text_for_args(&["weekly".to_string()]);
 
     assert!(help.contains("-w, --start-of-week [start-of-week]"));
     assert!(help.contains("default: monday"));
 
-    let daily_help = help_text_for_args(&["ccusage".to_string(), "daily".to_string()]);
+    let daily_help = help_text_for_args(&["daily".to_string()]);
     assert!(!daily_help.contains("--start-of-week"));
 }
 
@@ -1009,7 +980,7 @@ fn rejects_start_of_week_outside_weekly_reports() {
 
 #[test]
 fn contextual_statusline_help_lists_choice_options() {
-    let help = help_text_for_args(&["ccusage".to_string(), "statusline".to_string()]);
+    let help = help_text_for_args(&["statusline".to_string()]);
 
     assert!(help.contains("choices: off | emoji | text | emoji-text"));
     assert!(help.contains("choices: auto | ccusage | cc | both"));
@@ -1017,11 +988,7 @@ fn contextual_statusline_help_lists_choice_options() {
 
 #[test]
 fn grok_help_does_not_advertise_path_option() {
-    let help = help_text_for_args(&[
-        "ccusage".to_string(),
-        "grok".to_string(),
-        "daily".to_string(),
-    ]);
+    let help = help_text_for_args(&["grok".to_string(), "daily".to_string()]);
 
     assert!(!help.contains("--grok-path"));
 }
@@ -1031,19 +998,15 @@ fn snapshots_root_and_contextual_help_text() {
     insta::assert_snapshot!("root_help", help_text());
     insta::assert_snapshot!(
         "claude_agent_help",
-        help_text_for_args(&["ccusage".to_string(), "claude".to_string()])
+        help_text_for_args(&["claude".to_string()])
     );
     insta::assert_snapshot!(
         "codex_daily_help",
-        help_text_for_args(&[
-            "ccusage".to_string(),
-            "codex".to_string(),
-            "daily".to_string(),
-        ])
+        help_text_for_args(&["codex".to_string(), "daily".to_string(),])
     );
     insta::assert_snapshot!(
         "statusline_help",
-        help_text_for_args(&["ccusage".to_string(), "statusline".to_string()])
+        help_text_for_args(&["statusline".to_string()])
     );
 }
 

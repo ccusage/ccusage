@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
+use std::{collections::BTreeMap, ffi::OsString};
 
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
@@ -309,7 +309,9 @@ fn parse_statusline_command(
                     .map_err(|_| "Invalid value for --context-medium-threshold".to_string())?
             }
             "-z" | "--timezone" => args.timezone = Some(parser.value_for("--timezone")?),
-            "--config" => args.config = Some(PathBuf::from(parser.value_for("--config")?)),
+            "--config" => {
+                parser.value_for("--config")?;
+            }
             "--debug" => args.debug = true,
             flag => return Err(format!("Unknown statusline option '{flag}'")),
         }
@@ -770,7 +772,9 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
         "--no-color" => shared.no_color = true,
         "-z" | "--timezone" => shared.timezone = Some(parser.value_for("--timezone")?),
         "-q" | "--jq" => shared.jq = Some(parser.value_for("--jq")?),
-        "--config" => shared.config = Some(PathBuf::from(parser.value_for("--config")?)),
+        "--config" => {
+            parser.value_for("--config")?;
+        }
         "--compact" => shared.compact = true,
         "--single-thread" => shared.single_thread = true,
         "--no-cost" => shared.no_cost = true,
