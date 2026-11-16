@@ -4,7 +4,7 @@ use ccusage_adapter_common::{
     source::LoadContext,
     units::{SqliteStage, UnitError, read_units_flat},
 };
-use ccusage_core::{Diagnostics, LoadedEntry, Result, Skip, SkipKind};
+use ccusage_core::{Diagnostics, LoadedEntry, Result, Skip};
 
 use super::{
     parser::{HermesEntry, read_session_row, to_loaded_entry},
@@ -77,7 +77,7 @@ fn load_state_db_entries(
                     Err(error) => diagnostics.record(Skip::record(
                         db_path,
                         row_number,
-                        SkipKind::InvalidData,
+                        error.kind(),
                         error.detail(),
                     )),
                 }
@@ -258,7 +258,8 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].session_id, "before");
         assert_eq!(entries[1].session_id, "after");
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 2);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
         let warnings = diagnostics
             .warnings(&SharedArgs {
                 debug: true,

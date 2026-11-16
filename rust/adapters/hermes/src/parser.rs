@@ -1,5 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
+use ccusage_core::SkipKind;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
@@ -27,6 +28,13 @@ pub(super) enum SessionRowError {
 }
 
 impl SessionRowError {
+    pub(super) const fn kind(self) -> SkipKind {
+        match self {
+            Self::InvalidIdentity => SkipKind::InvalidData,
+            Self::InvalidTimestamp => SkipKind::InvalidTimestamp,
+        }
+    }
+
     pub(super) const fn detail(self) -> &'static str {
         match self {
             Self::InvalidIdentity => "Hermes usage row has no valid session identity",
