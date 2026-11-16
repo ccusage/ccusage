@@ -75,13 +75,21 @@ fn load_entries_inner(
         match source {
             CopilotSourceKind::Otel => {
                 // Each file's parser already settles repeats within the file, so
-                // only a row an earlier file exported is a copy of the same call.
+                // only a row an earlier file exported under a key built from the
+                // record's own IDs is a copy of the same call.
                 let new_rows = file_usage
                     .entries
                     .into_iter()
-                    .filter(|entry| !otel_keys.contains(&entry.dedup_key))
+                    .filter(|entry| {
+                        !entry.file_independent_key || !otel_keys.contains(&entry.dedup_key)
+                    })
                     .collect::<Vec<_>>();
-                otel_keys.extend(new_rows.iter().map(|entry| entry.dedup_key.clone()));
+                otel_keys.extend(
+                    new_rows
+                        .iter()
+                        .filter(|entry| entry.file_independent_key)
+                        .map(|entry| entry.dedup_key.clone()),
+                );
                 otel_entries.extend(new_rows);
             }
             CopilotSourceKind::SessionState => {
@@ -472,6 +480,7 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         // One AIU is one GitHub AI credit, billed at $0.01.
         cost_usd: Some(nano_aiu as f64 / 1e11),
         dedup_key: snapshot.dedup_key.clone(),
+        file_independent_key: false,
         call_ids: CallIds::default(),
     }
 }
@@ -518,6 +527,7 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         nano_aiu: current.nano_aiu.saturating_sub(baseline.nano_aiu),
         cost_usd: None,
         dedup_key: current.dedup_key.clone(),
+        file_independent_key: false,
         call_ids: CallIds::default(),
     }
 }
@@ -2476,6 +2486,55 @@ mod tests {
                 "usage record: {record:?}"
             );
         }
+    }
+
+    #[test]
+    fn counts_an_otel_call_copied_to_another_line_of_another_file_once() {
+        let span = otel_call("span-1", "2026-01-02T09:00:00.000Z");
+        let fixture = fs_fixture!({
+            "home/.copilot/otel/a.jsonl": span.clone(),
+            "home/.copilot/otel/b.jsonl":
+                [otel_call("span-2", "2026-01-02T08:00:00.000Z"), span].join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T08:00:00.000Z".to_string(), 1),
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_otel_calls_without_trace_and_span_ids_from_every_file() {
+        // Without trace and span IDs a row's key falls back to its line and
+        // time, which say nothing about whether two files hold the same call.
+        let call = |input_tokens: u64| {
+            let mut span: serde_json::Value =
+                serde_json::from_str(&otel_call("unused", "2026-01-02T09:00:00.000Z")).unwrap();
+            let span_object = span.as_object_mut().unwrap();
+            span_object.remove("traceId");
+            span_object.remove("spanId");
+            span["attributes"]["gen_ai.usage.input_tokens"] = json!(input_tokens);
+            span.to_string()
+        };
+        let fixture = fs_fixture!({
+            "home/.copilot/otel/a.jsonl": call(1),
+            "home/.copilot/otel/b.jsonl": call(2),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+                ("2026-01-02T09:00:00.000Z".to_string(), 2),
+            ]
+        );
     }
 
     #[test]

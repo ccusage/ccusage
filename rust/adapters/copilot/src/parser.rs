@@ -70,6 +70,8 @@ pub(super) struct CopilotUsageEntry {
     pub(super) nano_aiu: u64,
     pub(super) cost_usd: Option<f64>,
     pub(super) dedup_key: String,
+    /// Whether `dedup_key` names the same call in every file that holds it.
+    pub(super) file_independent_key: bool,
     pub(super) call_ids: CallIds,
 }
 
@@ -163,6 +165,7 @@ struct CopilotUsageCandidate {
     reasoning_output_tokens: u64,
     extra_total_tokens: u64,
     dedup_key: String,
+    file_independent_key: bool,
 }
 
 pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
@@ -200,6 +203,7 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
             nano_aiu: 0,
             cost_usd: None,
             dedup_key: candidate.dedup_key,
+            file_independent_key: candidate.file_independent_key,
             call_ids: CallIds {
                 response_id: candidate.response_id,
                 service_request_id: candidate.service_request_id,
@@ -451,6 +455,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
                 nano_aiu: model_nano_aiu.unwrap_or_default(),
                 cost_usd: None,
                 dedup_key,
+                file_independent_key: false,
                 call_ids: CallIds::default(),
             });
         }
@@ -542,6 +547,7 @@ fn usage_record_entries(
                     nano_aiu: 0,
                     cost_usd: None,
                     dedup_key,
+                    file_independent_key: false,
                     call_ids: record.call_ids,
                 },
                 source_session_id: record.accounting.map(|(source, _)| source),
@@ -674,7 +680,7 @@ fn to_candidate(
         .or_else(|| trace_id.clone())
         .unwrap_or_else(|| "unknown-session".to_string());
     let timestamp = timestamp_from_record(record).unwrap_or(fallback_timestamp);
-    let dedup_key = dedup_key_for_record(
+    let (dedup_key, file_independent_key) = dedup_key_for_record(
         source,
         record,
         attributes,
@@ -698,6 +704,7 @@ fn to_candidate(
         reasoning_output_tokens: reasoning,
         extra_total_tokens,
         dedup_key,
+        file_independent_key,
     })
 }
 
@@ -900,6 +907,9 @@ fn is_agent_turn_log_record(record: &CopilotRecord, attributes: &Map<String, Val
             || record_body(record).is_some_and(|body| body.starts_with("copilot_chat.agent.turn")))
 }
 
+/// Returns the row's key and whether it comes from IDs the record carries.
+/// Only such a key names the same call in another file; the fallbacks use the
+/// row's line and time, which can come from the file's modification time.
 fn dedup_key_for_record(
     source: CopilotUsageSource,
     record: &CopilotRecord,
@@ -908,31 +918,46 @@ fn dedup_key_for_record(
     session_id: &str,
     timestamp: TimestampMs,
     index: usize,
-) -> String {
+) -> (String, bool) {
     let span_id = span_id_from_record(record);
-    match source {
+    let record_key = match source {
+        CopilotUsageSource::ChatSpan | CopilotUsageSource::AgentSummarySpan => trace_id
+            .as_ref()
+            .zip(span_id.as_ref())
+            .map(|(trace_id, span_id)| format!("{trace_id}:{span_id}")),
+        CopilotUsageSource::InferenceLog => trace_id
+            .as_ref()
+            .zip(span_id.as_ref())
+            .map(|(trace_id, span_id)| format!("log:{trace_id}:{span_id}")),
+        CopilotUsageSource::AgentTurnLog => trace_id
+            .as_ref()
+            .zip(turn_index(attributes))
+            .map(|(trace_id, turn_index)| format!("agent-turn:{trace_id}:{turn_index}")),
+    };
+    if let Some(key) = record_key {
+        return (key, true);
+    }
+    let millis = timestamp.as_millis();
+    let key = match source {
         CopilotUsageSource::ChatSpan | CopilotUsageSource::AgentSummarySpan => {
-            if let (Some(trace_id), Some(span_id)) = (trace_id, span_id) {
-                return format!("{trace_id}:{span_id}");
-            }
-            format!("span:{session_id}:{}:{index}", timestamp.as_millis())
+            format!("span:{session_id}:{millis}:{index}")
         }
-        CopilotUsageSource::InferenceLog => {
-            if let (Some(trace_id), Some(span_id)) = (trace_id, span_id) {
-                return format!("log:{trace_id}:{span_id}");
-            }
-            format!("log:{session_id}:{}:{index}", timestamp.as_millis())
-        }
+        CopilotUsageSource::InferenceLog => format!("log:{session_id}:{millis}:{index}"),
         CopilotUsageSource::AgentTurnLog => {
-            let turn_index = number_value(attributes.get("turn.index"))
-                .or_else(|| number_value(attributes.get("copilot_chat.turn.index")))
-                .map_or_else(|| format!("idx-{index}"), |value| value.to_string());
+            let turn_index = turn_index(attributes)
+                .map_or_else(|| format!("idx-{index}"), |turn| turn.to_string());
             trace_id.as_ref().map_or_else(
                 || format!("agent-turn:{session_id}:{turn_index}:{index}"),
                 |trace_id| format!("agent-turn:{trace_id}:{turn_index}"),
             )
         }
-    }
+    };
+    (key, false)
+}
+
+fn turn_index(attributes: &Map<String, Value>) -> Option<u64> {
+    number_value(attributes.get("turn.index"))
+        .or_else(|| number_value(attributes.get("copilot_chat.turn.index")))
 }
 
 fn trace_id_from_record(record: &CopilotRecord) -> Option<String> {
