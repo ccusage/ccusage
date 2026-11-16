@@ -129,6 +129,7 @@ fn read_agent_database(
     // Model/provider tracking is per session in the JSONL path (state resets
     // per file). SQLite rows arrive in session order, so track the current
     // session and reset the tracked model/provider on session boundaries.
+    let prefilter = super::parser::record_prefilter();
     let mut current_session: Option<String> = None;
     let mut current_model: Option<String> = None;
     let mut current_provider: Option<String> = None;
@@ -170,6 +171,9 @@ fn read_agent_database(
                     ));
                     continue;
                 };
+                if !prefilter.matches(event_json.as_bytes()) {
+                    continue;
+                }
                 let Some(record) = jsonl::decode_record::<OpenClawLine>(
                     event_json.as_bytes(),
                     &database.path,
@@ -355,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_escaped_usage_keys_and_diagnoses_nested_usage_errors() {
+    fn diagnoses_nested_usage_errors_and_skips_events_without_markers() {
         let fixture = fs_fixture!({});
         let db_path = sqlite_root(&fixture);
         std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
@@ -370,7 +374,12 @@ mod tests {
                 (
                     "session-a",
                     1_769_753_935_279,
-                    r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","\u0075sage":{"input":10,"output":20}}}"#,
+                    r#"{"type":"message","message":{"role":"toolResult","content":"\u001b[31mred"#,
+                ),
+                (
+                    "session-a",
+                    1_769_753_935_279,
+                    r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20}}}"#,
                 ),
             ],
         );
