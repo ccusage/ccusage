@@ -240,7 +240,7 @@ fn models_dev_cost_has_required_rates(cost: &serde_json::Map<String, Value>) -> 
 pub struct Pricing {
     pub input: f64,
     pub output: f64,
-    pub(crate) cache_create: f64,
+    pub cache_create: f64,
     pub cache_read: f64,
     pub cache_read_explicit: bool,
     /// Whether `cache_create` came from published data rather than the derived
@@ -248,7 +248,7 @@ pub struct Pricing {
     cache_create_explicit: bool,
     pub input_above_200k: Option<f64>,
     pub output_above_200k: Option<f64>,
-    pub(crate) cache_create_above_200k: Option<f64>,
+    pub cache_create_above_200k: Option<f64>,
     pub cache_read_above_200k: Option<f64>,
     // Token count above which the `*_above_200k` rates apply. The field names
     // keep the LiteLLM `_above_200k_tokens` suffix for JSON compatibility, but
@@ -2837,7 +2837,7 @@ mod tests {
         let direct = pricing
             .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
             .unwrap();
-        assert_eq!(direct.cache_creation_input_token_cost() * 1e6, 0.44);
+        assert_eq!(direct.cache_create * 1e6, 0.44);
 
         let reseller = pricing
             .find_at(
@@ -2854,7 +2854,7 @@ mod tests {
         assert_eq!(reseller.input * 1e6, 9.0);
         assert_eq!(reseller.output * 1e6, 10.0);
         assert_eq!(reseller.cache_read * 1e6, 8.0);
-        assert_eq!(reseller.cache_creation_input_token_cost() * 1e6, 7.0);
+        assert_eq!(reseller.cache_create * 1e6, 7.0);
         assert_eq!(dotted_reseller.input * 1e6, 9.0);
         assert_eq!(dotted_reseller.output * 1e6, 10.0);
     }
@@ -2984,7 +2984,7 @@ mod tests {
         assert_eq!(flash.input * 1e6, 9.0);
         assert_eq!(flash.output * 1e6, 10.0);
         assert_eq!(flash.cache_read * 1e6, 8.0);
-        assert_eq!(flash.cache_creation_input_token_cost() * 1e6, 7.0);
+        assert_eq!(flash.cache_create * 1e6, 7.0);
     }
 
     #[test]
@@ -3002,7 +3002,7 @@ mod tests {
         assert_eq!(peak.input * 1e6, 9.0);
         assert_eq!(peak.output * 1e6, 1.32);
         assert_eq!(peak.cache_read * 1e6, 0.014);
-        assert_eq!(peak.cache_creation_input_token_cost() * 1e6, 0.44);
+        assert_eq!(peak.cache_create * 1e6, 0.44);
 
         let off_peak = pricing
             .find_at("deepseek-v4-flash", timestamp("2026-08-17T04:00:00Z"))
@@ -3010,7 +3010,7 @@ mod tests {
         assert_eq!(off_peak.input * 1e6, 9.0);
         assert_eq!(off_peak.output * 1e6, 0.66);
         assert_eq!(off_peak.cache_read * 1e6, 0.007);
-        assert_eq!(off_peak.cache_creation_input_token_cost() * 1e6, 0.22);
+        assert_eq!(off_peak.cache_create * 1e6, 0.22);
     }
 
     #[test]
