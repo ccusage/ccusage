@@ -140,10 +140,13 @@ fn load_entries_inner(
     Ok(entries)
 }
 
-/// Each usage record replaces the one OTel row of its call: a row sharing one
-/// of its call IDs, with the same model, nearest in time. VS Code reports the
-/// response ID of a turn on every call it makes, so an ID alone can name
-/// several calls, and the rows a record does not take are kept.
+/// Each usage record replaces the one OTel row of its call. A service request
+/// ID names one request, so every record first claims the row with its own
+/// service request ID. VS Code reports the response ID of a turn on every call
+/// it makes, so a response ID can name several calls: only records still
+/// without a row then take, in time order, the nearest unclaimed row with
+/// their response ID. Rows must share the record's model, and rows no record
+/// takes are kept.
 fn remove_recorded_otel_calls(
     otel_entries: &mut Vec<CopilotUsageEntry>,
     records: &[CopilotUsageEntry],
@@ -156,20 +159,32 @@ fn remove_recorded_otel_calls(
     }
     let mut records = records.iter().collect::<Vec<_>>();
     records.sort_by_key(|record| (record.timestamp, record.dedup_key.as_str()));
+    let mut matched = vec![false; records.len()];
     let mut replaced = HashSet::new();
-    for record in records {
-        let nearest = record
-            .call_ids
-            .iter()
-            .filter_map(|call_id| rows_by_call_id.get(&call_id))
-            .flatten()
-            .copied()
-            .filter(|index| otel_entries[*index].model == record.model && !replaced.contains(index))
-            .min_by_key(|index| {
-                let row = otel_entries[*index].timestamp.as_millis();
-                (row.abs_diff(record.timestamp.as_millis()), row, *index)
-            });
-        replaced.extend(nearest);
+    for kind in [CallIdKind::ServiceRequest, CallIdKind::Response] {
+        for (position, record) in records.iter().enumerate() {
+            if matched[position] {
+                continue;
+            }
+            let nearest = record
+                .call_ids
+                .iter()
+                .filter(|(id_kind, _)| *id_kind == kind)
+                .filter_map(|call_id| rows_by_call_id.get(&call_id))
+                .flatten()
+                .copied()
+                .filter(|index| {
+                    otel_entries[*index].model == record.model && !replaced.contains(index)
+                })
+                .min_by_key(|index| {
+                    let row = otel_entries[*index].timestamp.as_millis();
+                    (row.abs_diff(record.timestamp.as_millis()), row, *index)
+                });
+            if let Some(index) = nearest {
+                replaced.insert(index);
+                matched[position] = true;
+            }
+        }
     }
     let mut index = 0;
     otel_entries.retain(|_| {
@@ -2519,6 +2534,49 @@ mod tests {
             [
                 ("2026-01-02T09:00:00.000Z".to_string(), 1),
                 ("2026-01-02T09:09:00.000Z".to_string(), 100),
+            ]
+        );
+    }
+
+    #[test]
+    fn matches_service_request_ids_before_shared_response_ids() {
+        let record = |id: &str, timestamp: &str, service_request_id: &str| {
+            usage_record(
+                id,
+                timestamp,
+                json!({"apiCallId": "turn-response", "serviceRequestId": service_request_id}),
+            )
+        };
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                record("record-a", "2026-01-02T09:10:00.000Z", "service-a"),
+                record("record-b", "2026-01-02T09:20:00.000Z", "service-b"),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": [
+                otel_call_with(
+                    "call-a",
+                    "2026-01-02T09:05:00.000Z",
+                    ("github.copilot.service_request_id", "service-a"),
+                ),
+                otel_call_with(
+                    "call-b",
+                    "2026-01-02T09:11:00.000Z",
+                    ("gen_ai.response.id", "turn-response"),
+                ),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        // Record A's own service request ID claims call A, so the shared
+        // response ID is left for record B.
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:10:00.000Z".to_string(), 100),
+                ("2026-01-02T09:20:00.000Z".to_string(), 100),
             ]
         );
     }
