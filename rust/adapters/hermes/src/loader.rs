@@ -12,9 +12,7 @@ use super::{
 };
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx
-        .pricing
-        .ok_or_else(|| crate::cli_error("Hermes needs pricing from the report pipeline"))?;
+    let pricing = cx.pipeline_pricing()?;
     let tz = Some(cx.window.timezone());
     let db_paths = hermes_state_db_paths()?;
     // Load each state database in parallel (a fresh read-only connection per DB),

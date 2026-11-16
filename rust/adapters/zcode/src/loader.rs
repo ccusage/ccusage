@@ -64,7 +64,7 @@ pub(crate) fn load_entries(
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.expect("ZCode uses pipeline pricing");
+    let pricing = cx.pipeline_pricing()?;
     let tz = Some(cx.window.timezone());
     let db_paths = db_paths(shared)?;
     let loaded = read_units(&db_paths, shared.single_thread, cx.diagnostics, |db_path| {

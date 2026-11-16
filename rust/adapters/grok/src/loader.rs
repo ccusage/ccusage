@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use ccusage_adapter_common::{read_units, source::LoadContext};
 
-use crate::{LoadedEntry, PricingMap, Result};
+use crate::{LoadedEntry, Result};
 
 use super::paths::{GrokSessionFiles, discover_session_files};
 
@@ -22,17 +22,7 @@ pub(crate) fn load_entries(
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let owned_pricing = cx.pricing.is_none().then(|| {
-        PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        )
-    });
-    let pricing = cx
-        .pricing
-        .or(owned_pricing.as_ref())
-        .expect("pricing is available");
+    let pricing = cx.pipeline_pricing()?;
     let sessions = super::paths::discover_session_files(cx.diagnostics)?;
     let updates_paths: Vec<_> = sessions
         .iter()
@@ -89,7 +79,7 @@ pub fn has_data() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::SharedArgs;
+    use crate::{PricingMap, cli::SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use std::ffi::OsString;
 
