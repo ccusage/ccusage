@@ -1,5 +1,5 @@
 use ccusage_adapter_common::{UnitError, jsonl};
-use ccusage_core::{Diagnostics, Skip, SkipKind};
+use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LinePrefilter};
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -47,6 +47,22 @@ static INPUT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""input_tokens":"#));
 static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
     LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
+static ESCAPED_USAGE_MARKERS: LazyLock<LinePrefilter> = LazyLock::new(|| {
+    LinePrefilter::any(&[
+        br#""type""#,
+        b"turn_context",
+        b"event_msg",
+        b"token_count",
+        b"thread_settings_applied",
+        b"token_usage_record",
+        b"compacted",
+        br#""usage""#,
+        br#""input_tokens""#,
+        br#""prompt_tokens""#,
+    ])
+});
+static SESSION_META_MARKER: LazyLock<LinePrefilter> =
+    LazyLock::new(|| LinePrefilter::any(&[b"session_meta"]));
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
 const CODEX_AUTO_REVIEW_FALLBACKS_JSON: &str = include_str!("codex-auto-review-fallbacks.json");
 
@@ -63,7 +79,7 @@ struct CodexAutoReviewFallback<'a> {
     model: &'a str,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CodexLineKind {
     Session,
     Headless,
@@ -164,7 +180,7 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
         if bytes_read == 0 {
             return None;
         }
-        if memchr::memmem::find(&line, b"session_meta").is_some()
+        if SESSION_META_MARKER.matches(&line)
             && let Ok(value) = serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line)
             && value.entry_type.as_deref() == Some("session_meta")
         {
@@ -817,6 +833,14 @@ fn codex_service_tier(value: &str) -> Option<CodexServiceTier> {
 }
 
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
+    if !ESCAPED_USAGE_MARKERS.matches_escaped(line) {
+        return verbatim_line_usage_kind(line);
+    }
+    let value = serde_json::from_slice::<serde_json::Value>(line).ok()?;
+    verbatim_line_usage_kind(&serde_json::to_vec(&value).ok()?)
+}
+
+fn verbatim_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     let has_event_msg = EVENT_MSG_TYPE_FINDER.find(line).is_some();
     let has_token_count = has_event_msg && TOKEN_COUNT_TYPE_FINDER.find(line).is_some();
     let has_thread_settings_applied =
@@ -1815,6 +1839,55 @@ mod tests {
         ] {
             assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Session));
         }
+    }
+
+    #[test]
+    fn recognizes_usage_lines_whose_markers_are_spelled_with_escapes() {
+        for (line, kind) in [
+            (
+                br#"{"type":"turn\u005fcontext","payload":{}}"#.as_slice(),
+                CodexLineKind::Session,
+            ),
+            (
+                br#"{"type":"event_msg","payload":{"type":"token\u005fcount"}}"#.as_slice(),
+                CodexLineKind::Session,
+            ),
+            (
+                br#"{"type":"compact\u0065d","payload":{}}"#.as_slice(),
+                CodexLineKind::Session,
+            ),
+            (
+                br#"{"type":"turn.completed","us\u0061ge":{"input_tokens":1}}"#.as_slice(),
+                CodexLineKind::Headless,
+            ),
+        ] {
+            assert_eq!(
+                codex_line_usage_kind(line),
+                Some(kind),
+                "{}",
+                String::from_utf8_lossy(line)
+            );
+        }
+        assert_eq!(
+            codex_line_usage_kind(
+                br#"{"type":"response_item","payload":{"text":"a\nb \u001b[1m"}}"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn loads_token_counts_whose_types_are_spelled_with_escapes() {
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                r#"{"type":"turn\u005fcontext","payload":{"model":"gpt-5-mini"}}"#,
+                r#"{"timestamp":"2026-09-01T00:00:01Z","type":"event\u005fmsg","payload":{"type":"token\u005fcount","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
+            ].join("\n"),
+        });
+        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].total_tokens, 120);
+        assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
     }
 
     #[test]
