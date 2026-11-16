@@ -66,7 +66,8 @@ GitHub AI credit, $0.01). At every shutdown, and at checkpoints after the last o
 minus the per-model `totalNanoAiu` reported so far is unexplained; what stays unexplained at every
 later snapshot becomes cost-only `unknown` entries, dated where it first stays. Sessions without checkpoints
 (older Copilot versions restart both totals on every resume), with a shutdown missing either total,
-with usage records, or with OpenTelemetry rows get no such entries.
+with usage records or with a shutdown or checkpoint whose watermarks cover usage records, or with
+OpenTelemetry rows get no such entries.
 
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.
