@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    sync::{Mutex, OnceLock, RwLock},
+    sync::{Arc, Mutex, OnceLock, RwLock},
     time::{Duration, Instant},
 };
 
@@ -454,6 +454,10 @@ enum Fuzzy {
     Denied,
 }
 
+/// One slot per looked-up model, so concurrent first lookups of a model share
+/// a single fuzzy search instead of each running it.
+type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<Pricing>>>>>;
+
 #[derive(Debug)]
 pub struct PricingMap {
     entries: FxHashMap<String, Pricing>,
@@ -472,7 +476,7 @@ pub struct PricingMap {
     builtin_context_limits: FxHashMap<String, u64>,
     enable_models_dev_fallback: bool,
     enable_embedded_models_dev_fallback: bool,
-    find_cache: OnceLock<RwLock<FxHashMap<String, Option<Pricing>>>>,
+    find_cache: OnceLock<FindCache>,
     /// Every entry key under its normalized spelling, mapped to the one key
     /// carrying that spelling, or `None` when several keys share it.
     ///
@@ -1469,38 +1473,40 @@ impl PricingMap {
         // name is looked up repeatedly (e.g. across thousands of entries with
         // only a few dozen unique models), the cache avoids re-running the
         // expensive fuzzy fallback on every call.
-        {
-            let cache = self
-                .find_cache
-                .get_or_init(|| RwLock::new(FxHashMap::default()));
-            let guard = cache.read().unwrap_or_else(|error| error.into_inner());
-            if let Some(&cached) = guard.get(model) {
-                return cached;
-            }
-        }
-        // Full lookup (dropped the lock above so concurrent callers are not
-        // serialized on the expensive fuzzy path).
-        let result = self.find_with_fallbacks(
-            model,
-            || {
-                self.enable_models_dev_fallback
-                    .then(models_dev_pricing)
-                    .flatten()
-            },
-            || {
-                self.enable_embedded_models_dev_fallback
-                    .then(embedded_models_dev_pricing)
-            },
-        );
-        // Store the result (including None for misses) so repeated lookups
-        // for the same model that fails to match any pricing entry are also
-        // short-circuited.
         let cache = self
             .find_cache
             .get_or_init(|| RwLock::new(FxHashMap::default()));
-        let mut guard = cache.write().unwrap_or_else(|error| error.into_inner());
-        guard.insert(model.to_string(), result);
-        result
+        if let Some(&cached) = cache
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(model)
+            .and_then(|slot| slot.get())
+        {
+            return cached;
+        }
+        let slot = Arc::clone(
+            cache
+                .write()
+                .unwrap_or_else(|error| error.into_inner())
+                .entry(model.to_string())
+                .or_default(),
+        );
+        // The lock is released before the search, so lookups of other models
+        // are not serialized behind it. Misses are cached as `None` as well.
+        *slot.get_or_init(|| {
+            self.find_with_fallbacks(
+                model,
+                || {
+                    self.enable_models_dev_fallback
+                        .then(models_dev_pricing)
+                        .flatten()
+                },
+                || {
+                    self.enable_embedded_models_dev_fallback
+                        .then(embedded_models_dev_pricing)
+                },
+            )
+        })
     }
 
     fn find_with_fallbacks<'a>(
