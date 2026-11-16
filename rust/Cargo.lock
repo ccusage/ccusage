@@ -123,6 +123,7 @@ dependencies = [
  "ccusage-adapter-common",
  "ccusage-adapter-copilot",
  "ccusage-adapter-droid",
+ "ccusage-adapter-dsh",
  "ccusage-adapter-gemini",
  "ccusage-adapter-goose",
  "ccusage-adapter-grok",
@@ -167,6 +168,7 @@ dependencies = [
  "ccusage-adapter-common",
  "ccusage-adapter-copilot",
  "ccusage-adapter-droid",
+ "ccusage-adapter-dsh",
  "ccusage-adapter-gemini",
  "ccusage-adapter-goose",
  "ccusage-adapter-grok",
@@ -300,6 +302,20 @@ dependencies = [
  "ccusage-test-support",
  "jiff",
  "serde_json",
+]
+
+[[package]]
+name = "ccusage-adapter-dsh"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
+ "jiff",
+ "serde",
+ "serde_json",
+ "zstd",
 ]
 
 [[package]]
