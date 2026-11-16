@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::{
-    DailySummaries, DedupeIndexVec, SessionDays, advisor_usages_from_line,
+    DailySummaries, DedupeIndexVec, Rejection, SessionDays, advisor_usages_from_line,
     carries_more_usage_detail, chunk_file_indexes_by_size, deserialize_usage_line,
     is_anthropic_message_id, is_semver_prefix, main_thread_session_days,
     paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
@@ -250,11 +250,12 @@ struct DailyUsageEntry {
 /// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
 /// use; the derive would first buffer every line, message content included, into an
 /// intermediate tree.
-fn deserialize_daily_usage_line(line: &[u8]) -> Option<DailyUsageEntry> {
-    deserialize_usage_line::<DailyUsageEntry>(line).or_else(|| {
-        deserialize_usage_line::<DailyAgentProgressEntry>(line)
-            .map(DailyAgentProgressEntry::into_entry)
-    })
+fn deserialize_daily_usage_line(line: &[u8]) -> std::result::Result<DailyUsageEntry, Rejection> {
+    match deserialize_usage_line::<DailyUsageEntry>(line) {
+        Err(Rejection::Malformed) => deserialize_usage_line::<DailyAgentProgressEntry>(line)
+            .map(DailyAgentProgressEntry::into_entry),
+        result => result,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -390,9 +391,13 @@ fn read_daily_usage_file_with_diagnostics(
         if usage_marker.find(line).is_none() {
             continue;
         }
-        let Some(data) = deserialize_daily_usage_line(line) else {
-            super::diagnostics::rejected(path, &content, index, line, diagnostics, true);
-            continue;
+        let data = match deserialize_daily_usage_line(line) {
+            Ok(data) => data,
+            Err(Rejection::NullContract) => continue,
+            Err(Rejection::Malformed) => {
+                super::diagnostics::rejected(path, &content, index, line, diagnostics, true);
+                continue;
+            }
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
             super::diagnostics::invalid_timestamp(path, index, diagnostics);
@@ -774,6 +779,35 @@ mod tests {
         cli::{CostMode, SharedArgs},
     };
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+
+    #[test]
+    fn null_contract_rejections_claude_code_writes_stay_quiet() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": [
+                r#"{"timestamp":"2026-01-02T10:00:00.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+                crate::tests::SYNTHETIC_NULL_SPEED_LINE,
+            ]
+            .join("\n"),
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_os_string()),
+        )]);
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            single_thread: true,
+            debug: true,
+            ..SharedArgs::default()
+        };
+        let diagnostics = ccusage_core::Diagnostics::new("claude");
+
+        let daily =
+            load_daily_summaries_inner(&shared, None, false, session_days, &diagnostics).unwrap();
+
+        assert_eq!(daily.summaries[0].input_tokens, 10);
+        assert!(diagnostics.warnings(&shared).is_empty());
+    }
 
     #[test]
     fn collects_session_days_of_counted_main_thread_usage_only() {
