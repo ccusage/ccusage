@@ -272,6 +272,26 @@ mod tests {
     }
 
     #[test]
+    fn counts_a_session_whose_id_is_only_whitespace() {
+        let fixture = fs_fixture!({"state.db": ""});
+        let db_path = fixture.path("state.db");
+        create_state_db(&db_path);
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute(
+                "INSERT INTO sessions (id, source, model, started_at, input_tokens, output_tokens) VALUES (' ', 'cli', 'gpt-5', 1750000000, 100, 50)",
+            )
+            .unwrap();
+        let diagnostics = Diagnostics::new("hermes");
+
+        let entries = load_state_db_entries(&db_path, &diagnostics).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id, " ");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
     fn focused_and_unified_reports_agree() {
         let fixture = fs_fixture!({"state.db": ""});
         let db_path = fixture.path("state.db");
