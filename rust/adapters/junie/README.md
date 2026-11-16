@@ -9,7 +9,10 @@ The adapter reads `${JUNIE_HOME:-~/.junie}/sessions/`. `JUNIE_HOME` is Junie's
 own home override and takes a single root.
 
 - `sessions/<session-id>/events.jsonl` — the event stream. Only direct child
-  directories of `sessions/` are sessions.
+  directories of `sessions/` are sessions. Symlinked session directories and
+  event files are neither followed nor counted, as in the shared collectors; a
+  missing `sessions/` is empty, and other read errors are logged at debug level
+  and skipped.
 - `sessions/index.jsonl` — per-session `sessionId`, `createdAt`, and
   `projectDir`. A missing or unreadable index does not stop events loading.
 

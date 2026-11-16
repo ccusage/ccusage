@@ -23,7 +23,7 @@ pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<Loa
 }
 
 fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let files = discover_events_files();
+    let files = discover_events_files(shared);
     if files.is_empty() {
         return Ok(Vec::new());
     }
