@@ -1,6 +1,6 @@
 use std::{collections::HashSet, path::Path, path::PathBuf};
 
-use ccusage_adapter_common::{UnitError, jsonl, read_units, source::LoadContext};
+use ccusage_adapter_common::{SqliteStage, UnitError, jsonl, read_units, source::LoadContext};
 use ccusage_core::{Skip, SkipKind};
 
 use crate::{LoadedEntry, PricingMap, Result};
@@ -47,10 +47,10 @@ fn load_entries_from_database(
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let connection =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|_| UnitError::new(SkipKind::Unreadable, "could not open Kilo database"))?;
+            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     let mut statement = connection
         .prepare("SELECT id, session_id, data FROM message")
-        .map_err(|_| UnitError::new(SkipKind::Unreadable, "could not query Kilo messages"))?;
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     let mut entries = Vec::new();
     let mut row_number = 0_u32;
     loop {
@@ -103,12 +103,8 @@ fn load_entries_from_database(
                 }
             }
             Ok(sqlite::State::Done) => break,
-            Err(_) => {
-                cx.diagnostics.record(Skip::unit(
-                    db_path,
-                    SkipKind::ReadInterrupted,
-                    "Kilo database query stopped before all rows were read",
-                ));
+            Err(error) => {
+                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, cx.diagnostics);
                 break;
             }
         }
@@ -239,6 +235,45 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
+    }
+
+    #[test]
+    fn classifies_database_failures_by_their_sqlite_cause() {
+        use ccusage_adapter_common::source::{LoadContext, SourceOptions};
+        use ccusage_core::{
+            Diagnostics, ReportWindow, SkipKind,
+            cli::{AgentReportKind, SharedArgs},
+        };
+
+        let fixture = fs_fixture!({"not-a-database.db": "not a SQLite database"});
+        let wrong_schema = fixture.path("wrong-schema.db");
+        sqlite::open(&wrong_schema)
+            .unwrap()
+            .execute("CREATE TABLE other (id TEXT)")
+            .unwrap();
+        let shared = SharedArgs::default();
+        let window = ReportWindow::from_shared(&shared);
+        let pricing = PricingMap::default();
+
+        for (path, kind) in [
+            (wrong_schema, SkipKind::Invariant),
+            (fixture.path("not-a-database.db"), SkipKind::InvalidData),
+        ] {
+            let diagnostics = Diagnostics::new("kilo");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: Some(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
+            super::load_entries_from_database(&path, &cx, &pricing)
+                .unwrap_err()
+                .record(&path, &diagnostics);
+
+            assert_eq!(diagnostics.skipped(kind), 1, "{}", path.display());
+        }
     }
 
     #[test]
