@@ -702,7 +702,7 @@ fn read_usage_file_with_diagnostics(
             continue;
         }
         let Some(data) = deserialize_usage_line::<UsageEntry>(line) else {
-            diagnostics::rejected(path, index, line, diagnostics, false);
+            diagnostics::rejected(path, &content, index, line, diagnostics, false);
             continue;
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
@@ -716,7 +716,7 @@ fn read_usage_file_with_diagnostics(
         };
         update_loaded_file_timestamp(&mut loaded_file, timestamp);
         if !is_valid_usage_entry(&data) {
-            diagnostics::rejected(path, index, line, diagnostics, false);
+            diagnostics::rejected(path, &content, index, line, diagnostics, false);
             continue;
         }
         let date = format_date_tz(timestamp, tz);

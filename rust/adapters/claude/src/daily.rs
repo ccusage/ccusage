@@ -389,7 +389,7 @@ fn read_daily_usage_file_with_diagnostics(
             continue;
         }
         let Some(data) = deserialize_daily_usage_line(line) else {
-            super::diagnostics::rejected(path, index, line, diagnostics, true);
+            super::diagnostics::rejected(path, &content, index, line, diagnostics, true);
             continue;
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
@@ -407,7 +407,7 @@ fn read_daily_usage_file_with_diagnostics(
                 .map_or(timestamp, |current| current.min(timestamp)),
         );
         if !is_valid_daily_usage_entry(&data) {
-            super::diagnostics::rejected(path, index, line, diagnostics, true);
+            super::diagnostics::rejected(path, &content, index, line, diagnostics, true);
             continue;
         }
         let usage = data.message.usage;

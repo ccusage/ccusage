@@ -30,15 +30,18 @@ fn read_content_from(
     content
 }
 
+/// Records why `line`, line `index` of `content`, was not counted.
 pub(super) fn rejected(
     path: &Path,
+    content: &[u8],
     index: usize,
     line: &[u8],
     diagnostics: &Diagnostics,
     progress: bool,
 ) {
     let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
-    let Some(value) = ccusage_adapter_common::jsonl::decode_record::<serde_json::Value>(
+    let Some(value) = ccusage_adapter_common::jsonl::decode_line::<serde_json::Value>(
+        content,
         line,
         path,
         number,
@@ -77,10 +80,12 @@ mod tests {
         let diagnostics = Diagnostics::new("claude");
 
         assert!(read_content(&fixture.path("missing.jsonl"), &diagnostics).is_empty());
+        let line = br#"{"message":{"usage":{"SECRET_CANARY":"#;
         rejected(
             Path::new("session.jsonl"),
+            &[line.as_slice(), b"\n"].concat(),
             0,
-            br#"{"message":{"usage":{"SECRET_CANARY":"#,
+            line,
             &diagnostics,
             false,
         );
@@ -124,13 +129,39 @@ mod tests {
         );
     }
     #[test]
+    fn a_usage_line_still_being_written_is_not_a_skip() {
+        let diagnostics = Diagnostics::new("claude");
+        let content = br#"{"message":{"usage":{"input_tokens":10}}}
+{"message":{"usage":{"input_tok"#;
+        let line = &content[content.iter().position(|byte| *byte == b'\n').unwrap() + 1..];
+
+        rejected(
+            Path::new("session.jsonl"),
+            content,
+            1,
+            line,
+            &diagnostics,
+            false,
+        );
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
     fn unrelated_and_intentionally_unsupported_records_stay_quiet() {
         let diagnostics = Diagnostics::new("claude");
         for line in [
             br#"{"metadata":{"usage":{}}}"#.as_slice(),
             br#"{"data":{"message":{"message":{"usage":{}}}}}"#,
         ] {
-            rejected(Path::new("session.jsonl"), 0, line, &diagnostics, false);
+            rejected(
+                Path::new("session.jsonl"),
+                line,
+                0,
+                line,
+                &diagnostics,
+                false,
+            );
         }
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);

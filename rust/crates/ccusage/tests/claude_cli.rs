@@ -317,7 +317,7 @@ fn statusline_emits_one_warning_across_repeated_usage_loads() {
     let fixture = Fixture::new();
     let transcript = fixture.write_file(
         "projects/project-a/session-now.jsonl",
-        r#"{"message":{"usage":{"SECRET_CANARY":"#,
+        concat!(r#"{"message":{"usage":{"SECRET_CANARY":"#, "\n"),
     );
     let hook = serde_json::json!({
         "session_id": "session-now",
@@ -360,11 +360,68 @@ fn statusline_emits_one_warning_across_repeated_usage_loads() {
 }
 
 #[test]
+fn a_transcript_line_still_being_written_is_not_warned_about() {
+    let fixture = Fixture::new();
+    let transcript = fixture.write_file(
+        "projects/project-a/session-now.jsonl",
+        format!(
+            "{}\n{}",
+            usage_line(
+                "2026-01-02T00:00:00.000Z",
+                "session-now",
+                "msg-a",
+                "req-a",
+                0.5
+            ),
+            r#"{"timestamp":"2026-01-02T00:00:01.000Z","message":{"usage":{"input_tok"#
+        ),
+    );
+    let hook = serde_json::json!({
+        "session_id": "session-now",
+        "transcript_path": transcript,
+        "model": {"display_name": "Model"},
+    })
+    .to_string();
+
+    let daily = run_ccusage_output(
+        &fixture,
+        &[
+            "claude",
+            "daily",
+            "--offline",
+            "--json",
+            "--timezone",
+            "UTC",
+        ],
+        None,
+    );
+    let statusline = run_ccusage_output(
+        &fixture,
+        &[
+            "claude",
+            "statusline",
+            "--offline",
+            "--no-cache",
+            "--cost-source",
+            "ccusage",
+            "--timezone",
+            "UTC",
+        ],
+        Some(&hook),
+    );
+
+    for output in [daily, statusline] {
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(!stderr.contains("WARN"), "{stderr}");
+    }
+}
+
+#[test]
 fn statusline_debug_includes_sanitized_skip_samples() {
     let fixture = Fixture::new();
     let transcript = fixture.write_file(
         "projects/project-a/session-now.jsonl",
-        r#"{"message":{"usage":{"SECRET_CANARY":"#,
+        concat!(r#"{"message":{"usage":{"SECRET_CANARY":"#, "\n"),
     );
     let hook = serde_json::json!({
         "session_id": "session-now",
