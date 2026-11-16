@@ -4,21 +4,15 @@ use crate::{LoadedEntry, Result};
 use ccusage_adapter_common::{read_units, source::LoadContext};
 
 use super::{
-    parser::{content_id, migration_id, parse_session_file},
+    parser::{ContentId, content_id, migration_id, parse_session_file},
     paths::{collect_session_files, paths},
     sqlite::collect_sqlite_entries,
 };
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pricing;
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    // SQLite-era event ids (`session_id`, message `id`) win over the
-    // content-based JSONL ids: after `openclaw doctor --fix` migrates legacy
-    // JSONL into per-agent SQLite, both copies of the same event exist on
-    // disk, and the SQLite row carries the provider-billed embedded cost.
-    let mut sqlite_ids = HashSet::new();
-    let mut sqlite_entries: Vec<LoadedEntry> = Vec::new();
+    let mut sqlite_entries = Vec::new();
+    let mut jsonl_entries = Vec::new();
     for root in paths(cx.options.open_claw_path) {
         sqlite_entries.extend(collect_sqlite_entries(
             &root,
@@ -28,9 +22,6 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
             cx.diagnostics,
         ));
         let files = collect_session_files(&root, cx.diagnostics);
-        // Read session files in parallel; the first-wins dedup runs sequentially
-        // over the original file order so the surviving record per id is the
-        // same as the single-threaded read.
         let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
             parse_session_file(
                 file,
@@ -40,44 +31,50 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
                 cx.diagnostics,
             )
         });
-        for file_entries in loaded.into_iter().flatten() {
-            for entry in file_entries {
-                if seen.insert(content_id(&entry)) {
-                    entries.push(entry);
-                }
-            }
+        jsonl_entries.extend(loaded.into_iter().flatten().flatten());
+    }
+
+    // NOTE(2026-09-16, #1727): `openclaw doctor --fix` migrates legacy JSONL into
+    // per-agent SQLite and leaves both on disk; the SQLite row carries the
+    // provider-billed cost, so it replaces every JSONL copy of its event.
+    let mut seen = HashSet::new();
+    let mut sqlite_events = HashSet::new();
+    let mut entries = Vec::new();
+    for entry in sqlite_entries {
+        if seen.insert(EventIdentity::of(&entry)) {
+            sqlite_events.insert(migration_id(&entry));
+            entries.push(entry);
         }
     }
-    for entry in sqlite_entries {
-        if let Some(message_id) = entry.data.message.id.clone() {
-            if sqlite_ids.insert((Arc::clone(&entry.session_id), message_id.clone())) {
-                // A migrated JSONL duplicate carries no stable id, but it
-                // still shares the session, timestamp, model, and usage. Its
-                // cost can differ, so compare the migration identity without
-                // cost and keep the provider-billed SQLite row.
-                let content_id = content_id(&entry);
-                let migration_key = migration_id(&entry);
-                if let Some(position) = entries.iter().position(|existing| {
-                    existing.session_id == entry.session_id
-                        && existing.data.message.id.as_deref() == Some(message_id.as_str())
-                }) {
-                    entries[position] = entry;
-                } else if let Some(position) = entries
-                    .iter()
-                    .position(|existing| migration_id(existing) == migration_key)
-                {
-                    entries[position] = entry;
-                } else {
-                    seen.insert(content_id);
-                    entries.push(entry);
-                }
-            }
-        } else if seen.insert(content_id(&entry)) {
+    for entry in jsonl_entries {
+        if !sqlite_events.contains(&migration_id(&entry)) && seen.insert(EventIdentity::of(&entry))
+        {
             entries.push(entry);
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
+}
+
+#[derive(PartialEq, Eq, Hash)]
+enum EventIdentity {
+    Event {
+        session_id: Arc<str>,
+        event_id: String,
+    },
+    Content(ContentId),
+}
+
+impl EventIdentity {
+    fn of(entry: &LoadedEntry) -> Self {
+        match &entry.data.message.id {
+            Some(event_id) => Self::Event {
+                session_id: Arc::clone(&entry.session_id),
+                event_id: event_id.clone(),
+            },
+            None => Self::Content(content_id(entry)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -233,5 +230,71 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-sqlite"));
         assert!((entries[0].cost - 0.51).abs() < f64::EPSILON);
+    }
+
+    fn write_transcript_events(fixture: &ccusage_test_support::Fixture, events: &[&str]) {
+        let db_path = fixture.path("agents/main/agent/openclaw-agent.sqlite");
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let db = sqlite::open(&db_path).unwrap();
+        db.execute(
+            "CREATE TABLE transcript_events (session_id TEXT NOT NULL, seq INTEGER NOT NULL, event_json TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (session_id, seq))",
+        )
+        .unwrap();
+        for (seq, event_json) in events.iter().enumerate() {
+            let mut statement = db
+                .prepare(
+                    "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES ('session', ?1, ?2, 1769753935279)",
+                )
+                .unwrap();
+            statement.bind((1, seq as i64)).unwrap();
+            statement.bind((2, *event_json)).unwrap();
+            statement.next().unwrap();
+        }
+    }
+
+    fn assistant_event(id: Option<&str>, cost: f64) -> String {
+        let id = id.map(|id| format!(r#""id":"{id}","#)).unwrap_or_default();
+        format!(
+            r#"{{{id}"type":"message","message":{{"role":"assistant","model":"gpt-5.2","usage":{{"input":10,"output":20,"cost":{{"total":{cost}}}}},"timestamp":1769753935279}}}}"#
+        )
+    }
+
+    #[test]
+    fn prefers_sqlite_over_every_migrated_jsonl_copy() {
+        let fixture = fs_fixture!({
+            "agents/main/sessions/session.jsonl": format!(
+                "{}\n{}\n",
+                assistant_event(None, 0.50),
+                assistant_event(None, 0.49),
+            ),
+        });
+        write_transcript_events(&fixture, &[&assistant_event(Some("evt-sqlite"), 0.51)]);
+
+        let entries =
+            crate::load_entries(&SharedArgs::default(), fixture.root().to_str(), None).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("evt-sqlite"));
+    }
+
+    #[test]
+    fn keeps_sqlite_events_with_equal_content_and_distinct_ids() {
+        let fixture = fs_fixture!({});
+        write_transcript_events(
+            &fixture,
+            &[
+                &assistant_event(Some("evt-1"), 0.51),
+                &assistant_event(Some("evt-2"), 0.51),
+            ],
+        );
+
+        let entries =
+            crate::load_entries(&SharedArgs::default(), fixture.root().to_str(), None).unwrap();
+
+        let ids = entries
+            .iter()
+            .map(|entry| entry.data.message.id.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, [Some("evt-1"), Some("evt-2")]);
     }
 }

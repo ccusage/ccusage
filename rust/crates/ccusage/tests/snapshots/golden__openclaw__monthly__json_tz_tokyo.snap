@@ -7,18 +7,18 @@ exit: 0
 {
   "monthly": [
     {
-      "cacheCreationTokens": 900,
-      "cacheReadTokens": 12000,
-      "inputTokens": 3231,
+      "cacheCreationTokens": 600,
+      "cacheReadTokens": 8000,
+      "inputTokens": 2231,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "cost": 1.85,
-          "inputTokens": 3000,
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 8000,
+          "cost": 1.1,
+          "inputTokens": 2000,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
-          "outputTokens": 600,
-          "storedCost": 1.85
+          "outputTokens": 400,
+          "storedCost": 1.1
         },
         {
           "cacheCreationTokens": 0,
@@ -54,9 +54,9 @@ exit: 0
         "[openclaw] gpt-5"
       ],
       "month": "2025-12",
-      "outputTokens": 687,
-      "totalCost": 1.8604500000000002,
-      "totalTokens": 16818
+      "outputTokens": 487,
+      "totalCost": 1.1104500000000002,
+      "totalTokens": 11318
     },
     {
       "cacheCreationTokens": 1250,
@@ -123,12 +123,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 2150,
-    "cacheReadTokens": 44500,
-    "inputTokens": 10294,
-    "outputTokens": 3131,
-    "totalCost": 2.5767437500000003,
-    "totalTokens": 60425,
+    "cacheCreationTokens": 1850,
+    "cacheReadTokens": 40500,
+    "inputTokens": 9294,
+    "outputTokens": 2931,
+    "totalCost": 1.8267437500000003,
+    "totalTokens": 54925,
     "unpricedModels": [
       "[openclaw] openclaw-mystery-1",
       "[openclaw] unknown"
