@@ -548,7 +548,7 @@ fn load_message_rows(
                 return;
             };
             if let Some(entry) = message_value_to_entry(
-                &value,
+                value,
                 Some(id),
                 Some(session_id),
                 context.tz,
@@ -703,9 +703,7 @@ fn read_message_file(
         return Ok(None);
     }
     let value = decode_json::<OpenCodeMessage>(&content)?;
-    Ok(message_value_to_entry(
-        &value, None, None, tz, mode, pricing,
-    ))
+    Ok(message_value_to_entry(value, None, None, tz, mode, pricing))
 }
 
 fn table_exists(
