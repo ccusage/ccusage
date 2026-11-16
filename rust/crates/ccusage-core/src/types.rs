@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::TimestampMs;
+
+mod iterations;
+
+use iterations::{Lenient, MessageIterationsCacheCreation};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +29,8 @@ pub struct UsageMessage {
     pub id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(from = "TokenUsageRawJson")]
 pub struct TokenUsageRaw {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -35,72 +40,34 @@ pub struct TokenUsageRaw {
     pub cache_creation: Option<CacheCreationRaw>,
 }
 
-impl<'de> Deserialize<'de> for TokenUsageRaw {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct TokenUsageRawHelper {
-            input_tokens: u64,
-            output_tokens: u64,
-            #[serde(default)]
-            cache_creation_input_tokens: u64,
-            #[serde(default)]
-            cache_read_input_tokens: u64,
-            #[serde(default)]
-            speed: Option<Speed>,
-            #[serde(default)]
-            cache_creation: Option<CacheCreationRaw>,
-            #[serde(default)]
-            iterations: serde_json::Value,
-        }
+#[derive(Deserialize)]
+struct TokenUsageRawJson {
+    input_tokens: u64,
+    output_tokens: u64,
+    #[serde(default)]
+    cache_creation_input_tokens: u64,
+    #[serde(default)]
+    cache_read_input_tokens: u64,
+    speed: Option<Speed>,
+    #[serde(default)]
+    cache_creation: Option<CacheCreationRaw>,
+    #[serde(default)]
+    iterations: Lenient<MessageIterationsCacheCreation>,
+}
 
-        let helper = TokenUsageRawHelper::deserialize(deserializer)?;
-        // Claude Code advisor turns report one `usage` object whose top-level
-        // `cache_creation` 5m/1h split covers only the first `message`
-        // iteration, while `cache_creation_input_tokens` already sums every
-        // iteration. Summing the `message` iterations' splits restores the
-        // dropped writes for both token counts and cost.
-        let mut summed_5m = 0u64;
-        let mut summed_1h = 0u64;
-        let mut has_message_breakdown = false;
-        // The member is untyped so a malformed value cannot fail the whole
-        // `usage` object the way ignoring the unknown field used to.
-        let iterations = match helper.iterations {
-            serde_json::Value::Array(iterations) => iterations,
-            _ => Vec::new(),
-        };
-        for iteration in &iterations {
-            if iteration.get("type").and_then(|kind| kind.as_str()) != Some("message") {
-                continue;
-            }
-            let Some(breakdown) = iteration
-                .get("cache_creation")
-                .and_then(|value| serde_json::from_value::<CacheCreationRaw>(value.clone()).ok())
-            else {
-                continue;
-            };
-            has_message_breakdown = true;
-            summed_5m = summed_5m.saturating_add(breakdown.ephemeral_5m_input_tokens);
-            summed_1h = summed_1h.saturating_add(breakdown.ephemeral_1h_input_tokens);
+impl From<TokenUsageRawJson> for TokenUsageRaw {
+    fn from(json: TokenUsageRawJson) -> Self {
+        Self {
+            input_tokens: json.input_tokens,
+            output_tokens: json.output_tokens,
+            cache_creation_input_tokens: json.cache_creation_input_tokens,
+            cache_read_input_tokens: json.cache_read_input_tokens,
+            speed: json.speed,
+            // Claude Code advisor turns report one `usage` object whose
+            // top-level `cache_creation` split covers only the first `message`
+            // iteration, while `cache_creation_input_tokens` sums them all.
+            cache_creation: json.iterations.0.0.or(json.cache_creation),
         }
-        let cache_creation = if has_message_breakdown {
-            Some(CacheCreationRaw {
-                ephemeral_5m_input_tokens: summed_5m,
-                ephemeral_1h_input_tokens: summed_1h,
-            })
-        } else {
-            helper.cache_creation
-        };
-        Ok(TokenUsageRaw {
-            input_tokens: helper.input_tokens,
-            output_tokens: helper.output_tokens,
-            cache_creation_input_tokens: helper.cache_creation_input_tokens,
-            cache_read_input_tokens: helper.cache_read_input_tokens,
-            speed: helper.speed,
-            cache_creation,
-        })
     }
 }
 
@@ -384,5 +351,71 @@ mod tests {
         .unwrap();
 
         assert_eq!(usage.cache_creation_token_count(), 11142);
+    }
+
+    #[test]
+    fn keeps_the_top_level_breakdown_when_a_message_iteration_lacks_its_own() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 4,
+                "output_tokens": 244,
+                "cache_creation_input_tokens": 12323,
+                "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 11142},
+                "iterations": [
+                    {"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 11142}},
+                    {"type": "message", "cache_creation_input_tokens": 1181}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(usage.cache_creation_token_count(), 11142);
+    }
+
+    #[test]
+    fn malformed_iterations_keep_the_usage_and_its_top_level_breakdown() {
+        let iterations = [
+            r#""n/a""#,
+            "null",
+            "{}",
+            r#"[1, "x", null, [], {"type": 7}]"#,
+            r#"[{"type": "message", "cache_creation": "n/a"}]"#,
+            r#"[{"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": -1}}]"#,
+            r#"[{"type": "message", "cache_creation": {"ephemeral_1h_input_tokens": "10"}}]"#,
+            r#"[{"type": "message", "cache_creation": null}]"#,
+        ];
+        for iterations in iterations {
+            let line = format!(
+                r#"{{"input_tokens":1,"output_tokens":2,"cache_creation":{{"ephemeral_5m_input_tokens":3,"ephemeral_1h_input_tokens":4}},"iterations":{iterations}}}"#
+            );
+            let usage = serde_json::from_str::<TokenUsageRaw>(&line)
+                .unwrap_or_else(|error| panic!("{iterations}: {error}"));
+
+            assert_eq!(usage.cache_creation_token_count(), 7, "{iterations}");
+            assert_eq!(
+                usage.cache_creation_1h_token_count(),
+                Some(4),
+                "{iterations}"
+            );
+        }
+    }
+
+    #[test]
+    fn takes_the_split_from_message_iterations_without_a_top_level_one() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 1,
+                "output_tokens": 2,
+                "cache_creation_input_tokens": 30,
+                "iterations": [
+                    {"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": 10}},
+                    {"type": "message", "cache_creation": {"ephemeral_1h_input_tokens": 20, "ephemeral_2h_input_tokens": 5}}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(usage.cache_creation_token_count(), 30);
+        assert_eq!(usage.cache_creation_1h_token_count(), Some(20));
     }
 }
