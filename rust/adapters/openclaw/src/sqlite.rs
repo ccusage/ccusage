@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use ccusage_adapter_common::{SqliteStage, UnitError, jsonl};
+use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -21,28 +21,22 @@ struct AgentDatabase {
 /// stays lexical (no symlink following, no canonicalization): discovery must
 /// agree with the JSONL walk in `paths.rs`, which also refuses symlinks.
 /// Reads open read-only.
-fn collect_agent_databases(root: &Path) -> Vec<AgentDatabase> {
+fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentDatabase> {
     let mut databases = Vec::new();
     let agents_path = root.join("agents");
-    if !is_directory_without_symlink(&agents_path) {
+    if !lexical_type(&agents_path, diagnostics).is_some_and(|kind| kind.is_dir()) {
         return databases;
     }
-    let Ok(agents) = std::fs::read_dir(agents_path) else {
-        return databases;
-    };
-    for agent in agents.filter_map(std::result::Result::ok) {
-        let Ok(file_type) = agent.file_type() else {
-            continue;
-        };
+    for (agent, file_type) in dir_entries(&agents_path, diagnostics) {
         if !file_type.is_dir() {
             continue;
         }
-        let agent_path = agent.path().join("agent");
-        if !is_directory_without_symlink(&agent_path) {
+        let agent_path = agent.join("agent");
+        if !lexical_type(&agent_path, diagnostics).is_some_and(|kind| kind.is_dir()) {
             continue;
         }
         let path = agent_path.join("openclaw-agent.sqlite");
-        if is_file_without_symlink(&path) {
+        if lexical_type(&path, diagnostics).is_some_and(|kind| kind.is_file()) {
             databases.push(AgentDatabase { path });
         }
     }
@@ -50,12 +44,22 @@ fn collect_agent_databases(root: &Path) -> Vec<AgentDatabase> {
     databases
 }
 
-fn is_directory_without_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_dir())
-}
-
-fn is_file_without_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+/// The type of `path` itself, not of a symlink's target; `None` when it is
+/// missing, or cannot be inspected, which is recorded in `diagnostics`.
+fn lexical_type(path: &Path, diagnostics: &Diagnostics) -> Option<std::fs::FileType> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => Some(metadata.file_type()),
+        Err(error) => {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                diagnostics.record(Skip::unit(
+                    path,
+                    SkipKind::Unreadable,
+                    "cannot read file type",
+                ));
+            }
+            None
+        }
+    }
 }
 
 pub(super) fn collect_sqlite_entries(
@@ -66,7 +70,7 @@ pub(super) fn collect_sqlite_entries(
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
-    for database in collect_agent_databases(root) {
+    for database in collect_agent_databases(root, diagnostics) {
         entries.extend(read_agent_database(
             &database,
             tz,
@@ -517,7 +521,7 @@ mod tests {
         });
 
         let root = fixture.root();
-        let databases = collect_agent_databases(root);
+        let databases = collect_agent_databases(root, &diagnostics());
 
         assert_eq!(databases.len(), 2);
         assert_eq!(
@@ -528,6 +532,28 @@ mod tests {
             databases[1].path,
             fixture.path("agents/worker/agent/openclaw-agent.sqlite")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_agents_directory_is_reported() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let fixture = fs_fixture!({
+            "agents/main/agent/openclaw-agent.sqlite": "",
+        });
+        let agents = fixture.path("agents");
+        fs::set_permissions(&agents, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&agents).is_err();
+        let diagnostics = diagnostics();
+        let databases = collect_agent_databases(fixture.root(), &diagnostics);
+        fs::set_permissions(&agents, fs::Permissions::from_mode(0o700)).unwrap();
+        if !denied {
+            return;
+        }
+
+        assert!(databases.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[cfg(unix)]
@@ -555,6 +581,6 @@ mod tests {
         )
         .unwrap();
 
-        assert!(collect_agent_databases(fixture.root()).is_empty());
+        assert!(collect_agent_databases(fixture.root(), &diagnostics()).is_empty());
     }
 }
