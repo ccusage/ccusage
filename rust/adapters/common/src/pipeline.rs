@@ -56,9 +56,7 @@ pub fn focused_rows(
         diagnostics: &diagnostics,
     };
     let entries = load(source, &cx, ProgressOwner::Source)?;
-    for warning in diagnostics.warnings(shared) {
-        eprintln!("{warning}");
-    }
+    diagnostics.emit(shared);
     let mut rows = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
         source.summarize(entries, kind)
     })?;
@@ -119,9 +117,7 @@ pub fn load_entries_for_unmigrated_caller(
         diagnostics: &diagnostics,
     };
     let entries = load(source, &cx, ProgressOwner::Source)?;
-    for warning in diagnostics.warnings(shared) {
-        eprintln!("{warning}");
-    }
+    diagnostics.emit(shared);
     Ok(entries)
 }
 

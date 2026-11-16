@@ -344,9 +344,7 @@ pub(super) fn load_codex_events_with_detection_progress(
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
     let diagnostics = Diagnostics::new("codex");
     let loaded = load_codex_events_with_detection_diagnostics(shared, owner, &diagnostics)?;
-    for warning in diagnostics.warnings(shared) {
-        eprintln!("{warning}");
-    }
+    diagnostics.emit(shared);
     Ok(loaded)
 }
 

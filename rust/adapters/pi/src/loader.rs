@@ -105,9 +105,7 @@ fn load_entries_from_paths(
         diagnostics: &diagnostics,
     };
     let entries = load_entries_for_context(&cx, paths, scope)?;
-    for warning in diagnostics.warnings(shared) {
-        eprintln!("{warning}");
-    }
+    diagnostics.emit(shared);
     Ok(entries)
 }
 
