@@ -28,6 +28,7 @@ themselves independent of each other.
 - `ccusage-adapter-common`
 - `ccusage-adapter-copilot`
 - `ccusage-adapter-droid`
+- `ccusage-adapter-dsh`
 - `ccusage-adapter-gemini`
 - `ccusage-adapter-goose`
 - `ccusage-adapter-grok`

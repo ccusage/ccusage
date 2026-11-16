@@ -58,6 +58,8 @@ pub struct CcusageConfig {
     pub grok: Option<GrokConfig>,
     /// ZCode configuration.
     pub zcode: Option<ZCodeConfig>,
+    /// DeepSeek Harness configuration.
+    pub dsh: Option<DshConfig>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -179,6 +181,22 @@ pub struct ClineConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClineCommandsConfig {
+    pub daily: Option<SharedOptions>,
+    pub weekly: Option<SharedOptions>,
+    pub monthly: Option<SharedOptions>,
+    pub session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DshConfig {
+    pub defaults: Option<SharedOptions>,
+    pub commands: Option<DshCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DshCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
@@ -1276,6 +1294,7 @@ mod tests {
                 "copilot",
                 "defaults",
                 "droid",
+                "dsh",
                 "gemini",
                 "antigravity",
                 "goose",

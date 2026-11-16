@@ -11,7 +11,7 @@ use crate::{
     BUILT_IN_AGENT_NAMES, CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result,
     SessionAccumulator, UsageSummary,
     adapter::{
-        amp, antigravity, claude, cline, codebuff, codex, copilot, droid, gemini, goose, grok,
+        amp, antigravity, claude, cline, codebuff, codex, copilot, droid, dsh, gemini, goose, grok,
         hermes, kilo, kimi, openclaw, opencode, pi, qwen, zcode,
     },
     cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
@@ -557,6 +557,21 @@ fn load_base_rows(
                     &pricing["cline"],
                     cline::load_entries,
                     cline::summarize_entries,
+                )
+            }),
+        },
+        AgentLoadSpec {
+            index: 19,
+            agent: BUILT_IN_AGENT_NAMES[19],
+            progress_agent: crate::progress::UsageLoadAgent("DeepSeek Harness"),
+            load: Box::new(|| {
+                load_priced_summary_agent_rows(
+                    "dsh",
+                    load_kind,
+                    &source_shared["dsh"],
+                    &pricing["dsh"],
+                    dsh::load_entries,
+                    dsh::summarize_entries,
                 )
             }),
         },
@@ -1413,6 +1428,7 @@ mod tests {
             ("ZCODE_HOME", None),
             ("ANTIGRAVITY_DATA_DIR", None),
             ("CLINE_DATA_DIR", None),
+            ("DSH_HOME", None),
             ("APPDATA", None),
             (
                 "XDG_CONFIG_HOME",
