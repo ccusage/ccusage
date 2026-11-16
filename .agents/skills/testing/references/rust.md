@@ -58,13 +58,9 @@ equality — alias and separator handling means the tests in
 should resolve to. A pricing failure usually means the upstream snapshot moved or the
 name is genuinely unsupported.
 
-Use current Claude 4 names, `claude-{model-type}-{generation}-{date}`:
-
-```text
-claude-sonnet-4-20250514
-claude-opus-4-20250514
-```
-
-Include both Sonnet and Opus when model coverage matters. Alias forms such as
-`claude-4-sonnet-*` and Claude 3 names belong in tests that specifically cover
-pricing lookup, alias handling, or legacy compatibility.
+Use model IDs that resolve in the embedded snapshots, matching the forms the
+tests in `rust/crates/ccusage-core/src/pricing.rs` already cover (dated
+`claude-sonnet-4-20250514`, undated `claude-opus-5`). Include both Sonnet and
+Opus when model coverage matters. Alias forms such as `claude-4-sonnet-*` and
+Claude 3 names belong in tests that specifically cover pricing lookup, alias
+handling, or legacy compatibility.

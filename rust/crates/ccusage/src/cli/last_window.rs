@@ -53,7 +53,8 @@ fn window_target(cli: &mut Cli) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)
             | Command::OpenClaw(args)
             | Command::Grok(args)
             | Command::ZCode(args)
-            | Command::Cline(args),
+            | Command::Cline(args)
+            | Command::Junie(args),
         ) => agent_window_target(args),
         Some(Command::Session(_) | Command::Blocks(_) | Command::Statusline(_)) => None,
     }

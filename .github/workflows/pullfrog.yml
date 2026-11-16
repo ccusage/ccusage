@@ -18,6 +18,7 @@ jobs:
   pullfrog:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     permissions:
+      actions: read
       id-token: write
       contents: read
     steps:
@@ -29,7 +30,7 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix-cache
       - name: Run agent
-        uses: pullfrog/pullfrog@88bcc3d4bb26951b99fafe09f65d90d20d5b6d62 # v0.1.126
+        uses: pullfrog/pullfrog@8d512c34f4c6170374e7f139e5ffe0eede6db8f2 # v0.1.129
         with:
           prompt: ${{ inputs.prompt }}
           push: restricted

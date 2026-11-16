@@ -32,4 +32,5 @@ pub const BUILT_IN_AGENT_NAMES: &[&str] = &[
     "grok",
     "zcode",
     "cline",
+    "junie",
 ];

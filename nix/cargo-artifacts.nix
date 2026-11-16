@@ -60,6 +60,7 @@ let
     "droid"
     "gemini"
     "goose"
+    "junie"
     "grok"
     "hermes"
     "kilo"

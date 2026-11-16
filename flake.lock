@@ -138,23 +138,23 @@
     "litellm": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-KMvXgaV5Ml7zOvYY/YLbemVV9RY9kT1ffiQ4gyD01To=",
+        "narHash": "sha256-8gojtNz7JMBpCvQxdl30OAyj/WPFvX1LLTSAbvptVWI=",
         "type": "file",
-        "url": "https://raw.githubusercontent.com/BerriAI/litellm/1f2b2734e5db334c56312595184889f64a9f6e26/model_prices_and_context_window.json"
+        "url": "https://raw.githubusercontent.com/BerriAI/litellm/bc78cbe9a2b87be48b32f1c1fc00f13fea3d1bac/model_prices_and_context_window.json"
       },
       "original": {
         "type": "file",
-        "url": "https://raw.githubusercontent.com/BerriAI/litellm/1f2b2734e5db334c56312595184889f64a9f6e26/model_prices_and_context_window.json"
+        "url": "https://raw.githubusercontent.com/BerriAI/litellm/bc78cbe9a2b87be48b32f1c1fc00f13fea3d1bac/model_prices_and_context_window.json"
       }
     },
     "models-dev": {
       "flake": false,
       "locked": {
-        "lastModified": 1794659217,
-        "narHash": "sha256-Pczxa8n/6K6t+Y4djF51H+gLA9BIHy4j8Q4Kkn2pUvY=",
+        "lastModified": 1794812485,
+        "narHash": "sha256-jN2LW1D8dVcaZJwNgdyq+qUAGlUxiZUEuzttRqs9guA=",
         "owner": "anomalyco",
         "repo": "models.dev",
-        "rev": "9afe121d524c044965ab0442daac933d99edf010",
+        "rev": "30597d29ec8393ea3aa76902962f74dae8ea8a34",
         "type": "github"
       },
       "original": {

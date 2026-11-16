@@ -23,6 +23,7 @@ mod adapter {
     pub use ccusage_adapter_goose as goose;
     pub use ccusage_adapter_grok as grok;
     pub use ccusage_adapter_hermes as hermes;
+    pub use ccusage_adapter_junie as junie;
     pub use ccusage_adapter_kilo as kilo;
     pub use ccusage_adapter_kimi as kimi;
     pub use ccusage_adapter_openclaw as openclaw;
