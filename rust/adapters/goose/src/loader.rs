@@ -3,10 +3,11 @@ use std::{collections::HashSet, path::Path};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use ccusage_adapter_common::{
+    SqliteStage,
     source::LoadContext,
     units::{UnitError, read_units},
 };
-use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind, cli::SharedArgs};
+use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, cli::SharedArgs};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -76,10 +77,10 @@ fn load_entries_from_db(
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let connection =
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|_| UnitError::new(SkipKind::Unreadable, "could not open Goose database"))?;
+            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     let mut statement = connection
         .prepare(GOOSE_SESSION_QUERY)
-        .map_err(|_| UnitError::new(SkipKind::InvalidData, "could not read Goose sessions"))?;
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
     let mut entries = Vec::new();
     loop {
@@ -90,12 +91,8 @@ fn load_entries_from_db(
                 }
             }
             Ok(sqlite::State::Done) => break,
-            Err(_) => {
-                diagnostics.record(Skip::unit(
-                    db_path,
-                    SkipKind::ReadInterrupted,
-                    "reading Goose sessions stopped early; loaded rows were kept",
-                ));
+            Err(error) => {
+                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
                 break;
             }
         }
@@ -204,6 +201,28 @@ INSERT INTO sessions (
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);
         assert_eq!(entries[0].data.message.usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 30);
+    }
+
+    #[test]
+    fn a_database_without_the_session_columns_is_an_unsupported_schema() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("sessions.db");
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute("CREATE TABLE sessions (id TEXT)")
+            .unwrap();
+
+        let error = load_entries_from_db(
+            &db_path,
+            None,
+            &PricingMap::default(),
+            &Diagnostics::new("goose"),
+        )
+        .unwrap_err();
+        let diagnostics = Diagnostics::new("goose");
+        error.record(&db_path, &diagnostics);
+
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }
 
     #[test]
