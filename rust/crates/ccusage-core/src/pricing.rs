@@ -1011,7 +1011,7 @@ impl SpeedMultiplierOverrides {
                         pricing_alias(base).and_then(|alias| self.exact.get(alias).copied())
                     })
                     .or_else(|| {
-                        let normalized = part.replace(['.', '@'], "-");
+                        let normalized = normalized_pricing_key(part);
                         self.normalized_prefix
                             .iter()
                             .find_map(|(base, multiplier)| {
@@ -3022,11 +3022,17 @@ fn pricing_alias(model: &str) -> Option<&'static str> {
 }
 
 fn matches_model_suffix(part: &str, base: &str) -> bool {
-    let Some(index) = part.rfind(base) else {
+    // Model ids are a few dozen bytes, so scanning windows beats building a
+    // substring searcher for each of the thousands of startup lookups.
+    let (part, base) = (part.as_bytes(), base.as_bytes());
+    if base.is_empty() {
+        return true;
+    }
+    let Some(index) = part.windows(base.len()).rposition(|window| window == base) else {
         return false;
     };
-    let suffix = &part[index..];
-    suffix == base || suffix.as_bytes().get(base.len()) == Some(&b'-')
+    part.get(index + base.len())
+        .is_none_or(|&next| next == b'-')
 }
 
 fn should_log_pricing_refresh_details() -> bool {
@@ -5927,6 +5933,22 @@ mod tests {
             long_context_split_threshold("gpt-reserve"),
             long_context_split_threshold("gpt-5.6-luna")
         );
+    }
+
+    #[test]
+    fn model_suffix_matches_only_at_the_last_occurrence() {
+        assert!(super::matches_model_suffix("claude-opus-4-6", "opus-4-6"));
+        assert!(super::matches_model_suffix(
+            "us-claude-opus-4-6-v1",
+            "opus-4-6"
+        ));
+        assert!(!super::matches_model_suffix(
+            "opus-4-6-x-opus-4-60",
+            "opus-4-6"
+        ));
+        assert!(!super::matches_model_suffix("opus-4", "opus-4-6"));
+        assert!(super::matches_model_suffix("modèle-opus", "opus"));
+        assert!(super::matches_model_suffix("anything", ""));
     }
 
     #[test]
