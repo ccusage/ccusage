@@ -291,50 +291,12 @@ fn discover_config_paths() -> Vec<PathBuf> {
         paths.push(cwd.join(".ccusage").join("ccusage.json"));
     }
     paths.extend(
-        claude_config_dirs()
+        ccusage_cli::home::claude_config_dirs()
+            .into_dirs()
             .into_iter()
             .map(|dir| dir.join("ccusage.json")),
     );
     paths
-}
-
-/// The directories the user config is looked up in: the ones the Claude data
-/// loader reads, so a `ccusage.json` next to the data is found.
-fn claude_config_dirs() -> Vec<PathBuf> {
-    if let Ok(paths) = env::var("CLAUDE_CONFIG_DIR") {
-        return paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(claude_config_dir)
-            .collect();
-    }
-    let Some(home) = ccusage_cli::home::home_dir() else {
-        return Vec::new();
-    };
-    let xdg = env::var_os("XDG_CONFIG_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".config"));
-    // `~/.config/claude` stays in the list when `XDG_CONFIG_HOME` points
-    // elsewhere, so a config that was found there keeps loading.
-    let mut dirs = vec![xdg.join("claude")];
-    for dir in [home.join(".config").join("claude"), home.join(".claude")] {
-        if !dirs.contains(&dir) {
-            dirs.push(dir);
-        }
-    }
-    dirs
-}
-
-/// A `CLAUDE_CONFIG_DIR` entry as the Claude data loader resolves it: a leading
-/// `~` is the home directory, and a `projects` directory stands for its parent.
-fn claude_config_dir(raw: &str) -> PathBuf {
-    let path = ccusage_cli::home::expand_home_path(raw);
-    if path.file_name().is_some_and(|name| name == "projects") && path.is_dir() {
-        return path.parent().map(Path::to_path_buf).unwrap_or(path);
-    }
-    path
 }
 
 fn scan_config_path(args: &[String]) -> Option<PathBuf> {
@@ -1679,64 +1641,11 @@ mod tests {
         assert_eq!(shared.until.as_deref(), Some("20260131"));
     }
 
-    #[test]
-    fn user_config_directories_follow_xdg_config_home() {
-        let _env = EnvVarsGuard::set_many([
-            ("CLAUDE_CONFIG_DIR", None),
-            ("HOME", Some("/home/user".into())),
-            ("XDG_CONFIG_HOME", Some("/custom/xdg".into())),
-        ]);
-
-        assert_eq!(
-            claude_config_dirs(),
-            [
-                PathBuf::from("/custom/xdg/claude"),
-                PathBuf::from("/home/user/.config/claude"),
-                PathBuf::from("/home/user/.claude")
-            ]
-        );
-    }
-
-    #[test]
-    fn user_config_directories_treat_an_empty_xdg_config_home_as_unset() {
-        for xdg_config_home in [None, Some(std::ffi::OsString::new())] {
-            let _env = EnvVarsGuard::set_many([
-                ("CLAUDE_CONFIG_DIR", None),
-                ("HOME", Some("/home/user".into())),
-                ("XDG_CONFIG_HOME", xdg_config_home),
-            ]);
-
-            assert_eq!(
-                claude_config_dirs(),
-                [
-                    PathBuf::from("/home/user/.config/claude"),
-                    PathBuf::from("/home/user/.claude")
-                ]
-            );
-        }
-    }
-
-    #[test]
-    fn user_config_directories_resolve_entries_like_the_data_loader() {
-        let fixture = fs_fixture!({
-            "archive/projects/project/session.jsonl": "",
-        });
-        let entries = format!(
-            "~/.config/claude, {}",
-            fixture.path("archive/projects").display()
-        );
-        let _env = EnvVarsGuard::set_many([
-            ("HOME", Some("/home/user".into())),
-            ("CLAUDE_CONFIG_DIR", Some(entries.into())),
-        ]);
-
-        assert_eq!(
-            claude_config_dirs(),
-            [
-                PathBuf::from("/home/user/.config/claude"),
-                fixture.path("archive")
-            ]
-        );
+    fn user_config_timezone() -> Option<String> {
+        let config = ConfigContext::from_args(&["daily".to_string()]);
+        let mut shared = SharedArgs::default();
+        apply_config_to_shared(&mut shared, &config);
+        shared.timezone
     }
 
     #[test]
@@ -1749,12 +1658,36 @@ mod tests {
             ("HOME", Some(fixture.path("home").into())),
             ("XDG_CONFIG_HOME", Some(fixture.path("xdg").into())),
         ]);
-        let config = ConfigContext::from_args(&["daily".to_string()]);
-        let mut shared = SharedArgs::default();
 
-        apply_config_to_shared(&mut shared, &config);
+        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+    }
 
-        assert_eq!(shared.timezone.as_deref(), Some("Asia/Tokyo"));
+    #[test]
+    fn loads_the_user_config_from_a_tilde_claude_config_dir_entry() {
+        let fixture = fs_fixture!({
+            "home/claude-a/.keep": "",
+            "home/claude-b/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
+        });
+        let _env = EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.path("home").into())),
+            ("CLAUDE_CONFIG_DIR", Some("~/claude-a, ~/claude-b".into())),
+        ]);
+
+        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+    }
+
+    #[test]
+    fn loads_the_user_config_beside_a_projects_claude_config_dir_entry() {
+        let fixture = fs_fixture!({
+            "archive/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
+            "archive/projects/project/session.jsonl": "",
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.path("archive/projects").into()),
+        )]);
+
+        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
     }
 
     fn context(value: Value, raw: &str, agent: Option<&str>, report: &str) -> ConfigContext {
