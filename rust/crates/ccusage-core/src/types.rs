@@ -278,6 +278,78 @@ impl UsageSummary {
             .saturating_add(self.cache_read_tokens)
             .saturating_add(self.extra_total_tokens)
     }
+
+    pub fn totals_row(&self) -> TotalsRow<'_> {
+        TotalsRow {
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+            cache_creation_tokens: self.cache_creation_tokens,
+            cache_read_tokens: self.cache_read_tokens,
+            total_tokens: self.total_tokens(),
+            cost: self.total_cost,
+            credits: self.credits,
+            model_breakdowns: &self.model_breakdowns,
+        }
+    }
+}
+
+/// What one report row adds to the report's [`Totals`].
+pub struct TotalsRow<'a> {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub total_tokens: u64,
+    pub cost: f64,
+    pub credits: Option<f64>,
+    pub model_breakdowns: &'a [ModelBreakdown],
+}
+
+/// The totals of a report, computed once for its JSON and its table.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Totals {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost: f64,
+    /// Present only when the rows' credits add up to more than zero.
+    pub credits: Option<f64>,
+    /// See [`crate::unpriced_models`].
+    pub unpriced_models: Vec<String>,
+}
+
+impl Totals {
+    pub fn from_rows<'a>(rows: impl IntoIterator<Item = TotalsRow<'a>>) -> Self {
+        let mut totals = Self::default();
+        let mut costs = Vec::new();
+        let mut credits = Vec::new();
+        let mut breakdowns = Vec::new();
+        for row in rows {
+            totals.input_tokens = totals.input_tokens.saturating_add(row.input_tokens);
+            totals.output_tokens = totals.output_tokens.saturating_add(row.output_tokens);
+            totals.cache_creation_tokens = totals
+                .cache_creation_tokens
+                .saturating_add(row.cache_creation_tokens);
+            totals.cache_read_tokens = totals
+                .cache_read_tokens
+                .saturating_add(row.cache_read_tokens);
+            totals.total_tokens = totals.total_tokens.saturating_add(row.total_tokens);
+            costs.push(row.cost);
+            credits.extend(row.credits);
+            breakdowns.push(row.model_breakdowns);
+        }
+        totals.total_cost = crate::sum_costs(costs);
+        let credits = crate::sum_costs(credits);
+        totals.credits = (credits > 0.0).then_some(credits);
+        totals.unpriced_models = crate::unpriced_models(breakdowns.into_iter().flatten());
+        totals
+    }
+
+    pub fn from_summaries(rows: &[UsageSummary]) -> Self {
+        Self::from_rows(rows.iter().map(UsageSummary::totals_row))
+    }
 }
 
 #[cfg(test)]

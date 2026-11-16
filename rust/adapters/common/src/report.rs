@@ -1,13 +1,10 @@
 use std::io::IsTerminal;
 
-use serde_json::Value;
-
 use ccusage_core::cli::{AgentReportKind, SharedArgs};
 use ccusage_core::{
-    Align, Color, Result, SimpleTable, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary, color,
+    Align, Color, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary, color,
     first_column, format_breakdown_model_label, format_currency, format_models_multiline,
-    format_number, json_value_u64, print_box_title, should_use_compact_layout, terminal_style,
-    terminal_width, totals_json,
+    format_number, print_box_title, should_use_compact_layout, terminal_style, terminal_width,
 };
 
 pub fn print_table_for_agent(
@@ -132,76 +129,36 @@ pub fn print_table_for_agent(
         push_breakdown_rows(&mut table, row, compact, shared);
     }
 
-    let totals = totals_json(rows);
+    let totals = Totals::from_summaries(rows);
+    let total = |value: String| color(shared, value, Color::Yellow);
+    let credits = format!("{:.2}", totals.credits.unwrap_or_default());
     table.separator();
-    let credits = totals
-        .get("credits")
-        .and_then(Value::as_f64)
-        .unwrap_or_default();
-    if compact {
-        let mut row = vec![
-            color(shared, "Total", Color::Yellow),
+    let mut row = if compact {
+        vec![
+            total("Total".to_string()),
             String::new(),
-            color(
-                shared,
-                format_number(json_value_u64(totals.get("inputTokens"))),
-                Color::Yellow,
-            ),
-            color(
-                shared,
-                format_number(json_value_u64(totals.get("outputTokens"))),
-                Color::Yellow,
-            ),
-            color(shared, format!("{credits:.2}"), Color::Yellow),
-            color(
-                shared,
-                format_currency(
-                    totals
-                        .get("totalCost")
-                        .and_then(Value::as_f64)
-                        .unwrap_or(0.0),
-                ),
-                Color::Yellow,
-            ),
-        ];
-        if shared.no_cost {
-            row.pop();
-        }
-        table.push(row);
+            total(format_number(totals.input_tokens)),
+            total(format_number(totals.output_tokens)),
+            total(credits),
+            total(format_currency(totals.total_cost)),
+        ]
     } else {
-        let input = json_value_u64(totals.get("inputTokens"));
-        let output = json_value_u64(totals.get("outputTokens"));
-        let cache_create = json_value_u64(totals.get("cacheCreationTokens"));
-        let cache_read = json_value_u64(totals.get("cacheReadTokens"));
-        let mut row = vec![
-            color(shared, "Total", Color::Yellow),
+        vec![
+            total("Total".to_string()),
             String::new(),
-            color(shared, format_number(input), Color::Yellow),
-            color(shared, format_number(output), Color::Yellow),
-            color(shared, format_number(cache_create), Color::Yellow),
-            color(shared, format_number(cache_read), Color::Yellow),
-            color(
-                shared,
-                format_number(json_value_u64(totals.get("totalTokens"))),
-                Color::Yellow,
-            ),
-            color(shared, format!("{credits:.2}"), Color::Yellow),
-            color(
-                shared,
-                format_currency(
-                    totals
-                        .get("totalCost")
-                        .and_then(Value::as_f64)
-                        .unwrap_or(0.0),
-                ),
-                Color::Yellow,
-            ),
-        ];
-        if shared.no_cost {
-            row.pop();
-        }
-        table.push(row);
+            total(format_number(totals.input_tokens)),
+            total(format_number(totals.output_tokens)),
+            total(format_number(totals.cache_creation_tokens)),
+            total(format_number(totals.cache_read_tokens)),
+            total(format_number(totals.total_tokens)),
+            total(credits),
+            total(format_currency(totals.total_cost)),
+        ]
+    };
+    if shared.no_cost {
+        row.pop();
     }
+    table.push(row);
     table.print()?;
     Ok(())
 }

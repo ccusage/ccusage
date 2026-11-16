@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeSet,
-    io::{BufWriter, IsTerminal, Write},
-};
+use std::{collections::BTreeSet, io::IsTerminal};
 
 use serde::{
     Serialize,
@@ -10,12 +7,12 @@ use serde::{
 use serde_json::{Value, json};
 
 use crate::{
-    Align, Color, ModelBreakdown, Result, SimpleTable, UsageSummary, attach_unpriced_models,
+    Align, Color, ModelBreakdown, Result, SimpleTable, Totals, TotalsRow, attach_unpriced_models,
     cli::{AgentReportKind, SharedArgs, SortOrder},
-    cli_error, color, format_breakdown_model_label, format_currency, format_models_multiline,
-    format_number, json_float,
-    output::strip_cost_json,
-    print_box_title, should_use_compact_layout, sum_costs, unpriced_models,
+    color, format_breakdown_model_label, format_currency, format_models_multiline, format_number,
+    json_float,
+    output::{strip_cost_json, write_json_or_jq},
+    print_box_title, print_missing_pricing_warnings_for_models, should_use_compact_layout,
 };
 
 use ccusage_adapter_common::rows::UnifiedRow;
@@ -66,31 +63,7 @@ pub(super) fn print_sections_report_json(
     if no_cost {
         report.strip_costs();
     }
-    if let Some(filter) = jq {
-        let mut child = std::process::Command::new("jq")
-            .arg(filter)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::inherit())
-            .spawn()
-            .map_err(|error| cli_error(format!("failed to run jq: {error}")))?;
-        if let Some(stdin) = child.stdin.take() {
-            let mut stdin = BufWriter::new(stdin);
-            serde_json::to_writer(&mut stdin, &report)?;
-            stdin.write_all(b"\n")?;
-            stdin.flush()?;
-        }
-        let status = child.wait()?;
-        if !status.success() {
-            return Err(cli_error("jq failed"));
-        }
-    } else {
-        let stdout = std::io::stdout();
-        let mut stdout = BufWriter::new(stdout.lock());
-        serde_json::to_writer_pretty(&mut stdout, &report)?;
-        stdout.write_all(b"\n")?;
-        stdout.flush()?;
-    }
-    Ok(())
+    write_json_or_jq(&report, jq)
 }
 
 pub(super) struct OrderedJsonMap {
@@ -159,35 +132,31 @@ fn agent_json(row: &UnifiedRow) -> Value {
     })
 }
 
+fn totals(rows: &[UnifiedRow]) -> Totals {
+    Totals::from_rows(rows.iter().map(|row| TotalsRow {
+        input_tokens: row.input_tokens,
+        output_tokens: row.output_tokens,
+        cache_creation_tokens: row.cache_creation_tokens,
+        cache_read_tokens: row.cache_read_tokens,
+        total_tokens: row.total_tokens,
+        cost: row.total_cost,
+        credits: None,
+        model_breakdowns: &row.model_breakdowns,
+    }))
+}
+
 fn totals_json(rows: &[UnifiedRow]) -> Value {
-    let mut totals = json!({
-        "inputTokens": rows
-            .iter()
-            .map(|row| row.input_tokens)
-            .fold(0, u64::saturating_add),
-        "outputTokens": rows
-            .iter()
-            .map(|row| row.output_tokens)
-            .fold(0, u64::saturating_add),
-        "cacheCreationTokens": rows
-            .iter()
-            .map(|row| row.cache_creation_tokens)
-            .fold(0, u64::saturating_add),
-        "cacheReadTokens": rows
-            .iter()
-            .map(|row| row.cache_read_tokens)
-            .fold(0, u64::saturating_add),
-        "totalTokens": rows
-            .iter()
-            .map(|row| row.total_tokens)
-            .fold(0, u64::saturating_add),
-        "totalCost": json_float(sum_costs(rows.iter().map(|row| row.total_cost))),
+    let totals = totals(rows);
+    let mut value = json!({
+        "inputTokens": totals.input_tokens,
+        "outputTokens": totals.output_tokens,
+        "cacheCreationTokens": totals.cache_creation_tokens,
+        "cacheReadTokens": totals.cache_read_tokens,
+        "totalTokens": totals.total_tokens,
+        "totalCost": json_float(totals.total_cost),
     });
-    attach_unpriced_models(
-        &mut totals,
-        unpriced_models(rows.iter().flat_map(|row| &row.model_breakdowns)),
-    );
-    totals
+    attach_unpriced_models(&mut value, totals.unpriced_models);
+    value
 }
 
 fn rows_key(kind: AgentReportKind) -> &'static str {
@@ -242,116 +211,44 @@ pub(super) fn print_table(
         }
     }
     table.separator();
-    let totals = totals_json(rows);
-    let total_tokens = rows
-        .iter()
-        .map(|row| row.total_tokens)
-        .fold(0, u64::saturating_add);
-    if compact {
-        let mut total_row = vec![
-            color(shared, "Total", Color::Yellow),
+    let totals = totals(rows);
+    let total = |value: String| color(shared, value, Color::Yellow);
+    let mut total_row = if compact {
+        vec![
+            total("Total".to_string()),
             String::new(),
             String::new(),
-            color(
-                shared,
-                format_number(crate::json_value_u64(totals.get("inputTokens"))),
-                Color::Yellow,
-            ),
-            color(
-                shared,
-                format_number(crate::json_value_u64(totals.get("outputTokens"))),
-                Color::Yellow,
-            ),
-            color(
-                shared,
-                format_currency(
-                    totals
-                        .get("totalCost")
-                        .and_then(Value::as_f64)
-                        .unwrap_or(0.0),
-                ),
-                Color::Yellow,
-            ),
-        ];
-        if shared.no_cost {
-            total_row.pop();
-        }
-        table.push(total_row);
+            total(format_number(totals.input_tokens)),
+            total(format_number(totals.output_tokens)),
+            total(format_currency(totals.total_cost)),
+        ]
     } else {
-        let mut total_row = vec![
-            color(shared, "Total", Color::Yellow),
+        vec![
+            total("Total".to_string()),
             String::new(),
             String::new(),
-            color(
-                shared,
-                format_number(crate::json_value_u64(totals.get("inputTokens"))),
-                Color::Yellow,
-            ),
-            color(
-                shared,
-                format_number(crate::json_value_u64(totals.get("outputTokens"))),
-                Color::Yellow,
-            ),
-            color(
-                shared,
-                format_number(crate::json_value_u64(totals.get("cacheCreationTokens"))),
-                Color::Yellow,
-            ),
-            color(
-                shared,
-                format_number(crate::json_value_u64(totals.get("cacheReadTokens"))),
-                Color::Yellow,
-            ),
-            color(shared, format_number(total_tokens), Color::Yellow),
-            color(
-                shared,
-                format_currency(
-                    totals
-                        .get("totalCost")
-                        .and_then(Value::as_f64)
-                        .unwrap_or(0.0),
-                ),
-                Color::Yellow,
-            ),
-        ];
-        if shared.no_cost {
-            total_row.pop();
-        }
-        table.push(total_row);
+            total(format_number(totals.input_tokens)),
+            total(format_number(totals.output_tokens)),
+            total(format_number(totals.cache_creation_tokens)),
+            total(format_number(totals.cache_read_tokens)),
+            total(format_number(totals.total_tokens)),
+            total(format_currency(totals.total_cost)),
+        ]
+    };
+    if shared.no_cost {
+        total_row.pop();
     }
+    table.push(total_row);
     table.print()?;
-    crate::print_missing_pricing_warnings(&all_rows_as_usage_summaries(rows), shared.offline);
+    print_missing_pricing_warnings_for_models(
+        totals.unpriced_models.iter().map(String::as_str),
+        shared.offline,
+    );
     if compact {
         eprintln!("\nRunning in Compact Mode");
         eprintln!("Expand terminal width to see cache metrics and total tokens");
     }
     Ok(())
-}
-
-fn all_rows_as_usage_summaries(rows: &[UnifiedRow]) -> Vec<UsageSummary> {
-    rows.iter()
-        .map(|row| UsageSummary {
-            date: None,
-            month: None,
-            week: None,
-            session_id: None,
-            project_path: None,
-            last_activity: None,
-            first_activity: None,
-            input_tokens: row.input_tokens,
-            output_tokens: row.output_tokens,
-            cache_creation_tokens: row.cache_creation_tokens,
-            cache_read_tokens: row.cache_read_tokens,
-            extra_total_tokens: row.total_tokens.saturating_sub(component_total_tokens(row)),
-            total_cost: row.total_cost,
-            credits: None,
-            message_count: None,
-            models_used: row.models_used.clone(),
-            model_breakdowns: row.model_breakdowns.clone(),
-            project: None,
-            versions: None,
-        })
-        .collect()
 }
 
 pub(super) fn all_report_title(kind: AgentReportKind, detected_agents: &[&'static str]) -> String {
@@ -433,13 +330,6 @@ pub(super) fn all_table_row(
         values.pop();
     }
     values
-}
-
-fn component_total_tokens(row: &UnifiedRow) -> u64 {
-    row.input_tokens
-        .saturating_add(row.output_tokens)
-        .saturating_add(row.cache_creation_tokens)
-        .saturating_add(row.cache_read_tokens)
 }
 
 fn push_model_breakdown_rows(
