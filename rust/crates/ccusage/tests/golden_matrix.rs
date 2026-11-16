@@ -125,6 +125,24 @@ fn exported_fixture_replays_the_unified_report() {
 }
 
 #[test]
+fn malformed_test_clock_is_a_usage_error_not_a_panic() {
+    let fixture = Fixture::new();
+    let output = golden::hermetic_command(fixture.root(), &[], golden::WIDE_COLUMNS)
+        .env("CCUSAGE_TEST_NOW", "2026-01-02")
+        .args(["daily", "--offline", "--json", "--last", "1"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.starts_with("CCUSAGE_TEST_NOW=2026-01-02 is not an RFC 3339 instant"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
 fn claude_project_case_runs_a_successful_filtered_report() {
     let fixture = Fixture::new();
     let root = fixture.root();

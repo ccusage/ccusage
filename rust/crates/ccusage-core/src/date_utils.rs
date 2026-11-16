@@ -103,15 +103,24 @@ impl IsoDate {
 pub fn utc_now() -> TimestampMs {
     #[cfg(feature = "test-clock")]
     if let Some(now) = std::env::var_os("CCUSAGE_TEST_NOW") {
-        let now = now.to_string_lossy();
-        return parse_ts_timestamp(&now)
-            .unwrap_or_else(|| panic!("CCUSAGE_TEST_NOW is not an RFC 3339 instant: {now}"));
+        return parse_test_now(&now.to_string_lossy()).unwrap_or_else(|error| {
+            eprintln!("{error}");
+            std::process::exit(2)
+        });
     }
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
         .unwrap_or(0);
     TimestampMs::from_millis(millis)
+}
+
+#[cfg(any(test, feature = "test-clock"))]
+fn parse_test_now(value: &str) -> Result<TimestampMs, String> {
+    value
+        .parse::<JiffTimestamp>()
+        .map(|now| TimestampMs::from_millis(now.as_millisecond()))
+        .map_err(|error| format!("CCUSAGE_TEST_NOW={value} is not an RFC 3339 instant: {error}"))
 }
 
 pub fn parse_ts_timestamp(value: &str) -> Option<TimestampMs> {
@@ -347,11 +356,43 @@ pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date, parse_tz,
+        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date,
+        parse_test_now, parse_tz,
     };
 
     // 2026-01-02 00:00:00 UTC
     const JAN_2_UTC: i64 = 1_767_312_000_000;
+
+    #[test]
+    fn pins_the_test_clock_to_any_rfc3339_precision() {
+        let noon = JAN_2_UTC + 12 * MILLIS_PER_HOUR;
+        for value in [
+            "2026-01-02T12:00:00Z",
+            "2026-01-02T12:00:00.0Z",
+            "2026-01-02T12:00:00.000000Z",
+            "2026-01-02T12:00:00.000000000Z",
+            "2026-01-02T21:00:00+09:00",
+        ] {
+            assert_eq!(
+                parse_test_now(value).map(|now| now.as_millis()),
+                Ok(noon),
+                "{value}"
+            );
+        }
+        assert_eq!(
+            parse_test_now("2026-01-02T12:00:00.123456Z").map(|now| now.as_millis()),
+            Ok(noon + 123)
+        );
+    }
+
+    #[test]
+    fn explains_a_test_clock_that_is_not_an_instant() {
+        let error = parse_test_now("2026-01-02").unwrap_err();
+        assert!(
+            error.starts_with("CCUSAGE_TEST_NOW=2026-01-02 is not an RFC 3339 instant: "),
+            "{error}"
+        );
+    }
 
     #[test]
     fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {
