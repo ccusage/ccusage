@@ -19,35 +19,13 @@ pub(super) struct CopilotSourceFile {
     pub(super) path: PathBuf,
 }
 
-#[cfg(test)]
-pub(super) fn paths() -> Result<Vec<CopilotSourceFile>> {
-    paths_inner(None)
-}
-
-pub(super) fn paths_with_diagnostics(diagnostics: &Diagnostics) -> Result<Vec<CopilotSourceFile>> {
-    paths_inner(Some(diagnostics))
-}
-
-fn paths_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<CopilotSourceFile>> {
+pub(super) fn paths(diagnostics: &Diagnostics) -> Result<Vec<CopilotSourceFile>> {
     let mut files = Vec::new();
     let mut seen = HashSet::new();
     if let Some(copilot_root) = copilot_root() {
         let otel_dir = copilot_root.join("otel");
         let mut otel_files = Vec::new();
-        if let Some(diagnostics) = diagnostics {
-            collect_files_with_extension_diagnosed(
-                &otel_dir,
-                "jsonl",
-                &mut otel_files,
-                diagnostics,
-            );
-        } else {
-            ccusage_adapter_common::collect_files_with_extension(
-                &otel_dir,
-                "jsonl",
-                &mut otel_files,
-            );
-        }
+        collect_files_with_extension_diagnosed(&otel_dir, "jsonl", &mut otel_files, diagnostics);
         for path in otel_files {
             add_file(&mut files, &mut seen, CopilotSourceKind::Otel, path);
         }
@@ -97,14 +75,12 @@ fn paths_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<CopilotSourceFil
     Ok(files)
 }
 
-fn record_discovery_failure(diagnostics: Option<&Diagnostics>, path: &std::path::Path) {
-    if let Some(diagnostics) = diagnostics {
-        diagnostics.record(Skip::unit(
-            path,
-            SkipKind::Unreadable,
-            "Copilot source directory could not be read",
-        ));
-    }
+fn record_discovery_failure(diagnostics: &Diagnostics, path: &std::path::Path) {
+    diagnostics.record(Skip::unit(
+        path,
+        SkipKind::Unreadable,
+        "Copilot source directory could not be read",
+    ));
 }
 
 fn copilot_root() -> Option<PathBuf> {
@@ -162,7 +138,7 @@ mod tests {
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
         let denied = fs::metadata(blocked.join("events.jsonl")).is_err();
         let diagnostics = Diagnostics::new("copilot");
-        let files = paths_with_diagnostics(&diagnostics);
+        let files = paths(&diagnostics);
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
         let files = files.unwrap();
         if !denied {
@@ -199,7 +175,7 @@ mod tests {
             ),
         ]);
 
-        let files = paths().unwrap();
+        let files = paths(&Diagnostics::new("copilot")).unwrap();
 
         assert_eq!(
             files,
@@ -244,7 +220,7 @@ mod tests {
             (COPILOT_OTEL_FILE_EXPORTER_PATH_ENV, None),
         ]);
 
-        let files = paths().unwrap();
+        let files = paths(&Diagnostics::new("copilot")).unwrap();
 
         assert_eq!(
             files,

@@ -33,3 +33,34 @@ pub fn load_entries(
     })?;
     Ok((entries, diagnostics))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::Ordering;
+
+    use ccusage_core::PricingMap;
+
+    use super::load_entries;
+    use crate::{
+        source::{EntryDescriptor, SourceOptions},
+        test_source::{Fake, entries, shared},
+    };
+
+    #[test]
+    fn hands_back_the_entries_as_loaded_with_the_pipeline_pricing() {
+        let source = Fake::new(EntryDescriptor::standard("fake", "Fake"), entries());
+        let pricing = PricingMap::default();
+
+        let (loaded, diagnostics) = load_entries(
+            &source,
+            &shared(Some("20260102"), None),
+            SourceOptions::default(),
+            Some(&pricing),
+        )
+        .unwrap();
+
+        assert_eq!(loaded.len(), 4, "the window is the caller's to apply");
+        assert!(source.saw_pricing.load(Ordering::Relaxed));
+        assert_eq!(diagnostics.source(), "fake");
+    }
+}

@@ -12,7 +12,8 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-pub use loader::load_entries;
+#[cfg(test)]
+pub(crate) use loader::load_entries;
 pub use paths::{named_store_paths, paths as default_paths};
 pub use report::{report_from_rows, summarize_entries};
 

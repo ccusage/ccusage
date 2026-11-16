@@ -8,7 +8,6 @@ mod parser;
 mod paths;
 mod report;
 
-pub use loader::load_entries;
 pub use report::summarize_entries;
 
 pub struct Goose;

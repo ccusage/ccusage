@@ -1,19 +1,20 @@
-use ccusage_adapter_common::{
-    pipeline,
-    source::{LoadContext, SourceOptions},
-};
+use ccusage_adapter_common::source::LoadContext;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs};
+use crate::{LoadedEntry, PricingMap, Result};
 
 use super::parser;
 
-pub fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
-    pipeline::load_entries_for_unmigrated_caller(
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &crate::SOURCE,
         shared,
-        SourceOptions::default(),
+        ccusage_adapter_common::source::SourceOptions::default(),
         None,
     )
+    .map(|(entries, _)| entries)
 }
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {

@@ -1,4 +1,4 @@
-use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext, SourceOptions};
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
 use ccusage_core::*;
 
 mod loader;
@@ -58,20 +58,22 @@ impl EntrySource for OpenClaw {
     }
 }
 
-pub fn load_entries(
+#[cfg(test)]
+pub(crate) fn load_entries(
     shared: &crate::cli::SharedArgs,
     custom_path: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
+    pricing: Option<&crate::PricingMap>,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &SOURCE,
         shared,
-        SourceOptions {
+        ccusage_adapter_common::source::SourceOptions {
             open_claw_path: custom_path,
-            ..SourceOptions::default()
+            ..ccusage_adapter_common::source::SourceOptions::default()
         },
         pricing,
     )
+    .map(|(entries, _)| entries)
 }
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {

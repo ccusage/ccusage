@@ -25,18 +25,7 @@ pub(super) struct SourceFile {
     pub session_id: String,
 }
 
-#[cfg(test)]
-pub(super) fn discover_files() -> Result<Vec<SourceFile>> {
-    discover_files_inner(None)
-}
-
-pub(super) fn discover_files_with_diagnostics(
-    diagnostics: &Diagnostics,
-) -> Result<Vec<SourceFile>> {
-    discover_files_inner(Some(diagnostics))
-}
-
-fn discover_files_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<SourceFile>> {
+pub(super) fn discover_files(diagnostics: &Diagnostics) -> Result<Vec<SourceFile>> {
     let roots = data_roots()?;
     let mut files = Vec::new();
     let mut seen = HashSet::new();
@@ -53,16 +42,12 @@ fn discover_files_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<SourceF
                 })
             };
             let dir = root.join(relative_root);
-            if let Some(diagnostics) = diagnostics {
-                ccusage_adapter_common::collect_files_matching_diagnosed(
-                    &dir,
-                    &matches,
-                    &mut candidates,
-                    diagnostics,
-                );
-            } else {
-                ccusage_adapter_common::collect_files_matching(&dir, &matches, &mut candidates);
-            }
+            ccusage_adapter_common::collect_files_matching_diagnosed(
+                &dir,
+                &matches,
+                &mut candidates,
+                diagnostics,
+            );
         }
         candidates.sort();
 
@@ -209,7 +194,7 @@ mod tests {
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
         let denied = fs::read_dir(&blocked).is_err();
         let diagnostics = Diagnostics::new("cline");
-        let files = discover_files_with_diagnostics(&diagnostics);
+        let files = discover_files(&diagnostics);
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
         let files = files.unwrap();
         if !denied {
@@ -247,7 +232,7 @@ mod tests {
         );
         let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, configured);
 
-        let files = discover_files().unwrap();
+        let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
         let mut expected = vec![
             SourceFile {
@@ -283,7 +268,7 @@ mod tests {
         let configured = format!("{},{}", fixture.root().display(), fixture.root().display());
         let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, configured);
 
-        let files = discover_files().unwrap();
+        let files = discover_files(&Diagnostics::new("cline")).unwrap();
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].session_id, "task-a");
@@ -293,7 +278,11 @@ mod tests {
     fn empty_configured_roots_disable_default_discovery() {
         let _cleanup = EnvVarGuard::set(CLINE_DATA_DIR_ENV, " , ");
 
-        assert!(discover_files().unwrap().is_empty());
+        assert!(
+            discover_files(&Diagnostics::new("cline"))
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

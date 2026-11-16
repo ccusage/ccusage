@@ -230,11 +230,21 @@ mod tests {
             format!("{},{}", broken.root().display(), healthy.root().display()),
         );
 
-        let entries =
-            crate::load_entries(&SharedArgs::default(), &PricingMap::load_embedded()).unwrap();
+        let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+            &crate::SOURCE,
+            &SharedArgs::default(),
+            ccusage_adapter_common::source::SourceOptions::default(),
+            Some(&PricingMap::load_embedded()),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::Invariant),
+            1,
+            "the database without a message table is reported"
+        );
     }
 
     #[test]

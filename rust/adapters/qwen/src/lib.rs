@@ -14,7 +14,8 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind},
 };
 
-pub use loader::load_entries;
+#[cfg(test)]
+pub(crate) use loader::load_entries;
 pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 

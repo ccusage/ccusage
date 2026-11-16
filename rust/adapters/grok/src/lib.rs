@@ -12,7 +12,9 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-pub use loader::{has_data, load_entries};
+pub use loader::has_data;
+#[cfg(test)]
+pub(crate) use loader::load_entries;
 pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 

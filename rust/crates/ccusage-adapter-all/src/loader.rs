@@ -1133,7 +1133,15 @@ mod tests {
         shared: &SharedArgs,
         pricing: &PricingMap,
     ) -> Result<Vec<UnifiedRow>> {
-        let mut entries = pi::load_entries(shared, Some(store_path), Some(pricing))?;
+        let (mut entries, _) = ccusage_adapter_common::testing::load_entries(
+            &pi::SOURCE,
+            shared,
+            SourceOptions {
+                pi_path: Some(store_path),
+                ..SourceOptions::default()
+            },
+            Some(pricing),
+        )?;
         filter_loaded_entries_by_date(&mut entries, shared);
         let summaries = pi::summarize_entries(&entries, kind)?;
         Ok(summary_rows("pi", summaries, true))

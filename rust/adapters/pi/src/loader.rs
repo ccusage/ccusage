@@ -4,28 +4,29 @@ use std::{
 };
 
 use ccusage_adapter_common::{
-    collect_files_with_extension_diagnosed, pipeline, read_units,
-    source::{LoadContext, SourceOptions},
+    collect_files_with_extension_diagnosed, read_units, source::LoadContext,
 };
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs};
+use crate::{LoadedEntry, Result};
 
 use super::{parser, paths};
 
-pub fn load_entries(
-    shared: &SharedArgs,
+#[cfg(test)]
+pub(crate) fn load_entries(
+    shared: &crate::cli::SharedArgs,
     custom_path: Option<&str>,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    pipeline::load_entries_for_unmigrated_caller(
+    pricing: Option<&crate::PricingMap>,
+) -> crate::Result<Vec<crate::LoadedEntry>> {
+    ccusage_adapter_common::testing::load_entries(
         &crate::SOURCE,
         shared,
-        SourceOptions {
+        ccusage_adapter_common::source::SourceOptions {
             pi_path: custom_path,
-            ..SourceOptions::default()
+            ..ccusage_adapter_common::source::SourceOptions::default()
         },
         pricing,
     )
+    .map(|(entries, _)| entries)
 }
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
@@ -290,7 +291,11 @@ fn normalize_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::{CostMode, SharedArgs};
+    use crate::{
+        PricingMap,
+        cli::{CostMode, SharedArgs},
+    };
+    use ccusage_adapter_common::source::SourceOptions;
     use ccusage_test_support::Fixture;
     use serde_json::json;
     use std::path::Path;

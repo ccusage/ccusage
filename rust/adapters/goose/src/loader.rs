@@ -7,7 +7,7 @@ use ccusage_adapter_common::{
     source::LoadContext,
     units::{UnitError, read_units},
 };
-use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, cli::SharedArgs};
+use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -27,15 +27,6 @@ FROM sessions
 WHERE model_config_json IS NOT NULL
     AND TRIM(model_config_json) != ''
 "#;
-
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    ccusage_adapter_common::pipeline::load_entries_for_unmigrated_caller(
-        &crate::SOURCE,
-        shared,
-        ccusage_adapter_common::source::SourceOptions::default(),
-        Some(pricing),
-    )
-}
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx
@@ -102,6 +93,7 @@ fn load_entries_from_db(
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::SharedArgs;
     use std::path::Path;
 
     use super::*;

@@ -124,12 +124,7 @@ struct CopilotUsageCandidate {
     dedup_key: String,
 }
 
-#[cfg(test)]
-pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
-    parse_otel_file_with_diagnostics(path, &Diagnostics::new("copilot"))
-}
-
-pub(super) fn parse_otel_file_with_diagnostics(
+pub(super) fn parse_otel_file(
     path: &Path,
     diagnostics: &Diagnostics,
 ) -> Result<Vec<CopilotUsageEntry>> {
@@ -304,12 +299,7 @@ fn is_session_state_usage_envelope(value: &Value) -> bool {
         })
 }
 
-#[cfg(test)]
-pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage> {
-    parse_session_state_file_with_diagnostics(path, &Diagnostics::new("copilot"))
-}
-
-pub(super) fn parse_session_state_file_with_diagnostics(
+pub(super) fn parse_session_state_file(
     path: &Path,
     diagnostics: &Diagnostics,
 ) -> Result<CopilotSourceUsage> {
@@ -989,9 +979,12 @@ mod session_state_tests {
             .to_string(),
         });
 
-        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl"))
-            .expect("session-state file should parse")
-            .entries;
+        let entries = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .expect("session-state file should parse")
+        .entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp_text, "2026-04-15T09:52:27.352Z");
@@ -1047,9 +1040,12 @@ mod session_state_tests {
             ),
         });
 
-        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl"))
-            .unwrap()
-            .entries;
+        let entries = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap()
+        .entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].input_tokens, 1);
@@ -1095,9 +1091,12 @@ mod session_state_tests {
             .to_string(),
         });
 
-        let entries = parse_session_state_file(&fixture.path("session-1/events.jsonl"))
-            .unwrap()
-            .entries;
+        let entries = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap()
+        .entries;
 
         assert_eq!(
             entries
@@ -1148,7 +1147,11 @@ mod session_state_tests {
             .join("\n"),
         });
 
-        let parsed = parse_session_state_file(&fixture.path("session-1/events.jsonl")).unwrap();
+        let parsed = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap();
 
         assert_eq!(parsed.entries.len(), 1);
         assert_eq!(parsed.entries[0].nano_aiu, 42_202_140_000);
@@ -1201,7 +1204,11 @@ mod session_state_tests {
             .join("\n"),
         });
 
-        let parsed = parse_session_state_file(&fixture.path("session-1/events.jsonl")).unwrap();
+        let parsed = parse_session_state_file(
+            &fixture.path("session-1/events.jsonl"),
+            &Diagnostics::new("copilot"),
+        )
+        .unwrap();
 
         assert_eq!(
             parsed
