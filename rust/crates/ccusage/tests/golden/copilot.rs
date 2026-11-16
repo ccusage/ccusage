@@ -34,7 +34,8 @@ fn shutdown(head: &str, total: &str, models: &str) -> String {
 }
 
 /// One `session.usage_record` line. `head` holds the members before `data`,
-/// as for [`shutdown`], and `usage` the members of the record after `model`.
+/// as for [`shutdown`], and `usage` the members of `data.usage` after
+/// `interactionType`.
 fn usage_record(head: &str, model: &str, usage: &str) -> String {
     format!(
         r#"{{"type":"session.usage_record",{head}"data":{{"usage":{{"model":"{model}","interactionType":"conversation-agent",{usage}}}}}}}"#
