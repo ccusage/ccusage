@@ -59,11 +59,9 @@ let
       # are byte-identical, so mold folds them back together; nothing here
       # depends on two `fn` items having distinct addresses.
       lib.optionalString stdenv.hostPlatform.isLinux "-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--icf=all"
-      # The nixpkgs Darwin stdenv injects -liconv even though ccusage uses no
-      # iconv symbols, recording an unused /nix/store libiconv dependency that
-      # crashes non-Nix Macs (#1251). dead_strip_dylibs drops dylib load
-      # commands with no referenced symbols, so the unused libiconv is removed
-      # and the binary links only system dylibs.
+      # NOTE(2026-11-17, libc 0.2.191, #1251): libc links -liconv on Apple
+      # targets; ccusage uses no iconv symbols, and a /nix/store libiconv
+      # crashes non-Nix Macs, so dead-strip unused dylibs.
       # lld is used on Darwin for its identical-code folding, which recovers part of
       # the duplication the crate split introduces; ld64 has no equivalent.
       + lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-Wl,-dead_strip_dylibs -C link-arg=-fuse-ld=lld -C link-arg=-Wl,--icf=all";
@@ -115,35 +113,28 @@ let
     inherit (depsOnlyArgs) dummySrc;
   };
   cargoArtifacts = workspaceArtifacts.adapters;
+  # End-user Macs have no /nix/store, so fail the build if the binary links
+  # anything outside the macOS system paths.
+  systemDylibsGate = ''
+    if otool -L "$out/bin/ccusage" | awk '/^\t/ { print $1 }' | grep -Ev '^(/usr/lib/|/System/Library/)'; then
+      echo "error: $out/bin/ccusage links dylibs that do not exist on end-user machines" >&2
+      exit 1
+    fi
+  '';
 in
 craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
     doInstallCheck = true;
-    postInstall = lib.optionalString stdenv.hostPlatform.isDarwin ''
-      # The nixpkgs Darwin stdenv cc-wrapper injects -liconv into the link even
-      # when libiconv is absent from buildInputs.  dead_strip_dylibs (set in
-      # RUSTFLAGS) drops it locally, but in CI the cc-wrapper's -liconv may
-      # arrive after the linker has resolved dead_strip_dylibs.  Rewrite the
-      # install name as a robust fallback so the safety gate below doesn't fail
-      # on a dylib that carries no referenced symbols.
-      for lib in $(otool -L "$out/bin/ccusage" | tail -n +2 | awk '{print $1}' | grep -E '^/nix/store/[^/]+-libiconv-'); do
-        install_name_tool -change "$lib" /usr/lib/libiconv.2.dylib "$out/bin/ccusage"
-      done
-      # Every remaining dylib MUST be a macOS system path.  grep prints the
-      # offending entries when it matches — fail the build for any matches.
-      if otool -L "$out/bin/ccusage" | tail -n +2 | awk '{print $1}' | grep -Ev '^(/usr/lib/|/System/Library/)'; then
-        echo "error: ccusage links dylibs that do not exist on end-user machines" >&2
-        exit 1
-      fi
-    '';
+    postInstall = lib.optionalString stdenv.hostPlatform.isDarwin systemDylibsGate;
     passthru = {
       inherit
         cargoArtifacts
         commonArgs
         dependencyArtifacts
         depsOnlyArgs
+        systemDylibsGate
         version
         workspaceArtifacts
         ;
