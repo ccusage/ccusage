@@ -7,14 +7,13 @@ use std::{
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use memchr::memmem;
 use serde::Deserialize;
 
 use crate::{
     ModelBreakdown, PricingMap, Result, Speed, TimestampMs, TokenCounts, TokenUsageRaw,
     UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
-    fast::{FxHashMap, byte_lines, suffix_string},
+    fast::{FxHashMap, LinePrefilter, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
     stored_cost_for_mode, utc_now,
 };
@@ -389,9 +388,9 @@ fn read_daily_usage_file_with_diagnostics(
     };
     let content = super::diagnostics::read_content(path, diagnostics);
 
-    let usage_marker = memmem::Finder::new(br#""usage":{"#);
+    let usage_marker = LinePrefilter::all(&[br#""usage":{"#]);
     for (index, line) in byte_lines(&content).enumerate() {
-        if usage_marker.find(line).is_none() {
+        if !usage_marker.matches(line) {
             continue;
         }
         let data = match deserialize_daily_usage_line(line) {
@@ -1293,6 +1292,24 @@ mod tests {
 
         assert_eq!(deduped.len(), 1);
         assert_eq!(deduped[0].usage.input_tokens, 200);
+    }
+
+    #[test]
+    fn reads_daily_usage_and_advisor_iterations_under_escaped_keys() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-a","message":{"id":"msg-a","model":"main-model","us\u0061ge":{"input_tokens":100,"output_tokens":1,"iterations":[{"type":"advisor\u005fmessage","model":"advisor-model","input_tokens":10,"output_tokens":2}]}}}"#,
+        });
+
+        let loaded = read_daily_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[0].usage.input_tokens, 100);
+        assert_eq!(loaded.entries[1].usage.input_tokens, 10);
     }
 
     #[test]

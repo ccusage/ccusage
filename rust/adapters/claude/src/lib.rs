@@ -14,7 +14,7 @@ use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
     path::Path,
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -28,7 +28,7 @@ use crate::{
     UsageSummary, calculate_cost, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     debug_log,
-    fast::{FxHashMap, byte_lines, suffix_string},
+    fast::{FxHashMap, LinePrefilter, byte_lines, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
     progress, stored_cost_for_mode,
 };
@@ -696,9 +696,9 @@ fn read_usage_file_with_diagnostics(
     };
     let content = diagnostics::read_content(path, diagnostics);
 
-    let usage_marker = memmem::Finder::new(br#""usage":{"#);
+    let usage_marker = LinePrefilter::all(&[br#""usage":{"#]);
     for (index, line) in byte_lines(&content).enumerate() {
-        if usage_marker.find(line).is_none() {
+        if !usage_marker.matches(line) {
             continue;
         }
         let data = match deserialize_usage_line::<UsageEntry>(line) {
@@ -833,7 +833,9 @@ pub(crate) struct AdvisorUsage {
 }
 
 pub(crate) fn advisor_usages_from_line(line: &[u8]) -> Vec<AdvisorUsage> {
-    if memmem::find(line, br#""advisor_message""#).is_none() {
+    static ADVISOR_MARKER: LazyLock<LinePrefilter> =
+        LazyLock::new(|| LinePrefilter::all(&[br#""advisor_message""#]));
+    if !ADVISOR_MARKER.matches(line) {
         return Vec::new();
     }
     let Ok(envelope) = serde_json::from_slice::<UsageIterationsEnvelope>(line) else {
@@ -1447,6 +1449,24 @@ null,"usage":{"input_tokens":1}}}"#
         assert_eq!(loaded.entries[0].cost, 1.23);
         assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
         assert_eq!(loaded.entries[1].cost, 26.0);
+    }
+
+    #[test]
+    fn reads_usage_and_advisor_iterations_under_escaped_keys() {
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","version":"1.2.3","sessionId":"session-a","message":{"id":"msg-parent","model":"main-model","us\u0061ge":{"input_tokens":1,"output_tokens":2,"iterations":[{"type":"advisor\u005fmessage","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"requestId":"req-parent"}"#,
+        });
+
+        let loaded = read_usage_file(
+            &fixture.path("projects/project-a/session-a/chat.jsonl"),
+            None,
+            CostMode::Display,
+            None,
+        );
+
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[0].data.message.usage.output_tokens, 2);
+        assert_eq!(loaded.entries[1].model.as_deref(), Some("advisor-model"));
     }
 
     #[test]

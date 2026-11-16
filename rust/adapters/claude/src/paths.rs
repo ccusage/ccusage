@@ -13,7 +13,7 @@ use crate::{
     Diagnostics, MILLIS_PER_DAY, Result,
     cli::SharedArgs,
     cli_error, date_range_bounds_ms,
-    fast::{FxHashMap, FxHashSet},
+    fast::{FxHashMap, FxHashSet, LinePrefilter},
     home, parse_tz,
 };
 use crate::{TimestampMs, parse_ts_timestamp};
@@ -201,13 +201,14 @@ fn recorded_session_id(path: &Path) -> Option<String> {
     }
 
     let mut reader = BufReader::new(fs::File::open(path).ok()?);
+    let session_id_marker = LinePrefilter::all(&[br#""sessionId""#]);
     let mut line = Vec::new();
     loop {
         line.clear();
         if reader.read_until(b'\n', &mut line).ok()? == 0 {
             return None;
         }
-        if memmem::find(&line, b"\"sessionId\"").is_none() {
+        if !session_id_marker.matches(&line) {
             continue;
         }
         if let Ok(SessionIdProbe {
@@ -546,6 +547,18 @@ mod tests {
 
         assert_eq!(split.kept, [parent, workflow_agent]);
         assert!(split.pruned.is_empty());
+    }
+
+    #[test]
+    fn reads_a_recorded_session_id_under_an_escaped_key() {
+        let fixture = fs_fixture!({
+            "projects/p/agent-1.jsonl": r#"{"sessionI\u0064":"parent"}"#,
+        });
+
+        assert_eq!(
+            super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
+            Some("parent")
+        );
     }
 
     #[test]
