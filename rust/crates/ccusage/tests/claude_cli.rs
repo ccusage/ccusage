@@ -1230,3 +1230,68 @@ fn advisor_turns_count_the_cache_writes_of_every_message_iteration_in_every_repo
         "report costs differ: {costs:?}"
     );
 }
+
+fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> serde_json::Value {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"));
+    command
+        .env_clear()
+        .env("HOME", fixture.path("home"))
+        .env("USERPROFILE", fixture.path("home"))
+        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
+        .env("NO_COLOR", "1")
+        .current_dir(fixture.root())
+        .args(["claude", "daily", "--offline", "--mode", "display"]);
+    if let Some(claude_config_dir) = claude_config_dir {
+        command.env("CLAUDE_CONFIG_DIR", claude_config_dir);
+    }
+    let output = command.output().expect("failed to run ccusage");
+    assert!(
+        output.status.success(),
+        "ccusage claude daily failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout)
+        .expect("the user ccusage.json should switch the report to JSON")
+}
+
+const JSON_USER_CONFIG: &str = r#"{ "defaults": { "json": true } }"#;
+
+#[test]
+fn user_config_beside_the_logs_in_xdg_config_home_is_loaded() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "xdg-config/claude/projects/project-a/session-a.jsonl",
+        usage_line(
+            "2026-09-15T12:00:00.000Z",
+            "session-a",
+            "message-a",
+            "request-a",
+            1.0,
+        ),
+    );
+    let _ = fixture.write_file("xdg-config/claude/ccusage.json", JSON_USER_CONFIG);
+
+    let json = run_with_user_config(&fixture, None);
+
+    assert_eq!(json["totals"]["totalCost"], 1.0);
+}
+
+#[test]
+fn user_config_in_a_tilde_claude_config_dir_entry_is_loaded() {
+    let fixture = Fixture::new();
+    let _ = fixture.write_file(
+        "home/claude-a/projects/project-a/session-a.jsonl",
+        usage_line(
+            "2026-09-15T12:00:00.000Z",
+            "session-a",
+            "message-a",
+            "request-a",
+            1.0,
+        ),
+    );
+    let _ = fixture.write_file("home/claude-b/ccusage.json", JSON_USER_CONFIG);
+
+    let json = run_with_user_config(&fixture, Some("~/claude-a,~/claude-b"));
+
+    assert_eq!(json["totals"]["totalCost"], 1.0);
+}
