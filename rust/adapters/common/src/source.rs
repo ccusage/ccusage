@@ -11,7 +11,7 @@ use serde_json::Value;
 use ccusage_core::{
     Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result, UsageSummary,
     cli::{AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SourceArgs},
-    summary_period,
+    cli_error, summary_period,
 };
 
 use crate::{claims::ClaudeCounted, pipeline, rows::UnifiedRow};
@@ -221,6 +221,19 @@ pub struct LoadContext<'a> {
     pub options: SourceOptions<'a>,
     /// Where the loader records what it skipped.
     pub diagnostics: &'a Diagnostics,
+}
+
+impl<'a> LoadContext<'a> {
+    /// The pricing a [`PricingSupply::Pipeline`] source is handed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a context built without it, which the pipeline
+    /// never does for such a source.
+    pub fn pipeline_pricing(&self) -> Result<&'a PricingMap> {
+        self.pricing
+            .ok_or_else(|| cli_error("the report pipeline did not supply pricing"))
+    }
 }
 
 /// A source whose loader yields `Vec<LoadedEntry>`.
