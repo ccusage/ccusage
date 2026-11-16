@@ -390,26 +390,37 @@ const SHUTDOWN_EVENT: &str = "session.shutdown";
 const USAGE_CHECKPOINT_EVENT: &str = "session.usage_checkpoint";
 const USAGE_RECORD_EVENT: &str = "session.usage_record";
 
-fn is_otel_usage_envelope(value: &Value) -> bool {
-    const USAGE_ATTRIBUTES: &[&str] = &[
-        "gen_ai.usage.input_tokens",
-        "gen_ai.usage.output_tokens",
-        "gen_ai.usage.cache_read.input_tokens",
-        "gen_ai.usage.cache_write.input_tokens",
-        "gen_ai.usage.cache_creation.input_tokens",
-        "gen_ai.usage.reasoning.output_tokens",
-        "gen_ai.usage.reasoning_tokens",
-        "gen_ai.usage.total_tokens",
-        "gen_ai.usage.total.token_count",
-    ];
+const INPUT_TOKENS_ATTRIBUTE: &str = "gen_ai.usage.input_tokens";
+const OUTPUT_TOKENS_ATTRIBUTE: &str = "gen_ai.usage.output_tokens";
+const CACHE_READ_ATTRIBUTE: &str = "gen_ai.usage.cache_read.input_tokens";
+const CACHE_WRITE_ATTRIBUTES: [&str; 2] = [
+    "gen_ai.usage.cache_write.input_tokens",
+    "gen_ai.usage.cache_creation.input_tokens",
+];
+const REASONING_ATTRIBUTES: [&str; 2] = [
+    "gen_ai.usage.reasoning.output_tokens",
+    "gen_ai.usage.reasoning_tokens",
+];
+const TOTAL_TOKENS_ATTRIBUTES: [&str; 2] = [
+    "gen_ai.usage.total_tokens",
+    "gen_ai.usage.total.token_count",
+];
 
+fn is_otel_usage_envelope(value: &Value) -> bool {
     value
         .get("attributes")
         .and_then(Value::as_object)
         .is_some_and(|attributes| {
-            USAGE_ATTRIBUTES
-                .iter()
-                .any(|key| attributes.contains_key(*key))
+            [
+                INPUT_TOKENS_ATTRIBUTE,
+                OUTPUT_TOKENS_ATTRIBUTE,
+                CACHE_READ_ATTRIBUTE,
+            ]
+            .into_iter()
+            .chain(CACHE_WRITE_ATTRIBUTES)
+            .chain(REASONING_ATTRIBUTES)
+            .chain(TOTAL_TOKENS_ATTRIBUTES)
+            .any(|key| attributes.contains_key(key))
         })
 }
 
@@ -716,30 +727,12 @@ fn to_candidate(
     } else {
         return None;
     };
-    let input = attr_number(attributes, "gen_ai.usage.input_tokens");
-    let output = attr_number(attributes, "gen_ai.usage.output_tokens");
-    let cache_read = attr_number(attributes, "gen_ai.usage.cache_read.input_tokens");
-    let cache_creation = attr_number_first(
-        attributes,
-        &[
-            "gen_ai.usage.cache_write.input_tokens",
-            "gen_ai.usage.cache_creation.input_tokens",
-        ],
-    );
-    let reasoning = attr_number_first(
-        attributes,
-        &[
-            "gen_ai.usage.reasoning.output_tokens",
-            "gen_ai.usage.reasoning_tokens",
-        ],
-    );
-    let total = attr_number_first(
-        attributes,
-        &[
-            "gen_ai.usage.total_tokens",
-            "gen_ai.usage.total.token_count",
-        ],
-    );
+    let input = attr_number(attributes, INPUT_TOKENS_ATTRIBUTE);
+    let output = attr_number(attributes, OUTPUT_TOKENS_ATTRIBUTE);
+    let cache_read = attr_number(attributes, CACHE_READ_ATTRIBUTE);
+    let cache_creation = attr_number_first(attributes, &CACHE_WRITE_ATTRIBUTES);
+    let reasoning = attr_number_first(attributes, &REASONING_ATTRIBUTES);
+    let total = attr_number_first(attributes, &TOTAL_TOKENS_ATTRIBUTES);
     // Copilot counts cache reads and writes in the input tokens, as it does in
     // session-state `inputTokens`.
     let usage = TokenUsageRaw {
