@@ -8,8 +8,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry, parse_otel_file,
-        parse_session_state_file,
+        CallIdKind, CallIds, CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry,
+        CopilotUsageRecordEntry, parse_otel_file, parse_session_state_file,
     },
     paths::{CopilotSourceKind, paths},
 };
@@ -67,13 +67,34 @@ fn load_entries_inner(
         })
     });
     let mut otel_entries = Vec::new();
+    let mut otel_keys = HashSet::<String>::new();
     let mut session_state_entries = Vec::new();
+    let mut usage_records = Vec::new();
     let mut credit_snapshots = Vec::new();
     for (source, file_usage) in sources.iter().map(|source| source.kind).zip(parsed) {
         match source {
-            CopilotSourceKind::Otel => otel_entries.extend(file_usage.entries),
+            CopilotSourceKind::Otel => {
+                // Each file's parser already settles repeats within the file, so
+                // only a row an earlier file exported under a key built from the
+                // record's own IDs is a copy of the same call.
+                let new_rows = file_usage
+                    .entries
+                    .into_iter()
+                    .filter(|entry| {
+                        !entry.file_independent_key || !otel_keys.contains(&entry.dedup_key)
+                    })
+                    .collect::<Vec<_>>();
+                otel_keys.extend(
+                    new_rows
+                        .iter()
+                        .filter(|entry| entry.file_independent_key)
+                        .map(|entry| entry.dedup_key.clone()),
+                );
+                otel_entries.extend(new_rows);
+            }
             CopilotSourceKind::SessionState => {
                 session_state_entries.extend(file_usage.entries);
+                usage_records.extend(file_usage.usage_records);
                 credit_snapshots.extend(file_usage.credit_snapshots);
             }
         }
@@ -112,16 +133,102 @@ fn load_entries_inner(
             .get(&(entry.session_id.as_str(), entry.model.as_str()))
             .is_none_or(|after| entry.timestamp > *after)
     });
+    let usage_records = deduplicate_usage_records(usage_records);
+    remove_recorded_otel_calls(&mut otel_entries, &usage_records);
 
     let mut entries = session_state
         .entries
         .into_iter()
+        .chain(usage_records)
         .chain(otel_entries)
         .chain(credit_gaps)
         .map(|entry| usage_entry_to_loaded(entry, tz.as_ref(), shared.mode, pricing))
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
+}
+
+/// Each usage record replaces the one OTel row of its call. A service request
+/// ID names one request, so every record first claims the row with its own
+/// service request ID. VS Code reports the response ID of a turn on every call
+/// it makes, so a response ID can name several calls: only records still
+/// without a row then take, in time order, the nearest unclaimed row with
+/// their response ID. Rows must share the record's model, and rows no record
+/// takes are kept.
+fn remove_recorded_otel_calls(
+    otel_entries: &mut Vec<CopilotUsageEntry>,
+    records: &[CopilotUsageEntry],
+) {
+    let mut rows_by_call_id = HashMap::<(CallIdKind, &str), Vec<usize>>::new();
+    for (index, entry) in otel_entries.iter().enumerate() {
+        for call_id in entry.call_ids.iter() {
+            rows_by_call_id.entry(call_id).or_default().push(index);
+        }
+    }
+    let mut records = records.iter().collect::<Vec<_>>();
+    records.sort_by_key(|record| (record.timestamp, record.dedup_key.as_str()));
+    let mut matched = vec![false; records.len()];
+    let mut replaced = HashSet::new();
+    for kind in [CallIdKind::ServiceRequest, CallIdKind::Response] {
+        for (position, record) in records.iter().enumerate() {
+            if matched[position] {
+                continue;
+            }
+            let nearest = record
+                .call_ids
+                .iter()
+                .filter(|(id_kind, _)| *id_kind == kind)
+                .filter_map(|call_id| rows_by_call_id.get(&call_id))
+                .flatten()
+                .copied()
+                .filter(|index| {
+                    otel_entries[*index].model == record.model && !replaced.contains(index)
+                })
+                .min_by_key(|index| {
+                    let row = otel_entries[*index].timestamp.as_millis();
+                    (row.abs_diff(record.timestamp.as_millis()), row, *index)
+                });
+            if let Some(index) = nearest {
+                replaced.insert(index);
+                matched[position] = true;
+            }
+        }
+    }
+    let mut index = 0;
+    otel_entries.retain(|_| {
+        index += 1;
+        !replaced.contains(&(index - 1))
+    });
+}
+
+/// A call's record can appear in more than one session file, such as the log
+/// of the session that ran it and the log of a session it is accounted to.
+/// Each call is kept once, in the session that assigned its accounting
+/// sequence, or else the lowest session ID, so the result does not depend on
+/// the order files are read in.
+fn deduplicate_usage_records(records: Vec<CopilotUsageRecordEntry>) -> Vec<CopilotUsageEntry> {
+    let rank = |record: &CopilotUsageRecordEntry| {
+        (
+            record.source_session_id.as_deref() != Some(record.entry.session_id.as_str()),
+            record.entry.session_id.clone(),
+        )
+    };
+    let mut positions = HashMap::<String, usize>::new();
+    let mut kept = Vec::<CopilotUsageRecordEntry>::new();
+    for record in records {
+        match positions.get(&record.entry.dedup_key) {
+            Some(&position) => {
+                if rank(&record) < rank(&kept[position]) {
+                    kept[position] = record;
+                }
+            }
+            None => {
+                positions.insert(record.entry.dedup_key.clone(), kept.len());
+                kept.push(record);
+            }
+        }
+    }
+    kept.into_iter().map(|record| record.entry).collect()
 }
 
 struct SessionStateReconciliation {
@@ -373,6 +480,8 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         // One AIU is one GitHub AI credit, billed at $0.01.
         cost_usd: Some(nano_aiu as f64 / 1e11),
         dedup_key: snapshot.dedup_key.clone(),
+        file_independent_key: false,
+        call_ids: CallIds::default(),
     }
 }
 
@@ -418,6 +527,8 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         nano_aiu: current.nano_aiu.saturating_sub(baseline.nano_aiu),
         cost_usd: None,
         dedup_key: current.dedup_key.clone(),
+        file_independent_key: false,
+        call_ids: CallIds::default(),
     }
 }
 
@@ -435,7 +546,7 @@ fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<CopilotSourc
     match kind {
         CopilotSourceKind::Otel => Ok(CopilotSourceUsage {
             entries: parse_otel_file(path)?,
-            credit_snapshots: Vec::new(),
+            ..CopilotSourceUsage::default()
         }),
         CopilotSourceKind::SessionState => parse_session_state_file(path),
     }
@@ -1988,5 +2099,609 @@ mod tests {
             usage_rows(&entries),
             [("2026-01-02T10:00:00.000Z".to_string(), 100)]
         );
+    }
+
+    const RECEIPTS_ONLY: &str =
+        include_str!("../tests/fixtures/session-state/session-receipts/events.jsonl");
+    const SHUTDOWN_ONLY: &str =
+        include_str!("../tests/fixtures/session-state/session-a/events.jsonl");
+    const SHUTDOWN_THEN_RECEIPTS: &str =
+        include_str!("../tests/fixtures/session-state/session-resumed-receipts/events.jsonl");
+
+    /// `(timestamp, model, input, output, cache write, cache read, requests)`
+    /// per entry.
+    fn token_rows(entries: &[LoadedEntry]) -> Vec<(String, String, u64, u64, u64, u64, u64)> {
+        entries
+            .iter()
+            .map(|entry| {
+                let usage = entry.data.message.usage;
+                (
+                    entry.data.timestamp.clone(),
+                    entry.model.clone().unwrap_or_default(),
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.cache_creation_input_tokens,
+                    usage.cache_read_input_tokens,
+                    entry.message_count.unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
+
+    fn row(
+        timestamp: &str,
+        model: &str,
+        tokens: [u64; 5],
+    ) -> (String, String, u64, u64, u64, u64, u64) {
+        let [input, output, cache_write, cache_read, requests] = tokens;
+        (
+            timestamp.to_string(),
+            model.to_string(),
+            input,
+            output,
+            cache_write,
+            cache_read,
+            requests,
+        )
+    }
+
+    #[test]
+    fn reports_each_usage_record_as_one_call_at_its_own_time() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-receipts/events.jsonl": RECEIPTS_ONLY,
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        // Receipt input includes cache reads and writes, as shutdown input does.
+        // Checkpoint credits are not reported again as `unknown` cost.
+        assert_eq!(
+            token_rows(&entries),
+            [
+                row(
+                    "2026-02-05T09:00:00.000Z",
+                    "claude-sonnet-4.6",
+                    [100, 80, 100, 1000, 1]
+                ),
+                row("2026-02-05T09:05:00.000Z", "gpt-5.4", [100, 40, 0, 200, 1]),
+                row(
+                    "2026-02-06T10:00:00.000Z",
+                    "claude-sonnet-4.6",
+                    [50, 60, 50, 400, 1]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_shutdown_intervals_for_sessions_without_usage_records() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-a/events.jsonl": SHUTDOWN_ONLY,
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            token_rows(&entries),
+            [
+                row(
+                    "2026-01-02T01:20:00.000Z",
+                    "claude-opus-4.6",
+                    [70, 50, 20, 10, 1]
+                ),
+                row(
+                    "2026-01-03T01:20:00.000Z",
+                    "claude-opus-4.6",
+                    [80, 30, 10, 10, 2]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn counts_calls_once_when_a_shutdown_follows_their_usage_records() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-resumed-receipts/events.jsonl":
+                SHUTDOWN_THEN_RECEIPTS,
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        // The first shutdown predates receipts and keeps its usage; the second
+        // one only repeats the receipt, which stays on its own day.
+        assert_eq!(
+            token_rows(&entries),
+            [
+                row(
+                    "2026-02-07T09:00:00.000Z",
+                    "claude-sonnet-4.6",
+                    [100, 40, 100, 300, 2]
+                ),
+                row(
+                    "2026-02-08T23:00:00.000Z",
+                    "claude-sonnet-4.6",
+                    [50, 30, 0, 200, 1]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn counts_a_usage_record_without_tokens_as_a_call() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                json!({
+                    "type": "session.usage_record",
+                    "id": "record-1",
+                    "timestamp": "2026-02-05T09:00:00.000Z",
+                    "data": {"usage": {
+                        "model": "gpt-5.4",
+                        "inputTokens": 0,
+                        "outputTokens": 0,
+                        "accounting": {"sourceSessionId": "session-1", "sequence": 1}
+                    }}
+                })
+                .to_string(),
+                checkpoint("checkpoint-1", "2026-02-05T09:00:01.000Z", 3),
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-1",
+                    "timestamp": "2026-02-06T09:00:00.000Z",
+                    "data": {
+                        "totalNanoAiu": 3 * NANO_AIU_PER_CREDIT,
+                        "modelMetrics": {"gpt-5.4": {
+                            "usage": {"inputTokens": 0, "outputTokens": 0},
+                            "requests": {"count": 1}
+                        }}
+                    }
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        // The call keeps its own day and request count, and the shutdown that
+        // totals it neither repeats it nor turns its credits into `unknown` cost.
+        assert_eq!(
+            token_rows(&entries),
+            [row("2026-02-05T09:00:00.000Z", "gpt-5.4", [0, 0, 0, 0, 1])]
+        );
+    }
+
+    #[test]
+    fn counts_a_usage_record_delivered_twice_once() {
+        let duplicated = RECEIPTS_ONLY
+            .lines()
+            .find(|line| line.contains("\"record-r-2\""))
+            .unwrap()
+            .replace("\"record-r-2\"", "\"record-r-2-again\"");
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-receipts/events.jsonl":
+                format!("{RECEIPTS_ONLY}{duplicated}\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(token_rows(&entries).len(), 3);
+    }
+
+    /// A `test-model` usage record of `session-1` with 100 input tokens.
+    fn usage_record(id: &str, timestamp: &str, usage: serde_json::Value) -> String {
+        let mut usage_json = json!({"model": "test-model", "inputTokens": 100});
+        usage_json
+            .as_object_mut()
+            .unwrap()
+            .extend(usage.as_object().unwrap().clone());
+        json!({
+            "type": "session.usage_record",
+            "id": id,
+            "timestamp": timestamp,
+            "data": {"usage": usage_json}
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn counts_a_usage_record_in_parent_and_child_files_once_for_its_source_session() {
+        // Both orders of the two session directories, so the result cannot
+        // depend on which file is read first.
+        for (parent, child) in [("a-parent", "b-child"), ("b-parent", "a-child")] {
+            let record = |id: &str| {
+                usage_record(
+                    id,
+                    "2026-01-02T10:00:00.000Z",
+                    json!({"accounting": {"sourceSessionId": child, "sequence": 7}}),
+                )
+            };
+            let fixture = fs_fixture!({});
+            for (session, event_id) in [(parent, "parent-event"), (child, "child-event")] {
+                let _ = fixture.write_file(
+                    format!("home/.copilot/session-state/{session}/events.jsonl"),
+                    record(event_id),
+                );
+            }
+
+            let entries = load_copilot_home(&fixture, &utc_args());
+
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| (
+                        entry.session_id.to_string(),
+                        entry.data.message.usage.input_tokens
+                    ))
+                    .collect::<Vec<_>>(),
+                [(child.to_string(), 100)],
+                "parent {parent}, child {child}"
+            );
+        }
+    }
+
+    /// A checkpoint and a shutdown of `session-parent` whose `test-model`
+    /// breakdown totals one 100-token call worth one of its two credits.
+    /// `watermarks` are the shutdown's `usageAccountingWatermarks`, which only
+    /// processes that write usage records report.
+    fn parent_snapshots(watermarks: Option<serde_json::Value>) -> Vec<String> {
+        let mut checkpoint = json!({
+            "type": "session.usage_checkpoint",
+            "id": "checkpoint-1",
+            "timestamp": "2026-01-02T10:30:00.000Z",
+            "data": {"totalNanoAiu": 2 * NANO_AIU_PER_CREDIT}
+        });
+        let mut shutdown: serde_json::Value = serde_json::from_str(&shutdown_with_requests(
+            "shutdown-1",
+            "2026-01-02T11:00:00.000Z",
+            1,
+        ))
+        .unwrap();
+        shutdown["data"]["totalNanoAiu"] = json!(2 * NANO_AIU_PER_CREDIT);
+        shutdown["data"]["modelMetrics"]["test-model"]["totalNanoAiu"] = json!(NANO_AIU_PER_CREDIT);
+        if let Some(watermarks) = watermarks {
+            checkpoint["data"]["usageAccountingWatermarks"] = watermarks.clone();
+            shutdown["data"]["usageAccountingWatermarks"] = watermarks;
+        }
+        vec![checkpoint.to_string(), shutdown.to_string()]
+    }
+
+    #[test]
+    fn a_shutdown_counts_no_call_that_another_sessions_usage_record_reports() {
+        // A shutdown keeps accounting watermarks per source session, so its
+        // totals include the child's call wherever that call's record is.
+        let record = |id: &str| {
+            usage_record(
+                id,
+                "2026-01-02T10:00:00.000Z",
+                json!({"accounting": {"sourceSessionId": "session-child", "sequence": 1}}),
+            )
+        };
+        let watermarks = Some(json!({"session-child": 1}));
+        let with_copy = [
+            vec![record("parent-record")],
+            parent_snapshots(watermarks.clone()),
+        ]
+        .concat();
+        let cases = [
+            (
+                "parent holds a copy",
+                with_copy.clone(),
+                true,
+                vec![("session-child", "test-model", 100)],
+            ),
+            (
+                "parent holds only its shutdown",
+                parent_snapshots(watermarks),
+                true,
+                vec![("session-child", "test-model", 100)],
+            ),
+            (
+                "child file missing",
+                with_copy,
+                false,
+                vec![("session-parent", "test-model", 100)],
+            ),
+            // A shutdown from before usage records covers none of them, so it
+            // keeps its usage and its unexplained credit, which also shows that
+            // the parent's snapshots are parsed.
+            (
+                "parent shutdown predates usage records",
+                parent_snapshots(None),
+                true,
+                vec![
+                    ("session-child", "test-model", 100),
+                    ("session-parent", "test-model", 100),
+                    ("session-parent", "unknown", 0),
+                ],
+            ),
+        ];
+        for (layout, parent, child_file, expected) in cases {
+            let fixture = fs_fixture!({
+                "home/.copilot/session-state/session-parent/events.jsonl": parent.join("\n"),
+            });
+            if child_file {
+                let _ = fixture.write_file(
+                    "home/.copilot/session-state/session-child/events.jsonl",
+                    record("child-record"),
+                );
+            }
+
+            let entries = load_copilot_home(&fixture, &utc_args());
+
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| (
+                        entry.session_id.to_string(),
+                        entry.model.clone().unwrap_or_default(),
+                        entry.data.message.usage.input_tokens
+                    ))
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|(session, model, input)| (session.to_string(), model.to_string(), *input))
+                    .collect::<Vec<_>>(),
+                "{layout}"
+            );
+        }
+    }
+
+    /// A `test-model` OTel call of `session-1` with the given call ID attribute.
+    fn otel_call_with(span_id: &str, timestamp: &str, attribute: (&str, &str)) -> String {
+        let mut span: serde_json::Value =
+            serde_json::from_str(&otel_call(span_id, timestamp)).unwrap();
+        span["attributes"][attribute.0] = json!(attribute.1);
+        span.to_string()
+    }
+
+    #[test]
+    fn counts_an_otel_call_exported_to_two_files_once() {
+        let span = otel_call_with(
+            "span-1",
+            "2026-01-02T09:00:00.000Z",
+            ("gen_ai.response.id", "response-1"),
+        );
+        for record in [None, Some("response-1")] {
+            let fixture = fs_fixture!({
+                "home/.copilot/otel/a.jsonl": span.clone(),
+                "home/.copilot/otel/b.jsonl": span.clone(),
+            });
+            if let Some(api_call_id) = record {
+                let _ = fixture.write_file(
+                    "home/.copilot/session-state/session-1/events.jsonl",
+                    usage_record(
+                        "record-1",
+                        "2026-01-02T09:00:00.000Z",
+                        json!({"apiCallId": api_call_id}),
+                    ),
+                );
+            }
+
+            let entries = load_copilot_home(&fixture, &utc_args());
+
+            let expected_input = if record.is_some() { 100 } else { 1 };
+            assert_eq!(
+                usage_rows(&entries),
+                [("2026-01-02T09:00:00.000Z".to_string(), expected_input)],
+                "usage record: {record:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn counts_an_otel_call_copied_to_another_line_of_another_file_once() {
+        let span = otel_call("span-1", "2026-01-02T09:00:00.000Z");
+        let fixture = fs_fixture!({
+            "home/.copilot/otel/a.jsonl": span.clone(),
+            "home/.copilot/otel/b.jsonl":
+                [otel_call("span-2", "2026-01-02T08:00:00.000Z"), span].join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T08:00:00.000Z".to_string(), 1),
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_otel_calls_without_trace_and_span_ids_from_every_file() {
+        // Without trace and span IDs a row's key falls back to its line and
+        // time, which say nothing about whether two files hold the same call.
+        let call = |input_tokens: u64| {
+            let mut span: serde_json::Value =
+                serde_json::from_str(&otel_call("unused", "2026-01-02T09:00:00.000Z")).unwrap();
+            let span_object = span.as_object_mut().unwrap();
+            span_object.remove("traceId");
+            span_object.remove("spanId");
+            span["attributes"]["gen_ai.usage.input_tokens"] = json!(input_tokens);
+            span.to_string()
+        };
+        let fixture = fs_fixture!({
+            "home/.copilot/otel/a.jsonl": call(1),
+            "home/.copilot/otel/b.jsonl": call(2),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+                ("2026-01-02T09:00:00.000Z".to_string(), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn matches_call_ids_only_within_the_same_kind() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": usage_record(
+                "record-1",
+                "2026-01-02T09:00:00.000Z",
+                json!({"apiCallId": "same-value"}),
+            ),
+            "home/.copilot/otel/otel.jsonl": otel_call_with(
+                "span-1",
+                "2026-01-02T09:00:00.000Z",
+                ("github.copilot.service_request_id", "same-value"),
+            ),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 100),
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_usage_record_replaces_one_otel_call_of_a_shared_response_id() {
+        // VS Code reports the response ID of the turn on every call it makes.
+        let call = |span_id: &str, timestamp: &str, input_tokens: u64| {
+            let mut span: serde_json::Value =
+                serde_json::from_str(&otel_call(span_id, timestamp)).unwrap();
+            span["attributes"]["gen_ai.response.id"] = json!("turn-response");
+            span["attributes"]["gen_ai.usage.input_tokens"] = json!(input_tokens);
+            span.to_string()
+        };
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": usage_record(
+                "record-1",
+                "2026-01-02T09:09:00.000Z",
+                json!({"apiCallId": "turn-response"}),
+            ),
+            "home/.copilot/otel/otel.jsonl": [
+                call("first", "2026-01-02T09:00:00.000Z", 1),
+                call("recorded", "2026-01-02T09:10:00.000Z", 2),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+                ("2026-01-02T09:09:00.000Z".to_string(), 100),
+            ]
+        );
+    }
+
+    #[test]
+    fn matches_service_request_ids_before_shared_response_ids() {
+        let record = |id: &str, timestamp: &str, service_request_id: &str| {
+            usage_record(
+                id,
+                timestamp,
+                json!({"apiCallId": "turn-response", "serviceRequestId": service_request_id}),
+            )
+        };
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                record("record-a", "2026-01-02T09:10:00.000Z", "service-a"),
+                record("record-b", "2026-01-02T09:20:00.000Z", "service-b"),
+            ]
+            .join("\n"),
+            "home/.copilot/otel/otel.jsonl": [
+                otel_call_with(
+                    "call-a",
+                    "2026-01-02T09:05:00.000Z",
+                    ("github.copilot.service_request_id", "service-a"),
+                ),
+                otel_call_with(
+                    "call-b",
+                    "2026-01-02T09:11:00.000Z",
+                    ("gen_ai.response.id", "turn-response"),
+                ),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        // Record A's own service request ID claims call A, so the shared
+        // response ID is left for record B.
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:10:00.000Z".to_string(), 100),
+                ("2026-01-02T09:20:00.000Z".to_string(), 100),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_otel_calls_that_no_usage_record_covers() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": usage_record(
+                "record-1",
+                "2026-01-02T10:00:00.000Z",
+                json!({"apiCallId": "response-2"}),
+            ),
+            "home/.copilot/otel/otel.jsonl":
+                otel_call("uncovered", "2026-01-02T09:00:00.000Z"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+                ("2026-01-02T10:00:00.000Z".to_string(), 100),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_otel_calls_that_usage_records_cover_to_the_records() {
+        let otel = |span_id: &str, call_id: (&str, &str)| {
+            let mut span: serde_json::Value = serde_json::from_str(
+                &otel_call(span_id, "2026-02-05T09:05:00.000Z")
+                    .replace("session-1", "session-receipts")
+                    .replace("test-model", "gpt-5.4"),
+            )
+            .unwrap();
+            span["attributes"][call_id.0] = json!(call_id.1);
+            span.to_string()
+        };
+        for (attribute, recorded_id) in [
+            ("gen_ai.response.id", "chatcmpl-r-2"),
+            ("github.copilot.service_request_id", "service-r-2"),
+        ] {
+            let fixture = fs_fixture!({
+                "home/.copilot/session-state/session-receipts/events.jsonl": RECEIPTS_ONLY,
+                "home/.copilot/otel/otel.jsonl": [
+                    otel("recorded", (attribute, recorded_id)),
+                    otel("unrecorded", (attribute, "unrecorded")),
+                ]
+                .join("\n"),
+            });
+
+            let entries = load_copilot_home(&fixture, &utc_args());
+
+            assert_eq!(
+                token_rows(&entries)
+                    .into_iter()
+                    .filter(|row| row.1 == "gpt-5.4")
+                    .map(|row| (row.0, row.2))
+                    .collect::<Vec<_>>(),
+                [
+                    ("2026-02-05T09:05:00.000Z".to_string(), 100),
+                    ("2026-02-05T09:05:00.000Z".to_string(), 1),
+                ],
+                "{attribute}"
+            );
+        }
     }
 }
