@@ -872,7 +872,13 @@ fn process_is_alive(pid: u32) -> bool {
     unsafe extern "C" {
         fn kill(pid: i32, sig: i32) -> i32;
     }
-    unsafe { kill(pid as i32, 0) == 0 }
+    // `kill` reads a pid of 0 or below as a process group, so a cached pid
+    // that is not a positive `pid_t` names no single process.
+    let Some(pid) = i32::try_from(pid).ok().filter(|pid| *pid > 0) else {
+        return false;
+    };
+    // SAFETY: signal 0 only checks that `pid` exists and may be signaled.
+    unsafe { kill(pid, 0) == 0 }
 }
 
 #[cfg(not(unix))]
@@ -983,6 +989,14 @@ mod tests {
 
     use super::*;
     use crate::cli::{Cli, Command, CostMode};
+
+    #[test]
+    fn a_cached_pid_is_alive_only_when_it_names_one_running_process() {
+        assert!(process_is_alive(std::process::id()));
+        for pid in [0, i32::MAX as u32 + 1, u32::MAX] {
+            assert!(!process_is_alive(pid), "pid {pid}");
+        }
+    }
 
     #[test]
     fn claude_session_totals_only_include_entries_inside_date_window() {
