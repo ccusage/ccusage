@@ -26,6 +26,7 @@ pub mod qwen;
 pub mod zcode;
 
 use std::{
+    collections::BTreeMap,
     fs,
     io::Write as _,
     path::{Path, PathBuf},
@@ -238,6 +239,61 @@ pub fn run_matrix(agent: &'static str, seed: Seed, extras: Extras) {
     for case in &agent_cases(agent, extras, root) {
         assert_case(agent, root, &seeded, case);
     }
+}
+
+/// Writes every agent's seed into one `root` and returns the variables that
+/// point the CLI at all of them.
+pub fn seed_all(agents: &[AgentMatrix], root: &Path) -> Vec<(&'static str, PathBuf)> {
+    // Seeds write to disjoint directories but may name the same variable (the
+    // OpenCode seed adds a Claude store of its own); every such variable is a
+    // comma-separated list, so the values are joined.
+    let mut joined: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
+    for matrix in agents {
+        for (name, path) in (matrix.seed)(root) {
+            joined
+                .entry(name)
+                .or_default()
+                .push(path.to_string_lossy().into_owned());
+        }
+    }
+    joined
+        .into_iter()
+        .map(|(name, paths)| (name, PathBuf::from(paths.join(","))))
+        .collect()
+}
+
+/// Name of the file `export_fixture` writes beside the seeds.
+pub const FIXTURE_MANIFEST: &str = "golden-env.json";
+
+/// Seeds every agent into `root` and writes `FIXTURE_MANIFEST` there: the
+/// working directory and environment `hermetic_command` runs the unified
+/// reports under, and the matrix's date window. `diff-refs.bb` replays
+/// commands from it, so both read the same stores the goldens do.
+pub fn export_fixture(agents: &[AgentMatrix], root: &Path) {
+    let seeded = seed_all(agents, root);
+    let command = hermetic_command(root, &seeded, WIDE_COLUMNS);
+    let env: serde_json::Map<String, serde_json::Value> = command
+        .get_envs()
+        .filter_map(|(name, value)| {
+            Some((
+                name.to_string_lossy().into_owned(),
+                value?.to_string_lossy().into_owned().into(),
+            ))
+        })
+        .collect();
+    let cwd = command
+        .get_current_dir()
+        .expect("hermetic command has a working directory");
+    let manifest = serde_json::json!({
+        "cwd": cwd.to_string_lossy(),
+        "env": env,
+        "window": { "since": WINDOW_SINCE, "until": WINDOW_UNTIL },
+    });
+    fs::write(
+        root.join(FIXTURE_MANIFEST),
+        serde_json::to_string_pretty(&manifest).expect("manifest is JSON serialisable"),
+    )
+    .expect("failed to write golden fixture manifest");
 }
 
 /// Builds a `ccusage` command that can see nothing but the fixture: a cleared
