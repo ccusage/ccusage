@@ -9,7 +9,6 @@ use std::{
 };
 
 use memchr::memmem::Finder;
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
@@ -49,19 +48,29 @@ static ESCAPED_USAGE_MARKERS: LazyLock<LinePrefilter> = LazyLock::new(|| {
 static SESSION_META_MARKER: LazyLock<LinePrefilter> =
     LazyLock::new(|| LinePrefilter::any(&[b"session_meta"]));
 const CODEX_AUTO_REVIEW_MODEL: &str = "codex-auto-review";
-const CODEX_AUTO_REVIEW_FALLBACKS_JSON: &str = include_str!("codex-auto-review-fallbacks.json");
+const CODEX_AUTO_REVIEW_DEFAULT_MODEL: &str = "gpt-5";
+// NOTE(2026-09-17, #1753): auto-review routing changes independently of public
+// model releases, so a new entry needs evidence of the routing change, not just
+// a catalog release.
+const CODEX_AUTO_REVIEW_FALLBACKS: &[CodexAutoReviewFallback] = &[
+    CodexAutoReviewFallback::new("2026-07-30", "gpt-5.6-luna"),
+    CodexAutoReviewFallback::new("2026-03-05", "gpt-5.4"),
+    CodexAutoReviewFallback::new("2026-02-05", "gpt-5.3-codex"),
+    CodexAutoReviewFallback::new("2025-12-11", "gpt-5.2-codex"),
+    CodexAutoReviewFallback::new("2025-11-13", "gpt-5.1-codex"),
+    CodexAutoReviewFallback::new("2025-09-15", "gpt-5-codex"),
+    CodexAutoReviewFallback::new("2025-08-07", CODEX_AUTO_REVIEW_DEFAULT_MODEL),
+];
 
-static CODEX_AUTO_REVIEW_FALLBACK_MODELS: LazyLock<Vec<CodexAutoReviewFallback<'static>>> =
-    LazyLock::new(|| {
-        serde_json::from_str(CODEX_AUTO_REVIEW_FALLBACKS_JSON)
-            .expect("embedded codex-auto-review fallback snapshot must parse")
-    });
+struct CodexAutoReviewFallback {
+    released_on: &'static str,
+    model: &'static str,
+}
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CodexAutoReviewFallback<'a> {
-    released_on: &'a str,
-    model: &'a str,
+impl CodexAutoReviewFallback {
+    const fn new(released_on: &'static str, model: &'static str) -> Self {
+        Self { released_on, model }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1013,19 +1022,13 @@ fn codex_log_model_fallback(model: &str, timestamp: &str) -> Option<&'static str
     if model != CODEX_AUTO_REVIEW_MODEL {
         return None;
     }
-    let Some(date) = codex_timestamp_date(timestamp) else {
-        return Some("gpt-5");
-    };
-    Some(
-        codex_auto_review_fallback_models()
+    let routed = codex_timestamp_date(timestamp).and_then(|date| {
+        CODEX_AUTO_REVIEW_FALLBACKS
             .iter()
-            .find_map(|fallback| (date >= fallback.released_on).then_some(fallback.model))
-            .unwrap_or("gpt-5"),
-    )
-}
-
-fn codex_auto_review_fallback_models() -> &'static [CodexAutoReviewFallback<'static>] {
-    CODEX_AUTO_REVIEW_FALLBACK_MODELS.as_slice()
+            .filter(|fallback| fallback.released_on <= date)
+            .max_by_key(|fallback| fallback.released_on)
+    });
+    Some(routed.map_or(CODEX_AUTO_REVIEW_DEFAULT_MODEL, |fallback| fallback.model))
 }
 
 fn codex_timestamp_date(timestamp: &str) -> Option<&str> {
@@ -1803,20 +1806,34 @@ mod tests {
     }
 
     #[test]
-    fn loads_codex_auto_review_fallbacks_from_models_dev_snapshot() {
-        let fallbacks = codex_auto_review_fallback_models();
+    fn routes_codex_auto_review_through_models_the_embedded_pricing_knows() {
+        let pricing = crate::PricingMap::load_embedded();
 
-        assert_eq!(fallbacks.len(), 7);
-        assert_eq!(fallbacks[0].released_on, "2026-07-30");
-        assert_eq!(fallbacks[0].model, "gpt-5.6-luna");
-        assert!(!fallbacks.iter().any(|fallback| fallback.model == "gpt-5.5"));
-        assert_eq!(fallbacks[6].released_on, "2025-08-07");
-        assert_eq!(fallbacks[6].model, "gpt-5");
+        for fallback in CODEX_AUTO_REVIEW_FALLBACKS {
+            assert!(
+                pricing.find_exact(fallback.model).is_some(),
+                "{} has no embedded pricing",
+                fallback.model
+            );
+        }
         assert!(
-            fallbacks
-                .windows(2)
-                .all(|window| window[0].released_on > window[1].released_on)
+            !CODEX_AUTO_REVIEW_FALLBACKS
+                .iter()
+                .any(|fallback| fallback.model == "gpt-5.5")
         );
+        for (timestamp, expected) in [
+            ("2025-01-01T00:00:00Z", "gpt-5"),
+            ("2025-09-15T00:00:00Z", "gpt-5-codex"),
+            ("2026-07-29T23:59:59Z", "gpt-5.4"),
+            ("2026-07-30T00:00:00Z", "gpt-5.6-luna"),
+            ("not a date", "gpt-5"),
+        ] {
+            assert_eq!(
+                codex_log_model_fallback(CODEX_AUTO_REVIEW_MODEL, timestamp),
+                Some(expected),
+                "{timestamp}"
+            );
+        }
     }
 
     #[test]
