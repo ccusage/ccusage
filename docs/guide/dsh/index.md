@@ -23,11 +23,11 @@ Use `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session` t
 By default, ccusage reads session logs from:
 
 ```text
+~/.dsh/sessions/<project>/<session-id>/session.jsonl
 ~/.dsh/sessions/<project>/<session-id>/session.v<N>.jsonl
-~/.dsh/sessions/<project>/<session-id>/session.v<N>.jsonl.zstd
 ```
 
-Both plain and zstd-compressed logs are supported. A compressed log that is still being written can end in an incomplete frame; ccusage reads the complete part and skips the rest.
+Either file can also be zstd-compressed with a `.zstd` suffix. A compressed log that is still being written can end in an incomplete frame; ccusage reads the complete part and skips the rest.
 
 DeepSeek Harness keeps older log generations next to the newest one after it migrates a session to a new format. ccusage reads only the newest generation in each session directory, so the same requests are not counted twice.
 
@@ -52,9 +52,11 @@ Session rows are keyed by the session ID from the log header, such as `session-<
 
 ## Token and Cost Data
 
-ccusage counts the usage recorded on assistant messages and on compaction summaries. Assistant messages are attributed to the provider and model of the most recent request; compaction summaries use the provider and model they name. Input, output, cache read, and cache write tokens are recorded separately by DeepSeek Harness, so input tokens do not include cache tokens.
+ccusage counts the usage recorded on assistant messages, failed or aborted assistant attempts, and compaction summaries. When a message or attempt has no settled usage, ccusage uses the last usage its stream reported, as DeepSeek Harness itself does. Assistant messages and attempts are attributed to the provider and model of the most recent request; compaction summaries use the provider and model they name. Input, output, cache read, and cache write tokens are recorded separately by DeepSeek Harness, so input tokens do not include cache tokens.
 
-A forked session starts with a copy of its parent's log. ccusage counts only the requests made after the fork point, so a parent and its forks are not counted twice.
+A forked session starts with a copy of its parent's log. ccusage counts only the requests made after the fork point, so a parent and its forks are not counted twice. A fork whose log was cut off before the end of the copied history is skipped, because everything in it belongs to the parent.
+
+DeepSeek Harness does not log usage for the requests that generate session titles, so those requests are not included.
 
 DeepSeek Harness does not record costs, so ccusage calculates them from token counts and known model pricing. `auto` and `calculate` produce the same result, and `display` shows `$0.00`. Requests through DeepSeek's own API-key and account providers use DeepSeek pricing; requests through other providers look up pricing for that provider's model first, then for the bare model ID. A model without known pricing remains visible with a missing-pricing warning.
 

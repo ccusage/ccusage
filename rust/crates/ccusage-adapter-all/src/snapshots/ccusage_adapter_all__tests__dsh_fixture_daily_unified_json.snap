@@ -8,7 +8,7 @@ expression: "report_json(&result.rows, kind)"
       "agent": "all",
       "cacheCreationTokens": 600,
       "cacheReadTokens": 17000,
-      "inputTokens": 1600,
+      "inputTokens": 1650,
       "metadata": {
         "agents": [
           "dsh"
@@ -18,8 +18,8 @@ expression: "report_json(&result.rows, kind)"
         {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 17000,
-          "cost": 0.0042196000000000004,
-          "inputTokens": 1600,
+          "cost": 0.0042526000000000005,
+          "inputTokens": 1650,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 420
         }
@@ -29,8 +29,8 @@ expression: "report_json(&result.rows, kind)"
       ],
       "outputTokens": 420,
       "period": "2026-10-14",
-      "totalCost": 0.0042196000000000004,
-      "totalTokens": 19620
+      "totalCost": 0.0042526000000000005,
+      "totalTokens": 19670
     },
     {
       "agent": "all",
@@ -120,9 +120,9 @@ expression: "report_json(&result.rows, kind)"
   "totals": {
     "cacheCreationTokens": 2600,
     "cacheReadTokens": 22000,
-    "inputTokens": 23800,
+    "inputTokens": 23850,
     "outputTokens": 1770,
-    "totalCost": 0.034399599999999995,
-    "totalTokens": 50170
+    "totalCost": 0.0344326,
+    "totalTokens": 50220
   }
 }

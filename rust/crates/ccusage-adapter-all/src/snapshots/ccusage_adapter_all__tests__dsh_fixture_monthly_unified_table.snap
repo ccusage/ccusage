@@ -20,11 +20,11 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "2026-10",
         "All",
         "",
-        "23,800",
+        "23,850",
         "1,770",
         "2,600",
         "22,000",
-        "50,170",
+        "50,220",
         "$0.03"
       ],
       "kind": "row"
@@ -34,11 +34,11 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "",
         "- DeepSeek Harness",
         "- deepseek-flash\n- deepseek-v4-pro\n- sonnet-4-5",
-        "23,800",
+        "23,850",
         "1,770",
         "2,600",
         "22,000",
-        "50,170",
+        "50,220",
         "$0.03"
       ],
       "kind": "agent-breakdown"
@@ -48,11 +48,11 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "Total",
         "",
         "",
-        "23,800",
+        "23,850",
         "1,770",
         "2,600",
         "22,000",
-        "50,170",
+        "50,220",
         "$0.03"
       ],
       "kind": "total"

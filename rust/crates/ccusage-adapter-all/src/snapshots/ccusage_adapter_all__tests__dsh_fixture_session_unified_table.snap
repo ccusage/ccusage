@@ -34,11 +34,11 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "dsh-parent",
         "DeepSeek Harness",
         "- deepseek-flash\n- deepseek-v4-pro",
-        "20,600",
+        "20,650",
         "1,220",
         "600",
         "17,000",
-        "39,420",
+        "39,470",
         "$0.01"
       ],
       "kind": "row"
@@ -48,11 +48,11 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "Total",
         "",
         "",
-        "23,800",
+        "23,850",
         "1,770",
         "2,600",
         "22,000",
-        "50,170",
+        "50,220",
         "$0.03"
       ],
       "kind": "total"

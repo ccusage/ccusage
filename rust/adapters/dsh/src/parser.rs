@@ -30,6 +30,8 @@ struct HeaderLine {
     created_at: Option<i64>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     cwd: Option<String>,
+    #[serde(rename = "isSeeded", default)]
+    is_seeded: bool,
 }
 
 /// Every line after the header. Only the fields ccusage consumes are declared.
@@ -57,8 +59,42 @@ struct EventData {
     header: Option<RequestHeader>,
     #[serde(default, deserialize_with = "jsonl::lenient_object")]
     usage: Option<TokenUsage>,
+    #[serde(default, deserialize_with = "jsonl::lenient_vec")]
+    stream: Vec<StreamRecord>,
     #[serde(default)]
     inherited: bool,
+}
+
+impl EventData {
+    /// The usage dsh's own token meter reads for an assistant settlement: the
+    /// settled `usage`, else the last usage chunk of the stream.
+    fn settled_usage(self) -> Option<TokenUsage> {
+        self.usage.or_else(|| {
+            self.stream
+                .into_iter()
+                .rev()
+                .filter(|record| record.r#type.as_deref() == Some("chunk"))
+                .filter_map(|record| record.chunk)
+                .find(|chunk| chunk.r#type.as_deref() == Some("usage"))
+                .and_then(|chunk| chunk.usage)
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamRecord {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    r#type: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    chunk: Option<StreamChunk>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChunk {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    r#type: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    usage: Option<TokenUsage>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -158,6 +194,9 @@ fn parse_session(content: &[u8], path: &Path) -> Vec<DshUsageEntry> {
     let fallback_timestamp = TimestampMs::from_millis(header.created_at.unwrap_or_default());
     let cwd = header.cwd.map(Arc::<str>::from);
 
+    // dsh rejects a seeded log without its inherited marker, so one missing it
+    // was torn while copying the parent and holds only parent usage.
+    let mut awaiting_seed_end = header.is_seeded;
     let mut route = Route::default();
     let mut entries = Vec::new();
     for line in lines {
@@ -183,11 +222,14 @@ fn parse_session(content: &[u8], path: &Path) -> Vec<DshUsageEntry> {
             Some("session/end-seed") => {
                 if data.inherited {
                     entries.clear();
+                    awaiting_seed_end = false;
                 }
                 continue;
             }
-            Some("assistant/message") => data
-                .usage
+            // A failed or aborted stream settles as `assistant/attempt`; dsh still
+            // counts the usage its provider reported before the failure.
+            Some("assistant/message" | "assistant/attempt") => data
+                .settled_usage()
                 .map(|usage| (usage, route.provider.clone(), route.model.clone())),
             // Summarisation calls name their own route instead of the request route.
             Some("compaction/summary") => {
@@ -227,6 +269,9 @@ fn parse_session(content: &[u8], path: &Path) -> Vec<DshUsageEntry> {
             usage,
             extra_total_tokens,
         });
+    }
+    if awaiting_seed_end {
+        return Vec::new();
     }
     entries
 }
@@ -386,6 +431,38 @@ mod tests {
         assert_eq!(entries[1].provider.as_deref(), Some("openrouter"));
         assert_eq!(entries[1].model, "anthropic/claude-sonnet-4.5");
         assert_eq!(entries[1].usage.cache_creation_input_tokens, 20);
+    }
+
+    #[test]
+    fn falls_back_to_the_last_stream_usage_chunk_for_attempts_and_interrupted_messages() {
+        let entries = parse(&lines(&[
+            r#"{"type":"session","version":4,"id":"sid","createdAt":1}"#,
+            r#"{"type":"request/context","seq":1,"time":2,"data":{"provider":"deepseek-official","model":"deepseek-v4-pro"}}"#,
+            r#"{"type":"assistant/attempt","seq":2,"time":3,"data":{"stream":[{"type":"chunk","chunk":{"type":"usage","usage":{"inputTokens":5,"outputTokens":0}}},{"type":"chunk","chunk":{"type":"text","text":"x"}},{"type":"chunk","chunk":{"type":"usage","usage":{"inputTokens":50,"outputTokens":3}}}]}}"#,
+            r#"{"type":"assistant/message","seq":3,"time":4,"data":{"interrupted":true,"stream":[{"type":"chunk","chunk":{"type":"usage","usage":{"inputTokens":40,"outputTokens":2}}}]}}"#,
+            r#"{"type":"assistant/attempt","seq":4,"time":5,"data":{"stream":[]}}"#,
+        ]));
+        let usage = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.seq,
+                    entry.usage.input_tokens,
+                    entry.usage.output_tokens,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(usage, [(Some(2), 50, 3), (Some(3), 40, 2)]);
+    }
+
+    #[test]
+    fn drops_a_seeded_log_torn_before_its_inherited_marker() {
+        let entries = parse(&lines(&[
+            r#"{"type":"session","version":4,"id":"fork","createdAt":1,"isSeeded":true}"#,
+            r#"{"type":"request/context","seq":1,"time":2,"data":{"provider":"deepseek-official","model":"deepseek-v4-pro"}}"#,
+            r#"{"type":"assistant/message","seq":2,"time":3,"data":{"usage":{"inputTokens":10,"outputTokens":1}}}"#,
+        ]));
+        assert!(entries.is_empty());
     }
 
     #[test]
