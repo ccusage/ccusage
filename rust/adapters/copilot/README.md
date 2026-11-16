@@ -25,12 +25,15 @@ identity (`sourceSessionId`, `sequence`) is unique across all session files, so 
 each identity once even when the receipt appears in several files. It keeps the copy in the file
 whose session is `sourceSessionId`, or else the copy in the lowest session ID. A receipt without a
 `sourceSessionId` or a positive `sequence` is deduplicated by its event `id` within its own file.
-A receipt without tokens still counts as a request. Shutdown `modelMetrics` total every call before them, including receipted ones, so once
-a session has a receipt its later shutdowns and checkpoints are ignored. Each receipt is one entry at
-its own timestamp, outside the shutdown interval reconciliation below. A receipt replaces only the
-OpenTelemetry rows of its own call, matched by its `apiCallId` against `gen_ai.response.id` or by
-its `serviceRequestId` against `github.copilot.service_request_id`; rows that match no receipt are
-kept.
+A receipt without tokens still counts as a request. Shutdown `modelMetrics` total every call before
+them, including receipted ones, so once a session has a receipt its later shutdowns and checkpoints
+are ignored. Each receipt is one entry at its own timestamp, outside the shutdown interval
+reconciliation below. A receipt replaces at most one OpenTelemetry row: one with the same model that
+shares its `apiCallId` (`gen_ai.response.id`) or `serviceRequestId`
+(`github.copilot.service_request_id`), nearest in time. VS Code reports one response ID on every call
+of a turn, so an ID alone can name several calls. Receipt matching removes no other row; the
+shutdown reconciliation below still applies to OpenTelemetry rows of the shutdowns kept before the
+first receipt.
 
 Session-state shutdown records are cumulative per canonical `(session, model)` pair, so
 resumed sessions emit one shutdown per resume. The adapter reports each snapshot as interval

@@ -109,22 +109,13 @@ fn load_entries_inner(
         .iter()
         .map(|((session_id, model), timestamp)| ((session_id.as_str(), model.as_str()), *timestamp))
         .collect::<HashMap<_, _>>();
-    // Usage records identify their call, so they replace only the OTel rows of
-    // the same call; rows no record covers are kept.
-    let usage_records = deduplicate_usage_records(usage_records);
-    let recorded_calls = usage_records
-        .iter()
-        .flat_map(|entry| entry.call_ids.iter().map(String::as_str))
-        .collect::<HashSet<_>>();
     otel_entries.retain(|entry| {
         otel_after
             .get(&(entry.session_id.as_str(), entry.model.as_str()))
             .is_none_or(|after| entry.timestamp > *after)
-            && !entry
-                .call_ids
-                .iter()
-                .any(|id| recorded_calls.contains(id.as_str()))
     });
+    let usage_records = deduplicate_usage_records(usage_records);
+    remove_recorded_otel_calls(&mut otel_entries, &usage_records);
 
     let mut entries = session_state
         .entries
@@ -136,6 +127,44 @@ fn load_entries_inner(
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
+}
+
+/// Each usage record replaces the one OTel row of its call: a row sharing one
+/// of its call IDs, with the same model, nearest in time. VS Code reports the
+/// response ID of a turn on every call it makes, so an ID alone can name
+/// several calls, and the rows a record does not take are kept.
+fn remove_recorded_otel_calls(
+    otel_entries: &mut Vec<CopilotUsageEntry>,
+    records: &[CopilotUsageEntry],
+) {
+    let mut rows_by_call_id = HashMap::<&str, Vec<usize>>::new();
+    for (index, entry) in otel_entries.iter().enumerate() {
+        for call_id in &entry.call_ids {
+            rows_by_call_id.entry(call_id).or_default().push(index);
+        }
+    }
+    let mut records = records.iter().collect::<Vec<_>>();
+    records.sort_by_key(|record| (record.timestamp, record.dedup_key.as_str()));
+    let mut replaced = HashSet::new();
+    for record in records {
+        let nearest = record
+            .call_ids
+            .iter()
+            .filter_map(|call_id| rows_by_call_id.get(call_id.as_str()))
+            .flatten()
+            .copied()
+            .filter(|index| otel_entries[*index].model == record.model && !replaced.contains(index))
+            .min_by_key(|index| {
+                let row = otel_entries[*index].timestamp.as_millis();
+                (row.abs_diff(record.timestamp.as_millis()), row, *index)
+            });
+        replaced.extend(nearest);
+    }
+    let mut index = 0;
+    otel_entries.retain(|_| {
+        index += 1;
+        !replaced.contains(&(index - 1))
+    });
 }
 
 /// A call's record can appear in more than one session file, such as the log
@@ -2275,6 +2304,40 @@ mod tests {
     }
 
     #[test]
+    fn a_usage_record_replaces_one_otel_call_of_a_shared_response_id() {
+        // VS Code reports the response ID of the turn on every call it makes.
+        let call = |span_id: &str, timestamp: &str, input_tokens: u64| {
+            let mut span: serde_json::Value =
+                serde_json::from_str(&otel_call(span_id, timestamp)).unwrap();
+            span["attributes"]["gen_ai.response.id"] = json!("turn-response");
+            span["attributes"]["gen_ai.usage.input_tokens"] = json!(input_tokens);
+            span.to_string()
+        };
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": usage_record(
+                "record-1",
+                "2026-01-02T09:09:00.000Z",
+                json!({"apiCallId": "turn-response"}),
+            ),
+            "home/.copilot/otel/otel.jsonl": [
+                call("first", "2026-01-02T09:00:00.000Z", 1),
+                call("recorded", "2026-01-02T09:10:00.000Z", 2),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+                ("2026-01-02T09:09:00.000Z".to_string(), 100),
+            ]
+        );
+    }
+
+    #[test]
     fn keeps_otel_calls_that_no_usage_record_covers() {
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": usage_record(
@@ -2299,9 +2362,9 @@ mod tests {
 
     #[test]
     fn leaves_otel_calls_that_usage_records_cover_to_the_records() {
-        let otel = |span_id: &str, timestamp: &str, call_id: (&str, &str)| {
+        let otel = |span_id: &str, call_id: (&str, &str)| {
             let mut span: serde_json::Value = serde_json::from_str(
-                &otel_call(span_id, timestamp)
+                &otel_call(span_id, "2026-02-05T09:05:00.000Z")
                     .replace("session-1", "session-receipts")
                     .replace("test-model", "gpt-5.4"),
             )
@@ -2309,40 +2372,33 @@ mod tests {
             span["attributes"][call_id.0] = json!(call_id.1);
             span.to_string()
         };
-        let fixture = fs_fixture!({
-            "home/.copilot/session-state/session-receipts/events.jsonl": RECEIPTS_ONLY,
-            "home/.copilot/otel/otel.jsonl": [
-                otel(
-                    "by-response",
-                    "2026-02-05T09:05:00.000Z",
-                    ("gen_ai.response.id", "chatcmpl-r-2"),
-                ),
-                otel(
-                    "by-service-request",
-                    "2026-02-05T09:05:00.000Z",
-                    ("github.copilot.service_request_id", "service-r-2"),
-                ),
-                otel(
-                    "unrecorded",
-                    "2026-02-05T09:05:00.000Z",
-                    ("gen_ai.response.id", "chatcmpl-unrecorded"),
-                ),
-            ]
-            .join("\n"),
-        });
+        for (attribute, recorded_id) in [
+            ("gen_ai.response.id", "chatcmpl-r-2"),
+            ("github.copilot.service_request_id", "service-r-2"),
+        ] {
+            let fixture = fs_fixture!({
+                "home/.copilot/session-state/session-receipts/events.jsonl": RECEIPTS_ONLY,
+                "home/.copilot/otel/otel.jsonl": [
+                    otel("recorded", (attribute, recorded_id)),
+                    otel("unrecorded", (attribute, "unrecorded")),
+                ]
+                .join("\n"),
+            });
 
-        let entries = load_copilot_home(&fixture, &utc_args());
+            let entries = load_copilot_home(&fixture, &utc_args());
 
-        assert_eq!(
-            token_rows(&entries)
-                .into_iter()
-                .filter(|row| row.1 == "gpt-5.4")
-                .map(|row| (row.0, row.2))
-                .collect::<Vec<_>>(),
-            [
-                ("2026-02-05T09:05:00.000Z".to_string(), 100),
-                ("2026-02-05T09:05:00.000Z".to_string(), 1),
-            ]
-        );
+            assert_eq!(
+                token_rows(&entries)
+                    .into_iter()
+                    .filter(|row| row.1 == "gpt-5.4")
+                    .map(|row| (row.0, row.2))
+                    .collect::<Vec<_>>(),
+                [
+                    ("2026-02-05T09:05:00.000Z".to_string(), 100),
+                    ("2026-02-05T09:05:00.000Z".to_string(), 1),
+                ],
+                "{attribute}"
+            );
+        }
     }
 }
