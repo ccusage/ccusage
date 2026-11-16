@@ -1467,6 +1467,45 @@ mod tests {
     }
 
     #[test]
+    fn names_a_session_message_table_without_usage_columns_an_unsupported_schema() {
+        use ccusage_core::SkipKind;
+
+        let fixture = ccusage_test_support::Fixture::new();
+        let db = fixture.path("opencode.db");
+        create_db_message(
+            &db,
+            "good",
+            "s",
+            r#"{"modelID":"claude-opus-5","providerID":"anthropic","time":{"created":1767312000000},"tokens":{"input":10,"output":1}}"#,
+        );
+        sqlite::open(&db)
+            .unwrap()
+            .execute("CREATE TABLE session_message (id TEXT, session_id TEXT, seq INTEGER)")
+            .unwrap();
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            debug: true,
+            ..Default::default()
+        };
+        let diagnostics = ccusage_core::Diagnostics::new("opencode");
+
+        let loaded =
+            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
+                .unwrap();
+
+        assert_eq!(loaded.message_entries.len(), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
+        assert!(
+            diagnostics
+                .warnings(&shared)
+                .join("\n")
+                .contains("opencode.db: database schema is not supported")
+        );
+    }
+
+    #[test]
     fn specialized_diagnostics_leave_optional_sources_and_nonusage_quiet() {
         let fixture = ccusage_test_support::Fixture::new();
         sqlite::open(fixture.path("opencode.db"))
