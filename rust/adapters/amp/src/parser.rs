@@ -95,20 +95,22 @@ struct ThreadUnit<'a> {
 }
 
 impl ThreadUnit<'_> {
-    /// Parses a record's timestamp, recording a record whose timestamp the
-    /// report cannot place on a day. `record` is its 1-based position.
-    fn timestamp(&self, record: usize, text: Option<&str>) -> Option<TimestampMs> {
-        let timestamp = text.and_then(crate::parse_ts_timestamp);
-        if timestamp.is_none() {
-            self.diagnostics.record(Skip::record(
-                self.path,
-                u32::try_from(record).unwrap_or(u32::MAX),
-                SkipKind::InvalidTimestamp,
-                "missing or unsupported timestamp",
-            ));
-        }
-        timestamp
+    /// Records a record whose timestamp the report cannot place on a day.
+    /// `record` is its 1-based position.
+    fn invalid_timestamp(&self, record: usize) {
+        self.diagnostics.record(Skip::record(
+            self.path,
+            u32::try_from(record).unwrap_or(u32::MAX),
+            SkipKind::InvalidTimestamp,
+            "missing or unsupported timestamp",
+        ));
     }
+}
+
+/// A record's timestamp text together with the instant it names, or `None`
+/// when the report cannot place it on a day.
+fn placed_timestamp(text: String) -> Option<(String, TimestampMs)> {
+    crate::parse_ts_timestamp(&text).map(|timestamp| (text, timestamp))
 }
 
 /// Reads one thread file without reporting what it skipped; the loader goes
@@ -237,10 +239,11 @@ fn parse_ledger_events(
             ));
             continue;
         };
-        let Some(timestamp) = unit.timestamp(index + 1, event.timestamp.as_deref()) else {
+        let Some((timestamp_text, timestamp)) = event.timestamp.clone().and_then(placed_timestamp)
+        else {
+            unit.invalid_timestamp(index + 1);
             continue;
         };
-        let timestamp_text = event.timestamp.clone().unwrap();
         let data = UsageEntry {
             session_id: Some(thread_id.to_string()),
             timestamp: timestamp_text,
@@ -344,15 +347,13 @@ fn parse_message_usage(
             ));
             continue;
         };
-        let parsed_timestamp =
-            |text: String| crate::parse_ts_timestamp(&text).map(|timestamp| (text, timestamp));
         let timestamp = non_empty_json_string(usage.get("timestamp"))
-            .and_then(parsed_timestamp)
+            .and_then(placed_timestamp)
             .or_else(|| {
-                non_empty_json_string(message.timestamp.as_ref()).and_then(parsed_timestamp)
+                non_empty_json_string(message.timestamp.as_ref()).and_then(placed_timestamp)
             });
         let Some((timestamp_text, timestamp)) = timestamp else {
-            unit.timestamp(index + 1, None);
+            unit.invalid_timestamp(index + 1);
             continue;
         };
         let message_id = message.message_id.as_ref().and_then(|id| {
