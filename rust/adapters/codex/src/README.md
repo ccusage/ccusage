@@ -49,15 +49,7 @@ Unclassified usage uses the top-level `service_tier` in each Codex home's
 affect pricing. Profile selections made through CLI flags or separate profile
 files require an explicit `--speed` override for unclassified usage.
 
-Relevant MultiAgent V2 subagent replay markers:
-
-- A subagent rollout replays its parent's history before the child's own turn, so the prefix must not be counted again.
-- `type === "event_msg"` with `payload.type === "task_started"` ends the replayed prefix.
-- `type === "inter_agent_communication_metadata"` with `payload.trigger_turn === true` starts the child turn. The event was named `inter_agent_communication` before Codex CLI 0.143.0-alpha.15; both spellings are matched. `trigger_turn` is also emitted as `false`, so the value must be checked.
-- Usage between those two markers belongs to the child; usage before them is inherited history.
-- Which replay boundary a rollout uses is decided by scanning it for the marker, never from `session_meta` version fields. Resuming a session re-records the original session's `cli_version`, so that field cannot be used to gate behavior.
-
-Forked rollouts without those markers:
+Forked rollouts:
 
 - `session_meta.payload.forked_from_id` or `payload.source.subagent.thread_spawn.parent_thread_id` names the parent. This identifies how the rollout was forked, which resuming does not change, unlike `cli_version`.
 - A spawned subagent (`thread_spawn`) never inherits the parent's `token_usage_record` lines, so a record ends any skip of replayed history: everything from it on is the child's own, even when every line carries the fork timestamp. A record never starts a skip. A child created by a Codex release without records and resumed by a later one holds its own record-less turns before the first record.
