@@ -60,6 +60,7 @@ ccusage reads local usage data from coding agent CLIs and turns it into daily, w
 | Droid              | `ccusage droid daily`       |
 | Codebuff           | `ccusage codebuff daily`    |
 | Cline              | `ccusage cline daily`       |
+| Junie              | `ccusage junie daily`       |
 | Hermes Agent       | `ccusage hermes daily`      |
 | pi-agent           | `ccusage pi daily`          |
 | Goose              | `ccusage goose daily`       |
@@ -119,6 +120,7 @@ bunx ccusage amp session
 bunx ccusage droid daily
 bunx ccusage codebuff daily
 bunx ccusage cline daily
+bunx ccusage junie daily
 bunx ccusage hermes daily
 bunx ccusage goose daily
 bunx ccusage openclaw daily
@@ -162,7 +164,7 @@ bunx ccusage monthly --compact  # Compact monthly report
 - 📊 **Daily Report**: View token usage and costs aggregated by date
 - 📅 **Monthly Report**: View token usage and costs aggregated by month
 - 💬 **Session Report**: View usage grouped by conversation sessions
-- 🤖 **Unified CLI Reports**: View Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode usage from one CLI
+- 🤖 **Unified CLI Reports**: View Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Junie, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode usage from one CLI
 - ⏰ **5-Hour Blocks Report**: Track usage within Claude's billing windows with active block monitoring
 - 🚀 **Statusline Integration**: Compact usage display for Claude Code status bar hooks (Beta)
 - 🤖 **Model Tracking**: See which models are used across supported sources

@@ -11,6 +11,7 @@ pub(crate) use ccusage_adapter_gemini as gemini;
 pub(crate) use ccusage_adapter_goose as goose;
 pub(crate) use ccusage_adapter_grok as grok;
 pub(crate) use ccusage_adapter_hermes as hermes;
+pub(crate) use ccusage_adapter_junie as junie;
 pub(crate) use ccusage_adapter_kilo as kilo;
 pub(crate) use ccusage_adapter_kimi as kimi;
 pub(crate) use ccusage_adapter_openclaw as openclaw;

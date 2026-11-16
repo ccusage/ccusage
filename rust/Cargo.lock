@@ -127,6 +127,7 @@ dependencies = [
  "ccusage-adapter-goose",
  "ccusage-adapter-grok",
  "ccusage-adapter-hermes",
+ "ccusage-adapter-junie",
  "ccusage-adapter-kilo",
  "ccusage-adapter-kimi",
  "ccusage-adapter-openclaw",
@@ -170,6 +171,7 @@ dependencies = [
  "ccusage-adapter-goose",
  "ccusage-adapter-grok",
  "ccusage-adapter-hermes",
+ "ccusage-adapter-junie",
  "ccusage-adapter-kilo",
  "ccusage-adapter-kimi",
  "ccusage-adapter-openclaw",
@@ -347,6 +349,19 @@ dependencies = [
  "jiff",
  "serde_json",
  "sqlite",
+]
+
+[[package]]
+name = "ccusage-adapter-junie"
+version = "0.0.0"
+dependencies = [
+ "ccusage-adapter-common",
+ "ccusage-core",
+ "ccusage-test-support",
+ "insta",
+ "jiff",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
