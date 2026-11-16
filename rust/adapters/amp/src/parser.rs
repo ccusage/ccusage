@@ -155,7 +155,7 @@ fn parse_thread(
         if thread
             .messages
             .iter()
-            .any(|message| message.usage.is_some())
+            .any(|message| message.usage.as_ref().is_some_and(Value::is_object))
             || thread
                 .usage_ledger
                 .as_ref()
@@ -523,6 +523,15 @@ mod tests {
         let no_model = MESSAGES_THREAD.replace("\"model\":\"gpt-5\",", "");
         assert_eq!(parse(no_model.as_bytes(), &diagnostics).unwrap().len(), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn reads_a_thread_without_id_whose_usage_is_not_an_object_as_empty() {
+        let diagnostics = Diagnostics::new("amp");
+        let content =
+            br#"{"messages":[{"role":"assistant","model":"gpt-5","usage":"SECRET_CANARY"}]}"#;
+
+        assert!(parse(content, &diagnostics).unwrap().is_empty());
     }
 
     #[test]
