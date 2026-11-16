@@ -8,10 +8,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::{
-    Result, TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter,
-    parse_ts_timestamp,
+    TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter, parse_ts_timestamp,
 };
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::Diagnostics;
 
 /// A single parsed Copilot OpenTelemetry record. Only the fields ccusage
@@ -172,7 +171,7 @@ struct CopilotUsageCandidate {
 pub(super) fn parse_otel_file(
     path: &Path,
     diagnostics: &Diagnostics,
-) -> Result<Vec<CopilotUsageEntry>> {
+) -> Result<Vec<CopilotUsageEntry>, UnitError> {
     let content = fs::read(path)?;
     // Every usable Copilot OTel record carries the `attributes` object, so
     // lines without it are skipped before JSON parsing.
@@ -431,7 +430,7 @@ fn is_session_state_usage_envelope(value: &Value) -> bool {
 pub(super) fn parse_session_state_file(
     path: &Path,
     diagnostics: &Diagnostics,
-) -> Result<CopilotSourceUsage> {
+) -> Result<CopilotSourceUsage, UnitError> {
     let session_id = path
         .parent()
         .and_then(Path::file_name)

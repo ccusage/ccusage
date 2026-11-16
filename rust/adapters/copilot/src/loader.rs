@@ -14,7 +14,7 @@ use super::{
     paths::CopilotSourceKind,
 };
 use ccusage_adapter_common::{read_units, source::LoadContext, units::UnitError};
-use ccusage_core::{Diagnostics, SkipKind};
+use ccusage_core::Diagnostics;
 #[cfg(test)]
 use ccusage_core::{ReportWindow, cli::AgentReportKind};
 
@@ -37,19 +37,12 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
         .iter()
         .map(|source| source.path.clone())
         .collect::<Vec<_>>();
-    // Read source files in parallel; entries keep their original file order before
-    // the stable sort, so OTel-only output is identical to the previous read.
     let parsed = read_units(&files, shared.single_thread, cx.diagnostics, |path| {
         let kind = source_kinds
             .get(path)
             .copied()
             .expect("discovered Copilot file has source metadata");
-        read_source_file(path, kind, cx.diagnostics).map_err(|_| {
-            UnitError::new(
-                SkipKind::Unreadable,
-                "Copilot source file could not be read",
-            )
-        })
+        read_source_file(path, kind, cx.diagnostics)
     });
     let mut otel_entries = Vec::new();
     let mut otel_keys = HashSet::<String>::new();
@@ -533,7 +526,7 @@ fn read_source_file(
     path: &Path,
     kind: CopilotSourceKind,
     diagnostics: &Diagnostics,
-) -> Result<CopilotSourceUsage> {
+) -> std::result::Result<CopilotSourceUsage, UnitError> {
     match kind {
         CopilotSourceKind::Otel => Ok(CopilotSourceUsage {
             entries: parse_otel_file(path, diagnostics)?,
@@ -550,7 +543,8 @@ fn read_otel_file(
     mode: CostMode,
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
-    Ok(parse_otel_file(path, &Diagnostics::new("copilot"))?
+    Ok(parse_otel_file(path, &Diagnostics::new("copilot"))
+        .map_err(|error| crate::cli_error(error.to_string()))?
         .into_iter()
         .map(|entry| usage_entry_to_loaded(entry, tz, mode, pricing))
         .collect())
@@ -654,6 +648,7 @@ use super::report::{report_from_rows, summarize_entries};
 mod tests {
     use std::ffi::OsString;
 
+    use ccusage_core::SkipKind;
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use serde_json::json;
 
@@ -2923,5 +2918,58 @@ mod tests {
         let entries = load_priced_copilot_home(&fixture, &utc_args(), &test_model_pricing());
 
         assert_eq!(costs_in_credits(&entries), [10_000, 20_000, 15]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn names_the_io_error_kind_of_an_unreadable_source_file() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let fixture = fs_fixture!({ "otel/locked.jsonl": "{}\n" });
+        let locked = fixture.path("otel/locked.jsonl");
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        if fs::read(&locked).is_ok() {
+            return;
+        }
+        let _guard = EnvVarsGuard::set_many([
+            (
+                super::super::paths::COPILOT_HOME_ENV,
+                Some(OsString::from(fixture.root())),
+            ),
+            (
+                super::super::paths::COPILOT_OTEL_FILE_EXPORTER_PATH_ENV,
+                None,
+            ),
+        ]);
+        let shared = crate::cli::SharedArgs {
+            debug: true,
+            single_thread: true,
+            ..crate::cli::SharedArgs::default()
+        };
+        let window = ReportWindow::from_shared(&shared);
+        let diagnostics = Diagnostics::new("copilot");
+        let pricing = crate::PricingMap::default();
+        let cx = LoadContext {
+            shared: &shared,
+            kind: AgentReportKind::Daily,
+            window: &window,
+            pricing: Some(&pricing),
+            options: Default::default(),
+            diagnostics: &diagnostics,
+        };
+
+        let entries = load_entries_for_context(&cx).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o600)).unwrap();
+
+        assert!(entries.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        assert!(
+            diagnostics
+                .warnings(&shared)
+                .iter()
+                .any(|line| line.contains("I/O error (PermissionDenied)")),
+            "{:?}",
+            diagnostics.warnings(&shared)
+        );
     }
 }
