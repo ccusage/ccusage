@@ -1,4 +1,4 @@
-use ccusage_adapter_common::units::UnitError;
+use ccusage_adapter_common::jsonl;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     borrow::Cow,
@@ -1551,6 +1551,9 @@ fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
     usage
 }
 
+/// Classifies a rollout line that did not decode like every other JSONL
+/// source does. A rejected `token_count` still advances the cumulative
+/// baseline, so the next record's delta does not count its tokens again.
 fn record_decode_failure(
     path: &Path,
     line: u32,
@@ -1559,36 +1562,30 @@ fn record_decode_failure(
     diagnostics: &Diagnostics,
     previous_totals: Option<&mut Option<CodexRawUsage>>,
 ) {
-    use serde_json::error::Category;
-    let kind = match error.classify() {
-        Category::Io => SkipKind::Unreadable,
-        Category::Syntax | Category::Eof => SkipKind::InvalidData,
-        Category::Data => {
-            let Ok(value) = serde_json::from_slice::<Value>(content) else {
-                return;
-            };
+    jsonl::record_decode_error(
+        content,
+        error,
+        path,
+        line,
+        !content.ends_with(b"\n"),
+        diagnostics,
+        Some(|value: &Value| {
+            let token_count = value.get("type").and_then(Value::as_str) == Some("event_msg")
+                && value.pointer("/payload/type").and_then(Value::as_str) == Some("token_count");
             if let Some(previous_totals) = previous_totals
-                && value.get("type").and_then(Value::as_str) == Some("event_msg")
-                && value.pointer("/payload/type").and_then(Value::as_str) == Some("token_count")
+                && token_count
                 && let Some(total) = value.pointer("/payload/info/total_token_usage")
                 && let Ok(total) = serde_json::from_value::<CodexRawUsage>(total.clone())
             {
                 *previous_totals = Some(total);
             }
-            let usage = value.get("type").and_then(Value::as_str) == Some("token_usage_record")
-                || (value.get("type").and_then(Value::as_str) == Some("event_msg")
-                    && value.pointer("/payload/type").and_then(Value::as_str)
-                        == Some("token_count")
+            value.get("type").and_then(Value::as_str) == Some("token_usage_record")
+                || (token_count
                     && value
                         .pointer("/payload/info")
-                        .is_some_and(|info| !info.is_null()));
-            if !usage {
-                return;
-            }
-            SkipKind::InvalidData
-        }
-    };
-    diagnostics.record(Skip::record(path, line, kind, UnitError::from(error)));
+                        .is_some_and(|info| !info.is_null()))
+        }),
+    );
 }
 
 struct RecordLocation<'a> {
@@ -1884,6 +1881,26 @@ mod diagnostic_tests {
     use super::*;
     use ccusage_test_support::Fixture;
     #[test]
+    fn a_rollout_line_still_being_written_is_not_a_skip() {
+        let fixture = Fixture::new();
+        let path = fixture.write_file(
+            "session.jsonl",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_tok"#,
+        );
+        let diagnostics = Diagnostics::new("codex");
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |_| Ok(()),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
     fn nonusage_and_suppressed_session_records_stay_quiet() {
         let fixture = Fixture::new();
         let path = fixture.write_file("session.jsonl", [
@@ -1905,12 +1922,14 @@ mod diagnostic_tests {
         )
         .unwrap();
         assert!(events.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+        // Like every JSONL source, a selected record that does not decode and
+        // carries no usage is listed only under `--debug`.
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+        let _log_level = ccusage_test_support::EnvVarGuard::set("LOG_LEVEL", "1");
         assert!(
             diagnostics
-                .warnings(&crate::cli::SharedArgs {
-                    debug: true,
-                    ..Default::default()
-                })
+                .warnings(&crate::cli::SharedArgs::default())
                 .is_empty()
         );
     }
