@@ -18,21 +18,35 @@
              "gemini" "GEMINI_DATA_DIR" "antigravity" "ANTIGRAVITY_DATA_DIR" "kimi" "KIMI_DATA_DIR"
              "qwen" "QWEN_DATA_DIR" "openclaw" "OPENCLAW_DIR" "grok" "GROK_HOME" "zcode" "ZCODE_HOME"))
 
-(def period-reports ["daily" "monthly" "session"])
-(def weekly-reports ["daily" "weekly" "monthly" "session"])
+(defn help-commands
+  "The names under `COMMANDS:` in a `--help` page, read the way
+  golden_matrix.rs reads them."
+  [help]
+  (->> (str/split-lines help)
+       (drop-while #(not= "COMMANDS:" (str/trim %)))
+       rest
+       (take-while #(not (str/blank? %)))
+       (map #(first (str/split (str/trim %) #"\s+")))))
 
-(defn agent-reports
-  "Mirrors agent_report_supported in rust/crates/ccusage-cli-parser/src/parser.rs.
-  statusline is left out: it reads a hook payload from stdin instead of logs."
-  [agent]
-  (case agent
-    "claude" (conj weekly-reports "blocks")
-    ("opencode" "cline") weekly-reports
-    period-reports))
-
-(def report-commands
-  (vec (concat (conj weekly-reports "blocks")
-               (for [agent (keys agent-env-vars) report (agent-reports agent)] (str agent " " report)))))
+(defn report-commands
+  "Every report command `bin` lists in its help: the top-level reports, then
+  each agent's, an agent being a command whose own help lists commands.
+  golden_matrix.rs checks those help pages against the reports the parser
+  accepts. statusline is left out: it reads a hook payload from stdin instead
+  of logs."
+  [bin]
+  (let [help (fn [& command]
+               (:out (run-checked (into [bin] (concat command ["--help"])) {}
+                                  (str/join " " (concat [bin] command ["--help"])))))
+        report? #(not= "statusline" %)
+        commands (vec (mapcat (fn [command]
+                                (if-let [reports (seq (help-commands (help command)))]
+                                  (for [report reports :when (report? report)] (str command " " report))
+                                  (when (report? command) [command])))
+                              (help-commands (help))))]
+    (when (empty? commands)
+      (fail! (str bin " --help lists no report commands") {:kind :invalid-help}))
+    commands))
 
 (def output-variants
   [{:name "json" :args ["--json"]}
@@ -53,8 +67,8 @@
 (defn command-plan
   "Every command line both binaries run. `dates` is {:since :until} for a
   fixture run and (real-dates today) for a real one."
-  [{:keys [real]} dates]
-  (for [command report-commands
+  [{:keys [real]} dates commands]
+  (for [command commands
         {:keys [name args window? timezone] :or {timezone "UTC"}} output-variants]
     {:id (str (str/replace command " " "-") "--" name)
      :json? (boolean (some #{"--json"} args))
@@ -208,13 +222,14 @@
 (defn diff-help-text []
   (str "Usage: diff-refs.bb [options] <base> <head>\n\n"
        "Builds each git ref in release mode (or takes an existing binary path), runs every report\n"
-       "command with both binaries under the same arguments and environment, and compares stdout,\n"
-       "stderr, and exit code byte for byte. Variants cover JSON, tables, breakdowns, date windows,\n"
-       "cost modes, and timezones. Agent-specific options and statusline hook payloads are covered\n"
-       "by the golden tests. Each command runs twice per binary, then three more times per binary\n"
-       "when the results disagree: a command whose base output is not reproducible is reported as unstable\n"
-       "instead of different. Exits 0 only when all commands succeed with identical output,\n"
-       "1 on a confirmed difference, and 2 when a comparison cannot complete successfully.\n\n"
+       "command the head binary's help lists with both binaries under the same arguments and\n"
+       "environment, and compares stdout, stderr, and exit code byte for byte. Variants cover JSON,\n"
+       "tables, breakdowns, date windows, cost modes, and timezones. Agent-specific options and\n"
+       "statusline hook payloads are covered by the golden tests. Each command runs twice per\n"
+       "binary, then three more times per binary when the results disagree: a command whose base\n"
+       "output is not reproducible is reported as unstable instead of different. Exits 0 only when\n"
+       "all commands succeed with identical output, 1 on a confirmed difference, and 2 when a\n"
+       "comparison cannot complete successfully.\n\n"
        (cli/format-opts {:spec diff-spec})))
 
 (defn- run-all! [jobs commands compare!]
@@ -249,7 +264,7 @@
             dates (if real
                     (real-dates (java.time.LocalDate/now java.time.ZoneOffset/UTC))
                     (select-keys options [:since :until]))
-            commands (command-plan options dates)]
+            commands (command-plan options dates (report-commands (:head bins)))]
         (try
           (write-progress (format "comparing %d commands: base %s, head %s (%s)" (count commands) (:bin base) (:bin head)
                                   (cond real "real local logs" (:fixture options) (str "fixture " (:fixture options)) :else "empty environment")))

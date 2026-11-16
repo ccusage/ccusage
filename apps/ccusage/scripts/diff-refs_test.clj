@@ -23,24 +23,44 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"mutually exclusive"
                           (parse-diff-cli ["--real" "--fixture" "/tmp" "a" "b"])))))
 
+(defn- stub-binary
+  "An executable /bin/sh script in `dir` running `body`."
+  [dir name body]
+  (let [file (path dir name)]
+    (spit file (str "#!/bin/sh\nPATH=/no-such-path\n" body "\n"))
+    (babashka.fs/set-posix-file-permissions file "rwx------")
+    file))
+
+(def stub-help
+  "Answers `--help` like the CLI: COMMANDS at the root and for each agent,
+  options only for a report."
+  (str "case \"$*\" in\n"
+       "  --help) printf 'USAGE:\\n  ccusage <COMMANDS>\\n\\nCOMMANDS:\\n  daily       Show\\n  blocks      Show\\n"
+       "  statusline  Show\\n  claude      Show\\n  codex       Show\\n\\nOPTIONS:\\n  -j, --json  Output\\n'; exit 0;;\n"
+       "  'claude --help') printf 'COMMANDS:\\n  daily       Show\\n  blocks      Show\\n  statusline  Show\\n'; exit 0;;\n"
+       "  'codex --help') printf 'COMMANDS:\\n  daily    Show\\n  monthly  Show\\n'; exit 0;;\n"
+       "  *--help) printf 'OPTIONS:\\n  -j, --json  Output\\n'; exit 0;;\n"
+       "esac"))
+
 (deftest report-matrix
-  (is (= ["daily" "weekly" "monthly" "session"] (take 4 report-commands)))
-  (is (some #{"claude blocks"} report-commands))
-  (is (some #{"opencode weekly"} report-commands))
-  (is (some #{"cline weekly"} report-commands))
-  (testing "agents without weekly, blocks, or statusline"
-    (is (= ["codex daily" "codex monthly" "codex session"]
-           (filter #(clojure.string/starts-with? % "codex ") report-commands)))
-    (is (not-any? #(re-find #"statusline|^(codex|amp) (weekly|blocks)" %) report-commands)))
-  (is (some #{"blocks"} report-commands))
-  (is (= 66 (count report-commands))))
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-help."})]
+    (try
+      (testing "every report the head binary's help lists, statusline left out"
+        (is (= ["daily" "blocks" "claude daily" "claude blocks" "codex daily" "codex monthly"]
+               (report-commands (stub-binary dir "cli" stub-help)))))
+      (testing "a help page without commands cannot yield an empty plan"
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"lists no report commands"
+                              (report-commands (stub-binary dir "bare" "echo 'OPTIONS:'")))))
+      (finally (babashka.fs/delete-tree dir)))))
+
+(def planned ["daily" "weekly" "blocks" "claude daily" "claude blocks" "codex session"])
 
 (defn- args-of [plan id] (:args (first (filter #(= id (:id %)) plan))))
 
 (deftest planned-commands
-  (let [fixture (command-plan {} {:since "20250101" :until "20250131"})
-        real (command-plan {:real true} (real-dates (java.time.LocalDate/of 2026 3 1)))]
-    (is (= (* (count output-variants) (count report-commands)) (count fixture) (count real)))
+  (let [fixture (command-plan {} {:since "20250101" :until "20250131"} planned)
+        real (command-plan {:real true} (real-dates (java.time.LocalDate/of 2026 3 1)) planned)]
+    (is (= (* (count output-variants) (count planned)) (count fixture) (count real)))
     (is (apply distinct? (map :id fixture)))
     (testing "fixture runs are unbounded except for the window variant"
       (is (= ["claude" "daily" "--offline" "--timezone" "UTC" "--json"] (args-of fixture "claude-daily--json")))
@@ -58,9 +78,9 @@
     (is (false? (:json? (second fixture))))))
 
 (deftest cost-mode-and-timezone-commands
-  (let [fixture (command-plan {} {:since "20250101" :until "20250131"})
-        real (command-plan {:real true} (real-dates (java.time.LocalDate/of 2026 3 1)))]
-    (doseq [command report-commands
+  (let [fixture (command-plan {} {:since "20250101" :until "20250131"} planned)
+        real (command-plan {:real true} (real-dates (java.time.LocalDate/of 2026 3 1)) planned)]
+    (doseq [command planned
             [variant timezone extra] [["json-mode-calculate" "UTC" ["--mode" "calculate"]]
                                       ["json-mode-display" "UTC" ["--mode" "display"]]
                                       ["json-tz-tokyo" "Asia/Tokyo" []]]]
@@ -122,11 +142,8 @@
 
 (deftest end-to-end
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-e2e."})
-        script (fn [name body]
-                 (let [file (path dir name)]
-                   (spit file (str "#!/bin/sh\nPATH=/no-such-path\n" body "\n"))
-                   (babashka.fs/set-posix-file-permissions file "rwx------")
-                   file))
+        script (fn [name body] (stub-binary dir name (str "[ \"$1\" = --help ] && printf 'COMMANDS:\\n  daily  Show\\n  weekly  Show\\n' && exit 0\n"
+                                                            "[ \"$2\" = --help ] && exit 0\n" body)))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
         rejected (script "rejected" "echo 'unsupported report arguments' >&2; exit 2")
         unlaunchable (doto (script "unlaunchable" "echo unused")
@@ -210,6 +227,7 @@
         status (atom nil)]
     (try
       (with-redefs [resolve-variants (fn [& _] [{:bin "base"} {:bin "head"}])
+                    report-commands (fn [_] ["daily"])
                     run-all! (fn [& _] [{:status :unstable :args ["daily"]}])
                     write-progress (fn [_])]
         (with-out-str
