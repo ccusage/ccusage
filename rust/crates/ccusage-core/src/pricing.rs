@@ -979,6 +979,57 @@ struct ModelsDevLimit {
     context: Option<u64>,
 }
 
+struct SpeedMultipliers {
+    fast: SpeedMultiplierOverrides,
+    ultrafast: SpeedMultiplierOverrides,
+    flex: SpeedMultiplierOverrides,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PublishedSpeed {
+    fast: Option<f64>,
+    ultrafast: Option<f64>,
+    flex: Option<f64>,
+}
+
+impl SpeedMultipliers {
+    fn get() -> &'static Self {
+        static TABLES: OnceLock<SpeedMultipliers> = OnceLock::new();
+        TABLES.get_or_init(|| Self {
+            fast: SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON),
+            ultrafast: SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON),
+            flex: SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON),
+        })
+    }
+
+    fn for_model(&self, model: &str) -> PublishedSpeed {
+        PublishedSpeed {
+            fast: self.fast.multiplier_for(model),
+            ultrafast: self.ultrafast.multiplier_for(model),
+            flex: self.flex.multiplier_for(model),
+        }
+    }
+}
+
+impl PublishedSpeed {
+    fn or(self, other: Self) -> Self {
+        Self {
+            fast: self.fast.or(other.fast),
+            ultrafast: self.ultrafast.or(other.ultrafast),
+            flex: self.flex.or(other.flex),
+        }
+    }
+
+    fn applied_to(self, pricing: Pricing) -> Pricing {
+        Pricing {
+            fast_multiplier: self.fast.unwrap_or(1.0),
+            ultrafast_multiplier: self.ultrafast.unwrap_or(1.0),
+            flex_multiplier: self.flex.unwrap_or(1.0),
+            ..pricing
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct SpeedMultiplierOverrides {
     exact: FxHashMap<String, f64>,
@@ -1072,23 +1123,8 @@ impl PricingMap {
 
     fn build_embedded() -> Self {
         let mut map = Self::default();
-        let fast_multiplier_overrides =
-            SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON);
-        let ultrafast_multiplier_overrides =
-            SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON);
-        let flex_multiplier_overrides =
-            SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON);
-        map.load_json_with_overrides(
-            build_time_pricing_json(),
-            &fast_multiplier_overrides,
-            &ultrafast_multiplier_overrides,
-            &flex_multiplier_overrides,
-        );
-        map.put_builtin_pricing(
-            &fast_multiplier_overrides,
-            &ultrafast_multiplier_overrides,
-            &flex_multiplier_overrides,
-        );
+        map.load_json(build_time_pricing_json());
+        map.put_builtin_pricing();
         map.fill_long_context_rates_from_models_dev();
         // Resolve models that LiteLLM and the built-in table miss from the
         // embedded models.dev snapshot. This works offline, unlike the network
@@ -1165,30 +1201,10 @@ impl PricingMap {
     }
 
     pub fn load_json(&mut self, json: &str) -> usize {
-        let fast_multiplier_overrides =
-            SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON);
-        let ultrafast_multiplier_overrides =
-            SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON);
-        let flex_multiplier_overrides =
-            SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON);
-        self.load_json_with_overrides(
-            json,
-            &fast_multiplier_overrides,
-            &ultrafast_multiplier_overrides,
-            &flex_multiplier_overrides,
-        )
-    }
-
-    fn load_json_with_overrides(
-        &mut self,
-        json: &str,
-        fast_multiplier_overrides: &SpeedMultiplierOverrides,
-        ultrafast_multiplier_overrides: &SpeedMultiplierOverrides,
-        flex_multiplier_overrides: &SpeedMultiplierOverrides,
-    ) -> usize {
         let Ok(raw) = serde_json::from_str::<FxHashMap<String, serde_json::Value>>(json) else {
             return 0;
         };
+        let speed = SpeedMultipliers::get();
         let mut loaded_count = 0;
         for (model, value) in raw {
             let Some(pricing) = parse_litellm_pricing(value) else {
@@ -1203,38 +1219,36 @@ impl PricingMap {
             let context_limit = pricing.max_input_tokens;
             let cache_read_explicit = pricing.cache_read_input_token_cost.is_some();
             let cache_create_explicit = pricing.cache_creation_input_token_cost.is_some();
-            let provider_specific_entry = pricing.provider_specific_entry.as_ref();
-            let fast_multiplier = provider_specific_entry
-                .and_then(|entry| entry.fast)
-                .or_else(|| fast_multiplier_overrides.multiplier_for(&model))
-                .unwrap_or(1.0);
-            let flex_multiplier = provider_specific_entry
-                .and_then(|entry| entry.flex)
-                .or_else(|| flex_multiplier_overrides.multiplier_for(&model))
-                .unwrap_or(1.0);
+            let provider_specific = pricing
+                .provider_specific_entry
+                .as_ref()
+                .map(|entry| PublishedSpeed {
+                    fast: entry.fast,
+                    ultrafast: None,
+                    flex: entry.flex,
+                })
+                .unwrap_or_default();
             self.entries.insert(
                 model.clone(),
-                Pricing {
-                    input,
-                    output,
-                    cache_create: pricing
-                        .cache_creation_input_token_cost
-                        .unwrap_or(input * 1.25),
-                    cache_read: pricing.cache_read_input_token_cost.unwrap_or(input * 0.1),
-                    cache_read_explicit,
-                    cache_create_explicit,
-                    input_above_200k: pricing.input_cost_per_token_above_200k_tokens,
-                    output_above_200k: pricing.output_cost_per_token_above_200k_tokens,
-                    cache_create_above_200k: pricing
-                        .cache_creation_input_token_cost_above_200k_tokens,
-                    cache_read_above_200k: pricing.cache_read_input_token_cost_above_200k_tokens,
-                    long_context_threshold: None,
-                    fast_multiplier,
-                    ultrafast_multiplier: ultrafast_multiplier_overrides
-                        .multiplier_for(&model)
-                        .unwrap_or(1.0),
-                    flex_multiplier,
-                },
+                provider_specific
+                    .or(speed.for_model(&model))
+                    .applied_to(Pricing {
+                        input,
+                        output,
+                        cache_create: pricing
+                            .cache_creation_input_token_cost
+                            .unwrap_or(input * 1.25),
+                        cache_read: pricing.cache_read_input_token_cost.unwrap_or(input * 0.1),
+                        cache_read_explicit,
+                        cache_create_explicit,
+                        input_above_200k: pricing.input_cost_per_token_above_200k_tokens,
+                        output_above_200k: pricing.output_cost_per_token_above_200k_tokens,
+                        cache_create_above_200k: pricing
+                            .cache_creation_input_token_cost_above_200k_tokens,
+                        cache_read_above_200k: pricing
+                            .cache_read_input_token_cost_above_200k_tokens,
+                        ..Pricing::empty()
+                    }),
             );
             if let Some(context_limit) = context_limit {
                 self.context_limits.insert(model, context_limit);
@@ -1247,12 +1261,6 @@ impl PricingMap {
 
     fn load_models_dev_json_missing(&mut self, json: &str) -> Option<usize> {
         let raw = parse_models_dev_json(json)?;
-        let fast_multiplier_overrides =
-            SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON);
-        let ultrafast_multiplier_overrides =
-            SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON);
-        let flex_multiplier_overrides =
-            SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON);
         Some(match raw {
             ModelsDevJson::Providers(providers) => {
                 let rules = models_dev_catalog_rules();
@@ -1291,11 +1299,6 @@ impl PricingMap {
                             &provider_id,
                             trust,
                             true,
-                            (
-                                &fast_multiplier_overrides,
-                                &ultrafast_multiplier_overrides,
-                                &flex_multiplier_overrides,
-                            ),
                             &mut claims,
                         )
                     })
@@ -1307,18 +1310,7 @@ impl PricingMap {
                 // verdicts as fields rather than leaving them to be rederived.
                 // The flat snapshot has one implicit source, so any constant id
                 // works: ties inside it are settled by the source keys.
-                self.load_models_dev_models(
-                    models,
-                    "",
-                    MODELS_DEV_TRUST_OWNER,
-                    false,
-                    (
-                        &fast_multiplier_overrides,
-                        &ultrafast_multiplier_overrides,
-                        &flex_multiplier_overrides,
-                    ),
-                    &mut claims,
-                )
+                self.load_models_dev_models(models, "", MODELS_DEV_TRUST_OWNER, false, &mut claims)
             }
         })
     }
@@ -1344,15 +1336,9 @@ impl PricingMap {
         provider_id: &str,
         trust: u8,
         derive_exact_only: bool,
-        multiplier_overrides: (
-            &SpeedMultiplierOverrides,
-            &SpeedMultiplierOverrides,
-            &SpeedMultiplierOverrides,
-        ),
         claims: &mut FxHashMap<String, ModelsDevClaimSlot>,
     ) -> usize {
-        let (fast_multiplier_overrides, ultrafast_multiplier_overrides, flex_multiplier_overrides) =
-            multiplier_overrides;
+        let speed = SpeedMultipliers::get();
         let rules = models_dev_catalog_rules();
         let mut loaded_count = 0;
         // Two source keys in one catalog can resolve to the same model id, and the
@@ -1441,7 +1427,7 @@ impl PricingMap {
             let cache_create_explicit = cost.cache_write.is_some();
             self.entries.insert(
                 model_id.clone(),
-                Pricing {
+                speed.for_model(&model_id).applied_to(Pricing {
                     input,
                     output,
                     cache_create: cost
@@ -1459,16 +1445,8 @@ impl PricingMap {
                     cache_create_above_200k: long_context.and_then(|rates| rates.cache_create),
                     cache_read_above_200k: long_context.and_then(|rates| rates.cache_read),
                     long_context_threshold: long_context.map(|rates| rates.threshold),
-                    fast_multiplier: fast_multiplier_overrides
-                        .multiplier_for(&model_id)
-                        .unwrap_or(1.0),
-                    ultrafast_multiplier: ultrafast_multiplier_overrides
-                        .multiplier_for(&model_id)
-                        .unwrap_or(1.0),
-                    flex_multiplier: flex_multiplier_overrides
-                        .multiplier_for(&model_id)
-                        .unwrap_or(1.0),
-                },
+                    ..Pricing::empty()
+                }),
             );
             if exact_only {
                 self.exact_only.insert(model_id.clone());
@@ -1969,41 +1947,16 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
-        let fast_multiplier_overrides =
-            SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON);
-        let ultrafast_multiplier_overrides =
-            SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON);
-        let flex_multiplier_overrides =
-            SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON);
         let mut overrides: Vec<_> = overrides.into_iter().collect();
         let keys: FxHashSet<&str> = overrides.iter().map(|(model, _)| model.as_str()).collect();
         overrides.sort_by_cached_key(|(model, _)| override_application_order(model, &keys));
         for (model, override_value) in overrides {
-            self.apply_override(
-                model,
-                override_value,
-                (
-                    &fast_multiplier_overrides,
-                    &ultrafast_multiplier_overrides,
-                    &flex_multiplier_overrides,
-                ),
-            );
+            self.apply_override(model, override_value);
         }
         self.clear_find_cache();
     }
 
-    fn apply_override(
-        &mut self,
-        model: &str,
-        override_value: &PricingOverride,
-        multiplier_overrides: (
-            &SpeedMultiplierOverrides,
-            &SpeedMultiplierOverrides,
-            &SpeedMultiplierOverrides,
-        ),
-    ) {
-        let (fast_multiplier_overrides, ultrafast_multiplier_overrides, flex_multiplier_overrides) =
-            multiplier_overrides;
+    fn apply_override(&mut self, model: &str, override_value: &PricingOverride) {
         self.user_overrides
             .insert(model.to_string(), override_value.clone());
         let entry = |name: &str| {
@@ -2016,18 +1969,11 @@ impl PricingMap {
         let base = entry(model)
             .or_else(|| entry(resolved_model.as_ref()))
             .unwrap_or_else(|| {
-                let published = |overrides: &SpeedMultiplierOverrides| {
-                    overrides
-                        .multiplier_for(model)
-                        .or_else(|| overrides.multiplier_for(resolved_model.as_ref()))
-                        .unwrap_or(1.0)
-                };
-                Pricing {
-                    fast_multiplier: published(fast_multiplier_overrides),
-                    ultrafast_multiplier: published(ultrafast_multiplier_overrides),
-                    flex_multiplier: published(flex_multiplier_overrides),
-                    ..Pricing::empty()
-                }
+                let speed = SpeedMultipliers::get();
+                speed
+                    .for_model(model)
+                    .or(speed.for_model(resolved_model.as_ref()))
+                    .applied_to(Pricing::empty())
             });
 
         let new_input = override_value.input_cost_per_token.unwrap_or(base.input);
@@ -2183,8 +2129,15 @@ impl PricingMap {
         self.clear_find_cache();
     }
 
-    fn put_builtin_entry(&mut self, model: String, pricing: Pricing) {
-        self.entries.entry(model).or_insert(pricing);
+    fn put_builtin_entry(&mut self, model: &str, pricing: Pricing) {
+        let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
+        self.entries.entry(model.to_string()).or_insert(pricing);
+        self.clear_find_cache();
+    }
+
+    fn replace_with_builtin_entry(&mut self, model: &str, pricing: Pricing) {
+        let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
+        self.entries.insert(model.to_string(), pricing);
         self.clear_find_cache();
     }
 
@@ -2218,550 +2171,82 @@ impl PricingMap {
     /// push to main and daily, so overwriting it with these frozen numbers
     /// would reintroduce stale prices whenever a vendor changes theirs (OpenAI
     /// cut the gpt-5.6 rates after these were written).
-    fn put_builtin_pricing(
-        &mut self,
-        fast_multiplier_overrides: &SpeedMultiplierOverrides,
-        ultrafast_multiplier_overrides: &SpeedMultiplierOverrides,
-        flex_multiplier_overrides: &SpeedMultiplierOverrides,
-    ) {
-        self.put_builtin_entry(
-            "claude-opus-4-5".to_string(),
+    fn put_builtin_pricing(&mut self) {
+        const fn rates(input: f64, output: f64, cache_create: f64, cache_read: f64) -> Pricing {
             Pricing {
-                input: 5e-6,
-                output: 25e-6,
-                cache_create: 6.25e-6,
-                cache_read: 0.5e-6,
+                input,
+                output,
+                cache_create,
+                cache_read,
                 cache_read_explicit: true,
                 cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
-        );
+                ..Pricing::empty()
+            }
+        }
+        for model in [
+            "claude-opus-4-5",
+            "claude-opus-4-6",
+            "claude-opus-4-7",
+            "claude-opus-4-8",
+        ] {
+            self.put_builtin_entry(model, rates(5e-6, 25e-6, 6.25e-6, 0.5e-6));
+        }
+        self.put_builtin_entry("claude-haiku-4-5", rates(1e-6, 5e-6, 1.25e-6, 0.1e-6));
+        self.put_builtin_entry("claude-opus-4", rates(15e-6, 75e-6, 18.75e-6, 1.5e-6));
+        self.put_builtin_entry("claude-sonnet-4-6", rates(3e-6, 15e-6, 3.75e-6, 0.3e-6));
         self.put_builtin_entry(
-            "claude-opus-4-6".to_string(),
+            "claude-sonnet-4",
             Pricing {
-                input: 5e-6,
-                output: 25e-6,
-                cache_create: 6.25e-6,
-                cache_read: 0.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: fast_multiplier_overrides
-                    .multiplier_for("claude-opus-4-6")
-                    .unwrap_or(1.0),
-                ultrafast_multiplier: ultrafast_multiplier_overrides
-                    .multiplier_for("claude-opus-4-6")
-                    .unwrap_or(1.0),
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("claude-opus-4-6")
-                    .unwrap_or(1.0),
-            },
-        );
-        self.put_builtin_entry(
-            "claude-opus-4-7".to_string(),
-            Pricing {
-                input: 5e-6,
-                output: 25e-6,
-                cache_create: 6.25e-6,
-                cache_read: 0.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: fast_multiplier_overrides
-                    .multiplier_for("claude-opus-4-7")
-                    .unwrap_or(1.0),
-                ultrafast_multiplier: ultrafast_multiplier_overrides
-                    .multiplier_for("claude-opus-4-7")
-                    .unwrap_or(1.0),
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("claude-opus-4-7")
-                    .unwrap_or(1.0),
-            },
-        );
-        self.put_builtin_entry(
-            "claude-opus-4-8".to_string(),
-            Pricing {
-                input: 5e-6,
-                output: 25e-6,
-                cache_create: 6.25e-6,
-                cache_read: 0.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: fast_multiplier_overrides
-                    .multiplier_for("claude-opus-4-8")
-                    .unwrap_or(1.0),
-                ultrafast_multiplier: ultrafast_multiplier_overrides
-                    .multiplier_for("claude-opus-4-8")
-                    .unwrap_or(1.0),
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("claude-opus-4-8")
-                    .unwrap_or(1.0),
-            },
-        );
-        self.put_builtin_entry(
-            "claude-haiku-4-5".to_string(),
-            Pricing {
-                input: 1e-6,
-                output: 5e-6,
-                cache_create: 1.25e-6,
-                cache_read: 0.1e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
-        );
-        self.put_builtin_entry(
-            "claude-opus-4".to_string(),
-            Pricing {
-                input: 15e-6,
-                output: 75e-6,
-                cache_create: 18.75e-6,
-                cache_read: 1.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
-        );
-        self.put_builtin_entry(
-            "claude-sonnet-4-6".to_string(),
-            Pricing {
-                input: 3e-6,
-                output: 15e-6,
-                cache_create: 3.75e-6,
-                cache_read: 0.3e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
-        );
-        self.put_builtin_entry(
-            "claude-sonnet-4".to_string(),
-            Pricing {
-                input: 3e-6,
-                output: 15e-6,
-                cache_create: 3.75e-6,
-                cache_read: 0.3e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
                 input_above_200k: Some(6e-6),
                 output_above_200k: Some(22.5e-6),
                 cache_create_above_200k: Some(7.5e-6),
                 cache_read_above_200k: Some(0.6e-6),
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
+                ..rates(3e-6, 15e-6, 3.75e-6, 0.3e-6)
             },
         );
-        let claude_3_5_haiku = Pricing {
-            input: 0.8e-6,
-            output: 4e-6,
-            cache_create: 1.0e-6,
-            cache_read: 0.08e-6,
-            cache_read_explicit: true,
-            cache_create_explicit: true,
-            input_above_200k: None,
-            output_above_200k: None,
-            cache_create_above_200k: None,
-            cache_read_above_200k: None,
-            long_context_threshold: None,
-            fast_multiplier: 1.0,
-            ultrafast_multiplier: 1.0,
-            flex_multiplier: 1.0,
-        };
-        self.put_builtin_entry("claude-3-5-haiku".to_string(), claude_3_5_haiku);
-        self.put_builtin_entry("claude-3-5-haiku-20241022".to_string(), claude_3_5_haiku);
+        let claude_3_5_haiku = rates(0.8e-6, 4e-6, 1.0e-6, 0.08e-6);
+        self.put_builtin_entry("claude-3-5-haiku", claude_3_5_haiku);
+        self.put_builtin_entry("claude-3-5-haiku-20241022", claude_3_5_haiku);
+        self.put_builtin_entry("claude-3-opus", rates(15e-6, 75e-6, 18.75e-6, 1.5e-6));
+        self.put_builtin_entry("claude-3-sonnet", rates(3e-6, 15e-6, 3.75e-6, 0.3e-6));
+        self.put_builtin_entry("claude-3-haiku", rates(0.25e-6, 1.25e-6, 0.3e-6, 0.03e-6));
+        self.put_builtin_entry("gpt-5", rates(1.25e-6, 10e-6, 1.25e-6, 0.125e-6));
+        self.put_builtin_entry("gpt-5.5", rates(5e-6, 30e-6, 5e-6, 0.5e-6));
         self.put_builtin_entry(
-            "claude-3-opus".to_string(),
+            "grok-4.3",
             Pricing {
-                input: 15e-6,
-                output: 75e-6,
-                cache_create: 18.75e-6,
-                cache_read: 1.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
-        );
-        self.put_builtin_entry(
-            "claude-3-sonnet".to_string(),
-            Pricing {
-                input: 3e-6,
-                output: 15e-6,
-                cache_create: 3.75e-6,
-                cache_read: 0.3e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
-        );
-        self.put_builtin_entry(
-            "claude-3-haiku".to_string(),
-            Pricing {
-                input: 0.25e-6,
-                output: 1.25e-6,
-                cache_create: 0.3e-6,
-                cache_read: 0.03e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
-        );
-        self.put_builtin_entry(
-            "gpt-5".to_string(),
-            Pricing {
-                input: 1.25e-6,
-                output: 10e-6,
-                cache_create: 1.25e-6,
-                cache_read: 0.125e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("gpt-5")
-                    .unwrap_or(1.0),
-            },
-        );
-        self.put_builtin_entry(
-            "gpt-5.5".to_string(),
-            Pricing {
-                input: 5e-6,
-                output: 30e-6,
-                cache_create: 5e-6,
-                cache_read: 0.5e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: fast_multiplier_overrides
-                    .multiplier_for("gpt-5.5")
-                    .unwrap_or(1.0),
-                ultrafast_multiplier: ultrafast_multiplier_overrides
-                    .multiplier_for("gpt-5.5")
-                    .unwrap_or(1.0),
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("gpt-5.5")
-                    .unwrap_or(1.0),
-            },
-        );
-        self.put_builtin_entry(
-            "grok-4.3".to_string(),
-            Pricing {
-                input: 1.25e-6,
-                output: 2.5e-6,
-                cache_create: 1.25e-6,
-                cache_read: 0.125e-6,
                 cache_read_explicit: false,
                 cache_create_explicit: false,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
+                ..rates(1.25e-6, 2.5e-6, 1.25e-6, 0.125e-6)
             },
         );
         // Source: https://platform.kimi.ai/docs/pricing/chat-k25
-        self.put_builtin_entry(
-            "moonshot/kimi-k2.5".to_string(),
-            Pricing {
-                input: 0.6e-6,
-                output: 3e-6,
-                cache_create: 0.75e-6,
-                cache_read: 0.1e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
-        );
+        self.put_builtin_entry("moonshot/kimi-k2.5", rates(0.6e-6, 3e-6, 0.75e-6, 0.1e-6));
         // Source: https://platform.kimi.ai/docs/pricing/chat-k26
         self.put_builtin_entry(
-            "moonshot/kimi-k2.6".to_string(),
-            Pricing {
-                input: 0.95e-6,
-                output: 4e-6,
-                cache_create: 1.1875e-6,
-                cache_read: 0.16e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: 1.0,
-            },
+            "moonshot/kimi-k2.6",
+            rates(0.95e-6, 4e-6, 1.1875e-6, 0.16e-6),
         );
-        let gpt_5_1_pricing = Pricing {
-            input: 1.25e-6,
-            output: 10e-6,
-            cache_create: 1.25e-6,
-            cache_read: 0.125e-6,
-            cache_read_explicit: true,
-            cache_create_explicit: true,
-            input_above_200k: None,
-            output_above_200k: None,
-            cache_create_above_200k: None,
-            cache_read_above_200k: None,
-            long_context_threshold: None,
-            fast_multiplier: 1.0,
-            ultrafast_multiplier: 1.0,
-            flex_multiplier: 1.0,
-        };
-        self.put_builtin_entry(
-            "gpt-5.1".to_string(),
-            Pricing {
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("gpt-5.1")
-                    .unwrap_or(1.0),
-                ..gpt_5_1_pricing
-            },
-        );
-        self.entries
-            .insert("gpt-5.1-codex".to_string(), gpt_5_1_pricing);
-        let gpt_5_codex_pricing = Pricing {
-            input: 1.75e-6,
-            output: 14e-6,
-            cache_create: 1.75e-6,
-            cache_read: 0.175e-6,
-            cache_read_explicit: true,
-            cache_create_explicit: true,
-            input_above_200k: None,
-            output_above_200k: None,
-            cache_create_above_200k: None,
-            cache_read_above_200k: None,
-            long_context_threshold: None,
-            fast_multiplier: 1.0,
-            ultrafast_multiplier: 1.0,
-            flex_multiplier: 1.0,
-        };
-        self.entries
-            .insert("gpt-5.2-codex".to_string(), gpt_5_codex_pricing);
-        self.put_builtin_entry(
-            "gpt-5.3-codex".to_string(),
-            Pricing {
-                fast_multiplier: fast_multiplier_overrides
-                    .multiplier_for("gpt-5.3-codex")
-                    .unwrap_or(1.0),
-                ultrafast_multiplier: ultrafast_multiplier_overrides
-                    .multiplier_for("gpt-5.3-codex")
-                    .unwrap_or(1.0),
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("gpt-5.3-codex")
-                    .unwrap_or(1.0),
-                ..gpt_5_codex_pricing
-            },
-        );
-        self.entries.insert(
-            "gpt-5.2".to_string(),
-            Pricing {
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("gpt-5.2")
-                    .unwrap_or(1.0),
-                ..gpt_5_codex_pricing
-            },
-        );
-        self.put_builtin_entry(
-            "gpt-5.4".to_string(),
-            Pricing {
-                input: 2.5e-6,
-                output: 15e-6,
-                cache_create: 2.5e-6,
-                cache_read: 0.25e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: fast_multiplier_overrides
-                    .multiplier_for("gpt-5.4")
-                    .unwrap_or(1.0),
-                ultrafast_multiplier: ultrafast_multiplier_overrides
-                    .multiplier_for("gpt-5.4")
-                    .unwrap_or(1.0),
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("gpt-5.4")
-                    .unwrap_or(1.0),
-            },
-        );
-        self.put_builtin_entry(
-            "gpt-5.4-mini".to_string(),
-            Pricing {
-                input: 0.75e-6,
-                output: 4.5e-6,
-                cache_create: 0.75e-6,
-                cache_read: 0.075e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("gpt-5.4-mini")
-                    .unwrap_or(1.0),
-            },
-        );
-        self.put_builtin_entry(
-            "gpt-5.4-nano".to_string(),
-            Pricing {
-                input: 0.2e-6,
-                output: 1.25e-6,
-                cache_create: 0.2e-6,
-                cache_read: 0.02e-6,
-                cache_read_explicit: true,
-                cache_create_explicit: true,
-                input_above_200k: None,
-                output_above_200k: None,
-                cache_create_above_200k: None,
-                cache_read_above_200k: None,
-                long_context_threshold: None,
-                fast_multiplier: 1.0,
-                ultrafast_multiplier: 1.0,
-                flex_multiplier: flex_multiplier_overrides
-                    .multiplier_for("gpt-5.4-nano")
-                    .unwrap_or(1.0),
-            },
-        );
+        let gpt_5_1_pricing = rates(1.25e-6, 10e-6, 1.25e-6, 0.125e-6);
+        self.put_builtin_entry("gpt-5.1", gpt_5_1_pricing);
+        self.replace_with_builtin_entry("gpt-5.1-codex", gpt_5_1_pricing);
+        let gpt_5_codex_pricing = rates(1.75e-6, 14e-6, 1.75e-6, 0.175e-6);
+        self.replace_with_builtin_entry("gpt-5.2-codex", gpt_5_codex_pricing);
+        self.put_builtin_entry("gpt-5.3-codex", gpt_5_codex_pricing);
+        self.replace_with_builtin_entry("gpt-5.2", gpt_5_codex_pricing);
+        self.put_builtin_entry("gpt-5.4", rates(2.5e-6, 15e-6, 2.5e-6, 0.25e-6));
+        self.put_builtin_entry("gpt-5.4-mini", rates(0.75e-6, 4.5e-6, 0.75e-6, 0.075e-6));
+        self.put_builtin_entry("gpt-5.4-nano", rates(0.2e-6, 1.25e-6, 0.2e-6, 0.02e-6));
         // Source: https://platform.openai.com/docs/pricing (Standard tier,
         // short context). The long-context tier rates come from the embedded
         // models.dev snapshot via `fill_long_context_rates_from_models_dev`,
         // which runs after every pricing load.
-        for (model, input, output, cache_create, cache_read) in [
-            ("gpt-5.6-sol", 5e-6, 30e-6, 6.25e-6, 0.5e-6),
-            ("gpt-5.6-terra", 2.5e-6, 15e-6, 3.125e-6, 0.25e-6),
-            ("gpt-5.6-luna", 1e-6, 6e-6, 1.25e-6, 0.1e-6),
-        ] {
-            self.put_builtin_entry(
-                model.to_string(),
-                Pricing {
-                    input,
-                    output,
-                    cache_create,
-                    cache_read,
-                    cache_read_explicit: true,
-                    cache_create_explicit: true,
-                    input_above_200k: None,
-                    output_above_200k: None,
-                    cache_create_above_200k: None,
-                    cache_read_above_200k: None,
-                    long_context_threshold: None,
-                    fast_multiplier: fast_multiplier_overrides
-                        .multiplier_for(model)
-                        .unwrap_or(1.0),
-                    ultrafast_multiplier: ultrafast_multiplier_overrides
-                        .multiplier_for(model)
-                        .unwrap_or(1.0),
-                    flex_multiplier: flex_multiplier_overrides
-                        .multiplier_for(model)
-                        .unwrap_or(1.0),
-                },
-            );
-        }
+        self.put_builtin_entry("gpt-5.6-sol", rates(5e-6, 30e-6, 6.25e-6, 0.5e-6));
+        self.put_builtin_entry("gpt-5.6-terra", rates(2.5e-6, 15e-6, 3.125e-6, 0.25e-6));
+        self.put_builtin_entry("gpt-5.6-luna", rates(1e-6, 6e-6, 1.25e-6, 0.1e-6));
         // Source: https://docs.z.ai/guides/overview/pricing
-        let glm_pricing = |input: f64, output: f64, cache_read: f64| Pricing {
-            input,
-            output,
-            cache_create: 0.0,
-            cache_read,
-            cache_read_explicit: true,
-            cache_create_explicit: true,
-            input_above_200k: None,
-            output_above_200k: None,
-            cache_create_above_200k: None,
-            cache_read_above_200k: None,
-            long_context_threshold: None,
-            fast_multiplier: 1.0,
-            ultrafast_multiplier: 1.0,
-            flex_multiplier: 1.0,
-        };
+        let glm_pricing =
+            |input: f64, output: f64, cache_read: f64| rates(input, output, 0.0, cache_read);
         let glm_base = glm_pricing(0.6e-6, 2.2e-6, 0.11e-6);
         self.put_builtin_glm("glm-4.5", glm_base);
         self.put_builtin_glm("zai/glm-4.5", glm_base);
@@ -2774,7 +2259,7 @@ impl PricingMap {
         self.put_builtin_glm("glm-4.6", glm_base);
         self.put_builtin_glm("glm-4.7", glm_base);
         self.put_builtin_entry(
-            "glm-5".to_string(),
+            "glm-5",
             Pricing {
                 input: 1.0e-6,
                 output: 3.2e-6,
@@ -2783,7 +2268,7 @@ impl PricingMap {
             },
         );
         self.put_builtin_entry(
-            "glm-5-turbo".to_string(),
+            "glm-5-turbo",
             Pricing {
                 input: 1.2e-6,
                 output: 4.0e-6,
@@ -2792,7 +2277,7 @@ impl PricingMap {
             },
         );
         self.put_builtin_entry(
-            "glm-5.1".to_string(),
+            "glm-5.1",
             Pricing {
                 input: 1.4e-6,
                 output: 4.4e-6,
@@ -3187,11 +2672,9 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        EMBEDDED_PREWARM, FAST_MULTIPLIER_OVERRIDES_JSON, FLEX_MULTIPLIER_OVERRIDES_JSON, Fuzzy,
-        Pricing, PricingEndpoint, PricingMap, SpeedMultiplierOverrides,
-        ULTRAFAST_MULTIPLIER_OVERRIDES_JSON, build_time_models_dev_json, build_time_pricing_json,
-        embedded_models_dev_pricing, long_context_split_threshold, model_without_date_suffix,
-        prewarm_embedded,
+        EMBEDDED_PREWARM, Fuzzy, Pricing, PricingEndpoint, PricingMap, build_time_models_dev_json,
+        build_time_pricing_json, embedded_models_dev_pricing, long_context_split_threshold,
+        model_without_date_suffix, prewarm_embedded,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3898,7 +3381,7 @@ mod tests {
     fn exact_fallback_lookup_sees_a_colliding_entry_added_after_a_lookup() {
         let mut pricing = PricingMap::default();
         pricing.put_builtin_entry(
-            "acme-alpha-1.5".to_string(),
+            "acme-alpha-1.5",
             Pricing {
                 input: 1e-6,
                 ..Pricing::empty()
@@ -3910,7 +3393,7 @@ mod tests {
         assert_eq!(resolved.input, 1e-6);
 
         pricing.put_builtin_entry(
-            "acme.alpha@1.5".to_string(),
+            "acme.alpha@1.5",
             Pricing {
                 input: 2e-6,
                 ..Pricing::empty()
@@ -5351,17 +4834,13 @@ mod tests {
         let loaded = pricing.find_exact("gpt-5.6-sol").unwrap();
         let loaded_context_limit = pricing.context_limit("gpt-5.6-sol");
 
-        let overrides = SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON);
-        let ultrafast_overrides =
-            SpeedMultiplierOverrides::load(ULTRAFAST_MULTIPLIER_OVERRIDES_JSON);
-        let flex_overrides = SpeedMultiplierOverrides::load(FLEX_MULTIPLIER_OVERRIDES_JSON);
         let mut builtin = PricingMap::default();
-        builtin.put_builtin_pricing(&overrides, &ultrafast_overrides, &flex_overrides);
+        builtin.put_builtin_pricing();
         let builtin_rates = builtin.find_exact("gpt-5.6-sol").unwrap();
         assert_ne!(loaded.input, builtin_rates.input);
         assert_ne!(loaded.output, builtin_rates.output);
 
-        pricing.put_builtin_pricing(&overrides, &ultrafast_overrides, &flex_overrides);
+        pricing.put_builtin_pricing();
         let resolved = pricing.find_exact("gpt-5.6-sol").unwrap();
         assert_eq!(resolved.input, loaded.input);
         assert_eq!(resolved.output, loaded.output);
