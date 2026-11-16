@@ -31,7 +31,8 @@ are ignored. Each receipt is one entry at its own timestamp, outside the shutdow
 reconciliation below. A receipt replaces at most one OpenTelemetry row: one with the same model that
 shares its `apiCallId` (`gen_ai.response.id`) or `serviceRequestId`
 (`github.copilot.service_request_id`), nearest in time. VS Code reports one response ID on every call
-of a turn, so an ID alone can name several calls. Receipt matching removes no other row; the
+of a turn, so an ID alone can name several calls. A row with neither ID is never matched, so a call
+with both a receipt and such a row counts twice. Receipt matching removes no other row; the
 shutdown reconciliation below still applies to OpenTelemetry rows of the shutdowns kept before the
 first receipt.
 
