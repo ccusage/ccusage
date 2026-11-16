@@ -265,19 +265,27 @@ exit: 0
     },
     {
       "actualEndTime": "2026-01-02T11:00:00.000Z",
-      "burnRate": null,
+      "burnRate": {
+        "costPerHour": 0.0,
+        "tokensPerMinute": 60.833333333333336,
+        "tokensPerMinuteForIndicator": 11.666666666666666
+      },
       "costUSD": 0,
       "endTime": "2026-01-02T13:00:00.000Z",
       "entries": 4,
       "id": "2026-01-02T08:00:00.000Z",
-      "isActive": false,
+      "isActive": true,
       "isGap": false,
       "models": [
         "claude-opus-5-fast",
         "claude-sonnet-4-20250514",
         "claude-opus-4-20250514"
       ],
-      "projection": null,
+      "projection": {
+        "remainingMinutes": 60,
+        "totalCost": 0.0,
+        "totalTokens": 14600
+      },
       "startTime": "2026-01-02T08:00:00.000Z",
       "tokenCounts": {
         "cacheCreationInputTokens": 50,

@@ -127,6 +127,11 @@ pub const AGENT_HOME_ENV_VARS: [&str; 19] = [
 pub const WINDOW_SINCE: &str = "20251231";
 pub const WINDOW_UNTIL: &str = "20260101";
 
+/// "Now" for every case, on the last fixture day: Claude's `08:00Z` block is
+/// still active, `blocks --recent` keeps only the last three days, and the
+/// statusline has usage for today.
+pub const FIXED_NOW: &str = "2026-01-02T12:00:00Z";
+
 /// Variant name of the case that pins how an unsupported kind is rejected.
 pub const UNSUPPORTED_VARIANT: &str = "unsupported";
 
@@ -256,6 +261,7 @@ pub fn hermetic_command(root: &Path, seeded: &[(&'static str, PathBuf)], columns
         .env("XDG_CACHE_HOME", dir("xdg-cache"))
         .env("TMPDIR", dir("tmp"))
         .env("TZ", "UTC")
+        .env("CCUSAGE_TEST_NOW", FIXED_NOW)
         // jiff reads named zones such as Asia/Tokyo from the zoneinfo database,
         // which the Nix test sandbox only provides through TZDIR.
         .envs(std::env::var_os("TZDIR").map(|zoneinfo| ("TZDIR", zoneinfo)))
