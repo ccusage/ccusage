@@ -1,4 +1,4 @@
-use ccusage_core::{Diagnostics, Skip, SkipKind};
+use ccusage_core::Diagnostics;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -395,12 +395,7 @@ fn read_daily_usage_file_with_diagnostics(
             continue;
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
-            diagnostics.record(Skip::record(
-                path,
-                (index + 1) as u32,
-                SkipKind::InvalidTimestamp,
-                "invalid usage timestamp",
-            ));
+            super::diagnostics::invalid_timestamp(path, index, diagnostics);
             continue;
         };
         loaded_file.timestamp = Some(

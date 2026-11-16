@@ -706,12 +706,7 @@ fn read_usage_file_with_diagnostics(
             continue;
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
-            diagnostics.record(Skip::record(
-                path,
-                (index + 1) as u32,
-                SkipKind::InvalidTimestamp,
-                "invalid usage timestamp",
-            ));
+            diagnostics::invalid_timestamp(path, index, diagnostics);
             continue;
         };
         update_loaded_file_timestamp(&mut loaded_file, timestamp);
