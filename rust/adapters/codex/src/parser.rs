@@ -379,30 +379,39 @@ fn visit_codex_session_file_inner(
         let Some(line_kind) = codex_line_usage_kind(&line) else {
             continue;
         };
+        // Type names inside headless data can pass the substring scan; only
+        // the decoded envelope selects session accounting. Every other line
+        // takes the one headless path below, however the session decode went.
         if matches!(line_kind, CodexLineKind::Session) {
-            let value = match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
-                Ok(value) => value,
+            match serde_json::from_slice::<CodexSessionLogEntry<'_>>(&line) {
+                Ok(value)
+                    if is_session_usage_type(
+                        value.entry_type.as_deref(),
+                        value
+                            .payload
+                            .as_ref()
+                            .and_then(|payload| payload.payload_type.as_deref()),
+                    ) =>
+                {
+                    if value.entry_type.as_deref() == Some("token_usage_record") {
+                        replay.observe_usage_record();
+                    }
+                    visit_codex_session_entry(
+                        &session_id,
+                        value,
+                        &mut state,
+                        &mut |event| replay.visit(event, &mut visit),
+                        &RecordLocation {
+                            path,
+                            line: line_number,
+                            diagnostics,
+                        },
+                    )?;
+                    continue;
+                }
+                Ok(_) => {}
                 Err(error) => {
-                    if let Ok(value) = serde_json::from_slice::<Value>(&line)
-                        && !is_session_usage_type(
-                            value.get("type").and_then(Value::as_str),
-                            value.pointer("/payload/type").and_then(Value::as_str),
-                        )
-                    {
-                        add_codex_exec_event_value(
-                            &session_id,
-                            &value,
-                            &fallback_timestamp,
-                            &mut state.current_model,
-                            &mut state.current_model_is_fallback,
-                            &mut |event| replay.visit(event, &mut visit),
-                            &RecordLocation {
-                                path,
-                                line: line_number,
-                                diagnostics,
-                            },
-                        )?;
-                    } else {
+                    if !has_headless_envelope(&line) {
                         record_decode_failure(
                             path,
                             line_number,
@@ -411,34 +420,9 @@ fn visit_codex_session_file_inner(
                             diagnostics,
                             Some(&mut state.previous_totals),
                         );
+                        continue;
                     }
-                    continue;
                 }
-            };
-            // Type names inside headless data can pass the substring scan;
-            // only the decoded envelope selects session accounting.
-            if is_session_usage_type(
-                value.entry_type.as_deref(),
-                value
-                    .payload
-                    .as_ref()
-                    .and_then(|payload| payload.payload_type.as_deref()),
-            ) {
-                if value.entry_type.as_deref() == Some("token_usage_record") {
-                    replay.observe_usage_record();
-                }
-                visit_codex_session_entry(
-                    &session_id,
-                    value,
-                    &mut state,
-                    &mut |event| replay.visit(event, &mut visit),
-                    &RecordLocation {
-                        path,
-                        line: line_number,
-                        diagnostics,
-                    },
-                )?;
-                continue;
             }
         }
         if let Ok(value) = serde_json::from_slice::<CodexLogEntry<'_>>(&line) {
@@ -487,6 +471,15 @@ fn visit_codex_session_file_inner(
     }
 
     Ok(())
+}
+
+fn has_headless_envelope(line: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(line).is_ok_and(|value| {
+        !is_session_usage_type(
+            value.get("type").and_then(Value::as_str),
+            value.pointer("/payload/type").and_then(Value::as_str),
+        )
+    })
 }
 
 fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -> bool {
@@ -787,27 +780,7 @@ fn add_codex_exec_event_from_value(
             return Ok(());
         }
     };
-    add_codex_exec_event_value(
-        session_id,
-        &value,
-        fallback_timestamp,
-        current_model,
-        current_model_is_fallback,
-        visit,
-        location,
-    )
-}
-
-fn add_codex_exec_event_value(
-    session_id: &str,
-    value: &Value,
-    fallback_timestamp: &str,
-    current_model: &mut Option<String>,
-    current_model_is_fallback: &mut bool,
-    visit: &mut impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-    location: &RecordLocation<'_>,
-) -> Result<()> {
-    let raw_usage = match normalize_headless_codex_usage_value(value) {
+    let raw_usage = match normalize_headless_codex_usage_value(&value) {
         Ok(Some(raw_usage)) => raw_usage,
         Ok(None) => return Ok(()),
         Err(()) => {
@@ -815,11 +788,11 @@ fn add_codex_exec_event_value(
             return Ok(());
         }
     };
-    let parsed_model = codex_model_from_result_value(value);
+    let parsed_model = codex_model_from_result_value(&value);
     let timestamps = CodexExecTimestamps {
-        event: codex_timestamp_from_result_value(value)
+        event: codex_timestamp_from_result_value(&value)
             .unwrap_or_else(|| fallback_timestamp.to_string()),
-        model: codex_model_timestamp_from_result_value(value)
+        model: codex_model_timestamp_from_result_value(&value)
             .unwrap_or_else(|| fallback_timestamp.to_string()),
     };
     visit_codex_exec_usage_event(
@@ -1753,6 +1726,47 @@ mod tests {
             assert_eq!(events[0].input_tokens, 100);
             assert_eq!(events[0].output_tokens, 20);
             assert_eq!(events[0].total_tokens, 120);
+        }
+    }
+
+    #[test]
+    fn typed_and_value_headless_decoders_agree() {
+        let cases = [
+            json!({ "timestamp": "2026-09-01T00:00:01Z", "model": "gpt-5", "usage": { "input_tokens": 10, "output_tokens": 2 } }),
+            json!({ "created_at": 1_788_220_801_u64, "data": { "model_name": " gpt-5-mini ", "usage": { "prompt_tokens": 7, "completion_tokens": 3, "cached_tokens": 4 } } }),
+            json!({ "createdAt": 1_788_220_801_000_u64, "result": { "metadata": { "model": "gpt-5" }, "usage": { "input": 5, "output": 1, "total_tokens": 0 } } }),
+            json!({ "response": { "timestamp": "2026-09-01 00:00:01", "createdAt": "2026-09-01T00:00:02Z", "usage": { "input_tokens": "12", "reasoning_tokens": 3 } } }),
+            json!({ "timestamp": "not a date", "created_at": "2026-09-01T00:00:03Z", "model": "  ", "model_name": "gpt-5" }),
+            json!({ "usage": "broken", "data": { "usage": { "input_tokens": 1 } } }),
+            json!({ "usage": [1, 2], "result": { "usage": null } }),
+            json!({ "usage": { "input_tokens": 0, "output_tokens": 0 } }),
+            json!({ "data": null, "result": 3, "response": "x", "metadata": [] }),
+        ];
+        for case in cases {
+            let line = case.to_string();
+            let typed = serde_json::from_str::<CodexLogEntry<'_>>(&line).unwrap();
+            let value = serde_json::from_str::<Value>(&line).unwrap();
+
+            assert_eq!(
+                normalize_headless_codex_usage(&typed),
+                normalize_headless_codex_usage_value(&value),
+                "{line}"
+            );
+            assert_eq!(
+                codex_model_from_result(&typed),
+                codex_model_from_result_value(&value),
+                "{line}"
+            );
+            assert_eq!(
+                codex_timestamp_from_result(&typed),
+                codex_timestamp_from_result_value(&value),
+                "{line}"
+            );
+            assert_eq!(
+                codex_model_timestamp_from_result(&typed),
+                codex_model_timestamp_from_result_value(&value),
+                "{line}"
+            );
         }
     }
 
