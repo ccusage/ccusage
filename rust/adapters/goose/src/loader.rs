@@ -5,7 +5,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use ccusage_adapter_common::{
     SqliteStage,
     source::LoadContext,
-    units::{UnitError, read_units},
+    units::{UnitError, read_units_flat},
 };
 use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, Skip};
 
@@ -32,28 +32,12 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let db_paths = goose_db_paths()?;
-    // Load each database in parallel (a fresh read-only connection per DB), then
-    // run the sequential per-db dedup over the original path order so the
-    // surviving session per key matches the single-threaded read.
-    let loaded = read_units(
+    let mut entries = read_units_flat(
         &db_paths,
         cx.shared.single_thread,
         cx.diagnostics,
         |db_path| load_entries_from_db(db_path, tz, pricing, cx.diagnostics),
     );
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for (db_path, db_entries) in db_paths.iter().zip(loaded) {
-        let Some(db_entries) = db_entries else {
-            continue;
-        };
-        for entry in db_entries {
-            let key = format!("{}:{}", db_path.display(), entry.session_id);
-            if seen.insert(key) {
-                entries.push(entry);
-            }
-        }
-    }
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
@@ -72,13 +56,18 @@ fn load_entries_from_db(
         .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
     let mut entries = Vec::new();
+    let mut seen_sessions = HashSet::new();
     let mut row_number = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
                 row_number = row_number.saturating_add(1);
                 match row_to_entry(&statement, tz, pricing) {
-                    Ok(Some(entry)) => entries.push(entry),
+                    Ok(Some(entry)) => {
+                        if seen_sessions.insert(entry.session_id.clone()) {
+                            entries.push(entry);
+                        }
+                    }
                     Ok(None) => {}
                     Err(rejection) => diagnostics.record(Skip::record(
                         db_path,
