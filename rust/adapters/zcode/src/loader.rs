@@ -493,7 +493,10 @@ mod tests {
     #[test]
     fn separates_invalid_databases_from_unsupported_schemas() {
         let fixture = fs_fixture!({"broken.db": "SECRET_CANARY"});
-        sqlite::open(fixture.path("unsupported.db")).unwrap();
+        sqlite::open(fixture.path("unsupported.db"))
+            .unwrap()
+            .execute("CREATE TABLE other (id TEXT)")
+            .unwrap();
         let diagnostics = Diagnostics::new("zcode");
         let shared = SharedArgs::default();
         let pricing = PricingMap::load_embedded();
