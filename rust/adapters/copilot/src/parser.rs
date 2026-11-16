@@ -70,9 +70,37 @@ pub(super) struct CopilotUsageEntry {
     pub(super) nano_aiu: u64,
     pub(super) cost_usd: Option<f64>,
     pub(super) dedup_key: String,
-    /// Provider completion and Copilot service request IDs of a single call,
-    /// shared by its usage record and its OpenTelemetry rows.
-    pub(super) call_ids: Vec<String>,
+    pub(super) call_ids: CallIds,
+}
+
+/// IDs of a single call that its usage record and its OpenTelemetry rows
+/// share. The two kinds are separate namespaces and only match their own kind.
+#[derive(Debug, Clone, Default)]
+pub(super) struct CallIds {
+    /// Record `apiCallId`, OTel `gen_ai.response.id`: the provider completion ID.
+    pub(super) response_id: Option<String>,
+    /// Record `serviceRequestId`, OTel `github.copilot.service_request_id`.
+    pub(super) service_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum CallIdKind {
+    Response,
+    ServiceRequest,
+}
+
+impl CallIds {
+    pub(super) fn iter(&self) -> impl Iterator<Item = (CallIdKind, &str)> {
+        [
+            (CallIdKind::Response, self.response_id.as_deref()),
+            (
+                CallIdKind::ServiceRequest,
+                self.service_request_id.as_deref(),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(kind, id)| Some((kind, id?)))
+    }
 }
 
 /// Session-wide credit total from a `session.shutdown` or
@@ -172,11 +200,10 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
             nano_aiu: 0,
             cost_usd: None,
             dedup_key: candidate.dedup_key,
-            call_ids: candidate
-                .response_id
-                .into_iter()
-                .chain(candidate.service_request_id)
-                .collect(),
+            call_ids: CallIds {
+                response_id: candidate.response_id,
+                service_request_id: candidate.service_request_id,
+            },
         })
         .collect())
 }
@@ -399,7 +426,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
                 nano_aiu: model_nano_aiu.unwrap_or_default(),
                 cost_usd: None,
                 dedup_key,
-                call_ids: Vec::new(),
+                call_ids: CallIds::default(),
             });
         }
         let total_nano_aiu = session_nano_aiu.filter(|_| models_report_credits);
@@ -425,7 +452,7 @@ struct UsageRecordCall {
     /// `(sourceSessionId, sequence)`, unique across every session file.
     accounting: Option<(String, u64)>,
     event_id: Option<String>,
-    call_ids: Vec<String>,
+    call_ids: CallIds,
     model: String,
     usage: CopilotSessionUsage,
 }
@@ -442,11 +469,10 @@ fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
         let source = accounting.source_session_id?;
         (accounting.sequence > 0).then_some((source, accounting.sequence))
     });
-    let call_ids = record
-        .api_call_id
-        .into_iter()
-        .chain(record.service_request_id)
-        .collect();
+    let call_ids = CallIds {
+        response_id: record.api_call_id,
+        service_request_id: record.service_request_id,
+    };
     Some(UsageRecordCall {
         timestamp,
         accounting,

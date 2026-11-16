@@ -8,8 +8,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry, CopilotUsageRecordEntry,
-        parse_otel_file, parse_session_state_file,
+        CallIdKind, CallIds, CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry,
+        CopilotUsageRecordEntry, parse_otel_file, parse_session_state_file,
     },
     paths::{CopilotSourceKind, paths},
 };
@@ -148,9 +148,9 @@ fn remove_recorded_otel_calls(
     otel_entries: &mut Vec<CopilotUsageEntry>,
     records: &[CopilotUsageEntry],
 ) {
-    let mut rows_by_call_id = HashMap::<&str, Vec<usize>>::new();
+    let mut rows_by_call_id = HashMap::<(CallIdKind, &str), Vec<usize>>::new();
     for (index, entry) in otel_entries.iter().enumerate() {
-        for call_id in &entry.call_ids {
+        for call_id in entry.call_ids.iter() {
             rows_by_call_id.entry(call_id).or_default().push(index);
         }
     }
@@ -161,7 +161,7 @@ fn remove_recorded_otel_calls(
         let nearest = record
             .call_ids
             .iter()
-            .filter_map(|call_id| rows_by_call_id.get(call_id.as_str()))
+            .filter_map(|call_id| rows_by_call_id.get(&call_id))
             .flatten()
             .copied()
             .filter(|index| otel_entries[*index].model == record.model && !replaced.contains(index))
@@ -457,7 +457,7 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         // One AIU is one GitHub AI credit, billed at $0.01.
         cost_usd: Some(nano_aiu as f64 / 1e11),
         dedup_key: snapshot.dedup_key.clone(),
-        call_ids: Vec::new(),
+        call_ids: CallIds::default(),
     }
 }
 
@@ -503,7 +503,7 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         nano_aiu: current.nano_aiu.saturating_sub(baseline.nano_aiu),
         cost_usd: None,
         dedup_key: current.dedup_key.clone(),
-        call_ids: Vec::new(),
+        call_ids: CallIds::default(),
     }
 }
 
@@ -2392,6 +2392,32 @@ mod tests {
                 "usage record: {record:?}"
             );
         }
+    }
+
+    #[test]
+    fn matches_call_ids_only_within_the_same_kind() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": usage_record(
+                "record-1",
+                "2026-01-02T09:00:00.000Z",
+                json!({"apiCallId": "same-value"}),
+            ),
+            "home/.copilot/otel/otel.jsonl": otel_call_with(
+                "span-1",
+                "2026-01-02T09:00:00.000Z",
+                ("github.copilot.service_request_id", "same-value"),
+            ),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 100),
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+            ]
+        );
     }
 
     #[test]
