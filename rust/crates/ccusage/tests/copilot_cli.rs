@@ -113,6 +113,7 @@ fn run_cli<const N: usize>(fixture: &Fixture, args: [&str; N]) -> String {
         .env_remove("QWEN_DATA_DIR")
         .env_remove("GROK_HOME")
         .env_remove("CLINE_DATA_DIR")
+        .env_remove("JUNIE_HOME")
         .output()
         .expect("ccusage CLI should run");
     assert!(
