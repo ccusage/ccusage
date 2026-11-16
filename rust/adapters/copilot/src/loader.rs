@@ -2116,6 +2116,50 @@ mod tests {
     }
 
     #[test]
+    fn counts_a_usage_record_without_tokens_as_a_call() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                json!({
+                    "type": "session.usage_record",
+                    "id": "record-1",
+                    "timestamp": "2026-02-05T09:00:00.000Z",
+                    "data": {"usage": {
+                        "model": "gpt-5.4",
+                        "inputTokens": 0,
+                        "outputTokens": 0,
+                        "accounting": {"sourceSessionId": "session-1", "sequence": 1}
+                    }}
+                })
+                .to_string(),
+                checkpoint("checkpoint-1", "2026-02-05T09:00:01.000Z", 3),
+                json!({
+                    "type": "session.shutdown",
+                    "id": "shutdown-1",
+                    "timestamp": "2026-02-06T09:00:00.000Z",
+                    "data": {
+                        "totalNanoAiu": 3 * NANO_AIU_PER_CREDIT,
+                        "modelMetrics": {"gpt-5.4": {
+                            "usage": {"inputTokens": 0, "outputTokens": 0},
+                            "requests": {"count": 1}
+                        }}
+                    }
+                })
+                .to_string(),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        // The call keeps its own day and request count, and the shutdown that
+        // totals it neither repeats it nor turns its credits into `unknown` cost.
+        assert_eq!(
+            token_rows(&entries),
+            [row("2026-02-05T09:00:00.000Z", "gpt-5.4", [0, 0, 0, 0, 1])]
+        );
+    }
+
+    #[test]
     fn counts_a_usage_record_delivered_twice_once() {
         let duplicated = RECEIPTS_ONLY
             .lines()

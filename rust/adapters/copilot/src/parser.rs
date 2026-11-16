@@ -400,7 +400,7 @@ fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
     let record = event.data?.usage?;
     let model = normalize_copilot_model(record.model.as_deref()?);
     let usage = record.tokens;
-    if model.is_empty() || usage.is_empty() {
+    if model.is_empty() {
         return None;
     }
     let identity = record
