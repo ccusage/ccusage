@@ -23,7 +23,8 @@ use super::{
     replay::CodexReplayPlan,
 };
 
-pub fn load_codex_events_from_directory(
+#[cfg(test)]
+pub(crate) fn load_codex_events_from_directory(
     sessions_dir: &Path,
     single_thread: bool,
 ) -> Result<Vec<CodexTokenUsageEvent>> {
@@ -3242,6 +3243,54 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(parent_usage_reads, vec![parent]);
+    }
+
+    #[test]
+    fn loads_codex_token_count_events() {
+        let fixture = fs_fixture!({
+            "sessions/codex-session.jsonl": [
+                r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
+                r#"{"timestamp":"2026-01-02T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150},"model":"gpt-5"}}}"#,
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(&fixture.path("sessions"), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].session_id, "codex-session");
+        assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+        assert_eq!(events[0].input_tokens, 100);
+        assert_eq!(events[0].cached_input_tokens, 10);
+        assert_eq!(events[0].output_tokens, 50);
+        assert_eq!(events[0].reasoning_output_tokens, 0);
+        assert_eq!(events[0].total_tokens, 150);
+    }
+
+    #[test]
+    fn loads_codex_token_count_events_in_parallel() {
+        let fixture = fs_fixture!({
+            "sessions/session-a.jsonl": [
+                r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
+                r#"{"timestamp":"2026-01-02T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150},"model":"gpt-5"}}}"#,
+            ]
+            .join("\n"),
+            "sessions/session-b.jsonl": [
+                r#"{"timestamp":"2026-01-02T00:01:00.000Z","type":"turn_context","payload":{"model":"gpt-5-mini"}}"#,
+                r#"{"timestamp":"2026-01-02T00:01:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":40,"cached_input_tokens":4,"output_tokens":20,"reasoning_output_tokens":2,"total_tokens":62},"model":"gpt-5-mini"}}}"#,
+            ]
+            .join("\n"),
+        });
+
+        let single_thread_events =
+            load_codex_events_from_directory(&fixture.path("sessions"), true).unwrap();
+        let parallel_events =
+            load_codex_events_from_directory(&fixture.path("sessions"), false).unwrap();
+
+        assert_eq!(parallel_events.len(), 2);
+        assert_eq!(parallel_events, single_thread_events);
+        assert_eq!(parallel_events[0].session_id, "session-a");
+        assert_eq!(parallel_events[1].session_id, "session-b");
     }
 
     #[test]
