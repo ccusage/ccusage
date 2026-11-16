@@ -18,6 +18,7 @@ use crate::{
 
 use super::{
     reader::{READ_BUFFER_SIZE, open_rollout_lines, uncompressed_rollout_path},
+    replay::{CodexSessionMetadata, session_metadata_from_line},
     types::{
         CodexInfo, CodexLogEntry, CodexModelMetadata, CodexPayload, CodexResultFields,
         CodexSessionLogEntry, CodexTimestamp, CodexUsageCandidate,
@@ -308,6 +309,7 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
         compaction_history,
         visit,
         diagnostics,
+        None,
     )
 }
 
@@ -318,7 +320,37 @@ pub(super) fn visit_codex_session_file_with_diagnostics(
     visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
     diagnostics: &Diagnostics,
 ) -> Result<()> {
-    visit_codex_session_file_inner(sessions_dir, path, fork_replay, None, visit, diagnostics)
+    visit_codex_session_file_inner(
+        sessions_dir,
+        path,
+        fork_replay,
+        None,
+        visit,
+        diagnostics,
+        None,
+    )
+}
+
+/// Visits a rollout that its first line shows is not a fork, and returns that
+/// line's session metadata. A fork is left unvisited: which of its usage it
+/// replayed is known only once every rollout's metadata has been read.
+pub(super) fn visit_codex_session_file_unless_fork(
+    sessions_dir: &Path,
+    path: &Path,
+    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
+    diagnostics: &Diagnostics,
+) -> Result<CodexSessionMetadata> {
+    let mut metadata = CodexSessionMetadata::default();
+    visit_codex_session_file_inner(
+        sessions_dir,
+        path,
+        None,
+        None,
+        visit,
+        diagnostics,
+        Some(&mut metadata),
+    )?;
+    Ok(metadata)
 }
 
 fn visit_codex_session_file_inner(
@@ -328,6 +360,7 @@ fn visit_codex_session_file_inner(
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
     diagnostics: &Diagnostics,
+    mut stop_at_fork: Option<&mut CodexSessionMetadata>,
 ) -> Result<()> {
     let Ok((mut lines, opened_path)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
         diagnostics.record(Skip::unit(
@@ -370,6 +403,12 @@ fn visit_codex_session_file_inner(
             }
         };
         line_number = line_number.saturating_add(1);
+        if let Some(metadata) = stop_at_fork.take() {
+            *metadata = session_metadata_from_line(line);
+            if metadata.is_fork() {
+                return Ok(());
+            }
+        }
         let Some(line_kind) = codex_line_usage_kind(line) else {
             continue;
         };

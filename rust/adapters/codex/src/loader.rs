@@ -198,7 +198,7 @@ fn read_codex_events_from_files(
     }
 }
 
-fn has_date_bounds(shared: &SharedArgs) -> bool {
+pub(super) fn has_date_bounds(shared: &SharedArgs) -> bool {
     shared.since.is_some() || shared.until.is_some()
 }
 

@@ -19,7 +19,11 @@ use crate::{
     week_start,
 };
 
-use super::{parser, paths, replay::CodexReplayPlan};
+use super::{
+    loader::has_date_bounds,
+    parser, paths,
+    replay::{CodexReplayPlan, CodexSessionMetadata},
+};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 enum CodexEventKey {
@@ -119,15 +123,67 @@ struct CodexAggregation {
     seen: CodexDedupeMap,
 }
 
+/// How a run tells which rollouts replayed a parent's history.
+#[derive(Clone, Copy)]
+enum CodexReplay<'a> {
+    Planned(&'a CodexReplayPlan),
+    /// Reads each rollout's metadata from its own first line and leaves forks
+    /// for a planned run, so no separate pass opens every rollout up front.
+    Discover,
+}
+
 /// Read-only inputs every file of one aggregation run shares.
 struct CodexAggregateRun<'a> {
     sessions_dir: &'a Path,
     files: &'a [PathBuf],
     shared: &'a SharedArgs,
     kind: AgentReportKind,
-    replay_plan: &'a CodexReplayPlan,
+    replay: CodexReplay<'a>,
+    /// Indexes into `files` this run reads; `None` reads all of them.
+    selection: Option<&'a [usize]>,
     file_offset: usize,
     diagnostics: &'a Diagnostics,
+}
+
+impl CodexAggregateRun<'_> {
+    fn file_indexes(&self) -> Vec<usize> {
+        self.selection
+            .map_or_else(|| (0..self.files.len()).collect(), <[usize]>::to_vec)
+    }
+
+    fn chunk_file_indexes(&self, worker_count: usize) -> Vec<Vec<usize>> {
+        let Some(selection) = self.selection else {
+            return crate::chunk_file_indexes_by_size(self.files, worker_count);
+        };
+        let files = selection
+            .iter()
+            .map(|&index| self.files[index].clone())
+            .collect::<Vec<_>>();
+        crate::chunk_file_indexes_by_size(&files, worker_count)
+            .into_iter()
+            .map(|chunk| chunk.into_iter().map(|index| selection[index]).collect())
+            .collect()
+    }
+}
+
+/// Session metadata a discovering run read, by index into its files.
+type CodexFileMetadata = Vec<(usize, CodexSessionMetadata)>;
+
+/// Orders a discovering run's metadata by file index and lists the forks.
+fn fork_indexes(
+    file_count: usize,
+    metadata: CodexFileMetadata,
+) -> (Vec<usize>, Vec<CodexSessionMetadata>) {
+    let mut ordered = vec![CodexSessionMetadata::default(); file_count];
+    for (index, file_metadata) in metadata {
+        ordered[index] = file_metadata;
+    }
+    let forks = ordered
+        .iter()
+        .enumerate()
+        .filter_map(|(index, file_metadata)| file_metadata.is_fork().then_some(index))
+        .collect();
+    (forks, ordered)
 }
 
 pub fn load_groups(
@@ -170,52 +226,17 @@ fn load_groups_from_sources_with_diagnostics(
         .iter()
         .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, shared))
         .collect::<Vec<_>>();
-    let replay_plan = if shared.since.is_some() || shared.until.is_some() {
-        CodexReplayPlan::for_bounded_files(
-            file_groups
-                .iter()
-                .zip(&files_by_group)
-                .map(|(group, files)| (group.dir.as_path(), files.as_slice())),
-            file_groups
-                .iter()
-                .map(|group| (group.dir.as_path(), group.files.as_slice())),
-            shared.single_thread,
-            diagnostics,
-        )
-    } else {
-        CodexReplayPlan::new(
-            file_groups
-                .iter()
-                .map(|group| (group.dir.as_path(), group.files.as_slice())),
-            shared.single_thread,
-        )
-    };
-    let mut groups = BTreeMap::new();
-    let seen = create_dedupe_shards();
-    let mut file_offset = 0;
-    for (group, files) in file_groups.iter().zip(&files_by_group) {
-        if files.is_empty() {
-            continue;
-        }
-        merge_groups(
-            &mut groups,
-            aggregate_files_with_dedupe(
-                &CodexAggregateRun {
-                    sessions_dir: &group.dir,
-                    files,
-                    shared,
-                    kind,
-                    replay_plan: &replay_plan,
-                    file_offset,
-                    diagnostics,
-                },
-                &seen,
-            )?,
-        );
-        file_offset += files.len();
-    }
-    apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
-    Ok((groups, detected))
+    let all_files = file_groups
+        .iter()
+        .map(|group| (group.dir.as_path(), group.files.as_slice()))
+        .collect::<Vec<_>>();
+    let selected_files = file_groups
+        .iter()
+        .zip(&files_by_group)
+        .map(|(group, files)| (group.dir.as_path(), files.as_slice()))
+        .collect::<Vec<_>>();
+    aggregate_file_groups(&selected_files, &all_files, shared, kind, diagnostics)
+        .map(|groups| (groups, detected))
 }
 
 pub(super) fn load_groups_from_directory_with_diagnostics(
@@ -227,38 +248,95 @@ pub(super) fn load_groups_from_directory_with_diagnostics(
     let all_files = paths::collect_codex_usage_files(sessions_dir);
     let detected = !all_files.is_empty();
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
-    let replay_plan = if shared.since.is_some() || shared.until.is_some() {
+    if shared.single_thread {
+        return aggregate_files_local(sessions_dir, &files, &all_files, shared, kind, diagnostics)
+            .map(|groups| (groups, detected));
+    }
+    aggregate_file_groups(
+        &[(sessions_dir, files.as_slice())],
+        &[(sessions_dir, all_files.as_slice())],
+        shared,
+        kind,
+        diagnostics,
+    )
+    .map(|groups| (groups, detected))
+}
+
+/// Aggregates `selected` against the replay history of `available`, the
+/// unfiltered files of the same groups.
+fn aggregate_file_groups(
+    selected: &[(&Path, &[PathBuf])],
+    available: &[(&Path, &[PathBuf])],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    diagnostics: &Diagnostics,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    let bounded_plan = has_date_bounds(shared).then(|| {
         CodexReplayPlan::for_bounded_files(
-            [(sessions_dir, files.as_slice())],
-            [(sessions_dir, all_files.as_slice())],
+            selected.iter().copied(),
+            available.iter().copied(),
             shared.single_thread,
             diagnostics,
         )
-    } else {
-        CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
-    };
-    let run = CodexAggregateRun {
-        sessions_dir,
-        files: &files,
-        shared,
-        kind,
-        replay_plan: &replay_plan,
-        file_offset: 0,
-        diagnostics,
-    };
-    if shared.single_thread {
-        return aggregate_files_local(&run).map(|groups| (groups, detected));
-    }
+    });
+    let replay = bounded_plan
+        .as_ref()
+        .map_or(CodexReplay::Discover, CodexReplay::Planned);
+    let mut groups = BTreeMap::new();
     let seen = create_dedupe_shards();
-    let mut groups = aggregate_files_parallel(&run, &seen)?;
+    let mut metadata_by_group = Vec::with_capacity(selected.len());
+    let mut file_offset = 0;
+    for &(sessions_dir, files) in selected {
+        let run = CodexAggregateRun {
+            sessions_dir,
+            files,
+            shared,
+            kind,
+            replay,
+            selection: None,
+            file_offset,
+            diagnostics,
+        };
+        let (group_rows, metadata) = aggregate_files_with_dedupe(&run, &seen)?;
+        merge_groups(&mut groups, group_rows);
+        metadata_by_group.push(fork_indexes(files.len(), metadata));
+        file_offset += files.len();
+    }
+    if matches!(replay, CodexReplay::Discover) {
+        // Unbounded runs select every available file, so the metadata covers
+        // the whole plan in its order.
+        let (forks, metadata): (Vec<_>, Vec<_>) = metadata_by_group.into_iter().unzip();
+        let plan = CodexReplayPlan::with_metadata(
+            available.iter().copied(),
+            metadata.into_iter().flatten().collect(),
+            shared.single_thread,
+        );
+        let mut file_offset = 0;
+        for (&(sessions_dir, files), forks) in selected.iter().zip(&forks) {
+            if !forks.is_empty() {
+                let run = CodexAggregateRun {
+                    sessions_dir,
+                    files,
+                    shared,
+                    kind,
+                    replay: CodexReplay::Planned(&plan),
+                    selection: Some(forks),
+                    file_offset,
+                    diagnostics,
+                };
+                merge_groups(&mut groups, aggregate_files_with_dedupe(&run, &seen)?.0);
+            }
+            file_offset += files.len();
+        }
+    }
     apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
-    Ok((groups, detected))
+    Ok(groups)
 }
 
 fn aggregate_files_with_dedupe(
     run: &CodexAggregateRun<'_>,
     seen: &CodexDedupeShards,
-) -> Result<BTreeMap<String, CodexGroup>> {
+) -> Result<(BTreeMap<String, CodexGroup>, CodexFileMetadata)> {
     if run.shared.single_thread {
         return aggregate_files(run, seen);
     }
@@ -268,51 +346,54 @@ fn aggregate_files_with_dedupe(
 fn aggregate_files(
     run: &CodexAggregateRun<'_>,
     seen: &CodexDedupeShards,
-) -> Result<BTreeMap<String, CodexGroup>> {
+) -> Result<(BTreeMap<String, CodexGroup>, CodexFileMetadata)> {
     let mut groups = BTreeMap::new();
+    let mut metadata = Vec::new();
     let timezone = resolve_tz(run.shared.timezone.as_deref());
-    for (index, _) in run.files.iter().enumerate() {
-        aggregate_file(run, index, &timezone, seen, &mut groups)?;
+    for index in run.file_indexes() {
+        aggregate_file(run, index, &timezone, seen, &mut groups, &mut metadata)?;
     }
-    Ok(groups)
+    Ok((groups, metadata))
 }
 
 fn aggregate_files_parallel(
     run: &CodexAggregateRun<'_>,
     seen: &CodexDedupeShards,
-) -> Result<BTreeMap<String, CodexGroup>> {
+) -> Result<(BTreeMap<String, CodexGroup>, CodexFileMetadata)> {
+    let file_count = run.selection.map_or(run.files.len(), <[usize]>::len);
     let worker_count = thread::available_parallelism()
         .map(usize::from)
         .unwrap_or(1)
-        .min(run.files.len());
+        .min(file_count);
     if worker_count <= 1 {
         return aggregate_files(run, seen);
     }
 
-    let chunks = crate::chunk_file_indexes_by_size(run.files, worker_count);
+    let chunks = run.chunk_file_indexes(worker_count);
     thread::scope(|scope| {
         let mut handles = Vec::with_capacity(chunks.len());
         for chunk in chunks {
             handles.push(scope.spawn(move || {
                 let mut groups = BTreeMap::new();
+                let mut metadata = Vec::new();
                 let timezone = resolve_tz(run.shared.timezone.as_deref());
                 for index in chunk {
-                    aggregate_file(run, index, &timezone, seen, &mut groups)?;
+                    aggregate_file(run, index, &timezone, seen, &mut groups, &mut metadata)?;
                 }
-                Result::<BTreeMap<String, CodexGroup>>::Ok(groups)
+                Result::<_>::Ok((groups, metadata))
             }));
         }
 
         let mut groups = BTreeMap::new();
+        let mut metadata = Vec::new();
         for handle in handles {
-            merge_groups(
-                &mut groups,
-                handle
-                    .join()
-                    .map_err(|_| crate::cli_error("codex worker panicked"))??,
-            );
+            let (worker_groups, worker_metadata) = handle
+                .join()
+                .map_err(|_| crate::cli_error("codex worker panicked"))??;
+            merge_groups(&mut groups, worker_groups);
+            metadata.extend(worker_metadata);
         }
-        Ok(groups)
+        Ok((groups, metadata))
     })
 }
 
@@ -322,50 +403,116 @@ fn aggregate_file(
     timezone: &JiffTimeZone,
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
+    metadata: &mut CodexFileMetadata,
 ) -> Result<()> {
-    let file = &run.files[file_index];
     let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-    parser::visit_codex_session_file_with_diagnostics(
-        run.sessions_dir,
-        file,
-        run.replay_plan.fork_replay(file),
-        |event| {
-            if run
-                .replay_plan
-                .is_replayed_compaction(file, event.response_id.as_deref())
-            {
-                return Ok(());
-            }
-            add_event_to_groups(
-                &event,
-                run.kind,
-                timezone,
-                run.shared,
-                seen,
-                groups,
-                &mut provenance,
-            )
-        },
-        run.diagnostics,
-    )
+    let add = |event: &CodexTokenUsageEvent| {
+        add_event_to_groups(
+            event,
+            run.kind,
+            timezone,
+            run.shared,
+            seen,
+            groups,
+            &mut provenance,
+        )
+    };
+    visit_run_file(run, file_index, metadata, add)
 }
 
-fn aggregate_files_local(run: &CodexAggregateRun<'_>) -> Result<BTreeMap<String, CodexGroup>> {
-    let CodexAggregation { mut groups, seen } = aggregate_files_local_with_seen(run)?;
-    apply_recorded_usage_entries(&mut groups, seen.iter(), run.shared, run.kind);
+/// Visits one file of `run`, recording its metadata when the run discovers
+/// forks as it goes.
+fn visit_run_file(
+    run: &CodexAggregateRun<'_>,
+    file_index: usize,
+    metadata: &mut CodexFileMetadata,
+    mut add: impl FnMut(&CodexTokenUsageEvent) -> Result<()>,
+) -> Result<()> {
+    let file = &run.files[file_index];
+    match run.replay {
+        CodexReplay::Planned(plan) => parser::visit_codex_session_file_with_diagnostics(
+            run.sessions_dir,
+            file,
+            plan.fork_replay(file),
+            |event| {
+                if plan.is_replayed_compaction(file, event.response_id.as_deref()) {
+                    return Ok(());
+                }
+                add(&event)
+            },
+            run.diagnostics,
+        ),
+        CodexReplay::Discover => {
+            let file_metadata = parser::visit_codex_session_file_unless_fork(
+                run.sessions_dir,
+                file,
+                |event| add(&event),
+                run.diagnostics,
+            )?;
+            metadata.push((file_index, file_metadata));
+            Ok(())
+        }
+    }
+}
+
+fn aggregate_files_local(
+    sessions_dir: &Path,
+    files: &[PathBuf],
+    all_files: &[PathBuf],
+    shared: &SharedArgs,
+    kind: AgentReportKind,
+    diagnostics: &Diagnostics,
+) -> Result<BTreeMap<String, CodexGroup>> {
+    let bounded_plan = has_date_bounds(shared).then(|| {
+        CodexReplayPlan::for_bounded_files(
+            [(sessions_dir, files)],
+            [(sessions_dir, all_files)],
+            shared.single_thread,
+            diagnostics,
+        )
+    });
+    let run = CodexAggregateRun {
+        sessions_dir,
+        files,
+        shared,
+        kind,
+        replay: bounded_plan
+            .as_ref()
+            .map_or(CodexReplay::Discover, CodexReplay::Planned),
+        selection: None,
+        file_offset: 0,
+        diagnostics,
+    };
+    let (mut aggregation, metadata) = aggregate_files_local_with_seen(&run, None)?;
+    if matches!(run.replay, CodexReplay::Discover) {
+        let (forks, metadata) = fork_indexes(files.len(), metadata);
+        let plan = CodexReplayPlan::with_metadata([(sessions_dir, all_files)], metadata, true);
+        let fork_run = CodexAggregateRun {
+            replay: CodexReplay::Planned(&plan),
+            selection: Some(&forks),
+            ..run
+        };
+        aggregation = aggregate_files_local_with_seen(&fork_run, Some(aggregation))?.0;
+    }
+    let CodexAggregation { mut groups, seen } = aggregation;
+    apply_recorded_usage_entries(&mut groups, seen.iter(), shared, kind);
     Ok(groups)
 }
 
-fn aggregate_files_local_with_seen(run: &CodexAggregateRun<'_>) -> Result<CodexAggregation> {
-    let mut aggregation = CodexAggregation {
+fn aggregate_files_local_with_seen(
+    run: &CodexAggregateRun<'_>,
+    aggregation: Option<CodexAggregation>,
+) -> Result<(CodexAggregation, CodexFileMetadata)> {
+    let mut aggregation = aggregation.unwrap_or_else(|| CodexAggregation {
         groups: BTreeMap::new(),
         seen: FxHashMap::default(),
-    };
+    });
+    let mut metadata = Vec::new();
     let timezone = resolve_tz(run.shared.timezone.as_deref());
-    for (index, _) in run.files.iter().enumerate() {
-        aggregate_file_local(run, index, &timezone, &mut aggregation)?;
+    for index in run.file_indexes() {
+        aggregate_file_local(run, index, &timezone, &mut aggregation, &mut metadata)?;
     }
-    Ok(aggregation)
+    Ok((aggregation, metadata))
 }
 
 fn aggregate_file_local(
@@ -373,31 +520,20 @@ fn aggregate_file_local(
     file_index: usize,
     timezone: &JiffTimeZone,
     aggregation: &mut CodexAggregation,
+    metadata: &mut CodexFileMetadata,
 ) -> Result<()> {
-    let file = &run.files[file_index];
     let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-    parser::visit_codex_session_file_with_diagnostics(
-        run.sessions_dir,
-        file,
-        run.replay_plan.fork_replay(file),
-        |event| {
-            if run
-                .replay_plan
-                .is_replayed_compaction(file, event.response_id.as_deref())
-            {
-                return Ok(());
-            }
-            add_event_to_groups_local(
-                &event,
-                run.kind,
-                timezone,
-                run.shared,
-                aggregation,
-                &mut provenance,
-            )
-        },
-        run.diagnostics,
-    )
+    let add = |event: &CodexTokenUsageEvent| {
+        add_event_to_groups_local(
+            event,
+            run.kind,
+            timezone,
+            run.shared,
+            aggregation,
+            &mut provenance,
+        )
+    };
+    visit_run_file(run, file_index, metadata, add)
 }
 
 fn add_event_to_groups(
@@ -1972,6 +2108,113 @@ mod tests {
             assert_eq!(groups.len(), 2);
             assert_eq!(groups["2026-05-12"].input_tokens, 111);
             assert_eq!(groups["2026-05-13"].input_tokens, 222);
+        }
+    }
+
+    fn token_count_line(timestamp: &str, last: u64, total: u64) -> String {
+        json!({
+            "timestamp": timestamp,
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "model": "gpt-5.2",
+                    "last_token_usage": {"input_tokens": last, "output_tokens": 1, "total_tokens": last + 1},
+                    "total_token_usage": {"input_tokens": total, "output_tokens": 1, "total_tokens": total + 1},
+                },
+            },
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn skips_replayed_history_of_forks_read_during_the_pass() {
+        let parent = [
+            json!({
+                "timestamp": "2026-05-12T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {"id": "parent-xyz"},
+            })
+            .to_string(),
+            token_count_line("2026-05-12T08:01:00.000Z", 1_000, 1_000),
+            token_count_line("2026-05-12T08:02:00.000Z", 500, 1_500),
+        ]
+        .join("\n");
+        let fork = [
+            json!({
+                "timestamp": "2026-05-12T08:03:00.000Z",
+                "type": "session_meta",
+                "payload": {"id": "fork-abc", "forked_from_id": "parent-xyz"},
+            })
+            .to_string(),
+            token_count_line("2026-05-12T08:03:00.000Z", 1_000, 1_000),
+            token_count_line("2026-05-12T08:03:00.000Z", 500, 1_500),
+            token_count_line("2026-05-12T08:04:00.000Z", 100, 1_600),
+        ]
+        .join("\n");
+        let fixture = fs_fixture!({
+            "codex/sessions/2026/05/12/rollout-2026-05-12T08-00-00-parent-xyz.jsonl": parent.clone(),
+            "codex/archived_sessions/rollout-2026-05-12T08-03-00-fork-abc.jsonl": fork.clone(),
+            "single/2026/05/12/rollout-2026-05-12T08-00-00-parent-xyz.jsonl": parent,
+            "single/2026/05/12/rollout-2026-05-12T08-03-00-fork-abc.jsonl": fork,
+        });
+        let sources = [
+            CodexUsageSource::new_for_test(fixture.path("codex/sessions"), fixture.path("codex")),
+            CodexUsageSource::new_for_test(
+                fixture.path("codex/archived_sessions"),
+                fixture.path("codex"),
+            ),
+        ];
+
+        for single_thread in [true, false] {
+            for since in [None, Some("20260101".to_string())] {
+                let shared = SharedArgs {
+                    single_thread,
+                    since,
+                    timezone: Some("UTC".to_string()),
+                    ..SharedArgs::default()
+                };
+                let context = format!("single_thread={single_thread} since={:?}", shared.since);
+                let sessions = |groups: BTreeMap<String, CodexGroup>| {
+                    groups
+                        .into_iter()
+                        .map(|(session, group)| (session, group.input_tokens))
+                        .collect::<Vec<_>>()
+                };
+                let by_sources =
+                    load_groups_from_sources(&sources, &shared, AgentReportKind::Session).unwrap();
+                assert_eq!(
+                    sessions(by_sources),
+                    [
+                        (
+                            "2026/05/12/rollout-2026-05-12T08-00-00-parent-xyz".to_string(),
+                            1_500
+                        ),
+                        ("rollout-2026-05-12T08-03-00-fork-abc".to_string(), 100),
+                    ],
+                    "{context}"
+                );
+                let by_directory = load_groups_from_directory(
+                    &fixture.path("single"),
+                    &shared,
+                    AgentReportKind::Session,
+                )
+                .unwrap();
+                assert_eq!(
+                    sessions(by_directory),
+                    [
+                        (
+                            "2026/05/12/rollout-2026-05-12T08-00-00-parent-xyz".to_string(),
+                            1_500
+                        ),
+                        (
+                            "2026/05/12/rollout-2026-05-12T08-03-00-fork-abc".to_string(),
+                            100
+                        ),
+                    ],
+                    "{context}"
+                );
+            }
         }
     }
 

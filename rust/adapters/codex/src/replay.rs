@@ -101,6 +101,24 @@ impl CodexReplayPlan {
     ) -> Self {
         let files = collect_replay_files(groups);
         let metadata = read_session_metadata(&files, single_thread);
+        Self::from_metadata(files, metadata, single_thread)
+    }
+
+    /// Plans from metadata already read from the first line of every file in
+    /// `groups`, in the same order.
+    pub(super) fn with_metadata<'a>(
+        groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
+        metadata: Vec<CodexSessionMetadata>,
+        single_thread: bool,
+    ) -> Self {
+        Self::from_metadata(collect_replay_files(groups), metadata, single_thread)
+    }
+
+    fn from_metadata(
+        files: Vec<(PathBuf, &Path)>,
+        metadata: Vec<CodexSessionMetadata>,
+        single_thread: bool,
+    ) -> Self {
         let files_by_session_id = index_session_paths(&files, &metadata);
         let parent_by_child = build_parent_replays(&files, metadata, &files_by_session_id);
         let parent_paths = parent_by_child
@@ -419,11 +437,18 @@ fn read_usage_events(
 }
 
 #[derive(Clone, Default)]
-struct CodexSessionMetadata {
+pub(super) struct CodexSessionMetadata {
     session_id: Option<String>,
     parent_id: Option<String>,
     timestamp: Option<TimestampMs>,
     spawned: bool,
+}
+
+impl CodexSessionMetadata {
+    /// Whether the rollout replays history from the session it forked from.
+    pub(super) fn is_fork(&self) -> bool {
+        self.parent_id.is_some()
+    }
 }
 
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
@@ -434,6 +459,11 @@ fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
     let Ok(Some(line)) = lines.next_line() else {
         return CodexSessionMetadata::default();
     };
+    session_metadata_from_line(line)
+}
+
+/// Session metadata from a rollout's first line.
+pub(super) fn session_metadata_from_line(line: &[u8]) -> CodexSessionMetadata {
     let Ok(line) = std::str::from_utf8(line) else {
         return CodexSessionMetadata::default();
     };
