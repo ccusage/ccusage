@@ -12,6 +12,16 @@ pub struct CodexRawUsage {
     pub(crate) total_tokens: u64,
 }
 
+impl CodexRawUsage {
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.input_tokens == 0
+            && self.cached_input_tokens == 0
+            && self.cache_creation_tokens == 0
+            && self.output_tokens == 0
+            && self.reasoning_output_tokens == 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum CodexUsageCandidate {
     #[default]

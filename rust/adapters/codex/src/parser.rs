@@ -192,7 +192,7 @@ fn detect_rewritten_burst(path: &Path) -> Option<TimestampMs> {
                 .copied()
                 .map(normalize_codex_raw_usage)
                 .as_ref()
-                .is_some_and(has_codex_token_usage)
+                .is_some_and(|usage| !usage.is_empty())
         }) {
             continue;
         }
@@ -577,13 +577,7 @@ fn visit_codex_session_entry(
             location.invalid_timestamp();
             return Ok(());
         };
-        if raw_usage.input_tokens == 0
-            && raw_usage.cached_input_tokens == 0
-            && raw_usage.cache_creation_tokens == 0
-            && raw_usage.output_tokens == 0
-            && raw_usage.reasoning_output_tokens == 0
-            && raw_usage.total_tokens == 0
-        {
+        if raw_usage.is_empty() {
             return Ok(());
         }
 
@@ -692,7 +686,7 @@ fn visit_codex_session_entry(
     let Some(raw_usage) = delta else {
         return Ok(());
     };
-    if !has_codex_token_usage(&raw_usage) {
+    if raw_usage.is_empty() {
         return Ok(());
     }
 
@@ -1458,13 +1452,7 @@ fn normalize_headless_usage_candidate(
         CodexUsageCandidate::Malformed => return Err(()),
         CodexUsageCandidate::Missing => return Ok(None),
     };
-    if usage.input_tokens == 0
-        && usage.cached_input_tokens == 0
-        && usage.cache_creation_tokens == 0
-        && usage.output_tokens == 0
-        && usage.reasoning_output_tokens == 0
-        && usage.total_tokens == 0
-    {
+    if usage.is_empty() {
         return Ok(None);
     }
     Ok(Some(usage))
@@ -1533,14 +1521,6 @@ fn codex_token_count_usage(
         cumulative_advanced,
         delta: raw_usage.map(normalize_codex_raw_usage),
     }
-}
-
-fn has_codex_token_usage(usage: &CodexRawUsage) -> bool {
-    usage.input_tokens != 0
-        || usage.cached_input_tokens != 0
-        || usage.cache_creation_tokens != 0
-        || usage.output_tokens != 0
-        || usage.reasoning_output_tokens != 0
 }
 
 fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
@@ -1619,6 +1599,35 @@ mod tests {
     use ccusage_test_support::fs_fixture;
     use serde_json::json;
     use std::assert_matches;
+
+    #[test]
+    fn usage_with_only_a_total_is_empty_in_every_record_kind() {
+        let total_only = json!({"total_tokens": 50});
+        for record in [
+            json!({"timestamp": "2026-01-02T00:00:00Z", "type": "event_msg", "payload": {
+                "type": "token_count", "info": {"model": "gpt-5", "last_token_usage": total_only},
+            }}),
+            json!({"timestamp": "2026-01-02T00:00:00Z", "type": "turn.completed", "usage": total_only}),
+        ] {
+            let fixture = fs_fixture!({ "session.jsonl": record.to_string() });
+            assert!(
+                crate::test_support::rollout_events(fixture.root()).is_empty(),
+                "{record}"
+            );
+        }
+        let fixture = fs_fixture!({
+            "session.jsonl": [
+                json!({"type": "turn_context", "payload": {"model": "gpt-5"}}),
+                json!({"timestamp": "2026-01-02T00:00:00Z", "type": "token_usage_record", "payload": {
+                    "response_id": "response-1", "usage": total_only,
+                }}),
+                json!({"type": "compacted", "payload": {"compaction_response_id": "response-1"}}),
+            ]
+            .map(|line| line.to_string())
+            .join("\n"),
+        });
+        assert!(crate::test_support::rollout_events(fixture.root()).is_empty());
+    }
 
     #[test]
     fn maps_recorded_service_tier_spellings() {
