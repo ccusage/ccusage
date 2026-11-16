@@ -18,7 +18,8 @@ use ccusage_adapter_common::jsonl;
 
 const DEFAULT_MODEL: &str = "kimi-for-coding";
 const DEFAULT_PROVIDER: &str = "moonshot";
-const KIMI_FOR_CODING_K2_6_CUTOFF_MS: i64 = 1_776_698_890_072;
+// NOTE(2026-05-25, #1106): kimi-for-coding served kimi-k2.5 until 2026-04-20T15:28:10.072Z and kimi-k2.6 after.
+const KIMI_FOR_CODING_K2_6_FROM_MS: i64 = 1_776_698_890_072;
 
 /// Kimi `config.json` document, used to read the configured display model.
 #[derive(Debug, Deserialize)]
@@ -234,8 +235,7 @@ fn wire_line_to_entry_new(
         speed: None,
         cache_creation: None,
     };
-    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, 0);
-    if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
+    if crate::total_usage_tokens(usage) == 0 {
         return None;
     }
     let timestamp = line
@@ -254,7 +254,7 @@ fn wire_line_to_entry_new(
         output_tokens: usage.output_tokens,
         cache_creation_tokens: usage.cache_creation_input_tokens,
         cache_read_tokens: usage.cache_read_input_tokens,
-        extra_total_tokens,
+        extra_total_tokens: 0,
     })
 }
 
@@ -333,19 +333,31 @@ fn extract_session_id(file_path: &Path) -> String {
         .to_string()
 }
 
-pub(super) fn kimi_entry_key(entry: &KimiUsageEntry) -> String {
-    format!(
-        "{}:{}:{}:{}:{}:{}:{}:{}:{}",
-        entry.session_id,
-        entry.message_id.as_deref().unwrap_or_default(),
-        entry.timestamp_text,
-        entry.model,
-        entry.input_tokens,
-        entry.output_tokens,
-        entry.cache_creation_tokens,
-        entry.cache_read_tokens,
-        entry.extra_total_tokens
-    )
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub(super) struct KimiEntryKey {
+    session_id: String,
+    message_id: Option<String>,
+    timestamp: TimestampMs,
+    model: String,
+    tokens: [u64; 5],
+}
+
+impl KimiUsageEntry {
+    pub(super) fn dedupe_key(&self) -> KimiEntryKey {
+        KimiEntryKey {
+            session_id: self.session_id.clone(),
+            message_id: self.message_id.clone(),
+            timestamp: self.timestamp,
+            model: self.model.clone(),
+            tokens: [
+                self.input_tokens,
+                self.output_tokens,
+                self.cache_creation_tokens,
+                self.cache_read_tokens,
+                self.extra_total_tokens,
+            ],
+        }
+    }
 }
 
 pub(super) fn kimi_entry_to_loaded(
@@ -455,7 +467,7 @@ fn model_candidates(entry: &KimiUsageEntry) -> Vec<String> {
 }
 
 fn kimi_for_coding_pricing_model(timestamp: TimestampMs) -> &'static str {
-    if timestamp.as_millis() < KIMI_FOR_CODING_K2_6_CUTOFF_MS {
+    if timestamp < TimestampMs::from_millis(KIMI_FOR_CODING_K2_6_FROM_MS) {
         "moonshot/kimi-k2.5"
     } else {
         "moonshot/kimi-k2.6"

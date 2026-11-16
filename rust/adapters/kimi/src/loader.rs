@@ -5,7 +5,7 @@ use ccusage_adapter_common::{read_units, source::LoadContext};
 use crate::{LoadedEntry, Result};
 
 use super::{
-    parser::{kimi_entry_key, kimi_entry_to_loaded, read_wire_file},
+    parser::{kimi_entry_to_loaded, read_wire_file},
     paths::discover_wire_files,
 };
 
@@ -22,8 +22,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let mut seen = HashSet::new();
     for file_entries in loaded.into_iter().flatten() {
         for entry in file_entries {
-            let key = kimi_entry_key(&entry);
-            if seen.insert(key) {
+            if seen.insert(entry.dedupe_key()) {
                 entries.push(kimi_entry_to_loaded(
                     entry,
                     cx.window.timezone(),
