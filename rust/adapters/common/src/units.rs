@@ -21,6 +21,8 @@ pub struct UnitError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Fault {
     Skip(SkipKind),
+    /// The unit holds nothing but whitespace: no document was written yet.
+    Unwritten,
     /// The document ends before it is complete: it is still being written.
     Unfinished,
 }
@@ -81,14 +83,13 @@ impl UnitError {
     #[cold]
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
         let state = match self.fault {
+            Fault::Unwritten => UNWRITTEN,
             Fault::Unfinished => "incomplete, read as still being written",
             Fault::Skip(kind) => match fs::metadata(unit) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     "removed after discovery, read as absent"
                 }
-                Ok(metadata) if metadata.is_file() && metadata.len() == 0 => {
-                    "empty, read as not yet written"
-                }
+                Ok(metadata) if metadata.is_file() && metadata.len() == 0 => UNWRITTEN,
                 _ => return diagnostics.record(Skip::unit(unit, kind, self.detail)),
             },
         };
@@ -130,6 +131,8 @@ impl From<io::Error> for UnitError {
     }
 }
 
+const UNWRITTEN: &str = "empty, read as not yet written";
+
 /// Reads a whole JSON unit and decodes it like [`decode_json`].
 ///
 /// File IO failures are recorded as unreadable units.
@@ -141,17 +144,20 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
 /// string.
 ///
 /// An agent rewrites such a document in place as it grows, so a read can
-/// catch it part-way through: content that ends before the document does is
-/// noted under `--debug` like an empty file rather than skipped. Any other
-/// decoding failure is invalid data, with only the error category and
-/// location retained for diagnostics.
+/// catch it before the first byte or part-way through: content that is only
+/// whitespace, or that ends before the document does, is noted under
+/// `--debug` like an empty file rather than skipped. Any other decoding
+/// failure is invalid data, with only the error category and location
+/// retained for diagnostics.
 pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> {
     use serde_json::error::Category;
 
     serde_json::from_slice(content).map_err(|error| {
         let (fault, category) = match error.classify() {
-            Category::Eof if !content.is_empty() => (Fault::Unfinished, "EOF"),
-            Category::Eof => (Fault::Skip(SkipKind::InvalidData), "EOF"),
+            Category::Eof if content.iter().all(u8::is_ascii_whitespace) => {
+                (Fault::Unwritten, "EOF")
+            }
+            Category::Eof => (Fault::Unfinished, "EOF"),
             Category::Io => (Fault::Skip(SkipKind::Unreadable), "I/O"),
             Category::Syntax => (Fault::Skip(SkipKind::InvalidData), "syntax"),
             Category::Data => (Fault::Skip(SkipKind::InvalidData), "data"),
@@ -394,6 +400,33 @@ mod tests {
                 "test: {}: incomplete, read as still being written",
                 cut.display()
             )
+        );
+    }
+
+    #[test]
+    fn a_whitespace_only_document_is_noted_like_an_empty_file() {
+        let fixture = Fixture::new();
+        let blank = fixture.write_file("blank.json", " \n\t\r\n");
+        let diagnostics = Diagnostics::new("test");
+
+        let loaded = read_units(
+            std::slice::from_ref(&blank),
+            true,
+            &diagnostics,
+            super::read_json::<serde_json::Value>,
+        );
+
+        assert_eq!(loaded, [None]);
+        let debug = SharedArgs {
+            debug: true,
+            ..SharedArgs::default()
+        };
+        assert_eq!(
+            diagnostics.warnings(&debug),
+            [format!(
+                "test: {}: empty, read as not yet written",
+                blank.display()
+            )]
         );
     }
 
