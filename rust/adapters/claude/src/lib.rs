@@ -28,7 +28,7 @@ use crate::{
     UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     debug_log,
-    fast::{FxHashMap, byte_lines, suffix_string},
+    fast::{FxHashMap, suffix_string},
     format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, progress,
     resolve_tz, stored_cost_for_mode,
 };
@@ -694,29 +694,28 @@ fn read_usage_file_with_diagnostics(
         timestamp: None,
         entries: Vec::new(),
     };
-    let content = diagnostics::read_content(path, diagnostics);
-
     let usage_marker = memmem::Finder::new(br#""usage":{"#);
-    for (index, line) in byte_lines(&content).enumerate() {
+    diagnostics::for_each_line(path, diagnostics, |current| {
+        let (index, line) = (current.index, current.bytes);
         if usage_marker.find(line).is_none() {
-            continue;
+            return;
         }
         let data = match deserialize_usage_line::<UsageEntry>(line) {
             Ok(data) => data,
-            Err(Rejection::NullContract) => continue,
+            Err(Rejection::NullContract) => return,
             Err(Rejection::Malformed) => {
-                diagnostics::rejected(path, &content, index, line, diagnostics, false);
-                continue;
+                diagnostics::rejected(path, current, diagnostics, false);
+                return;
             }
         };
         let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
             diagnostics::invalid_timestamp(path, index, diagnostics);
-            continue;
+            return;
         };
         update_loaded_file_timestamp(&mut loaded_file, timestamp);
         if !is_valid_usage_entry(&data) {
-            diagnostics::rejected(path, &content, index, line, diagnostics, false);
-            continue;
+            diagnostics::rejected(path, current, diagnostics, false);
+            return;
         }
         let date = format_date_tz(timestamp, tz);
         let cost = calculate_cost_for_usage_at(
@@ -805,7 +804,7 @@ fn read_usage_file_with_diagnostics(
         }
         loaded_file.entries.push(entry);
         loaded_file.entries.extend(advisor_entries);
-    }
+    });
     loaded_file
 }
 

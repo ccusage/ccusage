@@ -194,11 +194,25 @@ pub fn decode_line<T: DeserializeOwned>(
     diagnostics: &Diagnostics,
     is_usage: Option<fn(&serde_json::Value) -> bool>,
 ) -> Option<T> {
+    let unterminated =
+        !content.ends_with(b"\n") && line.as_ptr_range().end == content.as_ptr_range().end;
+    decode_streamed_line(line, unterminated, unit, number, diagnostics, is_usage)
+}
+
+/// Decodes `line` like [`decode_line`] for a reader that streams the file
+/// instead of holding it whole, and so passes whether `line` is the
+/// unterminated end of the file itself.
+pub fn decode_streamed_line<T: DeserializeOwned>(
+    line: &[u8],
+    unterminated: bool,
+    unit: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+    is_usage: Option<fn(&serde_json::Value) -> bool>,
+) -> Option<T> {
     match serde_json::from_slice(line) {
         Ok(record) => Some(record),
         Err(error) => {
-            let unterminated =
-                !content.ends_with(b"\n") && line.as_ptr_range().end == content.as_ptr_range().end;
             record_decode_error(
                 line,
                 error,
