@@ -26,14 +26,6 @@ use crate::{
     collect_files_with_extension, date_range_bounds_ms, debug_log, resolve_tz,
 };
 
-pub(crate) fn load_entries(
-    shared: &SharedArgs,
-    report_kind: AgentReportKind,
-) -> Result<Vec<LoadedEntry>> {
-    load_entries_with_native_sessions(shared, report_kind)
-        .map(|entries| entries.into_iter().map(|(entry, _)| entry).collect())
-}
-
 /// An entry and the Claude Code session its `claude-agent` row ran in.
 pub type LinkedEntry = (LoadedEntry, Option<Arc<str>>);
 
@@ -53,8 +45,14 @@ pub(super) fn load_entries_with_native_sessions_with_diagnostics(
     owner: ProgressOwner,
     diagnostics: &Diagnostics,
 ) -> Result<Vec<LinkedEntry>> {
-    let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
-    let load = || load_entries_inner(shared, allow_aggregate_fallback, diagnostics);
+    let load = || {
+        Ok(load_directories(
+            &paths()?,
+            shared,
+            report_kind,
+            diagnostics,
+        ))
+    };
     match owner {
         ProgressOwner::Source => crate::progress::track_usage_load(
             crate::progress::UsageLoadAgent("OpenCode"),
@@ -65,87 +63,13 @@ pub(super) fn load_entries_with_native_sessions_with_diagnostics(
     }
 }
 
-fn load_entries_inner(
-    shared: &SharedArgs,
-    allow_aggregate_fallback: bool,
-    diagnostics: &Diagnostics,
-) -> Result<Vec<LinkedEntry>> {
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    let mut message_sessions = HashSet::new();
-    let mut compaction_entries = Vec::new();
-    let mut aggregate_entries = Vec::new();
-    for path in paths()? {
-        let directory_entries = load_entries_from_directory_parts(
-            &path,
-            shared,
-            allow_aggregate_fallback,
-            diagnostics,
-        )?;
-        for linked in directory_entries.message_entries {
-            message_sessions.insert(linked.0.session_id.to_string());
-            if let Some(id) = entry_id(&linked.0)
-                && !seen.insert(id.to_string())
-            {
-                continue;
-            }
-            entries.push(linked);
-        }
-        compaction_entries.extend(directory_entries.compaction_entries);
-        aggregate_entries.extend(directory_entries.aggregate_entries);
-    }
-    append_fallback_entries(
-        &mut entries,
-        &mut seen,
-        &message_sessions,
-        aggregate_entries,
-        compaction_entries,
-    );
-    entries.sort_by_key(|(entry, _)| entry.timestamp);
-    Ok(entries)
-}
-
-#[cfg(test)]
-fn load_entries_from_directory(
-    opencode_dir: &Path,
-    shared: &SharedArgs,
-) -> Result<Vec<LoadedEntry>> {
-    load_entries_from_directory_for_report(opencode_dir, shared, AgentReportKind::Daily)
-}
-
-#[cfg(test)]
-fn load_entries_from_directory_for_report(
-    opencode_dir: &Path,
+fn load_directories(
+    directories: &[PathBuf],
     shared: &SharedArgs,
     report_kind: AgentReportKind,
-) -> Result<Vec<LoadedEntry>> {
-    let diagnostics = &Diagnostics::new("opencode");
-    let directory_entries = load_entries_from_directory_parts(
-        opencode_dir,
-        shared,
-        report_kind == AgentReportKind::Session,
-        diagnostics,
-    )?;
-    let message_sessions = message_session_ids(&directory_entries.message_entries);
-    let mut seen = entry_ids(&directory_entries.message_entries);
-    let mut entries = directory_entries.message_entries;
-    append_fallback_entries(
-        &mut entries,
-        &mut seen,
-        &message_sessions,
-        directory_entries.aggregate_entries,
-        directory_entries.compaction_entries,
-    );
-    entries.sort_by_key(|(entry, _)| entry.timestamp);
-    Ok(entries.into_iter().map(|(entry, _)| entry).collect())
-}
-
-fn load_entries_from_directory_parts(
-    opencode_dir: &Path,
-    shared: &SharedArgs,
-    allow_aggregate_fallback: bool,
     diagnostics: &Diagnostics,
-) -> Result<DirectoryLoadResult> {
+) -> Vec<LinkedEntry> {
+    let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
     let pricing = if shared.mode == CostMode::Display {
         None
     } else {
@@ -157,80 +81,110 @@ fn load_entries_from_directory_parts(
     };
     let tz = resolve_tz(shared.timezone.as_deref());
     let window = DateWindow::from_shared(shared, &tz);
-    let mut message_entries = Vec::new();
-    let mut compaction_entries = Vec::new();
-    let mut seen = HashSet::new();
-    let mut aggregate_entries = Vec::new();
-    if let Some(db_path) = db_path(opencode_dir, diagnostics) {
-        let database_entries = load_entries_from_database(
-            &DatabaseLoadContext {
-                db_path: &db_path,
-                tz: &tz,
-                mode: shared.mode,
-                pricing: pricing.as_ref(),
-                shared,
-                window,
-                diagnostics,
-            },
-            allow_aggregate_fallback,
-        );
-        for linked in database_entries.message_entries {
-            if let Some(id) = entry_id(&linked.0)
-                && !seen.insert(id.to_string())
-            {
-                continue;
-            }
-            message_entries.push(linked);
+    let mut collector = EntryCollector::default();
+    for directory in directories {
+        if let Some(db_path) = db_path(directory, diagnostics) {
+            load_entries_from_database(
+                &DatabaseLoadContext {
+                    db_path: &db_path,
+                    tz: &tz,
+                    mode: shared.mode,
+                    pricing: pricing.as_ref(),
+                    shared,
+                    window,
+                    diagnostics,
+                },
+                allow_aggregate_fallback,
+                &mut collector,
+            );
         }
-        for linked in database_entries.compaction_entries {
-            if let Some(id) = entry_id(&linked.0)
-                && !seen.insert(id.to_string())
-            {
-                continue;
-            }
-            compaction_entries.push(linked);
-        }
-        aggregate_entries = database_entries.aggregate_entries;
-    }
 
-    let messages_dir = opencode_dir.join("storage").join("message");
-    let mut files = Vec::new();
-    collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
+        let messages_dir = directory.join("storage").join("message");
+        let mut files = Vec::new();
+        collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
 
-    // Skip files the DB pass already covered. Message files are stored as
-    // `storage/message/<sessionID>/<messageID>.json`, so the file stem is the
-    // message id used for dedup. When the DB already contributed that id, the
-    // file would be discarded by the id dedup below anyway — drop it here so we
-    // never pay the read. Files whose stem is not a known id (or that have no
-    // usable stem) are kept and parsed normally.
-    if !seen.is_empty() {
+        // Message files are stored as `storage/message/<sessionID>/<messageID>.json`,
+        // so a stem an earlier source already claimed names a file the id dedup
+        // would discard; skipping it saves the read. Files without a usable stem
+        // are parsed normally.
         files.retain(|file| {
             file.file_stem()
                 .and_then(|stem| stem.to_str())
-                .is_none_or(|stem| !seen.contains(stem))
+                .is_none_or(|stem| !collector.has_claimed(stem))
         });
-    }
 
-    // Read the surviving files in parallel, then run the sequential id dedup
-    // over the results in their original file order so parallelism never changes
-    // which duplicate survives.
-    let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
-        read_message_file(file, &tz, shared.mode, pricing.as_ref(), window)
-    });
-    for entry in loaded {
-        if let Some(id) = entry_id(&entry)
-            && !seen.insert(id.to_string())
-        {
-            continue;
+        // Read the surviving files in parallel, then run the sequential id dedup
+        // over the results in their original file order so parallelism never changes
+        // which duplicate survives.
+        let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
+            read_message_file(file, &tz, shared.mode, pricing.as_ref(), window)
+        });
+        for entry in loaded {
+            collector.push_message((entry, None));
         }
-        message_entries.push((entry, None));
+    }
+    collector.finish()
+}
+
+/// Every entry the configured directories yield, in load order, where the
+/// first entry to carry a message id keeps it.
+#[derive(Default)]
+struct EntryCollector {
+    claimed_ids: HashSet<String>,
+    message_sessions: HashSet<String>,
+    messages: Vec<LinkedEntry>,
+    compactions: Vec<LinkedEntry>,
+    aggregates: Vec<LoadedEntry>,
+}
+
+impl EntryCollector {
+    fn claim(&mut self, entry: &LoadedEntry) -> bool {
+        entry_id(entry).is_none_or(|id| self.claimed_ids.insert(id.to_string()))
     }
 
-    Ok(DirectoryLoadResult {
-        message_entries,
-        compaction_entries,
-        aggregate_entries,
-    })
+    fn has_claimed(&self, id: &str) -> bool {
+        self.claimed_ids.contains(id)
+    }
+
+    fn push_message(&mut self, linked: LinkedEntry) {
+        self.message_sessions
+            .insert(linked.0.session_id.to_string());
+        if self.claim(&linked.0) {
+            self.messages.push(linked);
+        }
+    }
+
+    fn push_compaction(&mut self, linked: LinkedEntry) {
+        if self.claim(&linked.0) {
+            self.compactions.push(linked);
+        }
+    }
+
+    fn push_aggregate(&mut self, entry: LoadedEntry) {
+        self.aggregates.push(entry);
+    }
+
+    /// Adds session aggregates for sessions without assistant or legacy message
+    /// usage, then compaction rows for sessions no aggregate covered. A session
+    /// aggregate already includes the session's compaction usage.
+    fn finish(mut self) -> Vec<LinkedEntry> {
+        let mut entries = std::mem::take(&mut self.messages);
+        let mut aggregate_sessions = HashSet::new();
+        for entry in std::mem::take(&mut self.aggregates) {
+            if self.message_sessions.contains(entry.session_id.as_ref()) || !self.claim(&entry) {
+                continue;
+            }
+            aggregate_sessions.insert(entry.session_id.to_string());
+            entries.push((entry, None));
+        }
+        entries.extend(
+            self.compactions
+                .into_iter()
+                .filter(|(entry, _)| !aggregate_sessions.contains(entry.session_id.as_ref())),
+        );
+        entries.sort_by_key(|(entry, _)| entry.timestamp);
+        entries
+    }
 }
 
 /// Reports whether `opencode_dir` holds any usage source at all: the SQLite
@@ -307,24 +261,11 @@ struct DatabaseLoadContext<'a> {
     diagnostics: &'a Diagnostics,
 }
 
-#[derive(Default)]
-struct DatabaseLoadResult {
-    message_entries: Vec<LinkedEntry>,
-    compaction_entries: Vec<LinkedEntry>,
-    aggregate_entries: Vec<LinkedEntry>,
-}
-
-#[derive(Default)]
-struct DirectoryLoadResult {
-    message_entries: Vec<LinkedEntry>,
-    compaction_entries: Vec<LinkedEntry>,
-    aggregate_entries: Vec<LinkedEntry>,
-}
-
 fn load_entries_from_database(
     context: &DatabaseLoadContext<'_>,
     allow_aggregate_fallback: bool,
-) -> DatabaseLoadResult {
+    collector: &mut EntryCollector,
+) {
     let &DatabaseLoadContext {
         tz,
         mode,
@@ -345,7 +286,7 @@ fn load_entries_from_database(
                 format!("Failed to open OpenCode database: {}", db_path.display()),
             );
             sqlite_setup_failure(error).record(db_path, diagnostics);
-            return DatabaseLoadResult::default();
+            return;
         }
     };
     if let Err(error) = connection
@@ -353,13 +294,8 @@ fn load_entries_from_database(
         .and_then(|mut statement| statement.next())
     {
         sqlite_setup_failure(error).record(db_path, diagnostics);
-        return DatabaseLoadResult::default();
+        return;
     }
-    let mut message_entries = Vec::new();
-    let mut compaction_entries = Vec::new();
-
-    let mut seen_message_ids = HashSet::new();
-    let mut message_sessions = HashSet::new();
     let fork_copies = fork_copy_cutoffs(&connection, db_path, diagnostics);
 
     if table_exists(&connection, "message", db_path, diagnostics) {
@@ -447,13 +383,7 @@ fn load_entries_from_database(
                                 mode,
                                 pricing,
                             ) {
-                                let session_key = entry.session_id.to_string();
-                                message_sessions.insert(session_key);
-                                push_unique_entry(
-                                    &mut message_entries,
-                                    &mut seen_message_ids,
-                                    (entry, None),
-                                );
+                                collector.push_message((entry, None));
                             }
                         }
                         Ok(sqlite::State::Done) => break,
@@ -596,18 +526,11 @@ fn load_entries_from_database(
                                 }
                             };
                             v2_entries += 1;
-                            // The session counters already include compaction usage,
-                            // so a compaction row alone must not suppress them.
                             if kind == SessionMessageKind::Compaction {
-                                push_unique_entry(
-                                    &mut compaction_entries,
-                                    &mut seen_message_ids,
-                                    linked,
-                                );
-                                continue;
+                                collector.push_compaction(linked);
+                            } else {
+                                collector.push_message(linked);
                             }
-                            message_sessions.insert(linked.0.session_id.to_string());
-                            push_unique_entry(&mut message_entries, &mut seen_message_ids, linked);
                         }
                         Ok(sqlite::State::Done) => break,
                         Err(error) => {
@@ -638,7 +561,6 @@ fn load_entries_from_database(
         }
     }
 
-    let mut aggregate_entries = Vec::new();
     if allow_aggregate_fallback && !has_temporal_filter(shared) {
         // Session aggregates are cumulative and cannot be sliced safely for a
         // bounded report, so only unbounded reports may use this fallback.
@@ -651,18 +573,9 @@ fn load_entries_from_database(
         }
         for table in aggregate_tables {
             for entry in load_session_aggregate_entries(&connection, table, context) {
-                if message_sessions.contains(entry.session_id.as_ref()) {
-                    continue;
-                }
-                push_unique_entry(&mut aggregate_entries, &mut seen_message_ids, (entry, None));
+                collector.push_aggregate(entry);
             }
         }
-    }
-
-    DatabaseLoadResult {
-        message_entries,
-        compaction_entries,
-        aggregate_entries,
     }
 }
 
@@ -687,73 +600,6 @@ fn read_message_file(
     Ok(message_value_to_entry(
         &value, None, None, tz, mode, pricing,
     ))
-}
-
-fn push_unique_entry(
-    entries: &mut Vec<LinkedEntry>,
-    seen_message_ids: &mut HashSet<String>,
-    entry: LinkedEntry,
-) -> bool {
-    if let Some(id) = entry_id(&entry.0)
-        && !seen_message_ids.insert(id.to_string())
-    {
-        return false;
-    }
-    entries.push(entry);
-    true
-}
-
-#[cfg(test)]
-fn entry_ids(entries: &[LinkedEntry]) -> HashSet<String> {
-    entries
-        .iter()
-        .filter_map(|(entry, _)| entry_id(entry))
-        .map(str::to_string)
-        .collect()
-}
-
-#[cfg(test)]
-fn message_session_ids(entries: &[LinkedEntry]) -> HashSet<String> {
-    entries
-        .iter()
-        .map(|(entry, _)| entry.session_id.to_string())
-        .collect()
-}
-
-/// Adds session aggregates for sessions without assistant or legacy message
-/// usage, then compaction rows for sessions no aggregate covered. A session
-/// aggregate already includes the session's compaction usage.
-fn append_fallback_entries(
-    entries: &mut Vec<LinkedEntry>,
-    seen: &mut HashSet<String>,
-    message_sessions: &HashSet<String>,
-    aggregate_entries: Vec<LinkedEntry>,
-    compaction_entries: Vec<LinkedEntry>,
-) {
-    let mut aggregate_sessions = HashSet::new();
-    for linked in aggregate_entries {
-        if message_sessions.contains(linked.0.session_id.as_ref()) {
-            continue;
-        }
-        if let Some(id) = entry_id(&linked.0)
-            && !seen.insert(id.to_string())
-        {
-            continue;
-        }
-        aggregate_sessions.insert(linked.0.session_id.to_string());
-        entries.push(linked);
-    }
-    for linked in compaction_entries {
-        if aggregate_sessions.contains(linked.0.session_id.as_ref()) {
-            continue;
-        }
-        if let Some(id) = entry_id(&linked.0)
-            && !seen.insert(id.to_string())
-        {
-            continue;
-        }
-        entries.push(linked);
-    }
 }
 
 fn table_exists(
@@ -1365,14 +1211,47 @@ pub(super) fn load_entries_with_native_sessions_with_progress(
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, path::Path};
+    use std::path::Path;
 
-    use super::{
-        load_entries, load_entries_from_directory, load_entries_from_directory_for_report,
-        load_entries_with_native_sessions,
+    use super::{LinkedEntry, load_directories};
+    use crate::{
+        LoadedEntry,
+        cli::{AgentReportKind, CostMode, SharedArgs},
     };
-    use crate::cli::{AgentReportKind, CostMode, SharedArgs};
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_core::Diagnostics;
+    use ccusage_test_support::fs_fixture;
+
+    fn load_linked(
+        directories: &[&Path],
+        shared: &SharedArgs,
+        report_kind: AgentReportKind,
+    ) -> Vec<LinkedEntry> {
+        let directories = directories
+            .iter()
+            .map(|directory| directory.to_path_buf())
+            .collect::<Vec<_>>();
+        load_directories(
+            &directories,
+            shared,
+            report_kind,
+            &Diagnostics::new("opencode"),
+        )
+    }
+
+    fn load_entries_from_directory_for_report(
+        directory: &Path,
+        shared: &SharedArgs,
+        report_kind: AgentReportKind,
+    ) -> Vec<LoadedEntry> {
+        load_linked(&[directory], shared, report_kind)
+            .into_iter()
+            .map(|(entry, _)| entry)
+            .collect()
+    }
+
+    fn load_entries_from_directory(directory: &Path, shared: &SharedArgs) -> Vec<LoadedEntry> {
+        load_entries_from_directory_for_report(directory, shared, AgentReportKind::Daily)
+    }
 
     #[test]
     fn reports_failed_fork_schema_probes_without_database_details() {
@@ -1426,10 +1305,13 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = Diagnostics::new("opencode");
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics);
+        load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
+        );
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
-        loaded.unwrap();
         if !denied {
             return;
         }
@@ -1456,9 +1338,13 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = Diagnostics::new("opencode");
-        let loaded = super::load_entries_from_directory_parts(&data, &shared, false, &diagnostics);
+        load_directories(
+            std::slice::from_ref(&data),
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
+        );
         fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
-        loaded.unwrap();
         if !denied {
             return;
         }
@@ -1484,14 +1370,14 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = ccusage_core::Diagnostics::new("opencode");
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
-                .unwrap();
-        assert_eq!(loaded.message_entries.len(), 1);
-        assert_eq!(
-            loaded.message_entries[0].0.data.message.usage.input_tokens,
-            10
+        let loaded = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
         );
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].0.data.message.usage.input_tokens, 10);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
         assert!(
             !diagnostics
@@ -1525,11 +1411,14 @@ mod tests {
         };
         let diagnostics = ccusage_core::Diagnostics::new("opencode");
 
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
-                .unwrap();
+        let loaded = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
+        );
 
-        assert_eq!(loaded.message_entries.len(), 1);
+        assert_eq!(loaded.len(), 1);
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
         assert!(
@@ -1558,10 +1447,13 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = ccusage_core::Diagnostics::new("opencode");
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, true, &diagnostics)
-                .unwrap();
-        assert!(loaded.message_entries.is_empty());
+        let loaded = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Session,
+            &diagnostics,
+        );
+        assert!(loaded.is_empty());
         assert!(diagnostics.warnings(&shared).is_empty());
     }
 
@@ -1625,10 +1517,13 @@ mod tests {
             ..Default::default()
         };
         let diagnostics = ccusage_core::Diagnostics::new("opencode");
-        let loaded =
-            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics)
-                .unwrap();
-        assert_eq!(loaded.message_entries.len(), 1);
+        let loaded = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Daily,
+            &diagnostics,
+        );
+        assert_eq!(loaded.len(), 1);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::Unreadable), 0);
         assert!(
@@ -1857,7 +1752,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -1891,7 +1786,7 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -1956,8 +1851,7 @@ mod tests {
             fixture.root(),
             &shared,
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
@@ -1998,8 +1892,7 @@ mod tests {
                 timezone: Some("UTC".to_string()),
                 ..SharedArgs::default()
             },
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-01-02");
@@ -2037,8 +1930,7 @@ mod tests {
                 timezone: Some("UTC".to_string()),
                 ..SharedArgs::default()
             },
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "legacy-session");
@@ -2143,8 +2035,7 @@ mod tests {
                 timezone: Some("UTC".to_string()),
                 ..SharedArgs::default()
             },
-        )
-        .unwrap();
+        );
 
         let mut ids: Vec<_> = entries
             .iter()
@@ -2199,8 +2090,7 @@ mod tests {
             fixture.root(),
             &shared,
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
         assert_eq!(session_entries.len(), 1);
         assert_ne!(
             session_entries[0].data.message.id.as_deref(),
@@ -2211,7 +2101,7 @@ mod tests {
 
         // Period reports never use cumulative session counters, so the
         // compaction row is the only usage they can attribute.
-        let daily_entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let daily_entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(daily_entries.len(), 1);
         assert_eq!(
             daily_entries[0].data.message.id.as_deref(),
@@ -2337,7 +2227,6 @@ mod tests {
                 ..SharedArgs::default()
             },
         )
-        .unwrap()
     }
 
     #[test]
@@ -2545,17 +2434,17 @@ mod tests {
                  model = '{\"id\":\"gpt-test\",\"providerID\":\"openai\"}' WHERE id = 'fork'",
             )
             .unwrap();
-        let _guard = EnvVarsGuard::set_many([(
-            "OPENCODE_DATA_DIR",
-            Some(fixture.root().as_os_str().to_os_string()),
-        )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
 
-        let entries = load_entries(&shared, AgentReportKind::Session).unwrap();
+        let entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &shared,
+            AgentReportKind::Session,
+        );
 
         let fork_input: Vec<u64> = entries
             .iter()
@@ -2642,8 +2531,7 @@ mod tests {
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "legacy-json-session");
@@ -2684,8 +2572,7 @@ mod tests {
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "aggregate-session");
@@ -2732,8 +2619,7 @@ mod tests {
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert!(entries.is_empty());
     }
@@ -2774,8 +2660,7 @@ mod tests {
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
@@ -2820,8 +2705,7 @@ mod tests {
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
@@ -2853,24 +2737,16 @@ mod tests {
         let message_fixture = fs_fixture!({
             "storage/message/cross-directory-session/cross-directory-message.json": r#"{"id":"cross-directory-message","sessionID":"cross-directory-session","providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":12,"output":6},"cost":0.03}"#,
         });
-        let _guard = EnvVarsGuard::set_many([(
-            "OPENCODE_DATA_DIR",
-            Some(OsString::from(format!(
-                "{},{}",
-                aggregate_fixture.root().display(),
-                message_fixture.root().display()
-            ))),
-        )]);
-
-        let entries = load_entries(
+        let entries = load_linked(
+            &[aggregate_fixture.root(), message_fixture.root()],
             &SharedArgs {
                 mode: CostMode::Display,
                 timezone: Some("UTC".to_string()),
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
+        let entries = entries.iter().map(|(entry, _)| entry).collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
@@ -2906,10 +2782,6 @@ mod tests {
                 reasoning_tokens: 0,
             },
         );
-        let _guard = EnvVarsGuard::set_many([(
-            "OPENCODE_DATA_DIR",
-            Some(fixture.root().as_os_str().to_os_string()),
-        )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("UTC".to_string()),
@@ -2921,7 +2793,8 @@ mod tests {
             AgentReportKind::Weekly,
             AgentReportKind::Monthly,
         ] {
-            let entries = load_entries(&shared, report_kind).unwrap();
+            let entries =
+                load_entries_from_directory_for_report(fixture.root(), &shared, report_kind);
             assert_eq!(entries.len(), 1);
             assert_eq!(
                 entries[0].data.message.id.as_deref(),
@@ -2929,7 +2802,11 @@ mod tests {
             );
         }
 
-        let session_entries = load_entries(&shared, AgentReportKind::Session).unwrap();
+        let session_entries = load_entries_from_directory_for_report(
+            fixture.root(),
+            &shared,
+            AgentReportKind::Session,
+        );
         assert_eq!(session_entries.len(), 2);
         assert!(session_entries.iter().any(|entry| {
             entry.data.message.id.as_deref() == Some("session:period-aggregate-session")
@@ -2981,21 +2858,17 @@ mod tests {
                 reasoning_tokens: 0,
             },
         );
-        let _guard = EnvVarsGuard::set_many([(
-            "OPENCODE_DATA_DIR",
-            Some(OsString::from(format!(
-                "{},{}",
-                live.root().display(),
-                archive.root().display()
-            ))),
-        )]);
         let shared = SharedArgs {
             mode: CostMode::Display,
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
 
-        let entries = load_entries_with_native_sessions(&shared, AgentReportKind::Session).unwrap();
+        let entries = load_linked(
+            &[live.root(), archive.root()],
+            &shared,
+            AgentReportKind::Session,
+        );
         let linked = entries
             .iter()
             .map(|(entry, native_session)| {
@@ -3039,8 +2912,7 @@ mod tests {
                 ..SharedArgs::default()
             },
             AgentReportKind::Session,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "current-session");
@@ -3058,7 +2930,7 @@ mod tests {
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":80,"output":40}}"#,
         );
 
-        let entries = load_entries_from_directory(fixture.root(), &SharedArgs::default()).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &SharedArgs::default());
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "channel-session-a");
@@ -3081,7 +2953,7 @@ mod tests {
             mode: CostMode::Display,
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "db-session-a");
@@ -3111,7 +2983,7 @@ mod tests {
             mode: CostMode::Display,
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 2);
         // The DB-covered id keeps the DB row, not the file's inflated tokens.
@@ -3174,8 +3046,8 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let single_entries = load_entries_from_directory(fixture.root(), &single).unwrap();
-        let multi_entries = load_entries_from_directory(fixture.root(), &multi).unwrap();
+        let single_entries = load_entries_from_directory(fixture.root(), &single);
+        let multi_entries = load_entries_from_directory(fixture.root(), &multi);
 
         let project = |entries: &[crate::LoadedEntry]| {
             entries
@@ -3220,7 +3092,7 @@ mod tests {
             since: Some("20260103".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-new"));
@@ -3252,7 +3124,7 @@ mod tests {
             until: Some("20260105".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-early"));
@@ -3276,7 +3148,7 @@ mod tests {
             until: Some("20260107".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-in-range"));
@@ -3300,7 +3172,7 @@ mod tests {
             until: Some("20260107".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert!(
             entries.is_empty(),
@@ -3320,7 +3192,7 @@ mod tests {
             until: Some("20260101".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert!(
             entries.is_empty(),
             "message on 2026-01-02 should be excluded by until=20260101"
@@ -3339,7 +3211,7 @@ mod tests {
             since: Some("20260103".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert!(
             entries.is_empty(),
             "message on 2026-01-02 should be excluded by since=20260103"
@@ -3359,7 +3231,7 @@ mod tests {
             until: Some("20260103".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(
             entries.len(),
             1,
@@ -3379,7 +3251,7 @@ mod tests {
             since: Some("20260102".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(
             entries.len(),
             1,
@@ -3399,7 +3271,7 @@ mod tests {
             until: Some("20260102".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(
             entries.len(),
             1,
@@ -3439,7 +3311,7 @@ mod tests {
             until: Some("20260101".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert!(
             entries.is_empty(),
             "pretty-printed message on 2026-01-02 must be excluded by until=20260101"
@@ -3459,7 +3331,7 @@ mod tests {
             until: Some("20260103".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.id.as_deref(), Some("msg-pretty"));
     }
@@ -3488,7 +3360,7 @@ mod tests {
             until: Some("20260102".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
@@ -3514,7 +3386,7 @@ mod tests {
             until: Some("20260101".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
@@ -3544,7 +3416,7 @@ mod tests {
             until: Some("20260102".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
@@ -3574,7 +3446,7 @@ mod tests {
             until: Some("20260103".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
@@ -3601,7 +3473,7 @@ mod tests {
             since: Some("abあcde".to_string()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
+        let entries = load_entries_from_directory(fixture.root(), &shared);
 
         assert_eq!(
             entries.len(),
@@ -3643,11 +3515,7 @@ mod tests {
             until: Some("20200102".to_string()),
             ..SharedArgs::default()
         };
-        assert!(
-            load_entries_from_directory(db_only.root(), &shared)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(load_entries_from_directory(db_only.root(), &shared).is_empty());
         assert!(super::has_source(db_only.root()));
     }
 

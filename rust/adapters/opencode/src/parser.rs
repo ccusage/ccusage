@@ -368,18 +368,6 @@ pub(crate) fn session_message_value_to_entry_checked(
     )
 }
 
-#[cfg(test)]
-pub(crate) fn session_message_value_to_entry(
-    row: SessionMessageRow<'_>,
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Option<(LoadedEntry, Option<Arc<str>>)> {
-    session_message_value_to_entry_checked(row, tz, mode, pricing)
-        .ok()
-        .flatten()
-}
-
 pub(crate) struct OpenCodeSessionAggregate {
     pub(crate) session_id: String,
     pub(crate) created: i64,
@@ -552,13 +540,13 @@ mod tests {
 
     use super::{
         OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind, SessionMessageRow,
-        message_value_to_entry, open_code_model_candidates, session_message_value_to_entry,
+        message_value_to_entry, open_code_model_candidates, session_message_value_to_entry_checked,
         session_value_to_entry,
     };
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
 
     fn v2_native_session(data: &str) -> Option<String> {
-        session_message_value_to_entry(
+        session_message_value_to_entry_checked(
             SessionMessageRow {
                 kind: SessionMessageKind::Assistant,
                 data,
@@ -570,6 +558,7 @@ mod tests {
             CostMode::Display,
             None,
         )
+        .unwrap()
         .unwrap()
         .1
         .map(|session| session.to_string())

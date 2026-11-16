@@ -29,7 +29,10 @@ pub fn has_data() -> bool {
 /// The CLI goes through `ccusage_adapter_all::run_opencode`, which can drop
 /// the turns the Claude source already counts.
 pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let entries = loader::load_entries(&args.shared, args.kind)?;
+    let entries = load_entries_with_native_sessions(&args.shared, args.kind)?
+        .into_iter()
+        .map(|(entry, _)| entry)
+        .collect();
     print_report(&args, entries)
 }
 
