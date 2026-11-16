@@ -234,6 +234,26 @@ struct CopilotSessionStateEvent {
     data: Option<CopilotSessionStateData>,
 }
 
+impl CopilotSessionStateEvent {
+    fn carries_usage(&self) -> bool {
+        let Some(data) = &self.data else {
+            return false;
+        };
+        match self.event_type.as_deref() {
+            Some(USAGE_RECORD_EVENT) => data.usage.is_some(),
+            Some(SHUTDOWN_EVENT | USAGE_CHECKPOINT_EVENT) => {
+                data.total_nano_aiu.is_some()
+                    || data.model_metrics.as_ref().is_some_and(|models| {
+                        models
+                            .values()
+                            .any(|metrics| metrics.usage.is_some() || metrics.requests.is_some())
+                    })
+            }
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct CopilotSessionStateData {
     #[serde(
@@ -394,44 +414,7 @@ fn is_otel_usage_envelope(value: &Value) -> bool {
 }
 
 fn is_session_state_usage_envelope(value: &Value) -> bool {
-    const USAGE_FIELDS: &[&str] = &[
-        "inputTokens",
-        "outputTokens",
-        "cacheReadTokens",
-        "cacheWriteTokens",
-        "reasoningTokens",
-    ];
-    let has_usage_fields = |usage: Option<&Value>| {
-        usage
-            .and_then(Value::as_object)
-            .is_some_and(|usage| USAGE_FIELDS.iter().any(|key| usage.contains_key(*key)))
-    };
-
-    let Some(event_type) = value.get("type").and_then(Value::as_str) else {
-        return false;
-    };
-    let Some(data) = value.get("data").and_then(Value::as_object) else {
-        return false;
-    };
-    match event_type {
-        USAGE_RECORD_EVENT => has_usage_fields(data.get("usage")),
-        SHUTDOWN_EVENT | USAGE_CHECKPOINT_EVENT => {
-            data.get("totalNanoAiu").is_some_and(Value::is_number)
-                || data
-                    .get("modelMetrics")
-                    .and_then(Value::as_object)
-                    .is_some_and(|models| {
-                        models.values().any(|metrics| {
-                            has_usage_fields(metrics.get("usage"))
-                                || metrics
-                                    .get("requests")
-                                    .and_then(Value::as_object)
-                                    .is_some_and(|requests| requests.contains_key("count"))
-                        })
-                    })
-        }
-        _ => false,
-    }
+    CopilotSessionStateEvent::deserialize(value).is_ok_and(|event| event.carries_usage())
 }
 
 pub(super) fn parse_session_state_file(
@@ -1216,6 +1199,10 @@ mod session_state_tests {
             "type": "session.usage_record",
             "data": {"usage": {"model": "gpt-5", "inputTokens": 0}}
         })));
+        assert!(is_session_state_usage_envelope(&json!({
+            "type": "session.usage_record",
+            "data": {"usage": {"model": "gpt-5"}}
+        })));
         assert!(!is_session_state_usage_envelope(&json!({
             "type": "session.usage_record",
             "data": {"usage": "SECRET_CANARY"}
@@ -1261,6 +1248,42 @@ mod session_state_tests {
                 .unwrap();
 
         assert_eq!(parsed.usage_records.len(), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
+            0
+        );
+    }
+
+    #[test]
+    fn reports_a_tokenless_usage_record_that_does_not_decode() {
+        let record = |id: &str| {
+            json!({
+                "type": "session.usage_record",
+                "id": id,
+                "timestamp": "2026-02-05T09:00:00.000Z",
+                "data": {"usage": {"model": "gpt-5"}},
+            })
+            .to_string()
+        };
+        let repeated = record("record-1").replacen(
+            r#""id":"record-1""#,
+            r#""id":"record-1","id":"record-1""#,
+            1,
+        );
+        let fixture = fs_fixture!({
+            "session-1/events.jsonl": format!("{repeated}
+{}
+", record("record-2")),
+        });
+        let diagnostics = Diagnostics::new("copilot");
+
+        let parsed =
+            parse_session_state_file(&fixture.path("session-1/events.jsonl"), &diagnostics)
+                .unwrap();
+
+        assert_eq!(parsed.usage_records.len(), 1);
+        assert_eq!(parsed.usage_records[0].entry.request_count, 1);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
         assert_eq!(
             diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
