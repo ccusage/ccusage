@@ -5,7 +5,7 @@ use crate::{
     PricingMap,
     aggregate::aggregate_events,
     cli::{AgentReportKind, CodexSpeed, CostMode, SharedArgs},
-    parser::{CodexForkReplay, visit_codex_session_file},
+    parser::{CodexForkReplay, visit_codex_session_file_with_diagnostics},
     report::report_from_groups,
     test_support::load_groups_from_directory,
     types::{
@@ -50,7 +50,7 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
         ..CodexRawUsage::default()
     }];
     let mut events = Vec::new();
-    visit_codex_session_file(
+    visit_codex_session_file_with_diagnostics(
         fixture.root(),
         &fixture.path("child.jsonl"),
         Some(CodexForkReplay {
@@ -61,6 +61,7 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
             events.push(event);
             Ok(())
         },
+        &ccusage_core::Diagnostics::new("codex"),
     )
     .unwrap();
 
@@ -114,7 +115,7 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
             token_count("2026-09-02T00:02:00Z", 20),
         ].join("\n"),
     });
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &fixture.path("2026/09/01/parent.jsonl"),
         crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
     );
@@ -158,7 +159,7 @@ fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot(
             token_count("2026-09-02T00:02:00Z", 30),
         ].join("\n"),
     });
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &fixture.path("2026/09/01/parent.jsonl"),
         crate::parse_ts_timestamp("2026-09-01T00:03:00Z").unwrap(),
     );

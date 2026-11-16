@@ -279,27 +279,6 @@ impl CodexReplayFilter<'_> {
     }
 }
 
-/// Visits every usage event in a Codex session log.
-///
-/// `fork_replay` carries the usage a forked session copied from its parent so it
-/// is not counted twice, and is `None` for sessions that are not forks.
-#[cfg(test)]
-pub(super) fn visit_codex_session_file(
-    sessions_dir: &Path,
-    path: &Path,
-    fork_replay: Option<CodexForkReplay<'_>>,
-    visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-) -> Result<()> {
-    visit_codex_session_file_with_compaction_history(
-        sessions_dir,
-        path,
-        fork_replay,
-        None,
-        visit,
-        &Diagnostics::new("codex"),
-    )
-}
-
 /// Visits usage while optionally retaining matched compaction identities,
 /// including requests already covered by cumulative usage in a parent log.
 pub(super) fn visit_codex_session_file_with_compaction_history(

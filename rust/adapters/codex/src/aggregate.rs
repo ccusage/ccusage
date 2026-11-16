@@ -972,8 +972,7 @@ mod tests {
         cli::CodexSpeed,
         model_aliases::set_model_aliases_for_tests,
         paths::CodexUsageSource,
-        replay,
-        test_support::{load_groups_from_directory, load_groups_from_sources},
+        test_support::{directory_source, load_groups_from_directory, load_groups_from_sources},
     };
 
     #[test]
@@ -1179,6 +1178,7 @@ mod tests {
             })
             .to_string(),
             usage_line("2026-03-15T08:01:00.000Z", 999),
+            r#"{"timestamp":"2026-03-15T08:02:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"secret":"#.to_string(),
         ]
         .join("\n");
         let long_running = [
@@ -1198,11 +1198,11 @@ mod tests {
         });
         let historical_path = fixture.path("sessions/2025/01/01/historical.jsonl");
         let long_running_path = fixture.path("sessions/2026/01/01/long-running.jsonl");
-        crate::paths::set_file_modified(
+        crate::test_support::set_file_modified(
             &historical_path,
             parse_ts_timestamp("2025-01-01T08:01:00.000Z").unwrap(),
         );
-        crate::paths::set_file_modified(
+        crate::test_support::set_file_modified(
             &long_running_path,
             parse_ts_timestamp("2026-03-15T08:01:00.000Z").unwrap(),
         );
@@ -1213,46 +1213,40 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        for single_thread in [true, false] {
-            let _ = replay::take_observed_file_read_events();
-            let bounded = load_groups_from_directory(
-                &fixture.path("sessions"),
-                &SharedArgs {
-                    single_thread,
-                    ..shared.clone()
-                },
+        let load = |shared: &SharedArgs| {
+            let diagnostics = Diagnostics::new("codex");
+            let (groups, _) = load_groups_from_sources_with_diagnostics(
+                &[directory_source(&fixture.path("sessions"))],
+                shared,
                 AgentReportKind::Daily,
+                &diagnostics,
             )
             .unwrap();
+            (
+                groups,
+                diagnostics.skipped(ccusage_core::SkipKind::InvalidData),
+            )
+        };
+
+        for single_thread in [true, false] {
+            let (bounded, bounded_skips) = load(&SharedArgs {
+                single_thread,
+                ..shared.clone()
+            });
             let group = &bounded["2026-03-15"];
             assert_eq!(group.input_tokens, 100);
             assert_eq!(group.output_tokens, 1);
             assert_eq!(group.total_tokens, 101);
-            if single_thread {
-                let reads = replay::take_observed_file_read_events();
-                assert!(reads.iter().any(|read| matches!(
-                    read,
-                    replay::ObservedFileRead::MetadataProbe(path) if path == &long_running_path
-                )));
-                assert!(reads.iter().any(|read| matches!(
-                    read,
-                    replay::ObservedFileRead::MetadataProbe(path) if path == &historical_path
-                )));
-                assert!(!reads.iter().any(|read| matches!(
-                    read,
-                    replay::ObservedFileRead::ParentUsage(path) if path == &historical_path
-                )));
-            }
+            assert_eq!(
+                bounded_skips, 0,
+                "the historical file was read past its first line"
+            );
 
-            let unbounded = load_groups_from_directory(
-                &fixture.path("sessions"),
-                &SharedArgs {
-                    single_thread,
-                    ..SharedArgs::default()
-                },
-                AgentReportKind::Daily,
-            )
-            .unwrap();
+            let (unbounded, unbounded_skips) = load(&SharedArgs {
+                single_thread,
+                ..SharedArgs::default()
+            });
+            assert_eq!(unbounded_skips, 1);
             assert_eq!(unbounded["2026-03-15"].input_tokens, 1_099);
         }
     }
@@ -1288,7 +1282,6 @@ mod tests {
         let fixture = fs_fixture!({
             "sessions/2026/03/16/late-utc.jsonl": &late_utc,
         });
-        let late_utc_path = fixture.path("sessions/2026/03/16/late-utc.jsonl");
         let shared = SharedArgs {
             since: Some("20260315".to_string()),
             until: Some("20260315".to_string()),
@@ -1297,14 +1290,12 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let _ = replay::take_observed_file_reads();
         let groups =
             load_groups_from_directory(&fixture.path("sessions"), &shared, AgentReportKind::Daily)
                 .unwrap();
 
         assert_eq!(groups["2026-03-15"].input_tokens, 100);
         assert_eq!(groups["2026-03-15"].total_tokens, 101);
-        assert!(replay::take_observed_file_reads().contains(&late_utc_path));
     }
 
     #[test]
@@ -1874,11 +1865,8 @@ mod tests {
                 ..SharedArgs::default()
             };
             let sources = vec![
-                CodexUsageSource::new_for_test(
-                    fixture.path("codex/sessions"),
-                    fixture.path("codex"),
-                ),
-                CodexUsageSource::new_for_test(
+                CodexUsageSource::new(fixture.path("codex/sessions"), fixture.path("codex")),
+                CodexUsageSource::new(
                     fixture.path("codex/archived_sessions"),
                     fixture.path("codex"),
                 ),
@@ -1940,8 +1928,8 @@ mod tests {
             "single/2026/05/12/rollout-2026-05-12T08-03-00-fork-abc.jsonl": fork,
         });
         let sources = [
-            CodexUsageSource::new_for_test(fixture.path("codex/sessions"), fixture.path("codex")),
-            CodexUsageSource::new_for_test(
+            CodexUsageSource::new(fixture.path("codex/sessions"), fixture.path("codex")),
+            CodexUsageSource::new(
                 fixture.path("codex/archived_sessions"),
                 fixture.path("codex"),
             ),

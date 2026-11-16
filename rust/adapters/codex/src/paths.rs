@@ -4,12 +4,6 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-#[cfg(test)]
-use std::{
-    fs::{File, FileTimes},
-    time::Duration,
-};
-
 use ccusage_adapter_common::collect_files_matching;
 use ccusage_core::Diagnostics;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
@@ -24,14 +18,6 @@ pub(super) fn codex_usage_sources() -> Result<Vec<CodexUsageSource>> {
     Ok(codex_usage_sources_from_homes(codex_home_paths()?))
 }
 
-#[cfg(test)]
-fn codex_usage_paths_from_homes(homes: Vec<PathBuf>) -> Vec<PathBuf> {
-    codex_usage_sources_from_homes(homes)
-        .into_iter()
-        .map(|source| source.dir)
-        .collect()
-}
-
 fn codex_usage_sources_from_homes(homes: Vec<PathBuf>) -> Vec<CodexUsageSource> {
     let mut paths = Vec::new();
     let mut seen = FxHashSet::default();
@@ -41,27 +27,18 @@ fn codex_usage_sources_from_homes(homes: Vec<PathBuf>) -> Vec<CodexUsageSource> 
         let mut found_usage_dir = false;
         if sessions.is_dir() {
             if seen.insert(sessions.clone()) {
-                paths.push(CodexUsageSource {
-                    dir: sessions,
-                    dedupe_scope: path.clone(),
-                });
+                paths.push(CodexUsageSource::new(sessions, path.clone()));
             }
             found_usage_dir = true;
         }
         if archived_sessions.is_dir() {
             if seen.insert(archived_sessions.clone()) {
-                paths.push(CodexUsageSource {
-                    dir: archived_sessions,
-                    dedupe_scope: path.clone(),
-                });
+                paths.push(CodexUsageSource::new(archived_sessions, path.clone()));
             }
             found_usage_dir = true;
         }
         if !found_usage_dir && seen.insert(path.clone()) {
-            paths.push(CodexUsageSource {
-                dir: path.clone(),
-                dedupe_scope: path,
-            });
+            paths.push(CodexUsageSource::new(path.clone(), path));
         }
     }
     paths
@@ -73,9 +50,8 @@ pub(super) struct CodexUsageSource {
     dedupe_scope: PathBuf,
 }
 
-#[cfg(test)]
 impl CodexUsageSource {
-    pub(super) fn new_for_test(dir: PathBuf, dedupe_scope: PathBuf) -> Self {
+    pub(super) fn new(dir: PathBuf, dedupe_scope: PathBuf) -> Self {
         Self { dir, dedupe_scope }
     }
 }
@@ -246,19 +222,15 @@ pub(super) fn codex_home_paths() -> Result<Vec<PathBuf>> {
 }
 
 #[cfg(test)]
-pub(super) fn set_file_modified(path: &Path, timestamp: crate::TimestampMs) {
-    let milliseconds = u64::try_from(timestamp.as_millis()).unwrap();
-    File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_times(FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)))
-        .unwrap();
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
+
+    fn codex_usage_paths_from_homes(homes: Vec<PathBuf>) -> Vec<PathBuf> {
+        codex_usage_sources_from_homes(homes)
+            .into_iter()
+            .map(|source| source.dir)
+            .collect()
+    }
 
     use ccusage_core::SkipKind;
     use ccusage_test_support::Fixture;
@@ -439,10 +411,8 @@ mod tests {
         use std::{ffi::OsString, os::unix::ffi::OsStringExt};
 
         let file_name = PathBuf::from(OsString::from_vec(b"session-\xFF.jsonl".to_vec()));
-        let source = CodexUsageSource::new_for_test(
-            PathBuf::from("/codex/sessions"),
-            PathBuf::from("/codex"),
-        );
+        let source =
+            CodexUsageSource::new(PathBuf::from("/codex/sessions"), PathBuf::from("/codex"));
 
         assert_eq!(
             codex_usage_file_key(&source, &source.dir.join(&file_name)),
@@ -457,11 +427,11 @@ mod tests {
         let historical = fixture.write_file("codex/sessions/2025/01/01/historical.jsonl", "");
         let resumed = fixture.write_file("codex/sessions/2026/01/01/resumed.jsonl", "");
         let current = fixture.write_file("codex/sessions/2026/03/15/current.jsonl", "");
-        set_file_modified(
+        crate::test_support::set_file_modified(
             &historical,
             crate::parse_ts_timestamp("2025-01-01T00:00:00.000Z").unwrap(),
         );
-        set_file_modified(
+        crate::test_support::set_file_modified(
             &resumed,
             crate::parse_ts_timestamp("2026-03-15T12:00:00.000Z").unwrap(),
         );

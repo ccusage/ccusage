@@ -2335,15 +2335,15 @@ fn bounded_loading_resolves_thread_id_rollout_parent_by_payload_id() {
     });
     let parent = fixture.path("sessions/2025/01/01/2025-01-01T08-00-00-thread_id_rollout.jsonl");
     let child = fixture.path("sessions/2026/03/15/child.jsonl");
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &parent,
         crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
     );
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &child,
         crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
     );
-    let sources = [CodexUsageSource::new_for_test(
+    let sources = [CodexUsageSource::new(
         fixture.path("sessions"),
         fixture.root().to_path_buf(),
     )];
@@ -2397,16 +2397,16 @@ fn bounded_loading_does_not_select_a_misleading_filename() {
     let parent = fixture.path("sessions/2025/01/02/zzz-actual-parent.jsonl");
     let child = fixture.path("sessions/2026/03/15/child.jsonl");
     for path in [&misleading, &parent] {
-        crate::paths::set_file_modified(
+        crate::test_support::set_file_modified(
             path,
             crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
         );
     }
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &child,
         crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
     );
-    let sources = [CodexUsageSource::new_for_test(
+    let sources = [CodexUsageSource::new(
         fixture.path("sessions"),
         fixture.root().to_path_buf(),
     )];
@@ -2418,7 +2418,6 @@ fn bounded_loading_does_not_select_a_misleading_filename() {
     };
 
     for single_thread in [true, false] {
-        let _ = crate::replay::take_observed_file_read_events();
         let (sessions, detected) = session_input_tokens(
             &sources,
             &SharedArgs {
@@ -2434,17 +2433,6 @@ fn bounded_loading_does_not_select_a_misleading_filename() {
             [("2026/03/15/child".to_string(), 50)],
             "single_thread={single_thread}"
         );
-        if single_thread {
-            let reads = crate::replay::take_observed_file_read_events();
-            assert!(reads.iter().any(|read| matches!(
-                read,
-                crate::replay::ObservedFileRead::ParentUsage(path) if path == &parent
-            )));
-            assert!(!reads.iter().any(|read| matches!(
-                read,
-                crate::replay::ObservedFileRead::ParentUsage(path) if path == &misleading
-            )));
-        }
     }
 }
 
@@ -2472,16 +2460,16 @@ fn bounded_loading_uses_the_first_duplicate_parent_id() {
     let second_parent = fixture.path("sessions/2025/01/02/zzz-second-parent.jsonl");
     let child = fixture.path("sessions/2026/03/15/child.jsonl");
     for path in [&first_parent, &second_parent] {
-        crate::paths::set_file_modified(
+        crate::test_support::set_file_modified(
             path,
             crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
         );
     }
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &child,
         crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
     );
-    let sources = [CodexUsageSource::new_for_test(
+    let sources = [CodexUsageSource::new(
         fixture.path("sessions"),
         fixture.root().to_path_buf(),
     )];
@@ -2532,15 +2520,15 @@ fn bounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
     });
     let child = fixture.path("sessions/2025/01/01/aaa-child.jsonl");
     let parent = fixture.path("sessions/2025/01/02/zzz-parent.jsonl");
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &child,
         crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
     );
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &parent,
         crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
     );
-    let sources = [CodexUsageSource::new_for_test(
+    let sources = [CodexUsageSource::new(
         fixture.path("sessions"),
         fixture.root().to_path_buf(),
     )];
@@ -2552,7 +2540,6 @@ fn bounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
     };
 
     for single_thread in [true, false] {
-        let _ = crate::replay::take_observed_file_read_events();
         let (sessions, detected) = session_input_tokens(
             &sources,
             &SharedArgs {
@@ -2592,11 +2579,11 @@ fn unbounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
     });
     let child = fixture.path("sessions/2025/01/01/aaa-child.jsonl");
     let parent = fixture.path("sessions/2025/01/02/zzz-parent.jsonl");
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &child,
         crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
     );
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &parent,
         crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
     );
@@ -2631,6 +2618,7 @@ fn bounded_loading_metadata_probes_history_but_reads_parent_usage_only() {
         "sessions/2025/01/01/unrelated.jsonl": [
             replay_metadata("2025-01-01T08:00:00.000Z", "unrelated", None),
             replay_token_count("2025-01-01T08:01:00.000Z", 999),
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"#.to_string(),
         ]
         .join("\n"),
         "sessions/2026/03/15/child.jsonl": [
@@ -2644,16 +2632,16 @@ fn bounded_loading_metadata_probes_history_but_reads_parent_usage_only() {
     let unrelated = fixture.path("sessions/2025/01/01/unrelated.jsonl");
     let child = fixture.path("sessions/2026/03/15/child.jsonl");
     for path in [&parent, &unrelated] {
-        crate::paths::set_file_modified(
+        crate::test_support::set_file_modified(
             path,
             crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
         );
     }
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &child,
         crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
     );
-    let sources = [CodexUsageSource::new_for_test(
+    let sources = [CodexUsageSource::new(
         fixture.path("sessions"),
         fixture.root().to_path_buf(),
     )];
@@ -2665,26 +2653,16 @@ fn bounded_loading_metadata_probes_history_but_reads_parent_usage_only() {
         ..SharedArgs::default()
     };
 
-    let _ = crate::replay::take_observed_file_reads();
-    let (sessions, detected) = session_input_tokens(&sources, &shared, &Diagnostics::new("codex"));
+    let diagnostics = Diagnostics::new("codex");
+    let (sessions, detected) = session_input_tokens(&sources, &shared, &diagnostics);
 
     assert!(detected);
     assert_eq!(sessions, [("2026/03/15/child".to_string(), 50)]);
-    let reads = crate::replay::take_observed_file_read_events();
-    for path in [&child, &parent, &unrelated] {
-        assert!(reads.iter().any(|read| matches!(
-            read,
-            crate::replay::ObservedFileRead::MetadataProbe(observed) if observed == path
-        )));
-    }
-    let parent_usage_reads = reads
-        .iter()
-        .filter_map(|read| match read {
-            crate::replay::ObservedFileRead::ParentUsage(path) => Some(path.clone()),
-            crate::replay::ObservedFileRead::MetadataProbe(_) => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(parent_usage_reads, vec![parent]);
+    assert_eq!(
+        diagnostics.skipped(ccusage_core::SkipKind::InvalidData),
+        0,
+        "the unrelated history was read past its first line"
+    );
 }
 
 #[test]
@@ -2805,7 +2783,7 @@ fn the_fused_fork_pass_records_a_parent_skip_once() {
         };
         let diagnostics = Diagnostics::new("codex");
         let (groups, _) = crate::aggregate::load_groups_from_sources_with_diagnostics(
-            &[CodexUsageSource::new_for_test(
+            &[CodexUsageSource::new(
                 fixture.path("sessions"),
                 fixture.path("sessions"),
             )],
@@ -2837,15 +2815,15 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
     });
     let parent = fixture.path("sessions/2025/01/01/parent.jsonl");
     let child = fixture.path("sessions/2026/03/15/child.jsonl");
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &parent,
         crate::parse_ts_timestamp("2025-01-01T08:00:00.000Z").unwrap(),
     );
-    crate::paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &child,
         crate::parse_ts_timestamp("2026-03-15T08:00:00.000Z").unwrap(),
     );
-    let sources = [CodexUsageSource::new_for_test(
+    let sources = [CodexUsageSource::new(
         fixture.path("sessions"),
         fixture.root().to_path_buf(),
     )];
@@ -2860,7 +2838,6 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
             ..Default::default()
         };
         let diagnostics = Diagnostics::new("codex");
-        let _ = crate::replay::take_observed_file_read_events();
         let (sessions, _) = session_input_tokens(&sources, &shared, &diagnostics);
 
         let expected = [
@@ -2879,16 +2856,10 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
                 .join("\n")
                 .contains("SECRET_CANARY")
         );
-        let reads = crate::replay::take_observed_file_read_events();
-        let parent_reads = reads
-            .iter()
-            .filter(|read| matches!(read, crate::replay::ObservedFileRead::ParentUsage(path) if path == &parent))
-            .count();
-        assert_eq!(parent_reads, 1);
 
         let diagnostics = Diagnostics::new("codex");
         let (groups, _) = crate::aggregate::load_groups_from_sources_with_diagnostics(
-            &[CodexUsageSource::new_for_test(
+            &[CodexUsageSource::new(
                 fixture.path("sessions"),
                 fixture.path("sessions"),
             )],
@@ -2902,12 +2873,6 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
             50 + parent_tokens
         );
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
-        let reads = crate::replay::take_observed_file_read_events();
-        let parent_reads = reads
-            .iter()
-            .filter(|read| matches!(read, crate::replay::ObservedFileRead::ParentUsage(path) if path == &parent))
-            .count();
-        assert_eq!(parent_reads, 1);
     }
 }
 

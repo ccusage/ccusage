@@ -1,9 +1,14 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::BTreeMap,
+    fs::{File, FileTimes},
+    path::Path,
+    time::{Duration, UNIX_EPOCH},
+};
 
 use ccusage_core::Diagnostics;
 
 use crate::{
-    CodexGroup, CodexTokenUsageEvent, Result, aggregate,
+    CodexGroup, CodexTokenUsageEvent, Result, TimestampMs, aggregate,
     cli::{AgentReportKind, SharedArgs},
     parser,
     paths::{self, CodexUsageSource},
@@ -11,7 +16,7 @@ use crate::{
 };
 
 pub(crate) fn directory_source(dir: &Path) -> CodexUsageSource {
-    CodexUsageSource::new_for_test(dir.to_path_buf(), dir.to_path_buf())
+    CodexUsageSource::new(dir.to_path_buf(), dir.to_path_buf())
 }
 
 pub(crate) fn load_groups_from_sources(
@@ -64,4 +69,14 @@ pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
         .unwrap();
     }
     events
+}
+
+pub(crate) fn set_file_modified(path: &Path, timestamp: TimestampMs) {
+    let milliseconds = u64::try_from(timestamp.as_millis()).unwrap();
+    File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)))
+        .unwrap();
 }

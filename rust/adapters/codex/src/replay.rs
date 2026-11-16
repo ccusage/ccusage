@@ -4,9 +4,6 @@ use std::{
     thread,
 };
 
-#[cfg(test)]
-use std::cell::RefCell;
-
 use ccusage_core::Diagnostics;
 use serde_json::Value;
 
@@ -18,63 +15,6 @@ use super::{
     },
     reader::{PROBE_BUFFER_SIZE, open_rollout_lines},
 };
-
-#[cfg(test)]
-#[derive(Debug, Eq, PartialEq)]
-pub(super) enum ObservedFileRead {
-    MetadataProbe(PathBuf),
-    ParentUsage(PathBuf),
-}
-
-#[cfg(test)]
-thread_local! {
-    static OBSERVED_FILE_READS: RefCell<Vec<ObservedFileRead>> = const { RefCell::new(Vec::new()) };
-}
-
-#[cfg(test)]
-pub(super) fn take_observed_file_reads() -> Vec<PathBuf> {
-    take_observed_file_read_events()
-        .into_iter()
-        .map(|read| match read {
-            ObservedFileRead::MetadataProbe(path) | ObservedFileRead::ParentUsage(path) => path,
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub(super) fn take_observed_file_read_events() -> Vec<ObservedFileRead> {
-    OBSERVED_FILE_READS.with(|paths| std::mem::take(&mut *paths.borrow_mut()))
-}
-
-fn observe_metadata_probe(path: &Path) {
-    #[cfg(test)]
-    {
-        OBSERVED_FILE_READS.with(|paths| {
-            paths
-                .borrow_mut()
-                .push(ObservedFileRead::MetadataProbe(path.to_path_buf()));
-        });
-    }
-    #[cfg(not(test))]
-    {
-        let _ = path;
-    }
-}
-
-fn observe_parent_usage(path: &Path) {
-    #[cfg(test)]
-    {
-        OBSERVED_FILE_READS.with(|paths| {
-            paths
-                .borrow_mut()
-                .push(ObservedFileRead::ParentUsage(path.to_path_buf()));
-        });
-    }
-    #[cfg(not(test))]
-    {
-        let _ = path;
-    }
-}
 
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
@@ -389,7 +329,6 @@ fn read_parent_usage_file(
 }
 
 fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics) -> ParentUsage {
-    observe_parent_usage(path);
     let mut stream = ParentUsage {
         timestamps: Vec::new(),
         usage: Vec::new(),
@@ -436,7 +375,6 @@ impl CodexSessionMetadata {
 }
 
 fn read_codex_session_metadata(path: &Path) -> CodexSessionMetadata {
-    observe_metadata_probe(path);
     let Ok((mut lines, _)) = open_rollout_lines(path, PROBE_BUFFER_SIZE) else {
         return CodexSessionMetadata::default();
     };

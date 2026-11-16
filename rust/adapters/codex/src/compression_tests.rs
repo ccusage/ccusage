@@ -237,10 +237,16 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
 
     assert_eq!(files, vec![plain]);
     let mut visited = Vec::new();
-    crate::parser::visit_codex_session_file(fixture.root(), &files[0], None, |event| {
-        visited.push(event);
-        Ok(())
-    })
+    crate::parser::visit_codex_session_file_with_diagnostics(
+        fixture.root(),
+        &files[0],
+        None,
+        |event| {
+            visited.push(event);
+            Ok(())
+        },
+        &Diagnostics::new("codex"),
+    )
     .unwrap();
     assert_eq!(visited.len(), 1);
     assert_eq!(visited[0].session_id, "session");
@@ -258,16 +264,22 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
     let files = paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
     let compressed = write_compressed(&fixture, "run.jsonl.zst", &headless);
-    paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &compressed,
         crate::parse_ts_timestamp("2026-10-14T12:00:00.000Z").unwrap(),
     );
 
     let mut visited = Vec::new();
-    crate::parser::visit_codex_session_file(fixture.root(), &files[0], None, |event| {
-        visited.push(event);
-        Ok(())
-    })
+    crate::parser::visit_codex_session_file_with_diagnostics(
+        fixture.root(),
+        &files[0],
+        None,
+        |event| {
+            visited.push(event);
+            Ok(())
+        },
+        &Diagnostics::new("codex"),
+    )
     .unwrap();
 
     assert_eq!(visited.len(), 1);
@@ -323,7 +335,7 @@ fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
         ]
         .join("\n"),
     );
-    paths::set_file_modified(
+    crate::test_support::set_file_modified(
         &parent,
         crate::parse_ts_timestamp("2026-09-01T00:00:01Z").unwrap(),
     );
