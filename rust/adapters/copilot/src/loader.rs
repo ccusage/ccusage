@@ -2304,6 +2304,44 @@ mod tests {
     }
 
     #[test]
+    fn a_shutdown_after_another_sessions_usage_record_does_not_count_it_again() {
+        // A session's shutdown keeps accounting watermarks per source session,
+        // so its totals include the records it holds for other sessions.
+        let record = usage_record(
+            "parent-record",
+            "2026-01-02T10:00:00.000Z",
+            json!({"accounting": {"sourceSessionId": "session-child", "sequence": 1}}),
+        );
+        let parent_shutdown = shutdown_with_requests("shutdown-1", "2026-01-02T11:00:00.000Z", 1);
+        for (child_file, owner) in [(true, "session-child"), (false, "session-parent")] {
+            let fixture = fs_fixture!({
+                "home/.copilot/session-state/session-parent/events.jsonl":
+                    [record.clone(), parent_shutdown.clone()].join("\n"),
+            });
+            if child_file {
+                let _ = fixture.write_file(
+                    "home/.copilot/session-state/session-child/events.jsonl",
+                    record.replace("parent-record", "child-record"),
+                );
+            }
+
+            let entries = load_copilot_home(&fixture, &utc_args());
+
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| (
+                        entry.session_id.to_string(),
+                        entry.data.message.usage.input_tokens
+                    ))
+                    .collect::<Vec<_>>(),
+                [(owner.to_string(), 100)],
+                "child file present: {child_file}"
+            );
+        }
+    }
+
+    #[test]
     fn a_usage_record_replaces_one_otel_call_of_a_shared_response_id() {
         // VS Code reports the response ID of the turn on every call it makes.
         let call = |span_id: &str, timestamp: &str, input_tokens: u64| {
