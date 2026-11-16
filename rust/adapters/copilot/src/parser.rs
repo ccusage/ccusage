@@ -65,11 +65,44 @@ pub(super) struct CopilotUsageEntry {
     pub(super) reasoning_output_tokens: u64,
     pub(super) extra_total_tokens: u64,
     pub(super) request_count: u64,
-    /// Cumulative per-model credits from session-state `totalNanoAiu`. Used only
-    /// to find session credits that `modelMetrics` does not account for.
-    pub(super) nano_aiu: u64,
-    pub(super) cost_usd: Option<f64>,
+    /// Credits Copilot recorded for this entry, in nano-AIU: per call for a
+    /// usage record, cumulative per model for a shutdown. `None` when the
+    /// source has no credits, which leaves the cost to token pricing.
+    pub(super) nano_aiu: Option<u64>,
     pub(super) dedup_key: String,
+    /// Whether `dedup_key` names the same call in every file that holds it.
+    pub(super) file_independent_key: bool,
+    pub(super) call_ids: CallIds,
+}
+
+/// IDs of a single call that its usage record and its OpenTelemetry rows
+/// share. The two kinds are separate namespaces and only match their own kind.
+#[derive(Debug, Clone, Default)]
+pub(super) struct CallIds {
+    /// Record `apiCallId`, OTel `gen_ai.response.id`: the provider completion ID.
+    pub(super) response_id: Option<String>,
+    /// Record `serviceRequestId`, OTel `github.copilot.service_request_id`.
+    pub(super) service_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum CallIdKind {
+    Response,
+    ServiceRequest,
+}
+
+impl CallIds {
+    pub(super) fn iter(&self) -> impl Iterator<Item = (CallIdKind, &str)> {
+        [
+            (CallIdKind::Response, self.response_id.as_deref()),
+            (
+                CallIdKind::ServiceRequest,
+                self.service_request_id.as_deref(),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(kind, id)| Some((kind, id?)))
+    }
 }
 
 /// Session-wide credit total from a `session.shutdown` or
@@ -86,9 +119,19 @@ pub(super) struct CopilotCreditSnapshot {
     pub(super) dedup_key: String,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct CopilotUsageRecordEntry {
+    pub(super) entry: CopilotUsageEntry,
+    /// `accounting.sourceSessionId`: the session that assigned the call's
+    /// accounting sequence. `None` when the record has no usable identity.
+    pub(super) source_session_id: Option<String>,
+}
+
 #[derive(Debug, Default)]
 pub(super) struct CopilotSourceUsage {
     pub(super) entries: Vec<CopilotUsageEntry>,
+    /// One entry per `session.usage_record` call.
+    pub(super) usage_records: Vec<CopilotUsageRecordEntry>,
     pub(super) credit_snapshots: Vec<CopilotCreditSnapshot>,
 }
 
@@ -111,6 +154,7 @@ struct CopilotUsageCandidate {
     source: CopilotUsageSource,
     trace_id: Option<String>,
     response_id: Option<String>,
+    service_request_id: Option<String>,
     model: String,
     session_id: String,
     timestamp: TimestampMs,
@@ -121,6 +165,7 @@ struct CopilotUsageCandidate {
     reasoning_output_tokens: u64,
     extra_total_tokens: u64,
     dedup_key: String,
+    file_independent_key: bool,
 }
 
 pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
@@ -155,9 +200,13 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
             reasoning_output_tokens: candidate.reasoning_output_tokens,
             extra_total_tokens: candidate.extra_total_tokens,
             request_count: 1,
-            nano_aiu: 0,
-            cost_usd: None,
+            nano_aiu: None,
             dedup_key: candidate.dedup_key,
+            file_independent_key: candidate.file_independent_key,
+            call_ids: CallIds {
+                response_id: candidate.response_id,
+                service_request_id: candidate.service_request_id,
+            },
         })
         .collect())
 }
@@ -188,6 +237,77 @@ struct CopilotSessionStateData {
         deserialize_with = "jsonl::lenient_f64"
     )]
     total_nano_aiu: Option<f64>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    usage: Option<CopilotUsageRecord>,
+    #[serde(
+        rename = "usageAccountingWatermarks",
+        default,
+        deserialize_with = "jsonl::lenient_object"
+    )]
+    usage_accounting_watermarks: Option<BTreeMap<String, Value>>,
+}
+
+impl CopilotSessionStateData {
+    /// Watermarks name the usage records a snapshot's totals include, per
+    /// source session, wherever those records are stored.
+    fn covers_usage_records(&self) -> bool {
+        self.usage_accounting_watermarks
+            .as_ref()
+            .is_some_and(|watermarks| {
+                watermarks
+                    .values()
+                    .any(|sequence| sequence.as_u64().is_some_and(|sequence| sequence > 0))
+            })
+    }
+}
+
+/// One model call from `session.usage_record`. Its token fields have the same
+/// meaning as a `modelMetrics` usage, which sums them.
+#[derive(Debug, Default, Deserialize)]
+struct CopilotUsageRecord {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    accounting: Option<CopilotUsageAccounting>,
+    #[serde(
+        rename = "apiCallId",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    api_call_id: Option<String>,
+    #[serde(
+        rename = "serviceRequestId",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    service_request_id: Option<String>,
+    #[serde(
+        rename = "copilotUsage",
+        default,
+        deserialize_with = "jsonl::lenient_object"
+    )]
+    copilot_usage: Option<CopilotRecordedCredits>,
+    #[serde(flatten)]
+    tokens: CopilotSessionUsage,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CopilotRecordedCredits {
+    #[serde(
+        rename = "totalNanoAiu",
+        default,
+        deserialize_with = "jsonl::lenient_f64"
+    )]
+    total_nano_aiu: Option<f64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CopilotUsageAccounting {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    source_session_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    sequence: u64,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -225,8 +345,19 @@ struct CopilotSessionUsage {
     reasoning_tokens: u64,
 }
 
+impl CopilotSessionUsage {
+    fn is_empty(&self) -> bool {
+        self.input_tokens == 0
+            && self.output_tokens == 0
+            && self.cache_read_tokens == 0
+            && self.cache_write_tokens == 0
+            && self.reasoning_tokens == 0
+    }
+}
+
 const SHUTDOWN_EVENT: &str = "session.shutdown";
 const USAGE_CHECKPOINT_EVENT: &str = "session.usage_checkpoint";
+const USAGE_RECORD_EVENT: &str = "session.usage_record";
 
 pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage> {
     let session_id = path
@@ -241,22 +372,40 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
     };
 
     let content = fs::read(path)?;
-    let prefilter =
-        LinePrefilter::any(&[SHUTDOWN_EVENT.as_bytes(), USAGE_CHECKPOINT_EVENT.as_bytes()]);
+    let prefilter = LinePrefilter::any(&[
+        SHUTDOWN_EVENT.as_bytes(),
+        USAGE_CHECKPOINT_EVENT.as_bytes(),
+        USAGE_RECORD_EVENT.as_bytes(),
+    ]);
     let mut parsed = CopilotSourceUsage::default();
+    let mut records = Vec::new();
+    let mut covered_by_records = false;
     for event in jsonl::records::<CopilotSessionStateEvent>(&content, Some(&prefilter)) {
         let is_shutdown = match event.event_type.as_deref() {
             Some(SHUTDOWN_EVENT) => true,
             Some(USAGE_CHECKPOINT_EVENT) => false,
+            Some(USAGE_RECORD_EVENT) => {
+                let record = usage_record(event);
+                covered_by_records |= record.is_some();
+                records.extend(record);
+                continue;
+            }
             _ => continue,
         };
+        let data = event.data.unwrap_or_default();
+        // Shutdowns and checkpoints written after a usage record, or by a
+        // process that reports watermarks, only total calls that usage records
+        // report, in this file or in the file of the session they belong to.
+        covered_by_records |= data.covers_usage_records();
+        if covered_by_records {
+            continue;
+        }
         let Some(timestamp_text) = event.timestamp.as_deref() else {
             continue;
         };
         let Some(timestamp) = parse_ts_timestamp(timestamp_text) else {
             continue;
         };
-        let data = event.data.unwrap_or_default();
         let session_nano_aiu = nano_aiu(data.total_nano_aiu);
         let snapshot_key = |total: Option<u64>| {
             event.id.as_deref().map_or_else(
@@ -292,14 +441,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
             let Some(usage) = metrics.usage else {
                 continue;
             };
-            if model.is_empty()
-                || usage.input_tokens == 0
-                    && usage.output_tokens == 0
-                    && usage.cache_read_tokens == 0
-                    && usage.cache_write_tokens == 0
-                    && usage.reasoning_tokens == 0
-                    && request_count == 0
-            {
+            if model.is_empty() || usage.is_empty() && request_count == 0 {
                 continue;
             }
             let model_nano_aiu = nano_aiu(metrics.total_nano_aiu);
@@ -325,9 +467,10 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
                 reasoning_output_tokens: usage.reasoning_tokens,
                 extra_total_tokens: 0,
                 request_count,
-                nano_aiu: model_nano_aiu.unwrap_or_default(),
-                cost_usd: None,
+                nano_aiu: model_nano_aiu,
                 dedup_key,
+                file_independent_key: false,
+                call_ids: CallIds::default(),
             });
         }
         let total_nano_aiu = session_nano_aiu.filter(|_| models_report_credits);
@@ -339,7 +482,98 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
             dedup_key: snapshot_key(total_nano_aiu),
         });
     }
+    if covered_by_records {
+        // Usage records report every call with its own credits or tokens, so
+        // the session-wide credit totals have nothing left to explain.
+        parsed.credit_snapshots.clear();
+    }
+    parsed.usage_records = usage_record_entries(records, &session_id);
     Ok(parsed)
+}
+
+struct UsageRecordCall {
+    timestamp: TimestampMs,
+    /// `(sourceSessionId, sequence)`, unique across every session file.
+    accounting: Option<(String, u64)>,
+    event_id: Option<String>,
+    call_ids: CallIds,
+    model: String,
+    usage: CopilotSessionUsage,
+    nano_aiu: Option<u64>,
+}
+
+fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
+    let timestamp = parse_ts_timestamp(event.timestamp.as_deref()?)?;
+    let record = event.data?.usage?;
+    let model = normalize_copilot_model(record.model.as_deref()?);
+    let usage = record.tokens;
+    let recorded_nano_aiu = nano_aiu(
+        record
+            .copilot_usage
+            .and_then(|credits| credits.total_nano_aiu),
+    );
+    if model.is_empty() {
+        return None;
+    }
+    let accounting = record.accounting.and_then(|accounting| {
+        let source = accounting.source_session_id?;
+        (accounting.sequence > 0).then_some((source, accounting.sequence))
+    });
+    let call_ids = CallIds {
+        response_id: record.api_call_id,
+        service_request_id: record.service_request_id,
+    };
+    Some(UsageRecordCall {
+        timestamp,
+        accounting,
+        event_id: event.id,
+        call_ids,
+        model,
+        usage,
+        nano_aiu: recorded_nano_aiu,
+    })
+}
+
+fn usage_record_entries(
+    records: Vec<UsageRecordCall>,
+    session_id: &str,
+) -> Vec<CopilotUsageRecordEntry> {
+    records
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| {
+            let call = record.usage;
+            // An accounting identity names the call in every file it appears
+            // in; an event ID or line position names it only in this file.
+            let dedup_key = match &record.accounting {
+                Some((source, sequence)) => format!("usage-record:{source}:{sequence}"),
+                None => record.event_id.map_or_else(
+                    || format!("usage-record:{session_id}:line:{index}"),
+                    |event_id| format!("usage-record:{session_id}:event:{event_id}"),
+                ),
+            };
+            CopilotUsageRecordEntry {
+                entry: CopilotUsageEntry {
+                    timestamp: record.timestamp,
+                    timestamp_text: crate::format_rfc3339_millis(record.timestamp),
+                    session_id: session_id.to_string(),
+                    model: record.model,
+                    input_tokens: uncached_session_input_tokens(&call),
+                    output_tokens: call.output_tokens,
+                    cache_creation_tokens: call.cache_write_tokens,
+                    cache_read_tokens: call.cache_read_tokens,
+                    reasoning_output_tokens: call.reasoning_tokens,
+                    extra_total_tokens: 0,
+                    request_count: 1,
+                    nano_aiu: record.nano_aiu,
+                    dedup_key,
+                    file_independent_key: false,
+                    call_ids: record.call_ids,
+                },
+                source_session_id: record.accounting.map(|(source, _)| source),
+            }
+        })
+        .collect()
 }
 
 fn nano_aiu(value: Option<f64>) -> Option<u64> {
@@ -456,6 +690,7 @@ fn to_candidate(
     let trace_id = trace_id_from_record(record);
     let trace_context = trace_id.as_ref().and_then(|id| trace_contexts.get(id));
     let response_id = attr_string(attributes, "gen_ai.response.id");
+    let service_request_id = attr_string(attributes, "github.copilot.service_request_id");
     let model = first_non_empty_model_attr(attributes)
         .or_else(|| trace_context.and_then(|context| context.model.clone()))
         .unwrap_or_else(|| "unknown".to_string());
@@ -465,7 +700,7 @@ fn to_candidate(
         .or_else(|| trace_id.clone())
         .unwrap_or_else(|| "unknown-session".to_string());
     let timestamp = timestamp_from_record(record).unwrap_or(fallback_timestamp);
-    let dedup_key = dedup_key_for_record(
+    let (dedup_key, file_independent_key) = dedup_key_for_record(
         source,
         record,
         attributes,
@@ -478,6 +713,7 @@ fn to_candidate(
         source,
         trace_id,
         response_id,
+        service_request_id,
         model,
         session_id,
         timestamp,
@@ -488,6 +724,7 @@ fn to_candidate(
         reasoning_output_tokens: reasoning,
         extra_total_tokens,
         dedup_key,
+        file_independent_key,
     })
 }
 
@@ -690,6 +927,9 @@ fn is_agent_turn_log_record(record: &CopilotRecord, attributes: &Map<String, Val
             || record_body(record).is_some_and(|body| body.starts_with("copilot_chat.agent.turn")))
 }
 
+/// Returns the row's key and whether it comes from IDs the record carries.
+/// Only such a key names the same call in another file; the fallbacks use the
+/// row's line and time, which can come from the file's modification time.
 fn dedup_key_for_record(
     source: CopilotUsageSource,
     record: &CopilotRecord,
@@ -698,31 +938,46 @@ fn dedup_key_for_record(
     session_id: &str,
     timestamp: TimestampMs,
     index: usize,
-) -> String {
+) -> (String, bool) {
     let span_id = span_id_from_record(record);
-    match source {
+    let record_key = match source {
+        CopilotUsageSource::ChatSpan | CopilotUsageSource::AgentSummarySpan => trace_id
+            .as_ref()
+            .zip(span_id.as_ref())
+            .map(|(trace_id, span_id)| format!("{trace_id}:{span_id}")),
+        CopilotUsageSource::InferenceLog => trace_id
+            .as_ref()
+            .zip(span_id.as_ref())
+            .map(|(trace_id, span_id)| format!("log:{trace_id}:{span_id}")),
+        CopilotUsageSource::AgentTurnLog => trace_id
+            .as_ref()
+            .zip(turn_index(attributes))
+            .map(|(trace_id, turn_index)| format!("agent-turn:{trace_id}:{turn_index}")),
+    };
+    if let Some(key) = record_key {
+        return (key, true);
+    }
+    let millis = timestamp.as_millis();
+    let key = match source {
         CopilotUsageSource::ChatSpan | CopilotUsageSource::AgentSummarySpan => {
-            if let (Some(trace_id), Some(span_id)) = (trace_id, span_id) {
-                return format!("{trace_id}:{span_id}");
-            }
-            format!("span:{session_id}:{}:{index}", timestamp.as_millis())
+            format!("span:{session_id}:{millis}:{index}")
         }
-        CopilotUsageSource::InferenceLog => {
-            if let (Some(trace_id), Some(span_id)) = (trace_id, span_id) {
-                return format!("log:{trace_id}:{span_id}");
-            }
-            format!("log:{session_id}:{}:{index}", timestamp.as_millis())
-        }
+        CopilotUsageSource::InferenceLog => format!("log:{session_id}:{millis}:{index}"),
         CopilotUsageSource::AgentTurnLog => {
-            let turn_index = number_value(attributes.get("turn.index"))
-                .or_else(|| number_value(attributes.get("copilot_chat.turn.index")))
-                .map_or_else(|| format!("idx-{index}"), |value| value.to_string());
+            let turn_index = turn_index(attributes)
+                .map_or_else(|| format!("idx-{index}"), |turn| turn.to_string());
             trace_id.as_ref().map_or_else(
                 || format!("agent-turn:{session_id}:{turn_index}:{index}"),
                 |trace_id| format!("agent-turn:{trace_id}:{turn_index}"),
             )
         }
-    }
+    };
+    (key, false)
+}
+
+fn turn_index(attributes: &Map<String, Value>) -> Option<u64> {
+    number_value(attributes.get("turn.index"))
+        .or_else(|| number_value(attributes.get("copilot_chat.turn.index")))
 }
 
 fn trace_id_from_record(record: &CopilotRecord) -> Option<String> {
@@ -1031,7 +1286,7 @@ mod session_state_tests {
         let parsed = parse_session_state_file(&fixture.path("session-1/events.jsonl")).unwrap();
 
         assert_eq!(parsed.entries.len(), 1);
-        assert_eq!(parsed.entries[0].nano_aiu, 42_202_140_000);
+        assert_eq!(parsed.entries[0].nano_aiu, Some(42_202_140_000));
         assert_eq!(
             parsed
                 .credit_snapshots

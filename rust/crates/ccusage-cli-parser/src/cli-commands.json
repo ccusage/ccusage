@@ -120,6 +120,10 @@
 			{
 				"name": "cline",
 				"description": "Show Cline usage commands"
+			},
+			{
+				"name": "dsh",
+				"description": "Show DeepSeek Harness usage commands"
 			}
 		]
 	},
@@ -911,6 +915,53 @@
 			"path": ["cline", "session"],
 			"description": "Show Cline usage grouped by session",
 			"usage": "ccusage cline session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["dsh"],
+			"description": "Usage reports for DeepSeek Harness.",
+			"usage": "ccusage dsh <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show DeepSeek Harness usage grouped by date"
+				},
+				{
+					"name": "weekly",
+					"description": "Show DeepSeek Harness usage grouped by week"
+				},
+				{
+					"name": "monthly",
+					"description": "Show DeepSeek Harness usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show DeepSeek Harness usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["dsh", "daily"],
+			"description": "Show DeepSeek Harness usage grouped by date",
+			"usage": "ccusage dsh daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["dsh", "weekly"],
+			"description": "Show DeepSeek Harness usage grouped by week",
+			"usage": "ccusage dsh weekly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["dsh", "monthly"],
+			"description": "Show DeepSeek Harness usage grouped by month",
+			"usage": "ccusage dsh monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["dsh", "session"],
+			"description": "Show DeepSeek Harness usage grouped by session",
+			"usage": "ccusage dsh session <OPTIONS>",
 			"options": "agent_options"
 		}
 	]

@@ -3,8 +3,11 @@
 The plain argument types the runtime shares: `SharedArgs`, the per-command
 argument structs, the enums the reports switch on, and the few constants and
 helpers (`BUILT_IN_AGENT_NAMES`, `DEFAULT_SESSION_DURATION_HOURS`,
-`home::home_dir`) that `ccusage-config` and `ccusage-cli-parser` need without
-depending on `ccusage-core`.
+`home::home_dir`, `home::expand_home_path`, `home::claude_config_dirs`) that
+`ccusage-config` and `ccusage-cli-parser` need without depending on
+`ccusage-core`. `home::claude_config_dirs` is the one place the Claude Code
+directories are resolved, so the Claude adapter and user config discovery
+agree.
 
 This crate deliberately has no dependencies, no build script, and no embedded
 assets. `ccusage-core` and every adapter depend on it, so anything heavier
@@ -15,6 +18,9 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 
 - `BUILT_IN_AGENT_NAMES`
 - `DEFAULT_SESSION_DURATION_HOURS`
+- `home::ClaudeConfigDirs`
+- `home::claude_config_dirs`
+- `home::expand_home_path`
 - `home::home_dir`
 - `types::AgentCommandArgs`
 - `types::AgentReportKind`

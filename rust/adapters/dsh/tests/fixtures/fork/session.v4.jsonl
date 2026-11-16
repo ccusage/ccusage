@@ -1,0 +1,7 @@
+{"type":"session","version":4,"id":"dsh-fork","createdAt":1792483200000,"cwd":"/home/user/project","parentSession":"dsh-parent","isSeeded":true,"delegationDepth":0}
+{"type":"request/header","seq":1,"time":1791968400100,"data":{"header":{"config":{"provider":"deepseek-official","model":"deepseek-v4-pro"},"tools":[]},"reason":"initial"}}
+{"type":"assistant/message","seq":3,"time":1791968405000,"data":{"turn":1,"step":1,"message":{"role":"assistant","content":[]},"stream":[],"usage":{"inputTokens":1200,"outputTokens":300,"cacheReadTokens":8000,"totalTokens":9500}},"surfaceOp":"append"}
+{"type":"session/end-seed","seq":4,"time":1792483200000,"data":{"inherited":true}}
+{"type":"request/header","seq":5,"time":1792483200100,"data":{"header":{"config":{"provider":"anthropic","model":"claude-sonnet-4-5"},"tools":[]},"reason":"change"}}
+{"type":"assistant/message","seq":6,"time":1792483205000,"data":{"turn":1,"step":1,"message":{"role":"assistant","content":[]},"stream":[],"usage":{"inputTokens":3000,"outputTokens":500,"cacheWriteTokens":2000,"totalTokens":5500}},"surfaceOp":"append"}
+{"type":"assistant/message","seq":7,"time":1793102400000,"data":{"turn":2,"step":1,"message":{"role":"assistant","content":[]},"stream":[],"usage":{"inputTokens":200,"outputTokens":50,"cacheReadTokens":5000,"totalTokens":5250}},"surfaceOp":"append"}

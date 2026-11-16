@@ -36,7 +36,7 @@ Every section uses the options resolved for the invoked command. For example, `c
 
 ## How Unified Views Work
 
-ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode. The same daily, weekly, monthly, and session views can run in two modes:
+ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness. The same daily, weekly, monthly, and session views can run in two modes:
 
 | Mode    | Command example        | What it shows                           |
 | ------- | ---------------------- | --------------------------------------- |
@@ -50,27 +50,28 @@ When one tool runs another, usage can be logged by both. OpenCode's Claude Agent
 
 ## Supported Sources
 
-| Source         | Namespace     | Example focused view        |
-| -------------- | ------------- | --------------------------- |
-| Claude Code    | `claude`      | `ccusage claude daily`      |
-| Codex          | `codex`       | `ccusage codex daily`       |
-| OpenCode       | `opencode`    | `ccusage opencode weekly`   |
-| Amp            | `amp`         | `ccusage amp session`       |
-| Droid          | `droid`       | `ccusage droid daily`       |
-| Codebuff       | `codebuff`    | `ccusage codebuff daily`    |
-| Cline          | `cline`       | `ccusage cline daily`       |
-| Hermes Agent   | `hermes`      | `ccusage hermes daily`      |
-| pi-agent       | `pi`          | `ccusage pi monthly`        |
-| Goose          | `goose`       | `ccusage goose daily`       |
-| OpenClaw       | `openclaw`    | `ccusage openclaw daily`    |
-| Kilo           | `kilo`        | `ccusage kilo daily`        |
-| Kimi           | `kimi`        | `ccusage kimi daily`        |
-| Qwen           | `qwen`        | `ccusage qwen daily`        |
-| Copilot CLI    | `copilot`     | `ccusage copilot daily`     |
-| Gemini CLI     | `gemini`      | `ccusage gemini daily`      |
-| Antigravity    | `antigravity` | `ccusage antigravity daily` |
-| Grok Build CLI | `grok`        | `ccusage grok daily`        |
-| ZCode          | `zcode`       | `ccusage zcode daily`       |
+| Source           | Namespace     | Example focused view        |
+| ---------------- | ------------- | --------------------------- |
+| Claude Code      | `claude`      | `ccusage claude daily`      |
+| Codex            | `codex`       | `ccusage codex daily`       |
+| OpenCode         | `opencode`    | `ccusage opencode weekly`   |
+| Amp              | `amp`         | `ccusage amp session`       |
+| Droid            | `droid`       | `ccusage droid daily`       |
+| Codebuff         | `codebuff`    | `ccusage codebuff daily`    |
+| Cline            | `cline`       | `ccusage cline daily`       |
+| Hermes Agent     | `hermes`      | `ccusage hermes daily`      |
+| pi-agent         | `pi`          | `ccusage pi monthly`        |
+| Goose            | `goose`       | `ccusage goose daily`       |
+| OpenClaw         | `openclaw`    | `ccusage openclaw daily`    |
+| Kilo             | `kilo`        | `ccusage kilo daily`        |
+| Kimi             | `kimi`        | `ccusage kimi daily`        |
+| Qwen             | `qwen`        | `ccusage qwen daily`        |
+| Copilot CLI      | `copilot`     | `ccusage copilot daily`     |
+| Gemini CLI       | `gemini`      | `ccusage gemini daily`      |
+| Antigravity      | `antigravity` | `ccusage antigravity daily` |
+| Grok Build CLI   | `grok`        | `ccusage grok daily`        |
+| ZCode            | `zcode`       | `ccusage zcode daily`       |
+| DeepSeek Harness | `dsh`         | `ccusage dsh daily`         |
 
 ## When to Focus a Source
 
@@ -93,6 +94,7 @@ ccusage copilot daily --json
 ccusage gemini session --json
 ccusage grok daily --json
 ccusage zcode daily --json
+ccusage dsh session --json
 ```
 
 ## Next Steps

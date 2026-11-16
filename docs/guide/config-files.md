@@ -84,7 +84,9 @@ ccusage monthly
 ccusage searches for configuration files in these locations (in priority order):
 
 1. **Local project**: `.ccusage/ccusage.json` (higher priority)
-2. **User config**: `~/.claude/ccusage.json` or `~/.config/claude/ccusage.json` (lower priority)
+2. **User config**: `ccusage.json` in the Claude Code directories (lower priority), described below
+
+The user config lives in the same Claude Code directories ccusage reads usage logs from: `$XDG_CONFIG_HOME/claude/ccusage.json` (`~/.config/claude/ccusage.json` when `XDG_CONFIG_HOME` is unset or empty), then `~/.claude/ccusage.json`. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its comma-separated directories instead, in the order they are listed. An entry of `~` or starting with `~/` is resolved against your home directory (`~user` and `~\` are not expanded), and an entry pointing at a `projects/` directory is read as its parent.
 
 Configuration files are merged in priority order, with local project settings overriding user settings.
 If you pass a custom config file using `--config`, it will override both local and user configs.
@@ -180,7 +182,7 @@ Override shared defaults for specific unified reports and legacy Claude commands
 
 ### Source-Specific Configuration
 
-Use data source namespaces to set defaults and report overrides. Supported namespaces are `claude`, `codex`, `opencode`, `amp`, `droid`, `codebuff`, `cline`, `hermes`, `pi`, `goose`, `openclaw`, `kilo`, `kimi`, `qwen`, `copilot`, `gemini`, `antigravity`, `grok`, and `zcode`.
+Use data source namespaces to set defaults and report overrides. Supported namespaces are `claude`, `codex`, `opencode`, `amp`, `droid`, `codebuff`, `cline`, `hermes`, `pi`, `goose`, `openclaw`, `kilo`, `kimi`, `qwen`, `copilot`, `gemini`, `antigravity`, `grok`, `zcode`, and `dsh`.
 
 ```json
 {
@@ -272,6 +274,11 @@ Use data source namespaces to set defaults and report overrides. Supported names
 		"defaults": {
 			"offline": true
 		}
+	},
+	"dsh": {
+		"defaults": {
+			"offline": true
+		}
 	}
 }
 ```
@@ -293,6 +300,7 @@ ccusage copilot monthly
 ccusage gemini daily
 ccusage antigravity daily
 ccusage zcode daily
+ccusage dsh daily
 ```
 
 Source-specific settings are also applied when running unified reports such as `ccusage daily`. Each source uses the same merged options as its focused command: global `defaults`, `commands.<report>`, `commands."<source> <report>"`, `commands."<source>:<report>"`, `<source>.defaults`, and `<source>.commands.<report>`, with command-line flags taking precedence for every source. Set `offline` and `pricingOverrides` globally to share them across sources, or in a source section to specialize them. Set `claude.commands.daily.project` to filter Claude rows in unified daily reports and their sections. Unified weekly reports use the unified command's `startOfWeek` for every source and for `--last` calculation; source-level `startOfWeek` values are ignored. Each source groups dates with its resolved timezone before rows are combined, so sources with different timezones can place the same event on adjacent calendar dates.
