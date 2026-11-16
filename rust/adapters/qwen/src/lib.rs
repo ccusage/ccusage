@@ -127,6 +127,38 @@ mod tests {
     }
 
     #[test]
+    fn counts_a_session_in_both_live_and_archive_once() {
+        let transcript = [
+            r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:00:00.000Z","sessionId":"session-a","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50}}"#,
+            r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:01:00.000Z","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
+        ]
+        .join("\n");
+        let fixture = fs_fixture!({
+            "projects/myProject/chats/session-a.jsonl": transcript.as_str(),
+            "projects/myProject/chats/archive/session-a.jsonl": transcript.as_str(),
+        });
+
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.root());
+        let entries = load_entries(&shared).unwrap();
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (entry.session_id.as_ref(), entry.project_path.as_ref()))
+                .collect::<Vec<_>>(),
+            [
+                ("session-a", "myProject"),
+                ("myProject-session-a", "myProject")
+            ]
+        );
+    }
+
+    #[test]
     fn builds_qwen_daily_json_report_with_reasoning_in_total() {
         let fixture = fs_fixture!({
             "projects/myProject/chats/chat-a.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-23T14:24:56.857Z","sessionId":"session-json","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"thoughtsTokenCount":10,"cachedContentTokenCount":5}}"#,
