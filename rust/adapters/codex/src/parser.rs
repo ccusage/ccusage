@@ -26,12 +26,7 @@ use super::{
 };
 
 static TYPE_KEY_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""type""#));
-static USAGE_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""usage":"#));
-static INPUT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""input_tokens":"#));
-static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
+static KEY_END_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#"":"#));
 static ESCAPED_USAGE_MARKERS: LazyLock<LinePrefilter> = LazyLock::new(|| {
     LinePrefilter::any(&[
         br#""type""#,
@@ -916,13 +911,18 @@ fn verbatim_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     {
         return Some(CodexLineKind::Session);
     }
-    if USAGE_FIELD_FINDER.find(line).is_some()
-        || INPUT_TOKENS_FIELD_FINDER.find(line).is_some()
-        || PROMPT_TOKENS_FIELD_FINDER.find(line).is_some()
-    {
-        return Some(CodexLineKind::Headless);
-    }
-    None
+    has_headless_usage_field(line).then_some(CodexLineKind::Headless)
+}
+
+/// Whether `line` holds `"usage":`, `"input_tokens":` or `"prompt_tokens":`.
+/// One pass over the `":` every key ends with replaces a search per field.
+fn has_headless_usage_field(line: &[u8]) -> bool {
+    KEY_END_FINDER.find_iter(line).any(|end| {
+        let key = &line[..end];
+        key.ends_with(br#""usage"#)
+            || key.ends_with(br#""input_tokens"#)
+            || key.ends_with(br#""prompt_tokens"#)
+    })
 }
 
 fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool, bool, bool) {
@@ -2000,6 +2000,24 @@ mod tests {
             br#"{"type" : "compacted","payload":{"type":"summary"}}"#.as_slice(),
         ] {
             assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Session));
+        }
+    }
+
+    #[test]
+    fn recognizes_headless_usage_fields_only_as_whole_keys() {
+        for line in [
+            br#"{"type":"turn.completed","usage":{"input_tokens":1}}"#.as_slice(),
+            br#"{"stats":{"input_tokens":1}}"#.as_slice(),
+            br#"{"x":1,"prompt_tokens":2}"#.as_slice(),
+        ] {
+            assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Headless));
+        }
+        for line in [
+            br#"{"usage" :{"input_tokens" :1}}"#.as_slice(),
+            br#"{"text":"\"usage\":1","cached_input_tokens":1}"#.as_slice(),
+            br#"{"my_usage":1,"prompt_tokens_details":{}}"#.as_slice(),
+        ] {
+            assert_matches!(codex_line_usage_kind(line), None);
         }
     }
 
