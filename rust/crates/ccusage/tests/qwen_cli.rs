@@ -50,6 +50,45 @@ fn qwen_session_window_keeps_sessions_last_active_on_the_until_day() {
     );
 }
 
+/// The Qwen daemon moves archived sessions into `chats/archive/`; their
+/// usage must keep counting in reports.
+#[test]
+fn qwen_session_includes_archived_chat_files() {
+    let fixture = fs_fixture!({
+        "qwen/projects/myProject/chats/live.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T02:00:00.000Z","sessionId":"live","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50}}"#,
+        "qwen/projects/myProject/chats/archive/archived.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-24T03:00:00.000Z","sessionId":"archived","usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#,
+    });
+
+    let report: Value = serde_json::from_str(&run_cli(
+        &fixture,
+        &[
+            "qwen",
+            "session",
+            "--since",
+            "20260224",
+            "--until",
+            "20260224",
+            "--timezone",
+            "UTC",
+            "--mode",
+            "display",
+            "--offline",
+            "--no-color",
+            "--json",
+        ],
+    ))
+    .unwrap();
+
+    let sessions = report["sessions"].as_array().expect("sessions");
+    let ids: Vec<&str> = sessions
+        .iter()
+        .map(|session| session["sessionId"].as_str().expect("sessionId"))
+        .collect();
+    assert!(ids.contains(&"live"));
+    assert!(ids.contains(&"archived"));
+    assert_eq!(report["totals"]["totalTokens"], 165);
+}
+
 fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
         .env_clear()

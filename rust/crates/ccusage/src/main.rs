@@ -56,6 +56,7 @@ fn main() -> Result<()> {
         Command::Grok(args) => adapter::grok::run(args),
         Command::ZCode(args) => adapter::zcode::run(args),
         Command::Cline(args) => adapter::cline::run(args),
+        Command::Junie(args) => adapter::junie::run(args),
         Command::Dsh(args) => adapter::dsh::run(args),
     }
 }
@@ -83,7 +84,7 @@ mod tests {
 
     #[test]
     fn agent_commands_are_exposed_by_independent_crates() {
-        let runs: [fn(AgentCommandArgs) -> Result<()>; 19] = [
+        let runs: [fn(AgentCommandArgs) -> Result<()>; 20] = [
             ccusage_adapter_amp::run,
             ccusage_adapter_antigravity::run,
             ccusage_adapter_codebuff::run,
@@ -102,10 +103,11 @@ mod tests {
             ccusage_adapter_qwen::run,
             ccusage_adapter_zcode::run,
             ccusage_adapter_cline::run,
+            ccusage_adapter_junie::run,
             ccusage_adapter_dsh::run,
         ];
 
-        assert_eq!(runs.len(), 19);
+        assert_eq!(runs.len(), 20);
     }
 
     #[test]

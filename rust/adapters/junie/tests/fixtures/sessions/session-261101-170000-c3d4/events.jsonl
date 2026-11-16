@@ -1,0 +1,1 @@
+{"kind":"SessionA2uxEvent","event":{"state":"IN_PROGRESS","agentEvent":{"kind":"LlmResponseMetadataEvent","modelUsage":[{"model":"gpt-4.1-2025-04-14","cost":0.00116,"inputTokens":500,"outputTokens":20}]}}}

@@ -61,6 +61,7 @@ let
     "dsh"
     "gemini"
     "goose"
+    "junie"
     "grok"
     "hermes"
     "kilo"

@@ -291,25 +291,12 @@ fn discover_config_paths() -> Vec<PathBuf> {
         paths.push(cwd.join(".ccusage").join("ccusage.json"));
     }
     paths.extend(
-        claude_config_dirs()
+        ccusage_cli::home::claude_config_dirs()
+            .into_dirs()
             .into_iter()
             .map(|dir| dir.join("ccusage.json")),
     );
     paths
-}
-
-fn claude_config_dirs() -> Vec<PathBuf> {
-    if let Ok(paths) = env::var("CLAUDE_CONFIG_DIR") {
-        return paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect();
-    }
-    ccusage_cli::home::home_dir()
-        .map(|home| vec![home.join(".config").join("claude"), home.join(".claude")])
-        .unwrap_or_default()
 }
 
 fn scan_config_path(args: &[String]) -> Option<PathBuf> {
@@ -806,7 +793,7 @@ mod tests {
         BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
         WeekDay, WeeklyArgs,
     };
-    use ccusage_test_support::fs_fixture;
+    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
 
     #[test]
     fn applies_schema_backed_shared_options() {
@@ -1652,6 +1639,55 @@ mod tests {
 
         assert_eq!(shared.since.as_deref(), Some("20260101"));
         assert_eq!(shared.until.as_deref(), Some("20260131"));
+    }
+
+    fn user_config_timezone() -> Option<String> {
+        let config = ConfigContext::from_args(&["daily".to_string()]);
+        let mut shared = SharedArgs::default();
+        apply_config_to_shared(&mut shared, &config);
+        shared.timezone
+    }
+
+    #[test]
+    fn loads_the_user_config_from_xdg_config_home() {
+        let fixture = fs_fixture!({
+            "xdg/claude/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
+        });
+        let _env = EnvVarsGuard::set_many([
+            ("CLAUDE_CONFIG_DIR", None),
+            ("HOME", Some(fixture.path("home").into())),
+            ("XDG_CONFIG_HOME", Some(fixture.path("xdg").into())),
+        ]);
+
+        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+    }
+
+    #[test]
+    fn loads_the_user_config_from_a_tilde_claude_config_dir_entry() {
+        let fixture = fs_fixture!({
+            "home/claude-a/.keep": "",
+            "home/claude-b/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
+        });
+        let _env = EnvVarsGuard::set_many([
+            ("HOME", Some(fixture.path("home").into())),
+            ("CLAUDE_CONFIG_DIR", Some("~/claude-a, ~/claude-b".into())),
+        ]);
+
+        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
+    }
+
+    #[test]
+    fn loads_the_user_config_beside_a_projects_claude_config_dir_entry() {
+        let fixture = fs_fixture!({
+            "archive/ccusage.json": r#"{ "defaults": { "timezone": "Asia/Tokyo" } }"#,
+            "archive/projects/project/session.jsonl": "",
+        });
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.path("archive/projects").into()),
+        )]);
+
+        assert_eq!(user_config_timezone().as_deref(), Some("Asia/Tokyo"));
     }
 
     fn context(value: Value, raw: &str, agent: Option<&str>, report: &str) -> ConfigContext {

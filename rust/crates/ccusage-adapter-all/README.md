@@ -31,6 +31,7 @@ themselves independent of each other.
 - `ccusage-adapter-dsh`
 - `ccusage-adapter-gemini`
 - `ccusage-adapter-goose`
+- `ccusage-adapter-junie`
 - `ccusage-adapter-grok`
 - `ccusage-adapter-hermes`
 - `ccusage-adapter-kilo`

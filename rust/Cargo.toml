@@ -29,6 +29,7 @@ ccusage-adapter-droid = { path = "adapters/droid" }
 ccusage-adapter-dsh = { path = "adapters/dsh" }
 ccusage-adapter-gemini = { path = "adapters/gemini" }
 ccusage-adapter-goose = { path = "adapters/goose" }
+ccusage-adapter-junie = { path = "adapters/junie" }
 ccusage-adapter-grok = { path = "adapters/grok" }
 ccusage-adapter-hermes = { path = "adapters/hermes" }
 ccusage-adapter-kilo = { path = "adapters/kilo" }

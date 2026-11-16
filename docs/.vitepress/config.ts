@@ -75,6 +75,7 @@ export default defineConfig({
 						{ text: 'Droid', link: '/guide/droid/' },
 						{ text: 'Codebuff', link: '/guide/codebuff/' },
 						{ text: 'Cline', link: '/guide/cline/' },
+						{ text: 'Junie', link: '/guide/junie/' },
 						{ text: 'Hermes Agent', link: '/guide/hermes/' },
 						{ text: 'pi-agent', link: '/guide/pi/' },
 						{ text: 'Goose', link: '/guide/goose/' },

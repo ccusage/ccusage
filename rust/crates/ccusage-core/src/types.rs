@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::TimestampMs;
 
+mod iterations;
+
+use iterations::{Lenient, MessageIterationsCacheCreation};
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageEntry {
@@ -26,16 +30,45 @@ pub struct UsageMessage {
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(from = "TokenUsageRawJson")]
 pub struct TokenUsageRaw {
     pub input_tokens: u64,
     pub output_tokens: u64,
-    #[serde(default)]
     pub cache_creation_input_tokens: u64,
-    #[serde(default)]
     pub cache_read_input_tokens: u64,
     pub speed: Option<Speed>,
-    #[serde(default)]
     pub cache_creation: Option<CacheCreationRaw>,
+}
+
+#[derive(Deserialize)]
+struct TokenUsageRawJson {
+    input_tokens: u64,
+    output_tokens: u64,
+    #[serde(default)]
+    cache_creation_input_tokens: u64,
+    #[serde(default)]
+    cache_read_input_tokens: u64,
+    speed: Option<Speed>,
+    #[serde(default)]
+    cache_creation: Option<CacheCreationRaw>,
+    #[serde(default)]
+    iterations: Lenient<MessageIterationsCacheCreation>,
+}
+
+impl From<TokenUsageRawJson> for TokenUsageRaw {
+    fn from(json: TokenUsageRawJson) -> Self {
+        Self {
+            input_tokens: json.input_tokens,
+            output_tokens: json.output_tokens,
+            cache_creation_input_tokens: json.cache_creation_input_tokens,
+            cache_read_input_tokens: json.cache_read_input_tokens,
+            speed: json.speed,
+            // Claude Code advisor turns report one `usage` object whose
+            // top-level `cache_creation` split covers only the first `message`
+            // iteration, while `cache_creation_input_tokens` sums them all.
+            cache_creation: json.iterations.0.0.or(json.cache_creation),
+        }
+    }
 }
 
 impl TokenUsageRaw {
@@ -273,5 +306,116 @@ mod tests {
         assert_eq!(counts.cache_creation_tokens, u64::MAX);
         assert_eq!(counts.cache_read_tokens, u64::MAX);
         assert_eq!(counts.total(), u64::MAX);
+    }
+
+    #[test]
+    fn sums_message_iteration_breakdowns_instead_of_the_truncated_top_level() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 4,
+                "output_tokens": 244,
+                "cache_creation_input_tokens": 12323,
+                "cache_read_input_tokens": 140030,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 11142
+                },
+                "iterations": [
+                    {"type": "message", "input_tokens": 2, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 11142}},
+                    {"type": "advisor_message", "model": "claude-fable-5-2", "input_tokens": 77025, "cache_creation": {"ephemeral_5m_input_tokens": 999, "ephemeral_1h_input_tokens": 999}},
+                    {"type": "message", "input_tokens": 2, "cache_creation": {"ephemeral_5m_input_tokens": 1181, "ephemeral_1h_input_tokens": 0}}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(usage.cache_creation_token_count(), 12323);
+    }
+
+    #[test]
+    fn keeps_the_top_level_breakdown_without_message_iteration_breakdowns() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 4,
+                "output_tokens": 244,
+                "cache_creation_input_tokens": 12323,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 0,
+                    "ephemeral_1h_input_tokens": 11142
+                },
+                "iterations": [
+                    {"type": "advisor_message", "model": "m", "input_tokens": 1}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(usage.cache_creation_token_count(), 11142);
+    }
+
+    #[test]
+    fn keeps_the_top_level_breakdown_when_a_message_iteration_lacks_its_own() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 4,
+                "output_tokens": 244,
+                "cache_creation_input_tokens": 12323,
+                "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 11142},
+                "iterations": [
+                    {"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 11142}},
+                    {"type": "message", "cache_creation_input_tokens": 1181}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(usage.cache_creation_token_count(), 11142);
+    }
+
+    #[test]
+    fn malformed_iterations_keep_the_usage_and_its_top_level_breakdown() {
+        let iterations = [
+            r#""n/a""#,
+            "null",
+            "{}",
+            r#"[1, "x", null, [], {"type": 7}]"#,
+            r#"[{"type": "message", "cache_creation": "n/a"}]"#,
+            r#"[{"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": -1}}]"#,
+            r#"[{"type": "message", "cache_creation": {"ephemeral_1h_input_tokens": "10"}}]"#,
+            r#"[{"type": "message", "cache_creation": null}]"#,
+        ];
+        for iterations in iterations {
+            let line = format!(
+                r#"{{"input_tokens":1,"output_tokens":2,"cache_creation":{{"ephemeral_5m_input_tokens":3,"ephemeral_1h_input_tokens":4}},"iterations":{iterations}}}"#
+            );
+            let usage = serde_json::from_str::<TokenUsageRaw>(&line)
+                .unwrap_or_else(|error| panic!("{iterations}: {error}"));
+
+            assert_eq!(usage.cache_creation_token_count(), 7, "{iterations}");
+            assert_eq!(
+                usage.cache_creation_1h_token_count(),
+                Some(4),
+                "{iterations}"
+            );
+        }
+    }
+
+    #[test]
+    fn takes_the_split_from_message_iterations_without_a_top_level_one() {
+        let usage = serde_json::from_str::<TokenUsageRaw>(
+            r#"{
+                "input_tokens": 1,
+                "output_tokens": 2,
+                "cache_creation_input_tokens": 30,
+                "iterations": [
+                    {"type": "message", "cache_creation": {"ephemeral_5m_input_tokens": 10}},
+                    {"type": "message", "cache_creation": {"ephemeral_1h_input_tokens": 20, "ephemeral_2h_input_tokens": 5}}
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(usage.cache_creation_token_count(), 30);
+        assert_eq!(usage.cache_creation_1h_token_count(), Some(20));
     }
 }

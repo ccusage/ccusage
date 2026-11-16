@@ -1,0 +1,1 @@
+{"kind":"SessionA2uxEvent","event":{"state":"IN_PROGRESS","agentEvent":{"kind":"LlmResponseMetadataEvent","agent":{"kind":"MainAgent","id":"main","name":"main","type":"LINEAR"},"modelUsage":[{"model":"vendor/custom-model","inputTokens":60,"cacheInputTokens":0,"cacheCreateTokens":0,"outputTokens":7}]}},"taskId":"task-261102-091530-e5f6","timestampMs":1793610900000}
