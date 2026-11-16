@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     sync::{Arc, Mutex, OnceLock, RwLock},
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -1026,8 +1027,35 @@ impl SpeedMultiplierOverrides {
     }
 }
 
+static EMBEDDED_PREWARM: Mutex<Option<JoinHandle<PricingMap>>> = Mutex::new(None);
+
+/// Starts building the embedded pricing table on a background thread.
+///
+/// The next [`PricingMap::load_embedded`] call takes that table instead of
+/// building its own, so a report can discover its log files while the
+/// snapshots inflate and parse. The embedded snapshots must already be
+/// installed.
+pub fn prewarm_embedded() {
+    let Ok(handle) = thread::Builder::new().spawn(PricingMap::build_embedded) else {
+        return;
+    };
+    if let Ok(mut prewarm) = EMBEDDED_PREWARM.lock() {
+        *prewarm = Some(handle);
+    }
+}
+
 impl PricingMap {
     pub fn load_embedded() -> Self {
+        let prewarm = EMBEDDED_PREWARM
+            .lock()
+            .ok()
+            .and_then(|mut prewarm| prewarm.take());
+        prewarm
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_else(Self::build_embedded)
+    }
+
+    fn build_embedded() -> Self {
         let mut map = Self::default();
         let fast_multiplier_overrides =
             SpeedMultiplierOverrides::load(FAST_MULTIPLIER_OVERRIDES_JSON);
