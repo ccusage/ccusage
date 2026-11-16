@@ -25,27 +25,11 @@ const REQUIRED_SESSION_COLUMNS: &[&str] = &["id", "directory"];
 
 #[derive(Debug, Clone, Copy)]
 struct Schema {
-    version: SchemaVersion,
     has_provider_id: bool,
     has_cache_creation: bool,
     has_cache_read: bool,
     has_computed_total: bool,
     has_session_version: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum SchemaVersion {
-    Legacy,
-    SessionVersioned,
-}
-
-impl SchemaVersion {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Legacy => "legacy",
-            Self::SessionVersioned => "session-versioned",
-        }
-    }
 }
 
 #[cfg(test)]
@@ -99,34 +83,18 @@ fn load_entries_from_database(
         sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
             .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
-    if let Err(error) = connection.execute("PRAGMA busy_timeout = 5000") {
-        debug_log(
-            shared,
-            format!(
-                "Failed to configure ZCode database locking: {}",
-                db_path.display()
-            ),
-        );
-        return Err(UnitError::sqlite(SqliteStage::Setup, error.code));
-    }
-    if let Err(error) = connection.execute("PRAGMA query_only = ON") {
-        debug_log(
-            shared,
-            format!(
-                "Failed to configure ZCode read-only mode: {}",
-                db_path.display()
-            ),
-        );
-        return Err(UnitError::sqlite(SqliteStage::Setup, error.code));
+    for pragma in ["PRAGMA busy_timeout = 5000", "PRAGMA query_only = ON"] {
+        connection
+            .execute(pragma)
+            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     }
 
-    let schema = read_schema(&connection, db_path, shared)?;
+    let schema = read_schema(&connection)?;
     debug_log(
         shared,
         format!(
-            "Reading ZCode SQLite schema at {} (layout={}, cache_creation={}, cache_read={}, computed_total={}, provider_id={}, session_version={})",
+            "Reading ZCode SQLite schema at {} (cache_creation={}, cache_read={}, computed_total={}, provider_id={}, session_version={})",
             db_path.display(),
-            schema.version.label(),
             schema.has_cache_creation,
             schema.has_cache_read,
             schema.has_computed_total,
@@ -163,13 +131,9 @@ fn load_entries_from_database(
     let query = format!(
         "SELECT m.id, m.session_id, m.started_at, m.model_id, m.input_tokens, m.output_tokens, {cache_creation}, {cache_read}, {computed_total}, {provider_id}, s.directory, {version} FROM model_usage m LEFT JOIN session s ON s.id = m.session_id WHERE m.status = 'completed'"
     );
-    let mut statement = connection.prepare(&query).map_err(|error| {
-        debug_log(
-            shared,
-            format!("Failed to query ZCode database: {}", db_path.display()),
-        );
-        UnitError::sqlite(SqliteStage::Setup, error.code)
-    })?;
+    let mut statement = connection
+        .prepare(&query)
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
     let mut entries = Vec::new();
     let mut row_number = 0_u32;
@@ -197,10 +161,6 @@ fn load_entries_from_database(
             }
             Ok(sqlite::State::Done) => break,
             Err(error) => {
-                debug_log(
-                    shared,
-                    format!("Failed to read ZCode database: {}", db_path.display()),
-                );
                 UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
                 break;
             }
@@ -209,11 +169,7 @@ fn load_entries_from_database(
     Ok(entries)
 }
 
-fn read_schema(
-    connection: &sqlite::Connection,
-    db_path: &Path,
-    shared: &SharedArgs,
-) -> std::result::Result<Schema, UnitError> {
+fn read_schema(connection: &sqlite::Connection) -> std::result::Result<Schema, UnitError> {
     let model_columns = table_columns(connection, "model_usage")?;
     let session_columns = table_columns(connection, "session")?;
     let missing_model = missing_columns(&model_columns, REQUIRED_MODEL_COLUMNS);
@@ -226,23 +182,16 @@ fn read_schema(
         if !missing_session.is_empty() {
             details.push(format!("session: {}", missing_session.join(", ")));
         }
-        debug_log(
-            shared,
+        return Err(UnitError::new(
+            SkipKind::Invariant,
             format!(
-                "Unsupported ZCode SQLite schema at {}: missing {}",
-                db_path.display(),
+                "database schema is not supported: missing {}",
                 details.join("; ")
             ),
-        );
-        return Err(UnitError::unsupported_schema());
+        ));
     }
 
     Ok(Schema {
-        version: if session_columns.contains("version") {
-            SchemaVersion::SessionVersioned
-        } else {
-            SchemaVersion::Legacy
-        },
         has_provider_id: model_columns.contains("provider_id"),
         has_cache_creation: model_columns.contains("cache_creation_input_tokens"),
         has_cache_read: model_columns.contains("cache_read_input_tokens"),
@@ -255,11 +204,11 @@ fn table_columns(
     connection: &sqlite::Connection,
     table: &str,
 ) -> std::result::Result<HashSet<String>, UnitError> {
-    // LIMIT 0 obtains column metadata without materializing any row values,
-    // including prompt or content fields that may be present in future schemas.
-    let query = format!("SELECT * FROM \"{table}\" LIMIT 0");
+    // NOTE(2026-11-17, #977): the bundled SQLite is built with
+    // SQLITE_OMIT_SCHEMA_PRAGMAS (.cargo/config.toml), so `PRAGMA table_info`
+    // silently returns no rows; column names come from a statement instead.
     let statement = connection
-        .prepare(query)
+        .prepare(format!("SELECT * FROM \"{table}\" LIMIT 0"))
         .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     Ok(statement.column_names().iter().cloned().collect())
 }
@@ -511,6 +460,43 @@ mod tests {
         assert!(loaded.iter().all(Option::is_none));
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn names_the_missing_columns_of_an_incomplete_schema() {
+        let fixture = fs_fixture!({});
+        let path = fixture.path("incomplete.db");
+        let db = sqlite::open(&path).unwrap();
+        db.execute("CREATE TABLE model_usage (id TEXT, session_id TEXT)")
+            .unwrap();
+        db.execute("CREATE TABLE session (id TEXT)").unwrap();
+        drop(db);
+
+        let diagnostics = Diagnostics::new("zcode");
+        load_entries_from_database(
+            &path,
+            &jiff::tz::TimeZone::system(),
+            &SharedArgs::default(),
+            &PricingMap::load_embedded(),
+            &diagnostics,
+        )
+        .unwrap_err()
+        .record(&path, &diagnostics);
+
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(
+            warnings.contains(
+                "database schema is not supported: missing model_usage: started_at, model_id, \
+                 status, input_tokens, output_tokens; session: directory"
+            ),
+            "{warnings}"
+        );
     }
 
     #[test]

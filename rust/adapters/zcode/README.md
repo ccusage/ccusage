@@ -31,10 +31,10 @@ The supported schema requires `model_usage.id`, `session_id`, `started_at`,
 `model_id`, `status`, `input_tokens`, and `output_tokens`, plus
 `session.id` and `session.directory`. `cache_creation_input_tokens`,
 `cache_read_input_tokens`, `computed_total_tokens`, `provider_id`, and
-`session.version` are read when present. The presence of `session.version` is
-reported as the session-versioned layout in debug diagnostics; compatible
-future versions are accepted when the required columns remain available, while
-unrelated or incomplete schemas are skipped.
+`session.version` are read when present, and `--debug` lists which optional
+columns were found. Compatible future versions are accepted when the required
+columns remain available, while unrelated or incomplete schemas are skipped
+with the missing columns named.
 
 Connections use SQLite read-only mode, a busy timeout, and connection-local
 query-only mode. The adapter does not change journal mode, so an existing
