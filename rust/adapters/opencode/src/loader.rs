@@ -20,7 +20,7 @@ use super::{
 use crate::{
     LoadedEntry, PricingMap, Result,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    collect_files_with_extension, date_range_bounds_ms, debug_log, parse_tz, read_files_parallel,
+    collect_files_with_extension, date_range_bounds_ms, debug_log, read_files_parallel, resolve_tz,
 };
 
 pub(crate) fn load_entries(
@@ -152,8 +152,8 @@ fn load_entries_from_directory_parts(
             shared.pricing_overrides.iter(),
         ))
     };
-    let tz = parse_tz(shared.timezone.as_deref());
-    let window = DateWindow::from_shared(shared, tz.as_ref());
+    let tz = resolve_tz(shared.timezone.as_deref());
+    let window = DateWindow::from_shared(shared, &tz);
     let mut message_entries = Vec::new();
     let mut compaction_entries = Vec::new();
     let mut seen = HashSet::new();
@@ -162,7 +162,7 @@ fn load_entries_from_directory_parts(
         let database_entries = load_entries_from_database(
             &DatabaseLoadContext {
                 db_path: &db_path,
-                tz: tz.as_ref(),
+                tz: &tz,
                 mode: shared.mode,
                 pricing: pricing.as_ref(),
                 shared,
@@ -214,7 +214,7 @@ fn load_entries_from_directory_parts(
     let loaded = read_files_parallel(&files, shared.single_thread, |file| {
         read_message_file(
             file,
-            tz.as_ref(),
+            &tz,
             shared.mode,
             pricing.as_ref(),
             window,
@@ -303,7 +303,7 @@ fn is_channel_db_name(name: &str) -> bool {
 }
 
 struct DatabaseLoadContext<'a> {
-    tz: Option<&'a JiffTimeZone>,
+    tz: &'a JiffTimeZone,
     mode: CostMode,
     pricing: Option<&'a PricingMap>,
     window: DateWindow,
@@ -685,7 +685,7 @@ fn load_entries_from_database(
 
 fn read_message_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     window: DateWindow,
@@ -1290,7 +1290,7 @@ impl DateWindow {
         end: None,
     };
 
-    fn from_shared(shared: &SharedArgs, tz: Option<&JiffTimeZone>) -> Self {
+    fn from_shared(shared: &SharedArgs, tz: &JiffTimeZone) -> Self {
         let (start, end) =
             date_range_bounds_ms(shared.since.as_deref(), shared.until.as_deref(), tz);
         Self { start, end }
@@ -1530,7 +1530,7 @@ mod tests {
         connection.execute("DROP TABLE session_v2").unwrap();
         let shared = SharedArgs::default();
         let context = DatabaseLoadContext {
-            tz: None,
+            tz: &jiff::tz::TimeZone::system(),
             mode: CostMode::Display,
             pricing: None,
             window: DateWindow::UNBOUNDED,

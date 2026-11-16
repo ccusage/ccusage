@@ -350,7 +350,7 @@ pub(super) fn kimi_entry_key(entry: &KimiUsageEntry) -> String {
 
 pub(super) fn kimi_entry_to_loaded(
     entry: KimiUsageEntry,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> LoadedEntry {
@@ -540,7 +540,12 @@ mod tests {
 
         let before_cost = calculate_kimi_cost(&before_cutoff, CostMode::Calculate, &pricing, usage);
         let at_cost = calculate_kimi_cost(&at_cutoff, CostMode::Calculate, &pricing, usage);
-        let loaded = kimi_entry_to_loaded(at_cutoff, None, CostMode::Calculate, &pricing);
+        let loaded = kimi_entry_to_loaded(
+            at_cutoff,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Calculate,
+            &pricing,
+        );
 
         assert!((before_cost - 0.000226).abs() < f64::EPSILON);
         assert!((at_cost - 0.00032035).abs() < f64::EPSILON);

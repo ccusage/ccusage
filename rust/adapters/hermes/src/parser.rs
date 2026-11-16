@@ -166,7 +166,7 @@ fn infer_provider_from_model(model: &str) -> &'static str {
 
 pub(super) fn to_loaded_entry(
     entry: HermesEntry,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> LoadedEntry {

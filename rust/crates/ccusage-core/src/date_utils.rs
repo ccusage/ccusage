@@ -212,7 +212,7 @@ pub fn date_within_range(date: &str, since: Option<&str>, until: Option<&str>) -
 pub fn date_range_bounds_ms(
     since: Option<&str>,
     until: Option<&str>,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
 ) -> (Option<i64>, Option<i64>) {
     let start = since
         .and_then(parse_compact_date)
@@ -229,15 +229,20 @@ pub fn date_range_bounds_ms(
 /// Days whose midnight does not exist because of a spring-forward transition
 /// resolve to the first instant that does, so a bound never lands in the
 /// neighboring day.
-fn start_of_day_ms(date: IsoDate, timezone: Option<&JiffTimeZone>) -> Option<i64> {
+fn start_of_day_ms(date: IsoDate, timezone: &JiffTimeZone) -> Option<i64> {
     let civil = JiffDate::new(
         i16::try_from(date.year).ok()?,
         i8::try_from(date.month).ok()?,
         i8::try_from(date.day).ok()?,
     )
     .ok()?;
-    let timezone = timezone.cloned().unwrap_or_else(JiffTimeZone::system);
-    Some(civil.to_zoned(timezone).ok()?.timestamp().as_millisecond())
+    Some(
+        civil
+            .to_zoned(timezone.clone())
+            .ok()?
+            .timestamp()
+            .as_millisecond(),
+    )
 }
 
 fn parse_digits(bytes: &[u8]) -> Option<u32> {
@@ -290,22 +295,21 @@ fn civil_from_days(days: i64) -> (i32, u32, u32) {
     (year as i32, month as u32, day as u32)
 }
 
-pub fn parse_tz(timezone: Option<&str>) -> Option<JiffTimeZone> {
-    match timezone? {
-        "local" => None,
-        "UTC" => Some(JiffTimeZone::UTC),
-        value => JiffTimeZone::get(value).ok(),
+/// Resolves a `--timezone` value once per report. `local`, an absent value and
+/// a name the zone database does not know all mean the system zone.
+pub fn resolve_tz(timezone: Option<&str>) -> JiffTimeZone {
+    match timezone {
+        Some("UTC") => JiffTimeZone::UTC,
+        Some("local") | None => JiffTimeZone::system(),
+        Some(value) => JiffTimeZone::get(value).unwrap_or_else(|_| JiffTimeZone::system()),
     }
 }
 
-pub fn format_date_tz(timestamp: TimestampMs, timezone: Option<&JiffTimeZone>) -> String {
+pub fn format_date_tz(timestamp: TimestampMs, timezone: &JiffTimeZone) -> String {
     let Ok(timestamp) = JiffTimestamp::from_millisecond(timestamp.as_millis()) else {
         return format_utc_date(timestamp);
     };
-    let datetime = match timezone {
-        Some(timezone) => timezone.to_datetime(timestamp),
-        None => JiffTimeZone::system().to_datetime(timestamp),
-    };
+    let datetime = timezone.to_datetime(timestamp);
     format_date_parts(
         i32::from(datetime.year()),
         u32::from(datetime.month() as u8),
@@ -343,7 +347,7 @@ pub fn format_rfc3339_millis(timestamp: TimestampMs) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date, parse_tz,
+        MILLIS_PER_HOUR, date_range_bounds_ms, date_within_range, parse_compact_date, resolve_tz,
     };
 
     // 2026-01-02 00:00:00 UTC
@@ -351,7 +355,7 @@ mod tests {
 
     #[test]
     fn formats_local_dates_across_dst_boundaries() {
-        let timezone = parse_tz(Some("Europe/London")).unwrap();
+        let timezone = resolve_tz(Some("Europe/London"));
         for (timestamp, expected) in [
             ("2026-03-28T23:30:00Z", "2026-03-28"),
             ("2026-03-29T23:30:00Z", "2026-03-30"),
@@ -359,14 +363,21 @@ mod tests {
             ("2026-10-25T23:30:00Z", "2026-10-25"),
         ] {
             let timestamp = super::parse_ts_timestamp(timestamp).unwrap();
-            assert_eq!(super::format_date_tz(timestamp, Some(&timezone)), expected);
+            assert_eq!(super::format_date_tz(timestamp, &timezone), expected);
         }
     }
 
     #[test]
     fn handles_documented_timezone_aliases_without_a_zoneinfo_lookup() {
-        assert!(parse_tz(Some("UTC")).is_some());
-        assert!(parse_tz(Some("local")).is_none());
+        assert_eq!(resolve_tz(Some("UTC")).iana_name(), Some("UTC"));
+        let system = jiff::tz::TimeZone::system();
+        for timezone in [Some("local"), None, Some("Not/AZone")] {
+            assert_eq!(
+                resolve_tz(timezone).iana_name(),
+                system.iana_name(),
+                "{timezone:?}"
+            );
+        }
     }
 
     #[test]
@@ -390,8 +401,8 @@ mod tests {
 
     #[test]
     fn resolves_bounds_to_local_midnight() {
-        let utc = parse_tz(Some("UTC"));
-        let (start, end) = date_range_bounds_ms(Some("20260102"), Some("20260102"), utc.as_ref());
+        let utc = resolve_tz(Some("UTC"));
+        let (start, end) = date_range_bounds_ms(Some("20260102"), Some("20260102"), &utc);
         assert_eq!(start, Some(JAN_2_UTC));
         assert_eq!(
             end,
@@ -400,16 +411,15 @@ mod tests {
         );
 
         // UTC+14 reaches a given local date fourteen hours before UTC does.
-        let kiritimati = parse_tz(Some("Pacific/Kiritimati"));
-        let (start, _) = date_range_bounds_ms(Some("20260102"), None, kiritimati.as_ref());
+        let kiritimati = resolve_tz(Some("Pacific/Kiritimati"));
+        let (start, _) = date_range_bounds_ms(Some("20260102"), None, &kiritimati);
         assert_eq!(start, Some(JAN_2_UTC - 14 * MILLIS_PER_HOUR));
     }
 
     #[test]
     fn spans_twenty_three_hours_across_a_spring_forward_day() {
-        let new_york = parse_tz(Some("America/New_York"));
-        let (start, end) =
-            date_range_bounds_ms(Some("20260308"), Some("20260308"), new_york.as_ref());
+        let new_york = resolve_tz(Some("America/New_York"));
+        let (start, end) = date_range_bounds_ms(Some("20260308"), Some("20260308"), &new_york);
         assert_eq!(
             end.unwrap() - start.unwrap(),
             23 * MILLIS_PER_HOUR,
@@ -419,12 +429,12 @@ mod tests {
 
     #[test]
     fn leaves_bounds_open_when_they_have_no_instant() {
-        let utc = parse_tz(Some("UTC"));
+        let utc = resolve_tz(Some("UTC"));
         assert_eq!(
-            date_range_bounds_ms(Some("202601"), Some("abあcde"), utc.as_ref()),
+            date_range_bounds_ms(Some("202601"), Some("abあcde"), &utc),
             (None, None)
         );
-        assert_eq!(date_range_bounds_ms(None, None, utc.as_ref()), (None, None));
+        assert_eq!(date_range_bounds_ms(None, None, &utc), (None, None));
     }
 
     #[test]

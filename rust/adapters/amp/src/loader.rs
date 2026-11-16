@@ -19,7 +19,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
             |file| {
                 parser::read_thread(
                     file,
-                    Some(cx.window.timezone()),
+                    cx.window.timezone(),
                     cx.shared.mode,
                     cx.pricing,
                     cx.diagnostics,

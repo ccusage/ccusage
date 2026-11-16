@@ -60,7 +60,7 @@ pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<Loa
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pricing.expect("ZCode uses pipeline pricing");
-    let tz = Some(cx.window.timezone());
+    let tz = cx.window.timezone();
     let db_paths = db_paths(shared)?;
     let loaded = read_units(&db_paths, shared.single_thread, cx.diagnostics, |db_path| {
         load_entries_from_database(db_path, tz, shared, pricing, cx.diagnostics)
@@ -85,7 +85,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
 
 fn load_entries_from_database(
     db_path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     shared: &SharedArgs,
     pricing: &PricingMap,
     diagnostics: &Diagnostics,
@@ -531,7 +531,15 @@ mod tests {
             &[fixture.path("broken.db"), fixture.path("unsupported.db")],
             true,
             &diagnostics,
-            |path| load_entries_from_database(path, None, &shared, &pricing, &diagnostics),
+            |path| {
+                load_entries_from_database(
+                    path,
+                    &jiff::tz::TimeZone::system(),
+                    &shared,
+                    &pricing,
+                    &diagnostics,
+                )
+            },
         );
 
         assert!(loaded.iter().all(Option::is_none));
@@ -553,7 +561,7 @@ mod tests {
         let diagnostics = Diagnostics::new("zcode");
         let entries = load_entries_from_database(
             &path,
-            None,
+            &jiff::tz::TimeZone::system(),
             &SharedArgs::default(),
             &PricingMap::load_embedded(),
             &diagnostics,

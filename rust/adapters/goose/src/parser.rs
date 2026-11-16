@@ -19,7 +19,7 @@ struct GooseModelConfig {
 
 pub(super) fn row_to_entry(
     statement: &sqlite::Statement<'_>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     pricing: &PricingMap,
 ) -> Option<LoadedEntry> {
     let id = statement.read::<String, _>(0).ok()?;

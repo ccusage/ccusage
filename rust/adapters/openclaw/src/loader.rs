@@ -22,7 +22,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     for root in paths(cx.options.open_claw_path) {
         sqlite_entries.extend(collect_sqlite_entries(
             &root,
-            Some(cx.window.timezone()),
+            cx.window.timezone(),
             cx.shared.mode,
             pricing,
             cx.diagnostics,
@@ -34,7 +34,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
             parse_session_file(
                 file,
-                Some(cx.window.timezone()),
+                cx.window.timezone(),
                 cx.shared.mode,
                 pricing,
                 cx.diagnostics,

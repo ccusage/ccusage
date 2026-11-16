@@ -15,7 +15,7 @@ use crate::{
     CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, Result,
     cli::{AgentReportKind, SharedArgs, WeekDay},
     fast::{FxHashMap, FxHashSet},
-    format_date_tz, merge_codex_service_tiers, parse_ts_timestamp, parse_tz, wants_json,
+    format_date_tz, merge_codex_service_tiers, parse_ts_timestamp, resolve_tz, wants_json,
     week_start,
 };
 
@@ -272,10 +272,9 @@ fn aggregate_files(
     seen: &CodexDedupeShards,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let mut groups = BTreeMap::new();
-    let timezone =
-        parse_tz(run.shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
+    let timezone = resolve_tz(run.shared.timezone.as_deref());
     for (index, _) in run.files.iter().enumerate() {
-        aggregate_file(run, index, timezone.as_ref(), seen, &mut groups)?;
+        aggregate_file(run, index, &timezone, seen, &mut groups)?;
     }
     Ok(groups)
 }
@@ -298,10 +297,9 @@ fn aggregate_files_parallel(
         for chunk in chunks {
             handles.push(scope.spawn(move || {
                 let mut groups = BTreeMap::new();
-                let timezone = parse_tz(run.shared.timezone.as_deref())
-                    .or_else(|| Some(JiffTimeZone::system()));
+                let timezone = resolve_tz(run.shared.timezone.as_deref());
                 for index in chunk {
-                    aggregate_file(run, index, timezone.as_ref(), seen, &mut groups)?;
+                    aggregate_file(run, index, &timezone, seen, &mut groups)?;
                 }
                 Result::<BTreeMap<String, CodexGroup>>::Ok(groups)
             }));
@@ -323,7 +321,7 @@ fn aggregate_files_parallel(
 fn aggregate_file(
     run: &CodexAggregateRun<'_>,
     file_index: usize,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
@@ -365,10 +363,9 @@ fn aggregate_files_local_with_seen(run: &CodexAggregateRun<'_>) -> Result<CodexA
         groups: BTreeMap::new(),
         seen: FxHashMap::default(),
     };
-    let timezone =
-        parse_tz(run.shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
+    let timezone = resolve_tz(run.shared.timezone.as_deref());
     for (index, _) in run.files.iter().enumerate() {
-        aggregate_file_local(run, index, timezone.as_ref(), &mut aggregation)?;
+        aggregate_file_local(run, index, &timezone, &mut aggregation)?;
     }
     Ok(aggregation)
 }
@@ -376,7 +373,7 @@ fn aggregate_files_local_with_seen(run: &CodexAggregateRun<'_>) -> Result<CodexA
 fn aggregate_file_local(
     run: &CodexAggregateRun<'_>,
     file_index: usize,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
     aggregation: &mut CodexAggregation,
 ) -> Result<()> {
     let file = &run.files[file_index];
@@ -408,7 +405,7 @@ fn aggregate_file_local(
 fn add_event_to_groups(
     event: &CodexTokenUsageEvent,
     kind: AgentReportKind,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
     shared: &SharedArgs,
     seen: &CodexDedupeShards,
     groups: &mut BTreeMap<String, CodexGroup>,
@@ -437,7 +434,7 @@ fn add_event_to_groups(
 fn add_event_to_groups_local(
     event: &CodexTokenUsageEvent,
     kind: AgentReportKind,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
     shared: &SharedArgs,
     aggregation: &mut CodexAggregation,
     provenance: &mut CodexEventProvenance,
@@ -476,7 +473,7 @@ fn add_deduped_event_to_groups(
     model: &str,
     timestamp: crate::TimestampMs,
     kind: AgentReportKind,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
     shared: &SharedArgs,
     groups: &mut BTreeMap<String, CodexGroup>,
 ) -> Result<()> {
@@ -498,7 +495,7 @@ fn codex_period_for(
     timestamp: crate::TimestampMs,
     session_id: Option<&str>,
     kind: AgentReportKind,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
     shared: &SharedArgs,
 ) -> Option<String> {
     let date = format_date_tz(timestamp, timezone);
@@ -692,7 +689,7 @@ fn apply_recorded_usage_entries<'a>(
     shared: &SharedArgs,
     kind: AgentReportKind,
 ) {
-    let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
+    let timezone = resolve_tz(shared.timezone.as_deref());
     for (key, record) in records {
         if let Some(compaction) = &record.compaction {
             // Workers may encounter a later file first. Compaction usage is
@@ -703,7 +700,7 @@ fn apply_recorded_usage_entries<'a>(
                 compaction.timestamp,
                 Some(&event.session_id),
                 kind,
-                timezone.as_ref(),
+                &timezone,
                 shared,
             ) {
                 accumulate_codex_event_into_group(
@@ -726,7 +723,7 @@ fn apply_recorded_usage_entries<'a>(
             key.timestamp,
             record.session_id.as_deref(),
             kind,
-            timezone.as_ref(),
+            &timezone,
             shared,
         ) else {
             continue;
@@ -970,7 +967,7 @@ pub fn aggregate_events(
             *tier = merge_codex_service_tiers(*tier, event.service_tier);
         }
     }
-    let timezone = parse_tz(timezone).or_else(|| Some(JiffTimeZone::system()));
+    let timezone = resolve_tz(timezone);
     for event in events {
         let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
             continue;
@@ -989,7 +986,7 @@ pub fn aggregate_events(
         let timestamp = parse_ts_timestamp(&event.timestamp).ok_or_else(|| {
             crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp))
         })?;
-        let date = format_date_tz(timestamp, timezone.as_ref());
+        let date = format_date_tz(timestamp, &timezone);
         let period = match kind {
             AgentReportKind::Daily => date,
             AgentReportKind::Weekly => week_start(&date, WeekDay::Monday).unwrap_or(date),
@@ -1010,13 +1007,13 @@ pub fn filter_events_by_date(
     if shared.since.is_none() && shared.until.is_none() {
         return Ok(());
     }
-    let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
+    let timezone = resolve_tz(shared.timezone.as_deref());
     let mut kept = Vec::with_capacity(events.len());
     for event in events.drain(..) {
         let timestamp = parse_ts_timestamp(&event.timestamp).ok_or_else(|| {
             crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp))
         })?;
-        let date = format_date_tz(timestamp, timezone.as_ref()).replace('-', "");
+        let date = format_date_tz(timestamp, &timezone).replace('-', "");
         if shared.since.as_ref().is_none_or(|since| &date >= since)
             && shared.until.as_ref().is_none_or(|until| &date <= until)
         {
@@ -1097,7 +1094,7 @@ mod tests {
             add_event_to_groups(
                 event,
                 AgentReportKind::Session,
-                None,
+                &jiff::tz::TimeZone::system(),
                 &shared,
                 &seen,
                 &mut groups,
@@ -1120,7 +1117,7 @@ mod tests {
     #[test]
     fn selects_codex_period_for_each_report_kind() {
         let timestamp = parse_ts_timestamp("2026-05-29T08:01:00.000Z").unwrap();
-        let timezone = parse_tz(Some("UTC")).unwrap();
+        let timezone = resolve_tz(Some("UTC"));
         let shared = SharedArgs::default();
 
         for (kind, expected) in [
@@ -1134,7 +1131,7 @@ mod tests {
                     timestamp,
                     Some("sessions/child.jsonl"),
                     kind,
-                    Some(&timezone),
+                    &timezone,
                     &shared,
                 )
                 .as_deref(),
@@ -1200,7 +1197,7 @@ mod tests {
 
     #[test]
     fn omits_codex_period_outside_date_bounds() {
-        let timezone = parse_tz(Some("UTC")).unwrap();
+        let timezone = resolve_tz(Some("UTC"));
         let shared = SharedArgs {
             since: Some("20260528".to_string()),
             until: Some("20260530".to_string()),
@@ -1213,7 +1210,7 @@ mod tests {
                     parse_ts_timestamp(timestamp).unwrap(),
                     Some("sessions/child.jsonl"),
                     AgentReportKind::Daily,
-                    Some(&timezone),
+                    &timezone,
                     &shared,
                 ),
                 None,
@@ -1224,14 +1221,14 @@ mod tests {
     #[test]
     fn omits_session_period_without_session_id() {
         let timestamp = parse_ts_timestamp("2026-05-29T08:01:00.000Z").unwrap();
-        let timezone = parse_tz(Some("UTC")).unwrap();
+        let timezone = resolve_tz(Some("UTC"));
 
         assert_eq!(
             codex_period_for(
                 timestamp,
                 None,
                 AgentReportKind::Session,
-                Some(&timezone),
+                &timezone,
                 &SharedArgs::default(),
             ),
             None,

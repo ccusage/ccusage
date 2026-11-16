@@ -14,7 +14,7 @@ pub(super) fn read_file(
     source: &SourceFile,
     mode: CostMode,
     pricing: &PricingMap,
-    timezone: Option<&jiff::tz::TimeZone>,
+    timezone: &jiff::tz::TimeZone,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let content = fs::read(&source.path)?;
     let root = serde_json::from_slice::<Value>(&content)?;
@@ -37,7 +37,7 @@ fn parse_extension_messages(
     source: &SourceFile,
     mode: CostMode,
     pricing: &PricingMap,
-    timezone: Option<&jiff::tz::TimeZone>,
+    timezone: &jiff::tz::TimeZone,
 ) -> Result<Vec<LoadedEntry>> {
     let Some(messages) = root.as_array() else {
         return Ok(Vec::new());
@@ -106,7 +106,7 @@ fn parse_cli_messages(
     source: &SourceFile,
     mode: CostMode,
     pricing: &PricingMap,
-    timezone: Option<&jiff::tz::TimeZone>,
+    timezone: &jiff::tz::TimeZone,
 ) -> Result<Vec<LoadedEntry>> {
     let Some(messages) = root.get("messages").and_then(Value::as_array) else {
         return Ok(Vec::new());
@@ -329,7 +329,7 @@ mod tests {
             &source(SourceKind::Extension),
             CostMode::Auto,
             &pricing,
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -375,7 +375,7 @@ mod tests {
             &source,
             CostMode::Auto,
             &PricingMap::load_embedded(),
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -470,7 +470,7 @@ mod tests {
             &source(SourceKind::Extension),
             CostMode::Auto,
             &PricingMap::load_embedded(),
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -551,7 +551,7 @@ mod tests {
             &source(SourceKind::Extension),
             CostMode::Auto,
             &PricingMap::load_embedded(),
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -624,7 +624,7 @@ mod tests {
             &source(SourceKind::Cli),
             CostMode::Auto,
             &PricingMap::load_embedded(),
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -667,7 +667,7 @@ mod tests {
             &source(SourceKind::Cli),
             CostMode::Auto,
             &PricingMap::load_embedded(),
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -703,7 +703,7 @@ mod tests {
             &source(SourceKind::Cli),
             CostMode::Auto,
             &pricing,
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -741,11 +741,30 @@ mod tests {
         });
         let pricing = PricingMap::load_embedded();
 
-        let auto = parse_cli_messages(&root, &source, CostMode::Auto, &pricing, None).unwrap();
-        let display =
-            parse_cli_messages(&root, &source, CostMode::Display, &pricing, None).unwrap();
-        let calculate =
-            parse_cli_messages(&root, &source, CostMode::Calculate, &pricing, None).unwrap();
+        let auto = parse_cli_messages(
+            &root,
+            &source,
+            CostMode::Auto,
+            &pricing,
+            &jiff::tz::TimeZone::system(),
+        )
+        .unwrap();
+        let display = parse_cli_messages(
+            &root,
+            &source,
+            CostMode::Display,
+            &pricing,
+            &jiff::tz::TimeZone::system(),
+        )
+        .unwrap();
+        let calculate = parse_cli_messages(
+            &root,
+            &source,
+            CostMode::Calculate,
+            &pricing,
+            &jiff::tz::TimeZone::system(),
+        )
+        .unwrap();
 
         assert_eq!(auto[0].cost, 0.0);
         assert_eq!(auto[0].stored_cost, Some(0.0));
@@ -768,11 +787,30 @@ mod tests {
         });
         let pricing = PricingMap::load_embedded();
 
-        let auto = parse_cli_messages(&root, &source, CostMode::Auto, &pricing, None).unwrap();
-        let display =
-            parse_cli_messages(&root, &source, CostMode::Display, &pricing, None).unwrap();
-        let calculate =
-            parse_cli_messages(&root, &source, CostMode::Calculate, &pricing, None).unwrap();
+        let auto = parse_cli_messages(
+            &root,
+            &source,
+            CostMode::Auto,
+            &pricing,
+            &jiff::tz::TimeZone::system(),
+        )
+        .unwrap();
+        let display = parse_cli_messages(
+            &root,
+            &source,
+            CostMode::Display,
+            &pricing,
+            &jiff::tz::TimeZone::system(),
+        )
+        .unwrap();
+        let calculate = parse_cli_messages(
+            &root,
+            &source,
+            CostMode::Calculate,
+            &pricing,
+            &jiff::tz::TimeZone::system(),
+        )
+        .unwrap();
 
         assert!(auto[0].cost > 0.0);
         assert_eq!(display[0].cost, 0.0);
@@ -798,7 +836,7 @@ mod tests {
             &source(SourceKind::Cli),
             CostMode::Auto,
             &pricing,
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -835,7 +873,7 @@ mod tests {
             &source,
             CostMode::Auto,
             &PricingMap::load_embedded(),
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 
@@ -854,7 +892,7 @@ mod tests {
             &source(SourceKind::Extension),
             CostMode::Auto,
             &pricing,
-            None,
+            &jiff::tz::TimeZone::system(),
         )
         .unwrap();
 

@@ -15,7 +15,7 @@ use crate::{
     UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, byte_lines, suffix_string},
-    format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
+    format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, resolve_tz,
     stored_cost_for_mode, utc_now,
 };
 
@@ -56,12 +56,12 @@ pub(super) fn load_daily_summaries_inner(
             shared.pricing_overrides.iter(),
         ))
     };
-    let tz = parse_tz(shared.timezone.as_deref()).unwrap_or_else(JiffTimeZone::system);
+    let tz = resolve_tz(shared.timezone.as_deref());
     let deduped = load_deduped_daily_entries(
         &kept,
         shared,
         project_filter,
-        Some(&tz),
+        &tz,
         pricing.as_ref(),
         &diagnostics,
     );
@@ -73,7 +73,7 @@ pub(super) fn load_daily_summaries_inner(
         || pruned.iter().any(|file| {
             read_daily_usage_file_with_diagnostics(
                 file,
-                Some(&tz),
+                &tz,
                 shared.mode,
                 pricing.as_ref(),
                 &diagnostics,
@@ -123,7 +123,7 @@ fn load_deduped_daily_entries(
     files: &[PathBuf],
     shared: &SharedArgs,
     project_filter: Option<&str>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> DedupedDailyEntries {
@@ -303,7 +303,7 @@ struct DailyUsageMessage {
 
 fn read_daily_usage_files_parallel(
     files: &[PathBuf],
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -325,7 +325,7 @@ fn read_daily_usage_files_parallel(
     thread::scope(|scope| {
         let mut handles = Vec::with_capacity(worker_count);
         for chunk in chunks {
-            let tz = tz.cloned();
+            let tz = tz.clone();
             handles.push(scope.spawn(move || {
                 chunk
                     .into_iter()
@@ -334,7 +334,7 @@ fn read_daily_usage_files_parallel(
                             index,
                             read_daily_usage_file_with_diagnostics(
                                 &files[index],
-                                tz.as_ref(),
+                                &tz,
                                 mode,
                                 pricing,
                                 diagnostics,
@@ -362,7 +362,7 @@ fn read_daily_usage_files_parallel(
 #[cfg(test)]
 fn read_daily_usage_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> DailyLoadedFile {
@@ -371,7 +371,7 @@ fn read_daily_usage_file(
 
 fn read_daily_usage_file_with_diagnostics(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -981,7 +981,12 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_daily_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1207,7 +1212,12 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_daily_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1230,7 +1240,12 @@ mod tests {
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_daily_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_daily_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1252,11 +1267,16 @@ mod tests {
 
         let discarded = ["a", "b", "c"].map(|session| {
             let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
-            let entry = read_daily_usage_file(&path, None, CostMode::Display, None)
-                .entries
-                .into_iter()
-                .next()
-                .unwrap();
+            let entry = read_daily_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            )
+            .entries
+            .into_iter()
+            .next()
+            .unwrap();
             push_deduped_daily_entry(entry, &mut deduped_indexes, &mut deduped)
                 .map(|(index, discarded)| (index, discarded.session_id.to_string()))
         });

@@ -812,7 +812,7 @@ mod tests {
 
         let entries = adapter::amp::read_thread_file(
             &fixture.path("threads/thread.json"),
-            parse_tz(Some("UTC")).as_ref(),
+            &resolve_tz(Some("UTC")),
             CostMode::Display,
             None,
         )

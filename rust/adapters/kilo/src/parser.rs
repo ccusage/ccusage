@@ -76,7 +76,7 @@ pub(super) fn message_value_to_entry(
     row_id: &str,
     row_session_id: &str,
     db_path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
 ) -> Option<LoadedEntry> {
@@ -285,7 +285,7 @@ mod tests {
             "row-1",
             "session-a",
             Path::new("/tmp/kilo.db"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             &PricingMap::load_embedded(),
         )
@@ -313,7 +313,7 @@ mod tests {
             "row-1",
             "session-a",
             Path::new("/tmp/kilo.db"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             &PricingMap::load_embedded(),
         )

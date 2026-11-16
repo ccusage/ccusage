@@ -31,7 +31,7 @@ pub(super) enum RowRejection {
 
 pub(super) fn row_to_entry(
     row: ZcodeUsageRow,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
     pricing_overrides: &BTreeMap<String, PricingOverride>,
@@ -235,7 +235,7 @@ mod tests {
     fn normalizes_both_inclusive_cache_buckets() {
         let entry = row_to_entry(
             row(),
-            Some(&JiffTimeZone::UTC),
+            &JiffTimeZone::UTC,
             CostMode::Display,
             &PricingMap::load_embedded(),
             &BTreeMap::new(),
@@ -268,7 +268,7 @@ mod tests {
                 row.model_id = model.to_string();
                 let entry = row_to_entry(
                     row,
-                    Some(&JiffTimeZone::UTC),
+                    &JiffTimeZone::UTC,
                     CostMode::Calculate,
                     &pricing,
                     &BTreeMap::new(),
@@ -286,7 +286,7 @@ mod tests {
         let pricing = PricingMap::load_embedded();
         let priced = row_to_entry(
             row(),
-            Some(&JiffTimeZone::UTC),
+            &JiffTimeZone::UTC,
             CostMode::Calculate,
             &pricing,
             &BTreeMap::new(),
@@ -301,7 +301,7 @@ mod tests {
         custom.model_id = "deepseek-v4-flash".to_string();
         let custom = row_to_entry(
             custom,
-            Some(&JiffTimeZone::UTC),
+            &JiffTimeZone::UTC,
             CostMode::Calculate,
             &pricing,
             &BTreeMap::new(),
@@ -322,7 +322,7 @@ mod tests {
 
         let entry = row_to_entry(
             row,
-            Some(&JiffTimeZone::UTC),
+            &JiffTimeZone::UTC,
             CostMode::Calculate,
             &PricingMap::load_embedded(),
             &BTreeMap::new(),
@@ -342,7 +342,7 @@ mod tests {
             row.model_id = model.to_string();
             row_to_entry(
                 row,
-                Some(&JiffTimeZone::UTC),
+                &JiffTimeZone::UTC,
                 CostMode::Calculate,
                 &pricing,
                 &BTreeMap::new(),
@@ -381,7 +381,7 @@ mod tests {
 
         let entry = row_to_entry(
             row,
-            Some(&JiffTimeZone::UTC),
+            &JiffTimeZone::UTC,
             CostMode::Calculate,
             &pricing,
             &overrides,
@@ -399,7 +399,7 @@ mod tests {
         row.computed_total_tokens = 123;
         let entry = row_to_entry(
             row,
-            Some(&JiffTimeZone::UTC),
+            &JiffTimeZone::UTC,
             CostMode::Display,
             &PricingMap::load_embedded(),
             &BTreeMap::new(),
@@ -417,7 +417,7 @@ mod tests {
         assert!(
             row_to_entry(
                 invalid_row,
-                Some(&JiffTimeZone::UTC),
+                &JiffTimeZone::UTC,
                 CostMode::Display,
                 &PricingMap::default(),
                 &BTreeMap::new(),
@@ -430,7 +430,7 @@ mod tests {
         assert!(
             row_to_entry(
                 invalid_row,
-                Some(&JiffTimeZone::UTC),
+                &JiffTimeZone::UTC,
                 CostMode::Display,
                 &PricingMap::default(),
                 &BTreeMap::new(),

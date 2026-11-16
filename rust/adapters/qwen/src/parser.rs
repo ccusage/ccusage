@@ -57,7 +57,7 @@ struct QwenUsageMetadata {
 
 pub(super) fn read_chat_file(
     file: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     shared: &SharedArgs,
@@ -92,7 +92,7 @@ fn parse_line(
     file: &Path,
     fallback: TimestampMs,
     record: &QwenLine,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Option<LoadedEntry> {
@@ -330,7 +330,7 @@ mod tests {
             Path::new("/tmp/project/chat.jsonl"),
             TimestampMs::UNIX_EPOCH,
             &record,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
         )

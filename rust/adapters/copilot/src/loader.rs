@@ -41,7 +41,7 @@ pub fn load_entries(
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pricing.expect("Copilot uses pipeline pricing");
-    let tz = Some(cx.window.timezone());
+    let tz = cx.window.timezone();
     let sources = super::paths::paths_with_diagnostics(cx.diagnostics)?;
     let source_kinds = sources
         .iter()
@@ -448,7 +448,7 @@ fn read_source_file(
 #[cfg(test)]
 fn read_otel_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &crate::PricingMap,
 ) -> Result<Vec<LoadedEntry>> {
@@ -482,7 +482,7 @@ fn load_entries_inner(
 
 fn usage_entry_to_loaded(
     entry: CopilotUsageEntry,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &crate::PricingMap,
 ) -> LoadedEntry {
@@ -814,7 +814,13 @@ mod tests {
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
         );
 
-        let loaded = read_otel_file(&file, None, CostMode::Auto, &pricing).unwrap();
+        let loaded = read_otel_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            &pricing,
+        )
+        .unwrap();
         let rows = summarize_entries(&loaded, AgentReportKind::Daily).unwrap();
         let report = report_from_rows(&rows, AgentReportKind::Daily);
 
@@ -866,7 +872,13 @@ mod tests {
             r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
         );
 
-        let loaded = read_otel_file(&file, None, CostMode::Auto, &pricing).unwrap();
+        let loaded = read_otel_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            &pricing,
+        )
+        .unwrap();
         let rows = summarize_entries(&loaded, AgentReportKind::Daily).unwrap();
         let report = report_from_rows(&rows, AgentReportKind::Daily);
 

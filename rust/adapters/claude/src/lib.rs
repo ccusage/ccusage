@@ -29,8 +29,8 @@ use crate::{
     cli::{CostMode, SharedArgs},
     debug_log,
     fast::{FxHashMap, byte_lines, suffix_string},
-    format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, parse_tz,
-    progress, stored_cost_for_mode,
+    format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, progress,
+    resolve_tz, stored_cost_for_mode,
 };
 
 #[doc(hidden)]
@@ -288,10 +288,10 @@ fn load_entries_inner(
             shared.pricing_overrides.iter(),
         ))
     };
-    let tz = parse_tz(shared.timezone.as_deref()).unwrap_or_else(JiffTimeZone::system);
+    let tz = resolve_tz(shared.timezone.as_deref());
     let mode = shared.mode;
     let loaded_files = read_files_parallel(&files, shared.single_thread, |file| {
-        read_usage_file_with_diagnostics(file, Some(&tz), mode, pricing.as_ref(), diagnostics)
+        read_usage_file_with_diagnostics(file, &tz, mode, pricing.as_ref(), diagnostics)
     });
     let loaded_entry_count = loaded_files
         .iter()
@@ -661,7 +661,7 @@ fn push_deduped_session_alias(
 #[cfg(test)]
 fn read_usage_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> LoadedFile {
@@ -670,7 +670,7 @@ fn read_usage_file(
 
 fn read_usage_file_with_diagnostics(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -1349,7 +1349,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             Some(&PricingMap::default()),
         );
@@ -1380,7 +1380,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             Some(&pricing),
         );
@@ -1404,7 +1404,12 @@ null,"usage":{"input_tokens":1}}}"#
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1434,7 +1439,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1507,7 +1512,7 @@ null,"usage":{"input_tokens":1}}}"#
 
             let loaded = read_usage_file(
                 &fixture.path("projects/project-a/session-a.jsonl"),
-                None,
+                &jiff::tz::TimeZone::system(),
                 CostMode::Display,
                 None,
             );
@@ -1534,7 +1539,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1560,7 +1565,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1586,7 +1591,7 @@ null,"usage":{"input_tokens":1}}}"#
 
         let loaded = read_usage_file(
             &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
         );
@@ -1611,7 +1616,12 @@ null,"usage":{"input_tokens":1}}}"#
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1634,7 +1644,12 @@ null,"usage":{"input_tokens":1}}}"#
             fixture.path("projects/project-a/session-a/chat.jsonl"),
             fixture.path("projects/project-a/session-b/chat.jsonl"),
         ] {
-            let loaded = read_usage_file(&path, None, CostMode::Display, None);
+            let loaded = read_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            );
             for entry in loaded.entries {
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
             }
@@ -1656,11 +1671,16 @@ null,"usage":{"input_tokens":1}}}"#
 
         let discarded = ["a", "b", "c"].map(|session| {
             let path = fixture.path(format!("projects/project-a/session-{session}/chat.jsonl"));
-            let entry = read_usage_file(&path, None, CostMode::Display, None)
-                .entries
-                .into_iter()
-                .next()
-                .unwrap();
+            let entry = read_usage_file(
+                &path,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None,
+            )
+            .entries
+            .into_iter()
+            .next()
+            .unwrap();
             push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
                 .map(|(index, discarded)| (index, discarded.session_id.to_string()))
         });

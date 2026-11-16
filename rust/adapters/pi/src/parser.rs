@@ -162,7 +162,7 @@ impl PiSessionData {
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn read_session_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<Vec<LoadedEntry>> {
@@ -173,7 +173,7 @@ pub fn read_session_file(
 fn read_session_file_for_store(
     path: &Path,
     store_root: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     store_name: &str,
@@ -183,7 +183,7 @@ fn read_session_file_for_store(
 
 pub(crate) fn read_session_file_data(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> Result<PiSessionData> {
@@ -195,7 +195,7 @@ pub(crate) fn read_session_file_data(
 pub(crate) fn read_session_file_data_for_store(
     path: &Path,
     store_root: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     store_name: &str,
@@ -215,7 +215,7 @@ pub(crate) fn read_session_file_data_for_store(
 
 pub(crate) fn read_session_file_data_with_diagnostics(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -233,7 +233,7 @@ pub(crate) fn read_session_file_data_with_diagnostics(
 pub(crate) fn read_session_file_data_for_store_with_diagnostics(
     path: &Path,
     store_root: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     store_name: &str,
@@ -346,7 +346,7 @@ impl<'a> PiStoreContext<'a> {
 
 fn read_session_file_data_with_context(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     context: PiStoreContext<'_>,
@@ -864,12 +864,24 @@ mod tests {
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
         let pricing = pricing_with_override("[pi] my-custom-model");
 
-        let auto = read_session_file(&file, None, CostMode::Auto, Some(&pricing)).unwrap();
+        let auto = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            Some(&pricing),
+        )
+        .unwrap();
         assert_eq!(auto[0].cost, 5.0);
         assert_eq!(auto[0].data.cost_usd, Some(0.0));
         assert_eq!(auto[0].missing_pricing_model, None);
 
-        let display = read_session_file(&file, None, CostMode::Display, Some(&pricing)).unwrap();
+        let display = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            Some(&pricing),
+        )
+        .unwrap();
         assert_eq!(display[0].cost, 0.0);
     }
 
@@ -884,7 +896,7 @@ mod tests {
         let auto = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             Some(&pricing),
             "omp",
@@ -897,7 +909,7 @@ mod tests {
         let display = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             Some(&pricing),
             "omp",
@@ -914,14 +926,20 @@ mod tests {
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
         let pricing = pricing_with_override("my-custom-model");
 
-        let default = read_session_file(&file, None, CostMode::Auto, Some(&pricing)).unwrap();
+        let default = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            Some(&pricing),
+        )
+        .unwrap();
         assert_eq!(default[0].cost, 5.0);
         assert_eq!(default[0].missing_pricing_model, None);
 
         let named = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             Some(&pricing),
             "omp",
@@ -938,7 +956,13 @@ mod tests {
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
-        let entries = read_session_file(&file, None, CostMode::Display, None).unwrap();
+        let entries = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.output_tokens, 333);
@@ -954,7 +978,13 @@ mod tests {
 
         // Use Calculate mode with an empty PricingMap so model won't be found
         let pricing = PricingMap::default();
-        let entries = read_session_file(&file, None, CostMode::Calculate, Some(&pricing)).unwrap();
+        let entries = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Calculate,
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(
@@ -982,7 +1012,7 @@ mod tests {
         let entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             Some(&pricing),
             "o3",
@@ -1020,7 +1050,7 @@ mod tests {
         let entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             Some(&pricing),
             "deepseek-chat",
@@ -1055,7 +1085,7 @@ mod tests {
         let entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             Some(&pricing),
             "omp",
@@ -1075,7 +1105,13 @@ mod tests {
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
         let pricing = PricingMap::default();
-        let entries = read_session_file(&file, None, CostMode::Display, Some(&pricing)).unwrap();
+        let entries = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].missing_pricing_model, None);
@@ -1089,7 +1125,13 @@ mod tests {
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
         let pricing = PricingMap::default();
-        let entries = read_session_file(&file, None, CostMode::Auto, Some(&pricing)).unwrap();
+        let entries = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            Some(&pricing),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         // In Auto mode with a display cost present, no missing pricing warning
@@ -1105,7 +1147,13 @@ mod tests {
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
-        let entries = read_session_file(&file, None, CostMode::Display, None).unwrap();
+        let entries = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);
@@ -1122,7 +1170,7 @@ mod tests {
         let entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
             "omp",
@@ -1144,14 +1192,19 @@ mod tests {
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
-        let pi = read_session_file(&file, None, CostMode::Display, None)
-            .unwrap()
-            .pop()
-            .unwrap();
+        let pi = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Display,
+            None,
+        )
+        .unwrap()
+        .pop()
+        .unwrap();
         let omp = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Display,
             None,
             "omp",
@@ -1176,8 +1229,13 @@ mod tests {
         let pricing = pricing_for_cost_tests();
         let expected_cost = 0.018000000000000002;
 
-        let default_entries =
-            read_session_file(&file, None, CostMode::Auto, Some(&pricing)).unwrap();
+        let default_entries = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            Some(&pricing),
+        )
+        .unwrap();
         assert_eq!(default_entries.len(), 2);
         assert_eq!(default_entries[0].cost, expected_cost);
         assert_eq!(default_entries[0].data.cost_usd, Some(-1.25));
@@ -1187,7 +1245,7 @@ mod tests {
         let named_entries = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             Some(&pricing),
             "omp",
@@ -1272,10 +1330,15 @@ mod tests {
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
         let pricing = PricingMap::default();
 
-        let default_entry = read_session_file(&file, None, CostMode::Auto, Some(&pricing))
-            .unwrap()
-            .pop()
-            .unwrap();
+        let default_entry = read_session_file(
+            &file,
+            &jiff::tz::TimeZone::system(),
+            CostMode::Auto,
+            Some(&pricing),
+        )
+        .unwrap()
+        .pop()
+        .unwrap();
         assert_eq!(default_entry.cost, 0.0);
         assert_eq!(
             default_entry.missing_pricing_model.as_deref(),
@@ -1285,7 +1348,7 @@ mod tests {
         let named_entry = read_session_file_for_store(
             &file,
             &fixture.path("sessions"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             Some(&pricing),
             "omp",

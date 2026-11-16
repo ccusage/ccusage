@@ -50,7 +50,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
             };
             super::parser::parse_session_files_with_diagnostics(
                 &session,
-                Some(cx.window.timezone()),
+                cx.window.timezone(),
                 shared.mode,
                 pricing,
                 cx.diagnostics,

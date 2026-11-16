@@ -5,7 +5,7 @@ use super::Cli;
 
 /// A timezone can arrive from `--timezone` or from a config file, and both
 /// land on the parsed args before this runs. Checking here, once, rejects an
-/// unknown name instead of letting `parse_tz` fall back to the local zone,
+/// unknown name instead of letting `resolve_tz` fall back to the local zone,
 /// which can group usage under the wrong date.
 pub(crate) fn validate(cli: &Cli) -> Result<(), String> {
     match effective_timezone(cli) {

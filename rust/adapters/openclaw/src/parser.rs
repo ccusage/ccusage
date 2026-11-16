@@ -226,7 +226,7 @@ pub(super) struct OpenClawEntry {
 
 pub(super) fn parse_session_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -410,7 +410,7 @@ fn transcript_event_id(record: &OpenClawLine) -> Option<String> {
 
 fn openclaw_entry_to_loaded(
     entry: OpenClawEntry,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
@@ -420,7 +420,7 @@ fn openclaw_entry_to_loaded(
 pub(super) fn sqlite_entry_to_loaded(
     entry: OpenClawEntry,
     message_id: Option<String>,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
@@ -429,7 +429,7 @@ pub(super) fn sqlite_entry_to_loaded(
 
 fn openclaw_entry_to_loaded_inner(
     entry: OpenClawEntry,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     message_id: Option<String>,
@@ -589,7 +589,7 @@ mod tests {
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &diagnostics,
@@ -624,7 +624,7 @@ mod tests {
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &diagnostics,
@@ -659,7 +659,7 @@ mod tests {
 
         let entries = parse_session_file(
             &file,
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &Diagnostics::new("openclaw"),
@@ -686,7 +686,7 @@ mod tests {
         let diagnostics = Diagnostics::new("openclaw");
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &diagnostics,
@@ -739,7 +739,7 @@ mod tests {
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
             Some(&pricing),
             &Diagnostics::new("openclaw"),

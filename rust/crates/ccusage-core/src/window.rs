@@ -1,6 +1,6 @@
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{TimestampMs, cli::SharedArgs, date_range_bounds_ms, format_date_tz, parse_tz};
+use crate::{TimestampMs, cli::SharedArgs, date_range_bounds_ms, format_date_tz, resolve_tz};
 
 /// The `--since`/`--until` window of one report in its report timezone.
 ///
@@ -20,7 +20,7 @@ impl ReportWindow {
         Self {
             since: shared.since.as_deref().map(Box::from),
             until: shared.until.as_deref().map(Box::from),
-            timezone: parse_tz(shared.timezone.as_deref()).unwrap_or_else(JiffTimeZone::system),
+            timezone: resolve_tz(shared.timezone.as_deref()),
         }
     }
 
@@ -61,7 +61,7 @@ impl ReportWindow {
     /// Reports whether the day `timestamp` falls on in the report timezone is
     /// inside the window.
     pub fn contains_timestamp(&self, timestamp: TimestampMs) -> bool {
-        self.is_unbounded() || self.contains_date(&format_date_tz(timestamp, Some(&self.timezone)))
+        self.is_unbounded() || self.contains_date(&format_date_tz(timestamp, &self.timezone))
     }
 
     /// The window as half-open Unix millisecond bounds, for a loader that can
@@ -69,11 +69,7 @@ impl ReportWindow {
     /// [`contains_date`](Self::contains_date) still makes the per-day decision;
     /// see [`date_range_bounds_ms`].
     pub fn bounds_ms(&self) -> (Option<i64>, Option<i64>) {
-        date_range_bounds_ms(
-            self.since.as_deref(),
-            self.until.as_deref(),
-            Some(&self.timezone),
-        )
+        date_range_bounds_ms(self.since.as_deref(), self.until.as_deref(), &self.timezone)
     }
 }
 
@@ -82,7 +78,7 @@ mod tests {
     use super::ReportWindow;
     use crate::{
         MILLIS_PER_HOUR, TimestampMs, cli::SharedArgs, date_range_bounds_ms, date_within_range,
-        parse_tz,
+        resolve_tz,
     };
 
     const BOUNDS: [Option<&str>; 12] = [
@@ -169,12 +165,12 @@ mod tests {
     #[test]
     fn bounds_ms_match_the_shared_helper() {
         for timezone in [Some("UTC"), Some("Asia/Tokyo"), Some("America/New_York")] {
-            let parsed = parse_tz(timezone);
+            let parsed = resolve_tz(timezone);
             for since in BOUNDS {
                 for until in BOUNDS {
                     assert_eq!(
                         window(since, until, timezone).bounds_ms(),
-                        date_range_bounds_ms(since, until, parsed.as_ref()),
+                        date_range_bounds_ms(since, until, &parsed),
                         "since {since:?} until {until:?} timezone {timezone:?}"
                     );
                 }

@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, parse_tz};
+use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, resolve_tz};
 use ccusage_adapter_common::source::LoadContext;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
@@ -32,7 +32,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     let (entries, skipped) = load_entries_with_timezone(
         cx.shared,
         pricing,
-        Some(cx.window.timezone()),
+        cx.window.timezone(),
         Some(cx.diagnostics),
     )?;
     for database in &skipped {
@@ -87,14 +87,14 @@ fn load_entries_inner(
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<(Vec<LoadedEntry>, Vec<SkippedDatabase>)> {
-    let timezone = parse_tz(shared.timezone.as_deref());
-    load_entries_with_timezone(shared, pricing, timezone.as_ref(), None)
+    let timezone = resolve_tz(shared.timezone.as_deref());
+    load_entries_with_timezone(shared, pricing, &timezone, None)
 }
 
 fn load_entries_with_timezone(
     shared: &SharedArgs,
     pricing: &PricingMap,
-    timezone: Option<&JiffTimeZone>,
+    timezone: &JiffTimeZone,
     diagnostics: Option<&Diagnostics>,
 ) -> Result<(Vec<LoadedEntry>, Vec<SkippedDatabase>)> {
     let database_paths = diagnostics.map_or_else(

@@ -5,7 +5,6 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 use serde::Deserialize;
 
@@ -14,8 +13,9 @@ use crate::{
     cli::SharedArgs,
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet},
-    home, parse_tz,
+    home,
     path_utils::expand_home_path,
+    resolve_tz,
 };
 use crate::{TimestampMs, parse_ts_timestamp};
 use ccusage_adapter_common::collect_usage_files;
@@ -123,10 +123,8 @@ pub(super) fn split_files_before_since(
         kept: files,
         pruned: Vec::new(),
     };
-    let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
-    let (Some(since_ms), _) =
-        date_range_bounds_ms(shared.since.as_deref(), None, timezone.as_ref())
-    else {
+    let timezone = resolve_tz(shared.timezone.as_deref());
+    let (Some(since_ms), _) = date_range_bounds_ms(shared.since.as_deref(), None, &timezone) else {
         return keep_all(files);
     };
     // Entry timestamps can outrun any mtime the filesystem reports when the

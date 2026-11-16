@@ -1,4 +1,4 @@
-use ccusage_core::{TimestampMs, UtcParts, format_date_tz, parse_tz};
+use ccusage_core::{TimestampMs, UtcParts, format_date_tz, resolve_tz};
 use jiff::{Timestamp as JiffTimestamp, tz::TimeZone as JiffTimeZone};
 
 /// `--timezone` and a config `timezone` are checked with this before use, so an
@@ -10,7 +10,7 @@ pub fn is_valid_timezone(value: &str) -> bool {
 }
 
 pub fn format_date(timestamp: TimestampMs, timezone: Option<&str>) -> String {
-    format_date_tz(timestamp, parse_tz(timezone).as_ref())
+    format_date_tz(timestamp, &resolve_tz(timezone))
 }
 
 #[doc(hidden)]

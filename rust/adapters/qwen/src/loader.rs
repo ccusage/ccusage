@@ -36,7 +36,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
         |file| {
             parser::read_chat_file(
                 file,
-                Some(cx.window.timezone()),
+                cx.window.timezone(),
                 shared.mode,
                 pricing,
                 shared,

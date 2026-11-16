@@ -15,7 +15,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let pricing = cx
         .pricing
         .ok_or_else(|| crate::cli_error("Hermes needs pricing from the report pipeline"))?;
-    let tz = Some(cx.window.timezone());
+    let tz = cx.window.timezone();
     let db_paths = hermes_state_db_paths()?;
     // Load each state database in parallel (a fresh read-only connection per DB),
     // then run the sequential session dedup over the original path order so the
@@ -217,12 +217,12 @@ mod tests {
             timezone: Some("UTC".to_string()),
             ..SharedArgs::default()
         };
-        let tz = crate::parse_tz(shared.timezone.as_deref());
+        let tz = crate::resolve_tz(shared.timezone.as_deref());
         let diagnostics = Diagnostics::new("hermes");
         let entries = load_state_db_entries(&db_path, &diagnostics)
             .unwrap()
             .into_iter()
-            .map(|entry| to_loaded_entry(entry, tz.as_ref(), shared.mode, &pricing))
+            .map(|entry| to_loaded_entry(entry, &tz, shared.mode, &pricing))
             .collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);

@@ -40,7 +40,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let pricing = cx
         .pricing
         .ok_or_else(|| crate::cli_error("Goose needs pricing from the report pipeline"))?;
-    let tz = Some(cx.window.timezone());
+    let tz = cx.window.timezone();
     let db_paths = goose_db_paths()?;
     // Load each database in parallel (a fresh read-only connection per DB), then
     // run the sequential per-db dedup over the original path order so the
@@ -70,7 +70,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
 
 fn load_entries_from_db(
     db_path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     pricing: &PricingMap,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
@@ -190,13 +190,9 @@ INSERT INTO sessions (
 
         let pricing = PricingMap::load_embedded();
         let diagnostics = Diagnostics::new("goose");
-        let entries = load_entries_from_db(
-            &db_path,
-            Some(&jiff::tz::TimeZone::UTC),
-            &pricing,
-            &diagnostics,
-        )
-        .unwrap();
+        let entries =
+            load_entries_from_db(&db_path, &jiff::tz::TimeZone::UTC, &pricing, &diagnostics)
+                .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-01");

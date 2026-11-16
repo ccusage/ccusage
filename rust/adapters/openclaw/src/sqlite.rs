@@ -60,7 +60,7 @@ fn is_file_without_symlink(path: &Path) -> bool {
 
 pub(super) fn collect_sqlite_entries(
     root: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -87,7 +87,7 @@ pub(super) fn collect_sqlite_entries(
 /// records, and a single malformed row must not drop the session around it.
 fn read_agent_database(
     database: &AgentDatabase,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
@@ -322,7 +322,7 @@ mod tests {
 
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &diagnostics(),
@@ -371,7 +371,7 @@ mod tests {
         let diagnostics = diagnostics();
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &diagnostics,
@@ -414,7 +414,7 @@ mod tests {
         let diagnostics = diagnostics();
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &diagnostics,
@@ -448,7 +448,7 @@ mod tests {
         let diagnostics = diagnostics();
         let entries = read_agent_database(
             &AgentDatabase { path: db_path },
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &diagnostics,
@@ -474,7 +474,7 @@ mod tests {
             &AgentDatabase {
                 path: db_path.clone(),
             },
-            None,
+            &jiff::tz::TimeZone::system(),
             CostMode::Auto,
             None,
             &diagnostics,
