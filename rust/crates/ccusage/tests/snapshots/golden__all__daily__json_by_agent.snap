@@ -298,17 +298,18 @@ exit: 0
             {
               "cacheCreationTokens": 100,
               "cacheReadTokens": 200,
-              "cost": 0.017925000000000003,
+              "cost": 0.4,
               "inputTokens": 300,
               "modelName": "claude-opus-4-20250514",
-              "outputTokens": 150
+              "outputTokens": 150,
+              "storedCost": 0.4
             }
           ],
           "modelsUsed": [
             "claude-opus-4-20250514"
           ],
           "outputTokens": 150,
-          "totalCost": 0.017925000000000003,
+          "totalCost": 0.4,
           "totalTokens": 750
         },
         {
@@ -658,6 +659,15 @@ exit: 0
           "storedCost": 3.25
         },
         {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
+          "cost": 0.409375,
+          "inputTokens": 550,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 225,
+          "storedCost": 0.4
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.12725,
@@ -674,14 +684,6 @@ exit: 0
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 500,
           "storedCost": 0.02
-        },
-        {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 200,
-          "cost": 0.0273,
-          "inputTokens": 550,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 225
         },
         {
           "cacheCreationTokens": 0,
@@ -779,7 +781,7 @@ exit: 0
       ],
       "outputTokens": 1729,
       "period": "2025-12-27",
-      "totalCost": 3.4492995000000004,
+      "totalCost": 3.8313745000000003,
       "totalTokens": 12199
     },
     {
@@ -982,6 +984,15 @@ exit: 0
           "inputTokens": 2500,
           "modelBreakdowns": [
             {
+              "cacheCreationTokens": 200,
+              "cacheReadTokens": 600,
+              "cost": 0.210935,
+              "inputTokens": 2400,
+              "modelName": "claude-sonnet-4-20250514",
+              "outputTokens": 500,
+              "storedCost": 0.2
+            },
+            {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
               "cost": 0.1,
@@ -989,14 +1000,6 @@ exit: 0
               "modelName": "unknown",
               "outputTokens": 0,
               "storedCost": 0.1
-            },
-            {
-              "cacheCreationTokens": 200,
-              "cacheReadTokens": 600,
-              "cost": 0.015930000000000003,
-              "inputTokens": 2400,
-              "modelName": "claude-sonnet-4-20250514",
-              "outputTokens": 500
             },
             {
               "cacheCreationTokens": 0,
@@ -1013,7 +1016,7 @@ exit: 0
             "claude-haiku-4-5-20251001"
           ],
           "outputTokens": 510,
-          "totalCost": 0.11608,
+          "totalCost": 0.31108500000000006,
           "totalTokens": 3830
         },
         {
@@ -1429,11 +1432,11 @@ exit: 0
         {
           "cacheCreationTokens": 2700,
           "cacheReadTokens": 32900,
-          "cost": 2.588523,
+          "cost": 2.783528,
           "inputTokens": 11101,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 2325,
-          "storedCost": 2.55
+          "storedCost": 2.75
         },
         {
           "cacheCreationTokens": 900,
@@ -1640,7 +1643,7 @@ exit: 0
       ],
       "outputTokens": 8264,
       "period": "2025-12-30",
-      "totalCost": 6.224072525,
+      "totalCost": 6.4190775250000005,
       "totalTokens": 158467
     },
     {
@@ -1887,6 +1890,15 @@ exit: 0
           "inputTokens": 4070,
           "modelBreakdowns": [
             {
+              "cacheCreationTokens": 200,
+              "cacheReadTokens": 800,
+              "cost": 0.15,
+              "inputTokens": 1000,
+              "modelName": "claude-sonnet-4-20250514",
+              "outputTokens": 500,
+              "storedCost": 0.15
+            },
+            {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
               "cost": 0.05,
@@ -1897,12 +1909,13 @@ exit: 0
               "storedCost": 0.05
             },
             {
-              "cacheCreationTokens": 200,
-              "cacheReadTokens": 800,
-              "cost": 0.011490000000000002,
-              "inputTokens": 1000,
-              "modelName": "claude-sonnet-4-20250514",
-              "outputTokens": 500
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.05,
+              "inputTokens": 300,
+              "modelName": "copilot-mystery-1",
+              "outputTokens": 70,
+              "storedCost": 0.05
             },
             {
               "cacheCreationTokens": 0,
@@ -1919,15 +1932,6 @@ exit: 0
               "inputTokens": 730,
               "modelName": "claude-haiku-4-5-20251001",
               "outputTokens": 121
-            },
-            {
-              "cacheCreationTokens": 0,
-              "cacheReadTokens": 0,
-              "cost": 0.0,
-              "inputTokens": 300,
-              "missingPricing": true,
-              "modelName": "copilot-mystery-1",
-              "outputTokens": 70
             }
           ],
           "modelsUsed": [
@@ -1938,7 +1942,7 @@ exit: 0
             "copilot-mystery-1"
           ],
           "outputTokens": 1075,
-          "totalCost": 0.0691975,
+          "totalCost": 0.25770750000000003,
           "totalTokens": 6745
         },
         {
@@ -2502,6 +2506,16 @@ exit: 0
           "outputTokens": 1770
         },
         {
+          "cacheCreationTokens": 1400,
+          "cacheReadTokens": 32060,
+          "cost": 0.225788,
+          "inputTokens": 8920,
+          "missingPricing": true,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 3340,
+          "storedCost": 0.16999999999999998
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "cost": 0.2,
@@ -2530,16 +2544,6 @@ exit: 0
           "storedCost": 0.11
         },
         {
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 32060,
-          "cost": 0.087278,
-          "inputTokens": 8920,
-          "missingPricing": true,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 3340,
-          "storedCost": 0.02
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
           "cost": 0.06344999999999999,
@@ -2565,6 +2569,15 @@ exit: 0
           "missingPricing": true,
           "modelName": "unknown",
           "outputTokens": 4,
+          "storedCost": 0.05
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70,
           "storedCost": 0.05
         },
         {
@@ -2707,15 +2720,6 @@ exit: 0
           "outputTokens": 65
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
-        },
-        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 500,
           "cost": 0.0,
@@ -2798,7 +2802,7 @@ exit: 0
       ],
       "outputTokens": 18299,
       "period": "2025-12-31",
-      "totalCost": 11.195466595000001,
+      "totalCost": 11.383976595000002,
       "totalTokens": 244880
     },
     {
@@ -4524,7 +4528,7 @@ exit: 0
           "agent": "copilot",
           "cacheCreationTokens": 0,
           "cacheReadTokens": 400,
-          "inputTokens": 2940,
+          "inputTokens": 2040,
           "modelBreakdowns": [
             {
               "cacheCreationTokens": 0,
@@ -4538,10 +4542,10 @@ exit: 0
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
-              "cost": 0.040499999999999994,
-              "inputTokens": 1800,
+              "cost": 0.020249999999999997,
+              "inputTokens": 900,
               "modelName": "claude-opus-4-20250514",
-              "outputTokens": 180
+              "outputTokens": 90
             },
             {
               "cacheCreationTokens": 0,
@@ -4566,9 +4570,9 @@ exit: 0
             "claude-sonnet-4-20250514",
             "claude-opus-4-20250514"
           ],
-          "outputTokens": 926,
-          "totalCost": 0.15227,
-          "totalTokens": 4266
+          "outputTokens": 836,
+          "totalCost": 0.13202,
+          "totalTokens": 3276
         },
         {
           "agent": "droid",
@@ -5025,7 +5029,7 @@ exit: 0
       ],
       "cacheCreationTokens": 1350,
       "cacheReadTokens": 522980,
-      "inputTokens": 124309,
+      "inputTokens": 123409,
       "metadata": {
         "agents": [
           "amp",
@@ -5053,10 +5057,10 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 8550,
-          "cost": 1.354325,
-          "inputTokens": 3000,
+          "cost": 1.3340750000000001,
+          "inputTokens": 2100,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1200,
+          "outputTokens": 1110,
           "storedCost": 1.25
         },
         {
@@ -5362,10 +5366,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 10306,
+      "outputTokens": 10216,
       "period": "2026-01-02",
-      "totalCost": 3.2761175,
-      "totalTokens": 660240
+      "totalCost": 3.2558674999999995,
+      "totalTokens": 659250
     },
     {
       "agent": "all",
@@ -5423,10 +5427,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 14975,
     "cacheReadTokens": 1273317,
-    "inputTokens": 1315997,
-    "outputTokens": 54880,
-    "totalCost": 27.811185265000006,
-    "totalTokens": 2662336,
+    "inputTokens": 1315097,
+    "outputTokens": 54790,
+    "totalCost": 28.556525265,
+    "totalTokens": 2661346,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

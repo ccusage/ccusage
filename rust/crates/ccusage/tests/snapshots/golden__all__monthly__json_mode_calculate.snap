@@ -515,7 +515,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 2750,
       "cacheReadTokens": 1005008,
-      "inputTokens": 1207314,
+      "inputTokens": 1206414,
       "metadata": {
         "agents": [
           "amp",
@@ -583,10 +583,10 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 12050,
-          "cost": 0.181785,
-          "inputTokens": 3944,
+          "cost": 0.161535,
+          "inputTokens": 3044,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1369
+          "outputTokens": 1279
         },
         {
           "cacheCreationTokens": 990,
@@ -1123,10 +1123,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 26079,
+      "outputTokens": 25989,
       "period": "2026-01",
-      "totalCost": 4.017020445,
-      "totalTokens": 2243248
+      "totalCost": 3.9967704449999992,
+      "totalTokens": 2242258
     },
     {
       "agent": "all",
@@ -1160,10 +1160,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 14635,
     "cacheReadTokens": 1269287,
-    "inputTokens": 1313987,
-    "outputTokens": 54560,
-    "totalCost": 8.746569265000003,
-    "totalTokens": 2655636,
+    "inputTokens": 1313087,
+    "outputTokens": 54470,
+    "totalCost": 8.726319265000003,
+    "totalTokens": 2654646,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

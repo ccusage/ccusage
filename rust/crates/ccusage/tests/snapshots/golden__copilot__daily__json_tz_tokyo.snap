@@ -16,17 +16,18 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 200,
-          "cost": 0.017925000000000003,
+          "cost": 0.4,
           "inputTokens": 300,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 150
+          "outputTokens": 150,
+          "storedCost": 0.4
         }
       ],
       "modelsUsed": [
         "claude-opus-4-20250514"
       ],
       "outputTokens": 150,
-      "totalCost": 0.017925000000000003,
+      "totalCost": 0.4,
       "totalTokens": 750
     },
     {
@@ -37,6 +38,15 @@ exit: 0
       "messageCount": 5,
       "modelBreakdowns": [
         {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 600,
+          "cost": 0.210935,
+          "inputTokens": 2400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 500,
+          "storedCost": 0.2
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.1,
@@ -44,14 +54,6 @@ exit: 0
           "modelName": "unknown",
           "outputTokens": 0,
           "storedCost": 0.1
-        },
-        {
-          "cacheCreationTokens": 200,
-          "cacheReadTokens": 600,
-          "cost": 0.015930000000000003,
-          "inputTokens": 2400,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 500
         },
         {
           "cacheCreationTokens": 0,
@@ -68,7 +70,7 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "outputTokens": 510,
-      "totalCost": 0.11608,
+      "totalCost": 0.31108500000000006,
       "totalTokens": 3830
     },
     {
@@ -132,10 +134,21 @@ exit: 0
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 800,
-          "cost": 0.011805000000000001,
+          "cost": 0.150315,
           "inputTokens": 1070,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 507
+          "outputTokens": 507,
+          "storedCost": 0.15
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 130,
+          "storedCost": 0.05
         },
         {
           "cacheCreationTokens": 0,
@@ -152,15 +165,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "gpt-5",
           "outputTokens": 80
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 900,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 130
         }
       ],
       "modelsUsed": [
@@ -171,7 +175,7 @@ exit: 0
         "gpt-5"
       ],
       "outputTokens": 850,
-      "totalCost": 0.334765,
+      "totalCost": 0.523275,
       "totalTokens": 5280
     },
     {
@@ -220,33 +224,33 @@ exit: 0
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
       "date": "2026-01-03",
-      "inputTokens": 1800,
-      "messageCount": 2,
+      "inputTokens": 900,
+      "messageCount": 1,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.040499999999999994,
-          "inputTokens": 1800,
+          "cost": 0.020249999999999997,
+          "inputTokens": 900,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 180
+          "outputTokens": 90
         }
       ],
       "modelsUsed": [
         "claude-opus-4-20250514"
       ],
-      "outputTokens": 180,
-      "totalCost": 0.040499999999999994,
-      "totalTokens": 1980
+      "outputTokens": 90,
+      "totalCost": 0.020249999999999997,
+      "totalTokens": 990
     }
   ],
   "totals": {
     "cacheCreationTokens": 500,
     "cacheReadTokens": 2600,
-    "inputTokens": 11010,
-    "outputTokens": 2800,
-    "totalCost": 0.6266775,
-    "totalTokens": 16930,
+    "inputTokens": 10110,
+    "outputTokens": 2710,
+    "totalCost": 1.3720175000000001,
+    "totalTokens": 15940,
     "unpricedModels": [
       "copilot-mystery-1",
       "unknown"

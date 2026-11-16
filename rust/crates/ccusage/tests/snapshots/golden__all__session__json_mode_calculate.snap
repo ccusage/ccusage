@@ -952,32 +952,6 @@ exit: 0
       "totalTokens": 7150
     },
     {
-      "agent": "copilot",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 1800,
-      "metadata": {
-        "lastActivity": "2026-01-02T15:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.040499999999999994,
-          "inputTokens": 1800,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 180
-        }
-      ],
-      "modelsUsed": [
-        "claude-opus-4-20250514"
-      ],
-      "outputTokens": 180,
-      "period": "conv-export",
-      "totalCost": 0.040499999999999994,
-      "totalTokens": 1980
-    },
-    {
       "agent": "kimi",
       "cacheCreationTokens": 450,
       "cacheReadTokens": 39000,
@@ -1232,6 +1206,32 @@ exit: 0
       "period": "conv-vscode",
       "totalCost": 0.020255000000000002,
       "totalTokens": 4164
+    },
+    {
+      "agent": "copilot",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 900,
+      "metadata": {
+        "lastActivity": "2026-01-02T15:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.020249999999999997,
+          "inputTokens": 900,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 90
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 90,
+      "period": "conv-export",
+      "totalCost": 0.020249999999999997,
+      "totalTokens": 990
     },
     {
       "agent": "openclaw",
@@ -5325,10 +5325,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 15335,
     "cacheReadTokens": 1279887,
-    "inputTokens": 1324903,
-    "outputTokens": 64470,
-    "totalCost": 10.501740264999999,
-    "totalTokens": 2687782,
+    "inputTokens": 1324003,
+    "outputTokens": 64380,
+    "totalCost": 10.481490265,
+    "totalTokens": 2686792,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

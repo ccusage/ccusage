@@ -470,6 +470,53 @@ exit: 0
       "totalTokens": 451000
     },
     {
+      "agent": "copilot",
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 1200,
+      "inputTokens": 1800,
+      "metadata": {
+        "lastActivity": "2026-01-02T08:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.4,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0,
+          "storedCost": 0.4
+        },
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 1200,
+          "cost": 0.35,
+          "inputTokens": 1500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 700,
+          "storedCost": 0.35
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70,
+          "storedCost": 0.05
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "unknown",
+        "copilot-mystery-1"
+      ],
+      "outputTokens": 770,
+      "period": "session-alpha",
+      "totalCost": 0.8000000000000002,
+      "totalTokens": 4070
+    },
+    {
       "agent": "kilo",
       "cacheCreationTokens": 300,
       "cacheReadTokens": 6500,
@@ -890,52 +937,6 @@ exit: 0
       "totalTokens": 5500
     },
     {
-      "agent": "copilot",
-      "cacheCreationTokens": 300,
-      "cacheReadTokens": 1200,
-      "inputTokens": 1800,
-      "metadata": {
-        "lastActivity": "2026-01-02T08:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.4,
-          "inputTokens": 0,
-          "modelName": "unknown",
-          "outputTokens": 0,
-          "storedCost": 0.4
-        },
-        {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 1200,
-          "cost": 0.016485000000000003,
-          "inputTokens": 1500,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 700
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
-        }
-      ],
-      "modelsUsed": [
-        "claude-sonnet-4-20250514",
-        "unknown",
-        "copilot-mystery-1"
-      ],
-      "outputTokens": 770,
-      "period": "session-alpha",
-      "totalCost": 0.416485,
-      "totalTokens": 4070
-    },
-    {
       "agent": "opencode",
       "cacheCreationTokens": 100,
       "cacheReadTokens": 900,
@@ -961,6 +962,33 @@ exit: 0
       "period": "ses-agg-only",
       "totalCost": 0.4,
       "totalTokens": 1500
+    },
+    {
+      "agent": "copilot",
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 200,
+      "inputTokens": 300,
+      "metadata": {
+        "lastActivity": "2025-12-27T22:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
+          "cost": 0.4,
+          "inputTokens": 300,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 150,
+          "storedCost": 0.4
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 150,
+      "period": "session-delta",
+      "totalCost": 0.4,
+      "totalTokens": 750
     },
     {
       "agent": "qwen",
@@ -1524,32 +1552,6 @@ exit: 0
       "totalTokens": 5560
     },
     {
-      "agent": "copilot",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 1800,
-      "metadata": {
-        "lastActivity": "2026-01-02T15:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.040499999999999994,
-          "inputTokens": 1800,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 180
-        }
-      ],
-      "modelsUsed": [
-        "claude-opus-4-20250514"
-      ],
-      "outputTokens": 180,
-      "period": "conv-export",
-      "totalCost": 0.040499999999999994,
-      "totalTokens": 1980
-    },
-    {
       "agent": "kimi",
       "cacheCreationTokens": 450,
       "cacheReadTokens": 39000,
@@ -1861,29 +1863,29 @@ exit: 0
     },
     {
       "agent": "copilot",
-      "cacheCreationTokens": 100,
-      "cacheReadTokens": 200,
-      "inputTokens": 300,
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 900,
       "metadata": {
-        "lastActivity": "2025-12-27T22:00:00.000Z"
+        "lastActivity": "2026-01-02T15:00:00.000Z"
       },
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 200,
-          "cost": 0.017925000000000003,
-          "inputTokens": 300,
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.020249999999999997,
+          "inputTokens": 900,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 150
+          "outputTokens": 90
         }
       ],
       "modelsUsed": [
         "claude-opus-4-20250514"
       ],
-      "outputTokens": 150,
-      "period": "session-delta",
-      "totalCost": 0.017925000000000003,
-      "totalTokens": 750
+      "outputTokens": 90,
+      "period": "conv-export",
+      "totalCost": 0.020249999999999997,
+      "totalTokens": 990
     },
     {
       "agent": "amp",
@@ -5398,10 +5400,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 15675,
     "cacheReadTokens": 1283917,
-    "inputTokens": 1326913,
-    "outputTokens": 64790,
-    "totalCost": 29.56635626500003,
-    "totalTokens": 2694482,
+    "inputTokens": 1326013,
+    "outputTokens": 64700,
+    "totalCost": 30.311696265000027,
+    "totalTokens": 2693492,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

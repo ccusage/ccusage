@@ -105,12 +105,12 @@ exit: 0
         {
           "cacheCreationTokens": 4100,
           "cacheReadTokens": 64960,
-          "cost": 2.704651,
+          "cost": 3.0381660000000004,
           "inputTokens": 21021,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 6165,
-          "storedCost": 2.59
+          "storedCost": 2.94
         },
         {
           "cacheCreationTokens": 200,
@@ -131,6 +131,16 @@ exit: 0
           "storedCost": 1.85
         },
         {
+          "cacheCreation1hTokens": 400,
+          "cacheCreationTokens": 1400,
+          "cacheReadTokens": 26200,
+          "cost": 1.13225,
+          "inputTokens": 13250,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 3095,
+          "storedCost": 0.65
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 1.1,
@@ -138,16 +148,6 @@ exit: 0
           "modelName": "[pi] claude-opus-4-20250514",
           "outputTokens": 90,
           "storedCost": 1.1
-        },
-        {
-          "cacheCreation1hTokens": 400,
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 26200,
-          "cost": 0.7501749999999999,
-          "inputTokens": 13250,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 3095,
-          "storedCost": 0.25
         },
         {
           "cacheCreationTokens": 100,
@@ -230,6 +230,15 @@ exit: 0
           "inputTokens": 3300,
           "modelName": "gpt-5.5",
           "outputTokens": 630
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70,
+          "storedCost": 0.05
         },
         {
           "cacheCreationTokens": 900,
@@ -405,15 +414,6 @@ exit: 0
           "outputTokens": 5
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
-        },
-        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 500,
           "cost": 0.0,
@@ -526,14 +526,14 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2025-12",
-      "totalCost": 20.868838620000005,
+      "totalCost": 21.634428619999994,
       "totalTokens": 415546
     },
     {
       "agent": "all",
       "cacheCreationTokens": 2750,
       "cacheReadTokens": 1005008,
-      "inputTokens": 1207314,
+      "inputTokens": 1206414,
       "metadata": {
         "agents": [
           "amp",
@@ -569,10 +569,10 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 12050,
-          "cost": 1.3873475,
-          "inputTokens": 3944,
+          "cost": 1.3670975,
+          "inputTokens": 3044,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1369,
+          "outputTokens": 1279,
           "storedCost": 1.25
         },
         {
@@ -1151,10 +1151,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 26079,
+      "outputTokens": 25989,
       "period": "2026-01",
-      "totalCost": 6.938965445,
-      "totalTokens": 2243248
+      "totalCost": 6.918715445,
+      "totalTokens": 2242258
     },
     {
       "agent": "all",
@@ -1188,10 +1188,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 14975,
     "cacheReadTokens": 1273317,
-    "inputTokens": 1315997,
-    "outputTokens": 54880,
-    "totalCost": 27.811185265000006,
-    "totalTokens": 2662336,
+    "inputTokens": 1315097,
+    "outputTokens": 54790,
+    "totalCost": 28.556525264999994,
+    "totalTokens": 2661346,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

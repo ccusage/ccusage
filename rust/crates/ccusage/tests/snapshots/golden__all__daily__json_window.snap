@@ -71,6 +71,16 @@ exit: 0
           "outputTokens": 1770
         },
         {
+          "cacheCreationTokens": 1400,
+          "cacheReadTokens": 32060,
+          "cost": 0.225788,
+          "inputTokens": 8920,
+          "missingPricing": true,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 3340,
+          "storedCost": 0.16999999999999998
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "cost": 0.2,
@@ -99,16 +109,6 @@ exit: 0
           "storedCost": 0.11
         },
         {
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 32060,
-          "cost": 0.087278,
-          "inputTokens": 8920,
-          "missingPricing": true,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 3340,
-          "storedCost": 0.02
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
           "cost": 0.06344999999999999,
@@ -134,6 +134,15 @@ exit: 0
           "missingPricing": true,
           "modelName": "unknown",
           "outputTokens": 4,
+          "storedCost": 0.05
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70,
           "storedCost": 0.05
         },
         {
@@ -276,15 +285,6 @@ exit: 0
           "outputTokens": 65
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
-        },
-        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 500,
           "cost": 0.0,
@@ -367,7 +367,7 @@ exit: 0
       ],
       "outputTokens": 18419,
       "period": "2025-12-31",
-      "totalCost": 11.197329095,
+      "totalCost": 11.385839095000001,
       "totalTokens": 245800
     },
     {
@@ -880,7 +880,7 @@ exit: 0
     "cacheReadTokens": 642944,
     "inputTokens": 1144049,
     "outputTokens": 34192,
-    "totalCost": 14.86017704,
+    "totalCost": 15.04868704,
     "totalTokens": 1828808,
     "unpricedModels": [
       "GLM-5.3",

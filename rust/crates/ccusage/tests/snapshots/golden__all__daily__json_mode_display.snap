@@ -110,6 +110,14 @@ exit: 0
           "outputTokens": 281
         },
         {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
+          "cost": 0.40525,
+          "inputTokens": 550,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 225
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.125,
@@ -132,14 +140,6 @@ exit: 0
           "inputTokens": 100,
           "modelName": "[openclaw] claude-opus-4-20250514",
           "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 200,
-          "cost": 0.0052499999999999995,
-          "inputTokens": 550,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 225
         },
         {
           "cacheCreationTokens": 0,
@@ -223,7 +223,7 @@ exit: 0
       ],
       "outputTokens": 1629,
       "period": "2025-12-27",
-      "totalCost": 3.4191624999999997,
+      "totalCost": 3.8191624999999996,
       "totalTokens": 11099
     },
     {
@@ -258,7 +258,7 @@ exit: 0
         {
           "cacheCreationTokens": 2700,
           "cacheReadTokens": 32900,
-          "cost": 2.558463,
+          "cost": 2.758463,
           "inputTokens": 11101,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 2325
@@ -459,7 +459,7 @@ exit: 0
       ],
       "outputTokens": 8264,
       "period": "2025-12-30",
-      "totalCost": 6.063543624999999,
+      "totalCost": 6.2635436250000005,
       "totalTokens": 158467
     },
     {
@@ -532,6 +532,14 @@ exit: 0
           "outputTokens": 80
         },
         {
+          "cacheCreationTokens": 1400,
+          "cacheReadTokens": 32060,
+          "cost": 0.1724,
+          "inputTokens": 8920,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 3340
+        },
+        {
           "cacheCreationTokens": 1000,
           "cacheReadTokens": 10000,
           "cost": 0.11,
@@ -565,19 +573,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 18030,
           "cost": 0.039029375,
           "inputTokens": 7360,
           "modelName": "gpt-5",
           "outputTokens": 1507
-        },
-        {
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 32060,
-          "cost": 0.0224,
-          "inputTokens": 8920,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 3340
         },
         {
           "cacheCreationTokens": 100,
@@ -642,14 +650,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "gemini-3-pro",
           "outputTokens": 10
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
         },
         {
           "cacheCreationTokens": 20,
@@ -803,7 +803,7 @@ exit: 0
       ],
       "outputTokens": 18299,
       "period": "2025-12-31",
-      "totalCost": 10.811537375,
+      "totalCost": 11.011537375,
       "totalTokens": 244880
     },
     {
@@ -1293,7 +1293,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1350,
       "cacheReadTokens": 522980,
-      "inputTokens": 124309,
+      "inputTokens": 123409,
       "metadata": {
         "agents": [
           "amp",
@@ -1322,9 +1322,9 @@ exit: 0
           "cacheCreationTokens": 50,
           "cacheReadTokens": 8550,
           "cost": 1.25,
-          "inputTokens": 3000,
+          "inputTokens": 2100,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1200
+          "outputTokens": 1110
         },
         {
           "cacheCreationTokens": 0,
@@ -1619,10 +1619,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 10306,
+      "outputTokens": 10216,
       "period": "2026-01-02",
       "totalCost": 1.8509897499999999,
-      "totalTokens": 660240
+      "totalTokens": 659250
     },
     {
       "agent": "all",
@@ -1656,10 +1656,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 14975,
     "cacheReadTokens": 1273317,
-    "inputTokens": 1314997,
-    "outputTokens": 54780,
-    "totalCost": 23.918788250000002,
-    "totalTokens": 2661236,
+    "inputTokens": 1314097,
+    "outputTokens": 54690,
+    "totalCost": 24.71878825,
+    "totalTokens": 2660246,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

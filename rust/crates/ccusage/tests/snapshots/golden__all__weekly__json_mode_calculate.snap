@@ -8,10 +8,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 14635,
     "cacheReadTokens": 1269287,
-    "inputTokens": 1313987,
-    "outputTokens": 54560,
-    "totalCost": 8.746569265,
-    "totalTokens": 2655636,
+    "inputTokens": 1313087,
+    "outputTokens": 54470,
+    "totalCost": 8.726319265,
+    "totalTokens": 2654646,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -274,7 +274,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 13411,
       "cacheReadTokens": 1266224,
-      "inputTokens": 1305881,
+      "inputTokens": 1304981,
       "metadata": {
         "agents": [
           "amp",
@@ -328,10 +328,10 @@ exit: 0
           "cacheCreation1hTokens": 400,
           "cacheCreationTokens": 1400,
           "cacheReadTokens": 38050,
-          "cost": 0.9046599999999999,
-          "inputTokens": 16644,
+          "cost": 0.88441,
+          "inputTokens": 15744,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 4239
+          "outputTokens": 4149
         },
         {
           "cacheCreationTokens": 100,
@@ -986,10 +986,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 52442,
+      "outputTokens": 52352,
       "period": "2025-12-29",
-      "totalCost": 8.693996064999999,
-      "totalTokens": 2641095
+      "totalCost": 8.673746065,
+      "totalTokens": 2640105
     },
     {
       "agent": "all",

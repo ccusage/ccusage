@@ -427,6 +427,50 @@ exit: 0
       "totalTokens": 17776
     },
     {
+      "agent": "copilot",
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 1200,
+      "inputTokens": 1800,
+      "metadata": {
+        "lastActivity": "2026-01-02T08:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.4,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 1200,
+          "cost": 0.35,
+          "inputTokens": 1500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 700
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "unknown",
+        "copilot-mystery-1"
+      ],
+      "outputTokens": 770,
+      "period": "session-alpha",
+      "totalCost": 0.8000000000000002,
+      "totalTokens": 4070
+    },
+    {
       "agent": "kilo",
       "cacheCreationTokens": 300,
       "cacheReadTokens": 6500,
@@ -797,47 +841,29 @@ exit: 0
     },
     {
       "agent": "copilot",
-      "cacheCreationTokens": 300,
-      "cacheReadTokens": 1200,
-      "inputTokens": 1800,
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 200,
+      "inputTokens": 300,
       "metadata": {
-        "lastActivity": "2026-01-02T08:00:00.000Z"
+        "lastActivity": "2025-12-27T22:00:00.000Z"
       },
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
           "cost": 0.4,
-          "inputTokens": 0,
-          "modelName": "unknown",
-          "outputTokens": 0
-        },
-        {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 1200,
-          "cost": 0.0,
-          "inputTokens": 1500,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 700
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
           "inputTokens": 300,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 150
         }
       ],
       "modelsUsed": [
-        "claude-sonnet-4-20250514",
-        "unknown",
-        "copilot-mystery-1"
+        "claude-opus-4-20250514"
       ],
-      "outputTokens": 770,
-      "period": "session-alpha",
+      "outputTokens": 150,
+      "period": "session-delta",
       "totalCost": 0.4,
-      "totalTokens": 4070
+      "totalTokens": 750
     },
     {
       "agent": "opencode",
@@ -2964,7 +2990,7 @@ exit: 0
       "agent": "copilot",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 1800,
+      "inputTokens": 900,
       "metadata": {
         "lastActivity": "2026-01-02T15:00:00.000Z"
       },
@@ -2973,18 +2999,18 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 1800,
+          "inputTokens": 900,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 180
+          "outputTokens": 90
         }
       ],
       "modelsUsed": [
         "claude-opus-4-20250514"
       ],
-      "outputTokens": 180,
+      "outputTokens": 90,
       "period": "conv-export",
       "totalCost": 0,
-      "totalTokens": 1980
+      "totalTokens": 990
     },
     {
       "agent": "copilot",
@@ -4872,32 +4898,6 @@ exit: 0
     },
     {
       "agent": "copilot",
-      "cacheCreationTokens": 100,
-      "cacheReadTokens": 200,
-      "inputTokens": 300,
-      "metadata": {
-        "lastActivity": "2025-12-27T22:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 200,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "claude-opus-4-20250514"
-      ],
-      "outputTokens": 150,
-      "period": "session-delta",
-      "totalCost": 0,
-      "totalTokens": 750
-    },
-    {
-      "agent": "copilot",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
       "inputTokens": 450,
@@ -5294,10 +5294,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 15675,
     "cacheReadTokens": 1283917,
-    "inputTokens": 1325913,
-    "outputTokens": 64690,
-    "totalCost": 25.582713250000015,
-    "totalTokens": 2693382,
+    "inputTokens": 1325013,
+    "outputTokens": 64600,
+    "totalCost": 26.382713250000016,
+    "totalTokens": 2692392,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

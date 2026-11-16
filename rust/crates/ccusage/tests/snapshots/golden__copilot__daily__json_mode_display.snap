@@ -16,7 +16,7 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 200,
-          "cost": 0.0,
+          "cost": 0.4,
           "inputTokens": 300,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 150
@@ -26,7 +26,7 @@ exit: 0
         "claude-opus-4-20250514"
       ],
       "outputTokens": 150,
-      "totalCost": 0.0,
+      "totalCost": 0.4,
       "totalTokens": 750
     },
     {
@@ -37,20 +37,20 @@ exit: 0
       "messageCount": 5,
       "modelBreakdowns": [
         {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 600,
+          "cost": 0.2,
+          "inputTokens": 2400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 500
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.1,
           "inputTokens": 0,
           "modelName": "unknown",
           "outputTokens": 0
-        },
-        {
-          "cacheCreationTokens": 200,
-          "cacheReadTokens": 600,
-          "cost": 0.0,
-          "inputTokens": 2400,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 500
         },
         {
           "cacheCreationTokens": 0,
@@ -67,7 +67,7 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "outputTokens": 510,
-      "totalCost": 0.1,
+      "totalCost": 0.30000000000000004,
       "totalTokens": 3830
     },
     {
@@ -78,12 +78,28 @@ exit: 0
       "messageCount": 11,
       "modelBreakdowns": [
         {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 800,
+          "cost": 0.15,
+          "inputTokens": 1000,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 500
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.05,
           "inputTokens": 40,
           "modelName": "unknown",
           "outputTokens": 4
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70
         },
         {
           "cacheCreationTokens": 0,
@@ -100,22 +116,6 @@ exit: 0
           "inputTokens": 2000,
           "modelName": "gpt-5",
           "outputTokens": 380
-        },
-        {
-          "cacheCreationTokens": 200,
-          "cacheReadTokens": 800,
-          "cost": 0.0,
-          "inputTokens": 1000,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 500
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
         }
       ],
       "modelsUsed": [
@@ -126,7 +126,7 @@ exit: 0
         "copilot-mystery-1"
       ],
       "outputTokens": 1075,
-      "totalCost": 0.05,
+      "totalCost": 0.25,
       "totalTokens": 6745
     },
     {
@@ -183,8 +183,8 @@ exit: 0
       "cacheCreationTokens": 0,
       "cacheReadTokens": 400,
       "date": "2026-01-02",
-      "inputTokens": 2940,
-      "messageCount": 6,
+      "inputTokens": 2040,
+      "messageCount": 5,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -214,9 +214,9 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 1800,
+          "inputTokens": 900,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 180
+          "outputTokens": 90
         }
       ],
       "modelsUsed": [
@@ -225,18 +225,18 @@ exit: 0
         "claude-sonnet-4-20250514",
         "claude-opus-4-20250514"
       ],
-      "outputTokens": 926,
+      "outputTokens": 836,
       "totalCost": 0.1,
-      "totalTokens": 4266
+      "totalTokens": 3276
     }
   ],
   "totals": {
     "cacheCreationTokens": 500,
     "cacheReadTokens": 2600,
-    "inputTokens": 11010,
-    "outputTokens": 2800,
-    "totalCost": 0.52,
-    "totalTokens": 16930
+    "inputTokens": 10110,
+    "outputTokens": 2710,
+    "totalCost": 1.3200000000000003,
+    "totalTokens": 15940
   }
 }
 

@@ -105,6 +105,13 @@ exit: 0
           "outputTokens": 281
         },
         {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
+          "inputTokens": 550,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 225
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 2010,
@@ -117,13 +124,6 @@ exit: 0
           "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 500
-        },
-        {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 200,
-          "inputTokens": 550,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 225
         },
         {
           "cacheCreationTokens": 0,
@@ -485,6 +485,14 @@ exit: 0
           "outputTokens": 1770
         },
         {
+          "cacheCreationTokens": 1400,
+          "cacheReadTokens": 32060,
+          "inputTokens": 8920,
+          "missingPricing": true,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 3340
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "inputTokens": 2000,
@@ -507,14 +515,6 @@ exit: 0
           "outputTokens": 500
         },
         {
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 32060,
-          "inputTokens": 8920,
-          "missingPricing": true,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 3340
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
           "inputTokens": 1400,
@@ -535,6 +535,13 @@ exit: 0
           "missingPricing": true,
           "modelName": "unknown",
           "outputTokens": 4
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70
         },
         {
           "cacheCreationTokens": 100,
@@ -655,14 +662,6 @@ exit: 0
           "inputTokens": 310,
           "modelName": "qwen-3-235b",
           "outputTokens": 65
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 300,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
         },
         {
           "cacheCreationTokens": 20,
@@ -1195,7 +1194,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1350,
       "cacheReadTokens": 522980,
-      "inputTokens": 124309,
+      "inputTokens": 123409,
       "metadata": {
         "agents": [
           "amp",
@@ -1223,9 +1222,9 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 8550,
-          "inputTokens": 3000,
+          "inputTokens": 2100,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1200
+          "outputTokens": 1110
         },
         {
           "cacheCreationTokens": 0,
@@ -1492,9 +1491,9 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 10306,
+      "outputTokens": 10216,
       "period": "2026-01-02",
-      "totalTokens": 660240
+      "totalTokens": 659250
     },
     {
       "agent": "all",
@@ -1526,9 +1525,9 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 14975,
     "cacheReadTokens": 1273317,
-    "inputTokens": 1315997,
-    "outputTokens": 54880,
-    "totalTokens": 2662336,
+    "inputTokens": 1315097,
+    "outputTokens": 54790,
+    "totalTokens": 2661346,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

@@ -346,6 +346,53 @@ exit: 0
       "totalTokens": 12230
     },
     {
+      "agent": "copilot",
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 800,
+      "inputTokens": 1300,
+      "metadata": {
+        "lastActivity": "2026-01-01T12:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.2,
+          "inputTokens": 0,
+          "modelName": "unknown",
+          "outputTokens": 0,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 800,
+          "cost": 0.15,
+          "inputTokens": 1000,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 500,
+          "storedCost": 0.15
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 300,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 70,
+          "storedCost": 0.05
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "copilot-mystery-1",
+        "unknown"
+      ],
+      "outputTokens": 570,
+      "period": "session-alpha",
+      "totalCost": 0.4,
+      "totalTokens": 2870
+    },
+    {
       "agent": "kilo",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 2500,
@@ -379,52 +426,6 @@ exit: 0
       "period": "ses-alpha",
       "totalCost": 0.23726250000000002,
       "totalTokens": 4542
-    },
-    {
-      "agent": "copilot",
-      "cacheCreationTokens": 200,
-      "cacheReadTokens": 800,
-      "inputTokens": 1300,
-      "metadata": {
-        "lastActivity": "2026-01-01T12:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.2,
-          "inputTokens": 0,
-          "modelName": "unknown",
-          "outputTokens": 0,
-          "storedCost": 0.2
-        },
-        {
-          "cacheCreationTokens": 200,
-          "cacheReadTokens": 800,
-          "cost": 0.011490000000000002,
-          "inputTokens": 1000,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 500
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 300,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 70
-        }
-      ],
-      "modelsUsed": [
-        "claude-sonnet-4-20250514",
-        "copilot-mystery-1",
-        "unknown"
-      ],
-      "outputTokens": 570,
-      "period": "session-alpha",
-      "totalCost": 0.21149,
-      "totalTokens": 2870
     },
     {
       "agent": "openclaw",
@@ -2871,7 +2872,7 @@ exit: 0
     "cacheReadTokens": 541284,
     "inputTokens": 840231,
     "outputTokens": 30780,
-    "totalCost": 14.52723164,
+    "totalCost": 14.715741640000001,
     "totalTokens": 1419751,
     "unpricedModels": [
       "GLM-5.3",

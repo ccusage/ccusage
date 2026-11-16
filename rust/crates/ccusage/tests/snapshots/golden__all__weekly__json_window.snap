@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 642944,
     "inputTokens": 1144049,
     "outputTokens": 34192,
-    "totalCost": 14.860177040000002,
+    "totalCost": 15.048687040000003,
     "totalTokens": 1828808,
     "unpricedModels": [
       "GLM-5.3",
@@ -107,12 +107,12 @@ exit: 0
         {
           "cacheCreationTokens": 1400,
           "cacheReadTokens": 51060,
-          "cost": 0.6225219999999999,
+          "cost": 0.7610319999999999,
           "inputTokens": 15273,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 4539,
-          "storedCost": 0.52
+          "storedCost": 0.67
         },
         {
           "cacheCreationTokens": 0,
@@ -205,6 +205,16 @@ exit: 0
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 899,
           "storedCost": 0.06
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 130,
+          "storedCost": 0.05
         },
         {
           "cacheCreationTokens": 100,
@@ -463,15 +473,6 @@ exit: 0
           "outputTokens": 30
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 900,
-          "missingPricing": true,
-          "modelName": "copilot-mystery-1",
-          "outputTokens": 130
-        },
-        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 500,
           "cost": 0.0,
@@ -652,7 +653,7 @@ exit: 0
       ],
       "outputTokens": 34192,
       "period": "2025-12-29",
-      "totalCost": 14.860177040000002,
+      "totalCost": 15.048687040000003,
       "totalTokens": 1828808
     }
   ]
