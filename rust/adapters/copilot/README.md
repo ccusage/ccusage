@@ -21,7 +21,9 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 - `COPILOT_OTEL_FILE_EXPORTER_PATH` (one explicit JSONL file)
 
 Session-state `session.usage_record` events are per-call receipts, keyed by their `accounting`
-identity (`sourceSessionId`, `sequence`); a repeated identity counts once. Shutdown `modelMetrics`
+identity (`sourceSessionId`, `sequence`), or by event `id` when a record has no `sourceSessionId`
+or no positive `sequence`; a repeated key counts once, and a record without tokens still counts as
+a request. Shutdown `modelMetrics`
 total every call before them, including receipted ones, so once a session has a receipt its later
 shutdowns and checkpoints are ignored. The parser folds each receipt into the running
 `(session, model)` total that continues from the last earlier shutdown, so the loader treats
