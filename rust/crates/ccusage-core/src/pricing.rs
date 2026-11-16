@@ -1903,121 +1903,95 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
-        let mut overrides: Vec<_> = overrides.into_iter().collect();
-        let keys: FxHashSet<&str> = overrides.iter().map(|(model, _)| model.as_str()).collect();
-        overrides.sort_by_cached_key(|(model, _)| override_application_order(model, &keys));
+        let overrides: FxHashMap<&'a str, &'a PricingOverride> = overrides
+            .into_iter()
+            .map(|(model, override_value)| (model.as_str(), override_value))
+            .collect();
+        let mut resolved = FxHashMap::default();
+        for model in overrides.keys() {
+            self.resolve_override(model, &overrides, &mut resolved);
+        }
+        for (model, pricing) in resolved {
+            self.entries.insert(model.to_string(), pricing);
+        }
         for (model, override_value) in overrides {
-            self.apply_override(model, override_value);
+            self.user_overrides
+                .insert(model.to_string(), override_value.clone());
+            if let Some(limit) = override_value.max_input_tokens {
+                self.context_limits.insert(model.to_string(), limit);
+            }
         }
         self.clear_find_cache();
     }
 
-    fn apply_override(&mut self, model: &str, override_value: &PricingOverride) {
-        self.user_overrides
-            .insert(model.to_string(), override_value.clone());
-        let entry = |name: &str| {
-            self.entries
-                .get(name)
-                .copied()
-                .or_else(|| pricing_alias(name).and_then(|alias| self.entries.get(alias).copied()))
-        };
-        let resolved_model = crate::model_aliases::resolve_model_name(model);
-        let base = entry(model)
-            .or_else(|| entry(resolved_model.as_ref()))
-            .unwrap_or_else(|| {
-                let speed = SpeedMultipliers::get();
-                speed
-                    .for_model(model)
-                    .or(speed.for_model(resolved_model.as_ref()))
-                    .applied_to(Pricing::empty())
-            });
-
-        let new_input = override_value.input_cost_per_token.unwrap_or(base.input);
-
-        // When input cost is overridden but cache fields are not explicitly provided,
-        // and the base cache values were derived from input (indicated by
-        // !cache_read_explicit), scale cache costs proportionally by
-        // new_input / old_input. When cache_read_explicit is true, the base cache
-        // values were independently set (from LiteLLM data or a prior override),
-        // so preserve them unchanged.
-        let should_scale = override_value.input_cost_per_token.is_some()
-            && base.input > 0.0
-            && !base.cache_read_explicit;
-        let scale = if should_scale {
-            new_input / base.input
-        } else {
-            1.0
-        };
-
-        let cache_create = if let Some(value) = override_value.cache_creation_input_token_cost {
-            value
-        } else if should_scale && base.cache_create > 0.0 {
-            base.cache_create * scale
-        } else {
-            base.cache_create
-        };
-
-        let cache_read = if let Some(value) = override_value.cache_read_input_token_cost {
-            value
-        } else if should_scale && base.cache_read > 0.0 {
-            base.cache_read * scale
-        } else {
-            base.cache_read
-        };
-
-        let cache_create_above_200k = if override_value
-            .cache_creation_input_token_cost_above_200k_tokens
-            .is_some()
-        {
-            override_value.cache_creation_input_token_cost_above_200k_tokens
-        } else if should_scale {
-            base.cache_create_above_200k.map(|v| v * scale)
-        } else {
-            base.cache_create_above_200k
-        };
-
-        let cache_read_above_200k = if override_value
-            .cache_read_input_token_cost_above_200k_tokens
-            .is_some()
-        {
-            override_value.cache_read_input_token_cost_above_200k_tokens
-        } else if should_scale {
-            base.cache_read_above_200k.map(|v| v * scale)
-        } else {
-            base.cache_read_above_200k
-        };
-
-        let pricing = Pricing {
-            input: new_input,
-            output: override_value.output_cost_per_token.unwrap_or(base.output),
-            cache_create,
-            cache_read,
-            cache_read_explicit: override_value.cache_read_input_token_cost.is_some()
-                || base.cache_read_explicit,
-            cache_create_explicit: override_value.cache_creation_input_token_cost.is_some()
-                || base.cache_create_explicit,
-            input_above_200k: override_value
-                .input_cost_per_token_above_200k_tokens
-                .or(base.input_above_200k),
-            output_above_200k: override_value
-                .output_cost_per_token_above_200k_tokens
-                .or(base.output_above_200k),
-            cache_create_above_200k,
-            cache_read_above_200k,
-            long_context_threshold: base.long_context_threshold,
-            fast_multiplier: override_value
-                .fast_multiplier
-                .unwrap_or(base.fast_multiplier),
-            ultrafast_multiplier: base.ultrafast_multiplier,
-            flex_multiplier: override_value
-                .flex_multiplier
-                .unwrap_or(base.flex_multiplier),
-        };
-
-        self.entries.insert(model.to_string(), pricing);
-        if let Some(limit) = override_value.max_input_tokens {
-            self.context_limits.insert(model.to_string(), limit);
+    fn resolve_override<'a>(
+        &self,
+        model: &'a str,
+        overrides: &FxHashMap<&'a str, &'a PricingOverride>,
+        resolved: &mut FxHashMap<&'a str, Pricing>,
+    ) -> Pricing {
+        if let Some(pricing) = resolved.get(model) {
+            return *pricing;
         }
+        let follow_overrides = !self.override_in_cycle(model, overrides);
+        let base = match self.override_base(model, overrides, follow_overrides) {
+            OverrideBase::Override(dependency) => {
+                self.resolve_override(dependency, overrides, resolved)
+            }
+            OverrideBase::Pricing(base) => base,
+        };
+        let pricing = overridden_pricing(base, overrides[model]);
+        resolved.insert(model, pricing);
+        pricing
+    }
+
+    fn override_base<'a>(
+        &self,
+        model: &str,
+        overrides: &FxHashMap<&'a str, &'a PricingOverride>,
+        follow_overrides: bool,
+    ) -> OverrideBase<'a> {
+        let resolved_model = crate::model_aliases::resolve_model_name(model);
+        let candidates = [
+            Some(model),
+            pricing_alias(model),
+            Some(resolved_model.as_ref()),
+            pricing_alias(resolved_model.as_ref()),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            if follow_overrides
+                && candidate != model
+                && let Some((&dependency, _)) = overrides.get_key_value(candidate)
+            {
+                return OverrideBase::Override(dependency);
+            }
+            if let Some(pricing) = self.entries.get(candidate) {
+                return OverrideBase::Pricing(*pricing);
+            }
+        }
+        let speed = SpeedMultipliers::get();
+        OverrideBase::Pricing(
+            speed
+                .for_model(model)
+                .or(speed.for_model(resolved_model.as_ref()))
+                .applied_to(Pricing::empty()),
+        )
+    }
+
+    fn override_in_cycle(
+        &self,
+        model: &str,
+        overrides: &FxHashMap<&str, &PricingOverride>,
+    ) -> bool {
+        let mut current = model;
+        for _ in 0..overrides.len() {
+            match self.override_base(current, overrides, true) {
+                OverrideBase::Override(next) if next == model => return true,
+                OverrideBase::Override(next) => current = next,
+                OverrideBase::Pricing(_) => return false,
+            }
+        }
+        false
     }
 
     fn clear_find_cache(&mut self) {
@@ -2280,6 +2254,95 @@ impl PricingMap {
     }
 }
 
+enum OverrideBase<'a> {
+    Override(&'a str),
+    Pricing(Pricing),
+}
+
+fn overridden_pricing(base: Pricing, override_value: &PricingOverride) -> Pricing {
+    let new_input = override_value.input_cost_per_token.unwrap_or(base.input);
+
+    // When input cost is overridden but cache fields are not explicitly provided,
+    // and the base cache values were derived from input (indicated by
+    // !cache_read_explicit), scale cache costs proportionally by
+    // new_input / old_input. When cache_read_explicit is true, the base cache
+    // values were independently set (from LiteLLM data or a prior override),
+    // so preserve them unchanged.
+    let should_scale = override_value.input_cost_per_token.is_some()
+        && base.input > 0.0
+        && !base.cache_read_explicit;
+    let scale = if should_scale {
+        new_input / base.input
+    } else {
+        1.0
+    };
+
+    let cache_create = if let Some(value) = override_value.cache_creation_input_token_cost {
+        value
+    } else if should_scale && base.cache_create > 0.0 {
+        base.cache_create * scale
+    } else {
+        base.cache_create
+    };
+
+    let cache_read = if let Some(value) = override_value.cache_read_input_token_cost {
+        value
+    } else if should_scale && base.cache_read > 0.0 {
+        base.cache_read * scale
+    } else {
+        base.cache_read
+    };
+
+    let cache_create_above_200k = if override_value
+        .cache_creation_input_token_cost_above_200k_tokens
+        .is_some()
+    {
+        override_value.cache_creation_input_token_cost_above_200k_tokens
+    } else if should_scale {
+        base.cache_create_above_200k.map(|v| v * scale)
+    } else {
+        base.cache_create_above_200k
+    };
+
+    let cache_read_above_200k = if override_value
+        .cache_read_input_token_cost_above_200k_tokens
+        .is_some()
+    {
+        override_value.cache_read_input_token_cost_above_200k_tokens
+    } else if should_scale {
+        base.cache_read_above_200k.map(|v| v * scale)
+    } else {
+        base.cache_read_above_200k
+    };
+
+    Pricing {
+        input: new_input,
+        output: override_value.output_cost_per_token.unwrap_or(base.output),
+        cache_create,
+        cache_read,
+        cache_read_explicit: override_value.cache_read_input_token_cost.is_some()
+            || base.cache_read_explicit,
+        cache_create_explicit: override_value.cache_creation_input_token_cost.is_some()
+            || base.cache_create_explicit,
+        input_above_200k: override_value
+            .input_cost_per_token_above_200k_tokens
+            .or(base.input_above_200k),
+        output_above_200k: override_value
+            .output_cost_per_token_above_200k_tokens
+            .or(base.output_above_200k),
+        cache_create_above_200k,
+        cache_read_above_200k,
+        long_context_threshold: base.long_context_threshold,
+        fast_multiplier: override_value
+            .fast_multiplier
+            .unwrap_or(base.fast_multiplier),
+        ultrafast_multiplier: base.ultrafast_multiplier,
+        flex_multiplier: override_value
+            .flex_multiplier
+            .unwrap_or(base.flex_multiplier),
+    }
+}
+
 fn parse_litellm_pricing(value: Value) -> Option<LiteLlmPricing> {
     if value
         .as_object()
@@ -2484,36 +2547,6 @@ fn model_without_date_suffix(model: &str) -> &str {
         }
     }
     model
-}
-
-/// Sorts an override after the overridden models its base entry is built
-/// from. A chain that loops sorts after every acyclic one, by how many links
-/// lead into the loop, so an alias pointing into a cycle follows the cycle.
-fn override_application_order(model: &str, keys: &FxHashSet<&str>) -> (bool, usize) {
-    // A chain longer than the number of keys must revisit one of them.
-    let chain: Vec<String> = std::iter::successors(Some(model.to_string()), |name| {
-        override_dependency(name, keys)
-    })
-    .take(keys.len() + 1)
-    .collect();
-    let occurrences = |name: &String| chain.iter().filter(|other| *other == name).count();
-    chain
-        .iter()
-        .position(|name| occurrences(name) > 1)
-        .map_or((false, chain.len() - 1), |cycle_entry| (true, cycle_entry))
-}
-
-fn override_dependency(model: &str, keys: &FxHashSet<&str>) -> Option<String> {
-    let resolved = crate::model_aliases::resolve_model_name(model);
-    [
-        pricing_alias(model),
-        Some(resolved.as_ref()),
-        pricing_alias(resolved.as_ref()),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|name| *name != model && keys.contains(name))
-    .map(str::to_string)
 }
 
 /// Maps model aliases to canonical pricing keys before fuzzy matching.
@@ -5308,6 +5341,49 @@ mod tests {
             .find(&key)
             .unwrap();
         assert_eq!(aliased.output, sol.output);
+    }
+
+    #[test]
+    fn alias_cycle_overrides_build_on_the_snapshot_not_on_each_other() {
+        let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+            ("cycle-a", "cycle-b"),
+            ("cycle-b", "cycle-a"),
+            ("into-cycle", "cycle-b"),
+        ]);
+        let overrides = std::collections::BTreeMap::from([
+            (
+                "cycle-a".to_string(),
+                ccusage_cli::PricingOverride {
+                    input_cost_per_token: Some(4e-6),
+                    ..Default::default()
+                },
+            ),
+            (
+                "cycle-b".to_string(),
+                ccusage_cli::PricingOverride {
+                    output_cost_per_token: Some(9e-6),
+                    ..Default::default()
+                },
+            ),
+            (
+                "into-cycle".to_string(),
+                ccusage_cli::PricingOverride {
+                    cache_read_input_token_cost: Some(1e-7),
+                    ..Default::default()
+                },
+            ),
+        ]);
+        let pricing = PricingMap::load_with_overrides(true, false, &overrides);
+
+        let cycle_a = pricing.find_exact("cycle-a").unwrap();
+        assert_eq!((cycle_a.input, cycle_a.output), (4e-6, 0.0));
+        let cycle_b = pricing.find_exact("cycle-b").unwrap();
+        assert_eq!((cycle_b.input, cycle_b.output), (0.0, 9e-6));
+        let into_cycle = pricing.find_exact("into-cycle").unwrap();
+        assert_eq!(
+            (into_cycle.input, into_cycle.output, into_cycle.cache_read),
+            (0.0, 9e-6, 1e-7)
+        );
     }
 
     #[test]
