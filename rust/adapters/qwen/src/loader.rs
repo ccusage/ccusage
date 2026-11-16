@@ -29,7 +29,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
         ))
     };
     let pricing = cx.pricing.or(owned_pricing.as_ref());
-    let files = super::paths::discover_chat_files_with_diagnostics(cx.diagnostics)?;
+    let files = super::paths::discover_chat_files(cx.diagnostics)?;
     let loaded = ccusage_adapter_common::read_units_flat(
         &files,
         shared.single_thread,

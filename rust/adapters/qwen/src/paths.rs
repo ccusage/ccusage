@@ -5,9 +5,7 @@ use std::{
 };
 
 use crate::Result;
-use ccusage_adapter_common::{
-    collect_files_with_extension, collect_files_with_extension_diagnosed,
-};
+use ccusage_adapter_common::collect_files_with_extension_diagnosed;
 use ccusage_core::Diagnostics;
 
 const QWEN_DATA_DIR_ENV: &str = "QWEN_DATA_DIR";
@@ -33,17 +31,7 @@ fn paths() -> Result<Vec<PathBuf>> {
         .collect())
 }
 
-pub(super) fn discover_chat_files() -> Result<Vec<PathBuf>> {
-    discover_chat_files_inner(None)
-}
-
-pub(super) fn discover_chat_files_with_diagnostics(
-    diagnostics: &Diagnostics,
-) -> Result<Vec<PathBuf>> {
-    discover_chat_files_inner(Some(diagnostics))
-}
-
-fn discover_chat_files_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<PathBuf>> {
+pub(super) fn discover_chat_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for root in paths()? {
         let projects = root.join("projects");
@@ -51,16 +39,7 @@ fn discover_chat_files_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<Pa
             continue;
         }
         let mut root_files = Vec::new();
-        if let Some(diagnostics) = diagnostics {
-            collect_files_with_extension_diagnosed(
-                &projects,
-                "jsonl",
-                &mut root_files,
-                diagnostics,
-            );
-        } else {
-            collect_files_with_extension(&projects, "jsonl", &mut root_files);
-        }
+        collect_files_with_extension_diagnosed(&projects, "jsonl", &mut root_files, diagnostics);
         root_files.retain(|file| is_chat_file(&projects, file));
         files.extend(root_files);
     }
@@ -137,7 +116,10 @@ mod tests {
         let _ = fixture.write_file("qwen/projects/project-a/chats/other/ignored.jsonl", "");
         let _guard = EnvVarGuard::set("QWEN_DATA_DIR", fixture.path("qwen"));
 
-        assert_eq!(discover_chat_files().unwrap(), [archived.clone(), direct]);
+        assert_eq!(
+            discover_chat_files(&ccusage_core::Diagnostics::new("qwen")).unwrap(),
+            [archived.clone(), direct]
+        );
         assert_eq!(project_from_file(&archived).as_deref(), Some("project-a"));
     }
 

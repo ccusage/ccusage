@@ -72,7 +72,8 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 }
 
 pub fn has_data() -> bool {
-    paths::discover_chat_files().is_ok_and(|files| !files.is_empty())
+    paths::discover_chat_files(&ccusage_core::Diagnostics::new("qwen"))
+        .is_ok_and(|files| !files.is_empty())
 }
 
 #[cfg(test)]
