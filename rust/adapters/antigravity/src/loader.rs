@@ -5,7 +5,10 @@ use ccusage_adapter_common::source::LoadContext;
 use crate::{LoadedEntry, Result};
 
 use super::{
-    parser::{AntigravityUsageEvent, event_to_loaded, merge_usage_event, parse_sqlite_file},
+    parser::{
+        AntigravityUsageEvent, ParsedDatabase, event_to_loaded, merge_usage_event,
+        parse_sqlite_file,
+    },
     paths::conversation_db_paths,
 };
 
@@ -14,11 +17,18 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     let mut events = Vec::new();
     for database_path in conversation_db_paths(cx.diagnostics)? {
         match parse_sqlite_file(&database_path) {
-            Ok(Some(parsed)) => events.extend(parsed),
-            Ok(None) => cx.diagnostics.debug_note(
+            Ok(ParsedDatabase::Events(parsed)) => events.extend(parsed),
+            Ok(ParsedDatabase::EmptySnapshot) => cx.diagnostics.debug_note(
                 &database_path,
                 format!(
                     "Skipping uninitialized Antigravity database '{}': empty SQLite snapshot",
+                    database_path.display()
+                ),
+            ),
+            Ok(ParsedDatabase::NoGenerationTable) => cx.diagnostics.debug_note(
+                &database_path,
+                format!(
+                    "Skipping Antigravity database '{}': no gen_metadata table",
                     database_path.display()
                 ),
             ),
@@ -1105,7 +1115,10 @@ mod tests {
         let fixture = Fixture::new();
         let database = fixture.write_file("conversations/empty.db", "");
 
-        assert!(parse_sqlite_file(&database).unwrap().is_none());
+        assert!(matches!(
+            parse_sqlite_file(&database).unwrap(),
+            ParsedDatabase::EmptySnapshot
+        ));
 
         let entries = load_from_fixture(&fixture, true);
 
@@ -1192,24 +1205,32 @@ mod tests {
     }
 
     #[test]
-    fn skips_database_missing_generation_table() {
+    fn notes_database_without_generation_table_only_under_debug() {
         let fixture = Fixture::new();
-        let db_path = fixture.path("conversations/missing-table.db");
-        let _ = fixture.create_dir_all("conversations");
+        let db_path = fixture.path("conversation_summaries.db");
         let connection = sqlite::open(&db_path).unwrap();
         connection
-            .execute("CREATE TABLE other (id INTEGER)")
+            .execute("CREATE TABLE summaries (id INTEGER PRIMARY KEY)")
             .unwrap();
         let _guard = EnvVarsGuard::set_many([(
             super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(fixture.root())),
         )]);
 
-        assert_skipped(
-            &skipped_databases(),
-            SkipKind::Invariant,
-            "unexpected shape",
-            &db_path,
+        let diagnostics = skipped_databases();
+
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 0);
+        assert!(diagnostics.warnings(&shared(true)).is_empty());
+        assert!(
+            diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..shared(true)
+                })
+                .contains(&format!(
+                    "Skipping Antigravity database '{}': no gen_metadata table",
+                    db_path.display()
+                ))
         );
     }
 

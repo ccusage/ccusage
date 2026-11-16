@@ -177,7 +177,14 @@ fn undecoded(detail: &'static str) -> impl FnOnce(&'static str) -> UnitError {
     move |_| UnitError::new(SkipKind::InvalidData, detail)
 }
 
-pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<AntigravityUsageEvent>>> {
+#[derive(Debug)]
+pub(super) enum ParsedDatabase {
+    Events(Vec<AntigravityUsageEvent>),
+    EmptySnapshot,
+    NoGenerationTable,
+}
+
+pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
     let fallback_timestamp = file_modified_timestamp(path);
     let connection =
         sqlite::Connection::open_with_flags(path, sqlite::OpenFlags::new().with_read_only())
@@ -186,7 +193,10 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<Antigr
         .execute("BEGIN DEFERRED TRANSACTION")
         .map_err(sqlite_failure)?;
     if database_snapshot_is_empty(&connection)? {
-        return Ok(None);
+        return Ok(ParsedDatabase::EmptySnapshot);
+    }
+    if !table_exists(&connection, "gen_metadata")? {
+        return Ok(ParsedDatabase::NoGenerationTable);
     }
     let session_id = path
         .file_stem()
@@ -329,7 +339,7 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<Option<Vec<Antigr
             );
         }
     }
-    Ok(Some(events))
+    Ok(ParsedDatabase::Events(events))
 }
 
 fn database_snapshot_is_empty(connection: &sqlite::Connection) -> DatabaseResult<bool> {

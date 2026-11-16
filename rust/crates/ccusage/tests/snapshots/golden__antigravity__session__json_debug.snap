@@ -210,7 +210,7 @@ exit: 0
 
 --- stderr ---
 Skipping uninitialized Antigravity database '[ROOT]/antigravity/ide/conversations/empty.db': empty SQLite snapshot
+Skipping Antigravity database '[ROOT]/antigravity/ide/conversations/missing-table.db': no gen_metadata table
 antigravity: unexpected shape: [ROOT]/antigravity/ide/conversations/bad-steps.db: database schema is not supported
-antigravity: unexpected shape: [ROOT]/antigravity/ide/conversations/missing-table.db: database schema is not supported
 antigravity: invalid data: [ROOT]/antigravity/ide/conversations/malformed-blob.db: generation metadata did not decode
 antigravity: invalid data: [ROOT]/antigravity/ide/conversations/not-a-database.db: database is corrupt or invalid
