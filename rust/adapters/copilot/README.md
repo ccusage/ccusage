@@ -23,12 +23,12 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 Session-state `session.usage_record` events are per-call receipts, keyed by their `accounting`
 identity (`sourceSessionId`, `sequence`), or by event `id` when a record has no `sourceSessionId`
 or no positive `sequence`; a repeated key counts once, and a record without tokens still counts as
-a request. Shutdown `modelMetrics`
-total every call before them, including receipted ones, so once a session has a receipt its later
-shutdowns and checkpoints are ignored. The parser folds each receipt into the running
-`(session, model)` total that continues from the last earlier shutdown, so the loader treats
-receipts exactly like the shutdown snapshots below and its interval split yields each call at its
-own timestamp.
+a request. Shutdown `modelMetrics` total every call before them, including receipted ones, so once
+a session has a receipt its later shutdowns and checkpoints are ignored. Each receipt is one entry at
+its own timestamp, outside the shutdown interval reconciliation below. A receipt replaces only the
+OpenTelemetry rows of its own call, matched by its `apiCallId` against `gen_ai.response.id` or by
+its `serviceRequestId` against `github.copilot.service_request_id`; rows that match no receipt are
+kept.
 
 Session-state shutdown records are cumulative per canonical `(session, model)` pair, so
 resumed sessions emit one shutdown per resume. The adapter reports each snapshot as interval

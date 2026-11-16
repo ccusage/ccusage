@@ -68,12 +68,14 @@ fn load_entries_inner(
     });
     let mut otel_entries = Vec::new();
     let mut session_state_entries = Vec::new();
+    let mut usage_records = Vec::new();
     let mut credit_snapshots = Vec::new();
     for (source, file_usage) in sources.iter().map(|source| source.kind).zip(parsed) {
         match source {
             CopilotSourceKind::Otel => otel_entries.extend(file_usage.entries),
             CopilotSourceKind::SessionState => {
                 session_state_entries.extend(file_usage.entries);
+                usage_records.extend(file_usage.usage_records);
                 credit_snapshots.extend(file_usage.credit_snapshots);
             }
         }
@@ -107,15 +109,28 @@ fn load_entries_inner(
         .iter()
         .map(|((session_id, model), timestamp)| ((session_id.as_str(), model.as_str()), *timestamp))
         .collect::<HashMap<_, _>>();
+    // Usage records identify their call, so they replace only the OTel rows of
+    // the same call; rows no record covers are kept.
+    let mut seen_records = HashSet::new();
+    usage_records.retain(|entry| seen_records.insert(entry.dedup_key.clone()));
+    let recorded_calls = usage_records
+        .iter()
+        .flat_map(|entry| entry.call_ids.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
     otel_entries.retain(|entry| {
         otel_after
             .get(&(entry.session_id.as_str(), entry.model.as_str()))
             .is_none_or(|after| entry.timestamp > *after)
+            && !entry
+                .call_ids
+                .iter()
+                .any(|id| recorded_calls.contains(id.as_str()))
     });
 
     let mut entries = session_state
         .entries
         .into_iter()
+        .chain(usage_records)
         .chain(otel_entries)
         .chain(credit_gaps)
         .map(|entry| usage_entry_to_loaded(entry, tz.as_ref(), shared.mode, pricing))
@@ -373,6 +388,7 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         // One AIU is one GitHub AI credit, billed at $0.01.
         cost_usd: Some(nano_aiu as f64 / 1e11),
         dedup_key: snapshot.dedup_key.clone(),
+        call_ids: Vec::new(),
     }
 }
 
@@ -418,6 +434,7 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         nano_aiu: current.nano_aiu.saturating_sub(baseline.nano_aiu),
         cost_usd: None,
         dedup_key: current.dedup_key.clone(),
+        call_ids: Vec::new(),
     }
 }
 
@@ -435,7 +452,7 @@ fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<CopilotSourc
     match kind {
         CopilotSourceKind::Otel => Ok(CopilotSourceUsage {
             entries: parse_otel_file(path)?,
-            credit_snapshots: Vec::new(),
+            ..CopilotSourceUsage::default()
         }),
         CopilotSourceKind::SessionState => parse_session_state_file(path),
     }
@@ -2176,18 +2193,75 @@ mod tests {
         assert_eq!(token_rows(&entries).len(), 3);
     }
 
+    /// A `test-model` usage record of `session-1` with 100 input tokens.
+    fn usage_record(id: &str, timestamp: &str, usage: serde_json::Value) -> String {
+        let mut usage_json = json!({"model": "test-model", "inputTokens": 100});
+        usage_json
+            .as_object_mut()
+            .unwrap()
+            .extend(usage.as_object().unwrap().clone());
+        json!({
+            "type": "session.usage_record",
+            "id": id,
+            "timestamp": timestamp,
+            "data": {"usage": usage_json}
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn keeps_otel_calls_that_no_usage_record_covers() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": usage_record(
+                "record-1",
+                "2026-01-02T10:00:00.000Z",
+                json!({"apiCallId": "response-2"}),
+            ),
+            "home/.copilot/otel/otel.jsonl":
+                otel_call("uncovered", "2026-01-02T09:00:00.000Z"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [
+                ("2026-01-02T09:00:00.000Z".to_string(), 1),
+                ("2026-01-02T10:00:00.000Z".to_string(), 100),
+            ]
+        );
+    }
+
     #[test]
     fn leaves_otel_calls_that_usage_records_cover_to_the_records() {
-        let otel = |span_id: &str, timestamp: &str| {
-            otel_call(span_id, timestamp)
-                .replace("session-1", "session-receipts")
-                .replace("test-model", "gpt-5.4")
+        let otel = |span_id: &str, timestamp: &str, call_id: (&str, &str)| {
+            let mut span: serde_json::Value = serde_json::from_str(
+                &otel_call(span_id, timestamp)
+                    .replace("session-1", "session-receipts")
+                    .replace("test-model", "gpt-5.4"),
+            )
+            .unwrap();
+            span["attributes"][call_id.0] = json!(call_id.1);
+            span.to_string()
         };
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-receipts/events.jsonl": RECEIPTS_ONLY,
             "home/.copilot/otel/otel.jsonl": [
-                otel("covered", "2026-02-05T09:05:00.000Z"),
-                otel("later", "2026-02-05T12:00:00.000Z"),
+                otel(
+                    "by-response",
+                    "2026-02-05T09:05:00.000Z",
+                    ("gen_ai.response.id", "chatcmpl-r-2"),
+                ),
+                otel(
+                    "by-service-request",
+                    "2026-02-05T09:05:00.000Z",
+                    ("github.copilot.service_request_id", "service-r-2"),
+                ),
+                otel(
+                    "unrecorded",
+                    "2026-02-05T09:05:00.000Z",
+                    ("gen_ai.response.id", "chatcmpl-unrecorded"),
+                ),
             ]
             .join("\n"),
         });
@@ -2202,7 +2276,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 ("2026-02-05T09:05:00.000Z".to_string(), 100),
-                ("2026-02-05T12:00:00.000Z".to_string(), 1),
+                ("2026-02-05T09:05:00.000Z".to_string(), 1),
             ]
         );
     }

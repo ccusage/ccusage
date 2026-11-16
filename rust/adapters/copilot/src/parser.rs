@@ -70,6 +70,9 @@ pub(super) struct CopilotUsageEntry {
     pub(super) nano_aiu: u64,
     pub(super) cost_usd: Option<f64>,
     pub(super) dedup_key: String,
+    /// Provider completion and Copilot service request IDs of a single call,
+    /// shared by its usage record and its OpenTelemetry rows.
+    pub(super) call_ids: Vec<String>,
 }
 
 /// Session-wide credit total from a `session.shutdown` or
@@ -89,6 +92,8 @@ pub(super) struct CopilotCreditSnapshot {
 #[derive(Debug, Default)]
 pub(super) struct CopilotSourceUsage {
     pub(super) entries: Vec<CopilotUsageEntry>,
+    /// One entry per `session.usage_record` call.
+    pub(super) usage_records: Vec<CopilotUsageEntry>,
     pub(super) credit_snapshots: Vec<CopilotCreditSnapshot>,
 }
 
@@ -111,6 +116,7 @@ struct CopilotUsageCandidate {
     source: CopilotUsageSource,
     trace_id: Option<String>,
     response_id: Option<String>,
+    service_request_id: Option<String>,
     model: String,
     session_id: String,
     timestamp: TimestampMs,
@@ -158,6 +164,11 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
             nano_aiu: 0,
             cost_usd: None,
             dedup_key: candidate.dedup_key,
+            call_ids: candidate
+                .response_id
+                .into_iter()
+                .chain(candidate.service_request_id)
+                .collect(),
         })
         .collect())
 }
@@ -200,6 +211,18 @@ struct CopilotUsageRecord {
     model: Option<String>,
     #[serde(default, deserialize_with = "jsonl::lenient_object")]
     accounting: Option<CopilotUsageAccounting>,
+    #[serde(
+        rename = "apiCallId",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    api_call_id: Option<String>,
+    #[serde(
+        rename = "serviceRequestId",
+        default,
+        deserialize_with = "jsonl::non_empty_string"
+    )]
+    service_request_id: Option<String>,
     #[serde(flatten)]
     tokens: CopilotSessionUsage,
 }
@@ -368,6 +391,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
                 nano_aiu: model_nano_aiu.unwrap_or_default(),
                 cost_usd: None,
                 dedup_key,
+                call_ids: Vec::new(),
             });
         }
         let total_nano_aiu = session_nano_aiu.filter(|_| models_report_credits);
@@ -383,7 +407,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
         // Usage records price every call from its tokens, so the session-wide
         // credit totals have nothing left to explain.
         parsed.credit_snapshots.clear();
-        append_usage_records(&mut parsed.entries, records, &session_id);
+        parsed.usage_records = usage_record_entries(records, &session_id);
     }
     Ok(parsed)
 }
@@ -391,6 +415,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
 struct UsageRecordCall {
     timestamp: TimestampMs,
     identity: Option<String>,
+    call_ids: Vec<String>,
     model: String,
     usage: CopilotSessionUsage,
 }
@@ -410,74 +435,55 @@ fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
             (accounting.sequence > 0).then(|| format!("{source}:{}", accounting.sequence))
         })
         .or(event.id);
+    let call_ids = record
+        .api_call_id
+        .into_iter()
+        .chain(record.service_request_id)
+        .collect();
     Some(UsageRecordCall {
         timestamp,
         identity,
+        call_ids,
         model,
         usage,
     })
 }
 
-/// Each usage record is one call. The loader reconciles session-state usage as
-/// cumulative `(session, model)` snapshots, so every record becomes the running
-/// total through that call, continuing from the shutdown the process restored.
-/// The loader's interval split then yields the call itself, and its OpenTelemetry
-/// reconciliation and date-range handling apply to records as they do to
-/// shutdowns.
-fn append_usage_records(
-    entries: &mut Vec<CopilotUsageEntry>,
-    mut records: Vec<UsageRecordCall>,
-    session_id: &str,
-) {
-    let mut totals = HashMap::<String, CopilotUsageEntry>::new();
-    for entry in entries.iter() {
-        totals.insert(entry.model.clone(), entry.clone());
-    }
-    records.sort_by_key(|record| record.timestamp);
+fn usage_record_entries(records: Vec<UsageRecordCall>, session_id: &str) -> Vec<CopilotUsageEntry> {
     let mut seen = HashSet::new();
-    for (index, record) in records.into_iter().enumerate() {
-        if record
-            .identity
-            .as_ref()
-            .is_some_and(|identity| !seen.insert(identity.clone()))
-        {
-            continue;
-        }
-        let call = record.usage;
-        let dedup_key = format!(
-            "usage-record:{session_id}:{}",
-            record.identity.unwrap_or_else(|| index.to_string())
-        );
-        let timestamp_text = crate::format_rfc3339_millis(record.timestamp);
-        let total = totals
-            .entry(record.model.clone())
-            .or_insert_with(|| CopilotUsageEntry {
+    records
+        .into_iter()
+        .enumerate()
+        .filter(|(_, record)| {
+            record
+                .identity
+                .as_ref()
+                .is_none_or(|identity| seen.insert(identity.clone()))
+        })
+        .map(|(index, record)| {
+            let call = record.usage;
+            CopilotUsageEntry {
                 timestamp: record.timestamp,
-                timestamp_text: timestamp_text.clone(),
+                timestamp_text: crate::format_rfc3339_millis(record.timestamp),
                 session_id: session_id.to_string(),
-                model: record.model.clone(),
-                input_tokens: 0,
-                output_tokens: 0,
-                cache_creation_tokens: 0,
-                cache_read_tokens: 0,
-                reasoning_output_tokens: 0,
+                model: record.model,
+                input_tokens: uncached_session_input_tokens(&call),
+                output_tokens: call.output_tokens,
+                cache_creation_tokens: call.cache_write_tokens,
+                cache_read_tokens: call.cache_read_tokens,
+                reasoning_output_tokens: call.reasoning_tokens,
                 extra_total_tokens: 0,
-                request_count: 0,
+                request_count: 1,
                 nano_aiu: 0,
                 cost_usd: None,
-                dedup_key: dedup_key.clone(),
-            });
-        total.timestamp = record.timestamp;
-        total.timestamp_text = timestamp_text;
-        total.dedup_key = dedup_key;
-        total.input_tokens += uncached_session_input_tokens(&call);
-        total.output_tokens += call.output_tokens;
-        total.cache_creation_tokens += call.cache_write_tokens;
-        total.cache_read_tokens += call.cache_read_tokens;
-        total.reasoning_output_tokens += call.reasoning_tokens;
-        total.request_count += 1;
-        entries.push(total.clone());
-    }
+                dedup_key: format!(
+                    "usage-record:{session_id}:{}",
+                    record.identity.unwrap_or_else(|| index.to_string())
+                ),
+                call_ids: record.call_ids,
+            }
+        })
+        .collect()
 }
 
 fn nano_aiu(value: Option<f64>) -> Option<u64> {
@@ -594,6 +600,7 @@ fn to_candidate(
     let trace_id = trace_id_from_record(record);
     let trace_context = trace_id.as_ref().and_then(|id| trace_contexts.get(id));
     let response_id = attr_string(attributes, "gen_ai.response.id");
+    let service_request_id = attr_string(attributes, "github.copilot.service_request_id");
     let model = first_non_empty_model_attr(attributes)
         .or_else(|| trace_context.and_then(|context| context.model.clone()))
         .unwrap_or_else(|| "unknown".to_string());
@@ -616,6 +623,7 @@ fn to_candidate(
         source,
         trace_id,
         response_id,
+        service_request_id,
         model,
         session_id,
         timestamp,
