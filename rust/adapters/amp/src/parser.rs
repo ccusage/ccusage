@@ -95,12 +95,12 @@ struct ThreadUnit<'a> {
 }
 
 impl ThreadUnit<'_> {
-    /// Records a record whose timestamp the report cannot place on a day.
-    /// `record` is its 1-based position.
-    fn invalid_timestamp(&self, record: usize) {
+    /// Records the record at `index` whose timestamp the report cannot place
+    /// on a day.
+    fn invalid_timestamp(&self, index: usize) {
         self.diagnostics.record(Skip::record(
             self.path,
-            u32::try_from(record).unwrap_or(u32::MAX),
+            Skip::line_number(index),
             SkipKind::InvalidTimestamp,
             "missing or unsupported timestamp",
         ));
@@ -233,7 +233,7 @@ fn parse_ledger_events(
         let Some(model) = event.model.clone() else {
             unit.diagnostics.record(Skip::record(
                 unit.path,
-                u32::try_from(index + 1).unwrap_or(u32::MAX),
+                Skip::line_number(index),
                 SkipKind::InvalidData,
                 "Amp usage record has no model",
             ));
@@ -241,7 +241,7 @@ fn parse_ledger_events(
         };
         let Some((timestamp_text, timestamp)) = event.timestamp.clone().and_then(placed_timestamp)
         else {
-            unit.invalid_timestamp(index + 1);
+            unit.invalid_timestamp(index);
             continue;
         };
         let data = UsageEntry {
@@ -341,7 +341,7 @@ fn parse_message_usage(
         else {
             unit.diagnostics.record(Skip::record(
                 unit.path,
-                u32::try_from(index + 1).unwrap_or(u32::MAX),
+                Skip::line_number(index),
                 SkipKind::InvalidData,
                 "Amp usage record has no model",
             ));
@@ -353,7 +353,7 @@ fn parse_message_usage(
                 non_empty_json_string(message.timestamp.as_ref()).and_then(placed_timestamp)
             });
         let Some((timestamp_text, timestamp)) = timestamp else {
-            unit.invalid_timestamp(index + 1);
+            unit.invalid_timestamp(index);
             continue;
         };
         let message_id = message.message_id.as_ref().and_then(|id| {

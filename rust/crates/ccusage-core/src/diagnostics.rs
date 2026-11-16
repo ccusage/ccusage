@@ -79,6 +79,12 @@ impl Skip {
             ..Self::unit(unit, kind, detail)
         }
     }
+
+    /// The 1-based line number [`Skip::record`] takes for the record at
+    /// 0-based `index`, saturating rather than wrapping on huge units.
+    pub fn line_number(index: usize) -> u32 {
+        u32::try_from(index.saturating_add(1)).unwrap_or(u32::MAX)
+    }
 }
 
 /// The skips of one kind. A skip is identified by its unit and line, so
@@ -353,6 +359,12 @@ mod tests {
             SkipKind::InvalidTimestamp,
             "timestamp 'soon'",
         )
+    }
+
+    #[test]
+    fn line_numbers_saturate_instead_of_wrapping() {
+        assert_eq!(Skip::line_number(0), 1);
+        assert_eq!(Skip::line_number(usize::MAX), u32::MAX);
     }
 
     #[test]

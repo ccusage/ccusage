@@ -30,15 +30,11 @@ fn read_content_from(
     content
 }
 
-fn line_number(index: usize) -> u32 {
-    u32::try_from(index + 1).unwrap_or(u32::MAX)
-}
-
 /// Records that line `index` of `path` carried a timestamp no day holds.
 pub(super) fn invalid_timestamp(path: &Path, index: usize, diagnostics: &Diagnostics) {
     diagnostics.record(Skip::record(
         path,
-        line_number(index),
+        Skip::line_number(index),
         SkipKind::InvalidTimestamp,
         "invalid usage timestamp",
     ));
@@ -53,7 +49,7 @@ pub(super) fn rejected(
     diagnostics: &Diagnostics,
     progress: bool,
 ) {
-    let number = line_number(index);
+    let number = Skip::line_number(index);
     let Some(value) = ccusage_adapter_common::jsonl::decode_line::<serde_json::Value>(
         content,
         line,
@@ -106,11 +102,6 @@ mod tests {
 
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-    }
-    #[test]
-    fn line_numbers_saturate_instead_of_wrapping() {
-        assert_eq!(line_number(0), 1);
-        assert_eq!(line_number(usize::MAX - 1), u32::MAX);
     }
 
     struct Interrupted;

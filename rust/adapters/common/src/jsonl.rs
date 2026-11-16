@@ -96,7 +96,7 @@ fn selected_lines<'data>(
             {
                 return None;
             }
-            let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
+            let number = ccusage_core::Skip::line_number(index);
             Some((number, line))
         })
 }
