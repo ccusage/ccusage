@@ -90,10 +90,13 @@
         (is (= args (args-of fixture id)) id)
         (is (= (into args ["--until" "20260228"]) (args-of real id)) id)))))
 
+(def ^:private pinned-manifest
+  {"cwd" "/f/cwd"
+   "env" {"HOME" "/f/home" "CLAUDE_CONFIG_DIR" "/f/claude,/f/opencode/claude"
+          "LOG_LEVEL" "0" "COLUMNS" "200" "CCUSAGE_TEST_NOW" "2026-01-02T12:00:00Z"}})
+
 (deftest environments
-  (let [env (golden-env {"cwd" "/f/cwd"
-                         "env" {"HOME" "/f/home" "CLAUDE_CONFIG_DIR" "/f/claude,/f/opencode/claude"
-                                "LOG_LEVEL" "0" "COLUMNS" "200" "CCUSAGE_TEST_NOW" "2026-01-02T12:00:00Z"}})]
+  (let [env (golden-env pinned-manifest true)]
     (is (true? (:clean? env)))
     (testing "the golden environment at the default log level"
       (is (= {"HOME" "/f/home" "CLAUDE_CONFIG_DIR" "/f/claude,/f/opencode/claude"
@@ -101,9 +104,54 @@
              (:vars env))))
     (testing "nothing from the caller leaks into a fixture run"
       (is (= (:vars env) (process-env env {"CODEX_HOME" "/real" "PATH" "/bin"})))))
-  (testing "a real run inherits the caller's environment at the default log level"
+  (testing "binaries that cannot pin the clock both run under the wall clock"
+    (is (not (contains? (:vars (golden-env pinned-manifest false)) "CCUSAGE_TEST_NOW"))))
+  (testing "a real run inherits the caller's environment at the default log level and the wall clock"
     (is (= {"HOME" "/h" "CODEX_HOME" "/real" "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"}
-           (process-env (real-env) {"HOME" "/h" "CODEX_HOME" "/real" "LOG_LEVEL" "0" "COLUMNS" "80"})))))
+           (process-env (real-env) {"HOME" "/h" "CODEX_HOME" "/real" "LOG_LEVEL" "0" "COLUMNS" "80"
+                                    "CCUSAGE_TEST_NOW" "2026-01-02T12:00:00Z"})))))
+
+(deftest pinned-clock-builds
+  (testing "a ref is built with the test clock only when its ccusage-core declares it"
+    (is (true? (declares-test-clock? "[features]\ntest-snapshots = [\"dep:x\"]\ntest-clock = []\n")))
+    (is (false? (declares-test-clock? "[features]\ntest-snapshots = [\"dep:x\"]\n")))
+    (is (false? (declares-test-clock? nil))))
+  (testing "this checkout declares it, so its own goldens' clock is honored"
+    (is (= [test-clock-feature] (clock-features (repo-root) "HEAD"))))
+  (testing "a test-clock build is cached apart from the plain release build"
+    (is (= "abc" (build-key "abc" [])))
+    (is (not= (build-key "abc" []) (build-key "abc" [test-clock-feature])))))
+
+(defn- run-diff-main
+  "diff-main over stub variants, returning the environment each command ran
+  under and the progress messages."
+  [variants]
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-clock."})
+        envs (atom []) progress (atom []) features-for (atom nil)]
+    (try
+      (with-redefs [resolve-variants (fn [_ _ _ f] (reset! features-for f) variants)
+                    prepare-golden-fixture! (fn [& _] (assoc pinned-manifest "cwd" (str dir)))
+                    report-commands (fn [_] ["daily"])
+                    compare-command! (fn [_ env & _] (swap! envs conj env) {:status :identical :args ["daily"]})
+                    write-progress #(swap! progress conj %)]
+        (with-out-str (diff-main "HEAD" "HEAD" "--output-dir" (str dir))))
+      {:envs @envs :progress @progress :features-for @features-for}
+      (finally (babashka.fs/delete-tree dir)))))
+
+(deftest pinned-clock-comparisons
+  (testing "refs are built with the test clock where they declare it"
+    (let [features-for (:features-for (run-diff-main [{:bin "b" :features []} {:bin "h" :features []}]))]
+      (is (= [test-clock-feature] (features-for "HEAD")))))
+  (testing "both sides pinned keep the golden clock"
+    (let [{:keys [envs]} (run-diff-main [{:bin "b" :features [test-clock-feature]} {:bin "h" :features [test-clock-feature]}])]
+      (is (seq envs))
+      (is (every? #(= "2026-01-02T12:00:00Z" (get-in % [:vars "CCUSAGE_TEST_NOW"])) envs))))
+  (testing "one side that cannot pin it moves both to the wall clock, with a notice naming it"
+    (let [{:keys [envs progress]} (run-diff-main [{:label "v18.0.0" :bin "b" :features []}
+                                                  {:label "HEAD" :bin "h" :features [test-clock-feature]}])]
+      (is (seq envs))
+      (is (not-any? #(contains? (:vars %) "CCUSAGE_TEST_NOW") envs))
+      (is (some #(and (.contains ^String % "v18.0.0") (.contains ^String % "wall clock")) progress)))))
 
 (defn- golden-manifest
   "What golden::export_fixture writes into `dir`, with a seeded store there."
@@ -205,7 +253,7 @@
         flaky (script "flaky" (str "n=0; if [ -f " (path dir "calls") " ]; then read -r n < " (path dir "calls")
                                    "; fi; n=$((n + 1)); echo \"$n\" > " (path dir "calls") "; echo \"$n\""))
         compare (fn [bins allow-stderr-diff]
-                  (compare-command! bins (golden-env {"env" {}}) (str dir) (str dir) allow-stderr-diff
+                  (compare-command! bins (golden-env {"env" {}} true) (str dir) (str dir) allow-stderr-diff
                                     {:id "daily--json" :json? true :args ["daily"]}))]
     (try
       (testing "identical output leaves nothing behind"
