@@ -331,9 +331,13 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     mut visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
     diagnostics: &Diagnostics,
 ) -> Result<()> {
-    let Ok((mut reader, opened_path)) = open_rollout_reader(path) else {
-        UnitError::new(SkipKind::Unreadable, "rollout open failed").record(path, diagnostics);
-        return Ok(());
+    let (mut reader, opened_path) = match open_rollout_reader(path) {
+        Ok(opened) => opened,
+        Err(failed_path) => {
+            UnitError::new(SkipKind::Unreadable, "rollout open failed")
+                .record(&failed_path, diagnostics);
+            return Ok(());
+        }
     };
     let mut line = Vec::new();
     let session_id = codex_session_id(sessions_dir, path);
@@ -1884,6 +1888,40 @@ mod diagnostic_tests {
                 "codex: {}: removed after discovery, read as absent",
                 path.display()
             )]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_sibling_encoding_of_a_removed_rollout_is_a_skip() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let fixture = Fixture::new();
+        let path = fixture.path("session.jsonl");
+        let compressed = fixture.write_file("session.jsonl.zst", "rollout");
+        fs::set_permissions(&compressed, fs::Permissions::from_mode(0o000)).unwrap();
+        let diagnostics = Diagnostics::new("codex");
+
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |_| Ok(()),
+            &diagnostics,
+        )
+        .unwrap();
+        fs::set_permissions(&compressed, fs::Permissions::from_mode(0o600)).unwrap();
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        let warnings = diagnostics
+            .warnings(&crate::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(
+            warnings.contains(&format!("{}: rollout open failed", compressed.display())),
+            "{warnings}"
         );
     }
 
