@@ -164,6 +164,25 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         FALLBACK_MTIME,
     );
 
+    // Qwen Code moves a finished session into the flat `chats/archive/`
+    // directory unchanged: the archived copy of the fallback file names the
+    // same session and dedupes against it, and an archived-only session counts.
+    write(
+        primary.join("projects/beta/chats/archive/fallback-c.jsonl"),
+        &fallback,
+        FALLBACK_MTIME,
+    );
+    write(
+        primary.join("projects/alpha/chats/archive/session-e.jsonl"),
+        &assistant(
+            "sess-e",
+            "2026-01-01T10:00:00.000Z",
+            CODER,
+            r#""promptTokenCount":420,"candidatesTokenCount":70,"cachedContentTokenCount":100"#,
+        ),
+        SECONDARY_MTIME,
+    );
+
     // Second data root with CRLF line endings; its copy of `a1` is a replay of
     // the first root's.
     write(
@@ -182,7 +201,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         SECONDARY_MTIME,
     );
 
-    // Only `projects/<project>/chats/<file>.jsonl` is a chat file.
+    // Only `projects/<project>/chats/<file>.jsonl` and
+    // `projects/<project>/chats/archive/<file>.jsonl` are chat files.
     let ignored = assistant(
         "sess-ignored",
         "2025-12-31T12:00:00.000Z",
@@ -196,6 +216,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         "projects/alpha/loose.jsonl",
         "projects/alpha/logs/wrong-directory.jsonl",
         "projects/alpha/chats/nested/too-deep.jsonl",
+        "projects/alpha/chats/archive/nested/too-deep.jsonl",
+        "projects/alpha/archive/wrong-directory.jsonl",
         "projects/alpha/chats/wrong-extension.json",
         "projects/alpha/chats/wrong-extension.jsonl.bak",
     ] {

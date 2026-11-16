@@ -6,12 +6,12 @@ exit: 0
 --- stdout ---
 {
   "totals": {
-    "cacheCreationTokens": 16375,
-    "cacheReadTokens": 1308287,
-    "inputTokens": 1343907,
-    "outputTokens": 58326,
-    "totalCost": 8.752736925,
-    "totalTokens": 2730312,
+    "cacheCreationTokens": 17725,
+    "cacheReadTokens": 1312587,
+    "inputTokens": 1347381,
+    "outputTokens": 58921,
+    "totalCost": 8.788541425000002,
+    "totalTokens": 2740031,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -284,9 +284,9 @@ exit: 0
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 15151,
-      "cacheReadTokens": 1305224,
-      "inputTokens": 1335301,
+      "cacheCreationTokens": 16501,
+      "cacheReadTokens": 1309524,
+      "inputTokens": 1338775,
       "metadata": {
         "agents": [
           "amp",
@@ -315,19 +315,20 @@ exit: 0
         {
           "cacheCreationTokens": 1670,
           "cacheReadTokens": 58800,
-          "cost": 2.0385355,
-          "inputTokens": 11893,
+          "cost": 2.0386105000000003,
+          "inputTokens": 11943,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 4465
+          "outputTokens": 4470
         },
         {
-          "cacheCreationTokens": 5090,
-          "cacheReadTokens": 104220,
-          "cost": 1.7687654999999998,
-          "inputTokens": 31074,
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 6440,
+          "cacheReadTokens": 108220,
+          "cost": 1.78059,
+          "inputTokens": 31478,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 9611
+          "outputTokens": 9751
         },
         {
           "cacheCreationTokens": 0,
@@ -341,10 +342,10 @@ exit: 0
           "cacheCreation1hTokens": 400,
           "cacheCreationTokens": 1400,
           "cacheReadTokens": 38050,
-          "cost": 0.88441,
-          "inputTokens": 15744,
+          "cost": 0.88891,
+          "inputTokens": 15944,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 4149
+          "outputTokens": 4169
         },
         {
           "cacheCreationTokens": 100,
@@ -364,19 +365,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 36135,
-          "cost": 0.38313625,
-          "inputTokens": 18630,
+          "cacheReadTokens": 36335,
+          "cost": 0.38426125,
+          "inputTokens": 19030,
           "modelName": "gpt-5",
-          "outputTokens": 5283
+          "outputTokens": 5343
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 102700,
-          "cost": 0.33251200000000003,
-          "inputTokens": 305532,
+          "cacheReadTokens": 102800,
+          "cost": 0.33329200000000003,
+          "inputTokens": 305952,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 3025
+          "outputTokens": 3095
         },
         {
           "cacheCreationTokens": 0,
@@ -409,6 +410,14 @@ exit: 0
           "inputTokens": 1380,
           "modelName": "anthropic/claude-sonnet-4.5",
           "outputTokens": 822
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0175,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 900,
@@ -979,6 +988,7 @@ exit: 0
         "claude-haiku-4-5-20251001",
         "claude-haiku-4.5",
         "claude-opus-4-20250514",
+        "claude-opus-5",
         "claude-opus-5-fast",
         "claude-sonnet-4-20250514",
         "cline-mystery-1",
@@ -1036,10 +1046,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 56127,
+      "outputTokens": 56722,
       "period": "2025-12-29",
-      "totalCost": 8.700163725,
-      "totalTokens": 2715190
+      "totalCost": 8.735968225,
+      "totalTokens": 2724909
     },
     {
       "agent": "all",

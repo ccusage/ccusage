@@ -493,9 +493,9 @@ exit: 0
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 6011,
-      "cacheReadTokens": 184616,
-      "inputTokens": 66394,
+      "cacheCreationTokens": 6111,
+      "cacheReadTokens": 185616,
+      "inputTokens": 66794,
       "metadata": {
         "agents": [
           "amp",
@@ -546,6 +546,14 @@ exit: 0
           "outputTokens": 400
         },
         {
+          "cacheCreationTokens": 1500,
+          "cacheReadTokens": 33060,
+          "cost": 0.2024,
+          "inputTokens": 9320,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 3430
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "cost": 0.2,
@@ -560,14 +568,6 @@ exit: 0
           "inputTokens": 340,
           "modelName": "[openclaw] openclaw-mystery-1",
           "outputTokens": 80
-        },
-        {
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 32060,
-          "cost": 0.1724,
-          "inputTokens": 8920,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 3340
         },
         {
           "cacheCreationTokens": 1000,
@@ -849,16 +849,16 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 19742,
+      "outputTokens": 19832,
       "period": "2025-12-31",
-      "totalCost": 11.011537375,
-      "totalTokens": 277373
+      "totalCost": 11.041537374999999,
+      "totalTokens": 278963
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 1640,
-      "cacheReadTokens": 482028,
-      "inputTokens": 1102495,
+      "cacheCreationTokens": 2890,
+      "cacheReadTokens": 485328,
+      "inputTokens": 1105369,
       "metadata": {
         "agents": [
           "amp",
@@ -885,12 +885,13 @@ exit: 0
       },
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 19000,
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1250,
+          "cacheReadTokens": 22000,
           "cost": 0.5116999999999999,
-          "inputTokens": 6353,
+          "inputTokens": 6357,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 1199
+          "outputTokens": 1249
         },
         {
           "cacheCreationTokens": 0,
@@ -910,11 +911,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 15155,
+          "cacheReadTokens": 15355,
           "cost": 0.25711375000000003,
-          "inputTokens": 5360,
+          "inputTokens": 5760,
           "modelName": "gpt-5",
-          "outputTokens": 2246
+          "outputTokens": 2306
         },
         {
           "cacheCreationTokens": 0,
@@ -952,9 +953,9 @@ exit: 0
           "cacheCreationTokens": 600,
           "cacheReadTokens": 17100,
           "cost": 0.007,
-          "inputTokens": 4330,
+          "inputTokens": 4380,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 1492
+          "outputTokens": 1497
         },
         {
           "cacheCreationTokens": 0,
@@ -1019,6 +1020,14 @@ exit: 0
           "inputTokens": 300,
           "modelName": "mystery-model-9000",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -1259,11 +1268,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 100000,
+          "cacheReadTokens": 100100,
           "cost": 0.0,
-          "inputTokens": 300111,
+          "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 2043
+          "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
@@ -1315,6 +1324,7 @@ exit: 0
         "antigravity-mystery-1",
         "claude-haiku-4-5-20251001",
         "claude-opus-4-20250514",
+        "claude-opus-5",
         "claude-sonnet-4-20250514",
         "cline-mystery-1",
         "codebuff-mystery-1",
@@ -1351,16 +1361,16 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 17145,
+      "outputTokens": 17630,
       "period": "2026-01-01",
       "totalCost": 1.7735550000000002,
-      "totalTokens": 1604360
+      "totalTokens": 1612269
     },
     {
       "agent": "all",
       "cacheCreationTokens": 1650,
       "cacheReadTokens": 529980,
-      "inputTokens": 127009,
+      "inputTokens": 127209,
       "metadata": {
         "agents": [
           "amp",
@@ -1390,9 +1400,9 @@ exit: 0
           "cacheCreationTokens": 50,
           "cacheReadTokens": 8550,
           "cost": 1.25,
-          "inputTokens": 2100,
+          "inputTokens": 2300,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1110
+          "outputTokens": 1130
         },
         {
           "cacheCreationTokens": 0,
@@ -1714,10 +1724,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 10816,
+      "outputTokens": 10836,
       "period": "2026-01-02",
       "totalCost": 1.8509897499999999,
-      "totalTokens": 670750
+      "totalTokens": 670970
     },
     {
       "agent": "all",
@@ -1749,12 +1759,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 16715,
-    "cacheReadTokens": 1312317,
-    "inputTokens": 1344917,
-    "outputTokens": 58546,
-    "totalCost": 24.71878825,
-    "totalTokens": 2735912,
+    "cacheCreationTokens": 18065,
+    "cacheReadTokens": 1316617,
+    "inputTokens": 1348391,
+    "outputTokens": 59141,
+    "totalCost": 24.74878825,
+    "totalTokens": 2745631,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

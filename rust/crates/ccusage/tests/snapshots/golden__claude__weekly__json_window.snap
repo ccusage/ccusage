@@ -6,29 +6,30 @@ exit: 0
 --- stdout ---
 {
   "totals": {
-    "cacheCreationTokens": 300,
-    "cacheReadTokens": 19300,
-    "inputTokens": 3290,
-    "outputTokens": 1220,
-    "totalCost": 0.5958700000000001,
-    "totalTokens": 24110,
+    "cacheCreationTokens": 1550,
+    "cacheReadTokens": 22300,
+    "inputTokens": 5294,
+    "outputTokens": 1570,
+    "totalCost": 0.6219695000000001,
+    "totalTokens": 30714,
     "unpricedModels": [
       "mystery-model-9000"
     ]
   },
   "weekly": [
     {
-      "cacheCreationTokens": 300,
-      "cacheReadTokens": 19300,
-      "inputTokens": 3290,
+      "cacheCreationTokens": 1550,
+      "cacheReadTokens": 22300,
+      "inputTokens": 5294,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 100,
-          "cacheReadTokens": 11000,
-          "cost": 0.52912,
-          "inputTokens": 1840,
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1350,
+          "cacheReadTokens": 14000,
+          "cost": 0.5377195,
+          "inputTokens": 1844,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 690,
+          "outputTokens": 740,
           "storedCost": 0.52
         },
         {
@@ -38,6 +39,14 @@ exit: 0
           "inputTokens": 1150,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 460
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0175,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -52,11 +61,12 @@ exit: 0
       "modelsUsed": [
         "claude-sonnet-4-20250514",
         "claude-opus-4-20250514",
-        "mystery-model-9000"
+        "mystery-model-9000",
+        "claude-opus-5"
       ],
-      "outputTokens": 1220,
-      "totalCost": 0.5958700000000001,
-      "totalTokens": 24110,
+      "outputTokens": 1570,
+      "totalCost": 0.6219695000000001,
+      "totalTokens": 30714,
       "week": "2025-12-28"
     }
   ]

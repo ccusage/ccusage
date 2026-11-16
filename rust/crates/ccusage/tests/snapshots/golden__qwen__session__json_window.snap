@@ -80,15 +80,40 @@ exit: 0
       "sessionId": "sess-d",
       "totalCost": 0.0015,
       "totalTokens": 300
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "firstActivity": "2026-01-01T10:00:00.000Z",
+      "inputTokens": 420,
+      "lastActivity": "2026-01-01T10:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0007800000000000001,
+          "inputTokens": 420,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "qwen3-coder-plus"
+      ],
+      "outputTokens": 70,
+      "projectPath": "alpha",
+      "sessionId": "sess-e",
+      "totalCost": 0.0007800000000000001,
+      "totalTokens": 590
     }
   ],
   "totals": {
     "cacheCreationTokens": 0,
-    "cacheReadTokens": 0,
-    "inputTokens": 550,
-    "outputTokens": 100,
-    "totalCost": 0.0020499999999999997,
-    "totalTokens": 650
+    "cacheReadTokens": 100,
+    "inputTokens": 970,
+    "outputTokens": 170,
+    "totalCost": 0.00283,
+    "totalTokens": 1240
   }
 }
 

@@ -236,6 +236,59 @@ exit: 0
       "totalTokens": 500
     },
     {
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 1200,
+      "firstActivity": "2025-12-31T11:00:00.000Z",
+      "inputTokens": 1050,
+      "lastActivity": "2026-01-02T09:30:00.000Z",
+      "messageCount": 4,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0045,
+          "inputTokens": 200,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 1000,
+          "cost": 0.003225,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0011250000000000001,
+          "inputTokens": 400,
+          "modelName": "gpt-5",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000075,
+          "inputTokens": 50,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 175,
+      "projectPath": "GitHub Copilot CLI",
+      "sessionId": "session-eta",
+      "totalCost": 0.008924999999999999,
+      "totalTokens": 2525
+    },
+    {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
       "firstActivity": "2025-12-30T12:00:00.000Z",
@@ -315,12 +368,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 500,
-    "cacheReadTokens": 2600,
-    "inputTokens": 10110,
-    "outputTokens": 2710,
-    "totalCost": 0.0864275,
-    "totalTokens": 15940,
+    "cacheCreationTokens": 600,
+    "cacheReadTokens": 3800,
+    "inputTokens": 11160,
+    "outputTokens": 2885,
+    "totalCost": 0.0953525,
+    "totalTokens": 18465,
     "unpricedModels": [
       "copilot-mystery-1",
       "unknown"

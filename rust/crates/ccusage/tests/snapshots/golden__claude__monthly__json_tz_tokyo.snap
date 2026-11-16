@@ -49,17 +49,18 @@ exit: 0
       "totalTokens": 30080
     },
     {
-      "cacheCreationTokens": 350,
-      "cacheReadTokens": 26100,
-      "inputTokens": 4320,
+      "cacheCreationTokens": 1600,
+      "cacheReadTokens": 29100,
+      "inputTokens": 6324,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 150,
-          "cacheReadTokens": 15000,
-          "cost": 0.5319475000000001,
-          "inputTokens": 2520,
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1400,
+          "cacheReadTokens": 18000,
+          "cost": 0.5405470000000001,
+          "inputTokens": 2524,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 650,
+          "outputTokens": 700,
           "storedCost": 0.52
         },
         {
@@ -69,6 +70,14 @@ exit: 0
           "inputTokens": 1300,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 1060
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0175,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -92,21 +101,22 @@ exit: 0
         "claude-sonnet-4-20250514",
         "claude-opus-4-20250514",
         "mystery-model-9000",
+        "claude-opus-5",
         "claude-opus-5-fast"
       ],
       "month": "2026-01",
-      "outputTokens": 1830,
-      "totalCost": 0.6544975000000001,
-      "totalTokens": 32600
+      "outputTokens": 2180,
+      "totalCost": 0.680597,
+      "totalTokens": 39204
     }
   ],
   "totals": {
-    "cacheCreationTokens": 1850,
-    "cacheReadTokens": 50200,
-    "inputTokens": 6590,
-    "outputTokens": 4040,
-    "totalCost": 0.9097175000000001,
-    "totalTokens": 62680,
+    "cacheCreationTokens": 3100,
+    "cacheReadTokens": 53200,
+    "inputTokens": 8594,
+    "outputTokens": 4390,
+    "totalCost": 0.935817,
+    "totalTokens": 69284,
     "unpricedModels": [
       "mystery-model-9000"
     ]

@@ -160,6 +160,51 @@ exit: 0
       "totalTokens": 3680
     },
     {
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 1200,
+      "firstActivity": "2025-12-31T11:00:00.000Z",
+      "inputTokens": 850,
+      "lastActivity": "2026-01-01T15:31:00.000Z",
+      "messageCount": 3,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 1000,
+          "cost": 0.03,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 90,
+          "storedCost": 0.03
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0011250000000000001,
+          "inputTokens": 400,
+          "modelName": "gpt-5",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000075,
+          "inputTokens": 50,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 155,
+      "projectPath": "GitHub Copilot CLI",
+      "sessionId": "session-eta",
+      "totalCost": 0.0312,
+      "totalTokens": 2305
+    },
+    {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 100,
       "firstActivity": "2025-12-31T15:30:00.000Z",
@@ -240,12 +285,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 200,
-    "cacheReadTokens": 1700,
-    "inputTokens": 5770,
-    "outputTokens": 1334,
-    "totalCost": 0.530775,
-    "totalTokens": 9004,
+    "cacheCreationTokens": 300,
+    "cacheReadTokens": 2900,
+    "inputTokens": 6620,
+    "outputTokens": 1489,
+    "totalCost": 0.5619750000000001,
+    "totalTokens": 11309,
     "unpricedModels": [
       "copilot-mystery-1",
       "unknown"

@@ -1195,6 +1195,47 @@ exit: 0
       "totalTokens": 14000
     },
     {
+      "agent": "claude",
+      "cacheCreationTokens": 1250,
+      "cacheReadTokens": 5500,
+      "inputTokens": 2154,
+      "metadata": {
+        "lastActivity": "2026-01-02T11:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "inputTokens": 150,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 600
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1250,
+          "cacheReadTokens": 3000,
+          "inputTokens": 4,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-5",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 950,
+      "period": "sess-beta-2",
+      "totalTokens": 9854
+    },
+    {
       "agent": "cline",
       "cacheCreationTokens": 500,
       "cacheReadTokens": 6000,
@@ -1306,30 +1347,6 @@ exit: 0
       "totalTokens": 6887
     },
     {
-      "agent": "claude",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 150,
-      "metadata": {
-        "lastActivity": "2026-01-02T11:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "inputTokens": 150,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 600
-        }
-      ],
-      "modelsUsed": [
-        "claude-opus-4-20250514"
-      ],
-      "outputTokens": 600,
-      "period": "sess-beta-2",
-      "totalTokens": 3250
-    },
-    {
       "agent": "opencode",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -1373,6 +1390,54 @@ exit: 0
       "outputTokens": 200,
       "period": "opus-0002",
       "totalTokens": 5560
+    },
+    {
+      "agent": "copilot",
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 1200,
+      "inputTokens": 1050,
+      "metadata": {
+        "lastActivity": "2026-01-02T09:30:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 1000,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 200,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "inputTokens": 400,
+          "modelName": "gpt-5",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 50,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 175,
+      "period": "session-eta",
+      "totalTokens": 2525
     },
     {
       "agent": "kimi",
@@ -3471,6 +3536,30 @@ exit: 0
       "totalTokens": 44
     },
     {
+      "agent": "qwen",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "inputTokens": 420,
+      "metadata": {
+        "lastActivity": "2026-01-01T10:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "inputTokens": 420,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "qwen3-coder-plus"
+      ],
+      "outputTokens": 70,
+      "period": "sess-e",
+      "totalTokens": 590
+    },
+    {
       "agent": "opencode",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -5036,11 +5125,11 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 17415,
-    "cacheReadTokens": 1322917,
-    "inputTokens": 1356833,
-    "outputTokens": 68556,
-    "totalTokens": 2769158,
+    "cacheCreationTokens": 18765,
+    "cacheReadTokens": 1327217,
+    "inputTokens": 1360307,
+    "outputTokens": 69151,
+    "totalTokens": 2778877,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
