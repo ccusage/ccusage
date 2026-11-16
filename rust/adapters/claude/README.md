@@ -5,6 +5,9 @@ into the usage entries the reports render.
 
 ## Owns
 
+- `commands/report.rs` — `ccusage daily`, `monthly`, `weekly`, `session` and `blocks`.
+- `commands/statusline.rs` — `ccusage statusline` and its output cache.
+- `blocks.rs` — billing-block grouping, burn rate and the blocks table.
 - `daily.rs` — the daily report path, which reads the same files with a narrower parser.
 - `paths.rs` — environment variables, default directories, and file discovery.
 
@@ -32,14 +35,13 @@ Statusline reads share caller-owned diagnostics and emit warnings once after ren
 
 - `SOURCE`
 - `load_entries`
-- `load_entries_since`
-- `load_entries_since_with_diagnostics`
-- `load_daily_summaries`
+- `run_daily`, `run_bucket`, `run_weekly`, `run_session`, `run_blocks`, `run_statusline`
 
 ## Depends on
 
 - `ccusage-adapter-common`
 - `ccusage-core`
+- `ccusage-report`
 - `jiff`
 - `memchr`
 - `rustc-hash`

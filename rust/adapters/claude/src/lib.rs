@@ -1,6 +1,8 @@
 use ccusage_adapter_common::{read_discovered_files, source::ProgressOwner};
 use ccusage_core::*;
 
+mod blocks;
+mod commands;
 mod daily;
 mod diagnostics;
 #[cfg(test)]
@@ -8,6 +10,7 @@ mod load_tests;
 mod paths;
 mod source;
 
+pub use commands::{run_blocks, run_bucket, run_daily, run_session, run_statusline, run_weekly};
 pub use source::SOURCE;
 
 use std::{
@@ -130,7 +133,7 @@ impl DedupedEntries {
 /// @param shared Report arguments; `since` and `timezone` bound the files read.
 /// @param project_filter Optional project directory to restrict the scan to.
 /// @returns Deduplicated entries, complete for every date on or after `since`.
-pub fn load_entries_since(
+pub(crate) fn load_entries_since(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<Vec<LoadedEntry>> {
@@ -141,7 +144,7 @@ pub fn load_entries_since(
 }
 
 /// Loads bounded entries into caller-owned diagnostics without emitting warnings.
-pub fn load_entries_since_with_diagnostics(
+pub(crate) fn load_entries_since_with_diagnostics(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     diagnostics: &Diagnostics,
@@ -154,7 +157,7 @@ pub fn load_entries_since_with_diagnostics(
 
 /// Loads daily Claude summaries. Summaries dated before `since` may be
 /// missing, so callers must filter them by date.
-pub fn load_daily_summaries(
+pub(crate) fn load_daily_summaries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     group_by_project: bool,

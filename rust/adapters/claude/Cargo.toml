@@ -7,6 +7,7 @@ publish.workspace = true
 [dependencies]
 ccusage-adapter-common.workspace = true
 ccusage-core.workspace = true
+ccusage-report.workspace = true
 jiff.workspace = true
 memchr.workspace = true
 rustc-hash.workspace = true
@@ -15,6 +16,9 @@ serde_json.workspace = true
 smallvec.workspace = true
 
 [dev-dependencies]
+ccusage-cli-parser.workspace = true
+ccusage-config.workspace = true
+ccusage-core = { workspace = true, features = ["test-snapshots"] }
 ccusage-test-support.workspace = true
 
 [lints]

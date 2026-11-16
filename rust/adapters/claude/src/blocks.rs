@@ -1,18 +1,18 @@
 use std::io::IsTerminal;
 
-use serde::Serialize;
-use serde_json::{Value, json};
-
-use crate::{
+use ccusage_core::{
     Align, Color, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, Result, SimpleTable,
-    TimestampMs, TokenCounts, am_pm,
+    TimestampMs, TokenCounts,
     cli::{SharedArgs, SortOrder},
     color,
     fast::FxHashSet,
     format_currency, format_date_tz, format_models_multiline, format_number, format_rfc3339_millis,
-    format_utc_second, hour_12, json_float, local_parts, print_box_title, resolve_tz,
-    should_use_compact_layout, terminal_width, utc_now,
+    json_float, model_aliases, print_box_title, resolve_tz, should_use_compact_layout,
+    terminal_style, terminal_width, utc_now,
 };
+use ccusage_report::{am_pm, format_utc_second, hour_12, local_parts};
+use serde::Serialize;
+use serde_json::{Value, json};
 
 /// A block is warned about once it passes this share of the token limit.
 const BLOCKS_WARNING_THRESHOLD: f64 = 0.8;
@@ -124,7 +124,7 @@ fn create_block(
         token_counts.add_usage(entry.data.message.usage);
         cost += entry.cost;
         if let Some(model) = &entry.model {
-            let model = crate::model_aliases::resolve_model_name(model).into_owned();
+            let model = model_aliases::resolve_model_name(model).into_owned();
             if seen_models.insert(model.clone()) {
                 models.push(model);
             }
@@ -361,7 +361,7 @@ pub fn print_blocks_table(
         headers.pop();
         aligns.pop();
     }
-    let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
+    let mut table = SimpleTable::new(headers, aligns, terminal_style(shared))
         .with_terminal_width(terminal_width);
     for block in blocks {
         if block.is_gap {

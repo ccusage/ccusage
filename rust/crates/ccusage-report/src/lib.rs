@@ -1,7 +1,7 @@
-//! Report-only helpers that only the `ccusage` binary reaches.
+//! Report-only helpers for the CLI and the Claude report commands.
 //!
-//! They live here rather than in `ccusage-core` so editing them does not
-//! recompile every adapter, which all depend on core.
+//! They live here rather than in `ccusage-core` so editing them recompiles
+//! only the Claude adapter and the binary, not every adapter built on core.
 
 mod date_utils;
 mod last_window;

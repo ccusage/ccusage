@@ -22,7 +22,6 @@ ccusage-adapter-claude.workspace = true
 ccusage-adapter-cline.workspace = true
 ccusage-adapter-codebuff.workspace = true
 ccusage-adapter-codex.workspace = true
-ccusage-adapter-common.workspace = true
 ccusage-adapter-copilot.workspace = true
 ccusage-adapter-droid.workspace = true
 ccusage-adapter-dsh.workspace = true
@@ -45,8 +44,6 @@ ccusage-report.workspace = true
 ring.workspace = true
 rustls.workspace = true
 rustls-webpki.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 ureq.workspace = true
 
 [build-dependencies]
@@ -56,6 +53,7 @@ serde_json.workspace = true
 ccusage-core = { workspace = true, features = ["test-clock", "test-snapshots"] }
 ccusage-test-support.workspace = true
 insta.workspace = true
+serde_json.workspace = true
 sqlite.workspace = true
 zstd.workspace = true
 

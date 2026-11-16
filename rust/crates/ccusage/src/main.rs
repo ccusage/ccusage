@@ -1,19 +1,9 @@
 mod adapter;
-mod blocks;
 mod cli;
-mod commands;
 mod http;
 
-pub(crate) use adapter::claude::{
-    load_daily_summaries, load_entries, load_entries_since, load_entries_since_with_diagnostics,
-};
-pub(crate) use blocks::{
-    block_json, calculate_burn_rate, filter_blocks_by_date, format_remaining_time,
-    identify_session_blocks, print_active_block_detail, print_blocks_table, sort_blocks,
-};
-pub(crate) use ccusage_core::*;
-pub(crate) use ccusage_report::*;
-use cli::Command;
+use ccusage_cli::Command;
+use ccusage_core::{BucketKind, Result, pricing};
 
 #[cfg(all(target_os = "linux", target_env = "musl"))]
 #[global_allocator]
@@ -28,12 +18,12 @@ fn main() -> Result<()> {
     pricing::set_json_fetcher(http::fetch_json);
     match cli::parse() {
         Command::All(args) => adapter::all::run(args),
-        Command::Daily(args) => commands::run_daily(args),
-        Command::Monthly(shared) => commands::run_bucket(shared, BucketKind::Monthly),
-        Command::Weekly(args) => commands::run_weekly(args),
-        Command::Session(args) => commands::run_session(args),
-        Command::Blocks(args) => commands::run_blocks(args),
-        Command::Statusline(args) => commands::run_statusline(args),
+        Command::Daily(args) => adapter::claude::run_daily(args),
+        Command::Monthly(shared) => adapter::claude::run_bucket(shared, BucketKind::Monthly),
+        Command::Weekly(args) => adapter::claude::run_weekly(args),
+        Command::Session(args) => adapter::claude::run_session(args),
+        Command::Blocks(args) => adapter::claude::run_blocks(args),
+        Command::Statusline(args) => adapter::claude::run_statusline(args),
         Command::Codex(args) => adapter::codex::run(args),
         Command::OpenCode(args) => adapter::all::run_opencode(args),
         Command::Amp(args) => adapter::amp::run(args),

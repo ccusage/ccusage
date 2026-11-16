@@ -120,7 +120,6 @@ dependencies = [
  "ccusage-adapter-cline",
  "ccusage-adapter-codebuff",
  "ccusage-adapter-codex",
- "ccusage-adapter-common",
  "ccusage-adapter-copilot",
  "ccusage-adapter-droid",
  "ccusage-adapter-dsh",
@@ -146,7 +145,6 @@ dependencies = [
  "ring",
  "rustls",
  "rustls-webpki",
- "serde",
  "serde_json",
  "sqlite",
  "ureq",
@@ -217,7 +215,10 @@ name = "ccusage-adapter-claude"
 version = "0.0.0"
 dependencies = [
  "ccusage-adapter-common",
+ "ccusage-cli-parser",
+ "ccusage-config",
  "ccusage-core",
+ "ccusage-report",
  "ccusage-test-support",
  "jiff",
  "memchr",
