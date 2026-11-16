@@ -193,12 +193,9 @@ mod diagnostic_tests {
         let usage = |timestamp: &str| {
             json!({"timestamp":timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string()
         };
-        let _ = fixture.write_file(
-            "sessions/original.jsonl",
-            &usage("2026-01-02T00:00:00.000Z"),
-        );
-        let _ = fixture.write_file("sessions/copy.jsonl", &usage("2026-01-02T00:00:00Z"));
-        let _ = fixture.write_file("sessions/later.jsonl", &usage("2026-01-03T00:00:00.000Z"));
+        let _ = fixture.write_file("sessions/original.jsonl", usage("2026-01-02T00:00:00.000Z"));
+        let _ = fixture.write_file("sessions/copy.jsonl", usage("2026-01-02T00:00:00Z"));
+        let _ = fixture.write_file("sessions/later.jsonl", usage("2026-01-03T00:00:00.000Z"));
         let _env = EnvVarsGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
             ("LOG_LEVEL", Some("0".into())),
@@ -385,25 +382,20 @@ mod diagnostic_tests {
                     since,
                     ..Default::default()
                 };
-                for multi_source_driver in [false, true] {
-                    let result = SOURCE
-                        .unified_rows(&UnifiedRequest {
-                            kind: AgentReportKind::Daily,
-                            shared: &shared,
-                            options: SourceOptions::default(),
-                            pricing: Some(&pricing),
-                            progress: ProgressOwner::Caller,
-                            multi_source_driver,
-                            claude_counted: None,
-                        })
-                        .unwrap();
-                    assert!(result.detected);
-                    assert!(result.rows.is_empty());
-                    assert!(result.diagnostics.warnings(&shared).is_empty());
-                }
-                let (events, detected) = crate::load_codex_events_with_detection(&shared).unwrap();
-                assert!(detected);
-                assert!(events.is_empty());
+                let result = SOURCE
+                    .unified_rows(&UnifiedRequest {
+                        kind: AgentReportKind::Daily,
+                        shared: &shared,
+                        options: SourceOptions::default(),
+                        pricing: Some(&pricing),
+                        progress: ProgressOwner::Caller,
+                        multi_source_driver: true,
+                        claude_counted: None,
+                    })
+                    .unwrap();
+                assert!(result.detected);
+                assert!(result.rows.is_empty());
+                assert!(result.diagnostics.warnings(&shared).is_empty());
             }
         }
     }
@@ -505,15 +497,11 @@ mod diagnostic_tests {
                 .unwrap();
             assert_eq!(rows.rows.len(), 1);
             let diagnostics = Diagnostics::new("codex");
-            let (events, _) = crate::loader::load_codex_events_with_detection_diagnostics(
-                &shared,
-                ProgressOwner::Caller,
-                &diagnostics,
-            )
-            .unwrap();
-            assert_eq!(events.len(), 2);
+            let (groups, _) =
+                load_groups_with_diagnostics(&shared, AgentReportKind::Daily, &diagnostics)
+                    .unwrap();
             assert_eq!(
-                events.iter().map(|event| event.input_tokens).sum::<u64>(),
+                groups.values().map(|group| group.input_tokens).sum::<u64>(),
                 30
             );
             assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);

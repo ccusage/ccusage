@@ -95,16 +95,6 @@ struct ParentUsage {
 }
 
 impl CodexReplayPlan {
-    pub(super) fn new<'a>(
-        groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
-        single_thread: bool,
-        diagnostics: &Diagnostics,
-    ) -> Self {
-        let files = collect_replay_files(groups);
-        let metadata = read_session_metadata(&files, single_thread);
-        Self::from_metadata(files, metadata, single_thread, diagnostics)
-    }
-
     /// Plans from metadata already read from the first line of every file in
     /// `groups`, in the same order.
     pub(super) fn with_metadata<'a>(

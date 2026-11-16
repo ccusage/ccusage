@@ -669,6 +669,19 @@ mod tests {
     }
 
     #[test]
+    fn merged_copies_keep_a_recorded_tier_and_settle_conflicts_as_standard() {
+        use CodexServiceTier::{Fast, Standard};
+
+        for (first, second, expected) in [
+            (None, Some(Fast), Fast),
+            (Some(Standard), Some(Fast), Standard),
+        ] {
+            assert_eq!(merge_codex_service_tiers(first, second), Some(expected));
+            assert_eq!(merge_codex_service_tiers(second, first), Some(expected));
+        }
+    }
+
+    #[test]
     fn derives_total_tokens_without_double_counting_reasoning() {
         let usage: CodexRawUsage = serde_json::from_str(
             r#"{

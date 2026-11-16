@@ -2,7 +2,6 @@ use ccusage_adapter_common::chunk_file_indexes_by_size;
 use ccusage_core::*;
 
 mod aggregate;
-mod loader;
 mod parser;
 mod paths;
 mod reader;
@@ -16,13 +15,15 @@ mod types;
 mod compaction_tests;
 #[cfg(test)]
 mod compression_tests;
+#[cfg(test)]
+mod loader_tests;
+#[cfg(test)]
+mod test_support;
 
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
-pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
-#[cfg(test)]
-use loader::load_codex_events_from_directory;
-pub use loader::load_codex_events_with_detection;
+use aggregate::aggregate_events;
+pub use aggregate::load_groups;
 
 pub use report::{
     calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
@@ -148,13 +149,152 @@ pub fn report_json(
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::aggregate::load_groups_from_directory;
     use super::report::report_from_groups;
     use super::*;
     use crate::cli::SharedArgs;
+    use crate::test_support::load_groups_from_directory;
     use crate::{CodexModelUsage, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket};
     use ccusage_test_support::fs_fixture;
     use serde_json::json;
+
+    fn events_report(
+        events: &[CodexTokenUsageEvent],
+        kind: AgentReportKind,
+        timezone: Option<&str>,
+        pricing: &PricingMap,
+        speed: CodexSpeedPolicy,
+    ) -> Result<Value> {
+        let groups = aggregate_events(events, kind, timezone)?;
+        Ok(report_from_groups(
+            &groups,
+            kind,
+            pricing,
+            speed,
+            CostMode::Calculate,
+        ))
+    }
+
+    fn usage_event(
+        timestamp: &str,
+        model: &str,
+        input_tokens: u64,
+        cached_input_tokens: u64,
+        output_tokens: u64,
+        reasoning_output_tokens: u64,
+    ) -> CodexTokenUsageEvent {
+        CodexTokenUsageEvent {
+            session_id: "codex-session".to_string(),
+            response_id: None,
+            timestamp: timestamp.to_string(),
+            model: Some(model.to_string()),
+            input_tokens,
+            cached_input_tokens,
+            cache_creation_tokens: 0,
+            output_tokens,
+            reasoning_output_tokens,
+            total_tokens: input_tokens + output_tokens,
+            is_fallback_model: false,
+            service_tier: None,
+        }
+    }
+
+    #[test]
+    fn builds_codex_daily_json_report() {
+        let pricing = PricingMap::load_embedded();
+        let events = [usage_event(
+            "2026-01-02T00:00:01.000Z",
+            "gpt-5",
+            100,
+            10,
+            50,
+            0,
+        )];
+
+        let report = events_report(
+            &events,
+            AgentReportKind::Daily,
+            Some("UTC"),
+            &pricing,
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+        )
+        .unwrap();
+
+        assert_eq!(report["daily"][0]["date"], "2026-01-02");
+        assert_eq!(report["daily"][0]["inputTokens"], 90);
+        assert_eq!(report["daily"][0]["cacheCreationTokens"], 0);
+        assert_eq!(report["daily"][0]["cacheReadTokens"], 10);
+        assert_eq!(report["daily"][0]["outputTokens"], 50);
+        assert_eq!(report["daily"][0]["reasoningOutputTokens"], 0);
+        assert_eq!(report["daily"][0]["totalTokens"], 150);
+        assert_eq!(report["daily"][0]["models"]["gpt-5"]["inputTokens"], 90);
+        assert_eq!(
+            report["daily"][0]["models"]["gpt-5"]["cacheCreationTokens"],
+            0
+        );
+        assert_eq!(report["daily"][0]["models"]["gpt-5"]["cacheReadTokens"], 10);
+        assert_eq!(report["daily"][0]["costUSD"], json!(0.00061375));
+        assert_eq!(report["totals"]["costUSD"], json!(0.00061375));
+    }
+
+    #[test]
+    fn prices_codex_versioned_and_fast_models_from_embedded_pricing() {
+        let pricing = PricingMap::load_embedded();
+        let cost = |event: CodexTokenUsageEvent, tier: CodexServiceTier| {
+            events_report(
+                &[event],
+                AgentReportKind::Daily,
+                Some("UTC"),
+                &pricing,
+                CodexSpeedPolicy::Forced(tier),
+            )
+            .unwrap()["daily"][0]["costUSD"]
+                .as_f64()
+                .unwrap()
+        };
+        let versioned = usage_event("2026-01-02T00:00:01.000Z", "gpt-5.3-codex", 120, 30, 11, 3);
+        let gpt_5_4 = usage_event("2026-03-18T00:00:01.000Z", "gpt-5.4", 100, 40, 10, 0);
+
+        assert!((cost(versioned, CodexServiceTier::Standard) - 0.00031675).abs() < f64::EPSILON);
+        assert!((cost(gpt_5_4.clone(), CodexServiceTier::Standard) - 0.00031).abs() < f64::EPSILON);
+        assert!((cost(gpt_5_4, CodexServiceTier::Fast) - 0.00062).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn applies_codex_fast_speed_multiplier_to_report_costs() {
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gpt-test": {
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000002,
+                    "cache_read_input_token_cost": 0.0000005,
+                    "provider_specific_entry": { "fast": 2 }
+                }
+            }"#,
+        );
+        let events = [usage_event(
+            "2026-01-02T00:00:01.000Z",
+            "gpt-test",
+            10,
+            2,
+            5,
+            0,
+        )];
+        let cost = |tier| {
+            events_report(
+                &events,
+                AgentReportKind::Daily,
+                Some("UTC"),
+                &pricing,
+                CodexSpeedPolicy::Forced(tier),
+            )
+            .unwrap()["daily"][0]["costUSD"]
+                .clone()
+        };
+
+        assert_eq!(cost(CodexServiceTier::Standard), json!(0.000019));
+        assert_eq!(cost(CodexServiceTier::Fast), json!(0.000038));
+    }
 
     fn session_groups(ids: &[&str]) -> BTreeMap<String, CodexGroup> {
         ids.iter()
@@ -259,7 +399,7 @@ mod tests {
     #[test]
     fn reports_non_cached_codex_input_separately_from_cached_input() {
         let pricing = PricingMap::default();
-        let report = report_json(
+        let report = events_report(
             &[CodexTokenUsageEvent {
                 session_id: "session-1".to_string(),
                 response_id: None,
@@ -277,7 +417,7 @@ mod tests {
             AgentReportKind::Daily,
             Some("UTC"),
             &pricing,
-            CodexSpeed::Standard,
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         )
         .unwrap();
 
@@ -330,12 +470,12 @@ mod tests {
             event("2026-08-17T01:00:00.000Z"),
         ];
 
-        let report = report_json(
+        let report = events_report(
             &events,
             AgentReportKind::Daily,
             Some("UTC"),
             &pricing,
-            CodexSpeed::Standard,
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         )
         .unwrap();
 
@@ -447,7 +587,7 @@ mod tests {
             ("private-codex-beta", "gpt-5.5"),
         ]);
         let pricing = PricingMap::default();
-        let report = report_json(
+        let report = events_report(
             &[
                 CodexTokenUsageEvent {
                     session_id: "session-1".to_string(),
@@ -481,7 +621,7 @@ mod tests {
             AgentReportKind::Daily,
             Some("UTC"),
             &pricing,
-            CodexSpeed::Standard,
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         )
         .unwrap();
 
@@ -1235,36 +1375,36 @@ mod tests {
         ];
 
         insta::assert_json_snapshot!(serde_json::json!({
-            "daily": report_json(
+            "daily": events_report(
                 &events,
                 AgentReportKind::Daily,
                 Some("UTC"),
                 &pricing,
-                CodexSpeed::Standard,
+                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             )
             .unwrap(),
-            "weekly": report_json(
+            "weekly": events_report(
                 &events,
                 AgentReportKind::Weekly,
                 Some("UTC"),
                 &pricing,
-                CodexSpeed::Standard,
+                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             )
             .unwrap(),
-            "monthly": report_json(
+            "monthly": events_report(
                 &events,
                 AgentReportKind::Monthly,
                 Some("UTC"),
                 &pricing,
-                CodexSpeed::Standard,
+                CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             )
             .unwrap(),
-            "sessionFast": report_json(
+            "sessionFast": events_report(
                 &events,
                 AgentReportKind::Session,
                 Some("UTC"),
                 &pricing,
-                CodexSpeed::Fast,
+                CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
             )
             .unwrap(),
         }));

@@ -1703,7 +1703,7 @@ mod tests {
             ].join("\n"),
         });
 
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
@@ -1735,7 +1735,7 @@ mod tests {
                 .replace(r#""type":"token_count""#, r#""type" : "token_count""#);
             let fixture = fs_fixture!({ "headless.jsonl": line });
 
-            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+            let events = crate::test_support::rollout_events(fixture.root());
 
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].input_tokens, 100);
@@ -1765,7 +1765,7 @@ mod tests {
                 .replace(r#""type":"token_count""#, r#""type" : "token_count""#);
             let fixture = fs_fixture!({ "headless.jsonl": line });
 
-            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+            let events = crate::test_support::rollout_events(fixture.root());
 
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].timestamp, "2026-09-01T00:00:01.000Z");
@@ -1956,7 +1956,7 @@ mod tests {
             .join("\n"),
         });
 
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
 
         assert_eq!(events.len(), 3);
         let compacted_usages = events
@@ -1987,7 +1987,7 @@ mod tests {
                     r#"{"timestamp":"2026-09-01T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
                 ].join("\n"),
             });
-            let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+            let events = crate::test_support::rollout_events(fixture.root());
             assert_eq!(events.last().unwrap().model.as_deref(), Some("gpt-5"));
             assert!(!events.last().unwrap().is_fallback_model);
         }
@@ -2046,7 +2046,7 @@ mod tests {
                 r#"{"timestamp":"2026-09-01T00:00:01Z","type":"event\u005fmsg","payload":{"type":"token\u005fcount","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
             ].join("\n"),
         });
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
         assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
@@ -2060,7 +2060,7 @@ mod tests {
                 r#"{"timestamp": "2026-09-01T00:00:01Z", "type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 100, "output_tokens": 20}}}}"#,
             ].join("\n"),
         });
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].total_tokens, 120);
         assert_eq!(events[0].model.as_deref(), Some("gpt-5-mini"));
@@ -2076,7 +2076,7 @@ mod tests {
                 r#"{"timestamp":"2026-09-01T00:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"output_tokens":30}}}}"#,
             ].join("\n"),
         });
-        let events = crate::load_codex_events_from_directory(fixture.root(), true).unwrap();
+        let events = crate::test_support::rollout_events(fixture.root());
 
         assert_eq!(events.len(), 3);
         assert_eq!(

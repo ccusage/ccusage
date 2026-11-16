@@ -5,8 +5,8 @@ into the usage entries the reports render.
 
 ## Owns
 
-- `aggregate.rs` — grouping events into report periods, including cross-session dedupe.
-- `loader.rs` — reading the source, dedupe, and date filtering.
+- `aggregate.rs` — reading the source, date filtering, and grouping events into report
+  periods, including cross-session dedupe.
 - `parser.rs` — raw record parsing, token mapping, and model naming.
 - `paths.rs` — environment variables, default directories, and file discovery.
 - `reader.rs` — opening plain and Zstandard-compressed rollouts as one line stream.
@@ -27,7 +27,7 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 Record shapes, token mapping, and cost rules are documented in [`src/README.md`](src/README.md).
 
-Uses `ccusage-adapter-common` for walking and size-balanced chunking. `loader.rs` performs
+Uses `ccusage-adapter-common` for walking and size-balanced chunking. `aggregate.rs` performs
 the ordered parallel reads, and `reader.rs` streams `.jsonl.zst` rollouts through `zstd`
 without unpacking them to disk.
 
@@ -38,10 +38,7 @@ lenient field conversions are unchanged.
 
 ## Public surface
 
-- `aggregate::aggregate_events`
-- `aggregate::filter_events_by_date`
 - `aggregate::load_groups`
-- `loader::load_codex_events_with_detection`
 - `report::calculate_codex_model_cost`
 - `report::calculate_group_cost`
 - `report::codex_model_missing_pricing`

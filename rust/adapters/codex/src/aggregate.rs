@@ -14,12 +14,11 @@ use rustc_hash::FxHasher;
 use crate::{
     CodexGroup, CodexServiceTier, CodexTokenUsageEvent, CodexUsageBucket, Result,
     cli::{AgentReportKind, SharedArgs, WeekDay},
-    fast::{FxHashMap, FxHashSet},
+    fast::FxHashMap,
     format_date_tz, merge_codex_service_tiers, parse_ts_timestamp, resolve_tz, week_start,
 };
 
 use super::{
-    loader::has_date_bounds,
     parser, paths,
     replay::{CodexReplayPlan, CodexSessionMetadata},
 };
@@ -929,108 +928,36 @@ fn merge_codex_model_usage(target: &mut crate::CodexModelUsage, source: crate::C
     target.is_fallback |= source.is_fallback;
 }
 
-pub fn aggregate_events(
+pub(crate) fn aggregate_events(
     events: &[CodexTokenUsageEvent],
     kind: AgentReportKind,
     timezone: Option<&str>,
 ) -> Result<BTreeMap<String, CodexGroup>> {
-    let mut groups = BTreeMap::new();
-    let mut seen_compaction_responses = FxHashSet::default();
-    let mut compaction_tiers = FxHashMap::default();
-    // Match loader and streaming aggregation: a copied record can supply a
-    // tier missing from the first copy, without changing its usage or owner.
-    for event in events {
-        if let Some(response_id) = event.response_id.as_deref()
-            && event
-                .model
-                .as_deref()
-                .is_some_and(|model| !model.is_empty())
-        {
-            let tier = compaction_tiers.entry(response_id).or_insert(None);
-            *tier = merge_codex_service_tiers(*tier, event.service_tier);
-        }
-    }
+    let shared = SharedArgs {
+        timezone: timezone.map(str::to_owned),
+        ..SharedArgs::default()
+    };
     let timezone = resolve_tz(timezone);
+    let seen = create_dedupe_shards();
+    let mut groups = BTreeMap::new();
+    let mut provenance = CodexEventProvenance::new(0);
     for event in events {
-        let Some(model) = event.model.as_deref().filter(|model| !model.is_empty()) else {
-            continue;
-        };
-        if let Some(response_id) = event.response_id.as_deref()
-            && !seen_compaction_responses.insert(response_id)
-        {
-            continue;
-        }
-        let merged_event = event.response_id.as_deref().map(|response_id| {
-            let mut merged = event.clone();
-            merged.service_tier = compaction_tiers[response_id];
-            merged
-        });
-        let event = merged_event.as_ref().unwrap_or(event);
-        let timestamp = parse_ts_timestamp(&event.timestamp).ok_or_else(|| {
-            crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp))
-        })?;
-        let date = format_date_tz(timestamp, &timezone);
-        let period = match kind {
-            AgentReportKind::Daily => date,
-            AgentReportKind::Weekly => week_start(&date, WeekDay::Monday).unwrap_or(date),
-            AgentReportKind::Monthly => date[..7].to_string(),
-            AgentReportKind::Session => event.session_id.clone(),
-        };
-        let group = groups.entry(period).or_insert_with(CodexGroup::default);
-        let model = crate::model_aliases::resolve_model_name(model);
-        accumulate_codex_event_into_group(group, event, model.as_ref(), timestamp, true);
+        add_event_to_groups(
+            event,
+            kind,
+            &timezone,
+            &shared,
+            &seen,
+            &mut groups,
+            &mut provenance,
+        )?;
     }
+    apply_recorded_usage_from_shards(&mut groups, &seen, &shared, kind);
     Ok(groups)
 }
 
-pub fn filter_events_by_date(
-    events: &mut Vec<CodexTokenUsageEvent>,
-    shared: &SharedArgs,
-) -> Result<()> {
-    if shared.since.is_none() && shared.until.is_none() {
-        return Ok(());
-    }
-    let timezone = resolve_tz(shared.timezone.as_deref());
-    let mut kept = Vec::with_capacity(events.len());
-    for event in events.drain(..) {
-        let timestamp = parse_ts_timestamp(&event.timestamp).ok_or_else(|| {
-            crate::cli_error(format!("Invalid Codex timestamp: {}", event.timestamp))
-        })?;
-        let date = format_date_tz(timestamp, &timezone).replace('-', "");
-        if shared.since.as_ref().is_none_or(|since| &date >= since)
-            && shared.until.as_ref().is_none_or(|until| &date <= until)
-        {
-            kept.push(event);
-        }
-    }
-    *events = kept;
-    Ok(())
-}
-
-#[cfg(test)]
-pub(super) fn load_groups_from_directory(
-    sessions_dir: &Path,
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-) -> Result<BTreeMap<String, CodexGroup>> {
-    load_groups_from_sources(
-        &[paths::CodexUsageSource::new_for_test(
-            sessions_dir.to_path_buf(),
-            sessions_dir.to_path_buf(),
-        )],
-        shared,
-        kind,
-    )
-}
-
-#[cfg(test)]
-fn load_groups_from_sources(
-    sources: &[paths::CodexUsageSource],
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-) -> Result<BTreeMap<String, CodexGroup>> {
-    load_groups_from_sources_with_diagnostics(sources, shared, kind, &Diagnostics::new("codex"))
-        .map(|(groups, _)| groups)
+fn has_date_bounds(shared: &SharedArgs) -> bool {
+    shared.since.is_some() || shared.until.is_some()
 }
 
 #[cfg(test)]
@@ -1041,8 +968,12 @@ mod tests {
     use serde_json::json;
 
     use crate::{
-        CodexModelUsage, PricingMap, cli::CodexSpeed, model_aliases::set_model_aliases_for_tests,
-        paths::CodexUsageSource, replay,
+        CodexModelUsage, PricingMap,
+        cli::CodexSpeed,
+        model_aliases::set_model_aliases_for_tests,
+        paths::CodexUsageSource,
+        replay,
+        test_support::{load_groups_from_directory, load_groups_from_sources},
     };
 
     #[test]
@@ -2121,8 +2052,7 @@ mod tests {
         let sessions = fixture.path("sessions");
 
         for single_thread in [true, false] {
-            let events = crate::load_codex_events_from_directory(&sessions, single_thread)
-                .unwrap()
+            let events = crate::test_support::rollout_events(&sessions)
                 .into_iter()
                 .map(|event| {
                     (
@@ -2180,10 +2110,6 @@ mod tests {
             let sessions = fixture.path("sessions");
 
             for single_thread in [true, false] {
-                let events =
-                    crate::load_codex_events_from_directory(&sessions, single_thread).unwrap();
-                assert_eq!(events.len(), 2, "{name}, single_thread={single_thread}");
-
                 assert_eq!(
                     daily_input_tokens(&sessions, single_thread),
                     [("2026-11-01".to_string(), 2_000)],
