@@ -787,56 +787,61 @@ fn to_candidate(
     })
 }
 
+impl CopilotUsageSource {
+    fn rank(self) -> u8 {
+        match self {
+            Self::ChatSpan => 0,
+            Self::InferenceLog => 1,
+            Self::AgentTurnLog => 2,
+            Self::AgentSummarySpan => 3,
+        }
+    }
+
+    fn outranks(self, other: Self) -> bool {
+        self.rank() < other.rank()
+    }
+}
+
 struct CandidateSets {
-    chat_traces: HashSet<String>,
-    inference_traces: HashSet<String>,
-    agent_turn_traces: HashSet<String>,
-    chat_response_ids: HashSet<String>,
-    inference_response_ids: HashSet<String>,
-    agent_turn_response_ids: HashSet<String>,
+    best_source_by_trace: HashMap<String, CopilotUsageSource>,
+    best_source_by_response: HashMap<String, CopilotUsageSource>,
     repeated_chat_spans: HashSet<usize>,
 }
 
 impl CandidateSets {
     fn new(candidates: &[CopilotUsageCandidate]) -> Self {
+        let mut best_source_by_trace = HashMap::new();
+        let mut best_source_by_response = HashMap::new();
+        for candidate in candidates {
+            for (best_sources, id) in [
+                (&mut best_source_by_trace, &candidate.trace_id),
+                (&mut best_source_by_response, &candidate.response_id),
+            ] {
+                if let Some(id) = id {
+                    keep_best_source(best_sources, id, candidate.source);
+                }
+            }
+        }
         Self {
+            best_source_by_trace,
+            best_source_by_response,
             repeated_chat_spans: repeated_chat_spans(candidates),
-            chat_traces: source_trace_ids(candidates, CopilotUsageSource::ChatSpan),
-            inference_traces: source_trace_ids(candidates, CopilotUsageSource::InferenceLog),
-            agent_turn_traces: source_trace_ids(candidates, CopilotUsageSource::AgentTurnLog),
-            chat_response_ids: source_response_ids(candidates, CopilotUsageSource::ChatSpan),
-            inference_response_ids: source_response_ids(
-                candidates,
-                CopilotUsageSource::InferenceLog,
-            ),
-            agent_turn_response_ids: source_response_ids(
-                candidates,
-                CopilotUsageSource::AgentTurnLog,
-            ),
         }
     }
 }
 
-fn source_trace_ids(
-    candidates: &[CopilotUsageCandidate],
+fn keep_best_source(
+    best_sources: &mut HashMap<String, CopilotUsageSource>,
+    id: &str,
     source: CopilotUsageSource,
-) -> HashSet<String> {
-    candidates
-        .iter()
-        .filter(|candidate| candidate.source == source)
-        .filter_map(|candidate| candidate.trace_id.clone())
-        .collect()
-}
-
-fn source_response_ids(
-    candidates: &[CopilotUsageCandidate],
-    source: CopilotUsageSource,
-) -> HashSet<String> {
-    candidates
-        .iter()
-        .filter(|candidate| candidate.source == source)
-        .filter_map(|candidate| candidate.response_id.clone())
-        .collect()
+) {
+    match best_sources.get_mut(id) {
+        Some(best) if source.outranks(*best) => *best = source,
+        Some(_) => {}
+        None => {
+            best_sources.insert(id.to_string(), source);
+        }
+    }
 }
 
 /// The Copilot CLI exports some chat spans a second time, under a new trace or
@@ -882,38 +887,16 @@ fn should_emit_candidate(
     candidate: &CopilotUsageCandidate,
     sets: &CandidateSets,
 ) -> bool {
-    let trace_match = |values: &HashSet<String>| {
-        candidate
-            .trace_id
-            .as_ref()
-            .is_some_and(|trace_id| values.contains(trace_id))
-    };
-    let response_match = |values: &HashSet<String>| {
-        candidate
-            .response_id
-            .as_ref()
-            .is_some_and(|response_id| values.contains(response_id))
-    };
-    match candidate.source {
-        CopilotUsageSource::ChatSpan => !sets.repeated_chat_spans.contains(&index),
-        CopilotUsageSource::InferenceLog => {
-            !trace_match(&sets.chat_traces) && !response_match(&sets.chat_response_ids)
-        }
-        CopilotUsageSource::AgentTurnLog => {
-            !trace_match(&sets.chat_traces)
-                && !trace_match(&sets.inference_traces)
-                && !response_match(&sets.chat_response_ids)
-                && !response_match(&sets.inference_response_ids)
-        }
-        CopilotUsageSource::AgentSummarySpan => {
-            !trace_match(&sets.chat_traces)
-                && !trace_match(&sets.inference_traces)
-                && !trace_match(&sets.agent_turn_traces)
-                && !response_match(&sets.chat_response_ids)
-                && !response_match(&sets.inference_response_ids)
-                && !response_match(&sets.agent_turn_response_ids)
-        }
+    if candidate.source == CopilotUsageSource::ChatSpan {
+        return !sets.repeated_chat_spans.contains(&index);
     }
+    let outranked = |best_sources: &HashMap<String, CopilotUsageSource>, id: &Option<String>| {
+        id.as_ref()
+            .and_then(|id| best_sources.get(id))
+            .is_some_and(|best| best.outranks(candidate.source))
+    };
+    !outranked(&sets.best_source_by_trace, &candidate.trace_id)
+        && !outranked(&sets.best_source_by_response, &candidate.response_id)
 }
 
 const MODEL_ATTRS: &[&str] = &["gen_ai.response.model", "gen_ai.request.model"];
