@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use ccusage_adapter_common::source::LoadContext;
-use ccusage_core::{Skip, SkipKind};
 
 use crate::{LoadedEntry, Result};
 
@@ -23,11 +22,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
                     database_path.display()
                 ),
             ),
-            Err(_) => cx.diagnostics.record(Skip::unit(
-                &database_path,
-                SkipKind::Unreadable,
-                "Antigravity database could not be read",
-            )),
+            Err(error) => error.record(&database_path, cx.diagnostics),
         }
     }
     let mut events = deduplicate_events(events);
@@ -95,7 +90,7 @@ mod tests {
     use std::path::Path;
 
     use ccusage_adapter_common::source::SourceOptions;
-    use ccusage_core::Diagnostics;
+    use ccusage_core::{Diagnostics, SkipKind};
 
     use super::*;
     use crate::parser::test_support::{
@@ -1173,8 +1168,8 @@ mod tests {
         );
         assert_skipped(
             &diagnostics,
-            SkipKind::Unreadable,
-            "unreadable",
+            SkipKind::InvalidData,
+            "invalid data",
             &fixture.path("conversations/malformed.db"),
         );
     }
@@ -1190,8 +1185,8 @@ mod tests {
 
         assert_skipped(
             &skipped_databases(),
-            SkipKind::Unreadable,
-            "unreadable",
+            SkipKind::InvalidData,
+            "invalid data",
             &not_a_database,
         );
     }
@@ -1212,8 +1207,8 @@ mod tests {
 
         assert_skipped(
             &skipped_databases(),
-            SkipKind::Unreadable,
-            "unreadable",
+            SkipKind::Invariant,
+            "unexpected shape",
             &db_path,
         );
     }
@@ -1257,8 +1252,8 @@ mod tests {
 
         assert_skipped(
             &skipped_databases(),
-            SkipKind::Unreadable,
-            "unreadable",
+            SkipKind::Invariant,
+            "unexpected shape",
             &db_path,
         );
     }
@@ -1279,16 +1274,16 @@ mod tests {
 
         assert_skipped(
             &skipped_databases(),
-            SkipKind::Unreadable,
-            "unreadable",
+            SkipKind::InvalidData,
+            "invalid data",
             &fixture.path("conversations/malformed.db"),
         );
     }
 
     #[test]
-    fn structured_loads_tally_unreadable_databases() {
-        use ccusage_adapter_common::source::{LoadContext, SourceOptions};
-        use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
+    fn structured_loads_tally_skipped_databases_without_their_content() {
+        use ccusage_adapter_common::source::LoadContext;
+        use ccusage_core::{ReportWindow, cli::AgentReportKind};
 
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/broken.db", "SECRET_CANARY");
@@ -1310,6 +1305,15 @@ mod tests {
         };
 
         assert!(load_entries_for_context(&cx).unwrap().is_empty());
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert!(
+            !diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..shared
+                })
+                .join("\n")
+                .contains("SECRET_CANARY")
+        );
     }
 }

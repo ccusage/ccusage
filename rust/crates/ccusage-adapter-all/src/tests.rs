@@ -2708,7 +2708,7 @@ fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
         fixture.path("antigravity").into_os_string(),
     );
     let shared = fixture_shared("20250615", "20250615");
-    let expected = vec!["WARN  antigravity: skipped 1 input (unreadable)".to_string()];
+    let expected = vec!["WARN  antigravity: skipped 1 input (invalid data)".to_string()];
 
     let rows = loader::load_rows(
         AgentReportKind::Daily,
