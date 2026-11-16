@@ -13,8 +13,6 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-#[doc(hidden)]
-pub use parser::read_thread_file;
 pub use report::{report_from_rows, summarize_entries};
 
 /// The Amp usage source.

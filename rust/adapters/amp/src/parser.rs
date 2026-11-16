@@ -6,9 +6,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    Diagnostics, LoadedEntry, PricingMap, Result, Skip, SkipKind, TimestampMs, TokenUsageRaw,
-    UsageEntry, UsageMessage, apply_total_token_fallback, calculate_cost, cli::CostMode,
-    format_date_tz, json_value_u64, missing_pricing_model_for_usage, non_empty_json_string,
+    Diagnostics, LoadedEntry, PricingMap, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry,
+    UsageMessage, apply_total_token_fallback, calculate_cost, cli::CostMode, format_date_tz,
+    json_value_u64, missing_pricing_model_for_usage, non_empty_json_string,
 };
 
 /// A single Amp thread file: one JSON object holding the thread id, the chat
@@ -113,14 +113,13 @@ fn placed_timestamp(text: String) -> Option<(String, TimestampMs)> {
     crate::parse_ts_timestamp(&text).map(|timestamp| (text, timestamp))
 }
 
-/// Reads one thread file without reporting what it skipped; the loader goes
-/// through [`read_thread`].
-pub fn read_thread_file(
+#[cfg(test)]
+fn read_thread_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
+) -> crate::Result<Vec<LoadedEntry>> {
     read_thread(path, tz, mode, pricing, &Diagnostics::new("amp"))
         .map_err(|error| crate::cli_error(error.to_string()))
 }
@@ -559,6 +558,37 @@ mod tests {
 
         assert!(loaded[0].is_none());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
+    fn loads_amp_thread_usage_events() {
+        let fixture = fs_fixture!({
+            "threads/thread.json": r#"{"id":"thread-a","messages":[{"role":"assistant","messageId":2,"usage":{"cacheCreationInputTokens":20,"cacheReadInputTokens":10}}],"usageLedger":{"events":[{"id":"event-a","timestamp":"2026-05-01T01:02:03.000Z","model":"claude-sonnet-4-20250514","credits":1.25,"tokens":{"input":100,"output":50},"toMessageId":2}]}}"#,
+        });
+
+        let entries = read_thread_file(
+            &fixture.path("threads/thread.json"),
+            crate::parse_tz(Some("UTC")).as_ref(),
+            CostMode::Display,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].date, "2026-05-01");
+        assert_eq!(entries[0].session_id.as_ref(), "thread-a");
+        assert_eq!(
+            entries[0].model.as_deref(),
+            Some("claude-sonnet-4-20250514")
+        );
+        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
+        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(
+            entries[0].data.message.usage.cache_creation_input_tokens,
+            20
+        );
+        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
+        assert_eq!(entries[0].credits, Some(1.25));
     }
 
     #[test]
