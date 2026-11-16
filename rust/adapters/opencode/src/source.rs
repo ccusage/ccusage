@@ -70,7 +70,7 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
     Ok(SourceRows {
         rows: summary_rows("opencode", summaries, false),
         detected,
-        warnings: diagnostics.warnings(request.shared),
+        diagnostics,
         claude_counted: None,
     })
 }
@@ -113,17 +113,27 @@ mod diagnostic_tests {
             .unwrap();
         assert_eq!(rows.rows.len(), 1);
         assert!(
-            rows.warnings
+            rows.diagnostics
+                .warnings(&shared)
                 .iter()
                 .any(|line| line.contains("invalid data")),
             "{:?}",
-            rows.warnings
+            rows.diagnostics.warnings(&shared)
         );
         assert!(
-            rows.warnings.iter().any(|line| line.contains("unreadable")),
+            rows.diagnostics
+                .warnings(&shared)
+                .iter()
+                .any(|line| line.contains("unreadable")),
             "{:?}",
-            rows.warnings
+            rows.diagnostics.warnings(&shared)
         );
-        assert!(!rows.warnings.join("\n").contains("SECRET_CANARY"));
+        assert!(
+            !rows
+                .diagnostics
+                .warnings(&shared)
+                .join("\n")
+                .contains("SECRET_CANARY")
+        );
     }
 }

@@ -33,15 +33,14 @@ pub(super) fn load_daily_summaries_inner(
     project_filter: Option<&str>,
     group_by_project: bool,
     session_days: impl FnOnce(&DedupedDailyEntries) -> SessionDays,
+    diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
-    let diagnostics = Diagnostics::new("claude");
     let paths = claude_paths()?;
     let SinceFiles { kept, pruned } =
         split_files_before_since(usage_files(&paths, project_filter), shared, utc_now());
     if kept.is_empty() && pruned.is_empty() {
         return Ok(DailySummaries {
             summaries: Vec::new(),
-            warnings: Vec::new(),
             detected: false,
             session_days: SessionDays::default(),
         });
@@ -63,7 +62,7 @@ pub(super) fn load_daily_summaries_inner(
         project_filter,
         tz.as_ref(),
         pricing.as_ref(),
-        &diagnostics,
+        diagnostics,
     );
     let session_days = session_days(&deduped);
     let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
@@ -76,7 +75,7 @@ pub(super) fn load_daily_summaries_inner(
                 tz.as_ref(),
                 shared.mode,
                 pricing.as_ref(),
-                &diagnostics,
+                diagnostics,
             )
             .entries
             .iter()
@@ -84,7 +83,6 @@ pub(super) fn load_daily_summaries_inner(
         });
     Ok(DailySummaries {
         summaries,
-        warnings: diagnostics.warnings(shared),
         detected,
         session_days,
     })
@@ -798,7 +796,14 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let daily = load_daily_summaries_inner(&shared, None, false, session_days).unwrap();
+        let daily = load_daily_summaries_inner(
+            &shared,
+            None,
+            false,
+            session_days,
+            &ccusage_core::Diagnostics::new("claude"),
+        )
+        .unwrap();
 
         assert_eq!(
             daily.session_days.into_iter().collect::<Vec<_>>(),
@@ -1062,7 +1067,14 @@ mod tests {
                 ..SharedArgs::default()
             };
 
-            let daily = load_daily_summaries_inner(&shared, None, false, session_days).unwrap();
+            let daily = load_daily_summaries_inner(
+                &shared,
+                None,
+                false,
+                session_days,
+                &ccusage_core::Diagnostics::new("claude"),
+            )
+            .unwrap();
 
             let breakdown = &daily.summaries[0].model_breakdowns[0];
             assert_eq!(breakdown.cache_creation_tokens, 100);

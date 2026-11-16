@@ -64,7 +64,7 @@ pub(super) fn load_rows(
     Ok(AllLoadResult {
         rows: finish_rows(kind, loaded.rows, shared, start_of_week),
         detected_agents: loaded.detected_agents,
-        warnings: loaded.warnings,
+        diagnostics: loaded.diagnostics,
     })
 }
 
@@ -77,7 +77,7 @@ pub(super) fn load_sections(
     let source_shared = shared_by_source(sources, shared);
     let (pricing, unified_pricing) =
         load_pricing(shared, &source_shared, !shared.pi_stores.is_empty());
-    let daily_base = needs_daily_family(kinds)
+    let mut daily_base = needs_daily_family(kinds)
         .then(|| {
             load_base_rows(
                 AgentReportKind::Daily,
@@ -89,7 +89,7 @@ pub(super) fn load_sections(
             )
         })
         .transpose()?;
-    let session_base = needs_session(kinds)
+    let mut session_base = needs_session(kinds)
         .then(|| {
             load_base_rows(
                 AgentReportKind::Session,
@@ -110,6 +110,20 @@ pub(super) fn load_sections(
         .as_ref()
         .map(|base| base.detected_agents.clone())
         .unwrap_or_default();
+    // The two loads read different files for one source, so their skips are
+    // merged per source rather than listed twice.
+    let mut diagnostics = Vec::new();
+    for base in daily_base.iter_mut().chain(&mut session_base) {
+        for loaded in std::mem::take(&mut base.diagnostics) {
+            match diagnostics
+                .iter()
+                .find(|merged: &&Diagnostics| merged.source() == loaded.source())
+            {
+                Some(merged) => merged.merge(&loaded),
+                None => diagnostics.push(loaded),
+            }
+        }
+    }
 
     let mut sections = Vec::with_capacity(kinds.len());
     for kind in kinds {
@@ -127,22 +141,11 @@ pub(super) fn load_sections(
         sections.push((*kind, rows));
     }
 
-    let warnings = daily_base
-        .iter()
-        .chain(&session_base)
-        .flat_map(|base| &base.warnings)
-        .fold(Vec::new(), |mut warnings, warning| {
-            if !warnings.contains(warning) {
-                warnings.push(warning.clone());
-            }
-            warnings
-        });
-
     Ok(AllSectionsLoadResult {
         sections,
         daily_detected_agents,
         session_detected_agents,
-        warnings,
+        diagnostics,
     })
 }
 
@@ -275,7 +278,7 @@ fn load_base_rows(
                     let ccusage_adapter_common::source::SourceRows {
                         rows,
                         detected,
-                        warnings,
+                        diagnostics,
                         claude_counted,
                     } = source_rows;
                     let counted = claude_counted.ok_or_else(|| {
@@ -285,7 +288,7 @@ fn load_base_rows(
                     Ok(AgentRows {
                         rows,
                         detected,
-                        warnings,
+                        diagnostics,
                     })
                 })
             }
@@ -347,20 +350,23 @@ fn load_base_rows(
     let loaded = load_agent_rows_parallel(specs, &mut progress)?;
     let mut detected_agents = Vec::new();
     let mut rows = Vec::new();
-    let mut warnings = Vec::new();
+    let mut diagnostics = Vec::with_capacity(loaded.len());
     for loaded in loaded {
-        warnings.extend(loaded.agent_rows.warnings.iter().cloned());
-        append_agent_rows(
-            &mut rows,
-            &mut detected_agents,
-            loaded.agent,
-            loaded.agent_rows,
-        );
+        let AgentRows {
+            rows: agent_rows,
+            detected,
+            diagnostics: agent_diagnostics,
+        } = loaded.agent_rows;
+        if detected {
+            detected_agents.push(loaded.agent);
+        }
+        rows.extend(agent_rows);
+        diagnostics.push(agent_diagnostics);
     }
     Ok(AllLoadResult {
         rows,
         detected_agents,
-        warnings,
+        diagnostics,
     })
 }
 
@@ -453,18 +459,6 @@ pub(super) fn load_agent_rows_parallel(
     })
 }
 
-fn append_agent_rows(
-    rows: &mut Vec<UnifiedRow>,
-    detected_agents: &mut Vec<&'static str>,
-    agent: &'static str,
-    agent_rows: AgentRows,
-) {
-    if agent_rows.detected {
-        detected_agents.push(agent);
-    }
-    rows.extend(agent_rows.rows);
-}
-
 fn leak_agent_name(name: &str) -> &'static str {
     Box::leak(name.to_string().into_boxed_str())
 }
@@ -553,7 +547,7 @@ fn agent_rows(rows: SourceRows) -> AgentRows {
     AgentRows {
         rows: rows.rows,
         detected: rows.detected,
-        warnings: rows.warnings,
+        diagnostics: rows.diagnostics,
     }
 }
 
@@ -577,7 +571,7 @@ fn load_pi_format_agent_rows(
     Ok(AgentRows {
         rows: summary_rows(agent, summaries, true),
         detected,
-        warnings: Vec::new(),
+        diagnostics: Diagnostics::new(agent),
     })
 }
 
@@ -611,14 +605,7 @@ fn load_named_pi_store_rows_from_paths(
         diagnostics: &diagnostics,
     };
     let entries = pi::load_entries_for_store_paths_with_context(&cx, store_paths, agent)?;
-    filtered_pi_format_agent_rows(
-        agent,
-        kind,
-        entries,
-        true,
-        &window,
-        diagnostics.warnings(shared),
-    )
+    filtered_pi_format_agent_rows(agent, kind, entries, true, &window, diagnostics)
 }
 
 fn filtered_pi_format_agent_rows(
@@ -627,7 +614,7 @@ fn filtered_pi_format_agent_rows(
     mut entries: Vec<LoadedEntry>,
     include_project_path: bool,
     window: &ReportWindow,
-    warnings: Vec<String>,
+    diagnostics: Diagnostics,
 ) -> Result<AgentRows> {
     let detected = !entries.is_empty();
     entries.retain(|entry| window.contains_date(&entry.date));
@@ -635,7 +622,7 @@ fn filtered_pi_format_agent_rows(
     Ok(AgentRows {
         rows: summary_rows(agent, summaries, include_project_path),
         detected,
-        warnings,
+        diagnostics,
     })
 }
 
@@ -1295,7 +1282,7 @@ mod tests {
 
         assert!(rows.detected);
         assert_eq!(rows.rows.len(), 1);
-        assert!(rows.warnings.iter().any(|warning| {
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
             warning.contains("invalid data")
                 && warning.starts_with("omp:")
                 && warning.contains("agent_session-a.jsonl:2")

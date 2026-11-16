@@ -224,12 +224,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(rows.rows.len(), 1);
-        assert!(rows.warnings.iter().any(|warning| {
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
             warning.contains("invalid data")
                 && warning.contains("chat.jsonl:2")
                 && !warning.contains("SECRET_CANARY")
         }));
-        assert!(rows.warnings.iter().any(|warning| {
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
             warning.contains("undecoded usage")
                 && warning.contains("chat.jsonl:3")
                 && !warning.contains("SECRET_CANARY")

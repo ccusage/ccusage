@@ -61,8 +61,14 @@ pub fn load_deduped_entries(
     shared: &SharedArgs,
     project_filter: Option<&str>,
 ) -> Result<DedupedEntries> {
-    let loaded = load_deduped_entries_with_progress(shared, project_filter, ProgressOwner::Source)?;
-    diagnostics::emit(&loaded.warnings);
+    let diagnostics = Diagnostics::new("claude");
+    let loaded = load_deduped_entries_with_progress(
+        shared,
+        project_filter,
+        ProgressOwner::Source,
+        &diagnostics,
+    )?;
+    diagnostics.emit(shared);
     Ok(loaded)
 }
 
@@ -71,9 +77,9 @@ pub(crate) fn load_deduped_entries_with_progress(
     shared: &SharedArgs,
     project_filter: Option<&str>,
     owner: ProgressOwner,
+    diagnostics: &Diagnostics,
 ) -> Result<DedupedEntries> {
-    let diagnostics = Diagnostics::new("claude");
-    let load = || load_entries_inner(shared, project_filter, false, &diagnostics);
+    let load = || load_entries_inner(shared, project_filter, false, diagnostics);
     match owner {
         ProgressOwner::Source => {
             progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
@@ -88,7 +94,6 @@ pub(crate) fn load_deduped_entries_with_progress(
 #[derive(Default)]
 pub struct DedupedEntries {
     pub entries: Vec<LoadedEntry>,
-    pub(crate) warnings: Vec<String>,
     /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
@@ -133,7 +138,7 @@ pub fn load_entries_since(
 ) -> Result<Vec<LoadedEntry>> {
     let diagnostics = Diagnostics::new("claude");
     let entries = load_entries_since_with_diagnostics(shared, project_filter, &diagnostics)?;
-    diagnostics::emit(&diagnostics.warnings(shared));
+    diagnostics.emit(shared);
     Ok(entries)
 }
 
@@ -156,15 +161,19 @@ pub fn load_daily_summaries(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<Vec<UsageSummary>> {
-    progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        daily::load_daily_summaries_inner(shared, project_filter, group_by_project, |_| {
-            SessionDays::default()
-        })
-    })
-    .map(|daily| {
-        diagnostics::emit(&daily.warnings);
-        daily.summaries
-    })
+    let diagnostics = Diagnostics::new("claude");
+    let daily =
+        progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
+            daily::load_daily_summaries_inner(
+                shared,
+                project_filter,
+                group_by_project,
+                |_| SessionDays::default(),
+                &diagnostics,
+            )
+        })?;
+    diagnostics.emit(shared);
+    Ok(daily.summaries)
 }
 
 /// Main-thread Claude usage as `(session ID, date)` pairs, so a source that
@@ -191,7 +200,6 @@ fn main_thread_session_days<'a>(
 pub struct DailySummaries {
     /// Summaries, possibly missing dates before `since`.
     pub summaries: Vec<UsageSummary>,
-    pub(crate) warnings: Vec<String>,
     /// Whether any usage file holds an entry, including files skipped as
     /// outside the `--since` window.
     pub detected: bool,
@@ -208,13 +216,15 @@ pub fn load_daily_summaries_with_detection(
     project_filter: Option<&str>,
     group_by_project: bool,
 ) -> Result<DailySummaries> {
+    let diagnostics = Diagnostics::new("claude");
     let loaded = load_daily_summaries_with_detection_progress(
         shared,
         project_filter,
         group_by_project,
         ProgressOwner::Source,
+        &diagnostics,
     )?;
-    diagnostics::emit(&loaded.warnings);
+    diagnostics.emit(shared);
     Ok(loaded)
 }
 
@@ -224,6 +234,7 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
     project_filter: Option<&str>,
     group_by_project: bool,
     owner: ProgressOwner,
+    diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
     let load = || {
         daily::load_daily_summaries_inner(
@@ -231,6 +242,7 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
             project_filter,
             group_by_project,
             daily::session_days,
+            diagnostics,
         )
     };
     match owner {
@@ -332,7 +344,6 @@ fn load_entries_inner(
     Ok(DedupedEntries {
         entries: deduped,
         copies,
-        warnings: diagnostics.warnings(shared),
     })
 }
 

@@ -46,7 +46,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     if let Some(sections) = args.sections {
         let sections = requested_sections(kind, sections);
         let result = loader::load_sections(&sections, &shared, &sources, start_of_week)?;
-        print_warnings(&result.warnings);
+        emit_diagnostics(&result.diagnostics, &shared, &sources);
         if wants_json(&shared) {
             return report::print_sections_report_json(
                 &result.sections,
@@ -67,7 +67,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         return Ok(());
     }
     let result = loader::load_rows(kind, &shared, &sources, start_of_week)?;
-    print_warnings(&result.warnings);
+    emit_diagnostics(&result.diagnostics, &shared, &sources);
     if wants_json(&shared) {
         let output = report::report_json_with_agents(&result.rows, kind, include_agents);
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
@@ -83,8 +83,18 @@ pub fn run_opencode(args: AgentCommandArgs) -> Result<()> {
     adapter::opencode::print_report(&args, entries)
 }
 
-fn print_warnings(warnings: &[String]) {
-    warnings.iter().for_each(|warning| eprintln!("{warning}"));
+/// Prints each source's skips with the options that source loaded with.
+fn emit_diagnostics(
+    diagnostics: &[Diagnostics],
+    shared: &cli::SharedArgs,
+    sources: &std::collections::BTreeMap<String, cli::SourceArgs>,
+) {
+    for diagnostics in diagnostics {
+        let shared = sources
+            .get(diagnostics.source())
+            .map_or(shared, |source| &source.shared);
+        diagnostics.emit(shared);
+    }
 }
 
 fn requested_sections(

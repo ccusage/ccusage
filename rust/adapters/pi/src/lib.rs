@@ -159,7 +159,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(rows.rows.len(), 1);
-        assert!(rows.warnings.iter().any(|warning| {
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
             warning.contains("invalid data")
                 && warning.contains("agent_session-a.jsonl:2")
                 && !warning.contains("SECRET_CANARY")

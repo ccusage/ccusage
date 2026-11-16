@@ -39,7 +39,7 @@ fn test_agent_rows(agent: &'static str) -> AgentRows {
             model_breakdowns: Vec::new(),
         }],
         detected: true,
-        warnings: Vec::new(),
+        diagnostics: Diagnostics::new(agent),
     }
 }
 
@@ -2696,7 +2696,56 @@ fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
     )
     .unwrap();
 
+    let warnings = |diagnostics: &[Diagnostics]| {
+        diagnostics
+            .iter()
+            .flat_map(|diagnostics| diagnostics.warnings(&shared))
+            .collect::<Vec<_>>()
+    };
     assert!(rows.rows.is_empty());
-    assert_eq!(rows.warnings, expected);
-    assert_eq!(sections.warnings, expected);
+    assert_eq!(warnings(&rows.diagnostics), expected);
+    assert_eq!(warnings(&sections.diagnostics), expected);
+}
+
+#[test]
+fn sections_report_one_skip_count_when_their_loads_read_different_files() {
+    let good = r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#;
+    let bad = r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"bad"}}}"#;
+    let fixture = fs_fixture!({
+        "claude/projects/p/new.jsonl": [good, bad].join("\n"),
+        "claude/projects/p/old.jsonl": [bad, bad].join("\n"),
+    });
+    // The daily load skips a transcript last written before `--since` without
+    // reading it; the session load reads every transcript.
+    set_file_modified(
+        &fixture.path("claude/projects/p/old.jsonl"),
+        "2001-01-01T00:00:00Z",
+    );
+    let _env = isolated_agent_env(
+        &fixture,
+        "CLAUDE_CONFIG_DIR",
+        fixture.path("claude").into_os_string(),
+    );
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        ..fixture_shared("20100101", "20991231")
+    };
+
+    let sections = loader::load_sections(
+        &[AgentReportKind::Daily, AgentReportKind::Session],
+        &shared,
+        &NO_SOURCES,
+        WeekDay::Monday,
+    )
+    .unwrap();
+
+    let warnings = sections
+        .diagnostics
+        .iter()
+        .flat_map(|diagnostics| diagnostics.warnings(&shared))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        warnings,
+        ["WARN  claude: skipped 3 records in 2 inputs (invalid data)"]
+    );
 }

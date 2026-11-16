@@ -134,9 +134,9 @@ pub struct SourceRows {
     /// Whether the report lists the source among the agents it found, which
     /// must not depend on the date window.
     pub detected: bool,
-    /// Lines for stderr, already gated; printed once all progress output
-    /// stopped.
-    pub warnings: Vec<String>,
+    /// What the load skipped. The unified report merges it with other loads
+    /// of the same source and prints it once all progress output stopped.
+    pub diagnostics: Diagnostics,
     /// Claude only: the usage it counted, for the sources that would otherwise
     /// count the same turns.
     pub claude_counted: Option<ClaudeCounted>,

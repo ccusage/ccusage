@@ -199,7 +199,7 @@ mod tests {
 
         assert!(rows.detected);
         assert!(rows.rows.is_empty());
-        assert!(rows.warnings.iter().any(|warning| {
+        assert!(rows.diagnostics.warnings(&shared).iter().any(|warning| {
             warning.contains("invalid data")
                 && warning.contains("updates.jsonl:1")
                 && !warning.contains("SECRET_CANARY")

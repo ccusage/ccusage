@@ -2,12 +2,6 @@ use std::{fs::File, io::Read, path::Path};
 
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-pub(super) fn emit(warnings: &[String]) {
-    for warning in warnings {
-        eprintln!("{warning}");
-    }
-}
-
 pub(super) fn read_content(path: &Path, diagnostics: &Diagnostics) -> Vec<u8> {
     let Ok(mut file) = File::open(path) else {
         diagnostics.record(Skip::unit(path, SkipKind::Unreadable, "file open failed"));

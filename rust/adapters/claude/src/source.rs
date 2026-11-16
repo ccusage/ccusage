@@ -5,7 +5,9 @@ use ccusage_adapter_common::{
     rows::summary_rows,
     source::{ALL_REPORTS, PricingSupply, SourceRows, UnifiedRequest, UsageSource},
 };
-use ccusage_core::{ReportWindow, Result, SessionAccumulator, UsageSummary, cli::AgentReportKind};
+use ccusage_core::{
+    Diagnostics, ReportWindow, Result, SessionAccumulator, UsageSummary, cli::AgentReportKind,
+};
 
 use crate::{load_daily_summaries_with_detection_progress, load_deduped_entries_with_progress};
 
@@ -34,10 +36,15 @@ impl UsageSource for Claude {
         let shared = request.shared;
         let window = ReportWindow::from_shared(shared);
         let project_filter = request.options.claude_project;
+        let diagnostics = Diagnostics::new("claude");
 
         if request.kind == AgentReportKind::Session {
-            let deduped =
-                load_deduped_entries_with_progress(shared, project_filter, request.progress)?;
+            let deduped = load_deduped_entries_with_progress(
+                shared,
+                project_filter,
+                request.progress,
+                &diagnostics,
+            )?;
             let detected = !deduped.entries.is_empty();
             let sessions = deduped
                 .main_thread_session_days(|entry| window.contains_date(&entry.date))
@@ -54,7 +61,7 @@ impl UsageSource for Claude {
             return Ok(SourceRows {
                 rows: summary_rows("claude", summaries, false),
                 detected,
-                warnings: deduped.warnings,
+                diagnostics,
                 claude_counted: Some(ClaudeCounted::sessions(sessions, shared)),
             });
         }
@@ -64,6 +71,7 @@ impl UsageSource for Claude {
             project_filter,
             false,
             request.progress,
+            &diagnostics,
         )?;
         let summaries = loaded
             .summaries
@@ -82,7 +90,7 @@ impl UsageSource for Claude {
         Ok(SourceRows {
             rows: summary_rows("claude", summaries, false),
             detected: loaded.detected,
-            warnings: loaded.warnings,
+            diagnostics,
             claude_counted: Some(ClaudeCounted::session_days(session_days, shared)),
         })
     }
@@ -127,11 +135,18 @@ mod diagnostic_tests {
             debug: true,
             ..Default::default()
         };
-        let focused = crate::load_deduped_entries(&shared, None).unwrap();
+        let diagnostics = Diagnostics::new("claude");
+        let focused = crate::load_deduped_entries_with_progress(
+            &shared,
+            None,
+            ProgressOwner::Caller,
+            &diagnostics,
+        )
+        .unwrap();
         assert_eq!(focused.entries.len(), 1);
         assert!(
-            focused
-                .warnings
+            diagnostics
+                .warnings(&shared)
                 .iter()
                 .any(|line| line.contains("invalid data"))
         );
@@ -148,14 +163,12 @@ mod diagnostic_tests {
                 })
                 .unwrap();
             assert_eq!(rows.rows.len(), 1);
+            let warnings = rows.diagnostics.warnings(&shared);
             assert!(
-                rows.warnings
-                    .iter()
-                    .any(|line| line.contains("invalid data")),
-                "{:?}",
-                rows.warnings
+                warnings.iter().any(|line| line.contains("invalid data")),
+                "{warnings:?}"
             );
-            assert!(!rows.warnings.join("\n").contains("SECRET_CANARY"));
+            assert!(!warnings.join("\n").contains("SECRET_CANARY"));
         }
     }
 }

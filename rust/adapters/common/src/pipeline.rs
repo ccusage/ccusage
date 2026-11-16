@@ -84,14 +84,13 @@ pub fn unified_rows(source: &dyn EntrySource, request: &UnifiedRequest<'_>) -> R
     };
     let entries = load(source, &cx, request.progress)?;
     let detected = detect(descriptor.detection, &entries);
-    let warnings = diagnostics.warnings(shared);
     let summaries = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
         source.summarize_unified(entries, kind)
     })?;
     Ok(SourceRows {
         rows: summary_rows(descriptor.id, summaries, descriptor.unified_project_path),
         detected,
-        warnings,
+        diagnostics,
         claude_counted: None,
     })
 }
@@ -438,11 +437,11 @@ mod tests {
         let rows = unified_rows(&source, &request(AgentReportKind::Daily, &shared)).unwrap();
 
         assert_eq!(rows.rows.len(), 3, "the rest of the source still reports");
+        let warnings = rows.diagnostics.warnings(&shared);
         assert!(
-            rows.warnings
+            warnings
                 .contains(&"fake: unreadable: /data/broken.json: permission denied".to_string()),
-            "{:?}",
-            rows.warnings
+            "{warnings:?}"
         );
     }
 
