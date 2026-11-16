@@ -65,10 +65,10 @@ pub(super) struct CopilotUsageEntry {
     pub(super) reasoning_output_tokens: u64,
     pub(super) extra_total_tokens: u64,
     pub(super) request_count: u64,
-    /// Cumulative per-model credits from session-state `totalNanoAiu`. Used only
-    /// to find session credits that `modelMetrics` does not account for.
-    pub(super) nano_aiu: u64,
-    pub(super) cost_usd: Option<f64>,
+    /// Credits Copilot recorded for this entry, in nano-AIU: per call for a
+    /// usage record, cumulative per model for a shutdown. `None` when the
+    /// source has no credits, which leaves the cost to token pricing.
+    pub(super) nano_aiu: Option<u64>,
     pub(super) dedup_key: String,
     /// Whether `dedup_key` names the same call in every file that holds it.
     pub(super) file_independent_key: bool,
@@ -200,8 +200,7 @@ pub(super) fn parse_otel_file(path: &Path) -> Result<Vec<CopilotUsageEntry>> {
             reasoning_output_tokens: candidate.reasoning_output_tokens,
             extra_total_tokens: candidate.extra_total_tokens,
             request_count: 1,
-            nano_aiu: 0,
-            cost_usd: None,
+            nano_aiu: None,
             dedup_key: candidate.dedup_key,
             file_independent_key: candidate.file_independent_key,
             call_ids: CallIds {
@@ -282,8 +281,24 @@ struct CopilotUsageRecord {
         deserialize_with = "jsonl::non_empty_string"
     )]
     service_request_id: Option<String>,
+    #[serde(
+        rename = "copilotUsage",
+        default,
+        deserialize_with = "jsonl::lenient_object"
+    )]
+    copilot_usage: Option<CopilotRecordedCredits>,
     #[serde(flatten)]
     tokens: CopilotSessionUsage,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct CopilotRecordedCredits {
+    #[serde(
+        rename = "totalNanoAiu",
+        default,
+        deserialize_with = "jsonl::lenient_f64"
+    )]
+    total_nano_aiu: Option<f64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -452,8 +467,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
                 reasoning_output_tokens: usage.reasoning_tokens,
                 extra_total_tokens: 0,
                 request_count,
-                nano_aiu: model_nano_aiu.unwrap_or_default(),
-                cost_usd: None,
+                nano_aiu: model_nano_aiu,
                 dedup_key,
                 file_independent_key: false,
                 call_ids: CallIds::default(),
@@ -469,8 +483,8 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
         });
     }
     if covered_by_records {
-        // Usage records price every call from its tokens, so the session-wide
-        // credit totals have nothing left to explain.
+        // Usage records report every call with its own credits or tokens, so
+        // the session-wide credit totals have nothing left to explain.
         parsed.credit_snapshots.clear();
     }
     parsed.usage_records = usage_record_entries(records, &session_id);
@@ -485,6 +499,7 @@ struct UsageRecordCall {
     call_ids: CallIds,
     model: String,
     usage: CopilotSessionUsage,
+    nano_aiu: Option<u64>,
 }
 
 fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
@@ -492,6 +507,11 @@ fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
     let record = event.data?.usage?;
     let model = normalize_copilot_model(record.model.as_deref()?);
     let usage = record.tokens;
+    let recorded_nano_aiu = nano_aiu(
+        record
+            .copilot_usage
+            .and_then(|credits| credits.total_nano_aiu),
+    );
     if model.is_empty() {
         return None;
     }
@@ -510,6 +530,7 @@ fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
         call_ids,
         model,
         usage,
+        nano_aiu: recorded_nano_aiu,
     })
 }
 
@@ -544,8 +565,7 @@ fn usage_record_entries(
                     reasoning_output_tokens: call.reasoning_tokens,
                     extra_total_tokens: 0,
                     request_count: 1,
-                    nano_aiu: 0,
-                    cost_usd: None,
+                    nano_aiu: record.nano_aiu,
                     dedup_key,
                     file_independent_key: false,
                     call_ids: record.call_ids,
@@ -1266,7 +1286,7 @@ mod session_state_tests {
         let parsed = parse_session_state_file(&fixture.path("session-1/events.jsonl")).unwrap();
 
         assert_eq!(parsed.entries.len(), 1);
-        assert_eq!(parsed.entries[0].nano_aiu, 42_202_140_000);
+        assert_eq!(parsed.entries[0].nano_aiu, Some(42_202_140_000));
         assert_eq!(
             parsed
                 .credit_snapshots
