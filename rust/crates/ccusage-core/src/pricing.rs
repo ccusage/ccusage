@@ -4531,16 +4531,15 @@ mod tests {
         );
         // Pick an embedded model the primary table (LiteLLM + built-ins) cannot
         // resolve on its own. `find_entry` never consults the fallback.
-        let Some(model) = embedded_models_dev_pricing()
+        let model = embedded_models_dev_pricing()
             .entries
             .keys()
             .find(|model| offline.find_entry(model, Fuzzy::Allowed).is_none())
-        else {
-            return;
-        };
-        // The primary table alone misses it, but the offline embedded fallback
-        // resolves it; a bare map without the fallback flag must not.
-        assert!(offline.find_entry(model, Fuzzy::Allowed).is_none());
+            .expect(
+                "the embedded models.dev snapshot should price a model the primary table misses",
+            );
+        // The offline embedded fallback resolves it; a bare map without the
+        // fallback flag must not.
         assert!(offline.find(model).is_some());
         assert!(PricingMap::default().find(model).is_none());
     }
