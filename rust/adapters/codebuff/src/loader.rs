@@ -142,12 +142,13 @@ mod tests {
     }
 
     #[test]
-    fn malformed_chat_file_does_not_discard_healthy_files() {
+    fn malformed_chat_file_is_reported_and_an_unwritten_one_is_not() {
         let fixture = fs_fixture!({
             "projects/project-a/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
                 {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}
             ]"#,
             "projects/project-b/chats/2026-01-03T03-04-05.000Z/chat-messages.json": "[broken",
+            "projects/project-c/chats/2026-01-04T03-04-05.000Z/chat-messages.json": "",
         });
         let _cleanup = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();

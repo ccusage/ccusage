@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_settings_file_does_not_discard_healthy_files() {
+    fn malformed_settings_file_is_reported_and_an_unwritten_one_is_not() {
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -188,6 +188,7 @@ mod tests {
                 "tokenUsage": {"inputTokens": 100, "outputTokens": 50}
             }"#,
             "session-b.settings.json": "{broken",
+            "session-c.settings.json": "",
         });
         let _cleanup = EnvVarGuard::set(DROID_SESSIONS_DIR_ENV, fixture.root());
         let shared = SharedArgs::default();

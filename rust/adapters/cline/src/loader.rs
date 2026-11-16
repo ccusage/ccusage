@@ -282,6 +282,7 @@ mod tests {
             include_str!("../tests/fixtures/extension/ui_messages.json"),
         );
         let _ = fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":");
+        let _ = fixture.write_file("tasks/unwritten/ui_messages.json", "");
         let _env = EnvVarGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {
             single_thread: true,
@@ -306,7 +307,7 @@ mod tests {
         assert_eq!(
             diagnostics.skipped(ccusage_core::SkipKind::InvalidData),
             1,
-            "the damaged task is reported"
+            "the damaged task is reported, the unwritten one is not"
         );
     }
 }
