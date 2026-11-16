@@ -4,7 +4,7 @@ use crate::{LoadedEntry, Result};
 use ccusage_adapter_common::{read_units, source::LoadContext};
 
 use super::{
-    parser::{ContentId, content_id, migration_id, parse_session_file},
+    parser::{content_id, migration_id, parse_session_file},
     paths::{collect_session_files, paths},
     sqlite::collect_sqlite_entries,
 };
@@ -37,44 +37,32 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     // NOTE(2026-09-16, #1727): `openclaw doctor --fix` migrates legacy JSONL into
     // per-agent SQLite and leaves both on disk; the SQLite row carries the
     // provider-billed cost, so it replaces every JSONL copy of its event.
-    let mut seen = HashSet::new();
+    let (identified, id_less): (Vec<_>, Vec<_>) = sqlite_entries
+        .into_iter()
+        .partition(|entry| entry.data.message.id.is_some());
+    let mut events = HashSet::new();
+    let mut contents = HashSet::new();
     let mut sqlite_events = HashSet::new();
     let mut entries = Vec::new();
-    for entry in sqlite_entries {
-        if seen.insert(EventIdentity::of(&entry)) {
+    for entry in identified.into_iter().chain(id_less) {
+        let content = content_id(&entry);
+        let is_new = match &entry.data.message.id {
+            Some(event_id) => events.insert((Arc::clone(&entry.session_id), event_id.clone())),
+            None => !contents.contains(&content),
+        };
+        if is_new {
+            contents.insert(content);
             sqlite_events.insert(migration_id(&entry));
             entries.push(entry);
         }
     }
     for entry in jsonl_entries {
-        if !sqlite_events.contains(&migration_id(&entry)) && seen.insert(EventIdentity::of(&entry))
-        {
+        if !sqlite_events.contains(&migration_id(&entry)) && contents.insert(content_id(&entry)) {
             entries.push(entry);
         }
     }
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
-}
-
-#[derive(PartialEq, Eq, Hash)]
-enum EventIdentity {
-    Event {
-        session_id: Arc<str>,
-        event_id: String,
-    },
-    Content(ContentId),
-}
-
-impl EventIdentity {
-    fn of(entry: &LoadedEntry) -> Self {
-        match &entry.data.message.id {
-            Some(event_id) => Self::Event {
-                session_id: Arc::clone(&entry.session_id),
-                event_id: event_id.clone(),
-            },
-            None => Self::Content(content_id(entry)),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -296,5 +284,24 @@ mod tests {
             .map(|entry| entry.data.message.id.as_deref())
             .collect::<Vec<_>>();
         assert_eq!(ids, [Some("evt-1"), Some("evt-2")]);
+    }
+
+    #[test]
+    fn drops_id_less_sqlite_event_matching_an_identified_one_in_either_order() {
+        let identified = assistant_event(Some("evt-x"), 0.51);
+        let id_less = assistant_event(None, 0.51);
+        for events in [[&identified, &id_less], [&id_less, &identified]] {
+            let fixture = fs_fixture!({});
+            write_transcript_events(&fixture, &events.map(String::as_str));
+
+            let entries =
+                crate::load_entries(&SharedArgs::default(), fixture.root().to_str(), None).unwrap();
+
+            let ids = entries
+                .iter()
+                .map(|entry| entry.data.message.id.as_deref())
+                .collect::<Vec<_>>();
+            assert_eq!(ids, [Some("evt-x")]);
+        }
     }
 }
