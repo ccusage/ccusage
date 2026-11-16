@@ -333,7 +333,7 @@ pub fn assert_case(scope: &str, root: &Path, seeded: &[(&'static str, PathBuf)],
     assert_outcome(scope, root, case, run_case(root, seeded, case));
 }
 
-pub fn assert_outcome(scope: &str, root: &Path, case: &Case, outcome: Outcome) {
+fn assert_outcome(scope: &str, root: &Path, case: &Case, outcome: Outcome) {
     let Outcome {
         exit,
         stdout,

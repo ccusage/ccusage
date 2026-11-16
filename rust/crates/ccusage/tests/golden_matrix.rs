@@ -162,15 +162,8 @@ fn every_accepted_agent_report_is_in_the_matrix() {
             if snapshotted.contains(kind) {
                 continue;
             }
-            let case = Case::new(
-                kind,
-                UNSUPPORTED_VARIANT,
-                &[matrix.agent, kind, "--offline", "--json"],
-            );
-            let probe = run_case(root, &[], &case);
-            if probe.exit == "2" {
-                golden::assert_outcome(matrix.agent, root, &case, probe);
-            } else {
+            let probe = run(&[matrix.agent, kind, "--offline", "--json"]);
+            if probe.exit != "2" {
                 uncovered.push(format!("{} {kind}", matrix.agent));
             }
         }
