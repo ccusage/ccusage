@@ -267,13 +267,10 @@ fn load_entries_from_database(
     collector: &mut EntryCollector,
 ) {
     let &DatabaseLoadContext {
-        tz,
-        mode,
-        pricing,
         shared,
-        window,
         db_path,
         diagnostics,
+        ..
     } = context;
     let connection = match sqlite::Connection::open_with_flags(
         db_path,
@@ -296,286 +293,395 @@ fn load_entries_from_database(
         sqlite_setup_failure(error).record(db_path, diagnostics);
         return;
     }
-    let fork_copies = fork_copy_cutoffs(&connection, db_path, diagnostics);
+    let probe = |table| TableSchema::probe(&connection, table, db_path, diagnostics);
+    let message = probe(Table::Message);
+    let session_message = probe(Table::SessionMessage);
+    let session_v2 = probe(Table::SessionV2);
 
-    if table_exists(&connection, "message", db_path, diagnostics) {
-        // Push the window into SQL only while a sample of `time_created` still
-        // looks millisecond-scaled. The payload check remains authoritative.
-        let pushdown =
-            if window.is_unbounded() || time_created_looks_like_millis(&connection, "message") {
-                window.widened_for_pushdown()
-            } else {
-                debug_log(
-                    shared,
-                    format!(
-                        "OpenCode time_created is not millisecond-scale; scanning unfiltered: {}",
-                        db_path.display()
-                    ),
-                );
-                DateWindow::UNBOUNDED
-            };
-        let statement = prepare_message_query(&connection, pushdown).or_else(|_| {
-            // A pre-SQLite-era schema has no `time_created` column, so the
-            // filtered query cannot prepare. Scan unfiltered instead.
-            debug_log(
-                shared,
-                format!(
-                    "Failed to prepare filtered OpenCode query; scanning unfiltered: {}",
-                    db_path.display()
-                ),
-            );
-            prepare_message_query(&connection, DateWindow::UNBOUNDED)
-        });
-        match statement {
-            Ok(mut statement) => {
-                let mut row = 0_u32;
-                loop {
-                    match statement.next() {
-                        Ok(sqlite::State::Row) => {
-                            row = row.saturating_add(1);
-                            let Ok(id) = statement.read::<String, _>(0) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Ok(session_id) = statement.read::<String, _>(1) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Ok(data) = statement.read::<String, _>(2) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            if !window.is_unbounded()
-                                && let Some(millis) = extract_message_timestamp(&data)
-                                && !window.contains(millis)
-                            {
-                                continue;
-                            }
-                            let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
-                                data.as_bytes(),
-                                db_path,
-                                row,
-                                diagnostics,
-                                Some(|_| true),
-                            ) else {
-                                continue;
-                            };
-                            if let Some(entry) = message_value_to_entry(
-                                &value,
-                                Some(id),
-                                Some(session_id),
-                                tz,
-                                mode,
-                                pricing,
-                            ) {
-                                collector.push_message((entry, None));
-                            }
-                        }
-                        Ok(sqlite::State::Done) => break,
-                        Err(error) => {
-                            UnitError::sqlite(SqliteStage::Rows, error.code)
-                                .record(db_path, diagnostics);
-                            debug_log(
-                                shared,
-                                format!("Failed to query OpenCode database: {}", db_path.display()),
-                            );
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(error) => {
-                error.record(db_path, diagnostics);
-                debug_log(
-                    shared,
-                    format!("Failed to read OpenCode database: {}", db_path.display()),
-                );
-            }
-        }
+    if let Some(schema) = &message {
+        load_message_rows(&connection, schema, context, collector);
     }
-
-    let has_session_messages = table_exists(&connection, "session_message", db_path, diagnostics);
-    if has_session_messages {
-        let pushdown = if window.is_unbounded()
-            || time_created_looks_like_millis(&connection, "session_message")
-        {
-            window.widened_for_pushdown()
-        } else {
-            DateWindow::UNBOUNDED
-        };
-        let statement = prepare_session_message_query(&connection, pushdown).or_else(|_| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to prepare filtered OpenCode v2 query; scanning unfiltered: {}",
-                    db_path.display()
-                ),
-            );
-            prepare_session_message_query(&connection, DateWindow::UNBOUNDED)
-        });
-        let mut v2_rows = 0;
-        let mut v2_entries = 0;
-        match statement {
-            Ok(mut statement) => {
-                let mut row = 0_u32;
-                loop {
-                    match statement.next() {
-                        Ok(sqlite::State::Row) => {
-                            row = row.saturating_add(1);
-                            v2_rows += 1;
-                            let Ok(id) = statement.read::<String, _>(0) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Ok(session_id) = statement.read::<String, _>(1) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Ok(message_type) = statement.read::<String, _>(2) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let Some(kind) = SessionMessageKind::from_row_type(&message_type)
-                            else {
-                                continue;
-                            };
-                            let Ok(data) = statement.read::<String, _>(3) else {
-                                diagnostics.record(Skip::record(
-                                    db_path,
-                                    row,
-                                    SkipKind::InvalidData,
-                                    "database column read failed",
-                                ));
-                                continue;
-                            };
-                            let created = statement
-                                .read::<i64, _>(4)
-                                .ok()
-                                .or_else(|| {
-                                    statement.read::<f64, _>(4).ok().map(|value| value as i64)
-                                })
-                                .unwrap_or(0);
-                            // Copies neither count nor mark the fork as covered:
-                            // the fork's `session_v2` counters start at zero and
-                            // only hold fork-local usage, so they stay a valid
-                            // fallback when every fork-local row is gone.
-                            if is_fork_copy(&fork_copies, &session_id, &statement) {
-                                continue;
-                            }
-                            if !window.is_unbounded()
-                                && let Some(millis) = extract_message_timestamp(&data)
-                                && !window.contains(millis)
-                            {
-                                continue;
-                            }
-                            let linked = match session_message_value_to_entry_checked(
-                                SessionMessageRow {
-                                    kind,
-                                    data: &data,
-                                    id,
-                                    session_id,
-                                    created,
-                                },
-                                tz,
-                                mode,
-                                pricing,
-                            ) {
-                                Ok(Some(linked)) => linked,
-                                Ok(None) => continue,
-                                Err(error) => {
-                                    jsonl::record_decode_error(
-                                        data.as_bytes(),
-                                        error,
-                                        db_path,
-                                        row,
-                                        false,
-                                        diagnostics,
-                                        Some(|_: &serde_json::Value| true),
-                                    );
-                                    continue;
-                                }
-                            };
-                            v2_entries += 1;
-                            if kind == SessionMessageKind::Compaction {
-                                collector.push_compaction(linked);
-                            } else {
-                                collector.push_message(linked);
-                            }
-                        }
-                        Ok(sqlite::State::Done) => break,
-                        Err(error) => {
-                            UnitError::sqlite(SqliteStage::Rows, error.code)
-                                .record(db_path, diagnostics);
-                            debug_log(
-                                shared,
-                                format!(
-                                    "Failed to query OpenCode v2 database: {}",
-                                    db_path.display()
-                                ),
-                            );
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(error) => error.record(db_path, diagnostics),
-        }
-        if v2_rows > 0 && v2_entries == 0 {
-            debug_log(
-                shared,
-                format!(
-                    "OpenCode v2 rows produced no usage entries: {v2_rows} rows in {}",
-                    db_path.display()
-                ),
-            );
-        }
+    if let Some(schema) = &session_message {
+        let fork_copies = session_v2
+            .as_ref()
+            .map(|session_v2| fork_copy_cutoffs(&connection, session_v2, schema))
+            .unwrap_or_default();
+        load_session_message_rows(&connection, schema, &fork_copies, context, collector);
     }
 
     if allow_aggregate_fallback && !has_temporal_filter(shared) {
         // Session aggregates are cumulative and cannot be sliced safely for a
         // bounded report, so only unbounded reports may use this fallback.
-        let mut aggregate_tables = Vec::new();
-        if table_exists(&connection, "session_v2", db_path, diagnostics) {
-            aggregate_tables.push("session_v2");
-        }
-        if has_session_messages && table_exists(&connection, "session", db_path, diagnostics) {
-            aggregate_tables.push("session");
-        }
-        for table in aggregate_tables {
-            for entry in load_session_aggregate_entries(&connection, table, context) {
+        let session = session_message
+            .is_some()
+            .then(|| probe(Table::Session))
+            .flatten();
+        for schema in [session_v2.as_ref(), session.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            for entry in load_session_aggregate_entries(&connection, schema, context) {
                 collector.push_aggregate(entry);
             }
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Table {
+    Message,
+    SessionMessage,
+    Session,
+    SessionV2,
+}
+
+impl Table {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Message => "message",
+            Self::SessionMessage => "session_message",
+            Self::Session => "session",
+            Self::SessionV2 => "session_v2",
+        }
+    }
+}
+
+/// What one table of an OpenCode database offers, read once per database.
+struct TableSchema {
+    table: Table,
+    columns: HashSet<String>,
+    /// Whether `time_created` exists and a sample of it looks like Unix
+    /// milliseconds, the scale the payload's `time.created` uses.
+    millis_scaled: bool,
+}
+
+impl TableSchema {
+    fn probe(
+        connection: &sqlite::Connection,
+        table: Table,
+        db_path: &Path,
+        diagnostics: &Diagnostics,
+    ) -> Option<Self> {
+        if !table_exists(connection, table, db_path, diagnostics) {
+            return None;
+        }
+        Self::read(connection, table, db_path, diagnostics)
+    }
+
+    fn read(
+        connection: &sqlite::Connection,
+        table: Table,
+        db_path: &Path,
+        diagnostics: &Diagnostics,
+    ) -> Option<Self> {
+        let columns = connection
+            .prepare(format!("SELECT * FROM {} LIMIT 0", table.name()))
+            .and_then(|statement| {
+                (0..statement.column_count())
+                    .map(|index| statement.column_name(index).map(str::to_string))
+                    .collect::<sqlite::Result<HashSet<_>>>()
+            });
+        let columns = match columns {
+            Ok(columns) => columns,
+            Err(error) => {
+                sqlite_setup_failure(error).record(db_path, diagnostics);
+                return None;
+            }
+        };
+        let millis_scaled =
+            columns.contains("time_created") && time_created_looks_like_millis(connection, table);
+        Some(Self {
+            table,
+            columns,
+            millis_scaled,
+        })
+    }
+
+    fn has_all(&self, columns: &[&str]) -> bool {
+        columns.iter().all(|column| self.columns.contains(*column))
+    }
+
+    fn column_or(&self, column: &'static str, fallback: &'static str) -> &'static str {
+        if self.columns.contains(column) {
+            column
+        } else {
+            fallback
+        }
+    }
+
+    /// The window to push into SQL. A `time_created` that is missing or not
+    /// millisecond-scaled leaves filtering to the payload check, which stays
+    /// authoritative either way.
+    fn pushdown(&self, context: &DatabaseLoadContext<'_>) -> DateWindow {
+        if context.window.is_unbounded() {
+            return DateWindow::UNBOUNDED;
+        }
+        if self.millis_scaled {
+            return context.window.widened_for_pushdown();
+        }
+        debug_log(
+            context.shared,
+            format!(
+                "OpenCode {}.time_created is missing or not millisecond-scale; scanning unfiltered: {}",
+                self.table.name(),
+                context.db_path.display()
+            ),
+        );
+        DateWindow::UNBOUNDED
+    }
+}
+
+/// A row whose columns do not have the types the scan reads.
+struct UnreadableRow;
+
+impl From<sqlite::Error> for UnreadableRow {
+    fn from(_: sqlite::Error) -> Self {
+        Self
+    }
+}
+
+/// Steps `statement` to its end, handing every row `read` accepts to `visit`
+/// and recording the rows it cannot read. Returns the number of rows stepped.
+fn scan_rows<T>(
+    mut statement: sqlite::Statement<'_>,
+    context: &DatabaseLoadContext<'_>,
+    table: Table,
+    unreadable: &'static str,
+    read: impl Fn(&sqlite::Statement<'_>) -> std::result::Result<Option<T>, UnreadableRow>,
+    mut visit: impl FnMut(u32, T),
+) -> u32 {
+    let mut row = 0_u32;
+    loop {
+        match statement.next() {
+            Ok(sqlite::State::Row) => {
+                row = row.saturating_add(1);
+                match read(&statement) {
+                    Ok(Some(value)) => visit(row, value),
+                    Ok(None) => {}
+                    Err(UnreadableRow) => context.diagnostics.record(Skip::record(
+                        context.db_path,
+                        row,
+                        SkipKind::InvalidData,
+                        unreadable,
+                    )),
+                }
+            }
+            Ok(sqlite::State::Done) => break,
+            Err(error) => {
+                UnitError::sqlite(SqliteStage::Rows, error.code)
+                    .record(context.db_path, context.diagnostics);
+                debug_log(
+                    context.shared,
+                    format!(
+                        "Failed to query OpenCode {} table: {}",
+                        table.name(),
+                        context.db_path.display()
+                    ),
+                );
+                break;
+            }
+        }
+    }
+    row
+}
+
+const COLUMN_READ_FAILED: &str = "database column read failed";
+
+struct MessageRecord {
+    id: String,
+    session_id: String,
+    data: String,
+}
+
+fn load_message_rows(
+    connection: &sqlite::Connection,
+    schema: &TableSchema,
+    context: &DatabaseLoadContext<'_>,
+    collector: &mut EntryCollector,
+) {
+    let statement = match prepare_message_query(connection, schema.pushdown(context)) {
+        Ok(statement) => statement,
+        Err(error) => {
+            error.record(context.db_path, context.diagnostics);
+            debug_log(
+                context.shared,
+                format!(
+                    "Failed to read OpenCode database: {}",
+                    context.db_path.display()
+                ),
+            );
+            return;
+        }
+    };
+    let window = context.window;
+    scan_rows(
+        statement,
+        context,
+        schema.table,
+        COLUMN_READ_FAILED,
+        |statement| {
+            Ok(Some(MessageRecord {
+                id: statement.read(0)?,
+                session_id: statement.read(1)?,
+                data: statement.read(2)?,
+            }))
+        },
+        |row,
+         MessageRecord {
+             id,
+             session_id,
+             data,
+         }| {
+            if !window.is_unbounded()
+                && let Some(millis) = extract_message_timestamp(&data)
+                && !window.contains(millis)
+            {
+                return;
+            }
+            let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
+                data.as_bytes(),
+                context.db_path,
+                row,
+                context.diagnostics,
+                Some(|_| true),
+            ) else {
+                return;
+            };
+            if let Some(entry) = message_value_to_entry(
+                &value,
+                Some(id),
+                Some(session_id),
+                context.tz,
+                context.mode,
+                context.pricing,
+            ) {
+                collector.push_message((entry, None));
+            }
+        },
+    );
+}
+
+struct SessionMessageRecord {
+    id: String,
+    session_id: String,
+    kind: SessionMessageKind,
+    data: String,
+    created: Option<i64>,
+    seq: Option<i64>,
+}
+
+impl SessionMessageRecord {
+    fn read(statement: &sqlite::Statement<'_>) -> std::result::Result<Option<Self>, UnreadableRow> {
+        let id = statement.read(0)?;
+        let session_id = statement.read(1)?;
+        let row_type: String = statement.read(2)?;
+        let Some(kind) = SessionMessageKind::from_row_type(&row_type) else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            id,
+            session_id,
+            kind,
+            data: statement.read(3)?,
+            created: statement
+                .read::<i64, _>(4)
+                .ok()
+                .or_else(|| statement.read::<f64, _>(4).ok().map(|value| value as i64)),
+            seq: statement.read::<Option<i64>, _>(5).ok().flatten(),
+        }))
+    }
+}
+
+fn load_session_message_rows(
+    connection: &sqlite::Connection,
+    schema: &TableSchema,
+    fork_copies: &HashMap<String, i64>,
+    context: &DatabaseLoadContext<'_>,
+    collector: &mut EntryCollector,
+) {
+    let statement = match prepare_session_message_query(connection, schema, context) {
+        Ok(statement) => statement,
+        Err(error) => {
+            error.record(context.db_path, context.diagnostics);
+            return;
+        }
+    };
+    let window = context.window;
+    let mut entries = 0;
+    let rows = scan_rows(
+        statement,
+        context,
+        schema.table,
+        COLUMN_READ_FAILED,
+        SessionMessageRecord::read,
+        |row, record| {
+            // Copies neither count nor mark the fork as covered:
+            // the fork's `session_v2` counters start at zero and
+            // only hold fork-local usage, so they stay a valid
+            // fallback when every fork-local row is gone.
+            if fork_copies
+                .get(&record.session_id)
+                .is_some_and(|cutoff| record.seq.is_some_and(|seq| seq <= *cutoff))
+            {
+                return;
+            }
+            if !window.is_unbounded()
+                && let Some(millis) = extract_message_timestamp(&record.data)
+                && !window.contains(millis)
+            {
+                return;
+            }
+            let SessionMessageRecord {
+                id,
+                session_id,
+                kind,
+                data,
+                created,
+                ..
+            } = record;
+            let linked = match session_message_value_to_entry_checked(
+                SessionMessageRow {
+                    kind,
+                    data: &data,
+                    id,
+                    session_id,
+                    created: created.unwrap_or(0),
+                },
+                context.tz,
+                context.mode,
+                context.pricing,
+            ) {
+                Ok(Some(linked)) => linked,
+                Ok(None) => return,
+                Err(error) => {
+                    jsonl::record_decode_error(
+                        data.as_bytes(),
+                        error,
+                        context.db_path,
+                        row,
+                        false,
+                        context.diagnostics,
+                        Some(|_: &serde_json::Value| true),
+                    );
+                    return;
+                }
+            };
+            entries += 1;
+            if kind == SessionMessageKind::Compaction {
+                collector.push_compaction(linked);
+            } else {
+                collector.push_message(linked);
+            }
+        },
+    );
+    if rows > 0 && entries == 0 {
+        debug_log(
+            context.shared,
+            format!(
+                "OpenCode v2 rows produced no usage entries: {rows} rows in {}",
+                context.db_path.display()
+            ),
+        );
     }
 }
 
@@ -604,14 +710,14 @@ fn read_message_file(
 
 fn table_exists(
     connection: &sqlite::Connection,
-    table: &str,
+    table: Table,
     db_path: &Path,
     diagnostics: &Diagnostics,
 ) -> bool {
     let exists = connection
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
         .and_then(|mut statement| {
-            statement.bind((1, table))?;
+            statement.bind((1, table.name()))?;
             statement.next()
         });
     match exists {
@@ -633,33 +739,12 @@ fn table_exists(
 /// carries the `seq` the fork kept when it copied the parent's rows.
 fn fork_copy_cutoffs(
     connection: &sqlite::Connection,
-    db_path: &Path,
-    diagnostics: &Diagnostics,
+    session_v2: &TableSchema,
+    session_message: &TableSchema,
 ) -> HashMap<String, i64> {
     let mut cutoffs = HashMap::new();
-    for table in ["session_v2", "session_message"] {
-        if !table_exists(connection, table, db_path, diagnostics) {
-            return cutoffs;
-        }
-    }
-    let Some(v2_columns) = fork_table_columns(connection, "session_v2", db_path, diagnostics)
-    else {
-        return cutoffs;
-    };
-    if !["id", "fork_session_id", "fork_boundary"]
-        .into_iter()
-        .all(|column| v2_columns.contains(column))
-    {
-        return cutoffs;
-    }
-    let Some(message_columns) =
-        fork_table_columns(connection, "session_message", db_path, diagnostics)
-    else {
-        return cutoffs;
-    };
-    if !["id", "session_id", "seq"]
-        .into_iter()
-        .all(|column| message_columns.contains(column))
+    if !session_v2.has_all(&["id", "fork_session_id", "fork_boundary"])
+        || !session_message.has_all(&["id", "session_id", "seq"])
     {
         return cutoffs;
     }
@@ -687,21 +772,6 @@ fn fork_copy_cutoffs(
         }
     }
     cutoffs
-}
-
-fn fork_table_columns(
-    connection: &sqlite::Connection,
-    table: &str,
-    db_path: &Path,
-    diagnostics: &Diagnostics,
-) -> Option<HashSet<String>> {
-    match table_columns(connection, table) {
-        Ok(columns) => Some(columns),
-        Err(error) => {
-            sqlite_setup_failure(error).record(db_path, diagnostics);
-            None
-        }
-    }
 }
 
 /// Largest copied `seq` for one fork: the parent's boundary `seq` for a
@@ -761,97 +831,53 @@ fn last_parent_seq_before(
     }
 }
 
-fn is_fork_copy(
-    fork_copies: &HashMap<String, i64>,
-    session_id: &str,
-    statement: &sqlite::Statement,
-) -> bool {
-    let Some(cutoff) = fork_copies.get(session_id) else {
-        return false;
-    };
-    // Without a readable `seq` the row cannot be classified, so it stays.
-    statement
-        .read::<i64, _>(5)
-        .ok()
-        .is_some_and(|seq| seq <= *cutoff)
-}
-
-fn table_columns(connection: &sqlite::Connection, table: &str) -> sqlite::Result<HashSet<String>> {
-    let sql = match table {
-        "message" => "SELECT * FROM message LIMIT 0",
-        "session" => "SELECT * FROM session LIMIT 0",
-        "session_v2" => "SELECT * FROM session_v2 LIMIT 0",
-        "session_message" => "SELECT * FROM session_message LIMIT 0",
-        _ => return Ok(HashSet::new()),
-    };
-    let statement = connection.prepare(sql)?;
-    (0..statement.column_count())
-        .map(|index| statement.column_name(index).map(str::to_string))
-        .collect()
-}
-
-fn prepare_session_message_query(
-    connection: &sqlite::Connection,
-    window: DateWindow,
-) -> std::result::Result<sqlite::Statement<'_>, UnitError> {
-    let columns = table_columns(connection, "session_message").map_err(sqlite_setup_failure)?;
-    if !["id", "session_id", "type", "data"]
-        .into_iter()
-        .all(|column| columns.contains(column))
-    {
+fn prepare_session_message_query<'a>(
+    connection: &'a sqlite::Connection,
+    schema: &TableSchema,
+    context: &DatabaseLoadContext<'_>,
+) -> std::result::Result<sqlite::Statement<'a>, UnitError> {
+    if !schema.has_all(&["id", "session_id", "type", "data"]) {
         return Err(UnitError::unsupported_schema());
     }
-    let has_time_created = columns.contains("time_created");
-    let has_seq = columns.contains("seq");
-    // `seq` is position 5 only when the column exists; `is_fork_copy`
-    // falls back to keeping the row when it cannot read a `seq`.
-    let seq_column = if has_seq { ", seq" } else { "" };
-    let time_created = if has_time_created {
-        "time_created"
-    } else {
-        "NULL"
-    };
+    let window = schema.pushdown(context);
     let select = format!(
-        "SELECT id, session_id, type, data, {time_created}{seq_column} FROM session_message"
+        "SELECT id, session_id, type, data, {}, {} FROM session_message",
+        schema.column_or("time_created", "NULL"),
+        schema.column_or("seq", "NULL"),
     );
-    let sql = if has_time_created {
-        match (window.start, window.end) {
-            (Some(_), Some(_)) => {
-                format!("{select} WHERE time_created >= ?1 AND time_created < ?2",)
-            }
-            (Some(_), None) => format!("{select} WHERE time_created >= ?1",),
-            (None, Some(_)) => format!("{select} WHERE time_created < ?1",),
-            (None, None) => select.clone(),
-        }
-    } else {
-        select.clone()
+    let sql = match (window.start, window.end) {
+        (Some(_), Some(_)) => format!("{select} WHERE time_created >= ?1 AND time_created < ?2"),
+        (Some(_), None) => format!("{select} WHERE time_created >= ?1"),
+        (None, Some(_)) => format!("{select} WHERE time_created < ?1"),
+        (None, None) => select,
     };
-    let mut statement = connection.prepare(&sql).map_err(sqlite_setup_failure)?;
-    if has_time_created {
-        for (index, bound) in [window.start, window.end].into_iter().flatten().enumerate() {
-            statement
-                .bind((index + 1, bound))
-                .map_err(sqlite_setup_failure)?;
-        }
-    }
+    let mut statement = connection.prepare(sql).map_err(sqlite_setup_failure)?;
+    bind_window(&mut statement, window)?;
     Ok(statement)
+}
+
+fn bind_window(
+    statement: &mut sqlite::Statement<'_>,
+    window: DateWindow,
+) -> std::result::Result<(), UnitError> {
+    for (index, bound) in [window.start, window.end].into_iter().flatten().enumerate() {
+        statement
+            .bind((index + 1, bound))
+            .map_err(sqlite_setup_failure)?;
+    }
+    Ok(())
 }
 
 fn sqlite_setup_failure(error: sqlite::Error) -> UnitError {
     UnitError::sqlite(SqliteStage::Setup, error.code)
 }
 
-fn prepare_session_aggregate_query<'a>(
-    connection: &'a sqlite::Connection,
-    table: &str,
-) -> sqlite::Result<Option<sqlite::Statement<'a>>> {
-    let table = match table {
-        "session" => "session",
-        "session_v2" => "session_v2",
-        _ => return Ok(None),
-    };
-    let columns = table_columns(connection, table)?;
-    if ![
+fn load_session_aggregate_entries(
+    connection: &sqlite::Connection,
+    schema: &TableSchema,
+    context: &DatabaseLoadContext<'_>,
+) -> Vec<LoadedEntry> {
+    if !schema.has_all(&[
         "id",
         "time_created",
         "cost",
@@ -859,37 +885,18 @@ fn prepare_session_aggregate_query<'a>(
         "tokens_output",
         "tokens_cache_read",
         "tokens_cache_write",
-    ]
-    .into_iter()
-    .all(|column| columns.contains(column))
-    {
-        return Ok(None);
+    ]) {
+        return Vec::new();
     }
-    let reasoning = if columns.contains("tokens_reasoning") {
-        "tokens_reasoning"
-    } else {
-        "0"
-    };
-    let model = if columns.contains("model") {
-        "model"
-    } else {
-        "NULL"
-    };
+    let table = schema.table.name();
     let sql = format!(
         "SELECT id, time_created, cost, tokens_input, tokens_output, \
-         tokens_cache_read, tokens_cache_write, {reasoning}, {model} FROM {table}"
+         tokens_cache_read, tokens_cache_write, {}, {} FROM {table}",
+        schema.column_or("tokens_reasoning", "0"),
+        schema.column_or("model", "NULL"),
     );
-    connection.prepare(&sql).map(Some)
-}
-
-fn load_session_aggregate_entries(
-    connection: &sqlite::Connection,
-    table: &str,
-    context: &DatabaseLoadContext<'_>,
-) -> Vec<LoadedEntry> {
-    let mut statement = match prepare_session_aggregate_query(connection, table) {
-        Ok(Some(statement)) => statement,
-        Ok(None) => return Vec::new(),
+    let statement = match connection.prepare(sql) {
+        Ok(statement) => statement,
         Err(error) => {
             debug_log(
                 context.shared,
@@ -903,79 +910,44 @@ fn load_session_aggregate_entries(
         }
     };
     let mut entries = Vec::new();
-    let mut row = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row = row.saturating_add(1);
-                let Ok(session_id) = statement.read::<String, _>(0) else {
-                    context.diagnostics.record(Skip::record(
-                        context.db_path,
-                        row,
-                        SkipKind::InvalidData,
-                        "invalid aggregate row",
-                    ));
-                    continue;
-                };
-                let Some(created) = read_f64(&statement, 1)
-                    .filter(|value| value.is_finite())
-                    .map(|value| value.trunc() as i64)
-                else {
-                    context.diagnostics.record(Skip::record(
-                        context.db_path,
-                        row,
-                        SkipKind::InvalidData,
-                        "invalid aggregate row",
-                    ));
-                    continue;
-                };
-                if !context.window.is_unbounded() && !context.window.contains(created) {
-                    continue;
-                }
-                let cost = read_f64(&statement, 2);
-                let input_tokens = read_u64(&statement, 3);
-                let output_tokens = read_u64(&statement, 4);
-                let cache_read_tokens = read_u64(&statement, 5);
-                let cache_write_tokens = read_u64(&statement, 6);
-                let reasoning_tokens = read_u64(&statement, 7);
-                let model = statement.read::<String, _>(8).ok();
-                let (model, provider) = parse_session_model(model.as_deref())
-                    .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
-                if let Some(entry) = session_value_to_entry(
-                    OpenCodeSessionAggregate {
-                        session_id,
-                        created,
-                        model,
-                        provider,
-                        input_tokens,
-                        output_tokens,
-                        reasoning_tokens,
-                        cache_read_tokens,
-                        cache_write_tokens,
-                        cost,
-                    },
-                    context.tz,
-                    context.mode,
-                    context.pricing,
-                ) {
-                    entries.push(entry);
-                }
+    scan_rows(
+        statement,
+        context,
+        schema.table,
+        "invalid aggregate row",
+        |statement| {
+            let session_id = statement.read(0)?;
+            let created = read_f64(statement, 1)
+                .filter(|value| value.is_finite())
+                .map(|value| value.trunc() as i64)
+                .ok_or(UnreadableRow)?;
+            let model = statement.read::<String, _>(8).ok();
+            let (model, provider) = parse_session_model(model.as_deref())
+                .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
+            Ok(Some(OpenCodeSessionAggregate {
+                session_id,
+                created,
+                model,
+                provider,
+                input_tokens: read_u64(statement, 3),
+                output_tokens: read_u64(statement, 4),
+                reasoning_tokens: read_u64(statement, 7),
+                cache_read_tokens: read_u64(statement, 5),
+                cache_write_tokens: read_u64(statement, 6),
+                cost: read_f64(statement, 2),
+            }))
+        },
+        |_, aggregate| {
+            if !context.window.is_unbounded() && !context.window.contains(aggregate.created) {
+                return;
             }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code)
-                    .record(context.db_path, context.diagnostics);
-                debug_log(
-                    context.shared,
-                    format!(
-                        "Failed to query OpenCode {table} table: {}",
-                        context.db_path.display()
-                    ),
-                );
-                break;
+            if let Some(entry) =
+                session_value_to_entry(aggregate, context.tz, context.mode, context.pricing)
+            {
+                entries.push(entry);
             }
-        }
-    }
+        },
+    );
     entries
 }
 
@@ -1125,9 +1097,6 @@ impl DateWindow {
 
 /// Prepares the `message` scan, narrowed to `window` where its bounds are set.
 ///
-/// Returns `None` when the statement cannot be prepared, which is what a schema
-/// without a `time_created` column looks like.
-///
 /// The bounds are applied through a subquery that selects only `id`. OpenCode's
 /// index is `(session_id, time_created, id)`, so a bare `time_created` range
 /// cannot seek it and scans the table, reading every `data` blob on the way. The
@@ -1154,11 +1123,7 @@ fn prepare_message_query(
         (None, None) => "SELECT id, session_id, data FROM message",
     };
     let mut statement = connection.prepare(sql).map_err(sqlite_setup_failure)?;
-    for (index, bound) in [window.start, window.end].into_iter().flatten().enumerate() {
-        statement
-            .bind((index + 1, bound))
-            .map_err(sqlite_setup_failure)?;
-    }
+    bind_window(&mut statement, window)?;
     Ok(statement)
 }
 
@@ -1166,7 +1131,7 @@ fn prepare_message_query(
 /// needs at least 12 digits, while second-scale values stay far below it.
 const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
 
-/// Reports whether a sample of `message.time_created` looks like Unix
+/// Reports whether a sample of `table.time_created` looks like Unix
 /// milliseconds, the scale the payload's `time.created` uses.
 ///
 /// Sampling keeps this cheap on databases tens of gigabytes in size, and proves
@@ -1175,18 +1140,11 @@ const MIN_MILLIS_SCALE: i64 = 100_000_000_000;
 /// does catch is a build that stored seconds, or left the column at zero, where
 /// millisecond bounds would otherwise exclude every row — those disable the
 /// push-down and leave the payload check to filter.
-fn time_created_looks_like_millis(connection: &sqlite::Connection, table: &str) -> bool {
-    let sql = match table {
-        "message" => "SELECT max(time_created) FROM (SELECT time_created FROM message LIMIT 8)",
-        "session_message" => {
-            "SELECT max(time_created) FROM (SELECT time_created FROM session_message LIMIT 8)"
-        }
-        _ => return false,
-    };
-    if !table_columns(connection, table).is_ok_and(|columns| columns.contains("time_created")) {
-        return false;
-    }
-    let Ok(mut statement) = connection.prepare(sql) else {
+fn time_created_looks_like_millis(connection: &sqlite::Connection, table: Table) -> bool {
+    let Ok(mut statement) = connection.prepare(format!(
+        "SELECT max(time_created) FROM (SELECT time_created FROM {} LIMIT 8)",
+        table.name()
+    )) else {
         return false;
     };
     match statement.next() {
@@ -1254,7 +1212,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_failed_fork_schema_probes_without_database_details() {
+    fn reports_failed_schema_probes_without_database_details() {
         use ccusage_core::{Diagnostics, SkipKind};
 
         let fixture = ccusage_test_support::Fixture::new();
@@ -1266,14 +1224,19 @@ mod tests {
         let diagnostics = Diagnostics::new("opencode");
         assert!(super::table_exists(
             &connection,
-            "session_message",
+            super::Table::SessionMessage,
             &path,
             &diagnostics,
         ));
         connection.execute("DROP TABLE session_message").unwrap();
         assert!(
-            super::fork_table_columns(&connection, "session_message", &path, &diagnostics,)
-                .is_none()
+            super::TableSchema::read(
+                &connection,
+                super::Table::SessionMessage,
+                &path,
+                &diagnostics
+            )
+            .is_none()
         );
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
         let warnings = diagnostics
@@ -1460,18 +1423,17 @@ mod tests {
     #[test]
     fn reports_aggregate_schema_read_failures() {
         use super::{
-            DatabaseLoadContext, DateWindow, load_session_aggregate_entries, table_exists,
+            DatabaseLoadContext, DateWindow, Table, TableSchema, load_session_aggregate_entries,
         };
         use ccusage_core::{Diagnostics, SkipKind};
 
         let fixture = ccusage_test_support::Fixture::new();
         let path = fixture.path("opencode.db");
+        create_db_session_aggregate_table(&path, "session_v2");
         let connection = sqlite::open(&path).unwrap();
-        connection
-            .execute("CREATE TABLE session_v2 (id TEXT PRIMARY KEY)")
-            .unwrap();
         let diagnostics = Diagnostics::new("opencode");
-        assert!(table_exists(&connection, "session_v2", &path, &diagnostics));
+        let schema =
+            TableSchema::probe(&connection, Table::SessionV2, &path, &diagnostics).unwrap();
         connection.execute("DROP TABLE session_v2").unwrap();
         let shared = SharedArgs::default();
         let context = DatabaseLoadContext {
@@ -1484,7 +1446,7 @@ mod tests {
             diagnostics: &diagnostics,
         };
 
-        assert!(load_session_aggregate_entries(&connection, "session_v2", &context).is_empty());
+        assert!(load_session_aggregate_entries(&connection, &schema, &context).is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }
 
@@ -1571,8 +1533,8 @@ mod tests {
         statement.next().unwrap();
     }
 
-    // Pre-SQLite-era layout: no `time_created` column, so the filtered query
-    // cannot prepare and the loader has to fall back to an unfiltered scan.
+    // Pre-SQLite-era layout: no `time_created` column, so the loader cannot
+    // push the window into SQL and scans unfiltered.
     fn create_db_message_legacy_schema(path: &Path, id: &str, session_id: &str, data: &str) {
         let db = sqlite::open(path).unwrap();
         db.execute("CREATE TABLE IF NOT EXISTS message (id TEXT, session_id TEXT, data TEXT)")
