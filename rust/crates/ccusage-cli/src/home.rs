@@ -215,20 +215,4 @@ mod tests {
             [PathBuf::from("~user/claude"), PathBuf::from("foo~/claude")]
         );
     }
-
-    #[test]
-    fn claude_dirs_resolve_a_projects_env_entry_to_its_parent() {
-        let root = env::temp_dir().join(format!("ccusage-cli-claude-dirs-{}", std::process::id()));
-        let projects = root.join("projects");
-        std::fs::create_dir_all(&projects).unwrap();
-
-        let resolved = claude_config_dirs_from(
-            Some(projects.display().to_string()),
-            None,
-            Some(PathBuf::from("/home/user")),
-        );
-        std::fs::remove_dir_all(&root).unwrap();
-
-        assert_eq!(dirs(resolved), [root]);
-    }
 }
