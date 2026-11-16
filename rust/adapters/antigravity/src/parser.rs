@@ -206,32 +206,15 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
     let trajectory_timestamp = read_trajectory_timestamp(&connection)?;
     let generation_rows = read_generation_rows(&connection)?;
     let step_rows = read_step_rows(&connection)?;
-    let generation_model = generation_rows.iter().rev().find_map(|(_, metadata)| {
-        metadata
-            .model
-            .as_deref()
-            .and_then(normalize_antigravity_model)
-            .or_else(|| {
-                metadata
-                    .model_id
-                    .map(model_name_from_id)
-                    .and_then(|model| normalize_antigravity_model(&model))
-            })
-    });
+    let generation_model = generation_rows
+        .iter()
+        .rev()
+        .find_map(|(_, metadata)| row_model(metadata.model.as_deref(), metadata.model_id));
 
     let mut events = Vec::new();
     let mut identity_timestamps = HashMap::new();
     for (idx, metadata) in step_rows {
-        let model = metadata
-            .model
-            .as_deref()
-            .and_then(normalize_antigravity_model)
-            .or_else(|| {
-                metadata
-                    .model_id
-                    .map(model_name_from_id)
-                    .and_then(|model| normalize_antigravity_model(&model))
-            })
+        let model = row_model(metadata.model.as_deref(), metadata.model_id)
             .or_else(|| generation_model.clone());
         let timestamp = metadata.timestamp.map(|timestamp| (timestamp, 3));
         let fallback_identities = [format!("step:{session_id}:{idx}")];
@@ -273,25 +256,15 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
 
     let mut current_model = None;
     for (idx, metadata) in generation_rows {
-        let row_model = metadata
-            .model
-            .as_deref()
-            .and_then(normalize_antigravity_model)
-            .or_else(|| {
+        let resolved_model =
+            row_model(metadata.model.as_deref(), metadata.model_id).or_else(|| {
                 metadata
-                    .model_id
-                    .map(model_name_from_id)
-                    .and_then(|model| normalize_antigravity_model(&model))
-            })
-            .or_else(|| {
-                metadata.usage.as_ref().and_then(|usage| {
-                    usage
-                        .model_id
-                        .map(model_name_from_id)
-                        .and_then(|model| normalize_antigravity_model(&model))
-                })
+                    .usage
+                    .as_ref()
+                    .and_then(|usage| usage.model_id)
+                    .and_then(model_from_id)
             });
-        if let Some(model) = row_model {
+        if let Some(model) = resolved_model {
             current_model = Some(model);
         }
         let model = current_model.clone();
@@ -486,10 +459,7 @@ fn append_usage_event(
     let reasoning_tokens = usage
         .reasoning_tokens
         .max(total_output_tokens.saturating_sub(output_tokens));
-    let id_model = usage
-        .model_id
-        .map(model_name_from_id)
-        .and_then(|model| normalize_antigravity_model(&model));
+    let id_model = usage.model_id.and_then(model_from_id);
     let same_model_row = context
         .model
         .filter(|_| context.model_id == usage.model_id)
@@ -884,21 +854,19 @@ fn model_name_from_id(model_id: u64) -> String {
         333 | 334 => "claude-4.5-sonnet".to_string(),
         340 | 341 => "claude-4.5-haiku".to_string(),
         342 => "model_openai_gpt_oss_120b_medium".to_string(),
-        1318 => "gemini-3.8-flash-high".to_string(),
-        1319 => "gemini-3.8-flash-medium".to_string(),
-        1320 => "gemini-3.8-flash-low".to_string(),
-        1298 => "gemini-3.7-flash-high".to_string(),
-        1299 => "gemini-3.7-flash-medium".to_string(),
-        1300 => "gemini-3.7-flash-low".to_string(),
-        1071 => "gemini-3.6-flash-high".to_string(),
-        1072 => "gemini-3.6-flash-medium".to_string(),
-        1073 => "gemini-3.6-flash-low".to_string(),
-        1417..=1419 => "gemini-4-argon".to_string(),
-        1402 => "claude-opus-5-5".to_string(),
-        1050 => "gemini-3.1-flash-lite".to_string(),
         1_000.. => format!("{UNRESOLVED_PLACEHOLDER_PREFIX}{}", model_id - 1_000),
         _ => format!("{UNRESOLVED_ID_PREFIX}{model_id}"),
     }
+}
+
+fn model_from_id(model_id: u64) -> Option<String> {
+    normalize_antigravity_model(&model_name_from_id(model_id))
+}
+
+fn row_model(model: Option<&str>, model_id: Option<u64>) -> Option<String> {
+    model
+        .and_then(normalize_antigravity_model)
+        .or_else(|| model_id.and_then(model_from_id))
 }
 
 const UNRESOLVED_PLACEHOLDER_PREFIX: &str = "model_placeholder_m";
@@ -935,20 +903,8 @@ fn normalize_antigravity_model(raw: &str) -> Option<String> {
         return None;
     }
     let lower = trimmed.to_ascii_lowercase();
-    let effort_variant = match lower.as_str() {
-        "gemini 3.8 flash (high)" => Some("gemini-3.8-flash-high"),
-        "gemini 3.8 flash (medium)" => Some("gemini-3.8-flash-medium"),
-        "gemini 3.8 flash (low)" => Some("gemini-3.8-flash-low"),
-        "gemini 3.7 flash (high)" => Some("gemini-3.7-flash-high"),
-        "gemini 3.7 flash (medium)" => Some("gemini-3.7-flash-medium"),
-        "gemini 3.7 flash (low)" => Some("gemini-3.7-flash-low"),
-        "gemini 3.6 flash (high)" => Some("gemini-3.6-flash-high"),
-        "gemini 3.6 flash (medium)" => Some("gemini-3.6-flash-medium"),
-        "gemini 3.6 flash (low)" => Some("gemini-3.6-flash-low"),
-        _ => None,
-    };
-    if let Some(model) = effort_variant {
-        return Some(model.to_string());
+    if let Some(model) = gemini_flash_effort_variant(&lower) {
+        return Some(model);
     }
     let base = lower
         .find('(')
@@ -1163,19 +1119,27 @@ fn find_exact_pricing_with_alias(pricing: &PricingMap, model: &str) -> Option<Pr
     })
 }
 
+const GEMINI_FLASH_EFFORT_FAMILIES: [&str; 3] =
+    ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"];
+const GEMINI_FLASH_EFFORTS: [&str; 3] = ["high", "medium", "low"];
+
 fn gemini_flash_pricing_alias(model: &str) -> Option<&'static str> {
-    match model {
-        "gemini-3.8-flash-high" | "gemini-3.8-flash-medium" | "gemini-3.8-flash-low" => {
-            Some("gemini-3.8-flash")
-        }
-        "gemini-3.7-flash-high" | "gemini-3.7-flash-medium" | "gemini-3.7-flash-low" => {
-            Some("gemini-3.7-flash")
-        }
-        "gemini-3.6-flash-high" | "gemini-3.6-flash-medium" | "gemini-3.6-flash-low" => {
-            Some("gemini-3.6-flash")
-        }
-        _ => None,
+    let (family, effort) = model.rsplit_once('-')?;
+    if !GEMINI_FLASH_EFFORTS.contains(&effort) {
+        return None;
     }
+    GEMINI_FLASH_EFFORT_FAMILIES
+        .into_iter()
+        .find(|candidate| *candidate == family)
+}
+
+fn gemini_flash_effort_variant(display_name: &str) -> Option<String> {
+    let (base, rest) = display_name.split_once('(')?;
+    let effort = rest.strip_suffix(')')?;
+    let variant = format!("{}-{effort}", base.trim().replace(' ', "-"));
+    gemini_flash_pricing_alias(&variant)
+        .is_some()
+        .then_some(variant)
 }
 
 fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
@@ -1446,8 +1410,7 @@ mod tests {
         API_PROVIDER_GOOGLE_GEMINI, DEFAULT_MODEL, EventContext, ModelUsage, ProtoField,
         ProtoValue, append_usage_event, calculate_antigravity_cost, field_bytes, field_bytes_all,
         field_text, field_varint, merge_usage_event, missing_antigravity_pricing, model_candidates,
-        model_name_from_id, normalize_antigravity_model, parse_generator_metadata,
-        parse_step_metadata,
+        model_from_id, normalize_antigravity_model, parse_generator_metadata, parse_step_metadata,
     };
     use crate::{PricingMap, TimestampMs, TokenUsageRaw, cli::CostMode, parse_ts_timestamp};
 
@@ -1759,7 +1722,7 @@ mod tests {
         ];
 
         for (model_id, placeholder, display_name, expected) in cases {
-            assert_eq!(model_name_from_id(model_id), expected);
+            assert_eq!(model_from_id(model_id).as_deref(), Some(expected));
             assert_eq!(
                 normalize_antigravity_model(placeholder).as_deref(),
                 Some(expected)
@@ -1777,7 +1740,7 @@ mod tests {
 
     #[test]
     fn maps_claude_opus_5_5_id_and_placeholder_to_priced_model() {
-        assert_eq!(model_name_from_id(1402), "claude-opus-5-5");
+        assert_eq!(model_from_id(1402).as_deref(), Some("claude-opus-5-5"));
         assert_eq!(
             normalize_antigravity_model("model_placeholder_m402").as_deref(),
             Some("claude-opus-5-5")
@@ -1790,7 +1753,7 @@ mod tests {
             ..TokenUsageRaw::default()
         };
         let cost = calculate_antigravity_cost(
-            &model_name_from_id(1402),
+            "claude-opus-5-5",
             None,
             usage,
             TimestampMs::UNIX_EPOCH,
