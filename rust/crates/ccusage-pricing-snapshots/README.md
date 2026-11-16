@@ -6,8 +6,9 @@ constants that `ccusage-core` inflates once the binary hands them over through
 
 ## Owns
 
-- `build.rs` — compacts the pinned LiteLLM snapshot and minifies and deflates
-  every snapshot into `OUT_DIR`. It reads `CCUSAGE_PRICING_JSON_PATH`, which
+- `build.rs` — filters the pinned LiteLLM snapshot through
+  `src/litellm_filter.rs` and minifies and deflates every snapshot into
+  `OUT_DIR`. It reads `CCUSAGE_PRICING_JSON_PATH`, which
   every Nix build and the dev shell set; the `fetch-litellm-pricing` feature adds
   the HTTPS download that plain `cargo build` needs on platforms Nix cannot
   target. The committed files stay indented for reviewable regeneration diffs,

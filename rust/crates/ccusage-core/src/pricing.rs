@@ -29,7 +29,7 @@ const ULTRAFAST_MULTIPLIER_OVERRIDES_JSON: &str =
 /// crate and every adapter built on it.
 #[derive(Clone, Copy, Debug)]
 pub struct EmbeddedSnapshots {
-    /// LiteLLM pricing, compacted to the model families priced offline.
+    /// LiteLLM pricing, filtered to the model families priced offline.
     pub litellm_pricing: &'static [u8],
     /// The committed models.dev pricing snapshot.
     pub models_dev_pricing: &'static [u8],
@@ -467,21 +467,6 @@ struct LiteLlmPricing {
 
 #[derive(Debug, Deserialize)]
 struct ProviderSpecificEntry {
-    fast: Option<f64>,
-    flex: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CompactLiteLlmPricing {
-    i: f64,
-    o: f64,
-    cc: Option<f64>,
-    cr: Option<f64>,
-    ia: Option<f64>,
-    oa: Option<f64>,
-    cca: Option<f64>,
-    cra: Option<f64>,
-    ctx: Option<u64>,
     fast: Option<f64>,
     flex: Option<f64>,
 }
@@ -2220,30 +2205,6 @@ fn overridden_pricing(base: Pricing, override_value: &PricingOverride) -> Pricin
 }
 
 fn parse_litellm_pricing(value: Value) -> Option<LiteLlmPricing> {
-    if value
-        .as_object()
-        .is_some_and(|entry| entry.contains_key("i") && entry.contains_key("o"))
-        && let Ok(compact) = serde_json::from_value::<CompactLiteLlmPricing>(value.clone())
-    {
-        return Some(LiteLlmPricing {
-            input_cost_per_token: Some(compact.i),
-            output_cost_per_token: Some(compact.o),
-            cache_creation_input_token_cost: compact.cc,
-            cache_read_input_token_cost: compact.cr,
-            input_cost_per_token_above_200k_tokens: compact.ia,
-            output_cost_per_token_above_200k_tokens: compact.oa,
-            cache_creation_input_token_cost_above_200k_tokens: compact.cca,
-            cache_read_input_token_cost_above_200k_tokens: compact.cra,
-            max_input_tokens: compact.ctx,
-            provider_specific_entry: compact
-                .fast
-                .or(compact.flex)
-                .map(|_| ProviderSpecificEntry {
-                    fast: compact.fast,
-                    flex: compact.flex,
-                }),
-        });
-    }
     let pricing = serde_json::from_value::<LiteLlmPricing>(value).ok()?;
     pricing
         .input_cost_per_token
@@ -3588,58 +3549,38 @@ mod tests {
     }
 
     #[test]
-    fn loads_compact_litellm_pricing_json() {
+    fn loads_every_litellm_rate_field() {
         let mut pricing = PricingMap::default();
         let loaded = pricing.load_json(
             r#"{
-                "gpt-compact": {
-                    "i": 0.000001,
-                    "o": 0.000010,
-                    "cc": 0.00000125,
-                    "cr": 0.0000001,
-                    "ia": 0.000002,
-                    "oa": 0.000020,
-                    "cca": 0.0000025,
-                    "cra": 0.0000002,
-                    "ctx": 123456,
-                    "fast": 1.5
-                }
-            }"#,
-        );
-
-        assert_eq!(loaded, 1);
-        let compact = pricing.find("gpt-compact").unwrap();
-        assert_eq!(compact.input, 1e-6);
-        assert_eq!(compact.output, 10e-6);
-        assert_eq!(compact.cache_create, 1.25e-6);
-        assert_eq!(compact.cache_read, 0.1e-6);
-        assert!(compact.cache_read_explicit);
-        assert_eq!(compact.input_above_200k, Some(2e-6));
-        assert_eq!(compact.output_above_200k, Some(20e-6));
-        assert_eq!(compact.cache_create_above_200k, Some(2.5e-6));
-        assert_eq!(compact.cache_read_above_200k, Some(0.2e-6));
-        assert_eq!(compact.fast_multiplier, 1.5);
-        assert_eq!(pricing.context_limit("gpt-compact"), Some(123456));
-    }
-
-    #[test]
-    fn falls_back_to_full_litellm_pricing_when_compact_shape_is_incomplete() {
-        let mut pricing = PricingMap::default();
-        let loaded = pricing.load_json(
-            r#"{
-                "gpt-full-with-extra-i": {
-                    "i": "provider metadata",
-                    "o": "provider metadata",
+                "gpt-every-rate": {
                     "input_cost_per_token": 0.000001,
-                    "output_cost_per_token": 0.000010
+                    "output_cost_per_token": 0.000010,
+                    "cache_creation_input_token_cost": 0.00000125,
+                    "cache_read_input_token_cost": 0.0000001,
+                    "input_cost_per_token_above_200k_tokens": 0.000002,
+                    "output_cost_per_token_above_200k_tokens": 0.000020,
+                    "cache_creation_input_token_cost_above_200k_tokens": 0.0000025,
+                    "cache_read_input_token_cost_above_200k_tokens": 0.0000002,
+                    "max_input_tokens": 123456,
+                    "provider_specific_entry": { "fast": 1.5 }
                 }
             }"#,
         );
 
         assert_eq!(loaded, 1);
-        let full = pricing.find("gpt-full-with-extra-i").unwrap();
-        assert_eq!(full.input, 1e-6);
-        assert_eq!(full.output, 10e-6);
+        let entry = pricing.find("gpt-every-rate").unwrap();
+        assert_eq!(entry.input, 1e-6);
+        assert_eq!(entry.output, 10e-6);
+        assert_eq!(entry.cache_create, 1.25e-6);
+        assert_eq!(entry.cache_read, 0.1e-6);
+        assert!(entry.cache_read_explicit);
+        assert_eq!(entry.input_above_200k, Some(2e-6));
+        assert_eq!(entry.output_above_200k, Some(20e-6));
+        assert_eq!(entry.cache_create_above_200k, Some(2.5e-6));
+        assert_eq!(entry.cache_read_above_200k, Some(0.2e-6));
+        assert_eq!(entry.fast_multiplier, 1.5);
+        assert_eq!(pricing.context_limit("gpt-every-rate"), Some(123456));
     }
 
     #[test]
@@ -5724,7 +5665,7 @@ mod tests {
     }
 
     #[test]
-    fn embedded_build_time_pricing_is_compact() {
+    fn embedded_build_time_pricing_is_filtered() {
         let json = build_time_pricing_json();
         assert!(json.len() < 200_000);
         assert!(!json.contains("\"source\""));

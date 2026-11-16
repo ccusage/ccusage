@@ -1,6 +1,9 @@
 use std::{env, fs, path::PathBuf};
 
-use serde_json::{Map, Value};
+use serde_json::Value;
+
+#[path = "src/litellm_filter.rs"]
+mod litellm_filter;
 
 const FLAKE_LOCK_JSON: &str = "../../../flake.lock";
 const OUT_PRICING_JSON: &str = "litellm-pricing.json.deflate";
@@ -12,7 +15,6 @@ const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
 #[cfg(feature = "fetch-litellm-pricing")]
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 
-#[cfg(not(test))]
 fn main() {
     println!("cargo:rerun-if-env-changed={PRICING_JSON_PATH_ENV}");
 
@@ -25,7 +27,8 @@ fn main() {
         println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
         fetch_pricing_json()
     };
-    let pricing_json = compact_pricing_json(&pricing_json).expect("compact LiteLLM pricing JSON");
+    let pricing_json =
+        litellm_filter::filter_pricing_json(&pricing_json).expect("filter LiteLLM pricing JSON");
 
     fs::write(out_path, deflate(pricing_json.as_bytes()))
         .expect("write build-time pricing snapshot");
@@ -79,12 +82,12 @@ fn fetch_pricing_json() -> String {
     );
 }
 
-#[cfg(all(feature = "fetch-litellm-pricing", not(test)))]
+#[cfg(feature = "fetch-litellm-pricing")]
 fn fetch_pricing_json() -> String {
     download_pricing_json().expect("fetch LiteLLM pricing for embed")
 }
 
-#[cfg(all(feature = "fetch-litellm-pricing", not(test)))]
+#[cfg(feature = "fetch-litellm-pricing")]
 fn download_pricing_json() -> std::io::Result<String> {
     let response = minreq::get(litellm_pricing_url()?)
         .with_timeout(PRICING_FETCH_TIMEOUT_SECONDS)
@@ -129,7 +132,7 @@ fn litellm_pricing_url() -> std::io::Result<String> {
 
 #[cfg(feature = "fetch-litellm-pricing")]
 fn required_flake_lock_string_field(
-    object: &Map<String, Value>,
+    object: &serde_json::Map<String, Value>,
     field: &str,
 ) -> std::io::Result<String> {
     object
@@ -142,106 +145,4 @@ fn required_flake_lock_string_field(
                 format!("flake.lock nodes.litellm.locked.{field} must be a string"),
             )
         })
-}
-
-fn compact_pricing_json(json: &str) -> Option<String> {
-    let Value::Object(raw) = serde_json::from_str::<Value>(json).ok()? else {
-        return None;
-    };
-    let mut compact = Map::new();
-    for (model, pricing) in raw {
-        if !is_embedded_model(&model) {
-            continue;
-        }
-        let Value::Object(pricing) = pricing else {
-            continue;
-        };
-        let mut fields = Map::new();
-        for (source, target) in [
-            ("input_cost_per_token", "i"),
-            ("output_cost_per_token", "o"),
-            ("cache_creation_input_token_cost", "cc"),
-            ("cache_read_input_token_cost", "cr"),
-            ("input_cost_per_token_above_200k_tokens", "ia"),
-            ("output_cost_per_token_above_200k_tokens", "oa"),
-            ("cache_creation_input_token_cost_above_200k_tokens", "cca"),
-            ("cache_read_input_token_cost_above_200k_tokens", "cra"),
-            ("max_input_tokens", "ctx"),
-        ] {
-            let Some(value) = pricing.get(source) else {
-                continue;
-            };
-            if !value.is_null() {
-                fields.insert(target.to_string(), value.clone());
-            }
-        }
-        for tier in ["fast", "flex"] {
-            if let Some(multiplier) = pricing
-                .get("provider_specific_entry")
-                .and_then(Value::as_object)
-                .and_then(|entry| entry.get(tier))
-                .filter(|value| !value.is_null())
-            {
-                fields.insert(tier.to_string(), multiplier.clone());
-            }
-        }
-        if fields.contains_key("i") && fields.contains_key("o") {
-            compact.insert(model, Value::Object(fields));
-        }
-    }
-    serde_json::to_string(&Value::Object(compact)).ok()
-}
-
-fn is_embedded_model(model: &str) -> bool {
-    model.starts_with("claude-")
-        || model.starts_with("anthropic.")
-        || model.starts_with("anthropic/")
-        || model.starts_with("us.anthropic.")
-        || model.starts_with("eu.anthropic.")
-        || model.starts_with("global.anthropic.")
-        || model.starts_with("jp.anthropic.")
-        || model.starts_with("au.anthropic.")
-        || model.starts_with("gpt-")
-        || model == "o3"
-        || model.starts_with("o3-")
-        || model == "o4-mini"
-        || model.starts_with("o4-mini-")
-        || model.starts_with("openai/")
-        || model.starts_with("azure/")
-        || model.starts_with("zai/")
-        || model.starts_with("openrouter/openai/")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::compact_pricing_json;
-    use ccusage_core::PricingMap;
-
-    #[test]
-    fn keeps_service_tier_multipliers_in_embedded_pricing() {
-        let compact = compact_pricing_json(
-            r#"{
-                "gpt-test": {
-                    "input_cost_per_token": 0.000001,
-                    "output_cost_per_token": 0.000002,
-                    "provider_specific_entry": { "fast": 2, "flex": 0.5 }
-                },
-                "gpt-flex-only": {
-                    "input_cost_per_token": 0.000001,
-                    "output_cost_per_token": 0.000002,
-                    "provider_specific_entry": { "fast": null, "flex": 0.25 }
-                }
-            }"#,
-        )
-        .unwrap();
-        let mut pricing = PricingMap::default();
-        pricing.load_json(&compact);
-
-        let both = pricing.find_exact("gpt-test").unwrap();
-        assert_eq!(both.fast_multiplier, 2.0);
-        assert_eq!(both.flex_multiplier, 0.5);
-        let flex_only = pricing.find_exact("gpt-flex-only").unwrap();
-        assert_eq!(flex_only.fast_multiplier, 1.0);
-        assert_eq!(flex_only.flex_multiplier, 0.25);
-    }
 }

@@ -21,10 +21,7 @@ minreq = { workspace = true, optional = true }
 serde_json = { workspace = true, features = ["float_roundtrip"] }
 
 [dev-dependencies]
-# build.rs is compiled into the unit tests, and its compaction test loads the
-# result through the runtime loader.
 ccusage-core.workspace = true
-miniz_oxide.workspace = true
 serde_json.workspace = true
 
 [lints]
