@@ -75,7 +75,7 @@ export CLAUDE_CONFIG_DIR="~/.config/claude,/backup/claude-archive"
 ccusage claude monthly
 ```
 
-For Codex, OpenCode, Amp, Droid, Codebuff, Cline, Junie, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI data locations, use the source-specific environment variables listed in [Environment Variables](/guide/environment-variables).
+For other data sources, [Environment Variables](/guide/environment-variables) lists each source-specific location variable.
 
 ### Directory Detection
 
