@@ -353,7 +353,7 @@ fn reconcile_session_state_entries(
             previous = Some(current);
             *attributed_nano_aiu
                 .entry((current.session_id.clone(), current.timestamp.as_millis()))
-                .or_default() += reconciled.nano_aiu;
+                .or_default() += reconciled.nano_aiu.unwrap_or_default();
             if latest_visible.is_none_or(|latest_pos| position > latest_pos)
                 || otel_start.is_some_and(|start| position >= start)
                 || since_millis.is_some_and(|start| current.timestamp.as_millis() < start)
@@ -476,9 +476,7 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         reasoning_output_tokens: 0,
         extra_total_tokens: 0,
         request_count: 0,
-        nano_aiu,
-        // One AIU is one GitHub AI credit, billed at $0.01.
-        cost_usd: Some(nano_aiu as f64 / 1e11),
+        nano_aiu: Some(nano_aiu),
         dedup_key: snapshot.dedup_key.clone(),
         file_independent_key: false,
         call_ids: CallIds::default(),
@@ -524,8 +522,12 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
             .extra_total_tokens
             .saturating_sub(baseline.extra_total_tokens),
         request_count: current.request_count.saturating_sub(baseline.request_count),
-        nano_aiu: current.nano_aiu.saturating_sub(baseline.nano_aiu),
-        cost_usd: None,
+        // The credits an interval adds are known only when both snapshots
+        // carry them; otherwise its tokens are priced.
+        nano_aiu: current
+            .nano_aiu
+            .zip(baseline.nano_aiu)
+            .map(|(current, baseline)| current.saturating_sub(baseline)),
         dedup_key: current.dedup_key.clone(),
         file_independent_key: false,
         call_ids: CallIds::default(),
@@ -540,6 +542,7 @@ fn has_usage(entry: &CopilotUsageEntry) -> bool {
         || entry.reasoning_output_tokens > 0
         || entry.extra_total_tokens > 0
         || entry.request_count > 0
+        || entry.nano_aiu.is_some_and(|nano_aiu| nano_aiu > 0)
 }
 
 fn read_source_file(path: &Path, kind: CopilotSourceKind) -> Result<CopilotSourceUsage> {
@@ -566,6 +569,11 @@ fn read_otel_file(
         .collect())
 }
 
+/// One AIU is one GitHub AI credit, billed at $0.01.
+fn nano_aiu_to_usd(nano_aiu: u64) -> f64 {
+    nano_aiu as f64 / 1e11
+}
+
 fn usage_entry_to_loaded(
     entry: CopilotUsageEntry,
     tz: Option<&JiffTimeZone>,
@@ -585,6 +593,7 @@ fn usage_entry_to_loaded(
         cache_creation: None,
         ..usage
     };
+    let cost_usd = entry.nano_aiu.map(nano_aiu_to_usd);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
         timestamp: entry.timestamp_text,
@@ -594,7 +603,7 @@ fn usage_entry_to_loaded(
             model: Some(entry.model.clone()),
             id: Some(entry.dedup_key),
         },
-        cost_usd: entry.cost_usd,
+        cost_usd,
         request_id: None,
         is_api_error_message: None,
         is_sidechain: None,
@@ -602,7 +611,7 @@ fn usage_entry_to_loaded(
     let cost = calculate_cost_for_usage_at(
         Some(&entry.model),
         cost_usage,
-        entry.cost_usd,
+        cost_usd,
         Some(entry.timestamp),
         mode,
         Some(pricing),
@@ -610,11 +619,11 @@ fn usage_entry_to_loaded(
     let missing_pricing_model = missing_pricing_model_for_usage(
         Some(&entry.model),
         cost_usage,
-        entry.cost_usd,
+        cost_usd,
         mode,
         Some(pricing),
     );
-    let stored_cost = stored_cost_for_mode(entry.cost_usd, mode);
+    let stored_cost = stored_cost_for_mode(cost_usd, mode);
     LoadedEntry {
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -1590,6 +1599,14 @@ mod tests {
         fixture: &ccusage_test_support::Fixture,
         shared: &crate::cli::SharedArgs,
     ) -> Vec<LoadedEntry> {
+        load_priced_copilot_home(fixture, shared, &crate::PricingMap::default())
+    }
+
+    fn load_priced_copilot_home(
+        fixture: &ccusage_test_support::Fixture,
+        shared: &crate::cli::SharedArgs,
+        pricing: &crate::PricingMap,
+    ) -> Vec<LoadedEntry> {
         let _guard = EnvVarsGuard::set_many([
             ("HOME", Some(OsString::from(fixture.path("home")))),
             ("USERPROFILE", None),
@@ -1601,7 +1618,7 @@ mod tests {
                 None,
             ),
         ]);
-        let mut entries = load_entries_inner(shared, &crate::PricingMap::default()).unwrap();
+        let mut entries = load_entries_inner(shared, pricing).unwrap();
         ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, shared);
         entries
     }
@@ -1645,7 +1662,7 @@ mod tests {
         assert_eq!(
             credit_rows(&entries),
             [
-                ("2026-01-02".to_string(), "test-model".to_string(), 150, 0),
+                ("2026-01-02".to_string(), "test-model".to_string(), 150, 42),
                 ("2026-01-02".to_string(), "unknown".to_string(), 0, 51),
             ]
         );
@@ -1671,7 +1688,7 @@ mod tests {
         assert_eq!(
             credit_rows(&entries),
             [
-                ("2026-01-02".to_string(), "test-model".to_string(), 150, 0),
+                ("2026-01-02".to_string(), "test-model".to_string(), 150, 10),
                 ("2026-01-02".to_string(), "unknown".to_string(), 0, 15),
                 ("2026-01-03".to_string(), "unknown".to_string(), 0, 15),
                 ("2026-01-03".to_string(), "unknown".to_string(), 0, 7),
@@ -1746,9 +1763,15 @@ mod tests {
 
         let entries = load_copilot_home(&fixture, &utc_args());
 
+        // Each shutdown's model row carries the credits it adds, so together
+        // they make up the session total with nothing left `unknown`.
         assert_eq!(
             credit_rows(&entries),
-            [("2026-01-02".to_string(), "test-model".to_string(), 150, 0)]
+            [
+                ("2026-01-02".to_string(), "test-model".to_string(), 150, 30),
+                ("2026-01-02".to_string(), "test-model".to_string(), 0, 5),
+                ("2026-01-02".to_string(), "test-model".to_string(), 0, 15),
+            ]
         );
     }
 
@@ -1773,7 +1796,10 @@ mod tests {
 
         assert_eq!(
             credit_rows(&entries),
-            [("2026-01-02".to_string(), "test-model".to_string(), 150, 0)]
+            [
+                ("2026-01-02".to_string(), "test-model".to_string(), 150, 30),
+                ("2026-01-02".to_string(), "test-model".to_string(), 0, 5),
+            ]
         );
     }
 
@@ -1792,7 +1818,7 @@ mod tests {
 
         assert_eq!(
             credit_rows(&entries),
-            [("2026-01-02".to_string(), "test-model".to_string(), 150, 0)]
+            [("2026-01-02".to_string(), "test-model".to_string(), 150, 40)]
         );
     }
 
@@ -2703,5 +2729,133 @@ mod tests {
                 "{attribute}"
             );
         }
+    }
+
+    /// `test-model` costs $1 per input token and $2 per output token.
+    fn test_model_pricing() -> crate::PricingMap {
+        let mut pricing = crate::PricingMap::default();
+        pricing.load_json(
+            r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
+        );
+        pricing
+    }
+
+    /// Cost of each entry in hundredths of a dollar, which is whole credits.
+    fn costs_in_credits(entries: &[LoadedEntry]) -> Vec<u64> {
+        entries
+            .iter()
+            .map(|entry| (entry.cost * 100.0).round() as u64)
+            .collect()
+    }
+
+    #[test]
+    fn prices_a_usage_record_from_the_credits_it_recorded_per_cost_mode() {
+        // 100 input and 10 output tokens are $120 by token pricing, while
+        // Copilot billed the call 5 credits. `cost` is the premium-request
+        // multiplier, not dollars.
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": usage_record(
+                "record-1",
+                "2026-02-05T09:00:00.000Z",
+                json!({
+                    "outputTokens": 10,
+                    "cost": 1.0,
+                    "accounting": {"sourceSessionId": "session-1", "sequence": 1},
+                    "copilotUsage": {
+                        "tokenDetails": [
+                            {"tokenType": "input", "tokenCount": 100, "batchSize": 1_000_000, "costPerBatch": 25_000_000_000_u64},
+                            {"tokenType": "output", "tokenCount": 10, "batchSize": 1_000_000, "costPerBatch": 250_000_000_000_u64}
+                        ],
+                        "totalNanoAiu": 5 * NANO_AIU_PER_CREDIT
+                    }
+                }),
+            ),
+        });
+        for (mode, credits) in [
+            (CostMode::Auto, 5),
+            (CostMode::Calculate, 12_000),
+            (CostMode::Display, 5),
+        ] {
+            let shared = crate::cli::SharedArgs { mode, ..utc_args() };
+
+            let entries = load_priced_copilot_home(&fixture, &shared, &test_model_pricing());
+
+            assert_eq!(costs_in_credits(&entries), [credits], "{mode:?}");
+            assert_eq!(entries[0].missing_pricing_model, None, "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn prices_a_usage_record_without_recorded_credits_from_its_tokens() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": usage_record(
+                "record-1",
+                "2026-02-05T09:00:00.000Z",
+                json!({"outputTokens": 10, "cost": 1.0}),
+            ),
+        });
+
+        let entries = load_priced_copilot_home(&fixture, &utc_args(), &test_model_pricing());
+
+        assert_eq!(costs_in_credits(&entries), [12_000]);
+    }
+
+    /// A shutdown whose cumulative `test-model` breakdown has `input` input
+    /// tokens and, when given, `credits` credits.
+    fn shutdown_with_credits(
+        id: &str,
+        timestamp: &str,
+        input: u64,
+        credits: Option<u64>,
+    ) -> String {
+        let mut model = json!({"usage": {"inputTokens": input}, "requests": {"count": 1}});
+        if let Some(credits) = credits {
+            model["totalNanoAiu"] = json!(credits * NANO_AIU_PER_CREDIT);
+        }
+        json!({
+            "type": "session.shutdown",
+            "id": id,
+            "timestamp": timestamp,
+            "data": {"modelMetrics": {"test-model": model}}
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn prices_each_shutdown_interval_from_the_credits_it_adds() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown_with_credits("shutdown-1", "2026-01-02T10:00:00.000Z", 100, Some(10)),
+                shutdown_with_credits("shutdown-2", "2026-01-03T10:00:00.000Z", 300, Some(25)),
+            ]
+            .join("\n"),
+        });
+        for (mode, credits) in [
+            (CostMode::Auto, [10, 15]),
+            (CostMode::Calculate, [10_000, 20_000]),
+            (CostMode::Display, [10, 15]),
+        ] {
+            let shared = crate::cli::SharedArgs { mode, ..utc_args() };
+
+            let entries = load_priced_copilot_home(&fixture, &shared, &test_model_pricing());
+
+            assert_eq!(costs_in_credits(&entries), credits, "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn prices_a_shutdown_interval_from_its_tokens_when_either_snapshot_lacks_credits() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": [
+                shutdown_with_credits("shutdown-1", "2026-01-02T10:00:00.000Z", 100, None),
+                shutdown_with_credits("shutdown-2", "2026-01-03T10:00:00.000Z", 300, Some(25)),
+                shutdown_with_credits("shutdown-3", "2026-01-04T10:00:00.000Z", 600, Some(40)),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_priced_copilot_home(&fixture, &utc_args(), &test_model_pricing());
+
+        assert_eq!(costs_in_credits(&entries), [10_000, 20_000, 15]);
     }
 }

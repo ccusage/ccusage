@@ -60,6 +60,16 @@ cache buckets separate. Session-state reasoning tokens are already included in o
 reasoning is included when total usage metadata shows it is separate. Internal model suffixes such
 as `-1m` and `-1m-internal` are removed before pricing and source deduplication.
 
+Copilot records what it billed in nano-AIU (1 AIU is one GitHub AI credit, $0.01): a receipt's
+`copilotUsage.totalNanoAiu` for its call, and a shutdown's per-model `totalNanoAiu` for every call
+of that model so far. These are the entries' precomputed cost, per receipt and per shutdown
+interval as the credits it adds over its predecessor; an interval that lacks credits on either
+snapshot, a receipt without them, and every OpenTelemetry row have none. Through the shared cost
+modes, `auto` uses the recorded cost and prices entries without one from their tokens, `display`
+uses the recorded cost and reports $0 for entries without one, and `calculate` prices every entry
+from its tokens. An interval whose credits grow without new tokens is still reported. `usage.cost`
+and `requests.cost` are premium-request multipliers and are ignored.
+
 `modelMetrics` only covers the running Copilot process, while the session-wide `totalNanoAiu`
 on `session.shutdown` and `session.usage_checkpoint` covers the whole session (1 AIU is one
 GitHub AI credit, $0.01). At every shutdown, and at checkpoints after the last one, the session total
