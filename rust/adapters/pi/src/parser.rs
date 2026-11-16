@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, Pricing, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
+    LoadedEntry, Pricing, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage,
     apply_total_token_fallback, calculate_cost_for_usage_at, calculate_cost_from_pricing,
     cli::CostMode, fast::LinePrefilter, format_date_tz, missing_pricing_model_for_usage,
     stored_cost_for_mode,
@@ -159,17 +159,19 @@ impl PiSessionData {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-pub fn read_session_file(
+#[cfg(test)]
+fn read_session_file(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    Ok(read_session_file_data(path, tz, mode, pricing)?.entries)
+) -> crate::Result<Vec<LoadedEntry>> {
+    read_session_file_data_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("pi"))
+        .map(|data| data.entries)
+        .map_err(|error| crate::cli_error(error.to_string()))
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 fn read_session_file_for_store(
     path: &Path,
     store_root: &Path,
@@ -177,30 +179,7 @@ fn read_session_file_for_store(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     store_name: &str,
-) -> Result<Vec<LoadedEntry>> {
-    Ok(read_session_file_data_for_store(path, store_root, tz, mode, pricing, store_name)?.entries)
-}
-
-pub(crate) fn read_session_file_data(
-    path: &Path,
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Result<PiSessionData> {
-    let diagnostics = Diagnostics::new("pi");
-    read_session_file_data_with_diagnostics(path, tz, mode, pricing, &diagnostics)
-        .map_err(|error| crate::cli_error(error.to_string()))
-}
-
-pub(crate) fn read_session_file_data_for_store(
-    path: &Path,
-    store_root: &Path,
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    store_name: &str,
-) -> Result<PiSessionData> {
-    let diagnostics = Diagnostics::new("pi");
+) -> crate::Result<Vec<LoadedEntry>> {
     read_session_file_data_for_store_with_diagnostics(
         path,
         store_root,
@@ -208,8 +187,9 @@ pub(crate) fn read_session_file_data_for_store(
         mode,
         pricing,
         store_name,
-        &diagnostics,
+        &Diagnostics::new("pi"),
     )
+    .map(|data| data.entries)
     .map_err(|error| crate::cli_error(error.to_string()))
 }
 

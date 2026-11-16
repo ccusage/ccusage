@@ -10,15 +10,14 @@ use serde_json::json;
 
 use ccusage_adapter_common::{
     claims::ClaudeCounted,
-    rows::{UnifiedRow, summary_rows},
+    rows::UnifiedRow,
     source::{
-        LoadContext, PricingSupply, ProgressOwner, SourceOptions, SourceRows, UnifiedRequest,
-        UsageSource,
+        PricingSupply, ProgressOwner, SourceOptions, SourceRows, UnifiedRequest, UsageSource,
     },
 };
 
 use crate::{
-    BUILT_IN_AGENT_NAMES, Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result,
+    BUILT_IN_AGENT_NAMES, Diagnostics, LoadedEntry, PricingMap, Result,
     adapter::{claude, opencode, pi},
     cli::{AgentReportKind, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
 };
@@ -28,7 +27,7 @@ use crate::{
     CodexGroup, UsageSummary, adapter::codex, cli::CodexSpeed, filter_loaded_entries_by_date,
 };
 #[cfg(test)]
-use ccusage_adapter_common::rows::summarize_entry_sessions;
+use ccusage_adapter_common::rows::summary_rows;
 
 use super::{
     report::sort_rows,
@@ -335,7 +334,7 @@ fn load_base_rows(
     let named_pi_stores = resolve_named_pi_store_paths(&shared.pi_stores, pi_path)?;
     for store in named_pi_stores {
         let agent = leak_agent_name(&store.name);
-        let paths = store.paths;
+        let store = pi::NamedStore::new(agent, store.paths);
         let index = specs.len();
         let pricing_ref =
             unified_pricing.expect("unified pricing is loaded when named pi stores are configured");
@@ -344,7 +343,8 @@ fn load_base_rows(
             agent,
             progress_agent: crate::progress::UsageLoadAgent(agent),
             load: Box::new(move || {
-                load_named_pi_store_rows_from_paths(agent, paths, load_kind, shared, pricing_ref)
+                load_source_result(&store, load_kind, shared, None, Some(pricing_ref), None)
+                    .map(agent_rows)
             }),
         });
     }
@@ -554,26 +554,25 @@ fn agent_rows(rows: SourceRows) -> AgentRows {
 
 #[cfg(test)]
 fn load_pi_format_agent_rows(
-    agent: &'static str,
     custom_path: Option<&str>,
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let mut entries = pi::load_entries(shared, custom_path, Some(pricing))?;
-    let detected = !entries.is_empty();
-    let summaries = if kind == AgentReportKind::Session {
-        filter_loaded_entries_by_date(&mut entries, shared);
-        summarize_entry_sessions(&entries)?
-    } else {
-        filter_loaded_entries_by_date(&mut entries, shared);
-        pi::summarize_entries(&entries, kind)?
-    };
-    Ok(AgentRows {
-        rows: summary_rows(agent, summaries, true),
-        detected,
-        diagnostics: Diagnostics::new(agent),
-    })
+    pi::SOURCE
+        .unified_rows(&UnifiedRequest {
+            kind,
+            shared,
+            options: SourceOptions {
+                pi_path: custom_path,
+                ..SourceOptions::default()
+            },
+            pricing: Some(pricing),
+            progress: ProgressOwner::Caller,
+            multi_source_driver: true,
+            claude_counted: None,
+        })
+        .map(agent_rows)
 }
 
 #[cfg(test)]
@@ -584,47 +583,8 @@ fn load_named_pi_store_rows(
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let store_paths = pi::named_store_paths(store_path)?;
-    load_named_pi_store_rows_from_paths(agent, store_paths, kind, shared, pricing)
-}
-
-fn load_named_pi_store_rows_from_paths(
-    agent: &'static str,
-    store_paths: Vec<PathBuf>,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Result<AgentRows> {
-    let window = ReportWindow::from_shared(shared);
-    let diagnostics = Diagnostics::new(agent);
-    let cx = LoadContext {
-        shared,
-        kind,
-        window: &window,
-        pricing: Some(pricing),
-        options: SourceOptions::default(),
-        diagnostics: &diagnostics,
-    };
-    let entries = pi::load_entries_for_store_paths_with_context(&cx, store_paths, agent)?;
-    filtered_pi_format_agent_rows(agent, kind, entries, true, &window, diagnostics)
-}
-
-fn filtered_pi_format_agent_rows(
-    agent: &'static str,
-    kind: AgentReportKind,
-    mut entries: Vec<LoadedEntry>,
-    include_project_path: bool,
-    window: &ReportWindow,
-    diagnostics: Diagnostics,
-) -> Result<AgentRows> {
-    let detected = !entries.is_empty();
-    entries.retain(|entry| window.contains_date(&entry.date));
-    let summaries = pi::summarize_entries(&entries, kind)?;
-    Ok(AgentRows {
-        rows: summary_rows(agent, summaries, include_project_path),
-        detected,
-        diagnostics,
-    })
+    let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
+    load_source_result(&store, kind, shared, None, Some(pricing), None).map(agent_rows)
 }
 
 /// Loads `ccusage opencode` entries. The `claude-agent` turns the Claude
@@ -1263,9 +1223,9 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        let rows = load_named_pi_store_rows_from_paths(
+        let rows = load_named_pi_store_rows(
             "omp",
-            vec![fixture.path("store")],
+            fixture.path("store").to_str().unwrap(),
             AgentReportKind::Daily,
             &shared,
             &PricingMap::default(),
@@ -1410,7 +1370,6 @@ mod tests {
         };
 
         let rows = load_pi_format_agent_rows(
-            "pi",
             Some(fixture.path("default-root").to_str().unwrap()),
             AgentReportKind::Session,
             &shared,
@@ -1453,6 +1412,61 @@ mod tests {
             rows.rows[0].metadata.as_ref().unwrap()["projectPath"],
             json!("project-a")
         );
+    }
+
+    #[test]
+    fn named_pi_store_sessions_split_by_project_like_the_default_store() {
+        let session = |input: u64| {
+            [
+                r#"{"type":"session","id":"same-session","timestamp":"2026-01-01T00:00:00.000Z"}"#.to_string(),
+                format!(
+                    r#"{{"type":"message","timestamp":"2026-01-02T10:00:00.000Z","message":{{"role":"assistant","model":"gpt-5","usage":{{"input":{input},"output":1}}}}}}"#
+                ),
+            ]
+            .join("\n")
+        };
+        let fixture = fs_fixture!({
+            "omp/sessions/project-a/agent_same-session.jsonl": session(10),
+            "omp/sessions/project-b/agent_same-session.jsonl": session(20),
+        });
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            ..SharedArgs::default()
+        };
+        let store_path = fixture.path("omp/sessions");
+
+        let named = load_named_pi_store_rows(
+            "omp",
+            store_path.to_str().unwrap(),
+            AgentReportKind::Session,
+            &shared,
+            &PricingMap::default(),
+        )
+        .unwrap();
+        let default = load_pi_format_agent_rows(
+            store_path.to_str(),
+            AgentReportKind::Session,
+            &shared,
+            &PricingMap::default(),
+        )
+        .unwrap();
+
+        let sessions = |rows: &AgentRows| {
+            rows.rows
+                .iter()
+                .map(|row| {
+                    (
+                        row.metadata.as_ref().unwrap()["projectPath"].clone(),
+                        row.input_tokens,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            sessions(&named),
+            [(json!("project-a"), 10), (json!("project-b"), 20)]
+        );
+        assert_eq!(sessions(&named), sessions(&default));
     }
 
     #[test]
@@ -2073,7 +2087,6 @@ mod tests {
             ..SharedArgs::default()
         };
         let mut rows = load_pi_format_agent_rows(
-            "pi",
             Some(fixture.path("pi/sessions").to_str().unwrap()),
             AgentReportKind::Daily,
             &shared,
