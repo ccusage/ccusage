@@ -633,6 +633,21 @@ mod tests {
     }
 
     #[test]
+    fn reads_event_types_written_with_escaped_slashes() {
+        let entries = parse(&lines(&[
+            r#"{"type":"session","version":4,"id":"child","createdAt":1,"isSeeded":true}"#,
+            r#"{"type":"request\/context","seq":1,"time":2,"data":{"provider":"deepseek-official","model":"deepseek-flash"}}"#,
+            r#"{"type":"assistant/message","seq":2,"time":3,"data":{"usage":{"inputTokens":100,"outputTokens":1}}}"#,
+            r#"{"type":"session\/end-seed","seq":3,"time":4,"data":{"inherited":true}}"#,
+            r#"{"type":"assistant\/message","seq":4,"time":5,"data":{"usage":{"inputTokens":200,"outputTokens":2}}}"#,
+        ]));
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].seq, Some(4));
+        assert_eq!(entries[0].model, "deepseek-flash");
+    }
+
+    #[test]
     fn reports_a_log_without_a_session_header() {
         let (entries, diagnostics) = parse_diagnosed(
             br#"{"type":"assistant/message","seq":1,"data":{"usage":{"inputTokens":1}}}"#,
