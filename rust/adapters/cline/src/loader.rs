@@ -1,20 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use jiff::tz::TimeZone as JiffTimeZone;
-
-use crate::{LoadedEntry, PricingMap, Result};
+use crate::{LoadedEntry, Result};
 use ccusage_adapter_common::{read_units_flat, source::LoadContext};
 
 use super::paths::discover_files;
-
-pub(super) struct EntryInput {
-    pub timestamp: crate::TimestampMs,
-    pub model: String,
-    pub provider: Option<String>,
-    pub usage: crate::TokenUsageRaw,
-    pub reported_cost: Option<f64>,
-    pub request_id: Option<String>,
-}
 
 #[cfg(test)]
 pub(crate) fn load_entries(
@@ -58,103 +47,10 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     Ok(entries)
 }
 
-pub(super) fn loaded_entry(
-    source: &super::paths::SourceFile,
-    input: EntryInput,
-    mode: crate::cli::CostMode,
-    pricing: &PricingMap,
-    timezone: &JiffTimeZone,
-) -> LoadedEntry {
-    use crate::{
-        UsageEntry, UsageMessage, calculate_cost_for_usage_at, format_date_tz,
-        missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
-    };
-
-    let EntryInput {
-        timestamp,
-        model,
-        provider,
-        usage,
-        reported_cost,
-        request_id,
-    } = input;
-    let timestamp_text = crate::format_rfc3339_millis(timestamp);
-    let session_id = match source.kind {
-        super::paths::SourceKind::Extension | super::paths::SourceKind::CliTask => {
-            format!("task:{}", source.session_id)
-        }
-        super::paths::SourceKind::Cli => format!("cli:{}", source.session_id),
-    };
-    let provider_model = provider
-        .as_deref()
-        .filter(|_| !model.contains('/'))
-        .map(|provider| format!("{provider}/{model}"));
-    let model_for_pricing = if pricing.find(&model).is_some() {
-        model.as_str()
-    } else {
-        provider_model
-            .as_deref()
-            .filter(|model| pricing.find(model).is_some())
-            .unwrap_or(model.as_str())
-    };
-    let cost = calculate_cost_for_usage_at(
-        Some(model_for_pricing),
-        usage,
-        reported_cost,
-        Some(timestamp),
-        mode,
-        Some(pricing),
-    );
-    let missing_pricing_model = if mode == crate::cli::CostMode::Display
-        || (mode == crate::cli::CostMode::Auto && reported_cost.is_some())
-        || total_usage_tokens(usage) == 0
-    {
-        None
-    } else {
-        let candidates = std::iter::once(model.clone()).chain(provider_model);
-        missing_pricing_model_for_candidates(
-            &model,
-            candidates,
-            total_usage_tokens(usage),
-            Some(pricing),
-        )
-    };
-    let data = UsageEntry {
-        session_id: Some(session_id.clone()),
-        timestamp: timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage,
-            model: Some(model.clone()),
-            id: request_id.clone(),
-        },
-        cost_usd: reported_cost,
-        request_id,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
-
-    LoadedEntry {
-        date: format_date_tz(timestamp, timezone),
-        timestamp,
-        project: Arc::from("cline"),
-        session_id: Arc::from(session_id),
-        project_path: Arc::from("Cline"),
-        cost,
-        credits: None,
-        model: Some(model),
-        usage_limit_reset_time: None,
-        missing_pricing_model,
-        extra_total_tokens: 0,
-        message_count: None,
-        data,
-        stored_cost: stored_cost_for_mode(reported_cost, mode),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PricingMap;
     use crate::cli::CostMode;
     use crate::cli::SharedArgs;
     use ccusage_test_support::{EnvVarGuard, Fixture};

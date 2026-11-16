@@ -1,12 +1,15 @@
+use std::sync::Arc;
+
 use ccusage_adapter_common::{UnitError, units::read_json};
 use serde_json::Value;
 
-use crate::{LoadedEntry, PricingMap, Result, TokenUsageRaw, cli::CostMode};
-
-use super::{
-    loader::{EntryInput, loaded_entry},
-    paths::{SourceFile, SourceKind},
+use crate::{
+    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
+    calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
+    missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
 };
+
+use super::paths::{SourceFile, SourceKind};
 
 pub(super) fn read_file(
     source: &SourceFile,
@@ -15,17 +18,11 @@ pub(super) fn read_file(
     timezone: &jiff::tz::TimeZone,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let root = read_json::<Value>(&source.path)?;
-    match source.kind {
+    Ok(match source.kind {
         SourceKind::Extension | SourceKind::CliTask => {
             parse_extension_messages(&root, source, mode, pricing, timezone)
         }
         SourceKind::Cli => parse_cli_messages(&root, source, mode, pricing, timezone),
-    }
-    .map_err(|_| {
-        UnitError::new(
-            ccusage_core::SkipKind::InvalidData,
-            "invalid Cline usage data",
-        )
     })
 }
 
@@ -35,9 +32,9 @@ fn parse_extension_messages(
     mode: CostMode,
     pricing: &PricingMap,
     timezone: &jiff::tz::TimeZone,
-) -> Result<Vec<LoadedEntry>> {
+) -> Vec<LoadedEntry> {
     let Some(messages) = root.as_array() else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut entries = Vec::new();
 
@@ -95,7 +92,7 @@ fn parse_extension_messages(
             timezone,
         ));
     }
-    Ok(entries)
+    entries
 }
 
 fn parse_cli_messages(
@@ -104,9 +101,9 @@ fn parse_cli_messages(
     mode: CostMode,
     pricing: &PricingMap,
     timezone: &jiff::tz::TimeZone,
-) -> Result<Vec<LoadedEntry>> {
+) -> Vec<LoadedEntry> {
     let Some(messages) = root.get("messages").and_then(Value::as_array) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut entries = Vec::new();
 
@@ -148,7 +145,105 @@ fn parse_cli_messages(
             timezone,
         ));
     }
-    Ok(entries)
+    entries
+}
+
+struct EntryInput {
+    timestamp: TimestampMs,
+    model: String,
+    provider: Option<String>,
+    usage: TokenUsageRaw,
+    reported_cost: Option<f64>,
+    request_id: Option<String>,
+}
+
+fn loaded_entry(
+    source: &SourceFile,
+    input: EntryInput,
+    mode: CostMode,
+    pricing: &PricingMap,
+    timezone: &jiff::tz::TimeZone,
+) -> LoadedEntry {
+    let EntryInput {
+        timestamp,
+        model,
+        provider,
+        usage,
+        reported_cost,
+        request_id,
+    } = input;
+    let timestamp_text = format_rfc3339_millis(timestamp);
+    let session_id = match source.kind {
+        SourceKind::Extension | SourceKind::CliTask => {
+            format!("task:{}", source.session_id)
+        }
+        SourceKind::Cli => format!("cli:{}", source.session_id),
+    };
+    let provider_model = provider
+        .as_deref()
+        .filter(|_| !model.contains('/'))
+        .map(|provider| format!("{provider}/{model}"));
+    let model_for_pricing = if pricing.find(&model).is_some() {
+        model.as_str()
+    } else {
+        provider_model
+            .as_deref()
+            .filter(|model| pricing.find(model).is_some())
+            .unwrap_or(model.as_str())
+    };
+    let cost = calculate_cost_for_usage_at(
+        Some(model_for_pricing),
+        usage,
+        reported_cost,
+        Some(timestamp),
+        mode,
+        Some(pricing),
+    );
+    let missing_pricing_model = if mode == CostMode::Display
+        || (mode == CostMode::Auto && reported_cost.is_some())
+        || total_usage_tokens(usage) == 0
+    {
+        None
+    } else {
+        let candidates = std::iter::once(model.clone()).chain(provider_model);
+        missing_pricing_model_for_candidates(
+            &model,
+            candidates,
+            total_usage_tokens(usage),
+            Some(pricing),
+        )
+    };
+    let data = UsageEntry {
+        session_id: Some(session_id.clone()),
+        timestamp: timestamp_text,
+        version: None,
+        message: UsageMessage {
+            usage,
+            model: Some(model.clone()),
+            id: request_id.clone(),
+        },
+        cost_usd: reported_cost,
+        request_id,
+        is_api_error_message: None,
+        is_sidechain: None,
+    };
+
+    LoadedEntry {
+        date: format_date_tz(timestamp, timezone),
+        timestamp,
+        project: Arc::from("cline"),
+        session_id: Arc::from(session_id),
+        project_path: Arc::from("Cline"),
+        cost,
+        credits: None,
+        model: Some(model),
+        usage_limit_reset_time: None,
+        missing_pricing_model,
+        extra_total_tokens: 0,
+        message_count: None,
+        data,
+        stored_cost: stored_cost_for_mode(reported_cost, mode),
+    }
 }
 
 fn extension_usage(
@@ -327,8 +422,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);
@@ -373,8 +467,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert!(entries.is_empty());
     }
@@ -468,8 +561,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("vendor/custom-model"));
@@ -549,8 +641,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
@@ -622,8 +713,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp, crate::TimestampMs::UNIX_EPOCH);
@@ -665,8 +755,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert!(entries.is_empty());
     }
@@ -701,8 +790,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].date, "2026-10-01");
@@ -744,24 +832,21 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
         let display = parse_cli_messages(
             &root,
             &source,
             CostMode::Display,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
         let calculate = parse_cli_messages(
             &root,
             &source,
             CostMode::Calculate,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(auto[0].cost, 0.0);
         assert_eq!(auto[0].stored_cost, Some(0.0));
@@ -790,24 +875,21 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
         let display = parse_cli_messages(
             &root,
             &source,
             CostMode::Display,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
         let calculate = parse_cli_messages(
             &root,
             &source,
             CostMode::Calculate,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert!(auto[0].cost > 0.0);
         assert_eq!(display[0].cost, 0.0);
@@ -834,8 +916,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries[0].data.cost_usd, None);
         assert_eq!(entries[0].stored_cost, None);
@@ -871,8 +952,7 @@ mod tests {
             CostMode::Auto,
             &PricingMap::load_embedded(),
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
@@ -890,8 +970,7 @@ mod tests {
             CostMode::Auto,
             &pricing,
             &jiff::tz::TimeZone::system(),
-        )
-        .unwrap();
+        );
 
         assert!(entries.is_empty());
         assert!(serde_json::from_str::<Value>("not json").is_err());
