@@ -28,6 +28,7 @@ enum PrefilterMode {
 /// marker verbatim and holds a backslash pays for more than the `memmem` scans.
 pub struct LinePrefilter {
     markers: SmallVec<[Marker; 4]>,
+    escapable: u128,
     mode: PrefilterMode,
 }
 
@@ -51,28 +52,68 @@ impl LinePrefilter {
     }
 
     fn new(markers: &[&[u8]], mode: PrefilterMode) -> Self {
-        let markers = markers.iter().map(|marker| Marker::new(marker)).collect();
-        Self { markers, mode }
+        debug_assert!(markers.len() <= 64, "a prefilter tracks at most 64 markers");
+        let markers = markers
+            .iter()
+            .map(|marker| Marker::new(marker))
+            .collect::<SmallVec<[Marker; 4]>>();
+        let escapable = markers.iter().fold(0, |set, marker| set | marker.escapable);
+        Self {
+            markers,
+            escapable,
+            mode,
+        }
     }
 
     /// Return `true` when `line` passes the filter and is worth parsing.
     pub fn matches(&self, line: &[u8]) -> bool {
-        let has_escape = || memchr(b'\\', line).is_some();
-        match self.mode {
-            PrefilterMode::All => {
-                let mut escaped = None;
-                self.markers.iter().all(|marker| {
-                    marker.finder.find(line).is_some()
-                        || *escaped.get_or_insert_with(has_escape) && marker.find_escaped(line)
-                })
-            }
-            PrefilterMode::Any => {
-                self.markers
-                    .iter()
-                    .any(|marker| marker.finder.find(line).is_some())
-                    || has_escape() && self.markers.iter().any(|marker| marker.find_escaped(line))
+        let mut has_escape = None;
+        let mut missing = 0_u64;
+        for (index, marker) in self.markers.iter().enumerate() {
+            if marker.finder.find(line).is_some() {
+                if matches!(self.mode, PrefilterMode::Any) {
+                    return true;
+                }
+            } else if matches!(self.mode, PrefilterMode::All)
+                && !*has_escape.get_or_insert_with(|| memchr(b'\\', line).is_some())
+            {
+                return false;
+            } else {
+                missing |= 1 << index;
             }
         }
+        match self.mode {
+            PrefilterMode::All => missing == 0 || self.spells_escaped(line, missing, true),
+            PrefilterMode::Any => self.spells_escaped(line, missing, false),
+        }
+    }
+
+    /// Return `true` when `line` spells one of the markers with at least one
+    /// escape, whether or not it also holds one verbatim.
+    pub fn matches_escaped(&self, line: &[u8]) -> bool {
+        let every = (1_u128 << self.markers.len()) - 1;
+        self.spells_escaped(line, every as u64, false)
+    }
+
+    fn spells_escaped(&self, line: &[u8], mut pending: u64, all: bool) -> bool {
+        let mut from = 0;
+        while let Some(offset) = memchr(b'\\', &line[from..]) {
+            let start = from + offset;
+            let (decoded, len) = decode_escape(&line[start..]);
+            from = start + len;
+            let Some(byte) = decoded.filter(|&byte| self.escapable >> byte & 1 == 1) else {
+                continue;
+            };
+            for (index, marker) in self.markers.iter().enumerate() {
+                if pending >> index & 1 == 1 && marker.spelled_around(line, start, from, byte) {
+                    pending &= !(1 << index);
+                    if !all || pending == 0 {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }
 
@@ -114,27 +155,15 @@ impl Marker {
         }
     }
 
-    fn find_escaped(&self, line: &[u8]) -> bool {
+    fn spelled_around(&self, line: &[u8], start: usize, end: usize, byte: u8) -> bool {
         let marker = self.finder.needle();
-        let mut from = 0;
-        while let Some(offset) = memchr(b'\\', &line[from..]) {
-            let start = from + offset;
-            let (decoded, len) = decode_escape(&line[start..]);
-            from = start + len;
-            let Some(byte) = decoded.filter(|&byte| self.escapable >> byte & 1 == 1) else {
-                continue;
-            };
-            let found = (0..marker.len().min(start + 1)).any(|index| {
+        self.escapable >> byte & 1 == 1
+            && (0..marker.len().min(start + 1)).any(|index| {
                 marker[index] == byte
                     && self.content[index]
                     && line[start - index..start] == marker[..index]
-                    && self.matches_at(index + 1, &line[from..])
-            });
-            if found {
-                return true;
-            }
-        }
-        false
+                    && self.matches_at(index + 1, &line[end..])
+            })
     }
 
     fn matches_at(&self, index: usize, mut rest: &[u8]) -> bool {
@@ -267,6 +296,22 @@ mod tests {
         assert!(!quoted.matches(br#"{"text":"\"usage\":{"}"#));
         assert!(!quoted.matches(br#"{"message":{"us\u0061ge":1}}"#));
         assert!(!quoted.matches(br#"{"message":{"us\u0061g":{}}}"#));
+    }
+
+    #[test]
+    fn line_prefilter_all_admits_each_marker_verbatim_or_escaped() {
+        let prefilter = LinePrefilter::all(&[br#""a/b""#, br#""c/d""#, br#""e""#]);
+
+        assert!(prefilter.matches(br#"{"a\/b":1,"c\/d":2,"e":3}"#));
+        assert!(!prefilter.matches(br#"{"a\/b":1,"e":3}"#));
+    }
+
+    #[test]
+    fn line_prefilter_matches_escaped_ignores_verbatim_markers() {
+        let prefilter = LinePrefilter::any(&[b"a/b", b"c/d"]);
+
+        assert!(prefilter.matches_escaped(br#"{"t":"a/b","u":"c\/d"}"#));
+        assert!(!prefilter.matches_escaped(br#"{"t":"a/b","n":"\n"}"#));
     }
 
     #[test]
