@@ -896,8 +896,13 @@ fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     if !ESCAPED_USAGE_MARKERS.matches_escaped(line) {
         return verbatim_line_usage_kind(line);
     }
-    let value = serde_json::from_slice::<serde_json::Value>(line).ok()?;
-    verbatim_line_usage_kind(&serde_json::to_vec(&value).ok()?)
+    match serde_json::from_slice::<serde_json::Value>(line)
+        .ok()
+        .and_then(|value| serde_json::to_vec(&value).ok())
+    {
+        Some(canonical) => verbatim_line_usage_kind(&canonical),
+        None => verbatim_line_usage_kind(line),
+    }
 }
 
 fn verbatim_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
@@ -2178,6 +2183,35 @@ mod diagnostic_tests {
         .unwrap();
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
+    fn malformed_usage_lines_skip_the_same_whether_or_not_a_marker_is_escaped() {
+        for malformed in [
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","note":"compact\u0065d","info":{"secret":"#,
+        ] {
+            let fixture = Fixture::new();
+            let path = fixture.write_file(
+                "session.jsonl",
+                [
+                    malformed,
+                    r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
+                ]
+                .join("\n"),
+            );
+            let diagnostics = Diagnostics::new("codex");
+            visit_codex_session_file_with_diagnostics(
+                fixture.root(),
+                &path,
+                None,
+                |_| Ok(()),
+                &diagnostics,
+            )
+            .unwrap();
+
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1, "{malformed}");
+        }
     }
 
     #[test]
