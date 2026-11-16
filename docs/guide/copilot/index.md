@@ -73,8 +73,8 @@ These views support `--json` for structured output, `--compact` for narrow termi
 - **Cache tokens** - cache read and cache creation token attributes are counted when present.
 - **Input tokens** - session-state `inputTokens` and OTel `gen_ai.usage.input_tokens` are normalized to uncached input after subtracting cache reads and cache writes.
 - **Reasoning tokens** - session-state reasoning tokens are already included in output tokens; OpenTelemetry reasoning is included when total usage metadata shows it is separate.
-- **Recorded credits** - in `auto` mode, usage records and shutdown intervals that carry `totalNanoAiu` are reported at $0.01 per AI credit.
-- **Pricing** - other rows, and every row in `--mode calculate`, are priced from LiteLLM pricing data using the normalized model name; both `-1m` and `-1m-internal` suffixes are removed.
+- **Recorded credits** - in `auto` and `display` modes, usage records and shutdown intervals that carry `totalNanoAiu` are reported at $0.01 per AI credit; in `display` mode, rows without them are $0.
+- **Pricing** - in `auto` mode, rows without recorded credits, and in `--mode calculate`, every row, are priced from LiteLLM pricing data using the normalized model name; both `-1m` and `-1m-internal` suffixes are removed.
 - **Unattributed credits** - session credits missing from the per-model breakdown are reported as `unknown` rows at $0.01 per AI credit.
 
 ## Environment Variables
