@@ -40,7 +40,7 @@ Only `events.jsonl` files in direct child directories of `sessions/` are read. `
 | `ccusage junie monthly` | Group usage by month         | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage junie session` | Group usage by Junie session | [Session Usage](/guide/session-reports) |
 
-Session IDs are the session directory names. Session rows show the project directory recorded in `index.jsonl`, or `Junie` when the session is missing from the index.
+Session IDs are the session directory names. Session rows show the project directory recorded in `index.jsonl`, or `Junie` when the session is missing from the index or its entry has no `projectDir`.
 
 ## Token and Cost Data
 

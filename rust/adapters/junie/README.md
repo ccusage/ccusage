@@ -33,7 +33,8 @@ is skipped rather than dated by the directory name or file mtime.
 with token-derived cost; a negative or non-finite cost is treated as missing.
 
 Session IDs are the session directory names. `project_path` is the index
-`projectDir`, or `Junie` when the session has no index entry.
+`projectDir`, or `Junie` when the session has no index entry or that entry has
+no `projectDir`.
 
 ## Adapter surface
 
