@@ -50,33 +50,29 @@ fn is_chat_file(projects: &Path, file: &Path) -> bool {
         return false;
     };
     let parts = relative.components().collect::<Vec<_>>();
-    match parts.as_slice() {
-        [
-            Component::Normal(project),
-            Component::Normal(chats),
-            Component::Normal(file),
-        ] if !project.is_empty()
-            && chats.to_str() == Some("chats")
-            && file.to_string_lossy().ends_with(".jsonl") =>
-        {
-            true
-        }
-        // The Qwen Code daemon archives finished sessions to the flat
-        // `chats/archive/` directory; contents match live session files.
-        [
-            Component::Normal(project),
-            Component::Normal(chats),
-            Component::Normal(archive),
-            Component::Normal(file),
-        ] if !project.is_empty()
-            && chats.to_str() == Some("chats")
-            && archive.to_str() == Some("archive")
-            && file.to_string_lossy().ends_with(".jsonl") =>
-        {
-            true
-        }
-        _ => false,
+    let [
+        Component::Normal(project),
+        Component::Normal(chats),
+        rest @ ..,
+    ] = parts.as_slice()
+    else {
+        return false;
+    };
+    if project.is_empty() || chats.to_str() != Some("chats") {
+        return false;
     }
+    let file = match rest {
+        [Component::Normal(file)] => file,
+        // Qwen Code archives finished sessions into the flat `chats/archive/`
+        // directory without changing their contents.
+        [Component::Normal(archive), Component::Normal(file)]
+            if archive.to_str() == Some("archive") =>
+        {
+            file
+        }
+        _ => return false,
+    };
+    file.to_string_lossy().ends_with(".jsonl")
 }
 
 pub(super) fn project_from_file(file: &Path) -> Option<String> {
