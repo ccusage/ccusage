@@ -88,35 +88,6 @@ pub struct AgentMatrix {
     pub extras: Extras,
 }
 
-/// Directory-valued environment variables that relocate an agent's store. Each
-/// one a seed does not return is pointed at an empty directory, so no adapter
-/// can fall back to a default location under `HOME`.
-///
-/// `COPILOT_OTEL_FILE_EXPORTER_PATH` is absent on purpose: it names a file and
-/// has no `HOME` fallback, so it stays unset unless the Copilot seed returns it.
-pub const AGENT_HOME_ENV_VARS: [&str; 20] = [
-    "CLAUDE_CONFIG_DIR",
-    "CODEX_HOME",
-    "OPENCODE_DATA_DIR",
-    "AMP_DATA_DIR",
-    "DROID_SESSIONS_DIR",
-    "CODEBUFF_DATA_DIR",
-    "HERMES_HOME",
-    "PI_AGENT_DIR",
-    "GOOSE_PATH_ROOT",
-    "KILO_DATA_DIR",
-    "COPILOT_HOME",
-    "GEMINI_DATA_DIR",
-    "ANTIGRAVITY_DATA_DIR",
-    "KIMI_DATA_DIR",
-    "QWEN_DATA_DIR",
-    "OPENCLAW_DIR",
-    "GROK_HOME",
-    "ZCODE_HOME",
-    "CLINE_DATA_DIR",
-    "DSH_HOME",
-];
-
 /// The shared fixture timeline. Every seed spreads its records over these UTC
 /// days so one `--since/--until` window cuts through the middle of all of them.
 ///
@@ -151,6 +122,8 @@ pub struct Case {
     pub args: Vec<String>,
     pub columns: u16,
     pub stdin: Option<String>,
+    /// Variables set on top of the hermetic environment.
+    pub env: Vec<(&'static str, &'static str)>,
 }
 
 impl Case {
@@ -161,7 +134,14 @@ impl Case {
             args: args.iter().map(|arg| (*arg).to_string()).collect(),
             columns: WIDE_COLUMNS,
             stdin: None,
+            env: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn env(mut self, name: &'static str, value: &'static str) -> Self {
+        self.env.push((name, value));
+        self
     }
 
     #[must_use]
@@ -300,51 +280,15 @@ pub fn export_fixture(agents: &[AgentMatrix], root: &Path) {
     .expect("failed to write golden fixture manifest");
 }
 
-/// Builds a `ccusage` command that can see nothing but the fixture: a cleared
-/// environment, every home and store variable inside `root`, and a working
-/// directory inside `root` because config discovery reads `./.ccusage`.
+/// The hermetic command at the matrix's fixed clock, pointed at the stores
+/// `seeded` names.
 pub fn hermetic_command(root: &Path, seeded: &[(&'static str, PathBuf)], columns: u16) -> Command {
-    let dir = |name: &str| {
-        let path = root.join(name);
-        fs::create_dir_all(&path).expect("failed to create hermetic directory");
-        path
-    };
-
-    let mut command = Command::new(env!("CARGO_BIN_EXE_ccusage"));
+    let mut command = crate::support::hermetic_command(root);
     command
-        .env_clear()
-        .current_dir(dir("cwd"))
-        .env("HOME", dir("home"))
-        .env("USERPROFILE", dir("home"))
-        .env("XDG_CONFIG_HOME", dir("xdg-config"))
-        .env("XDG_DATA_HOME", dir("xdg-data"))
-        .env("XDG_CACHE_HOME", dir("xdg-cache"))
-        .env("TMPDIR", dir("tmp"))
-        .env("TZ", "UTC")
         .env("CCUSAGE_TEST_NOW", FIXED_NOW)
-        // jiff reads named zones such as Asia/Tokyo from the zoneinfo database,
-        // which the Nix test sandbox only provides through TZDIR.
-        .envs(std::env::var_os("TZDIR").map(|zoneinfo| ("TZDIR", zoneinfo)))
         .env("COLUMNS", columns.to_string())
-        .env("NO_COLOR", "1")
-        .env("LOG_LEVEL", "0");
-
-    for name in AGENT_HOME_ENV_VARS {
-        if seeded.iter().any(|(seeded_name, _)| *seeded_name == name) {
-            continue;
-        }
-        let empty = dir(&format!("empty/{name}"));
-        if name == "CLAUDE_CONFIG_DIR" {
-            // A Claude config directory without `projects/` is an error rather
-            // than an empty store.
-            fs::create_dir_all(empty.join("projects"))
-                .expect("failed to create empty Claude projects directory");
-        }
-        command.env(name, empty);
-    }
-    for (name, path) in seeded {
-        command.env(name, path);
-    }
+        .env("LOG_LEVEL", "0")
+        .envs(seeded.iter().map(|(name, path)| (name, path)));
     command
 }
 
@@ -368,6 +312,7 @@ pub struct Outcome {
 
 pub fn run_case(root: &Path, seeded: &[(&'static str, PathBuf)], case: &Case) -> Outcome {
     let mut child = hermetic_command(root, seeded, case.columns)
+        .envs(case.env.iter().copied())
         .args(&case.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -413,9 +358,18 @@ fn assert_outcome(scope: &str, root: &Path, case: &Case, outcome: Outcome) {
     settings.set_prepend_module_to_snapshot(false);
     settings.set_snapshot_path("../snapshots");
     settings.set_omit_expression(true);
+    let env: String = case
+        .env
+        .iter()
+        .map(|(name, value)| format!("{name}={value} "))
+        .collect();
     settings.set_description(redact_root(
         root,
-        &format!("COLUMNS={} ccusage {}", case.columns, case.args.join(" ")),
+        &format!(
+            "{env}COLUMNS={} ccusage {}",
+            case.columns,
+            case.args.join(" ")
+        ),
     ));
     settings.bind(|| {
         insta::assert_snapshot!(

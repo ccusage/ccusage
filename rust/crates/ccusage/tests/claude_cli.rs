@@ -1,5 +1,14 @@
 use ccusage_test_support::Fixture;
 
+mod support;
+
+/// The hermetic command with `fixture`'s root as the Claude store.
+fn claude_command(fixture: &Fixture) -> std::process::Command {
+    let mut command = support::hermetic_command(fixture.root());
+    command.env("CLAUDE_CONFIG_DIR", fixture.root());
+    command
+}
+
 #[test]
 fn session_id_deduplicates_repeated_message_usage() {
     let fixture = Fixture::new();
@@ -13,12 +22,7 @@ fn session_id_deduplicates_repeated_message_usage() {
         messages.join("\n"),
     );
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("CLAUDE_CONFIG_DIR", fixture.root())
+    let output = claude_command(&fixture)
         .args([
             "session",
             "--id",
@@ -98,13 +102,7 @@ fn session_id_table_honors_breakdown() {
     let fixture = Fixture::new();
     write_two_model_session(&fixture);
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("CLAUDE_CONFIG_DIR", fixture.root())
-        .env("NO_COLOR", "1")
+    let output = claude_command(&fixture)
         .env("COLUMNS", "200")
         .args([
             "claude",
@@ -140,13 +138,7 @@ fn set_file_modified(path: &std::path::Path, unix_seconds: u64) {
 }
 
 fn run_bounded_daily(fixture: &Fixture, extra_args: &[&str]) -> std::process::Output {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("CLAUDE_CONFIG_DIR", fixture.root())
-        .env("NO_COLOR", "1")
+    let output = claude_command(fixture)
         .args([
             "claude",
             "daily",
@@ -275,7 +267,11 @@ fn daily_reads_a_mixed_shape_line_as_its_direct_entry_and_unwraps_agent_progress
 const FRESH_MTIME: u64 = 1_789_214_400;
 
 fn run_ccusage(fixture: &Fixture, args: &[&str], stdin: Option<&str>) -> String {
-    String::from_utf8(run_ccusage_output(fixture, args, stdin).stdout).unwrap()
+    run_command(claude_command(fixture), args, stdin)
+}
+
+fn run_command(command: std::process::Command, args: &[&str], stdin: Option<&str>) -> String {
+    String::from_utf8(run_command_output(command, args, stdin).stdout).unwrap()
 }
 
 fn run_ccusage_output(
@@ -283,15 +279,17 @@ fn run_ccusage_output(
     args: &[&str],
     stdin: Option<&str>,
 ) -> std::process::Output {
+    run_command_output(claude_command(fixture), args, stdin)
+}
+
+fn run_command_output(
+    mut command: std::process::Command,
+    args: &[&str],
+    stdin: Option<&str>,
+) -> std::process::Output {
     use std::io::Write as _;
 
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("CLAUDE_CONFIG_DIR", fixture.root())
-        .env("NO_COLOR", "1")
+    let mut child = command
         .args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -453,18 +451,17 @@ fn statusline_debug_includes_sanitized_skip_samples() {
 /// Runs `args` twice: once with the fixture's own mtimes and once with every
 /// file touched to a fresh mtime. mtime pruning must never change a report.
 fn assert_output_ignores_mtimes(
-    fixture: &Fixture,
+    command: impl Fn() -> std::process::Command,
     files: &[std::path::PathBuf],
     fresh_mtime: u64,
     args: &[&str],
     stdin: Option<&str>,
-    normalize: impl Fn(&str) -> String,
 ) -> String {
-    let stale = normalize(&run_ccusage(fixture, args, stdin));
+    let stale = run_command(command(), args, stdin);
     for file in files {
         set_file_modified(file, fresh_mtime);
     }
-    let fresh = normalize(&run_ccusage(fixture, args, stdin));
+    let fresh = run_command(command(), args, stdin);
     assert_eq!(stale, fresh, "ccusage {args:?} depends on file mtimes");
     fresh
 }
@@ -529,7 +526,7 @@ fn bounded_reports_dedupe_sidechain_replays_of_parents_in_stale_files() {
         set_file_modified(&parent, 1_788_264_000);
         set_file_modified(&sidechain, 1_789_128_300);
         let output = assert_output_ignores_mtimes(
-            &fixture,
+            || claude_command(&fixture),
             &files,
             FRESH_MTIME,
             &[
@@ -545,7 +542,6 @@ fn bounded_reports_dedupe_sidechain_replays_of_parents_in_stale_files() {
                 "--json",
             ],
             None,
-            str::to_string,
         );
         if command == "daily" {
             let json: serde_json::Value = serde_json::from_str(&output).unwrap();
@@ -582,7 +578,7 @@ fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
     set_file_modified(&subagent, 1_788_264_000);
 
     let output = assert_output_ignores_mtimes(
-        &fixture,
+        || claude_command(&fixture),
         &[parent, subagent],
         FRESH_MTIME,
         &[
@@ -597,7 +593,6 @@ fn bounded_unified_sessions_count_only_in_window_usage_of_old_subagent_files() {
             "--json",
         ],
         None,
-        str::to_string,
     );
     let json: serde_json::Value = serde_json::from_str(&output).unwrap();
     // Like `ccusage claude session`, the subagent's usage before `--since` is left out.
@@ -740,7 +735,7 @@ fn bounded_blocks_keep_anchors_from_older_files() {
     let files = write_block_chain(&fixture, 1_789_160_400_000, 71);
 
     assert_output_ignores_mtimes(
-        &fixture,
+        || claude_command(&fixture),
         &files,
         FRESH_MTIME,
         &[
@@ -756,56 +751,58 @@ fn bounded_blocks_keep_anchors_from_older_files() {
             "--json",
         ],
         None,
-        str::to_string,
     );
+}
+
+/// The statusline tests' clock, at `FRESH_MTIME`.
+const NOW: &str = "2026-09-12T12:00:00Z";
+const NOW_MS: i64 = 1_789_214_400_000;
+const HOUR_MS: i64 = 60 * 60 * 1000;
+
+fn claude_command_at_now(fixture: &Fixture) -> std::process::Command {
+    let mut command = claude_command(fixture);
+    command.env("CCUSAGE_TEST_NOW", NOW);
+    command
+}
+
+const STATUSLINE_ARGS: [&str; 7] = [
+    "statusline",
+    "--offline",
+    "--no-cache",
+    "--cost-source",
+    "cc",
+    "--timezone",
+    "UTC",
+];
+
+fn statusline_hook(session: &str, transcript: &std::path::Path) -> String {
+    serde_json::json!({
+        "session_id": session,
+        "transcript_path": transcript,
+        "model": {"display_name": "Model"},
+        "cost": {"total_cost_usd": 0},
+        "context_window": {"total_input_tokens": 1, "context_window_size": 100},
+    })
+    .to_string()
 }
 
 #[test]
 fn statusline_active_block_keeps_anchors_from_older_files() {
     let fixture = Fixture::new();
-    let now_ms = i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
-    )
-    .unwrap();
-    let files = write_block_chain(&fixture, now_ms - 60 * 60 * 1000, 71);
-    let hook = serde_json::json!({
-        "session_id": "session-chain",
-        "transcript_path": files.last().unwrap(),
-        "model": {"display_name": "Model"},
-        "cost": {"total_cost_usd": 0},
-        "context_window": {"total_input_tokens": 1, "context_window_size": 100},
-    })
-    .to_string();
-    let fresh_mtime = u64::try_from(now_ms / 1000).unwrap();
+    let files = write_block_chain(&fixture, NOW_MS - HOUR_MS, 71);
+    let hook = statusline_hook("session-chain", files.last().unwrap());
 
-    let block = assert_output_ignores_mtimes(
-        &fixture,
+    let output = assert_output_ignores_mtimes(
+        || claude_command_at_now(&fixture),
         &files,
-        fresh_mtime,
-        &[
-            "statusline",
-            "--offline",
-            "--no-cache",
-            "--cost-source",
-            "cc",
-            "--timezone",
-            "UTC",
-        ],
+        FRESH_MTIME,
+        &STATUSLINE_ARGS,
         Some(&hook),
-        // Keep only the block cost; the remaining time moves with the clock.
-        |output| {
-            output
-                .split(" / ")
-                .find(|segment| segment.contains("block"))
-                .and_then(|segment| segment.split(" (").next())
-                .unwrap_or(output)
-                .to_string()
-        },
     );
-    assert_eq!(block, "$1.00 block");
+    assert_eq!(
+        output,
+        "🤖 Model | 💰 $0.00 session / $3.00 today / $1.00 block (4h 0m left) | 🧠 1 (1%)\n"
+    );
 }
 
 #[test]
@@ -825,7 +822,7 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
     set_file_modified(&old, 1_788_264_000);
 
     let output = assert_output_ignores_mtimes(
-        &fixture,
+        || claude_command(&fixture),
         &[old],
         FRESH_MTIME,
         &[
@@ -839,7 +836,6 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
             "--offline",
         ],
         None,
-        str::to_string,
     );
     assert!(output.contains("Detected: Claude"), "{output}");
 }
@@ -847,16 +843,9 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
 #[test]
 fn statusline_keeps_the_current_block_before_future_dated_entries() {
     let fixture = Fixture::new();
-    let now_ms = i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
-    )
-    .unwrap();
     let at = |offset_hours: i64| {
         ccusage_core::format_rfc3339_millis(ccusage_core::TimestampMs::from_millis(
-            now_ms + offset_hours * 60 * 60 * 1000,
+            NOW_MS + offset_hours * HOUR_MS,
         ))
     };
     // A skewed clock wrote an entry eight hours ahead, after a long pause.
@@ -868,29 +857,17 @@ fn statusline_keeps_the_current_block_before_future_dated_entries() {
         ]
         .join("\n"),
     );
-    let hook = serde_json::json!({
-        "session_id": "session-now",
-        "transcript_path": transcript,
-        "model": {"display_name": "Model"},
-        "cost": {"total_cost_usd": 0},
-        "context_window": {"total_input_tokens": 1, "context_window_size": 100},
-    })
-    .to_string();
+    let hook = statusline_hook("session-now", &transcript);
 
-    let output = run_ccusage(
-        &fixture,
-        &[
-            "statusline",
-            "--offline",
-            "--no-cache",
-            "--cost-source",
-            "cc",
-            "--timezone",
-            "UTC",
-        ],
+    let output = run_command(
+        claude_command_at_now(&fixture),
+        &STATUSLINE_ARGS,
         Some(&hook),
     );
-    assert!(output.contains("$1.00 block"), "{output}");
+    assert_eq!(
+        output,
+        "🤖 Model | 💰 $0.00 session / $10.00 today / $1.00 block (4h 0m left) | 🧠 1 (1%)\n"
+    );
 }
 
 #[test]
@@ -932,7 +909,7 @@ fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
     set_file_modified(&workflow, 1_789_128_300);
 
     let output = assert_output_ignores_mtimes(
-        &fixture,
+        || claude_command(&fixture),
         &[parent, workflow],
         FRESH_MTIME,
         &[
@@ -948,7 +925,6 @@ fn bounded_reports_dedupe_replays_filed_under_another_session_directory() {
             "--json",
         ],
         None,
-        str::to_string,
     );
     let json: serde_json::Value = serde_json::from_str(&output).unwrap();
     assert_eq!(json["totals"]["totalCost"], 1.0, "{output}");
@@ -1386,15 +1362,8 @@ fn advisor_turns_count_the_cache_writes_of_every_message_iteration_in_every_repo
 }
 
 fn run_with_user_config(fixture: &Fixture, claude_config_dir: Option<&str>) -> serde_json::Value {
-    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"));
-    command
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("home"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("NO_COLOR", "1")
-        .current_dir(fixture.root())
-        .args(["claude", "daily", "--offline", "--mode", "display"]);
+    let mut command = support::hermetic_command(fixture.root());
+    command.args(["claude", "daily", "--offline", "--mode", "display"]);
     if let Some(claude_config_dir) = claude_config_dir {
         command.env("CLAUDE_CONFIG_DIR", claude_config_dir);
     }

@@ -1,7 +1,7 @@
-use std::process::Command;
-
 use ccusage_test_support::Fixture;
 use serde_json::Value;
+
+mod support;
 
 const MODEL: &str = r#"{"id":"gpt-5","providerID":"openai"}"#;
 
@@ -81,15 +81,9 @@ fn opencode_fixture() -> Fixture {
 }
 
 fn run_cli<const N: usize>(fixture: &Fixture, args: [&str; N]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
-        .env("XDG_DATA_HOME", fixture.path("xdg-data"))
+    let output = support::hermetic_command(fixture.root())
         .env("OPENCODE_DATA_DIR", fixture.path("opencode"))
         .env("LOG_LEVEL", "0")
-        .env("NO_COLOR", "1")
         .env("COLUMNS", "120")
         .args(["opencode"])
         .args(args)

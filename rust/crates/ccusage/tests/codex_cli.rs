@@ -1,7 +1,9 @@
-use std::process::{Command, Output};
+use std::process::Output;
 
 use ccusage_test_support::{Fixture, fs_fixture};
 use serde_json::{Value, json};
+
+mod support;
 
 const SESSION_UUID: &str = "01a0bb8c-c7c0-7630-9d82-860b875930f0";
 const SESSION_ID: &str =
@@ -323,18 +325,12 @@ fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
 }
 
 fn run_cli_output(fixture: &Fixture, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_ccusage"))
+    support::hermetic_command(fixture.root())
         .args(args)
         .args(["--offline", "--no-color", "--timezone", "UTC"])
         .env("CODEX_HOME", fixture.path("codex"))
-        .env("HOME", fixture.path("empty-home"))
-        .env("USERPROFILE", fixture.path("empty-userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("empty-xdg-config"))
         .env("LOG_LEVEL", "0")
-        .env("NO_COLOR", "1")
         .env("COLUMNS", "240")
-        .env_remove("CLAUDE_CONFIG_DIR")
-        .env_remove("CLINE_DATA_DIR")
         .output()
         .expect("ccusage CLI should run")
 }

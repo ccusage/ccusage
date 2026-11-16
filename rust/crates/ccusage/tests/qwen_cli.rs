@@ -1,6 +1,8 @@
 use ccusage_test_support::{Fixture, fs_fixture};
 use serde_json::Value;
 
+mod support;
+
 /// Two sessions in America/Los_Angeles (UTC-8): the first is last active at
 /// 2026-02-24T02:00Z, still 2026-02-23 locally, and the second a day later.
 fn qwen_fixture() -> Fixture {
@@ -90,14 +92,8 @@ fn qwen_session_includes_archived_chat_files() {
 }
 
 fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
-        .env_clear()
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
+    let output = support::hermetic_command(fixture.root())
         .env("QWEN_DATA_DIR", fixture.path("qwen"))
-        .envs(std::env::var_os("TZDIR").map(|zoneinfo| ("TZDIR", zoneinfo)))
-        .env("NO_COLOR", "1")
         .env("COLUMNS", "240")
         .args(args)
         .output()

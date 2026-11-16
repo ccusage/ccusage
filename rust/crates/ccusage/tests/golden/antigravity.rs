@@ -40,11 +40,25 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 }
 
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
-    vec![Case::new(
-        "session",
-        "json_debug",
-        &["antigravity", "session", "--offline", "--json", "--debug"],
-    )]
+    vec![
+        Case::new(
+            "session",
+            "json_debug",
+            &["antigravity", "session", "--offline", "--json", "--debug"],
+        ),
+        Case::new(
+            "session",
+            "json_warn",
+            &["antigravity", "session", "--offline", "--json"],
+        )
+        .env("LOG_LEVEL", "3"),
+        Case::new(
+            "session",
+            "unified_json_debug_warn",
+            &["session", "--offline", "--json", "--debug"],
+        )
+        .env("LOG_LEVEL", "3"),
+    ]
 }
 
 /// Counted: 2,594 tokens in five events.

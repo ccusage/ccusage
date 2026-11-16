@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use ccusage_test_support::Fixture;
 
 mod golden;
+mod support;
 
 use golden::{ALL_REPORT_KINDS, AgentMatrix, Case, UNSUPPORTED_VARIANT, agent_cases, run_case};
 
@@ -85,12 +86,6 @@ fn exported_fixture_replays_the_unified_report() {
         serde_json::from_slice(&std::fs::read(root.join(golden::FIXTURE_MANIFEST)).unwrap())
             .unwrap();
     let env = manifest["env"].as_object().unwrap();
-    for name in golden::AGENT_HOME_ENV_VARS {
-        assert!(
-            env.contains_key(name),
-            "{name} is missing from the manifest"
-        );
-    }
     let seeded = manifest["seeded"].as_array().unwrap();
     assert!(!seeded.is_empty());
     for name in seeded {

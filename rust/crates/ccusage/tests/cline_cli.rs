@@ -1,6 +1,8 @@
-use std::{collections::BTreeSet, process::Command};
+use std::collections::BTreeSet;
 
 use ccusage_test_support::{Fixture, fs_fixture};
+
+mod support;
 
 #[test]
 fn snapshots_cline_focused_json_and_table_reports_for_all_kinds() {
@@ -107,16 +109,11 @@ fn cline_fixture() -> Fixture {
 }
 
 fn run_cli(fixture: &Fixture, kind: &str, json: bool) -> String {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_ccusage"));
+    let mut command = support::hermetic_command(fixture.root());
     command
-        .env_clear()
         .env("CLINE_DATA_DIR", fixture.root())
-        .env("HOME", fixture.path("home"))
-        .env("USERPROFILE", fixture.path("userprofile"))
-        .env("XDG_CONFIG_HOME", fixture.path("xdg-config"))
         .env("COLUMNS", "120")
         .env("LOG_LEVEL", "0")
-        .env("NO_COLOR", "1")
         .args([
             "cline",
             kind,
