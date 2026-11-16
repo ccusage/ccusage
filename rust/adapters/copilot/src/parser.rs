@@ -89,11 +89,19 @@ pub(super) struct CopilotCreditSnapshot {
     pub(super) dedup_key: String,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct CopilotUsageRecordEntry {
+    pub(super) entry: CopilotUsageEntry,
+    /// `accounting.sourceSessionId`: the session that assigned the call's
+    /// accounting sequence. `None` when the record has no usable identity.
+    pub(super) source_session_id: Option<String>,
+}
+
 #[derive(Debug, Default)]
 pub(super) struct CopilotSourceUsage {
     pub(super) entries: Vec<CopilotUsageEntry>,
     /// One entry per `session.usage_record` call.
-    pub(super) usage_records: Vec<CopilotUsageEntry>,
+    pub(super) usage_records: Vec<CopilotUsageRecordEntry>,
     pub(super) credit_snapshots: Vec<CopilotCreditSnapshot>,
 }
 
@@ -414,7 +422,9 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
 
 struct UsageRecordCall {
     timestamp: TimestampMs,
-    identity: Option<String>,
+    /// `(sourceSessionId, sequence)`, unique across every session file.
+    accounting: Option<(String, u64)>,
+    event_id: Option<String>,
     call_ids: Vec<String>,
     model: String,
     usage: CopilotSessionUsage,
@@ -428,13 +438,10 @@ fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
     if model.is_empty() {
         return None;
     }
-    let identity = record
-        .accounting
-        .and_then(|accounting| {
-            let source = accounting.source_session_id?;
-            (accounting.sequence > 0).then(|| format!("{source}:{}", accounting.sequence))
-        })
-        .or(event.id);
+    let accounting = record.accounting.and_then(|accounting| {
+        let source = accounting.source_session_id?;
+        (accounting.sequence > 0).then_some((source, accounting.sequence))
+    });
     let call_ids = record
         .api_call_id
         .into_iter()
@@ -442,45 +449,51 @@ fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
         .collect();
     Some(UsageRecordCall {
         timestamp,
-        identity,
+        accounting,
+        event_id: event.id,
         call_ids,
         model,
         usage,
     })
 }
 
-fn usage_record_entries(records: Vec<UsageRecordCall>, session_id: &str) -> Vec<CopilotUsageEntry> {
-    let mut seen = HashSet::new();
+fn usage_record_entries(
+    records: Vec<UsageRecordCall>,
+    session_id: &str,
+) -> Vec<CopilotUsageRecordEntry> {
     records
         .into_iter()
         .enumerate()
-        .filter(|(_, record)| {
-            record
-                .identity
-                .as_ref()
-                .is_none_or(|identity| seen.insert(identity.clone()))
-        })
         .map(|(index, record)| {
             let call = record.usage;
-            CopilotUsageEntry {
-                timestamp: record.timestamp,
-                timestamp_text: crate::format_rfc3339_millis(record.timestamp),
-                session_id: session_id.to_string(),
-                model: record.model,
-                input_tokens: uncached_session_input_tokens(&call),
-                output_tokens: call.output_tokens,
-                cache_creation_tokens: call.cache_write_tokens,
-                cache_read_tokens: call.cache_read_tokens,
-                reasoning_output_tokens: call.reasoning_tokens,
-                extra_total_tokens: 0,
-                request_count: 1,
-                nano_aiu: 0,
-                cost_usd: None,
-                dedup_key: format!(
-                    "usage-record:{session_id}:{}",
-                    record.identity.unwrap_or_else(|| index.to_string())
+            // An accounting identity names the call in every file it appears
+            // in; an event ID or line position names it only in this file.
+            let dedup_key = match &record.accounting {
+                Some((source, sequence)) => format!("usage-record:{source}:{sequence}"),
+                None => record.event_id.map_or_else(
+                    || format!("usage-record:{session_id}:line:{index}"),
+                    |event_id| format!("usage-record:{session_id}:event:{event_id}"),
                 ),
-                call_ids: record.call_ids,
+            };
+            CopilotUsageRecordEntry {
+                entry: CopilotUsageEntry {
+                    timestamp: record.timestamp,
+                    timestamp_text: crate::format_rfc3339_millis(record.timestamp),
+                    session_id: session_id.to_string(),
+                    model: record.model,
+                    input_tokens: uncached_session_input_tokens(&call),
+                    output_tokens: call.output_tokens,
+                    cache_creation_tokens: call.cache_write_tokens,
+                    cache_read_tokens: call.cache_read_tokens,
+                    reasoning_output_tokens: call.reasoning_tokens,
+                    extra_total_tokens: 0,
+                    request_count: 1,
+                    nano_aiu: 0,
+                    cost_usd: None,
+                    dedup_key,
+                    call_ids: record.call_ids,
+                },
+                source_session_id: record.accounting.map(|(source, _)| source),
             }
         })
         .collect()

@@ -20,10 +20,12 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 - `COPILOT_HOME` (single relocated Copilot data root)
 - `COPILOT_OTEL_FILE_EXPORTER_PATH` (one explicit JSONL file)
 
-Session-state `session.usage_record` events are per-call receipts, keyed by their `accounting`
-identity (`sourceSessionId`, `sequence`), or by event `id` when a record has no `sourceSessionId`
-or no positive `sequence`; a repeated key counts once, and a record without tokens still counts as
-a request. Shutdown `modelMetrics` total every call before them, including receipted ones, so once
+Session-state `session.usage_record` events are per-call receipts. A receipt's `accounting`
+identity (`sourceSessionId`, `sequence`) is unique across all session files, so the loader counts
+each identity once even when the receipt appears in several files. It keeps the copy in the file
+whose session is `sourceSessionId`, or else the copy in the lowest session ID. A receipt without a
+`sourceSessionId` or a positive `sequence` is deduplicated by its event `id` within its own file.
+A receipt without tokens still counts as a request. Shutdown `modelMetrics` total every call before them, including receipted ones, so once
 a session has a receipt its later shutdowns and checkpoints are ignored. Each receipt is one entry at
 its own timestamp, outside the shutdown interval reconciliation below. A receipt replaces only the
 OpenTelemetry rows of its own call, matched by its `apiCallId` against `gen_ai.response.id` or by

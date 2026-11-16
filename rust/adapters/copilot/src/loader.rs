@@ -8,8 +8,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry, parse_otel_file,
-        parse_session_state_file,
+        CopilotCreditSnapshot, CopilotSourceUsage, CopilotUsageEntry, CopilotUsageRecordEntry,
+        parse_otel_file, parse_session_state_file,
     },
     paths::{CopilotSourceKind, paths},
 };
@@ -111,8 +111,7 @@ fn load_entries_inner(
         .collect::<HashMap<_, _>>();
     // Usage records identify their call, so they replace only the OTel rows of
     // the same call; rows no record covers are kept.
-    let mut seen_records = HashSet::new();
-    usage_records.retain(|entry| seen_records.insert(entry.dedup_key.clone()));
+    let usage_records = deduplicate_usage_records(usage_records);
     let recorded_calls = usage_records
         .iter()
         .flat_map(|entry| entry.call_ids.iter().map(String::as_str))
@@ -137,6 +136,36 @@ fn load_entries_inner(
         .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
+}
+
+/// A call's record can appear in more than one session file, such as the log
+/// of the session that ran it and the log of a session it is accounted to.
+/// Each call is kept once, in the session that assigned its accounting
+/// sequence, or else the lowest session ID, so the result does not depend on
+/// the order files are read in.
+fn deduplicate_usage_records(records: Vec<CopilotUsageRecordEntry>) -> Vec<CopilotUsageEntry> {
+    let rank = |record: &CopilotUsageRecordEntry| {
+        (
+            record.source_session_id.as_deref() != Some(record.entry.session_id.as_str()),
+            record.entry.session_id.clone(),
+        )
+    };
+    let mut positions = HashMap::<String, usize>::new();
+    let mut kept = Vec::<CopilotUsageRecordEntry>::new();
+    for record in records {
+        match positions.get(&record.entry.dedup_key) {
+            Some(&position) => {
+                if rank(&record) < rank(&kept[position]) {
+                    kept[position] = record;
+                }
+            }
+            None => {
+                positions.insert(record.entry.dedup_key.clone(), kept.len());
+                kept.push(record);
+            }
+        }
+    }
+    kept.into_iter().map(|record| record.entry).collect()
 }
 
 struct SessionStateReconciliation {
@@ -2207,6 +2236,42 @@ mod tests {
             "data": {"usage": usage_json}
         })
         .to_string()
+    }
+
+    #[test]
+    fn counts_a_usage_record_in_parent_and_child_files_once_for_its_source_session() {
+        // Both orders of the two session directories, so the result cannot
+        // depend on which file is read first.
+        for (parent, child) in [("a-parent", "b-child"), ("b-parent", "a-child")] {
+            let record = |id: &str| {
+                usage_record(
+                    id,
+                    "2026-01-02T10:00:00.000Z",
+                    json!({"accounting": {"sourceSessionId": child, "sequence": 7}}),
+                )
+            };
+            let fixture = fs_fixture!({});
+            for (session, event_id) in [(parent, "parent-event"), (child, "child-event")] {
+                let _ = fixture.write_file(
+                    format!("home/.copilot/session-state/{session}/events.jsonl"),
+                    record(event_id),
+                );
+            }
+
+            let entries = load_copilot_home(&fixture, &utc_args());
+
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| (
+                        entry.session_id.to_string(),
+                        entry.data.message.usage.input_tokens
+                    ))
+                    .collect::<Vec<_>>(),
+                [(child.to_string(), 100)],
+                "parent {parent}, child {child}"
+            );
+        }
     }
 
     #[test]
