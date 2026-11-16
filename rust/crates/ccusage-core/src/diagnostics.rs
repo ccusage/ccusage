@@ -168,7 +168,6 @@ impl Tally {
 
 #[derive(Default)]
 struct State {
-    lines: Vec<String>,
     notes: BTreeMap<PathBuf, String>,
     tallies: [Tally; SkipKind::ALL.len()],
 }
@@ -213,12 +212,6 @@ impl Diagnostics {
         tally.sample(skip);
     }
 
-    /// Adds a warning line a source already words and gates itself, printed
-    /// as-is before the aggregated ones.
-    pub fn push_line(&self, line: impl Into<String>) {
-        self.state().lines.push(line.into());
-    }
-
     /// Notes something about `unit` that is not a skip, worded by the source
     /// and printed as-is under `--debug` only.
     pub fn debug_note(&self, unit: &Path, note: impl Into<String>) {
@@ -237,7 +230,6 @@ impl Diagnostics {
         }
         let other = other.state();
         let mut state = self.state();
-        state.lines.extend(other.lines.iter().cloned());
         for (unit, note) in &other.notes {
             state
                 .notes
@@ -270,10 +262,11 @@ impl Diagnostics {
 
     fn render(&self, warn: bool, debug: bool) -> Vec<String> {
         let state = self.state();
-        let mut lines = state.lines.clone();
-        if debug {
-            lines.extend(state.notes.values().cloned());
-        }
+        let mut lines = if debug {
+            state.notes.values().cloned().collect()
+        } else {
+            Vec::new()
+        };
         for (kind, tally) in SkipKind::ALL.into_iter().zip(&state.tallies) {
             if tally.units.is_empty() {
                 continue;
