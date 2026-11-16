@@ -171,4 +171,5 @@ exit: 0
 }
 
 --- stderr ---
-dsh: unreadable: [ROOT]/dsh/home-a/sessions/bad/corrupt/session.v4.jsonl.zstd: I/O error (Other)
+dsh: [ROOT]/dsh/home-a/sessions/--work-beta--/sess-beta/session.v4.jsonl.zstd: incomplete, read as still being written
+dsh: invalid data: [ROOT]/dsh/home-a/sessions/bad/corrupt/session.v4.jsonl.zstd: not a valid zstd stream

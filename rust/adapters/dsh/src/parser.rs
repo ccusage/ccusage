@@ -9,9 +9,9 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, PricingMap, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::byte_lines,
-    format_date_tz, missing_pricing_model_for_candidates,
+    Diagnostics, LoadedEntry, PricingMap, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry,
+    UsageMessage, apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode,
+    fast::byte_lines, format_date_tz, missing_pricing_model_for_candidates,
 };
 use ccusage_adapter_common::{UnitError, jsonl};
 
@@ -158,26 +158,60 @@ pub(super) struct DshUsageEntry {
     extra_total_tokens: u64,
 }
 
-pub(super) fn read_session_file(path: &Path) -> Result<Vec<DshUsageEntry>, UnitError> {
-    let content = read_session_bytes(path)?;
+pub(super) fn read_session_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> Result<Vec<DshUsageEntry>, UnitError> {
+    let content = read_session_bytes(path, diagnostics)?;
     Ok(parse_session(&content, path))
 }
 
-fn read_session_bytes(path: &Path) -> io::Result<Vec<u8>> {
+fn read_session_bytes(path: &Path, diagnostics: &Diagnostics) -> Result<Vec<u8>, UnitError> {
     let mut file = File::open(path)?;
     let mut content = Vec::new();
     if !is_compressed(path) {
         file.read_to_end(&mut content)?;
         return Ok(content);
     }
-    // dsh appends one zstd frame per write batch, so a session that is still
-    // being written can end in an incomplete frame; keep the decoded prefix.
     let mut decoder = zstd::stream::read::Decoder::new(file)?;
-    if let Err(error) = decoder.read_to_end(&mut content)
-        && content.is_empty()
-    {
+    let Err(error) = decoder.read_to_end(&mut content) else {
+        return Ok(content);
+    };
+    let error = match error.kind() {
+        // dsh appends one zstd frame per write batch, so a session that is
+        // still being written can end inside a frame. The decoded part of that
+        // frame can end mid-line, and the line belongs to the frame cut short.
+        io::ErrorKind::UnexpectedEof => {
+            let complete = content
+                .iter()
+                .rposition(|byte| *byte == b'\n')
+                .map_or(0, |newline| newline + 1);
+            content.truncate(complete);
+            UnitError::unfinished(if content.is_empty() {
+                "zstd stream ends inside its first frame"
+            } else {
+                "zstd stream ends inside a frame; earlier records were kept"
+            })
+        }
+        // The decoder reports a malformed frame as `Other`.
+        io::ErrorKind::Other => UnitError::new(
+            SkipKind::InvalidData,
+            if content.is_empty() {
+                "not a valid zstd stream"
+            } else {
+                "zstd stream is corrupt; earlier records were kept"
+            },
+        ),
+        _ if !content.is_empty() => UnitError::new(
+            SkipKind::ReadInterrupted,
+            "zstd stream read stopped early; earlier records were kept",
+        ),
+        _ => UnitError::from(error),
+    };
+    if content.is_empty() {
         return Err(error);
     }
+    error.record(path, diagnostics);
     Ok(content)
 }
 
