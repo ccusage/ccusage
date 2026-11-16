@@ -18,7 +18,7 @@ use crate::{
     resolve_tz,
 };
 use crate::{TimestampMs, parse_ts_timestamp};
-use ccusage_adapter_common::collect_usage_files;
+use ccusage_adapter_common::visit_usage_files as visit_usage_files_in;
 
 pub fn claude_paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
@@ -64,18 +64,32 @@ fn normalize_claude_config_path(raw: &str) -> PathBuf {
 
 pub fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathBuf> {
     let mut files = Vec::new();
+    visit_usage_files(paths, project_filter, &mut |path| files.push(path));
+    files.sort_by_cached_key(|path| usage_file_order(path));
+    files
+}
+
+/// Hands each usage file to `visit` as the walk finds it, unsorted.
+pub(crate) fn visit_usage_files(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    visit: &mut dyn FnMut(PathBuf),
+) {
     for path in paths {
         let projects_dir = path.join("projects");
         if let Some(project_filter) =
             project_filter.filter(|filter| is_project_path_segment(filter))
         {
-            collect_usage_files(&projects_dir.join(project_filter), &mut files);
+            visit_usage_files_in(&projects_dir.join(project_filter), visit);
         } else {
-            collect_usage_files(&projects_dir, &mut files);
+            visit_usage_files_in(&projects_dir, visit);
         }
     }
-    files.sort_by_cached_key(|path| path.to_string_lossy().into_owned());
-    files
+}
+
+/// The order [`usage_files`] lists files in, which deduplication depends on.
+pub(crate) fn usage_file_order(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 /// Margin subtracted from the `--since` lower bound before comparing it with

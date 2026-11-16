@@ -3,7 +3,6 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
-    thread,
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -15,16 +14,19 @@ use crate::{
     UsageSummary, calculate_cost_for_usage_at,
     cli::{CostMode, SharedArgs},
     fast::{FxHashMap, suffix_string},
-    format_date_tz, log_level, missing_pricing_model_for_usage, parse_ts_timestamp, resolve_tz,
-    stored_cost_for_mode, utc_now,
+    format_date_tz, missing_pricing_model_for_usage, parse_ts_timestamp, stored_cost_for_mode,
+    utc_now,
 };
 
 use super::{
-    DailySummaries, DedupeIndexVec, Rejection, SessionDays, advisor_usages_from_line,
-    carries_more_usage_detail, chunk_file_indexes_by_size, deserialize_usage_line,
+    DailySummaries, DedupeIndexVec, Rejection, SessionDays, UsageLoadContext,
+    advisor_usages_from_line, carries_more_usage_detail, deserialize_usage_line,
     is_anthropic_message_id, is_semver_prefix, main_thread_session_days,
-    paths::{SinceFiles, claude_paths, extract_project, split_files_before_since, usage_files},
-    push_deduped_index, push_deduped_session_alias, push_new_deduped_index,
+    paths::{
+        claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
+        visit_usage_files,
+    },
+    push_deduped_index, push_deduped_session_alias, push_new_deduped_index, read_discovered_files,
     sidechain_entry_replay_dedupe_hash, sidechain_replay_dedupe_hash, usage_dedupe_hash,
 };
 
@@ -36,34 +38,41 @@ pub(super) fn load_daily_summaries_inner(
     diagnostics: &Diagnostics,
 ) -> Result<DailySummaries> {
     let paths = claude_paths()?;
-    let SinceFiles { kept, pruned } =
-        split_files_before_since(usage_files(&paths, project_filter), shared, utc_now());
-    if kept.is_empty() && pruned.is_empty() {
-        return Ok(DailySummaries {
-            summaries: Vec::new(),
-            detected: false,
-            session_days: SessionDays::default(),
-        });
-    }
-
-    let pricing = if shared.mode == CostMode::Display {
-        None
+    let context = UsageLoadContext::new(shared);
+    let mut pruned = Vec::new();
+    let deduped = if shared.since.is_some() {
+        let since_files =
+            split_files_before_since(usage_files(&paths, project_filter), shared, utc_now());
+        pruned = since_files.pruned;
+        let kept = since_files.kept;
+        load_deduped_daily_entries(
+            |visit| kept.into_iter().for_each(visit),
+            &context,
+            project_filter,
+            diagnostics,
+        )
     } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        ))
+        load_deduped_daily_entries(
+            |visit| visit_usage_files(&paths, project_filter, visit),
+            &context,
+            project_filter,
+            diagnostics,
+        )
     };
-    let tz = resolve_tz(shared.timezone.as_deref());
-    let deduped = load_deduped_daily_entries(
-        &kept,
-        shared,
-        project_filter,
-        &tz,
-        pricing.as_ref(),
-        diagnostics,
-    );
+    let deduped = match deduped {
+        Some(deduped) => deduped,
+        None if pruned.is_empty() => {
+            return Ok(DailySummaries {
+                summaries: Vec::new(),
+                detected: false,
+                session_days: SessionDays::default(),
+            });
+        }
+        None => DedupedDailyEntries {
+            entries: Vec::new(),
+            copies: Vec::new(),
+        },
+    };
     let session_days = session_days(&deduped);
     let summaries = summarize_daily_entries(&deduped.entries, group_by_project);
     // Skipped sessions still hold Claude usage, so they keep Claude detected
@@ -74,9 +83,9 @@ pub(super) fn load_daily_summaries_inner(
         || pruned.iter().any(|file| {
             read_daily_usage_file_with_diagnostics(
                 file,
-                &tz,
+                context.timezone(),
                 shared.mode,
-                pricing.as_ref(),
+                context.pricing(),
                 &Diagnostics::new("claude"),
             )
             .entries
@@ -119,36 +128,39 @@ pub(super) fn session_days(deduped: &DedupedDailyEntries) -> SessionDays {
     )
 }
 
+/// Loads and deduplicates the files `discover` yields, or `None` when it
+/// yields none.
 fn load_deduped_daily_entries(
-    files: &[PathBuf],
-    shared: &SharedArgs,
+    discover: impl FnOnce(&mut dyn FnMut(PathBuf)),
+    context: &UsageLoadContext<'_>,
     project_filter: Option<&str>,
-    tz: &JiffTimeZone,
-    pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
-) -> DedupedDailyEntries {
-    if files.is_empty() {
-        return DedupedDailyEntries {
-            entries: Vec::new(),
-            copies: Vec::new(),
-        };
+) -> Option<DedupedDailyEntries> {
+    let mode = context.shared.mode;
+    let mut loaded_files = read_discovered_files(context.shared.single_thread, discover, |file| {
+        read_daily_usage_file_with_diagnostics(
+            file,
+            context.timezone(),
+            mode,
+            context.pricing(),
+            diagnostics,
+        )
+    });
+    if loaded_files.is_empty() {
+        return None;
     }
-    let mode = shared.mode;
-    let loaded_files = if shared.single_thread {
-        files
-            .iter()
-            .map(|file| {
-                read_daily_usage_file_with_diagnostics(file, tz, mode, pricing, diagnostics)
-            })
-            .collect::<Vec<_>>()
-    } else {
-        read_daily_usage_files_parallel(files, tz, mode, pricing, diagnostics)
-    };
+    // Dedup keeps the first copy it meets, so files are folded in listing order.
+    loaded_files.sort_by_cached_key(|(path, _)| usage_file_order(path));
 
     let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> = FxHashMap::default();
-    let mut deduped = Vec::with_capacity(loaded_files.iter().map(|file| file.entries.len()).sum());
+    let mut deduped = Vec::with_capacity(
+        loaded_files
+            .iter()
+            .map(|(_, file)| file.entries.len())
+            .sum(),
+    );
     let mut copies = Vec::new();
-    for loaded_file in loaded_files {
+    for (_, loaded_file) in loaded_files {
         for entry in loaded_file.entries {
             if let Some(filter) = project_filter
                 && entry.project.as_ref() != filter
@@ -164,10 +176,10 @@ fn load_deduped_daily_entries(
             }
         }
     }
-    DedupedDailyEntries {
+    Some(DedupedDailyEntries {
         entries: deduped,
         copies,
-    }
+    })
 }
 
 fn summarize_daily_entries(
@@ -300,64 +312,6 @@ struct DailyUsageMessage {
     usage: TokenUsageRaw,
     model: Option<String>,
     id: Option<String>,
-}
-
-fn read_daily_usage_files_parallel(
-    files: &[PathBuf],
-    tz: &JiffTimeZone,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    diagnostics: &Diagnostics,
-) -> Vec<DailyLoadedFile> {
-    let worker_count = thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(files.len());
-    if worker_count <= 1 {
-        return files
-            .iter()
-            .map(|file| {
-                read_daily_usage_file_with_diagnostics(file, tz, mode, pricing, diagnostics)
-            })
-            .collect();
-    }
-
-    let chunks = chunk_file_indexes_by_size(files, worker_count);
-    thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(worker_count);
-        for chunk in chunks {
-            let tz = tz.clone();
-            handles.push(scope.spawn(move || {
-                chunk
-                    .into_iter()
-                    .map(|index| {
-                        (
-                            index,
-                            read_daily_usage_file_with_diagnostics(
-                                &files[index],
-                                &tz,
-                                mode,
-                                pricing,
-                                diagnostics,
-                            ),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            }));
-        }
-        let mut loaded_files = Vec::with_capacity(files.len());
-        loaded_files.resize_with(files.len(), || None);
-        for (index, file) in handles
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("daily usage worker panicked"))
-        {
-            loaded_files[index] = Some(file);
-        }
-        loaded_files
-            .into_iter()
-            .map(|file| file.expect("daily usage worker returned every file"))
-            .collect()
-    })
 }
 
 #[cfg(test)]

@@ -1,6 +1,4 @@
-use ccusage_adapter_common::{
-    chunk_file_indexes_by_size, read_files_parallel, source::ProgressOwner,
-};
+use ccusage_adapter_common::{read_discovered_files, source::ProgressOwner};
 use ccusage_core::*;
 
 mod daily;
@@ -14,7 +12,7 @@ use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
     path::Path,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -38,6 +36,7 @@ pub use paths::timestamp_from_line;
 pub use paths::usage_files;
 pub(crate) use paths::{
     claude_paths, extract_project, extract_session_parts, split_files_before_since,
+    usage_file_order, visit_usage_files,
 };
 
 struct DedupeIndex {
@@ -271,14 +270,21 @@ fn load_entries_inner(
                 .join(", ")
         ),
     );
-    let files = usage_files(&paths, project_filter);
-    debug_log(shared, format!("Found {} JSONL usage files", files.len()));
-    let files = if skip_files_before_since {
-        split_files_before_since(files, shared, utc_now()).kept
-    } else {
-        files
+    let context = UsageLoadContext::new(shared);
+    let mode = shared.mode;
+    let read = |file: &Path| {
+        read_usage_file_with_diagnostics(
+            file,
+            context.timezone(),
+            mode,
+            context.pricing(),
+            diagnostics,
+        )
     };
-    if skip_files_before_since && shared.since.is_some() {
+    let mut loaded_files = if skip_files_before_since && shared.since.is_some() {
+        let files = usage_files(&paths, project_filter);
+        debug_log(shared, format!("Found {} JSONL usage files", files.len()));
+        let files = split_files_before_since(files, shared, utc_now()).kept;
         debug_log(
             shared,
             format!(
@@ -286,25 +292,32 @@ fn load_entries_inner(
                 files.len()
             ),
         );
-    }
-    if files.is_empty() {
+        read_discovered_files(
+            shared.single_thread,
+            |visit| files.into_iter().for_each(visit),
+            read,
+        )
+    } else {
+        let loaded_files = read_discovered_files(
+            shared.single_thread,
+            |visit| visit_usage_files(&paths, project_filter, visit),
+            read,
+        );
+        debug_log(
+            shared,
+            format!("Found {} JSONL usage files", loaded_files.len()),
+        );
+        loaded_files
+    };
+    if loaded_files.is_empty() {
         return Ok(DedupedEntries::default());
     }
-
-    let pricing = if shared.mode == CostMode::Display {
-        None
-    } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        ))
-    };
-    let tz = resolve_tz(shared.timezone.as_deref());
-    let mode = shared.mode;
-    let loaded_files = read_files_parallel(&files, shared.single_thread, |file| {
-        read_usage_file_with_diagnostics(file, &tz, mode, pricing.as_ref(), diagnostics)
-    });
+    // Dedup keeps the first copy it meets, so files are folded in listing order.
+    loaded_files.sort_by_cached_key(|(path, _)| usage_file_order(path));
+    let loaded_files = loaded_files
+        .into_iter()
+        .map(|(_, file)| file)
+        .collect::<Vec<_>>();
     let loaded_entry_count = loaded_files
         .iter()
         .map(|file| file.entries.len())
@@ -345,6 +358,43 @@ fn load_entries_inner(
         entries: deduped,
         copies,
     })
+}
+
+/// The timezone and pricing a load prices entries with, resolved by the
+/// first file that needs them, so a load that finds no files skips both.
+pub(crate) struct UsageLoadContext<'a> {
+    pub(crate) shared: &'a SharedArgs,
+    timezone: OnceLock<JiffTimeZone>,
+    pricing: OnceLock<Option<PricingMap>>,
+}
+
+impl<'a> UsageLoadContext<'a> {
+    pub(crate) fn new(shared: &'a SharedArgs) -> Self {
+        Self {
+            shared,
+            timezone: OnceLock::new(),
+            pricing: OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn timezone(&self) -> &JiffTimeZone {
+        self.timezone
+            .get_or_init(|| resolve_tz(self.shared.timezone.as_deref()))
+    }
+
+    pub(crate) fn pricing(&self) -> Option<&PricingMap> {
+        self.pricing
+            .get_or_init(|| {
+                (self.shared.mode != CostMode::Display).then(|| {
+                    PricingMap::load_with_overrides(
+                        self.shared.offline,
+                        log_level() != Some(0),
+                        self.shared.pricing_overrides.iter(),
+                    )
+                })
+            })
+            .as_ref()
+    }
 }
 
 fn usage_token_total(data: &UsageEntry) -> u64 {
