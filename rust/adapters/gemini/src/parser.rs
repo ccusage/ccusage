@@ -95,10 +95,7 @@ impl GeminiRecord {
 /// chats, such as each project's `logs.json` prompt array, so a document that
 /// is not an object is read, to tell it from malformed input, and holds no
 /// usage.
-enum GeminiDocument {
-    Record(GeminiRecord),
-    Other,
-}
+struct GeminiDocument(Option<GeminiRecord>);
 
 impl<'de> Deserialize<'de> for GeminiDocument {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -113,36 +110,36 @@ impl<'de> Deserialize<'de> for GeminiDocument {
 
             fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
                 GeminiRecord::deserialize(MapAccessDeserializer::new(map))
-                    .map(GeminiDocument::Record)
+                    .map(|record| GeminiDocument(Some(record)))
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
                 while seq.next_element::<IgnoredAny>()?.is_some() {}
-                Ok(GeminiDocument::Other)
+                Ok(GeminiDocument(None))
             }
 
             fn visit_str<E: de::Error>(self, _: &str) -> Result<Self::Value, E> {
-                Ok(GeminiDocument::Other)
+                Ok(GeminiDocument(None))
             }
 
             fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self::Value, E> {
-                Ok(GeminiDocument::Other)
+                Ok(GeminiDocument(None))
             }
 
             fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self::Value, E> {
-                Ok(GeminiDocument::Other)
+                Ok(GeminiDocument(None))
             }
 
             fn visit_u64<E: de::Error>(self, _: u64) -> Result<Self::Value, E> {
-                Ok(GeminiDocument::Other)
+                Ok(GeminiDocument(None))
             }
 
             fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
-                Ok(GeminiDocument::Other)
+                Ok(GeminiDocument(None))
             }
 
             fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-                Ok(GeminiDocument::Other)
+                Ok(GeminiDocument(None))
             }
         }
 
@@ -178,7 +175,7 @@ pub(super) fn parse_json_file(
     path: &Path,
 ) -> std::result::Result<Vec<GeminiUsageEvent>, UnitError> {
     let fallback_timestamp = file_modified_timestamp(path);
-    let GeminiDocument::Record(record) =
+    let GeminiDocument(Some(record)) =
         ccusage_adapter_common::units::read_json::<GeminiDocument>(path)?
     else {
         return Ok(Vec::new());
