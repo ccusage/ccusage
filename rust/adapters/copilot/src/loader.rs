@@ -1989,4 +1989,177 @@ mod tests {
             [("2026-01-02T10:00:00.000Z".to_string(), 100)]
         );
     }
+
+    const RECEIPTS_ONLY: &str =
+        include_str!("../tests/fixtures/session-state/session-receipts/events.jsonl");
+    const SHUTDOWN_ONLY: &str =
+        include_str!("../tests/fixtures/session-state/session-a/events.jsonl");
+    const SHUTDOWN_THEN_RECEIPTS: &str =
+        include_str!("../tests/fixtures/session-state/session-resumed-receipts/events.jsonl");
+
+    /// `(timestamp, model, input, output, cache write, cache read, requests)`
+    /// per entry.
+    fn token_rows(entries: &[LoadedEntry]) -> Vec<(String, String, u64, u64, u64, u64, u64)> {
+        entries
+            .iter()
+            .map(|entry| {
+                let usage = entry.data.message.usage;
+                (
+                    entry.data.timestamp.clone(),
+                    entry.model.clone().unwrap_or_default(),
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.cache_creation_input_tokens,
+                    usage.cache_read_input_tokens,
+                    entry.message_count.unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
+
+    fn row(
+        timestamp: &str,
+        model: &str,
+        tokens: [u64; 5],
+    ) -> (String, String, u64, u64, u64, u64, u64) {
+        let [input, output, cache_write, cache_read, requests] = tokens;
+        (
+            timestamp.to_string(),
+            model.to_string(),
+            input,
+            output,
+            cache_write,
+            cache_read,
+            requests,
+        )
+    }
+
+    #[test]
+    fn reports_each_usage_record_as_one_call_at_its_own_time() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-receipts/events.jsonl": RECEIPTS_ONLY,
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        // Receipt input includes cache reads and writes, as shutdown input does.
+        // Checkpoint credits are not reported again as `unknown` cost.
+        assert_eq!(
+            token_rows(&entries),
+            [
+                row(
+                    "2026-02-05T09:00:00.000Z",
+                    "claude-sonnet-4.6",
+                    [100, 80, 100, 1000, 1]
+                ),
+                row("2026-02-05T09:05:00.000Z", "gpt-5.4", [100, 40, 0, 200, 1]),
+                row(
+                    "2026-02-06T10:00:00.000Z",
+                    "claude-sonnet-4.6",
+                    [50, 60, 50, 400, 1]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_shutdown_intervals_for_sessions_without_usage_records() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-a/events.jsonl": SHUTDOWN_ONLY,
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            token_rows(&entries),
+            [
+                row(
+                    "2026-01-02T01:20:00.000Z",
+                    "claude-opus-4.6",
+                    [70, 50, 20, 10, 1]
+                ),
+                row(
+                    "2026-01-03T01:20:00.000Z",
+                    "claude-opus-4.6",
+                    [80, 30, 10, 10, 2]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn counts_calls_once_when_a_shutdown_follows_their_usage_records() {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-resumed-receipts/events.jsonl":
+                SHUTDOWN_THEN_RECEIPTS,
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        // The first shutdown predates receipts and keeps its usage; the second
+        // one only repeats the receipt, which stays on its own day.
+        assert_eq!(
+            token_rows(&entries),
+            [
+                row(
+                    "2026-02-07T09:00:00.000Z",
+                    "claude-sonnet-4.6",
+                    [100, 40, 100, 300, 2]
+                ),
+                row(
+                    "2026-02-08T23:00:00.000Z",
+                    "claude-sonnet-4.6",
+                    [50, 30, 0, 200, 1]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn counts_a_usage_record_delivered_twice_once() {
+        let duplicated = RECEIPTS_ONLY
+            .lines()
+            .find(|line| line.contains("\"record-r-2\""))
+            .unwrap()
+            .replace("\"record-r-2\"", "\"record-r-2-again\"");
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-receipts/events.jsonl":
+                format!("{RECEIPTS_ONLY}{duplicated}\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(token_rows(&entries).len(), 3);
+    }
+
+    #[test]
+    fn leaves_otel_calls_that_usage_records_cover_to_the_records() {
+        let otel = |span_id: &str, timestamp: &str| {
+            otel_call(span_id, timestamp)
+                .replace("session-1", "session-receipts")
+                .replace("test-model", "gpt-5.4")
+        };
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-receipts/events.jsonl": RECEIPTS_ONLY,
+            "home/.copilot/otel/otel.jsonl": [
+                otel("covered", "2026-02-05T09:05:00.000Z"),
+                otel("later", "2026-02-05T12:00:00.000Z"),
+            ]
+            .join("\n"),
+        });
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            token_rows(&entries)
+                .into_iter()
+                .filter(|row| row.1 == "gpt-5.4")
+                .map(|row| (row.0, row.2))
+                .collect::<Vec<_>>(),
+            [
+                ("2026-02-05T09:05:00.000Z".to_string(), 100),
+                ("2026-02-05T12:00:00.000Z".to_string(), 1),
+            ]
+        );
+    }
 }

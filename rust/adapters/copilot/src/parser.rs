@@ -188,6 +188,29 @@ struct CopilotSessionStateData {
         deserialize_with = "jsonl::lenient_f64"
     )]
     total_nano_aiu: Option<f64>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    usage: Option<CopilotUsageRecord>,
+}
+
+/// One model call from `session.usage_record`. Its token fields have the same
+/// meaning as a `modelMetrics` usage, which sums them.
+#[derive(Debug, Default, Deserialize)]
+struct CopilotUsageRecord {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    accounting: Option<CopilotUsageAccounting>,
+    #[serde(flatten)]
+    tokens: CopilotSessionUsage,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CopilotUsageAccounting {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    source_session_id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    sequence: u64,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -225,8 +248,19 @@ struct CopilotSessionUsage {
     reasoning_tokens: u64,
 }
 
+impl CopilotSessionUsage {
+    fn is_empty(&self) -> bool {
+        self.input_tokens == 0
+            && self.output_tokens == 0
+            && self.cache_read_tokens == 0
+            && self.cache_write_tokens == 0
+            && self.reasoning_tokens == 0
+    }
+}
+
 const SHUTDOWN_EVENT: &str = "session.shutdown";
 const USAGE_CHECKPOINT_EVENT: &str = "session.usage_checkpoint";
+const USAGE_RECORD_EVENT: &str = "session.usage_record";
 
 pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage> {
     let session_id = path
@@ -241,15 +275,28 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
     };
 
     let content = fs::read(path)?;
-    let prefilter =
-        LinePrefilter::any(&[SHUTDOWN_EVENT.as_bytes(), USAGE_CHECKPOINT_EVENT.as_bytes()]);
+    let prefilter = LinePrefilter::any(&[
+        SHUTDOWN_EVENT.as_bytes(),
+        USAGE_CHECKPOINT_EVENT.as_bytes(),
+        USAGE_RECORD_EVENT.as_bytes(),
+    ]);
     let mut parsed = CopilotSourceUsage::default();
+    let mut records = Vec::new();
     for event in jsonl::records::<CopilotSessionStateEvent>(&content, Some(&prefilter)) {
         let is_shutdown = match event.event_type.as_deref() {
             Some(SHUTDOWN_EVENT) => true,
             Some(USAGE_CHECKPOINT_EVENT) => false,
+            Some(USAGE_RECORD_EVENT) => {
+                records.extend(usage_record(event));
+                continue;
+            }
             _ => continue,
         };
+        // Shutdowns and checkpoints written after a usage record only total
+        // calls that their usage records already report.
+        if !records.is_empty() {
+            continue;
+        }
         let Some(timestamp_text) = event.timestamp.as_deref() else {
             continue;
         };
@@ -292,14 +339,7 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
             let Some(usage) = metrics.usage else {
                 continue;
             };
-            if model.is_empty()
-                || usage.input_tokens == 0
-                    && usage.output_tokens == 0
-                    && usage.cache_read_tokens == 0
-                    && usage.cache_write_tokens == 0
-                    && usage.reasoning_tokens == 0
-                    && request_count == 0
-            {
+            if model.is_empty() || usage.is_empty() && request_count == 0 {
                 continue;
             }
             let model_nano_aiu = nano_aiu(metrics.total_nano_aiu);
@@ -339,7 +379,105 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
             dedup_key: snapshot_key(total_nano_aiu),
         });
     }
+    if !records.is_empty() {
+        // Usage records price every call from its tokens, so the session-wide
+        // credit totals have nothing left to explain.
+        parsed.credit_snapshots.clear();
+        append_usage_records(&mut parsed.entries, records, &session_id);
+    }
     Ok(parsed)
+}
+
+struct UsageRecordCall {
+    timestamp: TimestampMs,
+    identity: Option<String>,
+    model: String,
+    usage: CopilotSessionUsage,
+}
+
+fn usage_record(event: CopilotSessionStateEvent) -> Option<UsageRecordCall> {
+    let timestamp = parse_ts_timestamp(event.timestamp.as_deref()?)?;
+    let record = event.data?.usage?;
+    let model = normalize_copilot_model(record.model.as_deref()?);
+    let usage = record.tokens;
+    if model.is_empty() || usage.is_empty() {
+        return None;
+    }
+    let identity = record
+        .accounting
+        .and_then(|accounting| {
+            let source = accounting.source_session_id?;
+            (accounting.sequence > 0).then(|| format!("{source}:{}", accounting.sequence))
+        })
+        .or(event.id);
+    Some(UsageRecordCall {
+        timestamp,
+        identity,
+        model,
+        usage,
+    })
+}
+
+/// Each usage record is one call. The loader reconciles session-state usage as
+/// cumulative `(session, model)` snapshots, so every record becomes the running
+/// total through that call, continuing from the shutdown the process restored.
+/// The loader's interval split then yields the call itself, and its OpenTelemetry
+/// reconciliation and date-range handling apply to records as they do to
+/// shutdowns.
+fn append_usage_records(
+    entries: &mut Vec<CopilotUsageEntry>,
+    mut records: Vec<UsageRecordCall>,
+    session_id: &str,
+) {
+    let mut totals = HashMap::<String, CopilotUsageEntry>::new();
+    for entry in entries.iter() {
+        totals.insert(entry.model.clone(), entry.clone());
+    }
+    records.sort_by_key(|record| record.timestamp);
+    let mut seen = HashSet::new();
+    for (index, record) in records.into_iter().enumerate() {
+        if record
+            .identity
+            .as_ref()
+            .is_some_and(|identity| !seen.insert(identity.clone()))
+        {
+            continue;
+        }
+        let call = record.usage;
+        let dedup_key = format!(
+            "usage-record:{session_id}:{}",
+            record.identity.unwrap_or_else(|| index.to_string())
+        );
+        let timestamp_text = crate::format_rfc3339_millis(record.timestamp);
+        let total = totals
+            .entry(record.model.clone())
+            .or_insert_with(|| CopilotUsageEntry {
+                timestamp: record.timestamp,
+                timestamp_text: timestamp_text.clone(),
+                session_id: session_id.to_string(),
+                model: record.model.clone(),
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                reasoning_output_tokens: 0,
+                extra_total_tokens: 0,
+                request_count: 0,
+                nano_aiu: 0,
+                cost_usd: None,
+                dedup_key: dedup_key.clone(),
+            });
+        total.timestamp = record.timestamp;
+        total.timestamp_text = timestamp_text;
+        total.dedup_key = dedup_key;
+        total.input_tokens += uncached_session_input_tokens(&call);
+        total.output_tokens += call.output_tokens;
+        total.cache_creation_tokens += call.cache_write_tokens;
+        total.cache_read_tokens += call.cache_read_tokens;
+        total.reasoning_output_tokens += call.reasoning_tokens;
+        total.request_count += 1;
+        entries.push(total.clone());
+    }
 }
 
 fn nano_aiu(value: Option<f64>) -> Option<u64> {

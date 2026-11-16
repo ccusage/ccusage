@@ -20,6 +20,14 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 - `COPILOT_HOME` (single relocated Copilot data root)
 - `COPILOT_OTEL_FILE_EXPORTER_PATH` (one explicit JSONL file)
 
+Session-state `session.usage_record` events are per-call receipts, keyed by their `accounting`
+identity (`sourceSessionId`, `sequence`); a repeated identity counts once. Shutdown `modelMetrics`
+total every call before them, including receipted ones, so once a session has a receipt its later
+shutdowns and checkpoints are ignored. The parser folds each receipt into the running
+`(session, model)` total that continues from the last earlier shutdown, so the loader treats
+receipts exactly like the shutdown snapshots below and its interval split yields each call at its
+own timestamp.
+
 Session-state shutdown records are cumulative per canonical `(session, model)` pair, so
 resumed sessions emit one shutdown per resume. The adapter reports each snapshot as interval
 usage: the first snapshot is kept as-is and each later snapshot subtracts its predecessor, so
@@ -45,7 +53,7 @@ GitHub AI credit, $0.01). At every shutdown, and at checkpoints after the last o
 minus the per-model `totalNanoAiu` reported so far is unexplained; what stays unexplained at every
 later snapshot becomes cost-only `unknown` entries, dated where it first stays. Sessions without checkpoints
 (older Copilot versions restart both totals on every resume), with a shutdown missing either total,
-or with OpenTelemetry rows get no such entries.
+with usage records, or with OpenTelemetry rows get no such entries.
 
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads.

@@ -66,6 +66,46 @@ fn snapshots_copilot_unified_monthly_and_session_stdout() {
     );
 }
 
+#[test]
+fn reports_copilot_daily_usage_from_usage_records() {
+    let fixture = fs_fixture!({
+        "copilot/session-state/session-receipts/events.jsonl": include_str!(
+            "../../../adapters/copilot/tests/fixtures/session-state/session-receipts/events.jsonl"
+        ),
+        "copilot/session-state/session-resumed-receipts/events.jsonl": include_str!(
+            "../../../adapters/copilot/tests/fixtures/session-state/session-resumed-receipts/events.jsonl"
+        ),
+    });
+
+    let output: serde_json::Value =
+        serde_json::from_str(&run_cli(&fixture, ["copilot", "daily", "--json"]))
+            .expect("daily JSON should parse");
+    let days = output["daily"]
+        .as_array()
+        .expect("daily rows")
+        .iter()
+        .map(|day| {
+            (
+                day["date"].as_str().unwrap().to_string(),
+                day["inputTokens"].as_u64().unwrap(),
+                day["outputTokens"].as_u64().unwrap(),
+                day["cacheCreationTokens"].as_u64().unwrap(),
+                day["cacheReadTokens"].as_u64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        days,
+        [
+            ("2026-02-05".to_string(), 200, 120, 100, 1200),
+            ("2026-02-06".to_string(), 50, 60, 50, 400),
+            ("2026-02-07".to_string(), 100, 40, 100, 300),
+            ("2026-02-08".to_string(), 50, 30, 0, 200),
+        ]
+    );
+}
+
 fn copilot_fixture() -> Fixture {
     fs_fixture!({
         "copilot/session-state/session-a/events.jsonl": include_str!(
