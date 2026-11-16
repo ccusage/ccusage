@@ -2,9 +2,7 @@ use std::{collections::HashSet, path::Path};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use ccusage_adapter_common::{
-    SqliteStage, read_units, source::LoadContext, units::UnitError,
-};
+use ccusage_adapter_common::{SqliteStage, read_units, source::LoadContext, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log};

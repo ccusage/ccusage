@@ -208,7 +208,8 @@ fn read_agent_database(
             }
             Ok(sqlite::State::Done) => break,
             Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code).record(&database.path, diagnostics);
+                UnitError::sqlite(SqliteStage::Rows, error.code)
+                    .record(&database.path, diagnostics);
                 break;
             }
         }
