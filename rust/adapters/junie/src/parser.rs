@@ -102,7 +102,9 @@ pub(super) fn parse_events(
     content: &[u8],
     session_created_at: Option<TimestampMs>,
 ) -> Vec<JunieUsage> {
-    let prefilter = LinePrefilter::any(&[USAGE_EVENT_KIND.as_bytes()]);
+    // JSON may spell any letter of the kind as `\uXXXX`, so lines with a
+    // `\u` escape always reach the parser where the decoded kind is compared.
+    let prefilter = LinePrefilter::any(&[USAGE_EVENT_KIND.as_bytes(), br"\u"]);
     jsonl::records::<EventLine>(content, Some(&prefilter))
         .flat_map(|line| {
             let timestamp = line
@@ -223,6 +225,20 @@ mod tests {
     #[test]
     fn legacy_events_without_session_creation_time_are_skipped() {
         assert!(parse_events(LEGACY.as_bytes(), None).is_empty());
+    }
+
+    #[test]
+    fn reads_usage_events_whose_kind_is_json_escaped() {
+        let content = r#"{"event":{"agentEvent":{"kind":"LlmResponseMetadata\u0045vent","modelUsage":[{"model":"gpt-4.1","inputTokens":7}]}},"timestampMs":1785470253773}"#;
+
+        assert!(
+            !content.contains(USAGE_EVENT_KIND),
+            "fixture must not contain the raw kind"
+        );
+        let records = parse_events(content.as_bytes(), None);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].usage.input_tokens, 7);
     }
 
     #[test]
