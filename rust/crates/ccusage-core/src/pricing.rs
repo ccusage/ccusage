@@ -794,9 +794,9 @@ impl ModelsDevCatalogRules {
 fn normalized_models_dev_model_id(model_id: &str) -> Cow<'_, str> {
     if model_id
         .bytes()
-        .any(|byte| byte == b'.' || byte == b'@' || byte.is_ascii_uppercase())
+        .any(|byte| is_pricing_key_separator(byte) || byte.is_ascii_uppercase())
     {
-        Cow::Owned(model_id.to_lowercase().replace(['.', '@'], "-"))
+        Cow::Owned(dash_pricing_key_separators(model_id.to_lowercase().chars()))
     } else {
         Cow::Borrowed(model_id)
     }
@@ -2913,10 +2913,20 @@ fn suffix_starts_with_numeric_model_version(key: &str, suffix: &str) -> bool {
     !(digit_len == MODEL_DATE_SUFFIX_DIGITS && after_digits.is_none_or(is_pricing_key_boundary))
 }
 
+fn is_pricing_key_separator(byte: u8) -> bool {
+    matches!(byte, b'.' | b'@')
+}
+
+fn dash_pricing_key_separators(chars: impl Iterator<Item = char>) -> String {
+    chars
+        .map(|char| if matches!(char, '.' | '@') { '-' } else { char })
+        .collect()
+}
+
 /// Normalizes known model separator variants without allocating for canonical keys.
 fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
-    if value.contains(['.', '@']) {
-        Cow::Owned(value.replace(['.', '@'], "-"))
+    if value.bytes().any(is_pricing_key_separator) {
+        Cow::Owned(dash_pricing_key_separators(value.chars()))
     } else {
         Cow::Borrowed(value)
     }
