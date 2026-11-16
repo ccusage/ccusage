@@ -16,7 +16,7 @@ use crate::{
     stored_cost_for_mode,
 };
 use ccusage_adapter_common::{jsonl, units::UnitError};
-use ccusage_core::Diagnostics;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 /// A single parsed pi session record. Only the fields ccusage consumes are
 /// declared; serde skips everything else.
@@ -342,7 +342,7 @@ fn read_session_file_data_with_context(
     let mut entries = Vec::new();
     let mut usage_records = Vec::new();
 
-    for record in jsonl::records_with_usage_diagnostics::<PiLine>(
+    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<PiLine>(
         &content,
         Some(&prefilter),
         path,
@@ -352,12 +352,6 @@ fn read_session_file_data_with_context(
         if !is_pi_message_usage(&record) {
             continue;
         }
-        let Some(timestamp_text) = record.timestamp.clone() else {
-            continue;
-        };
-        let Some(timestamp) = crate::parse_ts_timestamp(&timestamp_text) else {
-            continue;
-        };
         let Some(message) = record.message.as_ref() else {
             continue;
         };
@@ -381,6 +375,17 @@ fn read_session_file_data_with_context(
         if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
             continue;
         }
+        let Some((timestamp_text, timestamp)) = record.timestamp.as_ref().and_then(|text| {
+            crate::parse_ts_timestamp(text).map(|timestamp| (text.clone(), timestamp))
+        }) else {
+            diagnostics.record(Skip::record(
+                path,
+                number,
+                SkipKind::InvalidTimestamp,
+                "pi assistant usage has no valid timestamp",
+            ));
+            continue;
+        };
         let raw_model = message.model.clone();
         let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
         let model = raw_model
@@ -909,6 +914,45 @@ mod tests {
         .unwrap();
         assert_eq!(named[0].cost, 5.0);
         assert_eq!(named[0].missing_pricing_model, None);
+    }
+
+    #[test]
+    fn diagnoses_assistant_usage_without_a_valid_timestamp() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": concat!(
+                r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+                "\n",
+                r#"{"type":"message","timestamp":"SECRET_CANARY","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5","usage":{"input":0,"output":0}}}"#,
+                "\n",
+            ),
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+        let diagnostics = Diagnostics::new("pi");
+
+        let data = read_session_file_data_with_diagnostics(
+            &file,
+            None,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(data.entries.len(), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+        let warnings = diagnostics
+            .warnings(&crate::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("agent_session-a.jsonl:2"));
+        assert!(warnings.contains("agent_session-a.jsonl:3"));
+        assert!(!warnings.contains("SECRET_CANARY"));
     }
 
     #[test]
