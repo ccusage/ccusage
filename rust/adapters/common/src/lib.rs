@@ -16,6 +16,8 @@ pub mod rows;
 pub mod source;
 #[cfg(test)]
 mod test_source;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod units;
 
 pub use report::print_table_for_agent;
