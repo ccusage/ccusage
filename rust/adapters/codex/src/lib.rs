@@ -48,7 +48,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let shared = args.shared;
     // The embedded table builds while the rollouts load; asking for pricing
     // before load_groups would wait for it instead.
-    pricing::prewarm_embedded();
+    pricing::prewarm_embedded(shared.offline);
     let mut groups = load_groups(&shared, args.kind)?;
     let pricing = PricingMap::load_with_overrides(
         shared.offline,

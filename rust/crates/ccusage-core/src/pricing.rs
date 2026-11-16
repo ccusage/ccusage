@@ -1033,15 +1033,30 @@ static EMBEDDED_PREWARM: Mutex<Option<JoinHandle<PricingMap>>> = Mutex::new(None
 ///
 /// The next [`PricingMap::load_embedded`] call takes that table instead of
 /// building its own, so a report can discover its log files while the
-/// snapshots inflate and parse. The embedded snapshots must already be
-/// installed.
-pub fn prewarm_embedded() {
-    let Ok(handle) = thread::Builder::new().spawn(PricingMap::build_embedded) else {
+/// snapshots inflate and parse. Nothing starts when the
+/// [`PricingMap::load_with_overrides`] base for `offline` is already loaded
+/// or a prewarmed table is still waiting to be taken. The embedded snapshots
+/// must already be installed.
+pub fn prewarm_embedded(offline: bool) {
+    if base_pricing(offline).get().is_some() {
+        return;
+    }
+    let Ok(mut prewarm) = EMBEDDED_PREWARM.lock() else {
         return;
     };
-    if let Ok(mut prewarm) = EMBEDDED_PREWARM.lock() {
-        *prewarm = Some(handle);
+    if prewarm.is_none() {
+        *prewarm = thread::Builder::new()
+            .spawn(PricingMap::build_embedded)
+            .ok();
     }
+}
+
+/// Every agent of a combined report prices its own rows, so the tables are
+/// parsed, and in online mode fetched, once per process rather than per agent.
+fn base_pricing(offline: bool) -> &'static OnceLock<PricingMap> {
+    static ONLINE: OnceLock<PricingMap> = OnceLock::new();
+    static OFFLINE: OnceLock<PricingMap> = OnceLock::new();
+    if offline { &OFFLINE } else { &ONLINE }
 }
 
 impl PricingMap {
@@ -1086,12 +1101,8 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
-        // Every agent of a combined report prices its own rows, so the tables are
-        // parsed, and in online mode fetched, once per process rather than per agent.
-        static ONLINE: OnceLock<PricingMap> = OnceLock::new();
-        static OFFLINE: OnceLock<PricingMap> = OnceLock::new();
-        let base = if offline { &OFFLINE } else { &ONLINE };
-        base.get_or_init(|| Self::load_base(offline, log))
+        base_pricing(offline)
+            .get_or_init(|| Self::load_base(offline, log))
             .with_user_overrides(overrides)
     }
 
@@ -3176,10 +3187,11 @@ fn fetch_json_url(url: &str) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        FAST_MULTIPLIER_OVERRIDES_JSON, FLEX_MULTIPLIER_OVERRIDES_JSON, Fuzzy, Pricing,
-        PricingEndpoint, PricingMap, SpeedMultiplierOverrides, ULTRAFAST_MULTIPLIER_OVERRIDES_JSON,
-        build_time_models_dev_json, build_time_pricing_json, embedded_models_dev_pricing,
-        long_context_split_threshold, model_without_date_suffix,
+        EMBEDDED_PREWARM, FAST_MULTIPLIER_OVERRIDES_JSON, FLEX_MULTIPLIER_OVERRIDES_JSON, Fuzzy,
+        Pricing, PricingEndpoint, PricingMap, SpeedMultiplierOverrides,
+        ULTRAFAST_MULTIPLIER_OVERRIDES_JSON, build_time_models_dev_json, build_time_pricing_json,
+        embedded_models_dev_pricing, long_context_split_threshold, model_without_date_suffix,
+        prewarm_embedded,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3457,6 +3469,18 @@ mod tests {
         assert!((flash.input * 1e6 - 0.44).abs() < 1e-12);
         assert!((flash.output * 1e6 - 1.32).abs() < 1e-12);
         assert!((flash.cache_read * 1e6 - 0.014).abs() < 1e-12);
+    }
+
+    #[test]
+    fn prewarm_skips_a_build_once_the_base_pricing_is_loaded() {
+        PricingMap::load_with_overrides(
+            true,
+            false,
+            std::iter::empty::<(&String, &ccusage_cli::PricingOverride)>(),
+        );
+        prewarm_embedded(true);
+
+        assert!(EMBEDDED_PREWARM.lock().unwrap().is_none());
     }
 
     #[test]
