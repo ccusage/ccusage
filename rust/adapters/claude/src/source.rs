@@ -1,13 +1,9 @@
-use std::collections::BTreeMap;
-
 use ccusage_adapter_common::{
     claims::ClaudeCounted,
-    rows::summary_rows,
+    rows::{summarize_entry_sessions, summary_rows},
     source::{ALL_REPORTS, PricingSupply, SourceRows, UnifiedRequest, UsageSource},
 };
-use ccusage_core::{
-    Diagnostics, ReportWindow, Result, SessionAccumulator, UsageSummary, cli::AgentReportKind,
-};
+use ccusage_core::{Diagnostics, ReportWindow, Result, cli::AgentReportKind};
 
 use crate::{load_daily_summaries_with_detection_progress, load_deduped_entries_with_progress};
 
@@ -94,20 +90,6 @@ impl UsageSource for Claude {
             claude_counted: Some(ClaudeCounted::session_days(session_days, shared)),
         })
     }
-}
-
-fn summarize_entry_sessions(entries: &[ccusage_core::LoadedEntry]) -> Result<Vec<UsageSummary>> {
-    let mut groups = BTreeMap::<(String, String), SessionAccumulator>::new();
-    for entry in entries {
-        groups
-            .entry((entry.project_path.to_string(), entry.session_id.to_string()))
-            .or_default()
-            .add_entry(entry);
-    }
-    groups
-        .into_values()
-        .map(|group| group.into_summary())
-        .collect()
 }
 
 #[cfg(test)]

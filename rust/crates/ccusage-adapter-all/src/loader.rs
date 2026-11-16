@@ -25,9 +25,10 @@ use crate::{
 
 #[cfg(test)]
 use crate::{
-    CodexGroup, SessionAccumulator, UsageSummary, adapter::codex, cli::CodexSpeed,
-    filter_loaded_entries_by_date,
+    CodexGroup, UsageSummary, adapter::codex, cli::CodexSpeed, filter_loaded_entries_by_date,
 };
+#[cfg(test)]
+use ccusage_adapter_common::rows::summarize_entry_sessions;
 
 use super::{
     report::sort_rows,
@@ -677,21 +678,6 @@ fn filter_daily_summaries_by_date(rows: &mut Vec<UsageSummary>, shared: &SharedA
         shared.since.as_ref().is_none_or(|since| &date >= since)
             && shared.until.as_ref().is_none_or(|until| &date <= until)
     });
-}
-
-#[cfg(test)]
-fn summarize_entry_sessions(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
-    let mut groups = BTreeMap::<(String, String), SessionAccumulator>::new();
-    for entry in entries {
-        groups
-            .entry((entry.project_path.to_string(), entry.session_id.to_string()))
-            .or_default()
-            .add_entry(entry);
-    }
-    groups
-        .into_values()
-        .map(|group| group.into_summary())
-        .collect()
 }
 
 fn needs_daily_family(kinds: &[AgentReportKind]) -> bool {

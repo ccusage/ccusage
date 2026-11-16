@@ -1,6 +1,10 @@
+use std::collections::BTreeMap;
+
 use serde_json::{Value, json};
 
-use ccusage_core::{ModelBreakdown, UsageSummary, json_float};
+use ccusage_core::{
+    LoadedEntry, ModelBreakdown, Result, SessionAccumulator, UsageSummary, json_float,
+};
 
 /// One row a source contributes to the unified report: a period, the agent it
 /// belongs to, and that agent's usage in the period.
@@ -60,6 +64,26 @@ pub fn summary_rows(
                 model_breakdowns: summary.model_breakdowns,
             })
         })
+        .collect()
+}
+
+/// Summarizes entries into one row per session of a project, ordered by
+/// project path and then session id.
+///
+/// The unified session report groups this way for the sources whose focused
+/// session report keys by session id alone, so two projects that reuse a
+/// session id stay two rows.
+pub fn summarize_entry_sessions(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
+    let mut groups = BTreeMap::<(String, String), SessionAccumulator>::new();
+    for entry in entries {
+        groups
+            .entry((entry.project_path.to_string(), entry.session_id.to_string()))
+            .or_default()
+            .add_entry(entry);
+    }
+    groups
+        .into_values()
+        .map(|group| group.into_summary())
         .collect()
 }
 

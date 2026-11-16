@@ -71,18 +71,7 @@ pub(crate) fn summarize_unified_entries(
     if kind != AgentReportKind::Session {
         return summarize_entries(entries, kind);
     }
-
-    let mut groups = BTreeMap::<(String, String), SessionAccumulator>::new();
-    for entry in entries {
-        groups
-            .entry((entry.project_path.to_string(), entry.session_id.to_string()))
-            .or_default()
-            .add_entry(entry);
-    }
-    groups
-        .into_values()
-        .map(|group| group.into_summary())
-        .collect()
+    ccusage_adapter_common::rows::summarize_entry_sessions(entries)
 }
 
 fn rows_key(kind: AgentReportKind) -> &'static str {
