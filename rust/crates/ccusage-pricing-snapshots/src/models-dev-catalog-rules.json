@@ -664,6 +664,7 @@
 		"qwen3-vl-30b-a3b-instruct",
 		"qwen3-vl-flash",
 		"qwen3-vl-plus",
+		"qwen4-max",
 		"qwq-32b",
 		"qwq-plus",
 		"reka-edge",

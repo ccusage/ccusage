@@ -16904,9 +16904,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.007,
-			"input": 0.014,
-			"output": 0.041
+			"cache_read": 0.009,
+			"input": 0.018,
+			"output": 0.054
 		},
 		"limit": {
 			"context": 262144
@@ -31281,6 +31281,17 @@
 		},
 		"limit": {
 			"context": 40000
+		}
+	},
+	"qwen4-max": {
+		"cost": {
+			"cache_read": 0.075,
+			"cache_write": 1.875,
+			"input": 1.5,
+			"output": 4.5
+		},
+		"limit": {
+			"context": 1000000
 		}
 	},
 	"qwq-plus": {
