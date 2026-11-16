@@ -1,6 +1,9 @@
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
-use ccusage_adapter_common::units::{UnitError, decode_json};
+use ccusage_adapter_common::{
+    jsonl,
+    units::{UnitError, decode_json},
+};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 use serde_json::Value;
@@ -8,42 +11,26 @@ use serde_json::Value;
 use crate::{
     Diagnostics, LoadedEntry, PricingMap, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry,
     UsageMessage, apply_total_token_fallback, calculate_cost, cli::CostMode, format_date_tz,
-    json_value_u64, missing_pricing_model_for_usage, non_empty_json_string,
+    missing_pricing_model_for_usage,
 };
 
 /// A single Amp thread file: one JSON object holding the thread id, the chat
 /// messages, and an optional usage ledger.
-///
-/// Polymorphic and leniency-sensitive leaves (token blocks, ids, credits) stay
-/// as raw [`Value`]s so navigation matches the historical `Value::get` parsing
-/// exactly instead of failing the whole file on an unexpected field type.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AmpThread {
-    #[serde(
-        default,
-        deserialize_with = "ccusage_adapter_common::jsonl::non_empty_string"
-    )]
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     id: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "ccusage_adapter_common::jsonl::lenient_vec"
-    )]
+    #[serde(default, deserialize_with = "jsonl::lenient_vec")]
     messages: Vec<AmpMessage>,
-    #[serde(
-        default,
-        deserialize_with = "ccusage_adapter_common::jsonl::lenient_object"
-    )]
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     usage_ledger: Option<AmpUsageLedger>,
 }
 
 /// Wrapper around the ledger's `events` array.
 #[derive(Debug, Default, Deserialize)]
 struct AmpUsageLedger {
-    #[serde(
-        default,
-        deserialize_with = "ccusage_adapter_common::jsonl::lenient_array"
-    )]
+    #[serde(default, deserialize_with = "jsonl::lenient_array")]
     events: Option<Vec<AmpLedgerEvent>>,
 }
 
@@ -51,40 +38,128 @@ struct AmpUsageLedger {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AmpLedgerEvent {
-    #[serde(default)]
-    id: Option<Value>,
-    #[serde(
-        default,
-        deserialize_with = "ccusage_adapter_common::jsonl::non_empty_string"
-    )]
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     timestamp: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "ccusage_adapter_common::jsonl::non_empty_string"
-    )]
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model: Option<String>,
-    #[serde(default)]
-    tokens: Option<Value>,
-    #[serde(default)]
-    to_message_id: Option<Value>,
-    #[serde(default)]
-    credits: Option<Value>,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    tokens: Option<AmpLedgerTokens>,
+    #[serde(default, deserialize_with = "jsonl::lenient_i64")]
+    to_message_id: Option<i64>,
+    #[serde(default, deserialize_with = "jsonl::lenient_f64")]
+    credits: Option<f64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct AmpLedgerTokens {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    input: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    output: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    total: u64,
 }
 
 /// A single chat message in the thread.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AmpMessage {
-    #[serde(default)]
-    role: Option<Value>,
-    #[serde(default)]
-    usage: Option<Value>,
-    #[serde(default)]
-    timestamp: Option<Value>,
-    #[serde(default)]
-    model: Option<Value>,
-    #[serde(default)]
-    message_id: Option<Value>,
+    #[serde(rename = "role", default, deserialize_with = "is_assistant_role")]
+    from_assistant: bool,
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
+    usage: Option<AmpMessageUsage>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    timestamp: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    #[serde(default, deserialize_with = "message_id")]
+    message_id: Option<AmpMessageId>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AmpMessageUsage {
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    input_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    output_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cache_creation_input_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    cache_read_input_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    total_tokens: u64,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    model: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    timestamp: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::lenient_f64")]
+    credits: Option<f64>,
+}
+
+#[derive(Debug)]
+enum AmpMessageId {
+    Number(i64),
+    Text(String),
+}
+
+impl AmpMessageId {
+    fn number(&self) -> Option<i64> {
+        match self {
+            Self::Number(number) => Some(*number),
+            Self::Text(_) => None,
+        }
+    }
+
+    fn to_text(&self) -> String {
+        match self {
+            Self::Number(number) => number.to_string(),
+            Self::Text(text) => text.clone(),
+        }
+    }
+}
+
+fn message_id<'de, D>(deserializer: D) -> std::result::Result<Option<AmpMessageId>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(match Option::<Value>::deserialize(deserializer)? {
+        Some(Value::Number(number)) => number.as_i64().map(AmpMessageId::Number),
+        Some(Value::String(text)) => Some(AmpMessageId::Text(text)),
+        _ => None,
+    })
+}
+
+fn is_assistant_role<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<Value>::deserialize(deserializer)?
+        .as_ref()
+        .and_then(Value::as_str)
+        == Some("assistant"))
+}
+
+struct AmpUsage {
+    usage: TokenUsageRaw,
+    extra_total_tokens: u64,
+    model: String,
+    timestamp_text: String,
+    timestamp: TimestampMs,
+    id: Option<String>,
+    credits: Option<f64>,
+}
+
+fn counted_usage(usage: TokenUsageRaw, total_tokens: u64) -> Option<(TokenUsageRaw, u64)> {
+    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total_tokens);
+    let counts_tokens = usage.input_tokens != 0
+        || usage.output_tokens != 0
+        || usage.cache_creation_input_tokens != 0
+        || usage.cache_read_input_tokens != 0
+        || extra_total_tokens != 0;
+    counts_tokens.then_some((usage, extra_total_tokens))
 }
 
 /// Where a thread's records come from and where the ones that cannot be
@@ -103,6 +178,15 @@ impl ThreadUnit<'_> {
             Skip::line_number(index),
             SkipKind::InvalidTimestamp,
             "missing or unsupported timestamp",
+        ));
+    }
+
+    fn missing_model(&self, index: usize) {
+        self.diagnostics.record(Skip::record(
+            self.path,
+            Skip::line_number(index),
+            SkipKind::InvalidData,
+            "Amp usage record has no model",
         ));
     }
 }
@@ -155,7 +239,7 @@ fn parse_thread(
         if thread
             .messages
             .iter()
-            .any(|message| message.usage.as_ref().is_some_and(Value::is_object))
+            .any(|message| message.usage.is_some())
             || thread
                 .usage_ledger
                 .as_ref()
@@ -205,37 +289,23 @@ fn parse_ledger_events(
         let Some(tokens) = event.tokens.as_ref() else {
             continue;
         };
-        let cache = event
+        let (cache_creation, cache_read) = event
             .to_message_id
-            .as_ref()
-            .and_then(Value::as_i64)
             .and_then(|id| cache_tokens.get(&id).copied())
             .unwrap_or_default();
         let usage = TokenUsageRaw {
-            input_tokens: json_value_u64(tokens.get("input")),
-            output_tokens: json_value_u64(tokens.get("output")),
-            cache_creation_input_tokens: cache.0,
-            cache_read_input_tokens: cache.1,
+            input_tokens: tokens.input,
+            output_tokens: tokens.output,
+            cache_creation_input_tokens: cache_creation,
+            cache_read_input_tokens: cache_read,
             speed: None,
             cache_creation: None,
         };
-        let total_tokens = json_value_u64(tokens.get("total"));
-        let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total_tokens);
-        if usage.input_tokens == 0
-            && usage.output_tokens == 0
-            && usage.cache_creation_input_tokens == 0
-            && usage.cache_read_input_tokens == 0
-            && extra_total_tokens == 0
-        {
+        let Some((usage, extra_total_tokens)) = counted_usage(usage, tokens.total) else {
             continue;
-        }
+        };
         let Some(model) = event.model.clone() else {
-            unit.diagnostics.record(Skip::record(
-                unit.path,
-                Skip::line_number(index),
-                SkipKind::InvalidData,
-                "Amp usage record has no model",
-            ));
+            unit.missing_model(index);
             continue;
         };
         let Some((timestamp_text, timestamp)) = event.timestamp.clone().and_then(placed_timestamp)
@@ -243,59 +313,21 @@ fn parse_ledger_events(
             unit.invalid_timestamp(index);
             continue;
         };
-        let data = UsageEntry {
-            session_id: Some(thread_id.to_string()),
-            timestamp: timestamp_text,
-            version: None,
-            message: UsageMessage {
+        entries.push(amp_entry(
+            AmpUsage {
                 usage,
-                model: Some(model.clone()),
-                id: non_empty_json_string(event.id.as_ref()),
+                extra_total_tokens,
+                model,
+                timestamp_text,
+                timestamp,
+                id: event.id.clone(),
+                credits: event.credits,
             },
-            cost_usd: None,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
-        };
-        let cost_data = UsageEntry {
-            message: UsageMessage {
-                usage: TokenUsageRaw {
-                    output_tokens: data
-                        .message
-                        .usage
-                        .output_tokens
-                        .saturating_add(extra_total_tokens),
-                    cache_creation: None,
-                    ..data.message.usage
-                },
-                ..data.message.clone()
-            },
-            ..data.clone()
-        };
-        let cost = calculate_cost(&cost_data, mode, pricing);
-        let missing_pricing_model = missing_pricing_model_for_usage(
-            Some(&model),
-            cost_data.message.usage,
-            None,
+            thread_id,
+            tz,
             mode,
             pricing,
-        );
-        entries.push(LoadedEntry {
-            date: format_date_tz(timestamp, tz),
-            timestamp,
-            project: Arc::from("amp"),
-            session_id: Arc::from(thread_id),
-            project_path: Arc::from("Amp"),
-            cost,
-            extra_total_tokens,
-            credits: json_value_f64(event.credits.as_ref()),
-            message_count: None,
-            model: Some(model),
-            usage_limit_reset_time: None,
-            missing_pricing_model,
-            data,
-            stored_cost: None,
-        });
+        ));
     }
     entries
 }
@@ -310,136 +342,132 @@ fn parse_message_usage(
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for (index, message) in messages.iter().enumerate() {
-        if message.role.as_ref().and_then(Value::as_str) != Some("assistant") {
+        if !message.from_assistant {
             continue;
         }
-        let Some(usage) = message.usage.as_ref() else {
+        let Some(record) = message.usage.as_ref() else {
             continue;
         };
-        let usage_raw = TokenUsageRaw {
-            input_tokens: json_value_u64(usage.get("inputTokens")),
-            output_tokens: json_value_u64(usage.get("outputTokens")),
-            cache_creation_input_tokens: json_value_u64(usage.get("cacheCreationInputTokens")),
-            cache_read_input_tokens: json_value_u64(usage.get("cacheReadInputTokens")),
+        let usage = TokenUsageRaw {
+            input_tokens: record.input_tokens,
+            output_tokens: record.output_tokens,
+            cache_creation_input_tokens: record.cache_creation_input_tokens,
+            cache_read_input_tokens: record.cache_read_input_tokens,
             speed: None,
             cache_creation: None,
         };
-        let total_tokens = json_value_u64(usage.get("totalTokens"));
-        let (usage_raw, extra_total_tokens) =
-            apply_total_token_fallback(usage_raw, 0, total_tokens);
-        if usage_raw.input_tokens == 0
-            && usage_raw.output_tokens == 0
-            && usage_raw.cache_creation_input_tokens == 0
-            && usage_raw.cache_read_input_tokens == 0
-            && extra_total_tokens == 0
-        {
-            continue;
-        }
-        let Some(model) = non_empty_json_string(usage.get("model"))
-            .or_else(|| non_empty_json_string(message.model.as_ref()))
-        else {
-            unit.diagnostics.record(Skip::record(
-                unit.path,
-                Skip::line_number(index),
-                SkipKind::InvalidData,
-                "Amp usage record has no model",
-            ));
+        let Some((usage, extra_total_tokens)) = counted_usage(usage, record.total_tokens) else {
             continue;
         };
-        let timestamp = non_empty_json_string(usage.get("timestamp"))
+        let Some(model) = record.model.clone().or_else(|| message.model.clone()) else {
+            unit.missing_model(index);
+            continue;
+        };
+        let timestamp = record
+            .timestamp
+            .clone()
             .and_then(placed_timestamp)
-            .or_else(|| {
-                non_empty_json_string(message.timestamp.as_ref()).and_then(placed_timestamp)
-            });
+            .or_else(|| message.timestamp.clone().and_then(placed_timestamp));
         let Some((timestamp_text, timestamp)) = timestamp else {
             unit.invalid_timestamp(index);
             continue;
         };
-        let message_id = message.message_id.as_ref().and_then(|id| {
-            id.as_i64()
-                .map(|v| v.to_string())
-                .or_else(|| id.as_str().map(str::to_string))
-        });
-        let data = UsageEntry {
-            session_id: Some(thread_id.to_string()),
-            timestamp: timestamp_text,
-            version: None,
-            message: UsageMessage {
-                usage: usage_raw,
-                model: Some(model.clone()),
-                id: message_id,
+        entries.push(amp_entry(
+            AmpUsage {
+                usage,
+                extra_total_tokens,
+                model,
+                timestamp_text,
+                timestamp,
+                id: message.message_id.as_ref().map(AmpMessageId::to_text),
+                credits: record.credits,
             },
-            cost_usd: None,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
-        };
-        let cost_data = UsageEntry {
-            message: UsageMessage {
-                usage: TokenUsageRaw {
-                    output_tokens: data
-                        .message
-                        .usage
-                        .output_tokens
-                        .saturating_add(extra_total_tokens),
-                    cache_creation: None,
-                    ..data.message.usage
-                },
-                ..data.message.clone()
-            },
-            ..data.clone()
-        };
-        let cost = calculate_cost(&cost_data, mode, pricing);
-        let missing_pricing_model = missing_pricing_model_for_usage(
-            Some(&model),
-            cost_data.message.usage,
-            None,
+            thread_id,
+            tz,
             mode,
             pricing,
-        );
-        entries.push(LoadedEntry {
-            date: format_date_tz(timestamp, tz),
-            timestamp,
-            project: Arc::from("amp"),
-            session_id: Arc::from(thread_id),
-            project_path: Arc::from("Amp"),
-            cost,
-            extra_total_tokens,
-            credits: json_value_f64(usage.get("credits")),
-            message_count: None,
-            model: Some(model),
-            usage_limit_reset_time: None,
-            missing_pricing_model,
-            data,
-            stored_cost: None,
-        });
+        ));
     }
     entries
 }
 
-fn cache_tokens_by_message_id(messages: &[AmpMessage]) -> HashMap<i64, (u64, u64)> {
-    let mut cache_tokens = HashMap::new();
-    for message in messages {
-        if message.role.as_ref().and_then(Value::as_str) != Some("assistant") {
-            continue;
-        }
-        let Some(message_id) = message.message_id.as_ref().and_then(Value::as_i64) else {
-            continue;
-        };
-        let usage = message.usage.as_ref();
-        cache_tokens.insert(
-            message_id,
-            (
-                json_value_u64(usage.and_then(|usage| usage.get("cacheCreationInputTokens"))),
-                json_value_u64(usage.and_then(|usage| usage.get("cacheReadInputTokens"))),
-            ),
-        );
+fn amp_entry(
+    record: AmpUsage,
+    thread_id: &str,
+    tz: &JiffTimeZone,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+) -> LoadedEntry {
+    let data = UsageEntry {
+        session_id: Some(thread_id.to_string()),
+        timestamp: record.timestamp_text,
+        version: None,
+        message: UsageMessage {
+            usage: record.usage,
+            model: Some(record.model.clone()),
+            id: record.id,
+        },
+        cost_usd: None,
+        request_id: None,
+        is_api_error_message: None,
+        is_sidechain: None,
+    };
+    let cost_data = UsageEntry {
+        message: UsageMessage {
+            usage: TokenUsageRaw {
+                output_tokens: record
+                    .usage
+                    .output_tokens
+                    .saturating_add(record.extra_total_tokens),
+                cache_creation: None,
+                ..record.usage
+            },
+            ..data.message.clone()
+        },
+        ..data.clone()
+    };
+    let cost = calculate_cost(&cost_data, mode, pricing);
+    let missing_pricing_model = missing_pricing_model_for_usage(
+        Some(&record.model),
+        cost_data.message.usage,
+        None,
+        mode,
+        pricing,
+    );
+    LoadedEntry {
+        date: format_date_tz(record.timestamp, tz),
+        timestamp: record.timestamp,
+        project: Arc::from("amp"),
+        session_id: Arc::from(thread_id),
+        project_path: Arc::from("Amp"),
+        cost,
+        extra_total_tokens: record.extra_total_tokens,
+        credits: record.credits,
+        message_count: None,
+        model: Some(record.model),
+        usage_limit_reset_time: None,
+        missing_pricing_model,
+        data,
+        stored_cost: None,
     }
-    cache_tokens
 }
 
-fn json_value_f64(value: Option<&Value>) -> Option<f64> {
-    value.and_then(Value::as_f64)
+fn cache_tokens_by_message_id(messages: &[AmpMessage]) -> HashMap<i64, (u64, u64)> {
+    messages
+        .iter()
+        .filter(|message| message.from_assistant)
+        .filter_map(|message| {
+            let id = message.message_id.as_ref()?.number()?;
+            let usage = message.usage.as_ref();
+            Some((
+                id,
+                (
+                    usage.map_or(0, |usage| usage.cache_creation_input_tokens),
+                    usage.map_or(0, |usage| usage.cache_read_input_tokens),
+                ),
+            ))
+        })
+        .collect()
 }
 
 #[cfg(test)]
