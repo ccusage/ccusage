@@ -42,17 +42,30 @@ pub fn collect_files_with_extension(
 }
 
 /// Collects the files under `dir` that `matches` accepts, recursing into
-/// subdirectories without following symlinks.
-///
-/// A missing `dir` holds no files. Any other directory or entry that cannot
-/// be read is recorded in `diagnostics`, so files it hides show up as a
-/// warning rather than as lower usage.
+/// subdirectories without following symlinks. What cannot be read is
+/// recorded like [`dir_entries`] does.
 pub fn collect_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
     files: &mut Vec<PathBuf>,
     diagnostics: &Diagnostics,
 ) {
+    for (path, file_type) in dir_entries(dir, diagnostics) {
+        if file_type.is_file() && matches(&path) {
+            files.push(path);
+        } else if file_type.is_dir() {
+            collect_files_matching(&path, matches, files, diagnostics);
+        }
+    }
+}
+
+/// The entries directly inside `dir`, each with its own (not a symlink
+/// target's) file type, in the order the directory lists them.
+///
+/// A missing `dir` holds no entries. A directory, entry or file type that
+/// cannot be read is recorded in `diagnostics`, so files it hides show up as
+/// a warning rather than as lower usage.
+pub fn dir_entries(dir: &Path, diagnostics: &Diagnostics) -> Vec<(PathBuf, fs::FileType)> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) => {
@@ -63,34 +76,33 @@ pub fn collect_files_matching(
                     "cannot read directory",
                 ));
             }
-            return;
+            return Vec::new();
         }
     };
-
-    for entry in entries {
-        let Ok(entry) = entry else {
-            diagnostics.record(Skip::unit(
-                dir,
-                SkipKind::ReadInterrupted,
-                "cannot read directory entry",
-            ));
-            continue;
-        };
-        let path = entry.path();
-        let Ok(file_type) = entry.file_type() else {
-            diagnostics.record(Skip::unit(
-                &path,
-                SkipKind::Unreadable,
-                "cannot read file type",
-            ));
-            continue;
-        };
-        if file_type.is_file() && matches(&path) {
-            files.push(path);
-        } else if file_type.is_dir() {
-            collect_files_matching(&path, matches, files, diagnostics);
-        }
-    }
+    entries
+        .filter_map(|entry| {
+            let Ok(entry) = entry else {
+                diagnostics.record(Skip::unit(
+                    dir,
+                    SkipKind::ReadInterrupted,
+                    "cannot read directory entry",
+                ));
+                return None;
+            };
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(file_type) => Some((path, file_type)),
+                Err(_) => {
+                    diagnostics.record(Skip::unit(
+                        &path,
+                        SkipKind::Unreadable,
+                        "cannot read file type",
+                    ));
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &SharedArgs) {
