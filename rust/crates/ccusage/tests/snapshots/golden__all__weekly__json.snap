@@ -8,10 +8,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 18065,
     "cacheReadTokens": 1316617,
-    "inputTokens": 1349391,
-    "outputTokens": 59241,
-    "totalCost": 28.645522425000003,
-    "totalTokens": 2746731,
+    "inputTokens": 1349380,
+    "outputTokens": 59240,
+    "totalCost": 28.645498675000002,
+    "totalTokens": 2746719,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -50,22 +50,13 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 22,
+      "inputTokens": 11,
       "metadata": {
         "agents": [
-          "grok",
-          "opencode"
+          "grok"
         ]
       },
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00002375,
-          "inputTokens": 11,
-          "modelName": "gpt-5",
-          "outputTokens": 1
-        },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
@@ -76,13 +67,12 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gpt-5",
         "grok-code-fast-1"
       ],
-      "outputTokens": 2,
+      "outputTokens": 1,
       "period": "1969-12-29",
-      "totalCost": 0.000027450000000000003,
-      "totalTokens": 24
+      "totalCost": 3.7e-6,
+      "totalTokens": 12
     },
     {
       "agent": "all",

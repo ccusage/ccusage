@@ -10,11 +10,10 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 22,
+      "inputTokens": 11,
       "metadata": {
         "agents": [
-          "grok",
-          "opencode"
+          "grok"
         ]
       },
       "modelBreakdowns": [
@@ -25,24 +24,15 @@ exit: 0
           "inputTokens": 11,
           "modelName": "grok-code-fast-1",
           "outputTokens": 1
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 11,
-          "modelName": "gpt-5",
-          "outputTokens": 1
         }
       ],
       "modelsUsed": [
-        "gpt-5",
         "grok-code-fast-1"
       ],
-      "outputTokens": 2,
+      "outputTokens": 1,
       "period": "1970-01-01",
       "totalCost": 0,
-      "totalTokens": 24
+      "totalTokens": 12
     },
     {
       "agent": "all",
@@ -1761,10 +1751,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 18065,
     "cacheReadTokens": 1316617,
-    "inputTokens": 1348391,
-    "outputTokens": 59141,
+    "inputTokens": 1348380,
+    "outputTokens": 59140,
     "totalCost": 24.74878825,
-    "totalTokens": 2745631,
+    "totalTokens": 2745619,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

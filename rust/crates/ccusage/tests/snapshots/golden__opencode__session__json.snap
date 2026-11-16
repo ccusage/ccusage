@@ -52,29 +52,6 @@ exit: 0
       "totalTokens": 88
     },
     {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 8888,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.88,
-          "inputTokens": 8888,
-          "modelName": "gpt-5",
-          "outputTokens": 8888,
-          "storedCost": 0.88
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 8888,
-      "sessionId": "ses-agg-no-time",
-      "totalCost": 0.88,
-      "totalTokens": 17776
-    },
-    {
       "cacheCreationTokens": 100,
       "cacheReadTokens": 900,
       "inputTokens": 400,
@@ -423,24 +400,24 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "inputTokens": 56,
+      "inputTokens": 45,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00013000000000000002,
-          "inputTokens": 56,
+          "cost": 0.00010625000000000001,
+          "inputTokens": 45,
           "modelName": "gpt-5",
-          "outputTokens": 6
+          "outputTokens": 5
         }
       ],
       "modelsUsed": [
         "gpt-5"
       ],
-      "outputTokens": 6,
+      "outputTokens": 5,
       "sessionId": "ses-v2-misc",
-      "totalCost": 0.00013000000000000002,
-      "totalTokens": 62
+      "totalCost": 0.00010625000000000001,
+      "totalTokens": 50
     },
     {
       "cacheCreationTokens": 200,
@@ -509,10 +486,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 800,
     "cacheReadTokens": 18400,
-    "inputTokens": 16774,
-    "outputTokens": 10828,
-    "totalCost": 4.468480000000001,
-    "totalTokens": 46872,
+    "inputTokens": 7875,
+    "outputTokens": 1939,
+    "totalCost": 3.58845625,
+    "totalTokens": 29084,
     "unpricedModels": [
       "opencode-mystery-1"
     ]

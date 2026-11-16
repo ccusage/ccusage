@@ -368,30 +368,6 @@ exit: 0
       "totalTokens": 100
     },
     {
-      "agent": "opencode",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 8888,
-      "metadata": {
-        "lastActivity": "1970-01-01T00:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 8888,
-          "modelName": "gpt-5",
-          "outputTokens": 8888
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 8888,
-      "period": "ses-agg-no-time",
-      "totalTokens": 17776
-    },
-    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 150000,
@@ -4033,30 +4009,6 @@ exit: 0
       "totalTokens": 33
     },
     {
-      "agent": "opencode",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 56,
-      "metadata": {
-        "lastActivity": "2026-01-02T11:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 56,
-          "modelName": "gpt-5",
-          "outputTokens": 6
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 6,
-      "period": "ses-v2-misc",
-      "totalTokens": 62
-    },
-    {
       "agent": "codex",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 30,
@@ -4101,6 +4053,30 @@ exit: 0
       "outputTokens": 60,
       "period": "bbbb2222-renamed",
       "totalTokens": 360
+    },
+    {
+      "agent": "opencode",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 45,
+      "metadata": {
+        "lastActivity": "2026-01-02T11:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 45,
+          "modelName": "gpt-5",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 5,
+      "period": "ses-v2-misc",
+      "totalTokens": 50
     },
     {
       "agent": "opencode",
@@ -5127,9 +5103,9 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 18765,
     "cacheReadTokens": 1327217,
-    "inputTokens": 1360307,
-    "outputTokens": 69151,
-    "totalTokens": 2778877,
+    "inputTokens": 1351408,
+    "outputTokens": 60262,
+    "totalTokens": 2761089,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

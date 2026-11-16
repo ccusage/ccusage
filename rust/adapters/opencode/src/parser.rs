@@ -182,7 +182,12 @@ impl OpenCodeV2Message {
             .or(self.provider_id.as_deref())
     }
 
-    fn into_usage(self, id: String, session_id: String, created: i64) -> Option<OpenCodeUsage> {
+    fn into_usage(
+        self,
+        id: String,
+        session_id: String,
+        created: Option<i64>,
+    ) -> Option<OpenCodeUsage> {
         let model = self
             .model
             .as_ref()
@@ -195,7 +200,7 @@ impl OpenCodeV2Message {
         Some(OpenCodeUsage {
             id: Some(id),
             session_id: Some(session_id),
-            created: self.time.and_then(|time| time.created).or(Some(created)),
+            created: self.time.and_then(|time| time.created).or(created),
             model,
             provider,
             tokens: self.tokens?,
@@ -262,18 +267,12 @@ impl OpenCodeUsage {
         }
     }
 
-    fn timestamp(&self) -> Option<crate::TimestampMs> {
-        self.created
-            .filter(|millis| *millis > 0)
-            .map(crate::TimestampMs::from_millis)
-    }
-
     fn into_entry(
         self,
         tz: &JiffTimeZone,
         mode: CostMode,
         pricing: Option<&PricingMap>,
-    ) -> Option<LoadedEntry> {
+    ) -> Result<Option<LoadedEntry>, MissingTimestamp> {
         let cache = self.tokens.cache.as_ref();
         let usage = TokenUsageRaw {
             input_tokens: self.tokens.input,
@@ -294,16 +293,20 @@ impl OpenCodeUsage {
             && extra_total_tokens == 0
             && !cost_only
         {
-            return None;
+            return Ok(None);
         }
-        let timestamp = self.timestamp();
+        let (Some(model), Some(provider)) = (self.model, self.provider) else {
+            return Ok(None);
+        };
+        let timestamp = self
+            .created
+            .filter(|millis| *millis > 0)
+            .ok_or(MissingTimestamp)?;
+        let timestamp = crate::TimestampMs::from_millis(timestamp);
         let pricing_timestamp = match self.kind {
-            UsageKind::Message => timestamp,
+            UsageKind::Message => Some(timestamp),
             UsageKind::Aggregate => None,
         };
-        let model = self.model?;
-        let provider = self.provider?;
-        let timestamp = timestamp.unwrap_or(crate::TimestampMs::UNIX_EPOCH);
         let data = UsageEntry {
             session_id: self.session_id,
             timestamp: crate::format_rfc3339_millis(timestamp),
@@ -345,7 +348,7 @@ impl OpenCodeUsage {
             .session_id
             .clone()
             .unwrap_or_else(|| "unknown".to_string());
-        Some(LoadedEntry {
+        Ok(Some(LoadedEntry {
             date: format_date_tz(timestamp, tz),
             timestamp,
             project: Arc::from("opencode"),
@@ -360,8 +363,21 @@ impl OpenCodeUsage {
             missing_pricing_model,
             stored_cost,
             data,
-        })
+        }))
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct MissingTimestamp;
+
+impl MissingTimestamp {
+    pub(crate) const REASON: &str = "OpenCode usage record has no creation time";
+}
+
+#[derive(Debug)]
+pub(crate) enum SessionMessageError {
+    Decode(serde_json::Error),
+    MissingTimestamp,
 }
 
 pub fn message_value_to_entry(
@@ -371,8 +387,9 @@ pub fn message_value_to_entry(
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Option<LoadedEntry> {
-    OpenCodeUsage::from_message(value, id, session_id)?.into_entry(tz, mode, pricing)
+) -> Result<Option<LoadedEntry>, MissingTimestamp> {
+    OpenCodeUsage::from_message(value, id, session_id)
+        .map_or(Ok(None), |usage| usage.into_entry(tz, mode, pricing))
 }
 
 pub(crate) struct SessionMessageRow<'a> {
@@ -380,7 +397,7 @@ pub(crate) struct SessionMessageRow<'a> {
     pub(crate) data: &'a str,
     pub(crate) id: String,
     pub(crate) session_id: String,
-    pub(crate) created: i64,
+    pub(crate) created: Option<i64>,
 }
 
 pub(crate) fn session_message_value_to_entry_checked(
@@ -388,7 +405,7 @@ pub(crate) fn session_message_value_to_entry_checked(
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Result<Option<crate::LinkedEntry>, serde_json::Error> {
+) -> Result<Option<crate::LinkedEntry>, SessionMessageError> {
     let SessionMessageRow {
         kind,
         data,
@@ -396,7 +413,8 @@ pub(crate) fn session_message_value_to_entry_checked(
         session_id,
         created,
     } = row;
-    let value = serde_json::from_str::<OpenCodeV2Message>(data)?;
+    let value =
+        serde_json::from_str::<OpenCodeV2Message>(data).map_err(SessionMessageError::Decode)?;
     // Running and failed compactions are out of scope: a failed one records
     // the usage it was billed but no model to attribute it to.
     if kind == SessionMessageKind::Compaction && value.status.as_deref() != Some("completed") {
@@ -405,10 +423,13 @@ pub(crate) fn session_message_value_to_entry_checked(
     let native_session = (value.provider() == Some("claude-agent"))
         .then(|| native_session_id(data))
         .flatten();
-    Ok(value
-        .into_usage(id, session_id, created)
-        .and_then(|usage| usage.into_entry(tz, mode, pricing))
-        .map(|entry| (entry, native_session)))
+    let Some(usage) = value.into_usage(id, session_id, created) else {
+        return Ok(None);
+    };
+    let entry = usage
+        .into_entry(tz, mode, pricing)
+        .map_err(|MissingTimestamp| SessionMessageError::MissingTimestamp)?;
+    Ok(entry.map(|entry| (entry, native_session)))
 }
 
 pub(crate) struct OpenCodeSessionAggregate {
@@ -429,7 +450,7 @@ pub(crate) fn session_value_to_entry(
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Option<LoadedEntry> {
+) -> Result<Option<LoadedEntry>, MissingTimestamp> {
     OpenCodeUsage::from_aggregate(aggregate).into_entry(tz, mode, pricing)
 }
 
@@ -533,9 +554,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind, SessionMessageRow,
-        message_value_to_entry, open_code_model_candidates, session_message_value_to_entry_checked,
-        session_value_to_entry,
+        MissingTimestamp, OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind,
+        SessionMessageRow, message_value_to_entry, open_code_model_candidates,
+        session_message_value_to_entry_checked, session_value_to_entry,
     };
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
 
@@ -546,7 +567,7 @@ mod tests {
                 data,
                 id: "msg-v2".to_string(),
                 session_id: "v2-session".to_string(),
-                created: 1_767_312_000_000,
+                created: Some(1_767_312_000_000),
             },
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
@@ -673,7 +694,7 @@ mod tests {
                 "sessionID": "session-a",
                 "providerID": "openai",
                 "modelID": "gpt-test",
-                "time": { "created": 0 },
+                "time": { "created": 1767312000000i64 },
                 "tokens": {
                     "input": 100,
                     "output": 10,
@@ -687,6 +708,7 @@ mod tests {
             CostMode::Auto,
             Some(&pricing),
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(entry.cost, 0.000205);
@@ -700,7 +722,7 @@ mod tests {
                 "sessionID": "session-a",
                 "providerID": "openai",
                 "modelID": "gpt-test",
-                "time": { "created": 0 },
+                "time": { "created": 1767312000000i64 },
                 "tokens": {
                     "input": 100
                 },
@@ -712,6 +734,7 @@ mod tests {
             CostMode::Auto,
             None,
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(entry.cost, 0.02);
@@ -725,7 +748,7 @@ mod tests {
                 "sessionID": "session-a",
                 "providerID": "openai",
                 "modelID": "gpt-test",
-                "time": { "created": 0 },
+                "time": { "created": 1767312000000i64 },
                 "tokens": {
                     "input": 100,
                     "output": 10,
@@ -739,6 +762,7 @@ mod tests {
             CostMode::Auto,
             None,
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(entry.data.message.usage.input_tokens, 100);
@@ -756,7 +780,7 @@ mod tests {
                 "sessionID": "session-a",
                 "providerID": "openai",
                 "modelID": "gpt-test",
-                "time": { "created": 0 },
+                "time": { "created": 1767312000000i64 },
                 "tokens": {
                     "total": 123
                 }
@@ -767,6 +791,7 @@ mod tests {
             CostMode::Auto,
             None,
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(entry.data.message.usage.output_tokens, 123);
@@ -795,7 +820,7 @@ mod tests {
                 "sessionID": "session-a",
                 "providerID": "kimi-for-coding",
                 "modelID": "k2p6",
-                "time": { "created": 0 },
+                "time": { "created": 1767312000000i64 },
                 "tokens": {
                     "input": 100,
                     "output": 10,
@@ -809,6 +834,7 @@ mod tests {
             CostMode::Auto,
             Some(&pricing),
         )
+        .unwrap()
         .unwrap();
 
         // The rate comes from LiteLLM's per-token prices or, when models.dev
@@ -855,13 +881,14 @@ mod tests {
             CostMode::Auto,
             Some(&pricing),
         )
+        .unwrap()
         .unwrap();
         let display_cost = message_value_to_entry(
             message(json!({
                 "id": "message-b",
                 "providerID": "openai",
                 "modelID": "gpt-test",
-                "time": { "created": 0 },
+                "time": { "created": 1767312000000i64 },
                 "tokens": { "total": 123 },
                 "cost": 0.02
             })),
@@ -871,6 +898,7 @@ mod tests {
             CostMode::Display,
             None,
         )
+        .unwrap()
         .unwrap();
 
         insta::assert_json_snapshot!(json!({
@@ -894,27 +922,61 @@ mod tests {
     }
 
     #[test]
-    fn keeps_epoch_for_display_but_omits_missing_message_timestamp_for_pricing() {
-        let pricing = deepseek_pricing(0.000009);
-        let entry = message_value_to_entry(
-            message(json!({
-                "id": "message-a",
-                "sessionID": "session-a",
-                "providerID": "deepseek",
-                "modelID": "deepseek-v4-flash",
-                "tokens": { "input": 1_000_000 },
-                "cost": 0
-            })),
-            None,
-            None,
-            &jiff::tz::TimeZone::system(),
-            CostMode::Calculate,
-            Some(&pricing),
-        )
-        .unwrap();
+    fn rejects_usage_without_a_positive_creation_time() {
+        for time in [
+            json!(null),
+            json!({}),
+            json!({ "created": 0 }),
+            json!({ "created": -1 }),
+        ] {
+            assert_eq!(
+                message_value_to_entry(
+                    message(json!({
+                        "id": "message-a",
+                        "sessionID": "session-a",
+                        "providerID": "openai",
+                        "modelID": "gpt-test",
+                        "time": time,
+                        "tokens": { "input": 10 }
+                    })),
+                    None,
+                    None,
+                    &jiff::tz::TimeZone::system(),
+                    CostMode::Display,
+                    None,
+                )
+                .map(|entry| entry.is_some()),
+                Err(MissingTimestamp),
+                "{time}"
+            );
+        }
+    }
 
-        assert_eq!(entry.timestamp.as_millis(), 0);
-        assert_eq!(entry.cost, 9.0);
+    #[test]
+    fn rejects_session_aggregates_without_a_positive_creation_time() {
+        let aggregate = OpenCodeSessionAggregate {
+            session_id: "session-a".to_string(),
+            created: 0,
+            model: "gpt-test".to_string(),
+            provider: "openai".to_string(),
+            input_tokens: 10,
+            output_tokens: 0,
+            reasoning_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cost: None,
+        };
+
+        assert_eq!(
+            session_value_to_entry(
+                aggregate,
+                &jiff::tz::TimeZone::system(),
+                CostMode::Display,
+                None
+            )
+            .map(|entry| entry.is_some()),
+            Err(MissingTimestamp)
+        );
     }
 
     #[test]
@@ -940,6 +1002,7 @@ mod tests {
             CostMode::Calculate,
             Some(&pricing),
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(entry.timestamp.as_millis(), created);

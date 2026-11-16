@@ -15,8 +15,9 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     parser::{
-        OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind, SessionMessageRow,
-        message_value_to_entry, session_message_value_to_entry_checked, session_value_to_entry,
+        MissingTimestamp, OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageError,
+        SessionMessageKind, SessionMessageRow, message_value_to_entry,
+        session_message_value_to_entry_checked, session_value_to_entry,
     },
     paths::paths,
 };
@@ -547,7 +548,7 @@ fn load_message_rows(
             ) else {
                 return;
             };
-            if let Some(entry) = message_value_to_entry(
+            match message_value_to_entry(
                 value,
                 Some(id),
                 Some(session_id),
@@ -555,10 +556,21 @@ fn load_message_rows(
                 context.mode,
                 context.pricing,
             ) {
-                collector.push_message((entry, None));
+                Ok(Some(entry)) => collector.push_message((entry, None)),
+                Ok(None) => {}
+                Err(MissingTimestamp) => record_missing_timestamp(context, row),
             }
         },
     );
+}
+
+fn record_missing_timestamp(context: &DatabaseLoadContext<'_>, row: u32) {
+    context.diagnostics.record(Skip::record(
+        context.db_path,
+        row,
+        SkipKind::InvalidTimestamp,
+        MissingTimestamp::REASON,
+    ));
 }
 
 struct SessionMessageRecord {
@@ -645,7 +657,7 @@ fn load_session_message_rows(
                     data: &data,
                     id,
                     session_id,
-                    created: created.unwrap_or(0),
+                    created,
                 },
                 context.tz,
                 context.mode,
@@ -653,7 +665,11 @@ fn load_session_message_rows(
             ) {
                 Ok(Some(linked)) => linked,
                 Ok(None) => return,
-                Err(error) => {
+                Err(SessionMessageError::MissingTimestamp) => {
+                    record_missing_timestamp(context, row);
+                    return;
+                }
+                Err(SessionMessageError::Decode(error)) => {
                     jsonl::record_decode_error(
                         data.as_bytes(),
                         error,
@@ -703,7 +719,9 @@ fn read_message_file(
         return Ok(None);
     }
     let value = decode_json::<OpenCodeMessage>(&content)?;
-    Ok(message_value_to_entry(value, None, None, tz, mode, pricing))
+    message_value_to_entry(value, None, None, tz, mode, pricing).map_err(|MissingTimestamp| {
+        UnitError::new(SkipKind::InvalidTimestamp, MissingTimestamp::REASON)
+    })
 }
 
 fn table_exists(
@@ -935,14 +953,14 @@ fn load_session_aggregate_entries(
                 cost: read_f64(statement, 2),
             }))
         },
-        |_, aggregate| {
+        |row, aggregate| {
             if !context.window.is_unbounded() && !context.window.contains(aggregate.created) {
                 return;
             }
-            if let Some(entry) =
-                session_value_to_entry(aggregate, context.tz, context.mode, context.pricing)
-            {
-                entries.push(entry);
+            match session_value_to_entry(aggregate, context.tz, context.mode, context.pricing) {
+                Ok(Some(entry)) => entries.push(entry),
+                Ok(None) => {}
+                Err(MissingTimestamp) => record_missing_timestamp(context, row),
             }
         },
     );
@@ -1446,6 +1464,77 @@ mod tests {
 
         assert!(load_session_aggregate_entries(&connection, &schema, &context).is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn skips_usage_without_a_creation_time_in_every_format() {
+        const UNTIMED: &str = r#"{"modelID":"gpt-test","providerID":"openai","model":{"id":"gpt-test","providerID":"openai"},"tokens":{"input":10,"output":1},"cost":0.01}"#;
+        let fixture = fs_fixture!({
+            "storage/message/file-session/file-untimed.json": r#"{"id":"file-untimed","sessionID":"file-session","modelID":"gpt-test","providerID":"openai","time":{"created":0},"tokens":{"input":10,"output":1},"cost":0.01}"#,
+        });
+        let db = fixture.path("opencode.db");
+        create_db_message(
+            &db,
+            "timed",
+            "timed-session",
+            &assistant_payload(10, 1, 0.01).replace(
+                r#""model":{"id":"gpt-test","providerID":"openai"},"#,
+                r#""modelID":"gpt-test","providerID":"openai","#,
+            ),
+        );
+        create_db_message_with_time(&db, "db-untimed", "db-session", 0, UNTIMED);
+        create_db_session_message_table(&db, false);
+        for id in ["v2-user-1", "v2-user-2"] {
+            insert_db_session_message(&db, id, "v2-session", "user", 0, "{}", false);
+        }
+        insert_db_session_message(
+            &db,
+            "v2-untimed",
+            "v2-session",
+            "assistant",
+            0,
+            UNTIMED,
+            false,
+        );
+        create_db_session_aggregate_table(&db, "session_v2");
+        insert_db_session_aggregate(
+            &db,
+            "session_v2",
+            &SessionAggregateFixture {
+                session_id: "aggregate-session",
+                time_created: 0,
+                model: r#"{"id":"gpt-test","providerID":"openai"}"#,
+                cost: 0.5,
+                input_tokens: 200,
+                output_tokens: 100,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+                reasoning_tokens: 0,
+            },
+        );
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            timezone: Some("UTC".to_string()),
+            ..SharedArgs::default()
+        };
+        let diagnostics = Diagnostics::new("opencode");
+
+        let entries = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Session,
+            &diagnostics,
+        );
+
+        let ids = entries
+            .iter()
+            .map(|(entry, _)| entry.data.message.id.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, [Some("timed")]);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            4
+        );
     }
 
     #[test]

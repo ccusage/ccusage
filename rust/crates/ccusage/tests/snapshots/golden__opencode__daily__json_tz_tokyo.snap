@@ -9,28 +9,6 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
-      "date": "1970-01-01",
-      "inputTokens": 11,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00002375,
-          "inputTokens": 11,
-          "modelName": "gpt-5",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 1,
-      "totalCost": 0.00002375,
-      "totalTokens": 12
-    },
-    {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
       "date": "2025-12-28",
       "inputTokens": 100,
       "modelBreakdowns": [
@@ -236,10 +214,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
-    "inputTokens": 7261,
-    "outputTokens": 1838,
-    "totalCost": 2.8082550000000004,
-    "totalTokens": 27349,
+    "inputTokens": 7250,
+    "outputTokens": 1837,
+    "totalCost": 2.8082312500000004,
+    "totalTokens": 27337,
     "unpricedModels": [
       "opencode-mystery-1"
     ]
