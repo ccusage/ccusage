@@ -185,7 +185,7 @@ fn pricing_candidates(raw_model: &str) -> Vec<String> {
         }
     };
 
-    let stripped = raw_model.trim_prefix("[grok] ").trim();
+    let stripped = raw_model.trim();
     if stripped.is_empty() {
         return candidates;
     }
@@ -753,13 +753,8 @@ mod tests {
     }
 
     #[test]
-    fn pricing_candidates_strip_grok_bracket_prefix() {
-        assert_eq!(
-            pricing_candidates("[grok] grok-4.5-build")[0],
-            "grok-4.5-build"
-        );
+    fn pricing_candidates_are_empty_for_a_blank_model() {
         assert!(pricing_candidates("   ").is_empty());
-        assert!(pricing_candidates("[grok] ").is_empty());
     }
 
     #[test]

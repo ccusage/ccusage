@@ -249,7 +249,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 Some(gamma),
                 "evt-b2",
                 &model_usage(&[(
-                    "[grok] grok-4.3-build",
+                    "grok-4.3-build",
                     r#""inputTokens":600,"outputTokens":100,"cachedReadTokens":3000"#,
                 )]),
             ),

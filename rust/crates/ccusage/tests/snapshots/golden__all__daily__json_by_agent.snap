@@ -3479,7 +3479,7 @@ exit: 0
               "cacheReadTokens": 600,
               "cost": 0.000325,
               "inputTokens": 0,
-              "modelName": "[grok] grok-4.3-build",
+              "modelName": "grok-4.3-build",
               "outputTokens": 100
             },
             {
@@ -3510,7 +3510,7 @@ exit: 0
             }
           ],
           "modelsUsed": [
-            "[grok] grok-4.3-build",
+            "grok-4.3-build",
             "grok-4.5-build",
             "grok-mystery-1",
             "grok-code-fast-1",
@@ -4191,7 +4191,7 @@ exit: 0
           "cacheReadTokens": 600,
           "cost": 0.000325,
           "inputTokens": 0,
-          "modelName": "[grok] grok-4.3-build",
+          "modelName": "grok-4.3-build",
           "outputTokens": 100
         },
         {
@@ -4406,7 +4406,6 @@ exit: 0
       "modelsUsed": [
         "GLM-5.3",
         "GLM-5.3-Flash",
-        "[grok] grok-4.3-build",
         "[openclaw] claude-haiku-4-5-20251001",
         "[openclaw] claude-sonnet-4-20250514",
         "[openclaw] gpt-5",
@@ -4439,6 +4438,7 @@ exit: 0
         "gpt-5-codex",
         "gpt-5.5",
         "gpt-unknown",
+        "grok-4.3-build",
         "grok-4.5-build",
         "grok-code-fast-1",
         "grok-mystery-1",

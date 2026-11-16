@@ -3765,7 +3765,7 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
           "inputTokens": 0,
-          "modelName": "[grok] grok-4.3-build",
+          "modelName": "grok-4.3-build",
           "outputTokens": 100
         },
         {
@@ -3778,7 +3778,7 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "[grok] grok-4.3-build",
+        "grok-4.3-build",
         "grok-mystery-1"
       ],
       "outputTokens": 310,
