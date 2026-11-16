@@ -1,4 +1,4 @@
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{UnitError, jsonl};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     borrow::Cow,
@@ -332,11 +332,7 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     diagnostics: &Diagnostics,
 ) -> Result<()> {
     let Ok((mut reader, opened_path)) = open_rollout_reader(path) else {
-        diagnostics.record(Skip::unit(
-            path,
-            SkipKind::Unreadable,
-            "rollout open failed",
-        ));
+        UnitError::new(SkipKind::Unreadable, "rollout open failed").record(path, diagnostics);
         return Ok(());
     };
     let mut line = Vec::new();
@@ -1861,6 +1857,36 @@ mod tests {
 mod diagnostic_tests {
     use super::*;
     use ccusage_test_support::Fixture;
+
+    #[test]
+    fn a_rollout_removed_after_discovery_is_noted_not_skipped() {
+        let fixture = Fixture::new();
+        let path = fixture.path("session.jsonl");
+        let diagnostics = Diagnostics::new("codex");
+
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |_| Ok(()),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
+        let debug = crate::cli::SharedArgs {
+            debug: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            diagnostics.warnings(&debug),
+            [format!(
+                "codex: {}: removed after discovery, read as absent",
+                path.display()
+            )]
+        );
+    }
+
     #[test]
     fn a_rollout_line_still_being_written_is_not_a_skip() {
         let fixture = Fixture::new();
