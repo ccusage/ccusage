@@ -1452,6 +1452,33 @@ exit: 0
       "totalTokens": 3160
     },
     {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 700,
+      "inputTokens": 1100,
+      "metadata": {
+        "lastActivity": "2025-12-31T15:30:01.000Z",
+        "reasoningOutputTokens": 20
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 700,
+          "cost": 0.005625,
+          "inputTokens": 1100,
+          "modelName": "gpt-5.5",
+          "outputTokens": 180
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5.5"
+      ],
+      "outputTokens": 180,
+      "period": "2025/12/31/rollout-2025-12-31T10-00-00-33333333-3333-4333-8333-333333333333",
+      "totalCost": 0.005625,
+      "totalTokens": 1980
+    },
+    {
       "agent": "kimi",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 5000,
@@ -1626,33 +1653,6 @@ exit: 0
       "period": "ses-v1-alpha",
       "totalCost": 0.0038274999999999997,
       "totalTokens": 3990
-    },
-    {
-      "agent": "codex",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 400,
-      "inputTokens": 700,
-      "metadata": {
-        "lastActivity": "2025-12-31T15:30:01.000Z",
-        "reasoningOutputTokens": 10
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 400,
-          "cost": 0.0035,
-          "inputTokens": 700,
-          "modelName": "gpt-5.5",
-          "outputTokens": 110
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5.5"
-      ],
-      "outputTokens": 110,
-      "period": "2025/12/31/rollout-2025-12-31T10-00-00-33333333-3333-4333-8333-333333333333",
-      "totalCost": 0.0035,
-      "totalTokens": 1210
     },
     {
       "agent": "zcode",
@@ -2037,6 +2037,33 @@ exit: 0
       "period": "b-twin",
       "totalCost": 0.0024000000000000002,
       "totalTokens": 480
+    },
+    {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 400,
+      "inputTokens": 600,
+      "metadata": {
+        "lastActivity": "2025-12-31T16:00:10.000Z",
+        "reasoningOutputTokens": 0
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 400,
+          "cost": 0.0018,
+          "inputTokens": 600,
+          "modelName": "gpt-5-codex",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5-codex"
+      ],
+      "outputTokens": 100,
+      "period": "rollout-2025-12-31T16-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "totalCost": 0.0018,
+      "totalTokens": 1100
     },
     {
       "agent": "kimi",
@@ -3074,11 +3101,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 9001,
-    "cacheReadTokens": 569584,
-    "inputTokens": 868845,
-    "outputTokens": 34170,
-    "totalCost": 14.790176300000002,
-    "totalTokens": 1483095,
+    "cacheReadTokens": 570284,
+    "inputTokens": 869845,
+    "outputTokens": 34340,
+    "totalCost": 14.794101300000001,
+    "totalTokens": 1484965,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

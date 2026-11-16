@@ -1,6 +1,4 @@
-use crate::{
-    aggregate::load_groups_with_diagnostics, loader::load_codex_events_with_detection_diagnostics,
-};
+use crate::aggregate::load_groups_with_diagnostics;
 use ccusage_core::Diagnostics;
 use serde_json::json;
 
@@ -16,9 +14,8 @@ use ccusage_core::{
 };
 
 use crate::{
-    CodexGroup, aggregate_events, calculate_codex_model_cost, calculate_group_cost,
-    codex_model_missing_pricing, filter_events_by_date, non_cached_input_tokens,
-    resolve_codex_speed,
+    CodexGroup, calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
+    non_cached_input_tokens, resolve_codex_speed,
 };
 
 pub struct Codex;
@@ -65,36 +62,16 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
         .expect("Codex pricing is available");
     let speed = resolve_codex_speed(request.options.codex_speed);
 
-    let (rows, detected) = if shared.since.is_none() && shared.until.is_none() {
-        let (groups, detected) = load_groups_with_diagnostics(
-            shared,
-            request.kind,
-            request.multi_source_driver,
-            &diagnostics,
-        )?;
-        let rows = groups
-            .iter()
-            .map(|(period, group)| {
-                unified_row_from_group(period, group, pricing, speed, shared.mode)
-            })
-            .collect();
-        (rows, detected)
-    } else {
-        let (mut events, detected) = load_codex_events_with_detection_diagnostics(
-            shared,
-            ProgressOwner::Caller,
-            &diagnostics,
-        )?;
-        filter_events_by_date(&mut events, shared)?;
-        let groups = aggregate_events(&events, request.kind, shared.timezone.as_deref())?;
-        let rows = groups
-            .iter()
-            .map(|(period, group)| {
-                unified_row_from_group(period, group, pricing, speed, shared.mode)
-            })
-            .collect();
-        (rows, detected)
-    };
+    let (groups, detected) = load_groups_with_diagnostics(
+        shared,
+        request.kind,
+        request.multi_source_driver,
+        &diagnostics,
+    )?;
+    let rows = groups
+        .iter()
+        .map(|(period, group)| unified_row_from_group(period, group, pricing, speed, shared.mode))
+        .collect();
 
     Ok(SourceRows {
         rows,
@@ -171,6 +148,102 @@ mod diagnostic_tests {
     use ccusage_adapter_common::source::SourceOptions;
     use ccusage_core::cli::SharedArgs;
     use ccusage_test_support::{EnvVarsGuard, Fixture};
+
+    fn unified_codex_rows(shared: &SharedArgs, kind: AgentReportKind) -> Vec<UnifiedRow> {
+        SOURCE
+            .unified_rows(&UnifiedRequest {
+                kind,
+                shared,
+                options: SourceOptions::default(),
+                pricing: Some(&PricingMap::load_embedded()),
+                progress: ProgressOwner::Caller,
+                multi_source_driver: true,
+                claude_counted: None,
+            })
+            .unwrap()
+            .rows
+    }
+
+    #[test]
+    fn bounded_unified_session_report_keeps_identical_requests_of_two_sessions() {
+        let fixture = Fixture::new();
+        let usage = json!({"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
+        let _ = fixture.write_file("sessions/session-a.jsonl", &usage);
+        let _ = fixture.write_file("sessions/session-b.jsonl", &usage);
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let shared = SharedArgs {
+            offline: true,
+            timezone: Some("UTC".to_owned()),
+            since: Some("20260101".to_owned()),
+            ..Default::default()
+        };
+
+        let rows = unified_codex_rows(&shared, AgentReportKind::Session);
+
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.period.as_str())
+                .collect::<Vec<_>>(),
+            ["session-a", "session-b"]
+        );
+        assert!(rows.iter().all(|row| row.total_tokens == 110));
+    }
+
+    #[test]
+    fn bounded_unified_rows_match_the_focused_codex_report() {
+        let fixture = Fixture::new();
+        let usage = |timestamp: &str| {
+            json!({"timestamp":timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string()
+        };
+        let _ = fixture.write_file(
+            "sessions/original.jsonl",
+            &usage("2026-01-02T00:00:00.000Z"),
+        );
+        let _ = fixture.write_file("sessions/copy.jsonl", &usage("2026-01-02T00:00:00Z"));
+        let _ = fixture.write_file("sessions/later.jsonl", &usage("2026-01-03T00:00:00.000Z"));
+        let _env = EnvVarsGuard::set_many([
+            ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
+            ("LOG_LEVEL", Some("0".into())),
+        ]);
+        let pricing = PricingMap::load_embedded();
+        let speed = crate::CodexSpeedPolicy::Forced(crate::CodexServiceTier::Standard);
+        for kind in [
+            AgentReportKind::Daily,
+            AgentReportKind::Weekly,
+            AgentReportKind::Monthly,
+            AgentReportKind::Session,
+        ] {
+            let shared = SharedArgs {
+                offline: true,
+                timezone: Some("UTC".to_owned()),
+                since: Some("20260102".to_owned()),
+                until: Some("20260102".to_owned()),
+                ..Default::default()
+            };
+
+            let focused = crate::load_groups(&shared, kind)
+                .unwrap()
+                .iter()
+                .map(|(period, group)| {
+                    unified_row_from_group(period, group, &pricing, speed, shared.mode)
+                })
+                .map(|row| (row.period, row.total_tokens))
+                .collect::<Vec<_>>();
+            let unified = unified_codex_rows(&shared, kind)
+                .into_iter()
+                .map(|row| (row.period, row.total_tokens))
+                .collect::<Vec<_>>();
+
+            assert_eq!(unified, focused, "{kind:?}");
+            if kind != AgentReportKind::Session {
+                assert_eq!(unified, [(focused[0].0.clone(), 110)], "{kind:?}");
+            }
+        }
+    }
+
     #[test]
     fn malformed_compaction_usage_warns_while_missing_and_zero_usage_stay_quiet() {
         let fixture = Fixture::new();
@@ -437,7 +510,7 @@ mod diagnostic_tests {
                 .unwrap();
             assert_eq!(rows.rows.len(), 1);
             let diagnostics = Diagnostics::new("codex");
-            let (events, _) = load_codex_events_with_detection_diagnostics(
+            let (events, _) = crate::loader::load_codex_events_with_detection_diagnostics(
                 &shared,
                 ProgressOwner::Caller,
                 &diagnostics,
