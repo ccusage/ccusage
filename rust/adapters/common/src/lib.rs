@@ -8,7 +8,7 @@ use ccusage_core::{LoadedEntry, ReportWindow, UsageSummary, cli::SharedArgs};
 
 pub mod claims;
 pub mod jsonl;
-#[cfg(feature = "testing")]
+#[cfg(any(test, feature = "testing"))]
 pub mod parity;
 pub mod pipeline;
 pub mod report;

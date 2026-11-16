@@ -3,8 +3,8 @@
 //!
 //! The two reports share the pipeline, but each adapter still supplies the
 //! hooks, the policies and a separate unified summarizer, so they can drift.
-//! Compiled only with the `testing` feature, which an adapter enables from its
-//! `[dev-dependencies]`.
+//! Compiled only for tests: this crate's own, and an adapter's through the
+//! `testing` feature it enables from its `[dev-dependencies]`.
 
 use std::collections::BTreeMap;
 
@@ -54,19 +54,33 @@ impl Totals {
 /// report when both load with `shared`.
 ///
 /// The caller points the source at a fixture first, through the environment
-/// variable its `paths.rs` reads. A kind listed in `known` must differ: an
-/// entry that no longer does fails the check, so the list cannot go stale.
+/// variable its `paths.rs` reads. The fixture must hold usage: two empty
+/// reports agree without comparing anything, so a source that reads nothing
+/// without the window fails the check. A window that leaves nothing is still
+/// compared. A kind listed in `known` must differ: an entry that no longer
+/// does fails the check, so the list cannot go stale.
 ///
 /// # Panics
 ///
-/// Panics when a load fails, when a kind differs without being listed, or when
-/// a listed kind no longer differs.
+/// Panics when a load fails, when the source reads no usage, when a kind
+/// differs without being listed, or when a listed kind no longer differs.
 pub fn assert_focused_matches_unified<S: EntrySource>(
     source: &S,
     shared: &SharedArgs,
     known: &[KnownDivergence],
 ) {
     let descriptor = source.descriptor();
+    let unbounded = SharedArgs {
+        since: None,
+        until: None,
+        ..shared.clone()
+    };
+    let everything = focused_totals(source, AgentReportKind::Daily, &unbounded);
+    assert!(
+        everything.total_tokens > 0 || everything.total_cost > 0.0,
+        "{}: the focused report read no usage, so there is nothing to compare; point the source at its fixture first",
+        descriptor.id
+    );
     for kind in descriptor.reports.iter().copied() {
         let focused = focused_totals(source, kind, shared);
         let unified = unified_totals(source, kind, shared);
@@ -196,6 +210,21 @@ mod tests {
 
         assert_focused_matches_unified(&source, &shared(None, None), &[]);
         assert_focused_matches_unified(&source, &shared(Some("20260102"), None), &[]);
+    }
+
+    #[test]
+    fn compares_a_window_that_leaves_nothing() {
+        let source = Fake::new(descriptor(), entries());
+
+        assert_focused_matches_unified(&source, &shared(Some("20300101"), None), &[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "the focused report read no usage")]
+    fn fails_a_source_that_reads_no_usage() {
+        let source = Fake::new(descriptor(), Vec::new());
+
+        assert_focused_matches_unified(&source, &shared(None, None), &[]);
     }
 
     #[test]
