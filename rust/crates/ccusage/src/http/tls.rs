@@ -62,14 +62,13 @@ static SIGNATURE_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
         algs::RSA_PKCS1_2048_8192_SHA512_ABSENT_PARAMS,
     ],
     mapping: &[
-        // TLS 1.3 fixes the curve per scheme; TLS 1.2 does not, hence two entries.
         (
             SignatureScheme::ECDSA_NISTP384_SHA384,
-            &[algs::ECDSA_P384_SHA384, algs::ECDSA_P256_SHA384],
+            &[algs::ECDSA_P384_SHA384],
         ),
         (
             SignatureScheme::ECDSA_NISTP256_SHA256,
-            &[algs::ECDSA_P256_SHA256, algs::ECDSA_P384_SHA256],
+            &[algs::ECDSA_P256_SHA256],
         ),
         (
             SignatureScheme::RSA_PSS_SHA512,
@@ -83,6 +82,10 @@ static SIGNATURE_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
             SignatureScheme::RSA_PSS_SHA256,
             &[algs::RSA_PSS_2048_8192_SHA256_LEGACY_KEY],
         ),
+        // NOTE(2026-11-17, rustls 0.23.46): the ClientHello signature_algorithms
+        // list is built from these schemes and no signature_algorithms_cert is
+        // sent, so in TLS 1.3 it also governs certificate-chain signatures. Keep
+        // the PKCS#1 schemes although TLS 1.3 CertificateVerify never uses them.
         (
             SignatureScheme::RSA_PKCS1_SHA512,
             &[algs::RSA_PKCS1_2048_8192_SHA512],
