@@ -26,6 +26,8 @@ use ccusage_core::{
     fast::{LinePrefilter, byte_lines},
 };
 
+use crate::units::being_written;
+
 /// Iterate over deserialized JSONL records contained in `content`.
 ///
 /// When `prefilter` is provided, lines that it rejects are skipped before any
@@ -232,7 +234,10 @@ pub fn decode_streamed_line<T: DeserializeOwned>(
 /// `unterminated` says the record is the last line of a JSONL file that does
 /// not end in a newline yet. An agent appends its log while ccusage reads it,
 /// so a record such a line cuts short is noted under `--debug` instead of
-/// skipped: the next run reads it whole.
+/// skipped while `unit` is still being written: the next run reads it whole.
+/// Once `unit` has been left unchanged past
+/// [`IN_PROGRESS_WINDOW`](crate::units::IN_PROGRESS_WINDOW), the line stays
+/// truncated and is skipped as invalid data.
 ///
 /// A data error is invalid data when `is_usage` confirms that the record, read
 /// as plain JSON, carries usage, and undecoded usage otherwise. `is_usage`
@@ -250,7 +255,7 @@ pub fn record_decode_error(
 ) {
     use serde_json::error::Category;
     let (kind, category) = match error.classify() {
-        Category::Eof if unterminated => {
+        Category::Eof if unterminated && being_written(unit) => {
             diagnostics.debug_note(
                 unit,
                 format!(
@@ -259,6 +264,15 @@ pub fn record_decode_error(
                     unit.display()
                 ),
             );
+            return;
+        }
+        Category::Eof if unterminated => {
+            diagnostics.record(Skip::record(
+                unit,
+                number,
+                SkipKind::InvalidData,
+                format!("last line is truncated at column {}", error.column()),
+            ));
             return;
         }
         Category::Io => (SkipKind::Unreadable, "I/O"),
@@ -646,7 +660,9 @@ mod tests {
     use serde::Deserialize;
 
     use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
-    use ccusage_test_support::EnvVarGuard;
+    use ccusage_test_support::{EnvVarGuard, Fixture};
+
+    use crate::units::tests::age_past_write_window;
 
     use super::{
         FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
@@ -697,17 +713,17 @@ mod tests {
         assert_eq!(parsed, [(1, Some(1)), (4, None)]);
     }
 
+    const CUT_LAST_LINE: &str = "{\"tokens\":1}\n{\"tokens\":2,\"mod";
+
     #[test]
-    fn a_record_cut_short_by_the_end_of_the_file_is_noted_not_skipped() {
+    fn a_record_cut_short_by_the_end_of_a_file_being_written_is_noted_not_skipped() {
+        let fixture = Fixture::new();
+        let live = fixture.write_file("live.jsonl", CUT_LAST_LINE);
         let diagnostics = Diagnostics::new("test");
-        let records = records_with_diagnostics::<Record>(
-            b"{\"tokens\":1}\n{\"tokens\":2,\"mod",
-            None,
-            Path::new("/logs/live.jsonl"),
-            &diagnostics,
-        )
-        .map(|record| record.tokens)
-        .collect::<Vec<_>>();
+        let records =
+            records_with_diagnostics::<Record>(CUT_LAST_LINE.as_bytes(), None, &live, &diagnostics)
+                .map(|record| record.tokens)
+                .collect::<Vec<_>>();
 
         assert_eq!(records, [1]);
         let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
@@ -717,8 +733,45 @@ mod tests {
                 debug: true,
                 ..SharedArgs::default()
             }),
-            ["test: /logs/live.jsonl:2: last line is incomplete, read as still being written"]
+            [format!(
+                "test: {}:2: last line is incomplete, read as still being written",
+                live.display()
+            )]
         );
+    }
+
+    #[test]
+    fn a_record_cut_short_by_the_end_of_a_file_left_unchanged_is_skipped_as_truncated() {
+        let fixture = Fixture::new();
+        let stale = fixture.write_file("stale.jsonl", CUT_LAST_LINE);
+        age_past_write_window(&stale);
+        let diagnostics = Diagnostics::new("test");
+        let records = records_with_diagnostics::<Record>(
+            CUT_LAST_LINE.as_bytes(),
+            None,
+            &stale,
+            &diagnostics,
+        )
+        .map(|record| record.tokens)
+        .collect::<Vec<_>>();
+
+        assert_eq!(records, [1]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let _log_level = EnvVarGuard::set("LOG_LEVEL", "1");
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(
+            warnings.contains(&format!(
+                "{}:2: last line is truncated at column 16",
+                stale.display()
+            )),
+            "{warnings}"
+        );
+        assert!(!warnings.contains("still being written"), "{warnings}");
     }
 
     #[test]

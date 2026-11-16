@@ -309,27 +309,48 @@ mod tests {
                 .contains("SECRET_CANARY")
         );
     }
+    const CUT_LAST_LINE: &str = r#"{"message":{"usage":{"input_tokens":10}}}
+{"message":{"usage":{"input_tok"#;
+
+    /// Streams `path` and rejects its unterminated last line the way the
+    /// loaders do.
+    fn reject_last_line(path: &Path, diagnostics: &Diagnostics) {
+        let mut rejected_lines = 0;
+        for_each_line(path, diagnostics, |line| {
+            if line.unterminated {
+                rejected_lines += 1;
+                rejected(path, line, diagnostics, false);
+            }
+        });
+        assert_eq!(rejected_lines, 1);
+    }
+
     #[test]
     fn a_usage_line_still_being_written_is_not_a_skip() {
         let diagnostics = Diagnostics::new("claude");
-        let content = br#"{"message":{"usage":{"input_tokens":10}}}
-{"message":{"usage":{"input_tok"#;
-        let lines = read_lines(Cursor::new(content), &diagnostics);
-        let (index, bytes, unterminated) = &lines[1];
-        assert!(*unterminated);
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.write_file("session.jsonl", CUT_LAST_LINE);
 
-        rejected(
-            Path::new("session.jsonl"),
-            Line {
-                index: *index,
-                bytes,
-                unterminated: *unterminated,
-            },
-            &diagnostics,
-            false,
-        );
+        reject_last_line(&path, &diagnostics);
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    }
+
+    #[test]
+    fn a_usage_line_left_cut_short_is_skipped_as_truncated() {
+        let diagnostics = Diagnostics::new("claude");
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.write_file("session.jsonl", CUT_LAST_LINE);
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(120))
+            .unwrap();
+
+        reject_last_line(&path, &diagnostics);
+
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]

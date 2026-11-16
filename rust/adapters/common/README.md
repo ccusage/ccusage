@@ -37,7 +37,7 @@ layers.
 - `report::print_table_for_agent`
 - `collect_files_with_extension`, `collect_files_matching`,
   `visit_files_matching`, `visit_usage_files` and `dir_entries`, which record
-  directories they cannot read in a `Diagnostics`
+  directories, entries and file types they cannot read in a `Diagnostics`
 - `read_discovered_files`
 - `filter_loaded_entries_by_date`
 - `filter_session_summaries_by_last_activity`

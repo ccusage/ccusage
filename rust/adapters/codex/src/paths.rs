@@ -260,6 +260,7 @@ pub(super) fn set_file_modified(path: &Path, timestamp: crate::TimestampMs) {
 mod tests {
     use super::*;
 
+    use ccusage_core::SkipKind;
     use ccusage_test_support::Fixture;
 
     #[test]
@@ -345,6 +346,32 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn records_a_session_subdirectory_it_cannot_list() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixture = Fixture::new();
+        let kept = fixture.write_file("codex/sessions/2026/01/01/kept.jsonl", "");
+        let blocked = fixture.create_dir_all("codex/sessions/2026/01/02");
+        let _ = fixture.write_file("codex/sessions/2026/01/02/hidden.jsonl", "");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let diagnostics = Diagnostics::new("codex");
+
+        let sources = codex_usage_sources_from_homes(vec![fixture.path("codex")]);
+        let groups = collect_deduped_codex_usage_files(&sources, &diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert_eq!(
+            groups,
+            vec![CodexUsageFileGroup {
+                dir: fixture.path("codex/sessions"),
+                files: vec![kept],
+            }]
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[test]

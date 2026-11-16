@@ -37,18 +37,28 @@ pub(super) fn uncompressed_rollout_path(path: &Path) -> PathBuf {
     }
 }
 
-/// Opens the rollout's lines through windows of `buffer_size` bytes.
+/// Opens the rollout's lines through windows of `buffer_size` bytes, at
+/// `path` or at its other encoding when `path` is gone, and returns them with
+/// the path it opened. On failure, returns the path to diagnose: the encoding
+/// that exists but did not open, or `path` when neither encoding exists.
 pub(super) fn open_rollout_lines(
     path: &Path,
     buffer_size: usize,
-) -> io::Result<(RolloutLines, PathBuf)> {
+) -> Result<(RolloutLines, PathBuf), PathBuf> {
     let (reader, opened) = match open_encoded_rollout(path, buffer_size) {
+        Ok(reader) => (reader, path.to_path_buf()),
         // Codex may compress or restore the rollout between discovery and this open.
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let other = other_encoding_path(path);
-            (open_encoded_rollout(&other, buffer_size)?, other)
+            match open_encoded_rollout(&other, buffer_size) {
+                Ok(reader) => (reader, other),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    return Err(path.to_path_buf());
+                }
+                Err(_) => return Err(other),
+            }
         }
-        result => (result?, path.to_path_buf()),
+        Err(_) => return Err(path.to_path_buf()),
     };
     Ok((LineReader::with_capacity(buffer_size, reader), opened))
 }

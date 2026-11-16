@@ -90,6 +90,18 @@ fn exported_fixture_replays_the_unified_report() {
             "{name} is missing from the manifest"
         );
     }
+    let seeded = manifest["seeded"].as_array().unwrap();
+    assert!(!seeded.is_empty());
+    for name in seeded {
+        let name = name.as_str().unwrap();
+        let stores = env[name].as_str().unwrap();
+        assert!(
+            stores
+                .split(',')
+                .any(|store| std::path::Path::new(store.trim()).exists()),
+            "{name}={stores} names no seeded store"
+        );
+    }
 
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
         .env_clear()
@@ -122,6 +134,24 @@ fn exported_fixture_replays_the_unified_report() {
     );
     assert_eq!(manifest["window"]["since"], golden::WINDOW_SINCE);
     assert_eq!(manifest["window"]["until"], golden::WINDOW_UNTIL);
+}
+
+#[test]
+fn malformed_test_clock_is_a_usage_error_not_a_panic() {
+    let fixture = Fixture::new();
+    let output = golden::hermetic_command(fixture.root(), &[], golden::WIDE_COLUMNS)
+        .env("CCUSAGE_TEST_NOW", "2026-01-02")
+        .args(["daily", "--offline", "--json", "--last", "1"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.starts_with("CCUSAGE_TEST_NOW=2026-01-02 is not an RFC 3339 instant"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "{stderr}");
 }
 
 #[test]

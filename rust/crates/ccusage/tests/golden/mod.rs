@@ -267,7 +267,8 @@ pub const FIXTURE_MANIFEST: &str = "golden-env.json";
 
 /// Seeds every agent into `root` and writes `FIXTURE_MANIFEST` there: the
 /// working directory and environment `hermetic_command` runs the unified
-/// reports under, and the matrix's date window. `diff-refs.bb` replays
+/// reports under, the variables in it that point at seeds, and the matrix's
+/// date window. `diff-refs.bb` replays
 /// commands from it, so both read the same stores the goldens do.
 pub fn export_fixture(agents: &[AgentMatrix], root: &Path) {
     let seeded = seed_all(agents, root);
@@ -287,6 +288,7 @@ pub fn export_fixture(agents: &[AgentMatrix], root: &Path) {
     let manifest = serde_json::json!({
         "cwd": cwd.to_string_lossy(),
         "env": env,
+        "seeded": seeded.iter().map(|(name, _)| name).collect::<Vec<_>>(),
         "window": { "since": WINDOW_SINCE, "until": WINDOW_UNTIL },
     });
     fs::write(

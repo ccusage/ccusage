@@ -12,7 +12,8 @@ publish.workspace = true
 test-snapshots = ["dep:ccusage-pricing-snapshots"]
 # Tests only: `utc_now` returns the RFC 3339 instant in `CCUSAGE_TEST_NOW`
 # when it is set, so tests of the binary can pin "now" for clock-relative
-# reports. Enabled from [dev-dependencies] for the same reason as above.
+# reports. Enabled from [dev-dependencies] for the same reason as above, and
+# by diff-refs.bb for the binaries it builds to replay the golden environment.
 test-clock = []
 
 [dependencies]

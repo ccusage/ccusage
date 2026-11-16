@@ -1,6 +1,7 @@
 use std::{
     fmt, fs, io,
     path::{Path, PathBuf},
+    time::{Duration, SystemTime},
 };
 
 use ccusage_core::{CliError, Diagnostics, Skip, SkipKind};
@@ -79,24 +80,33 @@ impl UnitError {
     /// A unit that is gone, still an empty file, or a document still being
     /// written when its read failed held no usage to lose: the agent removed
     /// it after discovery, or has not finished writing it. Only `--debug`
-    /// names such a unit.
+    /// names such a unit. A document cut short counts as still being written
+    /// only while the unit was modified within [`IN_PROGRESS_WINDOW`];
+    /// otherwise it stays truncated and is skipped as invalid data.
     #[cold]
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
         let state = match self.fault {
             Fault::Unwritten => UNWRITTEN,
-            Fault::Unfinished => "incomplete, read as still being written",
-            Fault::Skip(kind) => match fs::metadata(unit) {
+            Fault::Unfinished if being_written(unit) => "incomplete, read as still being written",
+            Fault::Unfinished | Fault::Skip(_) => match fs::metadata(unit) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     "removed after discovery, read as absent"
                 }
                 Ok(metadata) if metadata.is_file() && metadata.len() == 0 => UNWRITTEN,
-                _ => return diagnostics.record(Skip::unit(unit, kind, self.detail)),
+                _ => return diagnostics.record(Skip::unit(unit, self.kind(), self.detail)),
             },
         };
         diagnostics.debug_note(
             unit,
             format!("{}: {}: {state}", diagnostics.source(), unit.display()),
         );
+    }
+
+    fn kind(&self) -> SkipKind {
+        match self.fault {
+            Fault::Skip(kind) => kind,
+            Fault::Unwritten | Fault::Unfinished => SkipKind::InvalidData,
+        }
     }
 }
 
@@ -133,6 +143,25 @@ impl From<io::Error> for UnitError {
 
 const UNWRITTEN: &str = "empty, read as not yet written";
 
+/// How long after its last modification a unit that ends part-way through a
+/// JSON document still reads as being written. An agent that stops mid-write
+/// leaves the document truncated for good, and past this window the cut is
+/// skipped as invalid data instead.
+pub(crate) const IN_PROGRESS_WINDOW: Duration = Duration::from_secs(60);
+
+/// Whether `unit` was modified within [`IN_PROGRESS_WINDOW`]. A modification
+/// time ahead of the clock counts as recent; one that cannot be read does not.
+#[cold]
+pub(crate) fn being_written(unit: &Path) -> bool {
+    fs::metadata(unit)
+        .and_then(|metadata| metadata.modified())
+        .is_ok_and(|modified| {
+            SystemTime::now()
+                .duration_since(modified)
+                .map_or(true, |age| age <= IN_PROGRESS_WINDOW)
+        })
+}
+
 /// Reads a whole JSON unit and decodes it like [`decode_json`].
 ///
 /// File IO failures are recorded as unreadable units.
@@ -145,10 +174,10 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
 ///
 /// An agent rewrites such a document in place as it grows, so a read can
 /// catch it before the first byte or part-way through: content that is only
-/// whitespace, or that ends before the document does, is noted under
-/// `--debug` like an empty file rather than skipped. Any other decoding
-/// failure is invalid data, with only the error category and location
-/// retained for diagnostics.
+/// whitespace is noted under `--debug` like an empty file, and content that
+/// ends before the document does is noted while the unit is still being
+/// written (see [`UnitError::record`]). Any other decoding failure is invalid
+/// data, with only the error category and location retained for diagnostics.
 pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> {
     use serde_json::error::Category;
 
@@ -157,7 +186,16 @@ pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> 
             Category::Eof if content.iter().all(u8::is_ascii_whitespace) => {
                 (Fault::Unwritten, "EOF")
             }
-            Category::Eof => (Fault::Unfinished, "EOF"),
+            Category::Eof => {
+                return UnitError {
+                    fault: Fault::Unfinished,
+                    detail: format!(
+                        "JSON document is truncated at line {}, column {}",
+                        error.line(),
+                        error.column()
+                    ),
+                };
+            }
             Category::Io => (Fault::Skip(SkipKind::Unreadable), "I/O"),
             Category::Syntax => (Fault::Skip(SkipKind::InvalidData), "syntax"),
             Category::Data => (Fault::Skip(SkipKind::InvalidData), "data"),
@@ -221,13 +259,29 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{fs, path::Path};
+pub(crate) mod tests {
+    use std::{
+        fs,
+        path::Path,
+        time::{Duration, SystemTime},
+    };
 
     use ccusage_core::{Diagnostics, Result, SkipKind, cli::SharedArgs, cli_error};
     use ccusage_test_support::Fixture;
 
-    use super::{Fault, SqliteStage, UnitError, decode_json, read_units, read_units_flat};
+    use super::{
+        Fault, IN_PROGRESS_WINDOW, SqliteStage, UnitError, decode_json, read_units, read_units_flat,
+    };
+
+    pub(crate) fn age_past_write_window(path: &Path) {
+        let modified = SystemTime::now() - IN_PROGRESS_WINDOW - Duration::from_secs(1);
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    }
 
     fn numbers(path: &Path) -> Result<Vec<u32>> {
         let content = fs::read_to_string(path)?;
@@ -401,6 +455,37 @@ mod tests {
                 cut.display()
             )
         );
+    }
+
+    #[test]
+    fn a_document_left_cut_off_past_the_write_window_is_skipped_as_truncated() {
+        let fixture = Fixture::new();
+        let cut = fixture.write_file("cut.json", r#"{"usage":{"inp"#);
+        age_past_write_window(&cut);
+        let diagnostics = Diagnostics::new("test");
+
+        let loaded = read_units(
+            std::slice::from_ref(&cut),
+            true,
+            &diagnostics,
+            super::read_json::<serde_json::Value>,
+        );
+
+        assert_eq!(loaded, [None]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let debug = SharedArgs {
+            debug: true,
+            ..SharedArgs::default()
+        };
+        let warnings = diagnostics.warnings(&debug).join("\n");
+        assert!(
+            warnings.contains(&format!(
+                "{}: JSON document is truncated at line 1, column 14",
+                cut.display()
+            )),
+            "{warnings}"
+        );
+        assert!(!warnings.contains("still being written"), "{warnings}");
     }
 
     #[test]

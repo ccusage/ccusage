@@ -354,9 +354,13 @@ fn visit_codex_session_file_inner(
     diagnostics: &Diagnostics,
     mut stop_at_fork: Option<&mut CodexSessionMetadata>,
 ) -> Result<()> {
-    let Ok((mut lines, opened_path)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
-        UnitError::new(SkipKind::Unreadable, "rollout open failed").record(path, diagnostics);
-        return Ok(());
+    let (mut lines, opened_path) = match open_rollout_lines(path, READ_BUFFER_SIZE) {
+        Ok(opened) => opened,
+        Err(failed_path) => {
+            UnitError::new(SkipKind::Unreadable, "rollout open failed")
+                .record(&failed_path, diagnostics);
+            return Ok(());
+        }
     };
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
@@ -2046,6 +2050,40 @@ mod diagnostic_tests {
                 "codex: {}: removed after discovery, read as absent",
                 path.display()
             )]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_sibling_encoding_of_a_removed_rollout_is_a_skip() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let fixture = Fixture::new();
+        let path = fixture.path("session.jsonl");
+        let compressed = fixture.write_file("session.jsonl.zst", "rollout");
+        fs::set_permissions(&compressed, fs::Permissions::from_mode(0o000)).unwrap();
+        let diagnostics = Diagnostics::new("codex");
+
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |_| Ok(()),
+            &diagnostics,
+        )
+        .unwrap();
+        fs::set_permissions(&compressed, fs::Permissions::from_mode(0o600)).unwrap();
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        let warnings = diagnostics
+            .warnings(&crate::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(
+            warnings.contains(&format!("{}: rollout open failed", compressed.display())),
+            "{warnings}"
         );
     }
 

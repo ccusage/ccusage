@@ -85,11 +85,46 @@
                 "--test" "golden_matrix" "--" "--ignored" "--exact" "export_golden_fixture"]
                {:env {"CCUSAGE_GOLDEN_FIXTURE_DIR" dir}} "golden fixture export"))
 
+(defn- manifest-problems
+  "Why `manifest` cannot point both binaries at the golden seeds. An entry of
+  a store list may be blank or missing on purpose, so a seeded variable only
+  needs one store that exists."
+  [manifest]
+  (let [env (get manifest "env")
+        seeded (get manifest "seeded")
+        bound? #(and (string? %) (re-matches #"\d{8}" %))]
+    (if-not (map? manifest)
+      ["it is not a JSON object"]
+      (cond-> []
+        (not (and (string? (get manifest "cwd")) (fs/directory? (get manifest "cwd"))))
+        (conj "cwd is not an existing directory")
+        (not (and (map? env) (seq env) (every? string? (vals env))))
+        (conj "env is not a non-empty map of strings")
+        (not (and (bound? (get-in manifest ["window" "since"])) (bound? (get-in manifest ["window" "until"]))))
+        (conj "window does not hold YYYYMMDD since and until bounds")
+        (not (and (sequential? seeded) (seq seeded)))
+        (conj "seeded lists no store variables")
+        (sequential? seeded)
+        (into (for [name seeded
+                    :let [stores (get env name)]
+                    :when (not (and (string? stores)
+                                    (some #(fs/exists? (str/trim %)) (str/split stores #","))))]
+                (str "seeded variable " name " names no existing store")))))))
+
 (defn read-golden-fixture [dir]
   (let [manifest (path dir fixture-manifest)]
     (when-not (fs/regular-file? manifest)
       (fail! (str dir " is not a golden fixture: " fixture-manifest " is missing") {:kind :invalid-fixture}))
-    (json/parse-string (slurp manifest))))
+    (let [parsed (try (json/parse-string (slurp manifest))
+                      (catch Exception error {::unparsable (ex-message error)}))
+          problems (if-let [error (::unparsable parsed)]
+                     [(str fixture-manifest " is not JSON: " error)]
+                     (manifest-problems parsed))]
+      (when (seq problems)
+        (fail! (str dir " is not a usable golden fixture: " (str/join "; " problems)
+                    ". Pass an empty --fixture directory to export a fresh one.")
+               {:kind :invalid-fixture}))
+      parsed)))
 
 (defn prepare-golden-fixture!
   "Reuses the export in `dir`, or exports into it when it is missing or empty."
@@ -99,16 +134,40 @@
     (export-golden-fixture! repo dir))
   (read-golden-fixture dir))
 
+(def test-clock-var "CCUSAGE_TEST_NOW")
+
+(def test-clock-feature
+  "Dev-only: the shipped binary never enables it, so a ref built without it
+  reads the wall clock whatever the golden environment pins."
+  "ccusage-core/test-clock")
+
+(defn declares-test-clock? [core-cargo-toml]
+  (boolean (and core-cargo-toml (re-find #"(?m)^test-clock\s*=" core-cargo-toml))))
+
+(defn clock-features
+  "The features that make `commit` honor the golden clock; none for a commit
+  whose ccusage-core predates the test clock."
+  [repo commit]
+  (let [manifest (run-process ["git" "show" (str commit ":rust/crates/ccusage-core/Cargo.toml")] {:dir repo})]
+    (if (and (zero? (:exit manifest)) (declares-test-clock? (:out manifest))) [test-clock-feature] [])))
+
+(defn pins-clock? [variant] (boolean (some #{test-clock-feature} (:features variant))))
+
 (defn golden-env
-  "The environment the golden matrix runs under, at the default log level."
-  [manifest]
+  "The environment the golden matrix runs under, at the default log level.
+  Without `pinned-clock?` the golden clock is left out for both binaries: a
+  binary that ignores it would otherwise compare clock-relative reports at a
+  different instant than one that honors it."
+  [manifest pinned-clock?]
   {:clean? true
-   :vars (merge (into (sorted-map) (dissoc (get manifest "env") "LOG_LEVEL")) output-vars)})
+   :vars (merge (into (sorted-map) (cond-> (dissoc (get manifest "env") "LOG_LEVEL")
+                                     (not pinned-clock?) (dissoc test-clock-var)))
+                output-vars)})
 
 (defn real-env [] {:clean? false :vars output-vars})
 
 (defn process-env [{:keys [clean? vars]} inherited]
-  (if clean? (into {} vars) (merge (dissoc (into {} inherited) "LOG_LEVEL") vars)))
+  (if clean? (into {} vars) (merge (dissoc (into {} inherited) "LOG_LEVEL" test-clock-var) vars)))
 
 (defn run-captured!
   "Runs one binary and keeps stdout and stderr as files, so they are compared
@@ -234,7 +293,10 @@
        "Builds each git ref in release mode (or takes an existing binary path), runs every report\n"
        "command the head binary's help lists with both binaries under the same arguments and\n"
        "environment, and compares stdout, stderr, and exit code byte for byte. Without --real, both\n"
-       "binaries read the golden matrix seeds of this checkout, exported by `cargo test`. Variants\n"
+       "binaries read the golden matrix seeds of this checkout, exported by `cargo test`, at the\n"
+       "golden clock: refs are built with the dev-only ccusage-core/test-clock feature when they\n"
+       "declare it, and when either side cannot honor the clock (an older ref or a binary path)\n"
+       "both run under the wall clock instead, with a notice. Variants\n"
        "cover JSON, tables, breakdowns, date windows, cost modes, and timezones. Agent-specific\n"
        "options and statusline hook payloads are covered by the golden tests. Each command runs\n"
        "twice per binary, then three more times per binary when the results disagree: a command\n"
@@ -264,7 +326,7 @@
       (do (println (diff-help-text)) 0)
       (let [repo (repo-root)
             cache (expand (or (:cache-dir options) (path repo "rust" "target" "bench-history")))
-            [base head] (resolve-variants repo cache (:refs options))
+            [base head :as variants] (resolve-variants repo cache (:refs options) (partial clock-features repo))
             bins {:base (:bin base) :head (:bin head)}
             real (:real options)
             fixture-dir (when-not real
@@ -274,7 +336,13 @@
                          (str (temp-dir "ccusage-diff-refs.")))]
         (try
           (let [manifest (when fixture-dir (prepare-golden-fixture! repo fixture-dir))
-                env (if real (real-env) (golden-env manifest))
+                unpinned (remove pins-clock? variants)
+                _ (when (and manifest (contains? (get manifest "env") test-clock-var) (seq unpinned))
+                    (write-progress (str (str/join ", " (map :label unpinned))
+                                         " cannot honor " test-clock-var " (an existing binary, or a ref built without "
+                                         test-clock-feature "), so both binaries run under the wall clock;"
+                                         " clock-relative reports are compared at the current time")))
+                env (if real (real-env) (golden-env manifest (empty? unpinned)))
                 dates (if real
                         (real-dates (java.time.LocalDate/now java.time.ZoneOffset/UTC))
                         (merge (update-keys (get manifest "window") keyword)

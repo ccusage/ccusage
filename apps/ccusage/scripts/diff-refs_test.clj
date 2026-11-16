@@ -90,10 +90,13 @@
         (is (= args (args-of fixture id)) id)
         (is (= (into args ["--until" "20260228"]) (args-of real id)) id)))))
 
+(def ^:private pinned-manifest
+  {"cwd" "/f/cwd"
+   "env" {"HOME" "/f/home" "CLAUDE_CONFIG_DIR" "/f/claude,/f/opencode/claude"
+          "LOG_LEVEL" "0" "COLUMNS" "200" "CCUSAGE_TEST_NOW" "2026-01-02T12:00:00Z"}})
+
 (deftest environments
-  (let [env (golden-env {"cwd" "/f/cwd"
-                         "env" {"HOME" "/f/home" "CLAUDE_CONFIG_DIR" "/f/claude,/f/opencode/claude"
-                                "LOG_LEVEL" "0" "COLUMNS" "200" "CCUSAGE_TEST_NOW" "2026-01-02T12:00:00Z"}})]
+  (let [env (golden-env pinned-manifest true)]
     (is (true? (:clean? env)))
     (testing "the golden environment at the default log level"
       (is (= {"HOME" "/f/home" "CLAUDE_CONFIG_DIR" "/f/claude,/f/opencode/claude"
@@ -101,9 +104,67 @@
              (:vars env))))
     (testing "nothing from the caller leaks into a fixture run"
       (is (= (:vars env) (process-env env {"CODEX_HOME" "/real" "PATH" "/bin"})))))
-  (testing "a real run inherits the caller's environment at the default log level"
+  (testing "binaries that cannot pin the clock both run under the wall clock"
+    (is (not (contains? (:vars (golden-env pinned-manifest false)) "CCUSAGE_TEST_NOW"))))
+  (testing "a real run inherits the caller's environment at the default log level and the wall clock"
     (is (= {"HOME" "/h" "CODEX_HOME" "/real" "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"}
-           (process-env (real-env) {"HOME" "/h" "CODEX_HOME" "/real" "LOG_LEVEL" "0" "COLUMNS" "80"})))))
+           (process-env (real-env) {"HOME" "/h" "CODEX_HOME" "/real" "LOG_LEVEL" "0" "COLUMNS" "80"
+                                    "CCUSAGE_TEST_NOW" "2026-01-02T12:00:00Z"})))))
+
+(deftest pinned-clock-builds
+  (testing "a ref is built with the test clock only when its ccusage-core declares it"
+    (is (true? (declares-test-clock? "[features]\ntest-snapshots = [\"dep:x\"]\ntest-clock = []\n")))
+    (is (false? (declares-test-clock? "[features]\ntest-snapshots = [\"dep:x\"]\n")))
+    (is (false? (declares-test-clock? nil))))
+  (testing "this checkout declares it, so its own goldens' clock is honored"
+    (is (= [test-clock-feature] (clock-features (repo-root) "HEAD"))))
+  (testing "a test-clock build is cached apart from the plain release build"
+    (is (= "abc" (build-key "abc" [])))
+    (is (not= (build-key "abc" []) (build-key "abc" [test-clock-feature])))))
+
+(defn- run-diff-main
+  "diff-main over stub variants, returning the environment each command ran
+  under and the progress messages."
+  [variants]
+  (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-clock."})
+        envs (atom []) progress (atom []) features-for (atom nil)]
+    (try
+      (with-redefs [resolve-variants (fn [_ _ _ f] (reset! features-for f) variants)
+                    prepare-golden-fixture! (fn [& _] (assoc pinned-manifest "cwd" (str dir)))
+                    report-commands (fn [_] ["daily"])
+                    compare-command! (fn [_ env & _] (swap! envs conj env) {:status :identical :args ["daily"]})
+                    write-progress #(swap! progress conj %)]
+        (with-out-str (diff-main "HEAD" "HEAD" "--output-dir" (str dir))))
+      {:envs @envs :progress @progress :features-for @features-for}
+      (finally (babashka.fs/delete-tree dir)))))
+
+(deftest pinned-clock-comparisons
+  (testing "refs are built with the test clock where they declare it"
+    (let [features-for (:features-for (run-diff-main [{:bin "b" :features []} {:bin "h" :features []}]))]
+      (is (= [test-clock-feature] (features-for "HEAD")))))
+  (testing "both sides pinned keep the golden clock"
+    (let [{:keys [envs]} (run-diff-main [{:bin "b" :features [test-clock-feature]} {:bin "h" :features [test-clock-feature]}])]
+      (is (seq envs))
+      (is (every? #(= "2026-01-02T12:00:00Z" (get-in % [:vars "CCUSAGE_TEST_NOW"])) envs))))
+  (testing "one side that cannot pin it moves both to the wall clock, with a notice naming it"
+    (let [{:keys [envs progress]} (run-diff-main [{:label "v18.0.0" :bin "b" :features []}
+                                                  {:label "HEAD" :bin "h" :features [test-clock-feature]}])]
+      (is (seq envs))
+      (is (not-any? #(contains? (:vars %) "CCUSAGE_TEST_NOW") envs))
+      (is (some #(and (.contains ^String % "v18.0.0") (.contains ^String % "wall clock")) progress)))))
+
+(defn- golden-manifest
+  "What golden::export_fixture writes into `dir`, with a seeded store there."
+  [dir]
+  (let [store (doto (path dir "claude") babashka.fs/create-dirs)]
+    {"cwd" (str dir)
+     "env" {"HOME" (str dir) "CLAUDE_CONFIG_DIR" (str " " store " ," (path dir "missing"))}
+     "seeded" ["CLAUDE_CONFIG_DIR"]
+     "window" {"since" "20251231" "until" "20260101"}}))
+
+(defn- write-manifest! [dir manifest]
+  (babashka.fs/create-dirs dir)
+  (spit (path dir fixture-manifest) (if (string? manifest) manifest (cheshire.core/generate-string manifest))))
 
 (deftest golden-fixtures
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-fixture."})
@@ -111,10 +172,10 @@
     (try
       (with-redefs [export-golden-fixture! (fn [_ target]
                                              (swap! exports conj target)
-                                             (spit (path target fixture-manifest) "{\"cwd\": \"/c\", \"env\": {}}"))]
+                                             (write-manifest! target (golden-manifest target)))]
         (testing "a missing or empty directory is exported into, an exported one reused"
-          (is (= {"cwd" "/c" "env" {}} (prepare-golden-fixture! "/repo" (path dir "new"))))
-          (is (= {"cwd" "/c" "env" {}} (prepare-golden-fixture! "/repo" (path dir "new"))))
+          (let [exported (prepare-golden-fixture! "/repo" (path dir "new"))]
+            (is (= (golden-manifest (path dir "new")) exported (prepare-golden-fixture! "/repo" (path dir "new")))))
           (babashka.fs/create-dirs (path dir "empty"))
           (prepare-golden-fixture! "/repo" (path dir "empty"))
           (is (= [(path dir "new") (path dir "empty")] @exports)))
@@ -124,6 +185,23 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"is not a golden fixture"
                                 (prepare-golden-fixture! "/repo" (path dir "unrelated"))))
           (is (= 2 (count @exports)))))
+      (testing "a manifest that would let both refs read empty stores is rejected"
+        (doseq [[problem change] [["malformed JSON" (constantly "{\"cwd\":")]
+                                  ["no env" #(dissoc % "env")]
+                                  ["an empty env" #(assoc % "env" {})]
+                                  ["no seeded variables" #(dissoc % "seeded")]
+                                  ["an empty seeded list" #(assoc % "seeded" [])]
+                                  ["a seeded variable missing from env" #(update % "env" dissoc "CLAUDE_CONFIG_DIR")]
+                                  ["a seeded variable naming no existing store"
+                                   #(assoc-in % ["env" "CLAUDE_CONFIG_DIR"] (path dir "gone"))]
+                                  ["a missing working directory" #(assoc % "cwd" (path dir "gone"))]
+                                  ["no window" #(dissoc % "window")]
+                                  ["a malformed window bound" #(assoc-in % ["window" "until"] "2026-01-01")]]
+                :let [fixture (path dir (str "invalid-" (clojure.string/replace problem " " "-")))]]
+          (write-manifest! fixture (change (golden-manifest fixture)))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"is not a usable golden fixture"
+                                (prepare-golden-fixture! "/repo" fixture))
+              problem)))
       (finally (babashka.fs/delete-tree dir)))))
 
 (defn- run [exit out err] {:exit exit :out (.getBytes out) :err (.getBytes err)})
@@ -161,9 +239,7 @@
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-e2e."})
         script (fn [name body] (stub-binary dir name (str "[ \"$1\" = --help ] && printf 'COMMANDS:\\n  daily  Show\\n  weekly  Show\\n' && exit 0\n"
                                                             "[ \"$2\" = --help ] && exit 0\n" body)))
-        fixture (doto (path dir "fixture")
-                  babashka.fs/create-dirs
-                  (-> (path fixture-manifest) (spit (str "{\"cwd\": \"" dir "\", \"env\": {}, \"window\": {\"since\": \"20251231\", \"until\": \"20260101\"}}"))))
+        fixture (doto (path dir "fixture") (write-manifest! (golden-manifest dir)))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
         rejected (script "rejected" "echo 'unsupported report arguments' >&2; exit 2")
         unlaunchable (doto (script "unlaunchable" "echo unused")
@@ -177,7 +253,7 @@
         flaky (script "flaky" (str "n=0; if [ -f " (path dir "calls") " ]; then read -r n < " (path dir "calls")
                                    "; fi; n=$((n + 1)); echo \"$n\" > " (path dir "calls") "; echo \"$n\""))
         compare (fn [bins allow-stderr-diff]
-                  (compare-command! bins (golden-env {"env" {}}) (str dir) (str dir) allow-stderr-diff
+                  (compare-command! bins (golden-env {"env" {}} true) (str dir) (str dir) allow-stderr-diff
                                     {:id "daily--json" :json? true :args ["daily"]}))]
     (try
       (testing "identical output leaves nothing behind"
