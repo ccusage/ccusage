@@ -1,4 +1,7 @@
-use ccusage_adapter_common::{SqliteStage, units::UnitError};
+use ccusage_adapter_common::{
+    SqliteStage, jsonl, read_units_flat,
+    units::{UnitError, decode_json},
+};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     collections::{HashMap, HashSet},
@@ -20,7 +23,7 @@ use super::{
 use crate::{
     LoadedEntry, PricingMap, Result,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    collect_files_with_extension, date_range_bounds_ms, debug_log, parse_tz, read_files_parallel,
+    collect_files_with_extension, date_range_bounds_ms, debug_log, parse_tz,
 };
 
 pub(crate) fn load_entries(
@@ -211,17 +214,10 @@ fn load_entries_from_directory_parts(
     // Read the surviving files in parallel, then run the sequential id dedup
     // over the results in their original file order so parallelism never changes
     // which duplicate survives.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_message_file(
-            file,
-            tz.as_ref(),
-            shared.mode,
-            pricing.as_ref(),
-            window,
-            diagnostics,
-        )
+    let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
+        read_message_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), window)
     });
-    for entry in loaded.into_iter().flatten() {
+    for entry in loaded {
         if let Some(id) = entry_id(&entry)
             && !seen.insert(id.to_string())
         {
@@ -435,17 +431,14 @@ fn load_entries_from_database(
                             {
                                 continue;
                             }
-                            let value = match serde_json::from_str::<OpenCodeMessage>(&data) {
-                                Ok(value) => value,
-                                Err(error) => {
-                                    diagnostics.record(Skip::record(
-                                        db_path,
-                                        row,
-                                        SkipKind::InvalidData,
-                                        UnitError::from(error),
-                                    ));
-                                    continue;
-                                }
+                            let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
+                                data.as_bytes(),
+                                db_path,
+                                row,
+                                diagnostics,
+                                Some(|_| true),
+                            ) else {
+                                continue;
                             };
                             if let Some(entry) = message_value_to_entry(
                                 &value,
@@ -591,12 +584,15 @@ fn load_entries_from_database(
                                 Ok(Some(linked)) => linked,
                                 Ok(None) => continue,
                                 Err(error) => {
-                                    diagnostics.record(Skip::record(
+                                    jsonl::record_decode_error(
+                                        data.as_bytes(),
+                                        error,
                                         db_path,
                                         row,
-                                        SkipKind::InvalidData,
-                                        error,
-                                    ));
+                                        false,
+                                        diagnostics,
+                                        Some(|_: &serde_json::Value| true),
+                                    );
                                     continue;
                                 }
                             };
@@ -677,19 +673,8 @@ fn read_message_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     window: DateWindow,
-    diagnostics: &Diagnostics,
-) -> Option<LoadedEntry> {
-    let content = match fs::read(path) {
-        Ok(content) => content,
-        Err(_) => {
-            diagnostics.record(Skip::unit(
-                path,
-                SkipKind::Unreadable,
-                "message file read failed",
-            ));
-            return None;
-        }
-    };
+) -> std::result::Result<Option<LoadedEntry>, UnitError> {
+    let content = fs::read(path)?;
     // Skip out-of-range entries before the full parse. Extraction works on the
     // raw text and fails open (non-UTF-8 or missing timestamp -> full parse).
     if !window.is_unbounded()
@@ -697,20 +682,12 @@ fn read_message_file(
         && let Some(millis) = extract_message_timestamp(text)
         && !window.contains(millis)
     {
-        return None;
+        return Ok(None);
     }
-    let value = match serde_json::from_slice::<OpenCodeMessage>(&content) {
-        Ok(value) => value,
-        Err(error) => {
-            diagnostics.record(Skip::unit(
-                path,
-                SkipKind::InvalidData,
-                UnitError::from(error),
-            ));
-            return None;
-        }
-    };
-    message_value_to_entry(&value, None, None, tz, mode, pricing)
+    let value = decode_json::<OpenCodeMessage>(&content)?;
+    Ok(message_value_to_entry(
+        &value, None, None, tz, mode, pricing,
+    ))
 }
 
 fn push_unique_entry(

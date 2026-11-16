@@ -46,7 +46,7 @@ layers.
 - `units::read_units`
 - `units::read_units_flat`
 - `units::UnitError`
-- `units::read_json`
+- `units::read_json` and `units::decode_json`
 - `jsonl::records_with_diagnostics` and `records_with_usage_diagnostics`
 - `jsonl::numbered_records_with_usage_diagnostics`
 - `source::UsageSource`, `source::EntrySource` and the request, row and policy

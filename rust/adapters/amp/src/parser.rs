@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
-use ccusage_adapter_common::units::UnitError;
+use ccusage_adapter_common::units::{UnitError, decode_json};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 use serde_json::Value;
@@ -151,7 +151,7 @@ fn parse_thread(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let thread = serde_json::from_slice::<AmpThread>(content)?;
+    let thread = decode_json::<AmpThread>(content)?;
     let Some(thread_id) = thread.id else {
         if thread
             .messages
