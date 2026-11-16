@@ -128,6 +128,24 @@ mod tests {
     }
 
     #[test]
+    fn empty_junie_home_falls_back_to_dot_junie_under_home() {
+        let fixture = fs_fixture!({
+            "home/.junie/sessions/session-a/events.jsonl": "{}\n",
+        });
+        let _env = EnvVarsGuard::set_many([
+            (JUNIE_HOME_ENV, Some("".into())),
+            ("HOME", Some(fixture.path("home").into_os_string())),
+            ("USERPROFILE", Some(fixture.path("home").into_os_string())),
+        ]);
+
+        assert_eq!(junie_home(), Some(fixture.path("home/.junie")));
+        assert_eq!(
+            discover_events_files(&SharedArgs::default()),
+            vec![fixture.path("home/.junie/sessions/session-a/events.jsonl")]
+        );
+    }
+
+    #[test]
     fn missing_sessions_directory_yields_no_files() {
         let fixture = fs_fixture!({});
         let _home = EnvVarGuard::set(JUNIE_HOME_ENV, fixture.root());
