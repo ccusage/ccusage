@@ -4,7 +4,7 @@ use ccusage_adapter_common::{SqliteStage, UnitError, dir_entries, jsonl};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use super::parser::{OpenClawLine, TranscriptReader, entry_to_loaded};
+use super::parser::{OpenClawLine, TranscriptReader, entry_to_loaded, millis_from_f64};
 use crate::{LoadedEntry, PricingMap, TimestampMs, cli::CostMode};
 
 /// One per-agent SQLite store (`agents/<agentId>/agent/openclaw-agent.sqlite`).
@@ -153,11 +153,8 @@ fn read_agent_database(
                 };
                 let created_at = statement
                     .read::<i64, _>(3)
-                    .or_else(|_| {
-                        statement
-                            .read::<f64, _>(3)
-                            .map(|value| value.trunc() as i64)
-                    })
+                    .ok()
+                    .or_else(|| statement.read::<f64, _>(3).ok().and_then(millis_from_f64))
                     .unwrap_or(0);
                 let fallback_timestamp = TimestampMs::from_millis(created_at.max(0));
                 let Ok(event_json) = statement.read::<String, _>(2) else {

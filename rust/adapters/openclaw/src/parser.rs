@@ -457,18 +457,18 @@ fn timestamp_from_value(value: Option<&Value>) -> Option<TimestampMs> {
         return timestamp_from_millis(i64::try_from(raw).ok()?);
     }
     if let Some(raw) = value.as_f64() {
-        return timestamp_from_millis(raw.trunc() as i64);
+        return millis_from_f64(raw).and_then(timestamp_from_millis);
     }
     crate::parse_ts_timestamp(value.as_str()?)
 }
 
-/// OpenClaw writes `created_at` and message timestamps as Unix milliseconds
-/// (`readEventTimestamp` falls back to `Date.now()`), so accept any finite
-/// non-negative value here. Non-finite, negative, or overflowing inputs return
-/// `None` and let the caller fall back to the file mtime, matching the JSONL
-/// path.
+/// OpenClaw writes `created_at` and message timestamps as Unix milliseconds.
 fn timestamp_from_millis(raw: i64) -> Option<TimestampMs> {
     (raw >= 0).then(|| TimestampMs::from_millis(raw))
+}
+
+pub(super) fn millis_from_f64(raw: f64) -> Option<i64> {
+    (raw.is_finite() && raw.abs() < i64::MAX as f64).then(|| raw.trunc() as i64)
 }
 
 fn extract_session_id(path: &Path) -> String {
@@ -700,6 +700,25 @@ mod tests {
 
         assert_eq!(entry.output_tokens, 222);
         assert_eq!(entry.total_tokens, 222);
+    }
+
+    #[test]
+    fn falls_back_for_a_float_timestamp_beyond_the_millisecond_range() {
+        let record = serde_json::from_value::<OpenClawLine>(serde_json::json!({
+            "type": "message",
+            "message": {
+                "role": "assistant",
+                "model": "gpt-5.2",
+                "usage": { "input": 10, "output": 20 },
+                "timestamp": 1e300
+            }
+        }))
+        .unwrap();
+        let fallback = TimestampMs::from_millis(1_769_753_935_279);
+
+        let entry = parse_transcript_message(&record, "session-a", None, None, fallback).unwrap();
+
+        assert_eq!(entry.timestamp, fallback);
     }
 
     #[test]
