@@ -2,7 +2,6 @@ use std::{
     borrow::Cow,
     sync::{Arc, Mutex, OnceLock, RwLock},
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
 };
 
 use ccusage_cli::PricingOverride;
@@ -98,7 +97,6 @@ fn models_dev_catalog_rules_json() -> &'static str {
 const LITELLM_PRICING_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
-const MODELS_DEV_FAILURE_RETRY_AFTER: Duration = Duration::from_secs(60);
 // Anthropic date-suffixed model aliases use YYYYMMDD, while other numeric
 // suffixes are treated as distinct model versions.
 const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
@@ -836,48 +834,6 @@ fn models_dev_catalog_rules() -> &'static ModelsDevCatalogRules {
 enum ModelsDevJson {
     Providers(FxHashMap<String, ModelsDevProvider>),
     Models(FxHashMap<String, ModelsDevModel>),
-}
-
-struct ModelsDevPricingCache {
-    pricing: OnceLock<PricingMap>,
-    last_failure: Mutex<Option<Instant>>,
-    failure_retry_after: Duration,
-}
-
-impl ModelsDevPricingCache {
-    const fn new(failure_retry_after: Duration) -> Self {
-        Self {
-            pricing: OnceLock::new(),
-            last_failure: Mutex::new(None),
-            failure_retry_after,
-        }
-    }
-
-    fn get_or_try_load<F>(&self, fetch_json: F) -> Option<&PricingMap>
-    where
-        F: FnOnce() -> std::io::Result<String>,
-    {
-        if let Some(pricing) = self.pricing.get() {
-            return Some(pricing);
-        }
-        if self.last_failure.lock().is_ok_and(|last_failure| {
-            last_failure.is_some_and(|failed_at| failed_at.elapsed() < self.failure_retry_after)
-        }) {
-            return None;
-        }
-
-        let Some(map) = load_models_dev_pricing(fetch_json) else {
-            if let Ok(mut last_failure) = self.last_failure.lock() {
-                *last_failure = Some(Instant::now());
-            }
-            return None;
-        };
-        let _ = self.pricing.set(map);
-        if let Ok(mut last_failure) = self.last_failure.lock() {
-            *last_failure = None;
-        }
-        self.pricing.get()
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2589,9 +2545,19 @@ fn should_log_pricing_refresh_details() -> bool {
 }
 
 fn models_dev_pricing() -> Option<&'static PricingMap> {
-    static MODELS_DEV_PRICING: ModelsDevPricingCache =
-        ModelsDevPricingCache::new(MODELS_DEV_FAILURE_RETRY_AFTER);
-    MODELS_DEV_PRICING.get_or_try_load(fetch_models_dev_json)
+    static MODELS_DEV_PRICING: OnceLock<Option<PricingMap>> = OnceLock::new();
+    load_models_dev_pricing_once(&MODELS_DEV_PRICING, fetch_models_dev_json)
+}
+
+fn load_models_dev_pricing_once<F>(
+    cell: &OnceLock<Option<PricingMap>>,
+    fetch_json: F,
+) -> Option<&PricingMap>
+where
+    F: FnOnce() -> std::io::Result<String>,
+{
+    cell.get_or_init(|| load_models_dev_pricing(fetch_json))
+        .as_ref()
 }
 
 /// Pricing built from the models.dev snapshot embedded at build time. Unlike the
@@ -3734,89 +3700,72 @@ mod tests {
     }
 
     #[test]
-    fn retries_models_dev_pricing_after_fetch_failure() {
-        let cache = super::ModelsDevPricingCache::new(std::time::Duration::ZERO);
+    fn tries_models_dev_pricing_once_per_process() {
+        let cell = std::sync::OnceLock::new();
+        let attempts = AtomicUsize::new(0);
 
-        let failed = cache.get_or_try_load(|| {
+        let failed = super::load_models_dev_pricing_once(&cell, || {
+            attempts.fetch_add(1, Ordering::Relaxed);
             Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 "temporary failure",
             ))
         });
+        let later = super::load_models_dev_pricing_once(&cell, || {
+            attempts.fetch_add(1, Ordering::Relaxed);
+            Ok(
+                r#"{"openai":{"models":{"gpt-late":{"cost":{"input":1.0,"output":2.0}}}}}"#
+                    .to_string(),
+            )
+        });
+
         assert!(failed.is_none());
-
-        let pricing = cache
-            .get_or_try_load(|| {
-                Ok(r#"{
-                    "openai": {
-                        "id": "openai",
-                        "name": "OpenAI",
-                        "models": {
-                            "gpt-retry": {
-                                "id": "gpt-retry",
-                                "name": "GPT Retry",
-                                "cost": {
-                                    "input": 1.0,
-                                    "output": 2.0
-                                },
-                                "limit": {
-                                    "context": 42
-                                }
-                            }
-                        }
-                    }
-                }"#
-                .to_string())
-            })
-            .expect("models.dev retry should cache successful pricing");
-
-        let gpt_retry = pricing
-            .find_entry("gpt-retry", Fuzzy::Allowed)
-            .expect("successful retry should load pricing");
-        assert_eq!(gpt_retry.input, 0.000001);
-        assert_eq!(gpt_retry.output, 0.000002);
-        assert_eq!(
-            pricing.context_limit_entry("gpt-retry", Fuzzy::Allowed),
-            Some(42)
-        );
+        assert!(later.is_none());
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
     }
 
     #[test]
-    fn backs_off_models_dev_pricing_after_fetch_failure() {
-        let cache = super::ModelsDevPricingCache::new(std::time::Duration::from_secs(60));
-        let attempts = AtomicUsize::new(0);
-
-        let failed = cache.get_or_try_load(|| {
-            attempts.fetch_add(1, Ordering::Relaxed);
-            Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "temporary failure",
-            ))
-        });
-        assert!(failed.is_none());
-
-        let skipped = cache.get_or_try_load(|| {
-            attempts.fetch_add(1, Ordering::Relaxed);
+    fn keeps_the_models_dev_pricing_its_one_attempt_loaded() {
+        let cell = std::sync::OnceLock::new();
+        let loaded = super::load_models_dev_pricing_once(&cell, || {
             Ok(r#"{
                 "openai": {
                     "id": "openai",
                     "name": "OpenAI",
                     "models": {
-                        "gpt-skipped": {
-                            "id": "gpt-skipped",
-                            "name": "GPT Skipped",
+                        "gpt-first": {
+                            "id": "gpt-first",
+                            "name": "GPT First",
                             "cost": {
                                 "input": 1.0,
                                 "output": 2.0
+                            },
+                            "limit": {
+                                "context": 42
                             }
                         }
                     }
                 }
             }"#
             .to_string())
-        });
-        assert!(skipped.is_none());
-        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+        })
+        .expect("a usable models.dev body should load");
+
+        let gpt_first = loaded
+            .find_entry("gpt-first", Fuzzy::Allowed)
+            .expect("the loaded body should price its model");
+        assert_eq!(gpt_first.input, 0.000001);
+        assert_eq!(gpt_first.output, 0.000002);
+        assert_eq!(
+            loaded.context_limit_entry("gpt-first", Fuzzy::Allowed),
+            Some(42)
+        );
+        assert!(
+            super::load_models_dev_pricing_once(&cell, || {
+                Err(std::io::Error::other("must not fetch again"))
+            })
+            .is_some()
+        );
     }
 
     #[test]
