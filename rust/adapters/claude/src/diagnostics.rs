@@ -1,10 +1,11 @@
 use std::{fs::File, io::Read, path::Path};
 
+use ccusage_adapter_common::UnitError;
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 pub(super) fn read_content(path: &Path, diagnostics: &Diagnostics) -> Vec<u8> {
     let Ok(mut file) = File::open(path) else {
-        diagnostics.record(Skip::unit(path, SkipKind::Unreadable, "file open failed"));
+        UnitError::new(SkipKind::Unreadable, "file open failed").record(path, diagnostics);
         return Vec::new();
     };
     let capacity = file
@@ -85,11 +86,24 @@ mod tests {
     use std::io::{self, Cursor};
 
     #[test]
-    fn missing_files_and_malformed_usage_are_diagnosed() {
+    fn a_file_removed_after_discovery_is_not_a_skip() {
         let fixture = ccusage_test_support::Fixture::new();
         let diagnostics = Diagnostics::new("claude");
 
         assert!(read_content(&fixture.path("missing.jsonl"), &diagnostics).is_empty());
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
+        assert!(
+            diagnostics
+                .warnings(&ccusage_core::cli::SharedArgs::default())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn malformed_usage_is_diagnosed() {
+        let diagnostics = Diagnostics::new("claude");
+
         let line = br#"{"message":{"usage":{"SECRET_CANARY":"#;
         rejected(
             Path::new("session.jsonl"),
@@ -100,7 +114,6 @@ mod tests {
             false,
         );
 
-        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
