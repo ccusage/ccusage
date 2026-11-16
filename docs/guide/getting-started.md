@@ -50,6 +50,7 @@ ccusage opencode weekly
 ccusage amp session
 ccusage pi monthly
 ccusage cline daily
+ccusage junie daily
 ccusage kilo daily
 ccusage kimi daily
 ccusage qwen daily
@@ -103,6 +104,7 @@ Now that you have your first unified view, explore these features:
 5. **[Configuration](/guide/configuration)** - Customize ccusage behavior
 6. **[Claude Code](/guide/claude/)** - Claude Code-specific setup and features
 7. **[Cline](/guide/cline/)** - Cline extension and CLI data locations
+8. **[Junie](/guide/junie/)** - Junie CLI and IDE session data
 
 ## Common Use Cases
 
@@ -173,6 +175,7 @@ If ccusage shows no data, check:
    - Droid: `${DROID_SESSIONS_DIR:-~/.factory/sessions}`
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`
    - Cline: `~/.cline/data/sessions/` and editor `globalStorage/saoudrizwan.claude-dev/tasks/`
+   - Junie: `${JUNIE_HOME:-~/.junie}/sessions/`
    - Hermes Agent: `${HERMES_HOME:-~/.hermes}/state.db`
    - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}`
    - Goose: standard Goose data roots or `GOOSE_PATH_ROOT`
@@ -197,6 +200,7 @@ export AMP_DATA_DIR="/path/to/amp"
 export DROID_SESSIONS_DIR="/path/to/factory/sessions"
 export CODEBUFF_DATA_DIR="/path/to/manicode"
 export CLINE_DATA_DIR="/path/to/cline,/path/to/Code/User/globalStorage/saoudrizwan.claude-dev"
+export JUNIE_HOME="/path/to/junie"
 export HERMES_HOME="/path/to/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions"
 export GOOSE_PATH_ROOT="/path/to/goose"
