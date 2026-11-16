@@ -209,7 +209,6 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
         Some(Command::ZCode(args)) => agent_command_snapshot("zcode", args),
         Some(Command::Cline(args)) => agent_command_snapshot("cline", args),
-        Some(Command::Junie(args)) => agent_command_snapshot("junie", args),
         Some(Command::Dsh(args)) => agent_command_snapshot("dsh", args),
     }
 }
@@ -810,7 +809,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode", "cline", "junie", "dsh",
+        "copilot", "gemini", "kimi", "qwen", "openclaw", "grok", "zcode", "cline", "dsh",
     ];
 
     for agent in agents {
@@ -1125,10 +1124,6 @@ fn snapshots_representative_cli_parse_shapes() {
         json!({
             "case": "cline weekly",
             "cli": cli_snapshot(parse(&["ccusage", "cline", "weekly", "--json"])),
-        }),
-        json!({
-            "case": "junie weekly",
-            "cli": cli_snapshot(parse(&["ccusage", "junie", "weekly", "--json"])),
         }),
         json!({
             "case": "dsh weekly",
@@ -1466,24 +1461,6 @@ fn parses_cline_standard_reports() {
         let cli = parse(&["ccusage", "cline", report, "--json"]);
         let Some(Command::Cline(args)) = cli.command else {
             panic!("expected cline {report} command");
-        };
-
-        assert_eq!(args.kind, kind);
-        assert!(args.shared.json);
-    }
-}
-
-#[test]
-fn parses_junie_standard_reports() {
-    for (report, kind) in [
-        ("daily", AgentReportKind::Daily),
-        ("weekly", AgentReportKind::Weekly),
-        ("monthly", AgentReportKind::Monthly),
-        ("session", AgentReportKind::Session),
-    ] {
-        let cli = parse(&["ccusage", "junie", report, "--json"]);
-        let Some(Command::Junie(args)) = cli.command else {
-            panic!("expected junie {report} command");
         };
 
         assert_eq!(args.kind, kind);

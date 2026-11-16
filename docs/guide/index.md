@@ -2,9 +2,9 @@
 
 ![ccusage daily report showing token usage and costs by date](/screenshot.png)
 
-**ccusage** is a local CLI for understanding coding (agent) CLI token usage and estimated costs across Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Junie, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness.
+**ccusage** is a local CLI for understanding coding (agent) CLI token usage and estimated costs across Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness.
 
-The original **“cc”** came from **C**laude **C**ode usage and now also fits **C**odex **C**LI usage. As OpenCode, Amp, Droid, Codebuff, Cline, Junie, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, Gemini CLI, Antigravity, Grok Build CLI, ZCode, DeepSeek Harness, and other coding (agent) CLIs became part of the same workflow, ccusage expanded into a general name for local coding CLI usage analysis.
+The original **“cc”** came from **C**laude **C**ode usage and now also fits **C**odex **C**LI usage. As OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, Gemini CLI, Antigravity, Grok Build CLI, ZCode, DeepSeek Harness, and other coding (agent) CLIs became part of the same workflow, ccusage expanded into a general name for local coding CLI usage analysis.
 
 ## The Problem
 
@@ -19,7 +19,7 @@ Modern coding (agent) CLI usage is split across several local data formats. That
 
 ccusage reads the local usage files that coding CLIs already generate and provides:
 
-- **All Sources by Default** - Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Junie, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness in one CLI
+- **All Sources by Default** - Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness in one CLI
 - **Usage Views** - Daily, weekly, monthly, and session-based breakdowns
 - **Cost Analysis** - Estimated costs based on token usage and model pricing
 - **Focused Data Source Views** - Start with all detected sources, then narrow the same usage views to one source when needed
@@ -81,7 +81,6 @@ ccusage reads from local coding CLI data directories:
 | Droid            | `droid`       | `${DROID_SESSIONS_DIR:-~/.factory/sessions}`                                                              |
 | Codebuff         | `codebuff`    | `${CODEBUFF_DATA_DIR:-~/.config/manicode}`                                                                |
 | Cline            | `cline`       | `${CLINE_DATA_DIR}` or `~/.cline` and supported editor `globalStorage` roots                              |
-| Junie            | `junie`       | `${JUNIE_HOME:-~/.junie}/sessions`                                                                        |
 | Hermes Agent     | `hermes`      | `${HERMES_HOME:-~/.hermes}/state.db`                                                                      |
 | pi-agent         | `pi`          | `${PI_AGENT_DIR:-~/.pi/agent/sessions}`                                                                   |
 | Goose            | `goose`       | Standard Goose data roots or `GOOSE_PATH_ROOT`                                                            |
@@ -124,7 +123,6 @@ ccusage amp session
 ccusage droid daily
 ccusage codebuff daily
 ccusage cline daily
-ccusage junie daily
 ccusage hermes daily
 ccusage pi monthly
 ccusage goose daily

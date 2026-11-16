@@ -32,7 +32,6 @@ COMMANDS:
   grok                       Show Grok Build CLI usage commands
   zcode                      Show ZCode usage commands
   cline                      Show Cline usage commands
-  junie                      Show Junie usage commands
   dsh                        Show DeepSeek Harness usage commands
 
 For more info, run any command with the `--help` flag:
@@ -61,7 +60,6 @@ For more info, run any command with the `--help` flag:
   ccusage grok --help
   ccusage zcode --help
   ccusage cline --help
-  ccusage junie --help
   ccusage dsh --help
 
 OPTIONS:

@@ -4,7 +4,7 @@ ccusage supports several environment variables for configuration and customizati
 
 ## Agent Data Directories
 
-ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; `COPILOT_HOME`, `GROK_HOME`, and `JUNIE_HOME` accept a single root, while `COPILOT_OTEL_FILE_EXPORTER_PATH` points at one explicit JSONL export file:
+ccusage detects supported data source files from conventional locations by default. Set these variables when your data lives somewhere else. Directory variables can be one directory or a comma-separated list of directories; `COPILOT_HOME` and `GROK_HOME` accept a single root, while `COPILOT_OTEL_FILE_EXPORTER_PATH` points at one explicit JSONL export file:
 
 | Variable                          | Agent            | Default                                               |
 | --------------------------------- | ---------------- | ----------------------------------------------------- |
@@ -15,7 +15,6 @@ ccusage detects supported data source files from conventional locations by defau
 | `DROID_SESSIONS_DIR`              | Droid            | `~/.factory/sessions`                                 |
 | `CODEBUFF_DATA_DIR`               | Codebuff         | `~/.config/manicode`                                  |
 | `CLINE_DATA_DIR`                  | Cline            | `~/.cline` and supported editor `globalStorage` roots |
-| `JUNIE_HOME`                      | Junie            | `~/.junie`                                            |
 | `HERMES_HOME`                     | Hermes Agent     | `~/.hermes`                                           |
 | `PI_AGENT_DIR`                    | pi-agent         | `~/.pi/agent/sessions`                                |
 | `GOOSE_PATH_ROOT`                 | Goose            | Standard Goose data roots                             |
@@ -40,7 +39,6 @@ export AMP_DATA_DIR="/path/to/amp,/archive/amp"
 export DROID_SESSIONS_DIR="/path/to/factory/sessions,/archive/factory/sessions"
 export CODEBUFF_DATA_DIR="/path/to/manicode,/archive/manicode"
 export CLINE_DATA_DIR="/path/to/cline,/archive/cline"
-export JUNIE_HOME="/path/to/junie"
 export HERMES_HOME="/path/to/hermes,/archive/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions,/archive/pi/sessions"
 export GOOSE_PATH_ROOT="/path/to/goose,/archive/goose"
@@ -224,7 +222,7 @@ To see which environment variables are being used:
 
 ```bash
 # Show all environment variables
-env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|CLINE|JUNIE|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|GROK|ZCODE|DSH|CCUSAGE|LOG_LEVEL"
+env | grep -E "CLAUDE|CODEX|OPENCODE|AMP|DROID|CODEBUFF|CLINE|HERMES|PI_AGENT|GOOSE|OPENCLAW|KILO|KIMI|QWEN|COPILOT|GEMINI|GROK|ZCODE|DSH|CCUSAGE|LOG_LEVEL"
 
 # Debug mode shows environment variable usage
 LOG_LEVEL=4 ccusage daily --debug

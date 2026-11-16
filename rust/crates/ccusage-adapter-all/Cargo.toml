@@ -17,7 +17,6 @@ ccusage-adapter-droid.workspace = true
 ccusage-adapter-dsh.workspace = true
 ccusage-adapter-gemini.workspace = true
 ccusage-adapter-goose.workspace = true
-ccusage-adapter-junie.workspace = true
 ccusage-adapter-grok.workspace = true
 ccusage-adapter-hermes.workspace = true
 ccusage-adapter-kilo.workspace = true

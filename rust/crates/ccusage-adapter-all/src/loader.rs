@@ -12,7 +12,7 @@ use crate::{
     SessionAccumulator, UsageSummary,
     adapter::{
         amp, antigravity, claude, cline, codebuff, codex, copilot, droid, dsh, gemini, goose, grok,
-        hermes, junie, kilo, kimi, openclaw, opencode, pi, qwen, zcode,
+        hermes, kilo, kimi, openclaw, opencode, pi, qwen, zcode,
     },
     cli::{AgentReportKind, CodexSpeed, CostMode, NamedPiStore, SharedArgs, SourceArgs, WeekDay},
     date_within_range, filter_loaded_entries_by_date, filter_session_summaries_by_last_activity,
@@ -563,21 +563,6 @@ fn load_base_rows(
         AgentLoadSpec {
             index: 19,
             agent: BUILT_IN_AGENT_NAMES[19],
-            progress_agent: crate::progress::UsageLoadAgent("Junie"),
-            load: Box::new(|| {
-                load_priced_summary_agent_rows(
-                    "junie",
-                    load_kind,
-                    &source_shared["junie"],
-                    &pricing["junie"],
-                    junie::load_entries,
-                    junie::summarize_entries,
-                )
-            }),
-        },
-        AgentLoadSpec {
-            index: 20,
-            agent: BUILT_IN_AGENT_NAMES[20],
             progress_agent: crate::progress::UsageLoadAgent("DeepSeek Harness"),
             load: Box::new(|| {
                 load_priced_summary_agent_rows(
@@ -1443,7 +1428,6 @@ mod tests {
             ("ZCODE_HOME", None),
             ("ANTIGRAVITY_DATA_DIR", None),
             ("CLINE_DATA_DIR", None),
-            ("JUNIE_HOME", None),
             ("DSH_HOME", None),
             ("APPDATA", None),
             (

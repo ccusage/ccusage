@@ -36,7 +36,7 @@ Every section uses the options resolved for the invoked command. For example, `c
 
 ## How Unified Views Work
 
-ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Junie, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness. The same daily, weekly, monthly, and session views can run in two modes:
+ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness. The same daily, weekly, monthly, and session views can run in two modes:
 
 | Mode    | Command example        | What it shows                           |
 | ------- | ---------------------- | --------------------------------------- |
@@ -59,7 +59,6 @@ When one tool runs another, usage can be logged by both. OpenCode's Claude Agent
 | Droid            | `droid`       | `ccusage droid daily`       |
 | Codebuff         | `codebuff`    | `ccusage codebuff daily`    |
 | Cline            | `cline`       | `ccusage cline daily`       |
-| Junie            | `junie`       | `ccusage junie daily`       |
 | Hermes Agent     | `hermes`      | `ccusage hermes daily`      |
 | pi-agent         | `pi`          | `ccusage pi monthly`        |
 | Goose            | `goose`       | `ccusage goose daily`       |
@@ -87,7 +86,6 @@ ccusage amp monthly --compact
 ccusage droid session
 ccusage codebuff daily
 ccusage cline daily
-ccusage junie daily
 ccusage pi session --pi-path /path/to/sessions
 ccusage openclaw daily --open-claw-path /path/to/openclaw
 ccusage kilo session
