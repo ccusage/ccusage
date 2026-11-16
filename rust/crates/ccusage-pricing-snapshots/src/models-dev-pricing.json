@@ -1358,6 +1358,15 @@
 			"context": 131072
 		}
 	},
+	"Qwen/Qwen3-VL-30B-A3B-Thinking": {
+		"cost": {
+			"input": 0.29,
+			"output": 1
+		},
+		"limit": {
+			"context": 262000
+		}
+	},
 	"Qwen/Qwen3-VL-32B-Instruct": {
 		"cost": {
 			"input": 0.2,
@@ -2539,9 +2548,9 @@
 	},
 	"accounts/fireworks/routers/kimi-latest": {
 		"cost": {
-			"cache_read": 0.3,
-			"input": 3,
-			"output": 15
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 10
 		},
 		"exactOnly": true,
 		"limit": {
@@ -3322,6 +3331,17 @@
 		},
 		"limit": {
 			"context": 262144
+		}
+	},
+	"alibaba/qwen4-max": {
+		"cost": {
+			"cache_read": 0.075,
+			"cache_write": 1.875,
+			"input": 1.5,
+			"output": 4.5
+		},
+		"limit": {
+			"context": 1000000
 		}
 	},
 	"alicloud-deepseek-v4-flash": {
@@ -14571,6 +14591,17 @@
 			"context": 1048576
 		}
 	},
+	"gemini/gemini-4-hydrogen": {
+		"cost": {
+			"cache_read": 0.075,
+			"cache_write": 1.5,
+			"input": 1.5,
+			"output": 7.5
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
 	"gemma-3-12b": {
 		"cost": {
 			"input": 0.15,
@@ -16904,9 +16935,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.009,
-			"input": 0.018,
-			"output": 0.054
+			"cache_read": 0.021,
+			"input": 0.041,
+			"output": 0.124
 		},
 		"limit": {
 			"context": 262144
@@ -20681,6 +20712,26 @@
 		},
 		"limit": {
 			"context": 1000000
+		}
+	},
+	"lyber/deepseek-v4.1-flash-1017-abliterated": {
+		"cost": {
+			"cache_read": 0.029,
+			"input": 0.29,
+			"output": 0.99
+		},
+		"limit": {
+			"context": 1048576
+		}
+	},
+	"lyber/kimi-k3.1-pro-abliterated": {
+		"cost": {
+			"cache_read": 0.4,
+			"input": 4,
+			"output": 15
+		},
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"magibu-11b-v8": {
@@ -29020,6 +29071,17 @@
 			"context": 262128
 		}
 	},
+	"qwen-4-max": {
+		"cost": {
+			"cache_read": 0.09375,
+			"cache_write": 2.34375,
+			"input": 1.875,
+			"output": 5.625
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
 	"qwen-deep-research": {
 		"cost": {
 			"input": 7.742,
@@ -29718,15 +29780,6 @@
 			"context": 131072
 		}
 	},
-	"qwen/qwen3-vl-30b-a3b-thinking": {
-		"cost": {
-			"input": 0.29,
-			"output": 1
-		},
-		"limit": {
-			"context": 262144
-		}
-	},
 	"qwen/qwen3-vl-8b-instruct": {
 		"cost": {
 			"cache_read": 0.12,
@@ -30348,6 +30401,28 @@
 		},
 		"limit": {
 			"context": 1000000
+		}
+	},
+	"qwen/qwen4-max": {
+		"cost": {
+			"cache_read": 0.075,
+			"cache_write": 1.875,
+			"input": 1.5,
+			"output": 4.5
+		},
+		"limit": {
+			"context": 1000000
+		}
+	},
+	"qwen/qwen4-max:thinking": {
+		"cost": {
+			"cache_read": 0.075,
+			"cache_write": 1.875,
+			"input": 1.5,
+			"output": 4.5
+		},
+		"limit": {
+			"context": 983616
 		}
 	},
 	"qwen/qwenCoder/models/Qwen3-Coder-30B-A3B-Instruct": {
@@ -33038,6 +33113,15 @@
 			"context": 30000
 		}
 	},
+	"tencent/Hunyuan-A13B-Instruct": {
+		"cost": {
+			"input": 0.14,
+			"output": 0.57
+		},
+		"limit": {
+			"context": 131000
+		}
+	},
 	"tencent/deepseek-v4-flash": {
 		"cost": {
 			"cache_read": 0.003,
@@ -33186,15 +33270,6 @@
 		},
 		"limit": {
 			"context": 200000
-		}
-	},
-	"tencent/hunyuan-a13b-instruct": {
-		"cost": {
-			"input": 0.14,
-			"output": 0.57
-		},
-		"limit": {
-			"context": 131072
 		}
 	},
 	"tencent/hy-mt2-1.8b": {
@@ -36959,9 +37034,9 @@
 	},
 	"z-ai/glm-5.2:thinking": {
 		"cost": {
-			"cache_read": 0.0351,
-			"input": 0.189,
-			"output": 0.594
+			"cache_read": 0.078,
+			"input": 0.42,
+			"output": 1.32
 		},
 		"limit": {
 			"context": 1048576
@@ -38043,9 +38118,9 @@
 	},
 	"~deepseek/deepseek-flash-latest": {
 		"cost": {
-			"cache_read": 0.007,
-			"input": 0.02,
-			"output": 0.108
+			"cache_read": 0.01,
+			"input": 0.036,
+			"output": 0.5
 		},
 		"exactOnly": true,
 		"limit": {
