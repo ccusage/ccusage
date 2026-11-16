@@ -2127,6 +2127,7 @@ fn isolated_agents_env(
         "ZCODE_HOME",
         "ANTIGRAVITY_DATA_DIR",
         "CLINE_DATA_DIR",
+        "DSH_HOME",
         "APPDATA",
         "COPILOT_HOME",
         "LOG_LEVEL",
