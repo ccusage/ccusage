@@ -231,10 +231,7 @@ fn read_schema(
                 details.join("; ")
             ),
         );
-        return Err(UnitError::new(
-            SkipKind::Invariant,
-            "unsupported ZCode database schema",
-        ));
+        return Err(UnitError::unsupported_schema());
     }
 
     Ok(Schema {
