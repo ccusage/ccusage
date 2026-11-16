@@ -66,8 +66,25 @@ impl UnitError {
     /// Records this failure of `unit`. A reader that keeps what it read
     /// before the failure calls this itself; [`read_units`] calls it for a
     /// unit that failed as a whole.
+    ///
+    /// A unit that is gone, or still an empty file, when its read failed held
+    /// no usage to lose: the agent removed it after discovery, or created it
+    /// and has not written it yet. Only `--debug` names such a unit.
+    #[cold]
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
-        diagnostics.record(Skip::unit(unit, self.kind, self.detail));
+        let state = match fs::metadata(unit) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                "removed after discovery, read as absent"
+            }
+            Ok(metadata) if metadata.is_file() && metadata.len() == 0 => {
+                "empty, read as not yet written"
+            }
+            _ => return diagnostics.record(Skip::unit(unit, self.kind, self.detail)),
+        };
+        diagnostics.debug_note(
+            unit,
+            format!("{}: {}: {state}", diagnostics.source(), unit.display()),
+        );
     }
 }
 
@@ -184,7 +201,7 @@ where
 mod tests {
     use std::{fs, path::Path};
 
-    use ccusage_core::{Diagnostics, Result, SkipKind, cli_error};
+    use ccusage_core::{Diagnostics, Result, SkipKind, cli::SharedArgs, cli_error};
     use ccusage_test_support::Fixture;
 
     use super::{SqliteStage, UnitError, read_units, read_units_flat};
@@ -205,7 +222,7 @@ mod tests {
         let fixture = Fixture::new();
         let files = vec![
             fixture.write_file("a.txt", "1 2"),
-            fixture.path("missing.txt"),
+            fixture.create_dir_all("directory.txt"),
             fixture.write_file("empty.txt", ""),
             fixture.write_file("broken.txt", "3 four"),
         ];
@@ -223,7 +240,7 @@ mod tests {
         let mut files = Vec::new();
         for index in 0..64_u32 {
             if index % 7 == 3 {
-                files.push(fixture.path(format!("missing-{index}.txt")));
+                files.push(fixture.create_dir_all(format!("directory-{index}.txt")));
             } else {
                 let padding = " ".repeat((index as usize % 5) * 512);
                 files.push(fixture.write_file(
@@ -250,7 +267,7 @@ mod tests {
     #[test]
     fn a_reader_chooses_the_kind_of_its_failure() {
         let fixture = Fixture::new();
-        let files = vec![fixture.write_file("state.db", "")];
+        let files = vec![fixture.write_file("state.db", "SQLite format 3")];
         let diagnostics = Diagnostics::new("test");
 
         let loaded = read_units(&files, true, &diagnostics, |_| {
@@ -265,22 +282,55 @@ mod tests {
     #[test]
     fn io_errors_convert_without_a_wrapper() {
         let fixture = Fixture::new();
-        let files = vec![fixture.path("missing.txt")];
+        let files = vec![fixture.create_dir_all("directory.txt")];
         let diagnostics = Diagnostics::new("test");
 
-        let loaded = read_units(&files, true, &diagnostics, |file| {
-            fs::metadata(file).map(|metadata| metadata.len())
-        });
+        let loaded = read_units(&files, true, &diagnostics, |file| fs::read(file));
 
         assert_eq!(loaded, [None]);
         assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[test]
+    fn a_unit_removed_after_discovery_or_not_yet_written_is_noted_not_skipped() {
+        let fixture = Fixture::new();
+        let missing = fixture.path("missing.json");
+        let empty = fixture.write_file("empty.json", "");
+        let files = vec![missing.clone(), empty.clone()];
+        let diagnostics = Diagnostics::new("test");
+
+        let loaded = read_units(
+            &files,
+            true,
+            &diagnostics,
+            super::read_json::<serde_json::Value>,
+        );
+
+        assert_eq!(loaded, [None, None]);
+        for kind in [SkipKind::Unreadable, SkipKind::InvalidData] {
+            assert_eq!(diagnostics.skipped(kind), 0, "{kind:?}");
+        }
+        let debug = SharedArgs {
+            debug: true,
+            ..SharedArgs::default()
+        };
+        assert_eq!(
+            diagnostics.warnings(&debug),
+            [
+                format!("test: {}: empty, read as not yet written", empty.display()),
+                format!(
+                    "test: {}: removed after discovery, read as absent",
+                    missing.display()
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn read_json_classifies_read_and_decode_failures_separately() {
         let fixture = Fixture::new();
         let files = vec![
-            fixture.path("missing.json"),
+            fixture.create_dir_all("directory.json"),
             fixture.write_file("broken.json", "{\"value\":}"),
         ];
         let diagnostics = Diagnostics::new("test");
