@@ -394,19 +394,6 @@ fn is_otel_usage_envelope(value: &Value) -> bool {
 }
 
 fn is_session_state_usage_envelope(value: &Value) -> bool {
-    let Some(event_type) = value.get("type").and_then(Value::as_str) else {
-        return false;
-    };
-    if event_type != SHUTDOWN_EVENT && event_type != USAGE_CHECKPOINT_EVENT {
-        return false;
-    }
-    let Some(data) = value.get("data").and_then(Value::as_object) else {
-        return false;
-    };
-    if data.get("totalNanoAiu").is_some_and(Value::is_number) {
-        return true;
-    }
-
     const USAGE_FIELDS: &[&str] = &[
         "inputTokens",
         "outputTokens",
@@ -414,20 +401,37 @@ fn is_session_state_usage_envelope(value: &Value) -> bool {
         "cacheWriteTokens",
         "reasoningTokens",
     ];
-    data.get("modelMetrics")
-        .and_then(Value::as_object)
-        .is_some_and(|models| {
-            models.values().any(|metrics| {
-                metrics
-                    .get("usage")
+    let has_usage_fields = |usage: Option<&Value>| {
+        usage
+            .and_then(Value::as_object)
+            .is_some_and(|usage| USAGE_FIELDS.iter().any(|key| usage.contains_key(*key)))
+    };
+
+    let Some(event_type) = value.get("type").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(data) = value.get("data").and_then(Value::as_object) else {
+        return false;
+    };
+    match event_type {
+        USAGE_RECORD_EVENT => has_usage_fields(data.get("usage")),
+        SHUTDOWN_EVENT | USAGE_CHECKPOINT_EVENT => {
+            data.get("totalNanoAiu").is_some_and(Value::is_number)
+                || data
+                    .get("modelMetrics")
                     .and_then(Value::as_object)
-                    .is_some_and(|usage| USAGE_FIELDS.iter().any(|key| usage.contains_key(*key)))
-                    || metrics
-                        .get("requests")
-                        .and_then(Value::as_object)
-                        .is_some_and(|requests| requests.contains_key("count"))
-            })
-        })
+                    .is_some_and(|models| {
+                        models.values().any(|metrics| {
+                            has_usage_fields(metrics.get("usage"))
+                                || metrics
+                                    .get("requests")
+                                    .and_then(Value::as_object)
+                                    .is_some_and(|requests| requests.contains_key("count"))
+                        })
+                    })
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn parse_session_state_file(
@@ -1208,6 +1212,60 @@ mod session_state_tests {
             "type": "session.shutdown",
             "data": {"message": "SECRET_CANARY"}
         })));
+        assert!(is_session_state_usage_envelope(&json!({
+            "type": "session.usage_record",
+            "data": {"usage": {"model": "gpt-5", "inputTokens": 0}}
+        })));
+        assert!(!is_session_state_usage_envelope(&json!({
+            "type": "session.usage_record",
+            "data": {"usage": "SECRET_CANARY"}
+        })));
+        assert!(!is_session_state_usage_envelope(&json!({
+            "type": "session.usage_record",
+            "data": {"modelMetrics": {"gpt-5": {"usage": {"inputTokens": 1}}}}
+        })));
+    }
+
+    #[test]
+    fn reports_a_usage_record_that_does_not_decode_and_keeps_the_next_one() {
+        let record = |id: &str| {
+            json!({
+                "type": "session.usage_record",
+                "id": id,
+                "timestamp": "2026-02-05T09:00:00.000Z",
+                "data": {"usage": {
+                    "model": "gpt-5",
+                    "inputTokens": 100,
+                    "outputTokens": 10,
+                    "accounting": {"sourceSessionId": "session-1", "sequence": 1},
+                }},
+            })
+            .to_string()
+        };
+        // A repeated member is a data error that leaves the record's usage
+        // unread.
+        let repeated = record("record-1").replacen(
+            r#""id":"record-1""#,
+            r#""id":"record-1","id":"record-1""#,
+            1,
+        );
+        let fixture = fs_fixture!({
+            "session-1/events.jsonl": format!("{repeated}
+{}
+", record("record-2")),
+        });
+        let diagnostics = Diagnostics::new("copilot");
+
+        let parsed =
+            parse_session_state_file(&fixture.path("session-1/events.jsonl"), &diagnostics)
+                .unwrap();
+
+        assert_eq!(parsed.usage_records.len(), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
+            0
+        );
     }
 
     #[test]
