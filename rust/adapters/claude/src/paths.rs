@@ -9,7 +9,7 @@ use memchr::memmem;
 use serde::Deserialize;
 
 use crate::{
-    MILLIS_PER_DAY, Result,
+    Diagnostics, MILLIS_PER_DAY, Result,
     cli::SharedArgs,
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet},
@@ -62,9 +62,18 @@ fn normalize_claude_config_path(raw: &str) -> PathBuf {
     path
 }
 
-pub fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathBuf> {
+pub fn usage_files(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
+) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    visit_usage_files(paths, project_filter, &mut |path| files.push(path));
+    visit_usage_files(
+        paths,
+        project_filter,
+        &mut |path| files.push(path),
+        diagnostics,
+    );
     files.sort_by_cached_key(|path| usage_file_order(path));
     files
 }
@@ -74,15 +83,16 @@ pub(crate) fn visit_usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
     visit: &mut dyn FnMut(PathBuf),
+    diagnostics: &Diagnostics,
 ) {
     for path in paths {
         let projects_dir = path.join("projects");
         if let Some(project_filter) =
             project_filter.filter(|filter| is_project_path_segment(filter))
         {
-            visit_usage_files_in(&projects_dir.join(project_filter), visit);
+            visit_usage_files_in(&projects_dir.join(project_filter), visit, diagnostics);
         } else {
-            visit_usage_files_in(&projects_dir, visit);
+            visit_usage_files_in(&projects_dir, visit, diagnostics);
         }
     }
 }
@@ -394,6 +404,62 @@ mod tests {
         set_file_modified(&margin, ts("2026-09-19T12:00:00Z"));
         set_file_modified(&fresh, ts("2026-09-20T12:00:00Z"));
         vec![fresh, margin, old]
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_project_directory_is_reported_and_the_rest_still_found() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use crate::{Diagnostics, SkipKind};
+
+        let fixture = fs_fixture!({
+            "projects/blocked/s.jsonl": "{}",
+            "projects/healthy/s.jsonl": "{}",
+        });
+        let blocked = fixture.path("projects/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let diagnostics = Diagnostics::new("claude");
+        let files = super::usage_files(&[fixture.root().to_path_buf()], None, &diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(files, [fixture.path("projects/healthy/s.jsonl")]);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_streaming_walk_reports_an_unreadable_project_directory() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use crate::{Diagnostics, SkipKind};
+
+        let fixture = fs_fixture!({
+            "projects/blocked/s.jsonl": "{}",
+            "projects/healthy/s.jsonl": "{}",
+        });
+        let blocked = fixture.path("projects/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let diagnostics = Diagnostics::new("claude");
+        let mut files = Vec::new();
+        super::visit_usage_files(
+            &[fixture.root().to_path_buf()],
+            None,
+            &mut |path| files.push(path),
+            &diagnostics,
+        );
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(files, [fixture.path("projects/healthy/s.jsonl")]);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[test]

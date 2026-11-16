@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf};
 
+use ccusage_core::Diagnostics;
 use ccusage_test_support::{EnvVarGuard, Fixture};
 use serde_json::json;
 
@@ -139,7 +140,7 @@ fn counts_a_rollout_with_plain_and_compressed_copies_once() {
     );
 
     assert_eq!(
-        paths::collect_codex_usage_files(fixture.root()),
+        paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex")),
         vec![fixture.path("session.jsonl")]
     );
     let events = load_codex_events_from_directory(fixture.root(), true).unwrap();
@@ -223,7 +224,7 @@ fn keeps_usage_decoded_before_a_truncated_frame() {
 fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
     let fixture = Fixture::new();
     let plain = fixture.write_file("session.jsonl", usage_log("2026-10-14T00:00:00Z", 100));
-    let files = paths::collect_codex_usage_files(fixture.root());
+    let files = paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
     let _ = write_compressed(
         &fixture,
@@ -251,7 +252,7 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
     }})
     .to_string();
     let plain = fixture.write_file("run.jsonl", &headless);
-    let files = paths::collect_codex_usage_files(fixture.root());
+    let files = paths::collect_codex_usage_files(fixture.root(), &Diagnostics::new("codex"));
     fs::remove_file(&plain).unwrap();
     let compressed = write_compressed(&fixture, "run.jsonl.zst", &headless);
     paths::set_file_modified(

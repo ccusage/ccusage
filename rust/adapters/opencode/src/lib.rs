@@ -1,6 +1,4 @@
-use ccusage_adapter_common::{
-    collect_files_with_extension, filter_loaded_entries_by_date, read_files_parallel,
-};
+use ccusage_adapter_common::{collect_files_with_extension, filter_loaded_entries_by_date};
 use ccusage_core::*;
 
 mod loader;

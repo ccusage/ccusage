@@ -25,7 +25,6 @@ chunking, ordered parallel reads, and recording the files that could not be read
 ## Public surface
 
 - `SOURCE` — the `UsageSource` both reports go through
-- `parser::read_thread_file`
 - `report::report_from_rows`
 - `report::summarize_entries`
 - `run`

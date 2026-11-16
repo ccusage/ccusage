@@ -5,7 +5,9 @@ use std::{
     thread,
 };
 
-use ccusage_core::{LoadedEntry, ReportWindow, UsageSummary, cli::SharedArgs};
+use ccusage_core::{
+    Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, UsageSummary, cli::SharedArgs,
+};
 
 pub mod claims;
 pub mod jsonl;
@@ -24,120 +26,106 @@ pub mod units;
 pub use report::print_table_for_agent;
 pub use units::{SqliteStage, UnitError, read_units, read_units_flat};
 
-pub fn collect_usage_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    collect_files_with_extension(dir, "jsonl", files);
-}
-
-/// Like [`collect_usage_files`], but hands each file to `visit` as the walk
-/// finds it.
-pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf)) {
-    visit_files_matching_inner(
-        dir,
-        &|path| path.extension().is_some_and(|ext| ext == "jsonl"),
-        visit,
-        None,
-    );
-}
-
-pub fn collect_files_with_extension(dir: &Path, extension: &str, files: &mut Vec<PathBuf>) {
+/// Collects the files under `dir` whose extension is `extension`, like
+/// [`collect_files_matching`].
+pub fn collect_files_with_extension(
+    dir: &Path,
+    extension: &str,
+    files: &mut Vec<PathBuf>,
+    diagnostics: &Diagnostics,
+) {
     collect_files_matching(
         dir,
         &|path| path.extension().is_some_and(|ext| ext == extension),
         files,
+        diagnostics,
     );
 }
 
-pub fn collect_files_with_extension_diagnosed(
-    dir: &Path,
-    extension: &str,
-    files: &mut Vec<PathBuf>,
-    diagnostics: &ccusage_core::Diagnostics,
-) {
-    visit_files_matching_inner(
-        dir,
-        &|path| path.extension().is_some_and(|ext| ext == extension),
-        &mut |path| files.push(path),
-        Some(diagnostics),
-    );
-}
-
+/// Collects the files under `dir` that `matches` accepts, recursing into
+/// subdirectories without following symlinks. What cannot be read is
+/// recorded like [`dir_entries`] does.
 pub fn collect_files_matching(
-    dir: &Path,
-    matches: &impl Fn(&Path) -> bool,
-    files: &mut Vec<PathBuf>,
-) {
-    visit_files_matching_inner(dir, matches, &mut |path| files.push(path), None);
-}
-
-pub fn collect_files_matching_diagnosed(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
     files: &mut Vec<PathBuf>,
-    diagnostics: &ccusage_core::Diagnostics,
+    diagnostics: &Diagnostics,
 ) {
-    visit_files_matching_inner(
+    visit_files_matching(dir, matches, &mut |path| files.push(path), diagnostics);
+}
+
+/// Hands each `.jsonl` file under `dir` to `visit` as the walk finds it, like
+/// [`visit_files_matching`].
+pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics: &Diagnostics) {
+    visit_files_matching(
         dir,
-        matches,
-        &mut |path| files.push(path),
-        Some(diagnostics),
+        &|path| path.extension().is_some_and(|ext| ext == "jsonl"),
+        visit,
+        diagnostics,
     );
 }
 
-fn visit_files_matching_inner(
+/// Like [`collect_files_matching`], but hands each file to `visit` as the walk
+/// finds it, so reading can start before the walk ends.
+pub fn visit_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
     visit: &mut dyn FnMut(PathBuf),
-    diagnostics: Option<&ccusage_core::Diagnostics>,
+    diagnostics: &Diagnostics,
 ) {
-    use ccusage_core::{Skip, SkipKind};
+    for (path, file_type) in dir_entries(dir, diagnostics) {
+        if file_type.is_file() && matches(&path) {
+            visit(path);
+        } else if file_type.is_dir() {
+            visit_files_matching(&path, matches, visit, diagnostics);
+        }
+    }
+}
 
+/// The entries directly inside `dir`, each with its own (not a symlink
+/// target's) file type, in the order the directory lists them.
+///
+/// A missing `dir` holds no entries. A directory, entry or file type that
+/// cannot be read is recorded in `diagnostics`, so files it hides show up as
+/// a warning rather than as lower usage.
+pub fn dir_entries(dir: &Path, diagnostics: &Diagnostics) -> Vec<(PathBuf, fs::FileType)> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) => {
-            if error.kind() != std::io::ErrorKind::NotFound
-                && let Some(diagnostics) = diagnostics
-            {
+            if error.kind() != std::io::ErrorKind::NotFound {
                 diagnostics.record(Skip::unit(
                     dir,
                     SkipKind::Unreadable,
                     "cannot read directory",
                 ));
             }
-            return;
+            return Vec::new();
         }
     };
-
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => {
-                if let Some(diagnostics) = diagnostics {
-                    diagnostics.record(Skip::unit(
-                        dir,
-                        SkipKind::ReadInterrupted,
-                        "cannot read directory entry",
-                    ));
-                }
-                continue;
-            }
-        };
-        let Ok(file_type) = entry.file_type() else {
-            if let Some(diagnostics) = diagnostics {
+    entries
+        .filter_map(|entry| {
+            let Ok(entry) = entry else {
                 diagnostics.record(Skip::unit(
-                    &entry.path(),
-                    SkipKind::Unreadable,
-                    "cannot read file type",
+                    dir,
+                    SkipKind::ReadInterrupted,
+                    "cannot read directory entry",
                 ));
+                return None;
+            };
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(file_type) => Some((path, file_type)),
+                Err(_) => {
+                    diagnostics.record(Skip::unit(
+                        &path,
+                        SkipKind::Unreadable,
+                        "cannot read file type",
+                    ));
+                    None
+                }
             }
-            continue;
-        };
-        let path = entry.path();
-        if file_type.is_file() && matches(&path) {
-            visit(path);
-        } else if file_type.is_dir() {
-            visit_files_matching_inner(&path, matches, visit, diagnostics);
-        }
-    }
+        })
+        .collect()
 }
 
 pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &SharedArgs) {
@@ -420,11 +408,13 @@ mod tests {
         let kept = fixture.write_file("a/b/kept.jsonl", "");
         let _ = fixture.write_file("a/skipped.txt", "");
         let mut files = Vec::new();
+        let diagnostics = ccusage_core::Diagnostics::new("test");
 
         collect_files_matching(
             fixture.root(),
             &|path| path.extension().is_some_and(|ext| ext == "jsonl"),
             &mut files,
+            &diagnostics,
         );
 
         assert_eq!(files, vec![kept]);
@@ -440,7 +430,7 @@ mod tests {
         let diagnostics = Diagnostics::new("test");
         let mut files = Vec::new();
         for root in [fixture.path("missing"), failed, fixture.path("healthy")] {
-            super::collect_files_with_extension_diagnosed(&root, "jsonl", &mut files, &diagnostics);
+            super::collect_files_with_extension(&root, "jsonl", &mut files, &diagnostics);
         }
 
         assert_eq!(files, [healthy]);

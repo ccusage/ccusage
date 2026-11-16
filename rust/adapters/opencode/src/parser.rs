@@ -344,7 +344,7 @@ pub(crate) fn session_message_value_to_entry_checked(
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: Option<&PricingMap>,
-) -> Result<Option<crate::LinkedEntry>, ccusage_adapter_common::units::UnitError> {
+) -> Result<Option<crate::LinkedEntry>, serde_json::Error> {
     let SessionMessageRow {
         kind,
         data,

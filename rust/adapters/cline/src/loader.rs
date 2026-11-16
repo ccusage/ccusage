@@ -281,7 +281,7 @@ mod tests {
             "tasks/healthy/ui_messages.json",
             include_str!("../tests/fixtures/extension/ui_messages.json"),
         );
-        let _ = fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":");
+        let _ = fixture.write_file("tasks/damaged/ui_messages.json", "{\"type\":}");
         let _ = fixture.write_file("tasks/unwritten/ui_messages.json", "");
         let _env = EnvVarGuard::set(super::super::paths::CLINE_DATA_DIR_ENV, fixture.root());
         let shared = SharedArgs {

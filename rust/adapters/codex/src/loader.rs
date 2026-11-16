@@ -23,13 +23,18 @@ use super::{
     replay::CodexReplayPlan,
 };
 
-pub fn load_codex_events_from_directory(
+#[cfg(test)]
+pub(crate) fn load_codex_events_from_directory(
     sessions_dir: &Path,
     single_thread: bool,
 ) -> Result<Vec<CodexTokenUsageEvent>> {
     let diagnostics = &Diagnostics::new("codex");
-    let files = collect_codex_usage_files(sessions_dir);
-    let replay_plan = CodexReplayPlan::new([(sessions_dir, files.as_slice())], single_thread);
+    let files = collect_codex_usage_files(sessions_dir, diagnostics);
+    let replay_plan = CodexReplayPlan::new(
+        [(sessions_dir, files.as_slice())],
+        single_thread,
+        diagnostics,
+    );
     let events = dedupe_codex_events(read_codex_events_from_files(
         sessions_dir,
         &files,
@@ -96,9 +101,12 @@ fn load_codex_events_from_sources_with_files(
         if let Some(shared) = shared {
             return load_codex_events_from_directory_with_shared(&source.dir, shared, diagnostics);
         }
-        let files = collect_codex_usage_files(&source.dir);
-        let replay_plan =
-            CodexReplayPlan::new([(source.dir.as_path(), files.as_slice())], single_thread);
+        let files = collect_codex_usage_files(&source.dir, diagnostics);
+        let replay_plan = CodexReplayPlan::new(
+            [(source.dir.as_path(), files.as_slice())],
+            single_thread,
+            diagnostics,
+        );
         let events = dedupe_codex_events(read_codex_events_from_files(
             &source.dir,
             &files,
@@ -109,7 +117,7 @@ fn load_codex_events_from_sources_with_files(
         return Ok((events, !files.is_empty()));
     }
 
-    let groups = collect_deduped_codex_usage_files(sources);
+    let groups = collect_deduped_codex_usage_files(sources, diagnostics);
     let detected_before_filter = groups.iter().any(|group| !group.files.is_empty());
     let files_by_group = groups
         .iter()
@@ -138,6 +146,7 @@ fn load_codex_events_from_sources_with_files(
                 .iter()
                 .map(|group| (group.dir.as_path(), group.files.as_slice())),
             single_thread,
+            diagnostics,
         )
     };
     let mut events_by_file = Vec::new();
@@ -159,7 +168,7 @@ fn load_codex_events_from_directory_with_shared(
     shared: &SharedArgs,
     diagnostics: &Diagnostics,
 ) -> Result<(Vec<CodexTokenUsageEvent>, bool)> {
-    let all_files = collect_codex_usage_files(sessions_dir);
+    let all_files = collect_codex_usage_files(sessions_dir, diagnostics);
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
     let replay_plan = if has_date_bounds(shared) {
         CodexReplayPlan::for_bounded_files(
@@ -169,7 +178,11 @@ fn load_codex_events_from_directory_with_shared(
             diagnostics,
         )
     } else {
-        CodexReplayPlan::new([(sessions_dir, all_files.as_slice())], shared.single_thread)
+        CodexReplayPlan::new(
+            [(sessions_dir, all_files.as_slice())],
+            shared.single_thread,
+            diagnostics,
+        )
     };
     let events = dedupe_codex_events(read_codex_events_from_files(
         sessions_dir,
@@ -3230,6 +3243,119 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(parent_usage_reads, vec![parent]);
+    }
+
+    #[test]
+    fn loads_codex_token_count_events() {
+        let fixture = fs_fixture!({
+            "sessions/codex-session.jsonl": [
+                r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
+                r#"{"timestamp":"2026-01-02T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150},"model":"gpt-5"}}}"#,
+            ]
+            .join("\n"),
+        });
+
+        let events = load_codex_events_from_directory(&fixture.path("sessions"), true).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].session_id, "codex-session");
+        assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
+        assert_eq!(events[0].input_tokens, 100);
+        assert_eq!(events[0].cached_input_tokens, 10);
+        assert_eq!(events[0].output_tokens, 50);
+        assert_eq!(events[0].reasoning_output_tokens, 0);
+        assert_eq!(events[0].total_tokens, 150);
+    }
+
+    #[test]
+    fn loads_codex_token_count_events_in_parallel() {
+        let fixture = fs_fixture!({
+            "sessions/session-a.jsonl": [
+                r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
+                r#"{"timestamp":"2026-01-02T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150},"model":"gpt-5"}}}"#,
+            ]
+            .join("\n"),
+            "sessions/session-b.jsonl": [
+                r#"{"timestamp":"2026-01-02T00:01:00.000Z","type":"turn_context","payload":{"model":"gpt-5-mini"}}"#,
+                r#"{"timestamp":"2026-01-02T00:01:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":40,"cached_input_tokens":4,"output_tokens":20,"reasoning_output_tokens":2,"total_tokens":62},"model":"gpt-5-mini"}}}"#,
+            ]
+            .join("\n"),
+        });
+
+        let single_thread_events =
+            load_codex_events_from_directory(&fixture.path("sessions"), true).unwrap();
+        let parallel_events =
+            load_codex_events_from_directory(&fixture.path("sessions"), false).unwrap();
+
+        assert_eq!(parallel_events.len(), 2);
+        assert_eq!(parallel_events, single_thread_events);
+        assert_eq!(parallel_events[0].session_id, "session-a");
+        assert_eq!(parallel_events[1].session_id, "session-b");
+    }
+
+    #[test]
+    fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+                r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"#.to_string(),
+                replay_token_count("2025-01-01T08:02:00.000Z", 120),
+            ].join("\n") + "\n",
+            "sessions/2025/01/02/child.jsonl": [
+                replay_metadata("2025-01-02T08:00:00.000Z", "child", Some("parent")),
+                replay_token_count("2025-01-02T08:00:00.000Z", 120),
+            ].join("\n") + "\n",
+        });
+        let sessions = fixture.path("sessions");
+        let parent = fixture.path("sessions/2025/01/01/parent.jsonl");
+        let child = fixture.path("sessions/2025/01/02/child.jsonl");
+        let files = vec![parent.clone(), child];
+        let diagnostics = Diagnostics::new("codex");
+
+        let plan =
+            CodexReplayPlan::new([(sessions.as_path(), files.as_slice())], true, &diagnostics);
+
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        let _ = read_codex_events_from_files(&sessions, &files, true, &plan, &diagnostics);
+        let _ = CodexReplayPlan::new([(sessions.as_path(), files.as_slice())], true, &diagnostics);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn the_fused_fork_pass_records_a_parent_skip_once() {
+        let fixture = fs_fixture!({
+            "sessions/2025/01/01/parent.jsonl": [
+                replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
+                replay_token_count("2025-01-01T08:01:00.000Z", 100),
+                r#"{"type":"event_msg","payload":{"type":"token_count","info":{"secret":"#.to_string(),
+                replay_token_count("2025-01-01T08:02:00.000Z", 120),
+            ].join("\n") + "\n",
+            "sessions/2025/01/02/child.jsonl": [
+                replay_metadata("2025-01-02T08:00:00.000Z", "child", Some("parent")),
+                replay_token_count("2025-01-02T08:00:00.000Z", 120),
+                replay_token_count("2025-01-02T08:01:00.000Z", 150),
+            ].join("\n") + "\n",
+        });
+        let totals = [true, false].map(|single_thread| {
+            let shared = SharedArgs {
+                timezone: Some("UTC".to_string()),
+                single_thread,
+                ..Default::default()
+            };
+            let diagnostics = Diagnostics::new("codex");
+            let (groups, _) = crate::aggregate::load_groups_from_directory_with_diagnostics(
+                &fixture.path("sessions"),
+                &shared,
+                ccusage_core::cli::AgentReportKind::Daily,
+                &diagnostics,
+            )
+            .unwrap();
+
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+            groups.values().map(|group| group.input_tokens).sum::<u64>()
+        });
+        assert_eq!(totals[0], totals[1]);
     }
 
     #[test]

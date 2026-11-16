@@ -98,10 +98,11 @@ impl CodexReplayPlan {
     pub(super) fn new<'a>(
         groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         single_thread: bool,
+        diagnostics: &Diagnostics,
     ) -> Self {
         let files = collect_replay_files(groups);
         let metadata = read_session_metadata(&files, single_thread);
-        Self::from_metadata(files, metadata, single_thread)
+        Self::from_metadata(files, metadata, single_thread, diagnostics)
     }
 
     /// Plans from metadata already read from the first line of every file in
@@ -110,14 +111,21 @@ impl CodexReplayPlan {
         groups: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         metadata: Vec<CodexSessionMetadata>,
         single_thread: bool,
+        diagnostics: &Diagnostics,
     ) -> Self {
-        Self::from_metadata(collect_replay_files(groups), metadata, single_thread)
+        Self::from_metadata(
+            collect_replay_files(groups),
+            metadata,
+            single_thread,
+            diagnostics,
+        )
     }
 
     fn from_metadata(
         files: Vec<(PathBuf, &Path)>,
         metadata: Vec<CodexSessionMetadata>,
         single_thread: bool,
+        diagnostics: &Diagnostics,
     ) -> Self {
         let files_by_session_id = index_session_paths(&files, &metadata);
         let parent_by_child = build_parent_replays(&files, metadata, &files_by_session_id);
@@ -133,7 +141,7 @@ impl CodexReplayPlan {
 
         Self {
             parent_by_child,
-            usage_by_parent: read_parent_usage(&parents, single_thread, None),
+            usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
         }
     }
 
@@ -168,18 +176,9 @@ impl CodexReplayPlan {
             .cloned()
             .collect::<Vec<_>>();
 
-        let selected_paths = children
-            .iter()
-            .map(|(path, _)| path.as_path())
-            .collect::<HashSet<_>>();
-
         Self {
             parent_by_child,
-            usage_by_parent: read_parent_usage(
-                &parents,
-                single_thread,
-                Some((&selected_paths, diagnostics)),
-            ),
+            usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
         }
     }
 
@@ -350,16 +349,15 @@ fn read_session_metadata(
 fn read_parent_usage(
     parents: &[(PathBuf, &Path)],
     single_thread: bool,
-    diagnostics: Option<(&HashSet<&Path>, &Diagnostics)>,
+    diagnostics: &Diagnostics,
 ) -> HashMap<PathBuf, ParentUsage> {
     if parents.is_empty() {
         return HashMap::new();
     }
     let worker_count = replay_worker_count(parents.len(), single_thread);
+    // A parent the report also reads records the same skips again, which
+    // `Diagnostics` counts once.
     let read = |(path, sessions_dir): &(PathBuf, &Path)| {
-        let diagnostics = diagnostics.and_then(|(selected, diagnostics)| {
-            (!selected.contains(path.as_path())).then_some(diagnostics)
-        });
         read_parent_usage_file(path, sessions_dir, diagnostics)
     };
     if worker_count <= 1 {
@@ -392,7 +390,7 @@ fn read_parent_usage(
 fn read_parent_usage_file(
     path: &Path,
     sessions_dir: &Path,
-    diagnostics: Option<&Diagnostics>,
+    diagnostics: &Diagnostics,
 ) -> (PathBuf, ParentUsage) {
     (
         path.to_path_buf(),
@@ -400,11 +398,7 @@ fn read_parent_usage_file(
     )
 }
 
-fn read_usage_events(
-    sessions_dir: &Path,
-    path: &Path,
-    diagnostics: Option<&Diagnostics>,
-) -> ParentUsage {
+fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics) -> ParentUsage {
     observe_parent_usage(path);
     let mut stream = ParentUsage {
         timestamps: Vec::new(),

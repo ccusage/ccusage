@@ -42,7 +42,6 @@ lenient field conversions are unchanged.
 - `aggregate::filter_events_by_date`
 - `aggregate::load_groups`
 - `loader::load_codex_events_with_detection`
-- `loader::load_codex_events_from_directory`
 - `report::calculate_codex_model_cost`
 - `report::calculate_group_cost`
 - `report::codex_model_missing_pricing`

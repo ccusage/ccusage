@@ -213,7 +213,11 @@ mod tests {
         let parent_file = fixture.path("projects/project1/session-a.jsonl");
         let subagent_file = fixture.path("projects/project1/session-a/subagents/agent-a.jsonl");
 
-        let files = adapter::claude::usage_files(&[fixture.root().to_path_buf()], None);
+        let files = adapter::claude::usage_files(
+            &[fixture.root().to_path_buf()],
+            None,
+            &ccusage_core::Diagnostics::new("claude"),
+        );
 
         assert_eq!(files, vec![parent_file, subagent_file]);
     }
@@ -591,58 +595,6 @@ mod tests {
     }
 
     #[test]
-    fn loads_codex_token_count_events() {
-        let fixture = fs_fixture!({
-            "sessions/codex-session.jsonl": [
-                r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
-                r#"{"timestamp":"2026-01-02T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150},"model":"gpt-5"}}}"#,
-            ]
-            .join("\n"),
-        });
-
-        let events =
-            adapter::codex::load_codex_events_from_directory(&fixture.path("sessions"), true)
-                .unwrap();
-
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].session_id, "codex-session");
-        assert_eq!(events[0].model.as_deref(), Some("gpt-5"));
-        assert_eq!(events[0].input_tokens, 100);
-        assert_eq!(events[0].cached_input_tokens, 10);
-        assert_eq!(events[0].output_tokens, 50);
-        assert_eq!(events[0].reasoning_output_tokens, 0);
-        assert_eq!(events[0].total_tokens, 150);
-    }
-
-    #[test]
-    fn loads_codex_token_count_events_in_parallel() {
-        let fixture = fs_fixture!({
-            "sessions/session-a.jsonl": [
-                r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
-                r#"{"timestamp":"2026-01-02T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150},"model":"gpt-5"}}}"#,
-            ]
-            .join("\n"),
-            "sessions/session-b.jsonl": [
-                r#"{"timestamp":"2026-01-02T00:01:00.000Z","type":"turn_context","payload":{"model":"gpt-5-mini"}}"#,
-                r#"{"timestamp":"2026-01-02T00:01:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":40,"cached_input_tokens":4,"output_tokens":20,"reasoning_output_tokens":2,"total_tokens":62},"model":"gpt-5-mini"}}}"#,
-            ]
-            .join("\n"),
-        });
-
-        let single_thread_events =
-            adapter::codex::load_codex_events_from_directory(&fixture.path("sessions"), true)
-                .unwrap();
-        let parallel_events =
-            adapter::codex::load_codex_events_from_directory(&fixture.path("sessions"), false)
-                .unwrap();
-
-        assert_eq!(parallel_events.len(), 2);
-        assert_eq!(parallel_events, single_thread_events);
-        assert_eq!(parallel_events[0].session_id, "session-a");
-        assert_eq!(parallel_events[1].session_id, "session-b");
-    }
-
-    #[test]
     fn builds_codex_daily_json_report() {
         let pricing = PricingMap::load_embedded();
         let events = vec![CodexTokenUsageEvent {
@@ -802,37 +754,6 @@ mod tests {
 
         assert!((standard["daily"][0]["costUSD"].as_f64().unwrap() - 0.00031).abs() < f64::EPSILON);
         assert!((fast["daily"][0]["costUSD"].as_f64().unwrap() - 0.00062).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn loads_amp_thread_usage_events() {
-        let fixture = fs_fixture!({
-            "threads/thread.json": r#"{"id":"thread-a","messages":[{"role":"assistant","messageId":2,"usage":{"cacheCreationInputTokens":20,"cacheReadInputTokens":10}}],"usageLedger":{"events":[{"id":"event-a","timestamp":"2026-05-01T01:02:03.000Z","model":"claude-sonnet-4-20250514","credits":1.25,"tokens":{"input":100,"output":50},"toMessageId":2}]}}"#,
-        });
-
-        let entries = adapter::amp::read_thread_file(
-            &fixture.path("threads/thread.json"),
-            &resolve_tz(Some("UTC")),
-            CostMode::Display,
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-05-01");
-        assert_eq!(entries[0].session_id.as_ref(), "thread-a");
-        assert_eq!(
-            entries[0].model.as_deref(),
-            Some("claude-sonnet-4-20250514")
-        );
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
-        assert_eq!(
-            entries[0].data.message.usage.cache_creation_input_tokens,
-            20
-        );
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 10);
-        assert_eq!(entries[0].credits, Some(1.25));
     }
 
     #[test]

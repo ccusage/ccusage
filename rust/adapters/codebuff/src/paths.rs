@@ -1,7 +1,7 @@
 use std::{collections::HashSet, env, path::PathBuf};
 
 use crate::Result;
-use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
 
 pub(super) const CODEBUFF_DATA_DIR_ENV: &str = "CODEBUFF_DATA_DIR";
@@ -10,7 +10,7 @@ const CHANNELS: &[&str] = &["manicode", "manicode-dev", "manicode-staging"];
 pub(super) fn discover_chat_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for root in codebuff_project_roots()? {
-        collect_files_with_extension_diagnosed(&root, "json", &mut files, diagnostics);
+        collect_files_with_extension(&root, "json", &mut files, diagnostics);
     }
     Ok(files
         .into_iter()

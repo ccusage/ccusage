@@ -1,4 +1,7 @@
-use ccusage_adapter_common::{SqliteStage, units::UnitError};
+use ccusage_adapter_common::{
+    SqliteStage, dir_entries, jsonl, read_units_flat,
+    units::{UnitError, decode_json},
+};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     collections::{HashMap, HashSet},
@@ -20,7 +23,7 @@ use super::{
 use crate::{
     LoadedEntry, PricingMap, Result,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    collect_files_with_extension, date_range_bounds_ms, debug_log, read_files_parallel, resolve_tz,
+    collect_files_with_extension, date_range_bounds_ms, debug_log, resolve_tz,
 };
 
 pub(crate) fn load_entries(
@@ -158,7 +161,7 @@ fn load_entries_from_directory_parts(
     let mut compaction_entries = Vec::new();
     let mut seen = HashSet::new();
     let mut aggregate_entries = Vec::new();
-    if let Some(db_path) = db_path(opencode_dir) {
+    if let Some(db_path) = db_path(opencode_dir, diagnostics) {
         let database_entries = load_entries_from_database(
             &DatabaseLoadContext {
                 db_path: &db_path,
@@ -192,7 +195,7 @@ fn load_entries_from_directory_parts(
 
     let messages_dir = opencode_dir.join("storage").join("message");
     let mut files = Vec::new();
-    collect_files_with_extension(&messages_dir, "json", &mut files);
+    collect_files_with_extension(&messages_dir, "json", &mut files, diagnostics);
 
     // Skip files the DB pass already covered. Message files are stored as
     // `storage/message/<sessionID>/<messageID>.json`, so the file stem is the
@@ -211,17 +214,10 @@ fn load_entries_from_directory_parts(
     // Read the surviving files in parallel, then run the sequential id dedup
     // over the results in their original file order so parallelism never changes
     // which duplicate survives.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_message_file(
-            file,
-            &tz,
-            shared.mode,
-            pricing.as_ref(),
-            window,
-            diagnostics,
-        )
+    let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
+        read_message_file(file, &tz, shared.mode, pricing.as_ref(), window)
     });
-    for entry in loaded.into_iter().flatten() {
+    for entry in loaded {
         if let Some(id) = entry_id(&entry)
             && !seen.insert(id.to_string())
         {
@@ -245,7 +241,7 @@ fn load_entries_from_directory_parts(
 /// install full of logs. Stops at the first message file rather than collecting
 /// them all, so this stays cheap next to a large legacy dump.
 pub(crate) fn has_source(opencode_dir: &Path) -> bool {
-    if db_path(opencode_dir).is_some() {
+    if db_path(opencode_dir, &Diagnostics::new("opencode")).is_some() {
         return true;
     }
     has_json_file(&opencode_dir.join("storage").join("message"))
@@ -273,15 +269,14 @@ fn has_json_file(dir: &Path) -> bool {
     })
 }
 
-fn db_path(opencode_dir: &Path) -> Option<PathBuf> {
+fn db_path(opencode_dir: &Path, diagnostics: &Diagnostics) -> Option<PathBuf> {
     let default_path = opencode_dir.join("opencode.db");
     if default_path.is_file() {
         return Some(default_path);
     }
-    let mut candidates = fs::read_dir(opencode_dir)
-        .ok()?
-        .filter_map(std::result::Result::ok)
-        .map(|entry| entry.path())
+    let mut candidates = dir_entries(opencode_dir, diagnostics)
+        .into_iter()
+        .map(|(path, _)| path)
         .filter(|path| {
             path.is_file()
                 && path
@@ -435,17 +430,14 @@ fn load_entries_from_database(
                             {
                                 continue;
                             }
-                            let value = match serde_json::from_str::<OpenCodeMessage>(&data) {
-                                Ok(value) => value,
-                                Err(error) => {
-                                    diagnostics.record(Skip::record(
-                                        db_path,
-                                        row,
-                                        SkipKind::InvalidData,
-                                        UnitError::from(error),
-                                    ));
-                                    continue;
-                                }
+                            let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
+                                data.as_bytes(),
+                                db_path,
+                                row,
+                                diagnostics,
+                                Some(|_| true),
+                            ) else {
+                                continue;
                             };
                             if let Some(entry) = message_value_to_entry(
                                 &value,
@@ -591,12 +583,15 @@ fn load_entries_from_database(
                                 Ok(Some(linked)) => linked,
                                 Ok(None) => continue,
                                 Err(error) => {
-                                    diagnostics.record(Skip::record(
+                                    jsonl::record_decode_error(
+                                        data.as_bytes(),
+                                        error,
                                         db_path,
                                         row,
-                                        SkipKind::InvalidData,
-                                        error,
-                                    ));
+                                        false,
+                                        diagnostics,
+                                        Some(|_: &serde_json::Value| true),
+                                    );
                                     continue;
                                 }
                             };
@@ -677,19 +672,8 @@ fn read_message_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     window: DateWindow,
-    diagnostics: &Diagnostics,
-) -> Option<LoadedEntry> {
-    let content = match fs::read(path) {
-        Ok(content) => content,
-        Err(_) => {
-            diagnostics.record(Skip::unit(
-                path,
-                SkipKind::Unreadable,
-                "message file read failed",
-            ));
-            return None;
-        }
-    };
+) -> std::result::Result<Option<LoadedEntry>, UnitError> {
+    let content = fs::read(path)?;
     // Skip out-of-range entries before the full parse. Extraction works on the
     // raw text and fails open (non-UTF-8 or missing timestamp -> full parse).
     if !window.is_unbounded()
@@ -697,20 +681,12 @@ fn read_message_file(
         && let Some(millis) = extract_message_timestamp(text)
         && !window.contains(millis)
     {
-        return None;
+        return Ok(None);
     }
-    let value = match serde_json::from_slice::<OpenCodeMessage>(&content) {
-        Ok(value) => value,
-        Err(error) => {
-            diagnostics.record(Skip::unit(
-                path,
-                SkipKind::InvalidData,
-                UnitError::from(error),
-            ));
-            return None;
-        }
-    };
-    message_value_to_entry(&value, None, None, tz, mode, pricing)
+    let value = decode_json::<OpenCodeMessage>(&content)?;
+    Ok(message_value_to_entry(
+        &value, None, None, tz, mode, pricing,
+    ))
 }
 
 fn push_unique_entry(
@@ -1429,6 +1405,65 @@ mod tests {
             .join("\n");
         assert!(warnings.contains("database schema is not supported"));
         assert!(!warnings.contains("no such table"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_message_directory_is_reported() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use ccusage_core::{Diagnostics, SkipKind};
+
+        let fixture = ccusage_test_support::fs_fixture!({
+            "storage/message/blocked/m.json": "{}",
+        });
+        let blocked = fixture.path("storage/message/blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::read_dir(&blocked).is_err();
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            ..Default::default()
+        };
+        let diagnostics = Diagnostics::new("opencode");
+        let loaded =
+            super::load_entries_from_directory_parts(fixture.root(), &shared, false, &diagnostics);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+        loaded.unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_data_directory_that_cannot_be_listed_for_databases_is_reported() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        use ccusage_core::{Diagnostics, SkipKind};
+
+        let fixture = ccusage_test_support::fs_fixture!({
+            "data/storage/message/s/m.json": "{}",
+        });
+        let data = fixture.path("data");
+        fs::set_permissions(&data, fs::Permissions::from_mode(0o300)).unwrap();
+        let denied = fs::read_dir(&data).is_err();
+        let shared = SharedArgs {
+            offline: true,
+            mode: CostMode::Display,
+            ..Default::default()
+        };
+        let diagnostics = Diagnostics::new("opencode");
+        let loaded = super::load_entries_from_directory_parts(&data, &shared, false, &diagnostics);
+        fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
+        loaded.unwrap();
+        if !denied {
+            return;
+        }
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
     }
 
     #[test]

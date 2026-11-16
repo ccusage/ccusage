@@ -35,10 +35,10 @@ layers.
 ## Public surface
 
 - `report::print_table_for_agent`
-- `collect_usage_files`
-- `collect_files_with_extension`
-- `collect_files_matching`
-- `collect_files_with_extension_diagnosed` and `collect_files_matching_diagnosed`
+- `collect_files_with_extension`, `collect_files_matching`,
+  `visit_files_matching`, `visit_usage_files` and `dir_entries`, which record
+  directories they cannot read in a `Diagnostics`
+- `read_discovered_files`
 - `filter_loaded_entries_by_date`
 - `filter_session_summaries_by_last_activity`
 - `chunk_file_indexes_by_size`
@@ -46,7 +46,7 @@ layers.
 - `units::read_units`
 - `units::read_units_flat`
 - `units::UnitError`
-- `units::read_json`
+- `units::read_json` and `units::decode_json`
 - `jsonl::records_with_diagnostics` and `records_with_usage_diagnostics`
 - `jsonl::numbered_records_with_usage_diagnostics`
 - `source::UsageSource`, `source::EntrySource` and the request, row and policy

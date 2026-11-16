@@ -14,14 +14,23 @@ use crate::read_files_parallel;
 /// errors convert to [`SkipKind::Unreadable`] without their untrusted text.
 #[derive(Debug)]
 pub struct UnitError {
-    kind: SkipKind,
+    fault: Fault,
     detail: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Fault {
+    Skip(SkipKind),
+    /// The unit holds nothing but whitespace: no document was written yet.
+    Unwritten,
+    /// The document ends before it is complete: it is still being written.
+    Unfinished,
 }
 
 impl UnitError {
     pub fn new(kind: SkipKind, detail: impl Into<String>) -> Self {
         Self {
-            kind,
+            fault: Fault::Skip(kind),
             detail: detail.into(),
         }
     }
@@ -67,19 +76,22 @@ impl UnitError {
     /// before the failure calls this itself; [`read_units`] calls it for a
     /// unit that failed as a whole.
     ///
-    /// A unit that is gone, or still an empty file, when its read failed held
-    /// no usage to lose: the agent removed it after discovery, or created it
-    /// and has not written it yet. Only `--debug` names such a unit.
+    /// A unit that is gone, still an empty file, or a document still being
+    /// written when its read failed held no usage to lose: the agent removed
+    /// it after discovery, or has not finished writing it. Only `--debug`
+    /// names such a unit.
     #[cold]
     pub fn record(self, unit: &Path, diagnostics: &Diagnostics) {
-        let state = match fs::metadata(unit) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                "removed after discovery, read as absent"
-            }
-            Ok(metadata) if metadata.is_file() && metadata.len() == 0 => {
-                "empty, read as not yet written"
-            }
-            _ => return diagnostics.record(Skip::unit(unit, self.kind, self.detail)),
+        let state = match self.fault {
+            Fault::Unwritten => UNWRITTEN,
+            Fault::Unfinished => "incomplete, read as still being written",
+            Fault::Skip(kind) => match fs::metadata(unit) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    "removed after discovery, read as absent"
+                }
+                Ok(metadata) if metadata.is_file() && metadata.len() == 0 => UNWRITTEN,
+                _ => return diagnostics.record(Skip::unit(unit, kind, self.detail)),
+            },
         };
         diagnostics.debug_note(
             unit,
@@ -119,35 +131,46 @@ impl From<io::Error> for UnitError {
     }
 }
 
-impl From<serde_json::Error> for UnitError {
-    fn from(error: serde_json::Error) -> Self {
-        use serde_json::error::Category;
+const UNWRITTEN: &str = "empty, read as not yet written";
 
-        let (kind, category) = match error.classify() {
-            Category::Io => (SkipKind::Unreadable, "I/O"),
-            Category::Syntax => (SkipKind::InvalidData, "syntax"),
-            Category::Data => (SkipKind::InvalidData, "data"),
-            Category::Eof => (SkipKind::InvalidData, "EOF"),
+/// Reads a whole JSON unit and decodes it like [`decode_json`].
+///
+/// File IO failures are recorded as unreadable units.
+pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
+    decode_json(&fs::read(path)?)
+}
+
+/// Decodes `content`, the whole of one JSON unit, without copying it into a
+/// string.
+///
+/// An agent rewrites such a document in place as it grows, so a read can
+/// catch it before the first byte or part-way through: content that is only
+/// whitespace, or that ends before the document does, is noted under
+/// `--debug` like an empty file rather than skipped. Any other decoding
+/// failure is invalid data, with only the error category and location
+/// retained for diagnostics.
+pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> {
+    use serde_json::error::Category;
+
+    serde_json::from_slice(content).map_err(|error| {
+        let (fault, category) = match error.classify() {
+            Category::Eof if content.iter().all(u8::is_ascii_whitespace) => {
+                (Fault::Unwritten, "EOF")
+            }
+            Category::Eof => (Fault::Unfinished, "EOF"),
+            Category::Io => (Fault::Skip(SkipKind::Unreadable), "I/O"),
+            Category::Syntax => (Fault::Skip(SkipKind::InvalidData), "syntax"),
+            Category::Data => (Fault::Skip(SkipKind::InvalidData), "data"),
         };
-        Self::new(
-            kind,
-            format!(
+        UnitError {
+            fault,
+            detail: format!(
                 "JSON {category} error at line {}, column {}",
                 error.line(),
                 error.column()
             ),
-        )
-    }
-}
-
-/// Reads a whole JSON unit and decodes it without copying input into a string.
-///
-/// File IO failures are recorded as unreadable units; decoding failures are
-/// recorded separately as invalid data, with only the error category and byte
-/// location retained for diagnostics.
-pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, UnitError> {
-    let content = fs::read(path)?;
-    Ok(serde_json::from_slice(&content)?)
+        }
+    })
 }
 
 /// Reads `files` like [`read_files_parallel`], and records a unit whose read
@@ -204,7 +227,7 @@ mod tests {
     use ccusage_core::{Diagnostics, Result, SkipKind, cli::SharedArgs, cli_error};
     use ccusage_test_support::Fixture;
 
-    use super::{SqliteStage, UnitError, read_units, read_units_flat};
+    use super::{Fault, SqliteStage, UnitError, decode_json, read_units, read_units_flat};
 
     fn numbers(path: &Path) -> Result<Vec<u32>> {
         let content = fs::read_to_string(path)?;
@@ -348,12 +371,70 @@ mod tests {
     }
 
     #[test]
+    fn a_document_cut_off_by_the_end_of_the_file_is_noted_as_still_being_written() {
+        let fixture = Fixture::new();
+        let cut = fixture.write_file("cut.json", r#"{"usage":{"inp"#);
+        let files = vec![
+            cut.clone(),
+            fixture.write_file("broken.json", "{\"value\":}"),
+        ];
+        let diagnostics = Diagnostics::new("test");
+
+        let loaded = read_units(
+            &files,
+            true,
+            &diagnostics,
+            super::read_json::<serde_json::Value>,
+        );
+
+        assert_eq!(loaded, [None, None]);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
+        let debug = SharedArgs {
+            debug: true,
+            ..SharedArgs::default()
+        };
+        assert_eq!(
+            diagnostics.warnings(&debug)[0],
+            format!(
+                "test: {}: incomplete, read as still being written",
+                cut.display()
+            )
+        );
+    }
+
+    #[test]
+    fn a_whitespace_only_document_is_noted_like_an_empty_file() {
+        let fixture = Fixture::new();
+        let blank = fixture.write_file("blank.json", " \n\t\r\n");
+        let diagnostics = Diagnostics::new("test");
+
+        let loaded = read_units(
+            std::slice::from_ref(&blank),
+            true,
+            &diagnostics,
+            super::read_json::<serde_json::Value>,
+        );
+
+        assert_eq!(loaded, [None]);
+        let debug = SharedArgs {
+            debug: true,
+            ..SharedArgs::default()
+        };
+        assert_eq!(
+            diagnostics.warnings(&debug),
+            [format!(
+                "test: {}: empty, read as not yet written",
+                blank.display()
+            )]
+        );
+    }
+
+    #[test]
     fn serde_error_details_keep_only_category_and_location() {
-        let error = serde_json::from_str::<u64>(r#""SECRET_CANARY""#).unwrap_err();
+        let error = decode_json::<u64>(br#""SECRET_CANARY""#).unwrap_err();
 
-        let error = UnitError::from(error);
-
-        assert_eq!(error.kind, SkipKind::InvalidData);
+        assert_eq!(error.fault, Fault::Skip(SkipKind::InvalidData));
         assert!(error.detail.contains("data"));
         assert!(error.detail.contains("line 1"));
         assert!(error.detail.contains("column"));
@@ -378,13 +459,13 @@ mod tests {
             (None, SkipKind::Unreadable, SkipKind::ReadInterrupted),
         ] {
             assert_eq!(
-                UnitError::sqlite(SqliteStage::Setup, code).kind,
-                setup,
+                UnitError::sqlite(SqliteStage::Setup, code).fault,
+                Fault::Skip(setup),
                 "setup {code:?}"
             );
             assert_eq!(
-                UnitError::sqlite(SqliteStage::Rows, code).kind,
-                rows,
+                UnitError::sqlite(SqliteStage::Rows, code).fault,
+                Fault::Skip(rows),
                 "rows {code:?}"
             );
         }
@@ -394,7 +475,7 @@ mod tests {
     fn unstructured_reader_errors_never_echo_input() {
         let error = UnitError::from(cli_error("invalid token SECRET_CANARY"));
 
-        assert_eq!(error.kind, SkipKind::Unreadable);
+        assert_eq!(error.fault, Fault::Skip(SkipKind::Unreadable));
         assert!(!error.to_string().contains("SECRET_CANARY"));
     }
 
@@ -402,7 +483,7 @@ mod tests {
     fn custom_io_errors_never_echo_input() {
         let error = UnitError::from(std::io::Error::other("SECRET_CANARY"));
 
-        assert_eq!(error.kind, SkipKind::Unreadable);
+        assert_eq!(error.fault, Fault::Skip(SkipKind::Unreadable));
         assert!(!error.to_string().contains("SECRET_CANARY"));
     }
 }

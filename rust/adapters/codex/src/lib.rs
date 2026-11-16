@@ -20,8 +20,8 @@ mod compression_tests;
 use crate::{PricingMap, Result, cli::AgentCommandArgs, log_level, print_json_or_jq, wants_json};
 
 pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
-#[doc(hidden)]
-pub use loader::load_codex_events_from_directory;
+#[cfg(test)]
+use loader::load_codex_events_from_directory;
 pub use loader::load_codex_events_with_detection;
 
 pub use report::{

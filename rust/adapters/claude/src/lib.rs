@@ -282,7 +282,7 @@ fn load_entries_inner(
         )
     };
     let mut loaded_files = if skip_files_before_since && shared.since.is_some() {
-        let files = usage_files(&paths, project_filter);
+        let files = usage_files(&paths, project_filter, diagnostics);
         debug_log(shared, format!("Found {} JSONL usage files", files.len()));
         let files = split_files_before_since(files, shared, utc_now()).kept;
         debug_log(
@@ -300,7 +300,7 @@ fn load_entries_inner(
     } else {
         let loaded_files = read_discovered_files(
             shared.single_thread,
-            |visit| visit_usage_files(&paths, project_filter, visit),
+            |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
             read,
         );
         debug_log(
@@ -1213,7 +1213,11 @@ mod tests {
             "projects/project-b/session-b/b.jsonl": "{}",
         });
 
-        let files = usage_files(&[fixture.root().to_path_buf()], Some("project-a"));
+        let files = usage_files(
+            &[fixture.root().to_path_buf()],
+            Some("project-a"),
+            &ccusage_core::Diagnostics::new("claude"),
+        );
 
         assert_eq!(files.len(), 1);
         assert!(files[0].to_string_lossy().contains("project-a"));
@@ -1226,7 +1230,11 @@ mod tests {
             "projects/project-b/session-b/b.jsonl": "{}",
         });
 
-        let files = usage_files(&[fixture.root().to_path_buf()], Some("project-a/session-a"));
+        let files = usage_files(
+            &[fixture.root().to_path_buf()],
+            Some("project-a/session-a"),
+            &ccusage_core::Diagnostics::new("claude"),
+        );
 
         assert_eq!(files.len(), 2);
     }

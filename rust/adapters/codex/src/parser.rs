@@ -1,4 +1,4 @@
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{UnitError, jsonl};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use std::{
     borrow::Cow,
@@ -280,7 +280,7 @@ pub(super) fn visit_codex_session_file(
         fork_replay,
         None,
         visit,
-        None,
+        &Diagnostics::new("codex"),
     )
 }
 
@@ -292,16 +292,8 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     visit: impl FnMut(CodexTokenUsageEvent) -> Result<()>,
-    diagnostics: Option<&Diagnostics>,
+    diagnostics: &Diagnostics,
 ) -> Result<()> {
-    let quiet;
-    let diagnostics = match diagnostics {
-        Some(diagnostics) => diagnostics,
-        None => {
-            quiet = Diagnostics::new("codex");
-            &quiet
-        }
-    };
     visit_codex_session_file_inner(
         sessions_dir,
         path,
@@ -363,11 +355,7 @@ fn visit_codex_session_file_inner(
     mut stop_at_fork: Option<&mut CodexSessionMetadata>,
 ) -> Result<()> {
     let Ok((mut lines, opened_path)) = open_rollout_lines(path, READ_BUFFER_SIZE) else {
-        diagnostics.record(Skip::unit(
-            path,
-            SkipKind::Unreadable,
-            "rollout open failed",
-        ));
+        UnitError::new(SkipKind::Unreadable, "rollout open failed").record(path, diagnostics);
         return Ok(());
     };
     let session_id = codex_session_id(sessions_dir, path);
@@ -2031,6 +2019,36 @@ mod tests {
 mod diagnostic_tests {
     use super::*;
     use ccusage_test_support::Fixture;
+
+    #[test]
+    fn a_rollout_removed_after_discovery_is_noted_not_skipped() {
+        let fixture = Fixture::new();
+        let path = fixture.path("session.jsonl");
+        let diagnostics = Diagnostics::new("codex");
+
+        visit_codex_session_file_with_diagnostics(
+            fixture.root(),
+            &path,
+            None,
+            |_| Ok(()),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
+        let debug = crate::cli::SharedArgs {
+            debug: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            diagnostics.warnings(&debug),
+            [format!(
+                "codex: {}: removed after discovery, read as absent",
+                path.display()
+            )]
+        );
+    }
+
     #[test]
     fn a_rollout_line_still_being_written_is_not_a_skip() {
         let fixture = Fixture::new();

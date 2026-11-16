@@ -41,8 +41,11 @@ pub(super) fn load_daily_summaries_inner(
     let context = UsageLoadContext::new(shared);
     let mut pruned = Vec::new();
     let deduped = if shared.since.is_some() {
-        let since_files =
-            split_files_before_since(usage_files(&paths, project_filter), shared, utc_now());
+        let since_files = split_files_before_since(
+            usage_files(&paths, project_filter, diagnostics),
+            shared,
+            utc_now(),
+        );
         pruned = since_files.pruned;
         let kept = since_files.kept;
         load_deduped_daily_entries(
@@ -53,7 +56,7 @@ pub(super) fn load_daily_summaries_inner(
         )
     } else {
         load_deduped_daily_entries(
-            |visit| visit_usage_files(&paths, project_filter, visit),
+            |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
             &context,
             project_filter,
             diagnostics,

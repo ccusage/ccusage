@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ccusage_adapter_common::collect_files_matching_diagnosed;
+use ccusage_adapter_common::collect_files_matching;
 use ccusage_core::Diagnostics;
 
 const OPENCLAW_DIR_ENV: &str = "OPENCLAW_DIR";
@@ -44,7 +44,7 @@ fn existing_path_list(raw: &str) -> Vec<PathBuf> {
 
 pub(super) fn collect_session_files(root: &Path, diagnostics: &Diagnostics) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    collect_files_matching_diagnosed(
+    collect_files_matching(
         root,
         &|path| {
             path.file_name()

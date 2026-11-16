@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn diagnoses_malformed_whole_file_json() {
-        let fixture = fs_fixture!({"chat.json": "{\"SECRET_CANARY\":"});
+        let fixture = fs_fixture!({"chat.json": "{\"SECRET_CANARY\":}"});
         let diagnostics = Diagnostics::new("gemini");
 
         let loaded = ccusage_adapter_common::units::read_units(
@@ -697,7 +697,7 @@ mod tests {
             "logs.json": r#"[{"sessionId":"s1","messageId":0,"type":"user","message":"hi","timestamp":"2026-05-17T11:07:32.000Z"}]"#,
             "empty-logs.json": "[]",
             "scalar.json": "7",
-            "broken-logs.json": r#"[{"sessionId":"s1"},"#,
+            "broken-logs.json": r#"[{"sessionId":"s1"},]"#,
         });
         let files = [
             "logs.json",

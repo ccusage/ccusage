@@ -1,6 +1,6 @@
 use std::{collections::HashSet, env, fs, path::PathBuf};
 
-use ccusage_adapter_common::collect_files_with_extension_diagnosed;
+use ccusage_adapter_common::collect_files_with_extension;
 use ccusage_core::Diagnostics;
 
 use crate::Result;
@@ -64,7 +64,7 @@ pub(super) fn conversation_db_paths(diagnostics: &Diagnostics) -> Result<Vec<Pat
         }
         let dir = conversation_dir(root);
         let mut files = Vec::new();
-        collect_files_with_extension_diagnosed(&dir, "db", &mut files, diagnostics);
+        collect_files_with_extension(&dir, "db", &mut files, diagnostics);
         for path in files {
             let canonical_path = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if seen.insert(canonical_path) {

@@ -13,8 +13,6 @@ use crate::{
     cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
 };
 
-#[doc(hidden)]
-pub use parser::read_thread_file;
 pub use report::{report_from_rows, summarize_entries};
 
 /// The Amp usage source.
@@ -111,13 +109,13 @@ mod tests {
     }
 
     #[test]
-    fn a_thread_file_that_cannot_be_read_is_reported_and_the_rest_still_counts() {
+    fn a_thread_file_cut_mid_write_is_noted_under_debug_and_the_rest_still_counts() {
         let fixture = fixture();
         let _guard = EnvVarGuard::set("AMP_DATA_DIR", fixture.root());
-        // `--debug` names the file whatever LOG_LEVEL the test runs under.
+        let quiet = shared(None, None, "UTC");
         let shared = SharedArgs {
             debug: true,
-            ..shared(None, None, "UTC")
+            ..quiet.clone()
         };
 
         let rows = SOURCE
@@ -140,14 +138,13 @@ mod tests {
         assert_eq!(sessions, ["T-ledger", "T-messages"]);
         assert!(rows.detected);
         let truncated = fixture.path("threads/T-truncated.json");
-        assert!(
-            rows.diagnostics
-                .warnings(&shared)
-                .iter()
-                .any(|warning| warning
-                    .starts_with(&format!("amp: invalid data: {}: ", truncated.display()))),
-            "{:?}",
-            rows.diagnostics.warnings(&shared)
+        assert_eq!(
+            rows.diagnostics.warnings(&shared),
+            [format!(
+                "amp: {}: incomplete, read as still being written",
+                truncated.display()
+            )]
         );
+        assert!(rows.diagnostics.warnings(&quiet).is_empty());
     }
 }

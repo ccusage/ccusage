@@ -220,7 +220,7 @@ fn load_groups_from_sources_with_diagnostics(
     kind: AgentReportKind,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
-    let file_groups = paths::collect_deduped_codex_usage_files(sources);
+    let file_groups = paths::collect_deduped_codex_usage_files(sources, diagnostics);
     let detected = file_groups.iter().any(|group| !group.files.is_empty());
     let files_by_group = file_groups
         .iter()
@@ -245,7 +245,7 @@ pub(super) fn load_groups_from_directory_with_diagnostics(
     kind: AgentReportKind,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
-    let all_files = paths::collect_codex_usage_files(sessions_dir);
+    let all_files = paths::collect_codex_usage_files(sessions_dir, diagnostics);
     let detected = !all_files.is_empty();
     let files = paths::filter_codex_usage_files(sessions_dir, &all_files, shared);
     if shared.single_thread {
@@ -310,6 +310,7 @@ fn aggregate_file_groups(
             available.iter().copied(),
             metadata.into_iter().flatten().collect(),
             shared.single_thread,
+            diagnostics,
         );
         let mut file_offset = 0;
         for (&(sessions_dir, files), forks) in selected.iter().zip(&forks) {
@@ -486,7 +487,12 @@ fn aggregate_files_local(
     let (mut aggregation, metadata) = aggregate_files_local_with_seen(&run, None)?;
     if matches!(run.replay, CodexReplay::Discover) {
         let (forks, metadata) = fork_indexes(files.len(), metadata);
-        let plan = CodexReplayPlan::with_metadata([(sessions_dir, all_files)], metadata, true);
+        let plan = CodexReplayPlan::with_metadata(
+            [(sessions_dir, all_files)],
+            metadata,
+            true,
+            run.diagnostics,
+        );
         let fork_run = CodexAggregateRun {
             replay: CodexReplay::Planned(&plan),
             selection: Some(&forks),
