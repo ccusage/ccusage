@@ -67,12 +67,23 @@ fn load_entries_inner(
         })
     });
     let mut otel_entries = Vec::new();
+    let mut otel_keys = HashSet::<String>::new();
     let mut session_state_entries = Vec::new();
     let mut usage_records = Vec::new();
     let mut credit_snapshots = Vec::new();
     for (source, file_usage) in sources.iter().map(|source| source.kind).zip(parsed) {
         match source {
-            CopilotSourceKind::Otel => otel_entries.extend(file_usage.entries),
+            CopilotSourceKind::Otel => {
+                // Each file's parser already settles repeats within the file, so
+                // only a row an earlier file exported is a copy of the same call.
+                let new_rows = file_usage
+                    .entries
+                    .into_iter()
+                    .filter(|entry| !otel_keys.contains(&entry.dedup_key))
+                    .collect::<Vec<_>>();
+                otel_keys.extend(new_rows.iter().map(|entry| entry.dedup_key.clone()));
+                otel_entries.extend(new_rows);
+            }
             CopilotSourceKind::SessionState => {
                 session_state_entries.extend(file_usage.entries);
                 usage_records.extend(file_usage.usage_records);
@@ -2337,6 +2348,48 @@ mod tests {
                     .collect::<Vec<_>>(),
                 [(owner.to_string(), 100)],
                 "child file present: {child_file}"
+            );
+        }
+    }
+
+    /// A `test-model` OTel call of `session-1` with the given call ID attribute.
+    fn otel_call_with(span_id: &str, timestamp: &str, attribute: (&str, &str)) -> String {
+        let mut span: serde_json::Value =
+            serde_json::from_str(&otel_call(span_id, timestamp)).unwrap();
+        span["attributes"][attribute.0] = json!(attribute.1);
+        span.to_string()
+    }
+
+    #[test]
+    fn counts_an_otel_call_exported_to_two_files_once() {
+        let span = otel_call_with(
+            "span-1",
+            "2026-01-02T09:00:00.000Z",
+            ("gen_ai.response.id", "response-1"),
+        );
+        for record in [None, Some("response-1")] {
+            let fixture = fs_fixture!({
+                "home/.copilot/otel/a.jsonl": span.clone(),
+                "home/.copilot/otel/b.jsonl": span.clone(),
+            });
+            if let Some(api_call_id) = record {
+                let _ = fixture.write_file(
+                    "home/.copilot/session-state/session-1/events.jsonl",
+                    usage_record(
+                        "record-1",
+                        "2026-01-02T09:00:00.000Z",
+                        json!({"apiCallId": api_call_id}),
+                    ),
+                );
+            }
+
+            let entries = load_copilot_home(&fixture, &utc_args());
+
+            let expected_input = if record.is_some() { 100 } else { 1 };
+            assert_eq!(
+                usage_rows(&entries),
+                [("2026-01-02T09:00:00.000Z".to_string(), expected_input)],
+                "usage record: {record:?}"
             );
         }
     }
