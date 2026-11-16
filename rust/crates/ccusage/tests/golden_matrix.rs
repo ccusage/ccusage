@@ -90,6 +90,18 @@ fn exported_fixture_replays_the_unified_report() {
             "{name} is missing from the manifest"
         );
     }
+    let seeded = manifest["seeded"].as_array().unwrap();
+    assert!(!seeded.is_empty());
+    for name in seeded {
+        let name = name.as_str().unwrap();
+        let stores = env[name].as_str().unwrap();
+        assert!(
+            stores
+                .split(',')
+                .any(|store| std::path::Path::new(store.trim()).exists()),
+            "{name}={stores} names no seeded store"
+        );
+    }
 
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_ccusage"))
         .env_clear()

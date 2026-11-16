@@ -105,16 +105,29 @@
     (is (= {"HOME" "/h" "CODEX_HOME" "/real" "COLUMNS" "200" "NO_COLOR" "1" "TZ" "UTC"}
            (process-env (real-env) {"HOME" "/h" "CODEX_HOME" "/real" "LOG_LEVEL" "0" "COLUMNS" "80"})))))
 
+(defn- golden-manifest
+  "What golden::export_fixture writes into `dir`, with a seeded store there."
+  [dir]
+  (let [store (doto (path dir "claude") babashka.fs/create-dirs)]
+    {"cwd" (str dir)
+     "env" {"HOME" (str dir) "CLAUDE_CONFIG_DIR" (str " " store " ," (path dir "missing"))}
+     "seeded" ["CLAUDE_CONFIG_DIR"]
+     "window" {"since" "20251231" "until" "20260101"}}))
+
+(defn- write-manifest! [dir manifest]
+  (babashka.fs/create-dirs dir)
+  (spit (path dir fixture-manifest) (if (string? manifest) manifest (cheshire.core/generate-string manifest))))
+
 (deftest golden-fixtures
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-fixture."})
         exports (atom [])]
     (try
       (with-redefs [export-golden-fixture! (fn [_ target]
                                              (swap! exports conj target)
-                                             (spit (path target fixture-manifest) "{\"cwd\": \"/c\", \"env\": {}}"))]
+                                             (write-manifest! target (golden-manifest target)))]
         (testing "a missing or empty directory is exported into, an exported one reused"
-          (is (= {"cwd" "/c" "env" {}} (prepare-golden-fixture! "/repo" (path dir "new"))))
-          (is (= {"cwd" "/c" "env" {}} (prepare-golden-fixture! "/repo" (path dir "new"))))
+          (let [exported (prepare-golden-fixture! "/repo" (path dir "new"))]
+            (is (= (golden-manifest (path dir "new")) exported (prepare-golden-fixture! "/repo" (path dir "new")))))
           (babashka.fs/create-dirs (path dir "empty"))
           (prepare-golden-fixture! "/repo" (path dir "empty"))
           (is (= [(path dir "new") (path dir "empty")] @exports)))
@@ -124,6 +137,23 @@
           (is (thrown-with-msg? clojure.lang.ExceptionInfo #"is not a golden fixture"
                                 (prepare-golden-fixture! "/repo" (path dir "unrelated"))))
           (is (= 2 (count @exports)))))
+      (testing "a manifest that would let both refs read empty stores is rejected"
+        (doseq [[problem change] [["malformed JSON" (constantly "{\"cwd\":")]
+                                  ["no env" #(dissoc % "env")]
+                                  ["an empty env" #(assoc % "env" {})]
+                                  ["no seeded variables" #(dissoc % "seeded")]
+                                  ["an empty seeded list" #(assoc % "seeded" [])]
+                                  ["a seeded variable missing from env" #(update % "env" dissoc "CLAUDE_CONFIG_DIR")]
+                                  ["a seeded variable naming no existing store"
+                                   #(assoc-in % ["env" "CLAUDE_CONFIG_DIR"] (path dir "gone"))]
+                                  ["a missing working directory" #(assoc % "cwd" (path dir "gone"))]
+                                  ["no window" #(dissoc % "window")]
+                                  ["a malformed window bound" #(assoc-in % ["window" "until"] "2026-01-01")]]
+                :let [fixture (path dir (str "invalid-" (clojure.string/replace problem " " "-")))]]
+          (write-manifest! fixture (change (golden-manifest fixture)))
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"is not a usable golden fixture"
+                                (prepare-golden-fixture! "/repo" fixture))
+              problem)))
       (finally (babashka.fs/delete-tree dir)))))
 
 (defn- run [exit out err] {:exit exit :out (.getBytes out) :err (.getBytes err)})
@@ -161,9 +191,7 @@
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-diff-e2e."})
         script (fn [name body] (stub-binary dir name (str "[ \"$1\" = --help ] && printf 'COMMANDS:\\n  daily  Show\\n  weekly  Show\\n' && exit 0\n"
                                                             "[ \"$2\" = --help ] && exit 0\n" body)))
-        fixture (doto (path dir "fixture")
-                  babashka.fs/create-dirs
-                  (-> (path fixture-manifest) (spit (str "{\"cwd\": \"" dir "\", \"env\": {}, \"window\": {\"since\": \"20251231\", \"until\": \"20260101\"}}"))))
+        fixture (doto (path dir "fixture") (write-manifest! (golden-manifest dir)))
         stable (script "stable" "echo '{\"a\":1,\"b\":2}'")
         rejected (script "rejected" "echo 'unsupported report arguments' >&2; exit 2")
         unlaunchable (doto (script "unlaunchable" "echo unused")

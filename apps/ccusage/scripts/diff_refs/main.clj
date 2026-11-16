@@ -85,11 +85,46 @@
                 "--test" "golden_matrix" "--" "--ignored" "--exact" "export_golden_fixture"]
                {:env {"CCUSAGE_GOLDEN_FIXTURE_DIR" dir}} "golden fixture export"))
 
+(defn- manifest-problems
+  "Why `manifest` cannot point both binaries at the golden seeds. An entry of
+  a store list may be blank or missing on purpose, so a seeded variable only
+  needs one store that exists."
+  [manifest]
+  (let [env (get manifest "env")
+        seeded (get manifest "seeded")
+        bound? #(and (string? %) (re-matches #"\d{8}" %))]
+    (if-not (map? manifest)
+      ["it is not a JSON object"]
+      (cond-> []
+        (not (and (string? (get manifest "cwd")) (fs/directory? (get manifest "cwd"))))
+        (conj "cwd is not an existing directory")
+        (not (and (map? env) (seq env) (every? string? (vals env))))
+        (conj "env is not a non-empty map of strings")
+        (not (and (bound? (get-in manifest ["window" "since"])) (bound? (get-in manifest ["window" "until"]))))
+        (conj "window does not hold YYYYMMDD since and until bounds")
+        (not (and (sequential? seeded) (seq seeded)))
+        (conj "seeded lists no store variables")
+        (sequential? seeded)
+        (into (for [name seeded
+                    :let [stores (get env name)]
+                    :when (not (and (string? stores)
+                                    (some #(fs/exists? (str/trim %)) (str/split stores #","))))]
+                (str "seeded variable " name " names no existing store")))))))
+
 (defn read-golden-fixture [dir]
   (let [manifest (path dir fixture-manifest)]
     (when-not (fs/regular-file? manifest)
       (fail! (str dir " is not a golden fixture: " fixture-manifest " is missing") {:kind :invalid-fixture}))
-    (json/parse-string (slurp manifest))))
+    (let [parsed (try (json/parse-string (slurp manifest))
+                      (catch Exception error {::unparsable (ex-message error)}))
+          problems (if-let [error (::unparsable parsed)]
+                     [(str fixture-manifest " is not JSON: " error)]
+                     (manifest-problems parsed))]
+      (when (seq problems)
+        (fail! (str dir " is not a usable golden fixture: " (str/join "; " problems)
+                    ". Pass an empty --fixture directory to export a fresh one.")
+               {:kind :invalid-fixture}))
+      parsed)))
 
 (defn prepare-golden-fixture!
   "Reuses the export in `dir`, or exports into it when it is missing or empty."
