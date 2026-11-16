@@ -40,7 +40,7 @@ QWEN_DATA_DIR="$HOME/.qwen,/backup/qwen" ccusage qwen daily
                 └── *.jsonl
 ```
 
-Archived chats contribute to the same project and session reports as active chats.
+Sessions that Qwen Code archives to `chats/archive/` are read as well, so archived usage stays in the reports. A record found in both `chats/` and `chats/archive/` counts once.
 
 ## Report Views
 

@@ -76,7 +76,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 1224,
       "cacheReadTokens": 1063,
-      "inputTokens": 7073,
+      "inputTokens": 7573,
       "metadata": {
         "agents": [
           "amp",
@@ -87,6 +87,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -187,6 +188,15 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
+          "inputTokens": 500,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 81
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
           "inputTokens": 11,
           "missingPricing": true,
           "modelName": "[openclaw] unknown",
@@ -224,18 +234,19 @@ exit: 0
         "gemini-internal-model",
         "gpt-5",
         "grok-4.5-build",
-        "kimi-k2-thinking"
+        "kimi-k2-thinking",
+        "unknown"
       ],
-      "outputTokens": 1609,
+      "outputTokens": 1690,
       "period": "2025-12-27",
       "totalCost": 0.04919200000000001,
-      "totalTokens": 10999
+      "totalTokens": 11580
     },
     {
       "agent": "all",
       "cacheCreationTokens": 5850,
-      "cacheReadTokens": 100600,
-      "inputTokens": 38023,
+      "cacheReadTokens": 108600,
+      "inputTokens": 39403,
       "metadata": {
         "agents": [
           "amp",
@@ -246,6 +257,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -375,11 +387,27 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0014399999999999999,
+          "inputTokens": 180,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 200,
           "cost": 0.001148,
           "inputTokens": 500,
           "modelName": "GLM-5.2",
           "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 8000,
+          "cost": 0.000812,
+          "inputTokens": 1200,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -447,9 +475,11 @@ exit: 0
         "[openclaw] gpt-5",
         "[pi] claude-opus-4-20250514",
         "[pi] claude-sonnet-4-20250514",
+        "anthropic/claude-sonnet-4.5",
         "claude-haiku-4-5-20251001",
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
+        "deepseek-v4-pro",
         "gemini-2.5-flash",
         "gemini-2.5-pro",
         "gemini-3-pro",
@@ -464,16 +494,16 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 8064,
+      "outputTokens": 8424,
       "period": "2025-12-30",
-      "totalCost": 2.101947525000001,
-      "totalTokens": 152967
+      "totalCost": 2.1041995250000007,
+      "totalTokens": 162707
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 4811,
-      "cacheReadTokens": 160616,
-      "inputTokens": 60544,
+      "cacheCreationTokens": 6111,
+      "cacheReadTokens": 185616,
+      "inputTokens": 66794,
       "metadata": {
         "agents": [
           "amp",
@@ -484,6 +514,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -515,13 +546,13 @@ exit: 0
           "outputTokens": 1770
         },
         {
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 32060,
-          "cost": 0.089778,
-          "inputTokens": 8920,
+          "cacheCreationTokens": 1500,
+          "cacheReadTokens": 33060,
+          "cost": 0.093003,
+          "inputTokens": 9320,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 3340
+          "outputTokens": 3430
         },
         {
           "cacheCreationTokens": 0,
@@ -645,6 +676,14 @@ exit: 0
           "outputTokens": 120
         },
         {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 24000,
+          "cost": 0.0024951599999999997,
+          "inputTokens": 2850,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 743
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 40,
           "cost": 0.0019529999999999999,
@@ -737,6 +776,15 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "missingPricing": true,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 500,
           "cost": 0.0,
           "inputTokens": 0,
@@ -793,7 +841,9 @@ exit: 0
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514",
         "copilot-mystery-1",
+        "deepseek-v4-pro",
         "droid-mystery-1",
+        "dsh-mystery-1",
         "gemini-2-5-pro",
         "gemini-2.5-pro",
         "gemini-3-flash-preview",
@@ -816,16 +866,16 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 18299,
+      "outputTokens": 19832,
       "period": "2025-12-31",
-      "totalCost": 2.575028095000001,
-      "totalTokens": 244880
+      "totalCost": 2.5807482550000005,
+      "totalTokens": 278963
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 1400,
-      "cacheReadTokens": 482028,
-      "inputTokens": 1083005,
+      "cacheCreationTokens": 2890,
+      "cacheReadTokens": 485328,
+      "inputTokens": 1105369,
       "metadata": {
         "agents": [
           "amp",
@@ -836,6 +886,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -868,19 +919,20 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 100000,
-          "cost": 0.32066100000000003,
-          "inputTokens": 300111,
+          "cacheReadTokens": 100100,
+          "cost": 0.32144100000000003,
+          "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
-          "outputTokens": 2043
+          "outputTokens": 2113
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 19000,
-          "cost": 0.043644,
-          "inputTokens": 6353,
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1250,
+          "cacheReadTokens": 22000,
+          "cost": 0.052243500000000005,
+          "inputTokens": 6357,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 1199
+          "outputTokens": 1249
         },
         {
           "cacheCreationTokens": 50,
@@ -892,19 +944,35 @@ exit: 0
         },
         {
           "cacheCreationTokens": 300,
-          "cacheReadTokens": 15155,
-          "cost": 0.029576250000000002,
-          "inputTokens": 5360,
+          "cacheReadTokens": 15355,
+          "cost": 0.030701250000000003,
+          "inputTokens": 5760,
           "modelName": "gpt-5",
-          "outputTokens": 2246
+          "outputTokens": 2306
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0175,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 17100,
-          "cost": 0.01445,
-          "inputTokens": 4330,
+          "cost": 0.014525,
+          "inputTokens": 4380,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 1492
+          "outputTokens": 1497
+        },
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 0,
+          "cost": 0.010530000000000003,
+          "inputTokens": 400,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 562
         },
         {
           "cacheCreationTokens": 0,
@@ -977,6 +1045,14 @@ exit: 0
           "inputTokens": 513,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 254
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0033299999999999996,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
         },
         {
           "cacheCreationTokens": 0,
@@ -1148,10 +1224,10 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 345,
+          "inputTokens": 435,
           "missingPricing": true,
           "modelName": "unknown",
-          "outputTokens": 55
+          "outputTokens": 65
         },
         {
           "cacheCreationTokens": 0,
@@ -1275,14 +1351,17 @@ exit: 0
         "[pi] gpt-5",
         "[pi] pi-mystery-1",
         "amp-mystery-1",
+        "anthropic/claude-sonnet-4.5",
         "antigravity-mystery-1",
         "claude-haiku-4-5-20251001",
         "claude-opus-4-20250514",
+        "claude-opus-5",
         "claude-sonnet-4-20250514",
         "cline-mystery-1",
         "codebuff-mystery-1",
         "codex-mystery-1",
         "copilot-mystery-1",
+        "deepseek-flash",
         "gemini-2.5-flash",
         "gemini-2.5-pro",
         "gemini-3-flash-preview",
@@ -1313,16 +1392,16 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 15773,
+      "outputTokens": 17630,
       "period": "2026-01-01",
-      "totalCost": 2.7980604449999995,
-      "totalTokens": 1583008
+      "totalCost": 2.839999945,
+      "totalTokens": 1612269
     },
     {
       "agent": "all",
-      "cacheCreationTokens": 1350,
-      "cacheReadTokens": 522980,
-      "inputTokens": 124309,
+      "cacheCreationTokens": 1650,
+      "cacheReadTokens": 529980,
+      "inputTokens": 127209,
       "metadata": {
         "agents": [
           "amp",
@@ -1333,6 +1412,7 @@ exit: 0
           "codex",
           "copilot",
           "droid",
+          "dsh",
           "gemini",
           "goose",
           "grok",
@@ -1366,10 +1446,10 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 8550,
-          "cost": 0.1487625,
-          "inputTokens": 3000,
+          "cost": 0.1330125,
+          "inputTokens": 2300,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1200
+          "outputTokens": 1130
         },
         {
           "cacheCreationTokens": 990,
@@ -1394,6 +1474,14 @@ exit: 0
           "inputTokens": 1300,
           "modelName": "openai/gpt-5",
           "outputTokens": 420
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 4000,
+          "cost": 0.0066,
+          "inputTokens": 800,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 200
         },
         {
           "cacheCreationTokens": 0,
@@ -1460,6 +1548,14 @@ exit: 0
           "outputTokens": 60
         },
         {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 0,
+          "cost": 0.0008265000000000001,
+          "inputTokens": 1300,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 150
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0005250000000000001,
@@ -1482,6 +1578,14 @@ exit: 0
           "inputTokens": 500,
           "modelName": "devstral-medium-latest",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.000384,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
         },
         {
           "cacheCreationTokens": 0,
@@ -1628,6 +1732,7 @@ exit: 0
         "[pi] gpt-5",
         "amp-mystery-1",
         "anthropic/claude-sonnet-4",
+        "anthropic/claude-sonnet-4.5",
         "claude-haiku-4-5-20251001",
         "claude-haiku-4.5",
         "claude-opus-4-20250514",
@@ -1635,7 +1740,9 @@ exit: 0
         "claude-sonnet-4-20250514",
         "codebuff-mystery-1",
         "codebuff-unknown",
+        "deepseek-flash",
         "deepseek-v4-flash",
+        "deepseek-v4-pro",
         "devstral-medium-latest",
         "gemini-2.5-flash",
         "gemini-3.6-flash-high",
@@ -1653,10 +1760,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 10306,
+      "outputTokens": 10836,
       "period": "2026-01-02",
-      "totalCost": 1.21896,
-      "totalTokens": 660240
+      "totalCost": 1.2110204999999998,
+      "totalTokens": 670970
     },
     {
       "agent": "all",
@@ -1688,12 +1795,12 @@ exit: 0
     }
   ],
   "totals": {
-    "cacheCreationTokens": 14635,
-    "cacheReadTokens": 1269287,
-    "inputTokens": 1313987,
-    "outputTokens": 54560,
-    "totalCost": 8.746569265000002,
-    "totalTokens": 2655636,
+    "cacheCreationTokens": 17725,
+    "cacheReadTokens": 1312587,
+    "inputTokens": 1347381,
+    "outputTokens": 58921,
+    "totalCost": 8.788541425000002,
+    "totalTokens": 2740031,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -1709,6 +1816,7 @@ exit: 0
       "codex-mystery-1",
       "copilot-mystery-1",
       "droid-mystery-1",
+      "dsh-mystery-1",
       "gemini-internal-model",
       "gemini-mystery-1",
       "goose-mystery-1",

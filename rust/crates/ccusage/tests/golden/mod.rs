@@ -13,6 +13,7 @@ pub mod codebuff;
 pub mod codex;
 pub mod copilot;
 pub mod droid;
+pub mod dsh;
 pub mod gemini;
 pub mod goose;
 pub mod grok;
@@ -71,7 +72,7 @@ pub const ALL_REPORT_KINDS: [&str; 6] = [
 pub fn report_kinds(agent: &str) -> &'static [&'static str] {
     match agent {
         "claude" => &ALL_REPORT_KINDS,
-        "opencode" | "cline" => &["daily", "weekly", "monthly", "session"],
+        "opencode" | "cline" | "dsh" => &["daily", "weekly", "monthly", "session"],
         "codex" | "amp" | "droid" | "codebuff" | "hermes" | "pi" | "goose" | "kilo" | "copilot"
         | "gemini" | "antigravity" | "kimi" | "qwen" | "openclaw" | "grok" | "zcode" => {
             &["daily", "monthly", "session"]
@@ -93,7 +94,7 @@ pub struct AgentMatrix {
 ///
 /// `COPILOT_OTEL_FILE_EXPORTER_PATH` is absent on purpose: it names a file and
 /// has no `HOME` fallback, so it stays unset unless the Copilot seed returns it.
-pub const AGENT_HOME_ENV_VARS: [&str; 19] = [
+pub const AGENT_HOME_ENV_VARS: [&str; 20] = [
     "CLAUDE_CONFIG_DIR",
     "CODEX_HOME",
     "OPENCODE_DATA_DIR",
@@ -113,6 +114,7 @@ pub const AGENT_HOME_ENV_VARS: [&str; 19] = [
     "GROK_HOME",
     "ZCODE_HOME",
     "CLINE_DATA_DIR",
+    "DSH_HOME",
 ];
 
 /// The shared fixture timeline. Every seed spreads its records over these UTC

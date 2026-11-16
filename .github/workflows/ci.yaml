@@ -56,6 +56,7 @@ jobs:
     # is published from the separate `tirith-sarif-upload` job, which never runs
     # PR code, keeping the elevated `security-events: write` away from the scan.
     permissions:
+      actions: read
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -166,6 +167,7 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
+      actions: read
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -184,6 +186,7 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
     permissions:
+      actions: read
       contents: read
       pull-requests: read
 
@@ -220,9 +223,10 @@ jobs:
       - name: Root test dependency layers for the sticky disk
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |
-          mkdir -p /nix/var/nix/gcroots/ci
+          user_gcroot="/nix/var/nix/gcroots/per-user/$(id -un)/ci"
+          mkdir -p "$user_gcroot"
           nix build .#ccusage-tests.passthru.cargoArtifacts \
-            --out-link /nix/var/nix/gcroots/ci/ccusage-test-deps
+            --out-link "$user_gcroot/ccusage-test-deps"
 
   build-native-packages:
     needs: [changes, tirith-scan]
@@ -497,6 +501,7 @@ jobs:
     # Runs PR-built binaries and scripts, so it gets a read-only token; the
     # comment is posted by ccusage-perf-comment, which runs none of them.
     permissions:
+      actions: read
       contents: read
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -575,6 +580,7 @@ jobs:
     if: github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
     needs: ccusage-perf
     permissions:
+      actions: read
       contents: read
       pull-requests: write
       issues: write

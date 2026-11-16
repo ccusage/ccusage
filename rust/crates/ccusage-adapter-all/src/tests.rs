@@ -2156,6 +2156,7 @@ fn isolated_agents_env(
         "ZCODE_HOME",
         "ANTIGRAVITY_DATA_DIR",
         "CLINE_DATA_DIR",
+        "DSH_HOME",
         "APPDATA",
         "COPILOT_HOME",
         "LOG_LEVEL",
@@ -2777,4 +2778,42 @@ fn sections_report_one_skip_count_when_their_loads_read_different_files() {
         warnings,
         ["WARN  claude: skipped 3 records in 2 inputs (invalid data)"]
     );
+}
+
+#[test]
+fn dsh_fixture_reports_all_kinds_through_unified_json_and_tables() {
+    let fixture = fs_fixture!({
+        "dsh/sessions/--home-user-project--/dsh-parent/session.v4.jsonl": include_str!(
+            "../../../adapters/dsh/tests/fixtures/parent/session.v4.jsonl"
+        ),
+        "dsh/sessions/--home-user-project--/dsh-fork/session.v4.jsonl": include_str!(
+            "../../../adapters/dsh/tests/fixtures/fork/session.v4.jsonl"
+        ),
+    });
+    let _env = isolated_agent_env(&fixture, "DSH_HOME", fixture.path("dsh").into_os_string());
+    let shared = fixture_shared("20261001", "20261101");
+
+    for kind in [
+        AgentReportKind::Daily,
+        AgentReportKind::Weekly,
+        AgentReportKind::Monthly,
+        AgentReportKind::Session,
+    ] {
+        let result = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday).unwrap();
+
+        assert_eq!(result.detected_agents, ["dsh"]);
+        insta::assert_json_snapshot!(
+            format!("dsh_fixture_{kind:?}_unified_json").to_lowercase(),
+            report_json(&result.rows, kind)
+        );
+        insta::assert_snapshot!(
+            format!("dsh_fixture_{kind:?}_unified_table").to_lowercase(),
+            serde_json::to_string_pretty(&table_snapshot(
+                &result.rows,
+                kind,
+                &result.detected_agents,
+            ))
+            .unwrap()
+        );
+    }
 }

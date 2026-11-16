@@ -33,6 +33,14 @@ fn shutdown(head: &str, total: &str, models: &str) -> String {
     format!(r#"{{"type":"session.shutdown",{head}"data":{{{total}"modelMetrics":{{{models}}}}}}}"#)
 }
 
+/// One `session.usage_record` line. `head` holds the members before `data`,
+/// as for [`shutdown`], and `usage` the members of the record after `model`.
+fn usage_record(head: &str, model: &str, usage: &str) -> String {
+    format!(
+        r#"{{"type":"session.usage_record",{head}"data":{{"usage":{{"model":"{model}","interactionType":"conversation-agent",{usage}}}}}}}"#
+    )
+}
+
 /// One `modelMetrics` member. `usage` is the body of the usage object and
 /// `rest` holds further members, each with its leading comma.
 fn model(name: &str, usage: &str, rest: &str) -> String {
@@ -258,6 +266,49 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
         ],
     );
 
+    // Newer Copilot versions record every model call as a usage record, each
+    // counted once at its own time. A record's input includes its cache reads
+    // and writes, and the credits it carries become its cost.
+    let accounted_record = usage_record(
+        r#""id":"ur-h1","timestamp":"2025-12-31T11:00:00.000Z","#,
+        SONNET,
+        r#""inputTokens":1500,"outputTokens":90,"cacheReadTokens":1000,"cacheWriteTokens":100,"accounting":{"sourceSessionId":"session-eta","sequence":1,"usageId":"call-h1"},"apiCallId":"chatcmpl-h1","serviceRequestId":"svc-h1","copilotUsage":{"totalNanoAiu":3000000000}"#,
+    );
+    let unaccounted_record = usage_record(
+        r#""id":"ur-h3","timestamp":"2026-01-02T09:30:00.000Z","#,
+        OPUS,
+        r#""inputTokens":200,"outputTokens":20"#,
+    );
+    write(
+        "session-state/session-eta/events.jsonl",
+        &[
+            r#"{"type":"session.start","id":"start-h","timestamp":"2025-12-31T10:59:00.000Z","data":{"sessionId":"session-eta"}}"#.to_string(),
+            accounted_record.clone(),
+            // 2026-01-02 in Asia/Tokyo. No recorded credits, so it is priced.
+            usage_record(
+                r#""id":"ur-h2","timestamp":"2026-01-01T15:30:00.000Z","#,
+                GPT,
+                r#""inputTokens":600,"outputTokens":60,"cacheReadTokens":200,"accounting":{"sourceSessionId":"session-eta","sequence":2,"usageId":"call-h2"},"apiCallId":"chatcmpl-h2","serviceRequestId":"svc-h2""#,
+            ),
+            // Without an accounting identity the event ID names the call, so
+            // its replay in this file counts once.
+            unaccounted_record.clone(),
+            unaccounted_record,
+            usage_record(
+                r#""id":"ur-h4","timestamp":"2026-01-02T09:40:00.000Z","#,
+                "",
+                r#""inputTokens":9999,"outputTokens":9999"#,
+            ),
+            r#"{"type":"session.usage_checkpoint","id":"cp-h1","timestamp":"2026-01-02T09:40:01.000Z","data":{"totalNanoAiu":3000000000,"usageAccountingWatermarks":{"session-eta":2}}}"#.to_string(),
+        ],
+    );
+    // Another session's log holding the same accounted call: it stays in the
+    // session that assigned its accounting sequence.
+    write(
+        "session-state/session-theta/events.jsonl",
+        &[accounted_record],
+    );
+
     write("session-state/session-empty/events.jsonl", &[]);
     write(
         "session-state/session-truncated/events.jsonl",
@@ -274,7 +325,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     write("session-state/nested/session-x/events.jsonl", &undiscovered);
     write("session-state/events.jsonl", &undiscovered);
 
-    // The explicit exporter file. Its one span is also in `otel/cli/trace.jsonl`.
+    // The explicit exporter file. Its one span is also in `otel/cli/trace.jsonl`,
+    // where the record IDs it carries make it the same call, counted once.
     let exported_twice = chat_span(
         ("trace-export", "span-x1"),
         JAN_02 + 15 * HOUR,
@@ -354,6 +406,33 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                 ("trace-g3", "span-g3"),
                 JAN_01 + 11 * HOUR,
                 &call("session-gamma", HAIKU, &tokens(230, 32)),
+            ),
+            // The OTel rows of two session-eta calls, which their usage
+            // records replace: one by service request ID, one by response ID.
+            // The row of another model under the same response ID is kept.
+            chat_span(
+                ("trace-h1", "span-h1"),
+                DEC_31 + 11 * HOUR,
+                &format!(
+                    r#"{},"github.copilot.service_request_id":"svc-h1""#,
+                    call("session-eta", SONNET, &tokens(1500, 90))
+                ),
+            ),
+            chat_span(
+                ("trace-h2", "span-h2"),
+                JAN_01 + 15 * HOUR + 30 * MINUTE,
+                &format!(
+                    r#"{},"gen_ai.response.id":"chatcmpl-h2""#,
+                    call("session-eta", GPT, &tokens(600, 60))
+                ),
+            ),
+            chat_span(
+                ("trace-h2", "span-h2b"),
+                JAN_01 + 15 * HOUR + 31 * MINUTE,
+                &format!(
+                    r#"{},"gen_ai.response.id":"chatcmpl-h2""#,
+                    call("session-eta", HAIKU, &tokens(50, 5))
+                ),
             ),
             exported_twice,
         ],

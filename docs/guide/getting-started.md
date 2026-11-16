@@ -53,6 +53,7 @@ ccusage cline daily
 ccusage kilo daily
 ccusage kimi daily
 ccusage qwen daily
+ccusage dsh daily
 ```
 
 ## Your First Report
@@ -103,6 +104,7 @@ Now that you have your first unified view, explore these features:
 5. **[Configuration](/guide/configuration)** - Customize ccusage behavior
 6. **[Claude Code](/guide/claude/)** - Claude Code-specific setup and features
 7. **[Cline](/guide/cline/)** - Cline extension and CLI data locations
+8. **[DeepSeek Harness](/guide/dsh/)** - DeepSeek Harness session log locations
 
 ## Common Use Cases
 
@@ -184,6 +186,7 @@ If ccusage shows no data, check:
    - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
    - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
+   - DeepSeek Harness: `${DSH_HOME:-~/.dsh}/sessions/`
 
 ### Custom Data Directory
 
@@ -209,9 +212,10 @@ export ANTIGRAVITY_DATA_DIR="/path/to/antigravity"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
 export ZCODE_HOME="/path/to/zcode-home"
+export DSH_HOME="/path/to/dsh-home"
 ```
 
-Directory variables can contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` supports multiple roots and deduplicates them:
+Directory variables can contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` and `DSH_HOME` support multiple roots and deduplicate them:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"
@@ -229,6 +233,7 @@ export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export ZCODE_HOME="/path/to/zcode,/archive/zcode"
+export DSH_HOME="/path/to/dsh,/archive/dsh"
 ```
 
 ## Getting Help

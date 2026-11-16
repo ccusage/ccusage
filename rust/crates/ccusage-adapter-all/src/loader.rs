@@ -858,6 +858,7 @@ mod tests {
             ("ZCODE_HOME", None),
             ("ANTIGRAVITY_DATA_DIR", None),
             ("CLINE_DATA_DIR", None),
+            ("DSH_HOME", None),
             ("APPDATA", None),
             (
                 "XDG_CONFIG_HOME",
