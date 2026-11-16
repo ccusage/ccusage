@@ -1,8 +1,6 @@
 use std::{collections::HashSet, env, fs, path::PathBuf};
 
-use ccusage_adapter_common::{
-    collect_files_with_extension, collect_files_with_extension_diagnosed,
-};
+use ccusage_adapter_common::collect_files_with_extension_diagnosed;
 use ccusage_core::Diagnostics;
 
 use crate::Result;
@@ -51,17 +49,7 @@ fn conversation_dir(root: PathBuf) -> PathBuf {
     if nested.is_dir() { nested } else { root }
 }
 
-pub(super) fn conversation_db_paths() -> Result<Vec<PathBuf>> {
-    conversation_db_paths_inner(None)
-}
-
-pub(super) fn conversation_db_paths_with_diagnostics(
-    diagnostics: &Diagnostics,
-) -> Result<Vec<PathBuf>> {
-    conversation_db_paths_inner(Some(diagnostics))
-}
-
-fn conversation_db_paths_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<PathBuf>> {
+pub(super) fn conversation_db_paths(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let (roots, custom_root) = resolve_roots();
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
@@ -76,11 +64,7 @@ fn conversation_db_paths_inner(diagnostics: Option<&Diagnostics>) -> Result<Vec<
         }
         let dir = conversation_dir(root);
         let mut files = Vec::new();
-        if let Some(diagnostics) = diagnostics {
-            collect_files_with_extension_diagnosed(&dir, "db", &mut files, diagnostics);
-        } else {
-            collect_files_with_extension(&dir, "db", &mut files);
-        }
+        collect_files_with_extension_diagnosed(&dir, "db", &mut files, diagnostics);
         for path in files {
             let canonical_path = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if seen.insert(canonical_path) {
@@ -116,7 +100,7 @@ mod tests {
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
         ]);
 
-        let paths = conversation_db_paths().unwrap();
+        let paths = conversation_db_paths(&Diagnostics::new("antigravity")).unwrap();
 
         assert_eq!(paths.len(), 6);
         assert!(paths.iter().all(|path| path.extension().unwrap() == "db"));
@@ -138,7 +122,7 @@ mod tests {
             Some(OsString::from(override_value)),
         )]);
 
-        let paths = conversation_db_paths().unwrap();
+        let paths = conversation_db_paths(&Diagnostics::new("antigravity")).unwrap();
 
         assert_eq!(
             paths,
@@ -165,7 +149,7 @@ mod tests {
         )]);
 
         assert_eq!(
-            conversation_db_paths().unwrap(),
+            conversation_db_paths(&Diagnostics::new("antigravity")).unwrap(),
             vec![fixture.path("conversations/session.db")]
         );
     }
@@ -184,7 +168,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            conversation_db_paths().unwrap(),
+            conversation_db_paths(&Diagnostics::new("antigravity")).unwrap(),
             vec![fixture.path(".gemini/antigravity-cli/conversations/session.db")]
         );
     }
