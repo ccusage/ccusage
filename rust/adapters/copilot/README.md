@@ -52,7 +52,9 @@ shutdowns report, counted with `requests.count` from the first shutdown interval
 OpenTelemetry rows, those rows replace the intervals from there on. The comparison covers every
 shutdown, so it does not depend on `--since` or `--until`. Other OpenTelemetry records remain
 available. Chat spans the CLI exports twice, with the response ID and usage of one call, count
-once, and so does a row that an earlier OpenTelemetry file already holds under the same key. Copilot counts cache reads and writes in session-state `inputTokens` and in OpenTelemetry
+once, and so does a row that an earlier OpenTelemetry file already holds under the same key built
+from its trace and span IDs (or trace ID and turn index); keys that fall back to the row's line or
+time are file-local and never match across files. Copilot counts cache reads and writes in session-state `inputTokens` and in OpenTelemetry
 `gen_ai.usage.input_tokens`, so the adapter reports the uncached remainder as input and keeps the
 cache buckets separate. Session-state reasoning tokens are already included in output tokens; OpenTelemetry
 reasoning is included when total usage metadata shows it is separate. Internal model suffixes such
