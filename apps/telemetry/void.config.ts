@@ -13,8 +13,8 @@ export default defineConfig({
 		// telemetry guide promises is never stored.
 		observability: { enabled: false },
 		analytics_engine_datasets: [{ binding: 'PINGS', dataset: 'ccusage_telemetry' }],
-		// Remote-only: there is no local simulation, so dev needs a Cloudflare
-		// login. In exchange the rollup reads the dataset without an API token secret.
+		// Remote-only: running the rollup locally needs a Cloudflare login,
+		// since Analytics SQL has no local simulation.
 		analytics: { binding: 'ANALYTICS' },
 		r2_buckets: [{ binding: 'ROLLUPS', bucket_name: 'ccusage-telemetry-rollups' }],
 	},
