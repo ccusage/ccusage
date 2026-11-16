@@ -2314,25 +2314,90 @@ mod tests {
         }
     }
 
+    /// A checkpoint and a shutdown of `session-parent` whose `test-model`
+    /// breakdown totals one 100-token call worth one of its two credits.
+    /// `watermarks` are the shutdown's `usageAccountingWatermarks`, which only
+    /// processes that write usage records report.
+    fn parent_snapshots(watermarks: Option<serde_json::Value>) -> Vec<String> {
+        let mut checkpoint = json!({
+            "type": "session.usage_checkpoint",
+            "id": "checkpoint-1",
+            "timestamp": "2026-01-02T10:30:00.000Z",
+            "data": {"totalNanoAiu": 2 * NANO_AIU_PER_CREDIT}
+        });
+        let mut shutdown: serde_json::Value = serde_json::from_str(&shutdown_with_requests(
+            "shutdown-1",
+            "2026-01-02T11:00:00.000Z",
+            1,
+        ))
+        .unwrap();
+        shutdown["data"]["totalNanoAiu"] = json!(2 * NANO_AIU_PER_CREDIT);
+        shutdown["data"]["modelMetrics"]["test-model"]["totalNanoAiu"] = json!(NANO_AIU_PER_CREDIT);
+        if let Some(watermarks) = watermarks {
+            checkpoint["data"]["usageAccountingWatermarks"] = watermarks.clone();
+            shutdown["data"]["usageAccountingWatermarks"] = watermarks;
+        }
+        vec![checkpoint.to_string(), shutdown.to_string()]
+    }
+
     #[test]
-    fn a_shutdown_after_another_sessions_usage_record_does_not_count_it_again() {
-        // A session's shutdown keeps accounting watermarks per source session,
-        // so its totals include the records it holds for other sessions.
-        let record = usage_record(
-            "parent-record",
-            "2026-01-02T10:00:00.000Z",
-            json!({"accounting": {"sourceSessionId": "session-child", "sequence": 1}}),
-        );
-        let parent_shutdown = shutdown_with_requests("shutdown-1", "2026-01-02T11:00:00.000Z", 1);
-        for (child_file, owner) in [(true, "session-child"), (false, "session-parent")] {
+    fn a_shutdown_counts_no_call_that_another_sessions_usage_record_reports() {
+        // A shutdown keeps accounting watermarks per source session, so its
+        // totals include the child's call wherever that call's record is.
+        let record = |id: &str| {
+            usage_record(
+                id,
+                "2026-01-02T10:00:00.000Z",
+                json!({"accounting": {"sourceSessionId": "session-child", "sequence": 1}}),
+            )
+        };
+        let watermarks = Some(json!({"session-child": 1}));
+        let with_copy = [
+            vec![record("parent-record")],
+            parent_snapshots(watermarks.clone()),
+        ]
+        .concat();
+        let cases = [
+            (
+                "parent holds a copy",
+                with_copy.clone(),
+                true,
+                vec![("session-child", "test-model", 100)],
+            ),
+            (
+                "parent holds only its shutdown",
+                parent_snapshots(watermarks),
+                true,
+                vec![("session-child", "test-model", 100)],
+            ),
+            (
+                "child file missing",
+                with_copy,
+                false,
+                vec![("session-parent", "test-model", 100)],
+            ),
+            // A shutdown from before usage records covers none of them, so it
+            // keeps its usage and its unexplained credit, which also shows that
+            // the parent's snapshots are parsed.
+            (
+                "parent shutdown predates usage records",
+                parent_snapshots(None),
+                true,
+                vec![
+                    ("session-child", "test-model", 100),
+                    ("session-parent", "test-model", 100),
+                    ("session-parent", "unknown", 0),
+                ],
+            ),
+        ];
+        for (layout, parent, child_file, expected) in cases {
             let fixture = fs_fixture!({
-                "home/.copilot/session-state/session-parent/events.jsonl":
-                    [record.clone(), parent_shutdown.clone()].join("\n"),
+                "home/.copilot/session-state/session-parent/events.jsonl": parent.join("\n"),
             });
             if child_file {
                 let _ = fixture.write_file(
                     "home/.copilot/session-state/session-child/events.jsonl",
-                    record.replace("parent-record", "child-record"),
+                    record("child-record"),
                 );
             }
 
@@ -2343,11 +2408,15 @@ mod tests {
                     .iter()
                     .map(|entry| (
                         entry.session_id.to_string(),
+                        entry.model.clone().unwrap_or_default(),
                         entry.data.message.usage.input_tokens
                     ))
                     .collect::<Vec<_>>(),
-                [(owner.to_string(), 100)],
-                "child file present: {child_file}"
+                expected
+                    .iter()
+                    .map(|(session, model, input)| (session.to_string(), model.to_string(), *input))
+                    .collect::<Vec<_>>(),
+                "{layout}"
             );
         }
     }

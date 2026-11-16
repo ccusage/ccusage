@@ -236,6 +236,26 @@ struct CopilotSessionStateData {
     total_nano_aiu: Option<f64>,
     #[serde(default, deserialize_with = "jsonl::lenient_object")]
     usage: Option<CopilotUsageRecord>,
+    #[serde(
+        rename = "usageAccountingWatermarks",
+        default,
+        deserialize_with = "jsonl::lenient_object"
+    )]
+    usage_accounting_watermarks: Option<BTreeMap<String, Value>>,
+}
+
+impl CopilotSessionStateData {
+    /// Watermarks name the usage records a snapshot's totals include, per
+    /// source session, wherever those records are stored.
+    fn covers_usage_records(&self) -> bool {
+        self.usage_accounting_watermarks
+            .as_ref()
+            .is_some_and(|watermarks| {
+                watermarks
+                    .values()
+                    .any(|sequence| sequence.as_u64().is_some_and(|sequence| sequence > 0))
+            })
+    }
 }
 
 /// One model call from `session.usage_record`. Its token fields have the same
@@ -340,19 +360,25 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
     ]);
     let mut parsed = CopilotSourceUsage::default();
     let mut records = Vec::new();
+    let mut covered_by_records = false;
     for event in jsonl::records::<CopilotSessionStateEvent>(&content, Some(&prefilter)) {
         let is_shutdown = match event.event_type.as_deref() {
             Some(SHUTDOWN_EVENT) => true,
             Some(USAGE_CHECKPOINT_EVENT) => false,
             Some(USAGE_RECORD_EVENT) => {
-                records.extend(usage_record(event));
+                let record = usage_record(event);
+                covered_by_records |= record.is_some();
+                records.extend(record);
                 continue;
             }
             _ => continue,
         };
-        // Shutdowns and checkpoints written after a usage record only total
-        // calls that their usage records already report.
-        if !records.is_empty() {
+        let data = event.data.unwrap_or_default();
+        // Shutdowns and checkpoints written after a usage record, or by a
+        // process that reports watermarks, only total calls that usage records
+        // report, in this file or in the file of the session they belong to.
+        covered_by_records |= data.covers_usage_records();
+        if covered_by_records {
             continue;
         }
         let Some(timestamp_text) = event.timestamp.as_deref() else {
@@ -361,7 +387,6 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
         let Some(timestamp) = parse_ts_timestamp(timestamp_text) else {
             continue;
         };
-        let data = event.data.unwrap_or_default();
         let session_nano_aiu = nano_aiu(data.total_nano_aiu);
         let snapshot_key = |total: Option<u64>| {
             event.id.as_deref().map_or_else(
@@ -438,12 +463,12 @@ pub(super) fn parse_session_state_file(path: &Path) -> Result<CopilotSourceUsage
             dedup_key: snapshot_key(total_nano_aiu),
         });
     }
-    if !records.is_empty() {
+    if covered_by_records {
         // Usage records price every call from its tokens, so the session-wide
         // credit totals have nothing left to explain.
         parsed.credit_snapshots.clear();
-        parsed.usage_records = usage_record_entries(records, &session_id);
     }
+    parsed.usage_records = usage_record_entries(records, &session_id);
     Ok(parsed)
 }
 
