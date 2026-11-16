@@ -1079,6 +1079,16 @@ mod tests {
     }
 
     #[test]
+    fn extracts_parent_session_from_claude_workflow_run_path() {
+        let (session_id, project_path) = extract_session_parts(Path::new(
+            "/home/me/.claude/projects/project-a/session-a/subagents/workflows/wf_1/agent-a.jsonl",
+        ));
+
+        assert_eq!(session_id, "session-a");
+        assert_eq!(project_path, "project-a");
+    }
+
+    #[test]
     fn rejects_null_schema_fields_like_typescript_loader() {
         assert!(has_unsupported_null_field(
             br#"{"message":{"usage":{"speed":null}}}"#
