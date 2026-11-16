@@ -1572,7 +1572,6 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
     "goose",
     "grok",
     "hermes",
-    "junie",
     "kilo",
     "kimi",
     "openclaw",

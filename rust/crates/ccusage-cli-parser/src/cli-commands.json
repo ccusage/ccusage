@@ -120,10 +120,6 @@
 			{
 				"name": "cline",
 				"description": "Show Cline usage commands"
-			},
-			{
-				"name": "junie",
-				"description": "Show Junie usage commands"
 			}
 		]
 	},
@@ -915,53 +911,6 @@
 			"path": ["cline", "session"],
 			"description": "Show Cline usage grouped by session",
 			"usage": "ccusage cline session <OPTIONS>",
-			"options": "agent_options"
-		},
-		{
-			"path": ["junie"],
-			"description": "Usage reports for Junie.",
-			"usage": "ccusage junie <COMMANDS>",
-			"commands": [
-				{
-					"name": "daily",
-					"description": "Show Junie usage grouped by date"
-				},
-				{
-					"name": "weekly",
-					"description": "Show Junie usage grouped by week"
-				},
-				{
-					"name": "monthly",
-					"description": "Show Junie usage grouped by month"
-				},
-				{
-					"name": "session",
-					"description": "Show Junie usage grouped by session"
-				}
-			]
-		},
-		{
-			"path": ["junie", "daily"],
-			"description": "Show Junie usage grouped by date",
-			"usage": "ccusage junie daily <OPTIONS>",
-			"options": "agent_period_options"
-		},
-		{
-			"path": ["junie", "weekly"],
-			"description": "Show Junie usage grouped by week",
-			"usage": "ccusage junie weekly <OPTIONS>",
-			"options": "agent_period_options"
-		},
-		{
-			"path": ["junie", "monthly"],
-			"description": "Show Junie usage grouped by month",
-			"usage": "ccusage junie monthly <OPTIONS>",
-			"options": "agent_period_options"
-		},
-		{
-			"path": ["junie", "session"],
-			"description": "Show Junie usage grouped by session",
-			"usage": "ccusage junie session <OPTIONS>",
 			"options": "agent_options"
 		}
 	]

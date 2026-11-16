@@ -54,7 +54,6 @@ export GEMINI_DATA_DIR="$HOME/.gemini/tmp"
 export OPENCODE_DATA_DIR="$HOME/.local/share/opencode"
 export AMP_DATA_DIR="$HOME/.local/share/amp"
 export CLINE_DATA_DIR="$HOME/.cline,/path/to/globalStorage/saoudrizwan.claude-dev"
-export JUNIE_HOME="$HOME/.junie"
 export PI_AGENT_DIR="$HOME/.pi/agent/sessions"
 export KILO_DATA_DIR="$HOME/.local/share/kilo"
 export COPILOT_HOME="$HOME/.copilot"
@@ -114,7 +113,7 @@ For individual developers working on multiple projects:
 
 ### Multiple Sources
 
-Configure Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Junie, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode separately with data source namespaces:
+Configure Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode separately with data source namespaces:
 
 ```json
 // ~/.config/claude/ccusage.json

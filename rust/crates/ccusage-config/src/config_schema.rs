@@ -24,8 +24,6 @@ pub struct CcusageConfig {
     pub claude: Option<ClaudeConfig>,
     /// Cline configuration.
     pub cline: Option<ClineConfig>,
-    /// Junie configuration.
-    pub junie: Option<JunieConfig>,
     /// Codex configuration.
     pub codex: Option<CodexConfig>,
     /// OpenCode configuration.
@@ -181,22 +179,6 @@ pub struct ClineConfig {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClineCommandsConfig {
-    pub daily: Option<SharedOptions>,
-    pub weekly: Option<SharedOptions>,
-    pub monthly: Option<SharedOptions>,
-    pub session: Option<SharedOptions>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct JunieConfig {
-    pub defaults: Option<SharedOptions>,
-    pub commands: Option<JunieCommandsConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct JunieCommandsConfig {
     pub daily: Option<SharedOptions>,
     pub weekly: Option<SharedOptions>,
     pub monthly: Option<SharedOptions>,
@@ -1229,8 +1211,6 @@ mod tests {
         assert_schema_properties(&schema, &["zcode", "defaults"], &shared);
         assert_schema_properties(&schema, &["cline", "defaults"], &shared);
         assert_schema_properties(&schema, &["cline", "commands", "weekly"], &shared);
-        assert_schema_properties(&schema, &["junie", "defaults"], &shared);
-        assert_schema_properties(&schema, &["junie", "commands", "weekly"], &shared);
     }
 
     #[test]
@@ -1290,7 +1270,6 @@ mod tests {
                 "amp",
                 "claude",
                 "cline",
-                "junie",
                 "codebuff",
                 "codex",
                 "commands",

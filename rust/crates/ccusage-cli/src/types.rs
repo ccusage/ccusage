@@ -29,7 +29,6 @@ pub enum Command {
     Grok(AgentCommandArgs),
     ZCode(AgentCommandArgs),
     Cline(AgentCommandArgs),
-    Junie(AgentCommandArgs),
 }
 
 #[derive(Clone, Debug, Default)]
