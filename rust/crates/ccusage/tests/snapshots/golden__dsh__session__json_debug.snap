@@ -171,5 +171,8 @@ exit: 0
 }
 
 --- stderr ---
+dsh: [ROOT]/dsh/home-a/sessions/--work-alpha--/sess-alpha/session.v4.jsonl:24: last line is incomplete, read as still being written
+dsh: [ROOT]/dsh/home-a/sessions/--work-beta--/fork-torn/session.v4.jsonl: seeded log has no inherited end-seed marker; read as its parent's usage
 dsh: [ROOT]/dsh/home-a/sessions/--work-beta--/sess-beta/session.v4.jsonl.zstd: incomplete, read as still being written
 dsh: invalid data: [ROOT]/dsh/home-a/sessions/bad/corrupt/session.v4.jsonl.zstd: not a valid zstd stream
+dsh: invalid data: [ROOT]/dsh/home-a/sessions/bad/no-header/session.v4.jsonl:1: first record is not a session header

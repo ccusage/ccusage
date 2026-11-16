@@ -9,9 +9,11 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    Diagnostics, LoadedEntry, PricingMap, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry,
-    UsageMessage, apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode,
-    fast::byte_lines, format_date_tz, missing_pricing_model_for_candidates,
+    Diagnostics, LoadedEntry, PricingMap, Skip, SkipKind, TimestampMs, TokenUsageRaw, UsageEntry,
+    UsageMessage, apply_total_token_fallback, calculate_cost_for_usage_at,
+    cli::CostMode,
+    fast::{LinePrefilter, byte_lines},
+    format_date_tz, missing_pricing_model_for_candidates,
 };
 use ccusage_adapter_common::{UnitError, jsonl};
 
@@ -163,7 +165,7 @@ pub(super) fn read_session_file(
     diagnostics: &Diagnostics,
 ) -> Result<Vec<DshUsageEntry>, UnitError> {
     let content = read_session_bytes(path, diagnostics)?;
-    Ok(parse_session(&content, path))
+    Ok(parse_session(&content, path, diagnostics))
 }
 
 fn read_session_bytes(path: &Path, diagnostics: &Diagnostics) -> Result<Vec<u8>, UnitError> {
@@ -215,17 +217,50 @@ fn read_session_bytes(path: &Path, diagnostics: &Diagnostics) -> Result<Vec<u8>,
     Ok(content)
 }
 
-fn parse_session(content: &[u8], path: &Path) -> Vec<DshUsageEntry> {
-    let mut lines = byte_lines(content);
-    let Some(header) = lines
-        .next()
-        .and_then(|line| serde_json::from_slice::<HeaderLine>(line).ok())
-        .filter(|header| header.r#type.as_deref() == Some("session"))
+/// The event types ccusage reads. Every other line is skipped before parsing.
+const EVENT_MARKERS: [&[u8]; 6] = [
+    b"request/header",
+    b"request/context",
+    b"session/end-seed",
+    b"assistant/message",
+    b"assistant/attempt",
+    b"compaction/summary",
+];
+
+fn parse_session(content: &[u8], path: &Path, diagnostics: &Diagnostics) -> Vec<DshUsageEntry> {
+    let Some((header_number, header_line)) = byte_lines(content)
+        .enumerate()
+        .find(|(_, line)| !line.iter().all(u8::is_ascii_whitespace))
+        .map(|(index, line)| (Skip::line_number(index), line))
     else {
         return Vec::new();
     };
+    // Every request in the log is read against the header, so one that does
+    // not decode leaves the whole log unread.
+    let Some(header) = jsonl::decode_line::<HeaderLine>(
+        content,
+        header_line,
+        path,
+        header_number,
+        diagnostics,
+        Some(|_| true),
+    ) else {
+        return Vec::new();
+    };
+    if header.r#type.as_deref() != Some("session") {
+        diagnostics.record(Skip::record(
+            path,
+            header_number,
+            SkipKind::InvalidData,
+            "first record is not a session header",
+        ));
+        return Vec::new();
+    }
     let session_id = header.id.unwrap_or_else(|| session_id_from_path(path));
-    let fallback_timestamp = TimestampMs::from_millis(header.created_at.unwrap_or_default());
+    let created_at = header
+        .created_at
+        .filter(|millis| *millis > 0)
+        .map(TimestampMs::from_millis);
     let cwd = header.cwd.map(Arc::<str>::from);
 
     // dsh rejects a seeded log without its inherited marker, so one missing it
@@ -233,10 +268,20 @@ fn parse_session(content: &[u8], path: &Path) -> Vec<DshUsageEntry> {
     let mut awaiting_seed_end = header.is_seeded;
     let mut route = Route::default();
     let mut entries = Vec::new();
-    for line in lines {
-        let Ok(event) = serde_json::from_slice::<EventLine>(line) else {
+    // Undated requests, recorded only once they are known not to be copies of
+    // the parent's.
+    let mut undated = Vec::new();
+    let prefilter = LinePrefilter::any(&EVENT_MARKERS);
+    for (number, event) in jsonl::numbered_records_with_usage_diagnostics::<EventLine>(
+        content,
+        Some(&prefilter),
+        path,
+        diagnostics,
+        is_usage_event,
+    ) {
+        if number <= header_number {
             continue;
-        };
+        }
         let Some(data) = event.data else {
             continue;
         };
@@ -256,6 +301,7 @@ fn parse_session(content: &[u8], path: &Path) -> Vec<DshUsageEntry> {
             Some("session/end-seed") => {
                 if data.inherited {
                     entries.clear();
+                    undated.clear();
                     awaiting_seed_end = false;
                 }
                 continue;
@@ -289,12 +335,17 @@ fn parse_session(content: &[u8], path: &Path) -> Vec<DshUsageEntry> {
         if crate::total_usage_tokens(usage).saturating_add(extra_total_tokens) == 0 {
             continue;
         }
+        let Some(timestamp) = event
+            .time
+            .filter(|millis| *millis > 0)
+            .map(TimestampMs::from_millis)
+            .or(created_at)
+        else {
+            undated.push(number);
+            continue;
+        };
         entries.push(DshUsageEntry {
-            timestamp: event
-                .time
-                .filter(|millis| *millis > 0)
-                .map(TimestampMs::from_millis)
-                .unwrap_or(fallback_timestamp),
+            timestamp,
             session_id: session_id.clone(),
             cwd: cwd.clone(),
             seq: event.seq,
@@ -305,9 +356,36 @@ fn parse_session(content: &[u8], path: &Path) -> Vec<DshUsageEntry> {
         });
     }
     if awaiting_seed_end {
+        diagnostics.debug_note(
+            path,
+            format!(
+                "{}: {}: seeded log has no inherited end-seed marker; read as its parent's usage",
+                diagnostics.source(),
+                path.display()
+            ),
+        );
         return Vec::new();
     }
+    for number in undated {
+        diagnostics.record(Skip::record(
+            path,
+            number,
+            SkipKind::InvalidTimestamp,
+            "request has no time and its session header no createdAt",
+        ));
+    }
     entries
+}
+
+/// Whether a line that did not decode is a model call: one of the event
+/// types usage is read from, with its usage or stream present.
+fn is_usage_event(value: &serde_json::Value) -> bool {
+    matches!(
+        value.get("type").and_then(serde_json::Value::as_str),
+        Some("assistant/message" | "assistant/attempt" | "compaction/summary")
+    ) && value
+        .get("data")
+        .is_some_and(|data| data.get("usage").is_some() || data.get("stream").is_some())
 }
 
 fn update_route(route: &mut Route, provider: Option<String>, model: Option<String>) {
@@ -435,10 +513,26 @@ mod tests {
     }
 
     fn parse(content: &[u8]) -> Vec<DshUsageEntry> {
-        parse_session(
+        parse_diagnosed(content).0
+    }
+
+    fn parse_diagnosed(content: &[u8]) -> (Vec<DshUsageEntry>, Diagnostics) {
+        let diagnostics = Diagnostics::new("dsh");
+        let entries = parse_session(
             content,
             Path::new("sessions/--p--/fallback/session.v4.jsonl"),
-        )
+            &diagnostics,
+        );
+        (entries, diagnostics)
+    }
+
+    fn debug_warnings(diagnostics: &Diagnostics) -> String {
+        diagnostics
+            .warnings(&crate::cli::SharedArgs {
+                debug: true,
+                ..crate::cli::SharedArgs::default()
+            })
+            .join("\n")
     }
 
     #[test]
@@ -491,12 +585,21 @@ mod tests {
 
     #[test]
     fn drops_a_seeded_log_torn_before_its_inherited_marker() {
-        let entries = parse(&lines(&[
-            r#"{"type":"session","version":4,"id":"fork","createdAt":1,"isSeeded":true}"#,
+        let (entries, diagnostics) = parse_diagnosed(&lines(&[
+            r#"{"type":"session","version":4,"id":"fork","isSeeded":true}"#,
             r#"{"type":"request/context","seq":1,"time":2,"data":{"provider":"deepseek-official","model":"deepseek-v4-pro"}}"#,
             r#"{"type":"assistant/message","seq":2,"time":3,"data":{"usage":{"inputTokens":10,"outputTokens":1}}}"#,
+            // The parent's undated request is the parent's to report.
+            r#"{"type":"assistant/message","seq":3,"data":{"usage":{"inputTokens":10,"outputTokens":1}}}"#,
         ]));
+
         assert!(entries.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
+        assert!(
+            debug_warnings(&diagnostics).contains("seeded log has no inherited end-seed marker"),
+            "{}",
+            debug_warnings(&diagnostics)
+        );
     }
 
     #[test]
@@ -530,11 +633,67 @@ mod tests {
     }
 
     #[test]
-    fn ignores_files_without_a_session_header_and_zero_usage() {
-        assert!(
-            parse(br#"{"type":"assistant/message","seq":1,"data":{"usage":{"inputTokens":1}}}"#)
-                .is_empty()
+    fn reports_a_log_without_a_session_header() {
+        let (entries, diagnostics) = parse_diagnosed(
+            br#"{"type":"assistant/message","seq":1,"data":{"usage":{"inputTokens":1}}}"#,
         );
+
+        assert!(entries.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert!(
+            debug_warnings(&diagnostics).contains("first record is not a session header"),
+            "{}",
+            debug_warnings(&diagnostics)
+        );
+    }
+
+    #[test]
+    fn reports_a_session_header_that_does_not_decode() {
+        let (entries, diagnostics) = parse_diagnosed(&lines(&[
+            r#"{"type":"session","id":"sid","isSeeded":"yes"}"#,
+            r#"{"type":"assistant/message","seq":1,"time":2,"data":{"usage":{"inputTokens":1}}}"#,
+        ]));
+
+        assert!(entries.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn reports_requests_that_do_not_decode_and_keeps_the_rest() {
+        let (entries, diagnostics) = parse_diagnosed(&lines(&[
+            r#"{"type":"session","id":"sid","createdAt":1}"#,
+            // Not one of the events read, so never parsed.
+            "not json",
+            r#"{"type":"assistant/message","seq":1,"seq":1,"time":2,"data":{"usage":{"inputTokens":5}}}"#,
+            r#"{"type":"assistant/message","seq":2,"time":3,"data":{"usage":{"inputTok"#,
+            r#"{"type":"request/context","seq":3,"seq":3,"data":{"model":"deepseek-v4-pro"}}"#,
+            r#"{"type":"assistant/message","seq":4,"time":4,"data":{"usage":{"inputTokens":7}}}"#,
+        ]));
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].seq, Some(4));
+        // The repeated `seq` of a request and the line cut short are skips;
+        // the route change carries no usage and is a --debug note.
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 2);
+        assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 1);
+    }
+
+    #[test]
+    fn reports_requests_dated_by_neither_their_time_nor_the_header() {
+        let (entries, diagnostics) = parse_diagnosed(&lines(&[
+            r#"{"type":"session","id":"sid","createdAt":0}"#,
+            r#"{"type":"assistant/message","seq":1,"data":{"usage":{"inputTokens":5}}}"#,
+            r#"{"type":"assistant/message","seq":2,"time":-1,"data":{"usage":{"inputTokens":5}}}"#,
+            r#"{"type":"assistant/message","seq":3,"time":7,"data":{"usage":{"inputTokens":5}}}"#,
+        ]));
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 7);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
+    }
+
+    #[test]
+    fn ignores_zero_usage_and_dates_requests_by_the_header() {
         let entries = parse(&lines(&[
             r#"{"type":"session","createdAt":1700000000000}"#,
             "not json",
