@@ -1054,6 +1054,16 @@ impl PricingMap {
     where
         I: IntoIterator<Item = (&'a String, &'a PricingOverride)>,
     {
+        // Every agent of a combined report prices its own rows, so the tables are
+        // parsed, and in online mode fetched, once per process rather than per agent.
+        static ONLINE: OnceLock<PricingMap> = OnceLock::new();
+        static OFFLINE: OnceLock<PricingMap> = OnceLock::new();
+        let base = if offline { &OFFLINE } else { &ONLINE };
+        base.get_or_init(|| Self::load_base(offline, log))
+            .with_user_overrides(overrides)
+    }
+
+    fn load_base(offline: bool, log: bool) -> Self {
         let mut map = Self::load_embedded();
         if !offline {
             let fetch_result = crate::progress::track_status(
@@ -1084,7 +1094,6 @@ impl PricingMap {
         // overrides get the final word.
         map.fill_long_context_rates_from_models_dev();
         map.enable_models_dev_fallback = !offline;
-        map.apply_overrides(overrides);
         map
     }
 
