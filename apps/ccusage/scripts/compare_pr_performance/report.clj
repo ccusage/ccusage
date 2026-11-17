@@ -63,11 +63,10 @@
                            ["Verdict" (comparison-verdict comparison)])))
           results)))
 
-(def comment-marker "ccusage-perf-comment")
+(defn comment-marker [head-sha] (str "<!-- ccusage-perf-comment:" head-sha " -->"))
 
 (defn render-report [{:keys [base-sha head-sha] :as context} results sizes]
-  (str (str/join "\n" (concat [(str "<!-- " comment-marker " -->")]
-                              (when head-sha [(str "<!-- " comment-marker ":" head-sha " -->")])
+  (str (str/join "\n" (concat (when head-sha [(comment-marker head-sha)])
                               ["## ccusage performance comparison" ""]
                               (when head-sha [(str "PR: `" (format-sha head-sha) "`"
                                                    (when base-sha (str " merged onto Base: `" (format-sha base-sha) "`")))

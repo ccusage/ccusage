@@ -594,6 +594,10 @@ jobs:
       - name: Upsert PR comment
         env:
           COMMENT_FILE: ${{ runner.temp }}/ccusage-perf/ccusage-perf-comment.md
+          # NOTE(2026-11-17): this step runs the base commit's script, and main's
+          # script still reads its marker from COMMENT_MARKER instead of the
+          # report's first line. Remove this once main carries the new script.
+          COMMENT_MARKER: <!-- ccusage-perf-comment:${{ github.event.pull_request.head.sha }} -->
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

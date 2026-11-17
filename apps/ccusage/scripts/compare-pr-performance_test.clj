@@ -140,11 +140,15 @@
   (let [rounds [(round 1000 600) (round 1000 620) (round 1000 610)]
         result {:command "claude daily" :base (variant-summary rounds "base") :head (variant-summary rounds "PR")
                 :comparison (compare-variants rounds "base" "PR" 0.1)}
-        markdown (render-report {:base-sha "1111111111111111" :head-sha "2222222222222222" :threshold 0.1 :runs 3 :warmup 1
-                                 :fixture-stats {:bytes 1073741824 :files 10} :codex-fixture-stats {:bytes 1048576 :files 2}}
-                                [result] {:base 2048 :head 1024})]
-    (is (.startsWith markdown "<!-- ccusage-perf-comment -->\n<!-- ccusage-perf-comment:2222222222222222 -->\n"))
-    (is (.contains markdown "PR: `222222222222` merged onto Base: `111111111111`"))
+        context {:base-sha (apply str (repeat 40 "1")) :head-sha (apply str (repeat 40 "2")) :threshold 0.1 :runs 3 :warmup 1
+                 :fixture-stats {:bytes 1073741824 :files 10} :codex-fixture-stats {:bytes 1048576 :files 2}}
+        markdown (render-report context [result] {:base 2048 :head 1024})
+        header (slurp (path (.getParent (babashka.fs/file *file*)) "testdata" "perf-comment-header.txt"))]
+    (testing "the PR comment upsert reads its marker from this header"
+      (is (.startsWith markdown header)))
+    (testing "a report without a head commit carries no comment marker"
+      (is (.startsWith (render-report (dissoc context :head-sha) [result] {:base 2048 :head 1024})
+                       "## ccusage performance comparison\n")))
     (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
     (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
     (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))))

@@ -18,9 +18,13 @@ def main []: nothing -> nothing {
             '}'
         ] | str join "\n" | save $mock
         ^chmod +x $mock
-        let marker = '<!-- ccusage-perf-comment:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -->'
+        let header = open --raw (
+            $env.FILE_PWD
+            | path join ../../apps/ccusage/scripts/testdata/perf-comment-header.txt
+        )
+        let marker = $header | lines | first
+        let report = $header + "\nFixture performance report.\n"
         let body = $fixture | path join comment.md
-        [$marker '' 'Fixture performance report.'] | str join "\n" | save $body
         let log = $fixture | path join calls.txt
         let existing = [
             [
@@ -61,13 +65,26 @@ def main []: nothing -> nothing {
                 valid: true
                 calls: [GET POST]
             }
+            {
+                report: (
+                    $report
+                    | lines
+                    | skip 1
+                    | str join "\n"
+                )
+                comments: '[]'
+                method: ''
+                code: ''
+                valid: false
+                calls: []
+            }
         ] | each {|case|
             '' | save --force $log
+            $case | get --optional report | default $report | save --force $body
             let result = with-env {
                 PATH: ($env.PATH | prepend $fixture)
                 GITHUB_REPOSITORY: test/repo
                 PR_NUMBER: '7'
-                COMMENT_MARKER: $marker
                 COMMENT_FILE: $body
                 TEST_CALLS: $log
                 TEST_COMMENTS: $case.comments
