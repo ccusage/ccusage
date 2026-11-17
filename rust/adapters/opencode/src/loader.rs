@@ -433,18 +433,19 @@ fn scan_rows<T>(
     table: Table,
     unreadable: &'static str,
     read: impl Fn(&sqlite::Statement<'_>) -> std::result::Result<Option<T>, UnreadableRow>,
-    mut visit: impl FnMut(u32, T),
+    mut visit: impl FnMut(&Path, u32, T),
 ) -> u32 {
+    let unit = table_rows_unit(context.db_path, table);
     let mut row = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
                 row = row.saturating_add(1);
                 match read(&statement) {
-                    Ok(Some(value)) => visit(row, value),
+                    Ok(Some(value)) => visit(&unit, row, value),
                     Ok(None) => {}
                     Err(UnreadableRow) => context.diagnostics.record(Skip::record(
-                        context.db_path,
+                        &unit,
                         row,
                         SkipKind::InvalidData,
                         unreadable,
@@ -468,6 +469,13 @@ fn scan_rows<T>(
         }
     }
     row
+}
+
+fn table_rows_unit(db_path: &Path, table: Table) -> PathBuf {
+    let mut unit = db_path.as_os_str().to_os_string();
+    unit.push("#");
+    unit.push(table.name());
+    PathBuf::from(unit)
 }
 
 const COLUMN_READ_FAILED: &str = "database column read failed";
@@ -511,7 +519,8 @@ fn load_message_rows(
                 data: statement.read(2)?,
             }))
         },
-        |row,
+        |unit,
+         row,
          MessageRecord {
              id,
              session_id,
@@ -525,7 +534,7 @@ fn load_message_rows(
             }
             let Some(value) = jsonl::decode_record::<OpenCodeMessage>(
                 data.as_bytes(),
-                context.db_path,
+                unit,
                 row,
                 context.diagnostics,
                 Some(|_| true),
@@ -542,15 +551,15 @@ fn load_message_rows(
             ) {
                 Ok(Some(entry)) => collector.push_message((entry, None)),
                 Ok(None) => {}
-                Err(MissingTimestamp) => record_missing_timestamp(context, row),
+                Err(MissingTimestamp) => record_missing_timestamp(context, unit, row),
             }
         },
     );
 }
 
-fn record_missing_timestamp(context: &DatabaseLoadContext<'_>, row: u32) {
+fn record_missing_timestamp(context: &DatabaseLoadContext<'_>, unit: &Path, row: u32) {
     context.diagnostics.record(Skip::record(
-        context.db_path,
+        unit,
         row,
         SkipKind::InvalidTimestamp,
         MissingTimestamp::REASON,
@@ -607,7 +616,7 @@ fn load_session_message_rows(
         schema.table,
         COLUMN_READ_FAILED,
         SessionMessageRecord::read,
-        |row, record| {
+        |unit, row, record| {
             // Copies neither count nor mark the fork as covered:
             // the fork's `session_v2` counters start at zero and
             // only hold fork-local usage, so they stay a valid
@@ -647,14 +656,14 @@ fn load_session_message_rows(
                 Ok(Some(linked)) => linked,
                 Ok(None) => return,
                 Err(SessionMessageError::MissingTimestamp) => {
-                    record_missing_timestamp(context, row);
+                    record_missing_timestamp(context, unit, row);
                     return;
                 }
                 Err(SessionMessageError::Decode(error)) => {
                     jsonl::record_decode_error(
                         data.as_bytes(),
                         error,
-                        context.db_path,
+                        unit,
                         row,
                         false,
                         context.diagnostics,
@@ -931,7 +940,7 @@ fn load_session_aggregate_entries(
                 cost: read_f64(statement, 2),
             }))
         },
-        |row, aggregate| {
+        |unit, row, aggregate| {
             if !context.window.is_unbounded()
                 && aggregate
                     .created
@@ -942,7 +951,7 @@ fn load_session_aggregate_entries(
             match session_value_to_entry(aggregate, context.tz, context.mode, context.pricing) {
                 Ok(Some(entry)) => entries.push(entry),
                 Ok(None) => {}
-                Err(MissingTimestamp) => record_missing_timestamp(context, row),
+                Err(MissingTimestamp) => record_missing_timestamp(context, unit, row),
             }
         },
     );
@@ -1429,9 +1438,6 @@ mod tests {
         );
         create_db_message_with_time(&db, "db-untimed", "db-session", 0, UNTIMED);
         create_db_session_message_table(&db, false);
-        for id in ["v2-user-1", "v2-user-2"] {
-            insert_db_session_message(&db, id, "v2-session", "user", 0, "{}", false);
-        }
         insert_db_session_message(
             &db,
             "v2-untimed",
