@@ -3,8 +3,8 @@
 #
 # The release `cargoArtifacts` cannot serve them. Tests and clippy compile the
 # whole workspace with `--all-targets`, which pulls in dev-dependencies, and the
-# `test-snapshots` feature variants of the workspace crates, neither of which
-# the release layers contain. Without this layer each of them recompiled all of that on every CI run.
+# dev-only feature variants of the workspace crates (`test-clock`,
+# `testing`), neither of which the release layers contain. Without this layer each of them recompiled all of that on every CI run.
 #
 # It uses the dev profile on purpose: these consumers never ship a binary, so
 # fat LTO and size optimization would only slow the compile. Every consumer
