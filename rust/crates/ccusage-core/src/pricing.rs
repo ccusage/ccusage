@@ -2377,10 +2377,26 @@ mod tests {
     }
 
     #[test]
-    fn cache_supplement_uses_the_shared_speed_policy_when_the_primary_entry_is_missing() {
+    fn curated_rows_use_the_shared_speed_policy_when_the_primary_entry_is_missing() {
         let mut pricing = PricingMap::default();
         pricing.put_builtin_pricing();
-        assert_eq!(pricing.find_exact("gpt-5.2").unwrap().flex_multiplier, 0.5);
+        assert_eq!(pricing.find_exact("gpt-5.1").unwrap().flex_multiplier, 0.5);
+    }
+
+    #[test]
+    fn litellm_gpt_rows_without_a_cache_write_rate_bill_it_at_the_input_rate() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (model, input, read) in [
+            ("gpt-5.1-codex", 1.25e-6, 0.125e-6),
+            ("gpt-5.2-codex", 1.75e-6, 0.175e-6),
+            ("gpt-5.2", 1.75e-6, 0.175e-6),
+        ] {
+            let entry = pricing.find_exact(model).unwrap();
+            assert_eq!(entry.cache_create, None, "{model}");
+            assert_eq!(entry.cache_creation_rate(), input, "{model}");
+            assert_eq!(entry.cache_read, Some(read), "{model}");
+        }
     }
 
     #[test]

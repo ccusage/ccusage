@@ -113,13 +113,6 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
         cache_fields: false,
     },
     Supplement {
-        model: "gpt-5.1-codex",
-        pricing: rates(1.25e-6, 10e-6, 1.25e-6, 0.125e-6),
-        context_limit: None,
-        context_fallback: false,
-        cache_fields: true,
-    },
-    Supplement {
         model: "gpt-5.5",
         pricing: rates(5e-6, 30e-6, 5e-6, 0.5e-6),
         context_limit: Some(1050000),
@@ -151,25 +144,11 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
         cache_fields: false,
     },
     Supplement {
-        model: "gpt-5.2-codex",
-        pricing: rates(1.75e-6, 14e-6, 1.75e-6, 0.175e-6),
-        context_limit: None,
-        context_fallback: false,
-        cache_fields: true,
-    },
-    Supplement {
         model: "gpt-5.3-codex",
         pricing: rates(1.75e-6, 14e-6, 1.75e-6, 0.175e-6),
         context_limit: None,
         context_fallback: false,
         cache_fields: false,
-    },
-    Supplement {
-        model: "gpt-5.2",
-        pricing: rates(1.75e-6, 14e-6, 1.75e-6, 0.175e-6),
-        context_limit: None,
-        context_fallback: false,
-        cache_fields: true,
     },
     Supplement {
         model: "gpt-5.4",
