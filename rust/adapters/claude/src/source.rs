@@ -12,6 +12,9 @@ pub struct Claude;
 pub static SOURCE: Claude = Claude;
 
 impl Claude {
+    /// The main-thread session days this source counts inside `shared`'s
+    /// window, for every focused report kind: a focused session report counts
+    /// only a session's in-window days, so it matches by session day too.
     pub fn counted(
         &self,
         shared: &ccusage_core::cli::SharedArgs,
@@ -22,7 +25,7 @@ impl Claude {
         let deduped = crate::load_entries_with_mode(
             shared,
             project_filter,
-            false,
+            true,
             diagnostics,
             ccusage_core::cli::CostMode::Display,
         )?;
@@ -130,35 +133,70 @@ mod diagnostic_tests {
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
     use ccusage_core::cli::{AgentReportKind, CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};
+    use std::sync::Arc;
 
     #[test]
-    fn counted_reads_no_pricing_and_retains_only_in_window_main_thread_days() {
+    fn counted_keeps_only_in_window_main_thread_session_days() {
         let fixture = Fixture::new();
-        let path = fixture.write_file("projects/p/session-main.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","sessionId":"session-main","message":{"id":"msg-main","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#);
+        let main = fixture.write_file(
+            "projects/p/session-main.jsonl",
+            [
+                r#"{"timestamp":"2026-01-02T00:00:00Z","sessionId":"session-main","requestId":"req-main","message":{"id":"msg-main","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+                r#"{"timestamp":"2026-01-02T01:00:00Z","sessionId":"session-side","requestId":"req-side","isSidechain":true,"message":{"id":"msg-side","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+                r#"{"timestamp":"2025-12-01T00:00:00Z","sessionId":"session-main","requestId":"req-old","message":{"id":"msg-old","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+            ]
+            .join("\n"),
+        );
+        let _ = fixture.write_file(
+            "projects/p/session-resumed.jsonl",
+            r#"{"timestamp":"2026-01-02T00:00:00Z","sessionId":"session-resumed","requestId":"req-main","message":{"id":"msg-main","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+        );
+        let stale = fixture.write_file(
+            "projects/p/session-stale.jsonl",
+            r#"{"timestamp":"2026-01-03T00:00:00Z","sessionId":"session-stale","requestId":"req-stale","message":{"id":"msg-stale","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+        );
+        ccusage_test_support::set_modified(
+            &stale,
+            ccusage_test_support::instant("2025-06-01T00:00:00Z"),
+        );
         let _env = EnvVarsGuard::set_many([(
             "CLAUDE_CONFIG_DIR",
             Some(fixture.root().as_os_str().to_owned()),
         )]);
         let shared = SharedArgs {
             mode: CostMode::Calculate,
+            since: Some("20260101".to_owned()),
             timezone: Some("UTC".to_owned()),
             ..Default::default()
         };
         let diagnostics = Diagnostics::new("claude");
         let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
-        let entry = crate::read_usage_file_with_diagnostics(
-            &path,
+        let probe = crate::read_usage_file_with_diagnostics(
+            &main,
             ReportWindow::from_shared(&shared).timezone(),
             CostMode::Display,
             None,
             &diagnostics,
         )
         .remove(0);
-        assert!(
-            counted
-                .retain_uncounted(vec![(entry, Some(std::sync::Arc::from("session-main")))])
-                .is_empty()
-        );
+        let at = |timestamp: &str| {
+            let mut entry = probe.clone();
+            entry.timestamp = crate::parse_ts_timestamp(timestamp).unwrap();
+            entry
+        };
+        let probes = [
+            ("session-main", "2026-01-02T12:00:00Z", true),
+            ("session-resumed", "2026-01-02T12:00:00Z", true),
+            ("session-side", "2026-01-02T12:00:00Z", false),
+            ("session-main", "2026-01-03T12:00:00Z", false),
+            ("session-main", "2025-12-01T12:00:00Z", false),
+            ("session-stale", "2026-01-03T12:00:00Z", false),
+        ];
+        for (session, timestamp, is_counted) in probes {
+            let kept = counted.retain_uncounted(vec![(at(timestamp), Some(Arc::from(session)))]);
+            assert_eq!(kept.is_empty(), is_counted, "{session} {timestamp}");
+        }
+        assert!(diagnostics.warnings(&shared).is_empty());
     }
 
     #[test]
