@@ -17,7 +17,10 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
     let pricing = cx.pipeline_pricing()?;
     let loaded = load_entries_from_databases(&db_paths, cx, pricing);
-    let mut entries = dedupe_first_wins(loaded, |entry| entry.data.message.id.clone());
+    let mut entries = dedupe_first_wins(loaded, |(id, _)| id.clone())
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect::<Vec<_>>();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
@@ -26,7 +29,7 @@ fn load_entries_from_databases(
     db_paths: &[PathBuf],
     cx: &LoadContext<'_>,
     pricing: &PricingMap,
-) -> Vec<LoadedEntry> {
+) -> Vec<(String, LoadedEntry)> {
     sqlite_units(
         db_paths,
         cx.shared.single_thread,

@@ -82,7 +82,7 @@ pub(super) fn message_value_to_entry(
     tz: &JiffTimeZone,
     mode: CostMode,
     pricing: &PricingMap,
-) -> std::result::Result<Option<LoadedEntry>, MissingTimestamp> {
+) -> std::result::Result<Option<(String, LoadedEntry)>, MissingTimestamp> {
     if value.role.as_deref() != Some("assistant") {
         return Ok(None);
     }
@@ -136,7 +136,7 @@ pub(super) fn message_value_to_entry(
         message: UsageMessage {
             usage,
             model: Some(model.clone()),
-            id: Some(message_id),
+            id: Some(message_id.clone()),
         },
         cost_usd,
         request_id: None,
@@ -163,22 +163,25 @@ pub(super) fn message_value_to_entry(
     let missing_pricing_model =
         missing_kilo_pricing(&cost_data, provider.as_deref(), mode, pricing);
     let stored_cost = stored_cost_for_mode(cost_data.cost_usd, mode);
-    Ok(Some(LoadedEntry {
-        date: format_date_tz(timestamp, tz),
-        timestamp,
-        project: Arc::from("kilo"),
-        session_id: Arc::from(session_id),
-        project_path: Arc::from("Kilo"),
-        cost,
-        extra_total_tokens,
-        credits: None,
-        model: Some(model),
-        usage_limit_reset_time: None,
-        missing_pricing_model,
-        stored_cost,
-        message_count: None,
-        data,
-    }))
+    Ok(Some((
+        message_id,
+        LoadedEntry {
+            date: format_date_tz(timestamp, tz),
+            timestamp,
+            project: Arc::from("kilo"),
+            session_id: Arc::from(session_id),
+            project_path: Arc::from("Kilo"),
+            cost,
+            extra_total_tokens,
+            credits: None,
+            model: Some(model),
+            usage_limit_reset_time: None,
+            missing_pricing_model,
+            stored_cost,
+            message_count: None,
+            data,
+        },
+    )))
 }
 
 fn normalize_timestamp(value: i64) -> Option<TimestampMs> {
@@ -292,7 +295,7 @@ mod tests {
             "tokens": { "input": 100, "output": 10, "cache": 0 }
         }))
         .unwrap();
-        let entry = message_value_to_entry(
+        let (_, entry) = message_value_to_entry(
             &value,
             "row-1",
             "session-a",
@@ -322,7 +325,7 @@ mod tests {
             "tokens": { "total": 234 }
         }))
         .unwrap();
-        let entry = message_value_to_entry(
+        let (_, entry) = message_value_to_entry(
             &value,
             "row-1",
             "session-a",
