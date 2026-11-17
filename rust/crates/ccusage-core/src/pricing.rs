@@ -165,8 +165,10 @@ pub(crate) enum ProviderFamily {
 
 impl ProviderFamily {
     fn from_model(model: &str, provider: Option<&str>) -> Self {
-        if model.split('/').any(|id| {
-            id.starts_with("gpt-")
+        if model.split(['/', '.']).any(|id| {
+            let id = id.strip_prefix("openai-").unwrap_or(id);
+            id.starts_with("codex-")
+                || id.starts_with("gpt-")
                 || id.starts_with("chatgpt-")
                 || ["o1", "o3", "o4"].into_iter().any(|prefix| {
                     id == prefix
@@ -177,7 +179,7 @@ impl ProviderFamily {
         }) {
             return Self::OpenAi;
         }
-        if model.split('/').any(|id| id.starts_with("claude-")) {
+        if model.split(['/', '.']).any(|id| id.starts_with("claude-")) {
             return Self::Anthropic;
         }
         match provider {
@@ -6294,6 +6296,34 @@ mod tests {
             .unwrap();
 
         assert_eq!(matched.input, 2.0);
+    }
+
+    #[test]
+    fn hosted_openai_model_names_keep_openai_cache_write_defaults() {
+        for (model, provider) in [
+            ("bedrock_mantle/openai.gpt-5.4", "bedrock_mantle"),
+            ("global.openai.gpt-5.4", "bedrock_converse"),
+            ("us.openai.gpt-5.5", "bedrock_converse"),
+            ("oci/openai.gpt-5", "oci"),
+            ("snowflake/openai-gpt-5", "snowflake"),
+            ("azure_ai/codex-mini", "azure_ai"),
+        ] {
+            let mut map = PricingMap::default();
+            map.load_json(
+                &serde_json::json!({ model: {
+                    "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6,
+                    "litellm_provider": provider,
+                }})
+                .to_string(),
+            );
+            let pricing = map.find_exact(model).unwrap();
+            assert_eq!(pricing.cache_creation_rate(), pricing.input, "{model}");
+            assert_eq!(
+                pricing.one_hour_cache_creation_rate(),
+                pricing.input,
+                "{model}"
+            );
+        }
     }
 
     #[test]
