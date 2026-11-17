@@ -4,38 +4,21 @@ use ccusage_adapter_common::{source::LoadContext, units::read_typed_units};
 
 use crate::{LoadedEntry, Result};
 
-use super::{
-    parser::GrokDedupeKey,
-    paths::{GrokSessionFiles, discover_session_files},
-};
-
-impl AsRef<std::path::Path> for GrokSessionFiles {
-    fn as_ref(&self) -> &std::path::Path {
-        &self.updates
-    }
-}
+use super::{parser::GrokDedupeKey, paths::discover_session_files};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pipeline_pricing()?;
     let sessions = super::paths::discover_session_files(cx.diagnostics)?;
-    let loaded = read_typed_units(
-        &sessions,
-        shared.single_thread,
-        cx.diagnostics,
-        |GrokSessionFiles {
-             updates,
-             summary: _summary,
-         }| {
-            super::parser::parse_session_files_with_diagnostics(
-                updates,
-                cx.window.timezone(),
-                shared.mode,
-                pricing,
-                cx.diagnostics,
-            )
-        },
-    );
+    let loaded = read_typed_units(&sessions, shared.single_thread, cx.diagnostics, |updates| {
+        super::parser::parse_session_files_with_diagnostics(
+            updates,
+            cx.window.timezone(),
+            shared.mode,
+            pricing,
+            cx.diagnostics,
+        )
+    });
 
     let mut seen_events = HashSet::new();
     let mut entries: Vec<_> = loaded

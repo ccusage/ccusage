@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use ccusage_adapter_common::roots::{self, RootsEnv};
 
@@ -8,12 +8,6 @@ use ccusage_core::Diagnostics;
 
 /// Official Grok CLI home override (single root).
 pub(crate) const GROK_HOME_ENV: &str = "GROK_HOME";
-
-#[derive(Debug, Clone)]
-pub(super) struct GrokSessionFiles {
-    pub updates: PathBuf,
-    pub summary: Option<PathBuf>,
-}
 
 /// Resolve the Grok data root from `GROK_HOME`, then `~/.grok`.
 fn resolve_root() -> Option<PathBuf> {
@@ -28,7 +22,7 @@ fn resolve_root() -> Option<PathBuf> {
 }
 
 /// Discover every `sessions/**/updates.jsonl` under the resolved root.
-pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<GrokSessionFiles>> {
+pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     if let Some(root) = resolve_root() {
         let sessions = root.join("sessions");
@@ -38,22 +32,11 @@ pub(super) fn discover_session_files(diagnostics: &Diagnostics) -> Result<Vec<Gr
             updates.retain(|path| {
                 path.file_name().and_then(|name| name.to_str()) == Some("updates.jsonl")
             });
-            for updates_path in updates {
-                let summary = sibling_summary(&updates_path);
-                files.push(GrokSessionFiles {
-                    updates: updates_path,
-                    summary,
-                });
-            }
+            files.extend(updates);
         }
     }
-    files.sort_by(|a, b| a.updates.cmp(&b.updates));
+    files.sort();
     Ok(files)
-}
-
-fn sibling_summary(updates: &Path) -> Option<PathBuf> {
-    let summary = updates.with_file_name("summary.json");
-    summary.is_file().then_some(summary)
 }
 
 #[cfg(test)]
@@ -75,14 +58,7 @@ mod tests {
         )]);
         let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert_eq!(files.len(), 1);
-        assert!(files[0].updates.ends_with("updates.jsonl"));
-        assert!(files[0].summary.is_some());
-        assert!(
-            files[0]
-                .summary
-                .as_ref()
-                .is_some_and(|path| path.ends_with("summary.json"))
-        );
+        assert!(files[0].ends_with("updates.jsonl"));
     }
 
     #[test]
@@ -101,13 +77,7 @@ mod tests {
         let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         let names: Vec<_> = files
             .iter()
-            .map(|file| {
-                file.updates
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string()
-            })
+            .map(|file| file.file_name().unwrap().to_string_lossy().to_string())
             .collect();
         assert_eq!(names, vec!["updates.jsonl".to_string()]);
     }
@@ -126,10 +96,9 @@ mod tests {
 
         let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert_eq!(files.len(), 2);
-        assert!(files.iter().any(|file| file.summary.is_some()));
-        assert!(files.iter().any(|file| file.summary.is_none()));
+        assert!(files.iter().all(|file| file.ends_with("updates.jsonl")));
         // Discovery sorts by path so load order is stable across runs.
-        assert!(files[0].updates < files[1].updates);
+        assert!(files[0] < files[1]);
     }
 
     #[test]
@@ -144,7 +113,7 @@ mod tests {
 
         let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
         assert_eq!(files.len(), 1);
-        assert!(files[0].updates.ends_with("updates.jsonl"));
+        assert!(files[0].ends_with("updates.jsonl"));
     }
 
     #[test]
@@ -165,7 +134,7 @@ mod tests {
         let files = discover_session_files(&Diagnostics::new("grok")).unwrap();
 
         assert_eq!(files.len(), 1);
-        assert!(files[0].updates.to_string_lossy().contains("session-a"));
+        assert!(files[0].to_string_lossy().contains("session-a"));
     }
 
     #[test]
