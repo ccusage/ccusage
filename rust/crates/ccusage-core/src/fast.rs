@@ -711,7 +711,7 @@ mod tests {
         ] {
             fragments.push(unicode_escape(hex).into_bytes());
         }
-        let marker_sets: [&[&[u8]]; 7] = [
+        let marker_sets: [&[&[u8]]; 10] = [
             &[br#""usage":{"#],
             &[br#""usage":{"#, br#""type""#],
             &[br#""x":{"a/e"#, b"us_e"],
@@ -719,6 +719,9 @@ mod tests {
             &[br#"]"x/a""#, b"a/e"],
             &[br#"{"a":["#],
             &[br#"{"#, br#""a_x""#],
+            &[br#"a":{"#],
+            &[br#"a_x":{"#],
+            &[br#"a/e":["#, br#""type""#],
         ];
         let mut state = 0x2545_f491_4f6c_dd1d_u64;
         let mut next = move |bound: usize| {
@@ -768,6 +771,8 @@ mod tests {
             &[br#"]"x/a""#, b"a/e"],
             &[br#"{"a":["#],
             &[br#"{"#, br#""a_x""#],
+            &[br#"a_x":{"#],
+            &[br#"a/e":["#, br#""type""#],
         ];
         let mut state = 0x6a09_e667_f3bc_c909_u64;
         let mut next = |bound: usize| {
