@@ -355,6 +355,16 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
         ),
         Case::new(
             "session",
+            "json_order_asc",
+            &["claude", "session", "--offline", "--json", "--order", "asc"],
+        ),
+        Case::new(
+            "session",
+            "table_order_asc",
+            &["claude", "session", "--offline", "--order", "asc"],
+        ),
+        Case::new(
+            "session",
             "id_json",
             &[
                 "claude",
@@ -363,6 +373,20 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
                 "--json",
                 "--id",
                 "sess-alpha-1",
+            ],
+        ),
+        Case::new(
+            "session",
+            "id_json_order_desc",
+            &[
+                "claude",
+                "session",
+                "--offline",
+                "--json",
+                "--id",
+                "sess-alpha-1",
+                "--order",
+                "desc",
             ],
         ),
         Case::new(
@@ -468,4 +492,145 @@ pub fn extra_cases(root: &Path) -> Vec<Case> {
             &["claude", "statusline", "--offline", "--no-cache"],
         ),
     ]
+}
+
+#[test]
+fn session_order_honors_flags_and_config_without_changing_the_default() {
+    use ccusage_test_support::Fixture;
+    use serde_json::Value;
+
+    use crate::golden::run_case;
+
+    let fixture = Fixture::new();
+    let seeded = seed(fixture.root());
+    let config = fixture.write_file("order.json", r#"{"defaults":{"order":"asc"}}"#);
+    let report = |flags: &[&str]| {
+        let mut case = Case::new("session", "", &["claude", "session", "--offline", "--json"]);
+        case.args
+            .extend(flags.iter().map(|flag| (*flag).to_string()));
+        let output = run_case(fixture.root(), &seeded, &case);
+        assert_eq!(output.exit, "0", "{}", output.stderr);
+        output.stdout
+    };
+    let ids = |output: &str| {
+        serde_json::from_str::<Value>(output).unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["sessionId"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let ascending = [
+        "sess-gamma-old",
+        "sess-beta-2",
+        "sess-alpha-1",
+        "sess-beta-1",
+    ];
+    assert_eq!(ids(&report(&["--order", "asc"])), ascending);
+    assert_eq!(
+        ids(&report(&["--config", config.to_str().unwrap()])),
+        ascending
+    );
+    assert_eq!(report(&[]), report(&["--order", "desc"]));
+    assert_eq!(
+        report(&["--config", config.to_str().unwrap(), "--order", "desc"]),
+        report(&[]),
+    );
+}
+
+#[test]
+fn chronological_reports_honor_order_without_changing_their_default() {
+    use ccusage_test_support::Fixture;
+    use serde_json::Value;
+
+    use crate::golden::run_case;
+
+    let fixture = Fixture::new();
+    let seeded = seed(fixture.root());
+    let config = fixture.write_file("order.json", r#"{"defaults":{"order":"desc"}}"#);
+    for (kind, field) in [
+        ("daily", "date"),
+        ("weekly", "week"),
+        ("monthly", "month"),
+        ("blocks", "startTime"),
+    ] {
+        let report = |flags: &[&str]| {
+            let mut case = Case::new(kind, "", &["claude", kind, "--offline", "--json"]);
+            case.args
+                .extend(flags.iter().map(|flag| (*flag).to_string()));
+            let output = run_case(fixture.root(), &seeded, &case);
+            assert_eq!(output.exit, "0", "{kind}: {}", output.stderr);
+            output.stdout
+        };
+        let periods = |output: &str| {
+            serde_json::from_str::<Value>(output).unwrap()[kind]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row[field].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        let ascending = report(&["--order", "asc"]);
+        assert_eq!(report(&[]), ascending, "{kind}");
+        let mut expected = periods(&ascending);
+        assert!(expected.len() > 1, "{kind}");
+        assert!(expected.windows(2).all(|pair| pair[0] < pair[1]), "{kind}");
+        expected.reverse();
+        assert_eq!(periods(&report(&["--order", "desc"])), expected, "{kind}");
+        assert_eq!(
+            periods(&report(&["--config", config.to_str().unwrap()])),
+            expected,
+            "{kind}",
+        );
+    }
+}
+
+#[test]
+fn session_id_orders_entries_without_reordering_aggregation() {
+    use ccusage_test_support::Fixture;
+    use serde_json::Value;
+
+    use crate::golden::run_case;
+
+    let fixture = Fixture::new();
+    let seeded = seed(fixture.root());
+    let config = fixture.write_file("order.json", r#"{"defaults":{"order":"desc"}}"#);
+    let report = |flags: &[&str]| {
+        let mut case = Case::new(
+            "session",
+            "",
+            &[
+                "claude",
+                "session",
+                "--offline",
+                "--json",
+                "--id",
+                "sess-alpha-1",
+            ],
+        );
+        case.args
+            .extend(flags.iter().map(|flag| (*flag).to_string()));
+        let output = run_case(fixture.root(), &seeded, &case);
+        assert_eq!(output.exit, "0", "{}", output.stderr);
+        output.stdout
+    };
+    let default = report(&[]);
+    assert_eq!(default, report(&["--order", "asc"]));
+    let mut expected: Value = serde_json::from_str(&default).unwrap();
+    expected.as_object_mut().unwrap().remove("entries");
+    for flags in [
+        vec!["--order", "desc"],
+        vec!["--config", config.to_str().unwrap()],
+    ] {
+        let mut actual: Value = serde_json::from_str(&report(&flags)).unwrap();
+        let inputs = actual["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["inputTokens"].as_u64().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(inputs, [0, 200, 300, 400, 250, 700, 120, 50, 500, 1000]);
+        actual.as_object_mut().unwrap().remove("entries");
+        assert_eq!(actual, expected);
+    }
 }

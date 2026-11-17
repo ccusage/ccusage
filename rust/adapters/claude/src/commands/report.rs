@@ -9,7 +9,9 @@ use ccusage_core::{
     summary::{Bucket, KeyTarget, summarize_bucket},
     totals_json, utc_now, wants_json,
 };
-use ccusage_report::{group_project_output, session_summary_json, summary_json};
+use ccusage_report::{
+    group_project_output, session_cost_ordering, session_summary_json, summary_json,
+};
 use serde_json::json;
 
 use crate::{
@@ -108,23 +110,21 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
         return run_session_id(&id, &shared);
     }
 
-    let mut session_shared = shared.clone();
-    session_shared.order = Some(SortOrder::Desc);
-    let mut rows = load_session_rows(&session_shared)?;
+    let mut rows = load_session_rows(&shared)?;
     rows.retain(|row| {
         row.input_tokens + row.output_tokens + row.cache_creation_tokens + row.cache_read_tokens > 0
     });
-    rows.sort_by(|a, b| match session_shared.order.unwrap_or_default() {
+    rows.sort_by(|a, b| match session_cost_ordering(&shared) {
         SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
         SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
     });
 
-    if wants_json(&session_shared) {
+    if wants_json(&shared) {
         let output = json!({
             "sessions": rows.iter().map(session_summary_json).collect::<Vec<_>>(),
             "totals": totals_json(&rows),
         });
-        print_json_or_jq(output, session_shared.jq.as_deref(), session_shared.no_cost)?;
+        print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost)?;
         return Ok(());
     }
 
@@ -132,7 +132,7 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
         "Claude Code Token Usage Report - By Session",
         "Session",
         &rows,
-        &session_shared,
+        &shared,
         false,
         None,
     )?;
@@ -190,6 +190,9 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
     summary.session_id = Some(id.to_string());
 
     if wants_json(shared) {
+        if shared.requested_order() == Some(SortOrder::Desc) {
+            session_entries.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp));
+        }
         let output = json!({
             "sessionId": id,
             "totalCost": summary.total_cost,
