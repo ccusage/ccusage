@@ -2008,7 +2008,7 @@ fn bounded_codex_reports_match_focused_rows_after_unified_bucketing() {
             .unwrap()
             .iter()
             .map(|(period, group)| {
-                codex::unified_row_from_group(period, group, &pricing, speed, shared.mode)
+                codex::unified_row_from_group(period, group, Some(&pricing), speed, shared.mode)
             })
             .collect::<Vec<_>>();
         let mut unified = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday)
@@ -2762,7 +2762,7 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
     let row = adapter::codex::unified_row_from_group(
         "2026-01-02",
         &group,
-        &PricingMap::default(),
+        Some(&PricingMap::default()),
         adapter::codex::CodexSpeedPolicy::Forced(adapter::codex::CodexServiceTier::Standard),
         CostMode::Calculate,
     );
@@ -2831,7 +2831,7 @@ fn includes_codex_model_breakdowns_in_all_rows() {
     let row = adapter::codex::unified_row_from_group(
         "2026-01-02",
         &group,
-        &pricing,
+        Some(&pricing),
         adapter::codex::CodexSpeedPolicy::Forced(adapter::codex::CodexServiceTier::Standard),
         CostMode::Calculate,
     );
@@ -2863,7 +2863,7 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
     let row = adapter::codex::unified_row_from_group(
         "2026-01-02",
         &group,
-        &PricingMap::default(),
+        Some(&PricingMap::default()),
         adapter::codex::CodexSpeedPolicy::Forced(adapter::codex::CodexServiceTier::Standard),
         CostMode::Display,
     );

@@ -84,7 +84,7 @@ pub(super) fn message_value_to_entry(
     db_path: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> std::result::Result<Option<(String, LoadedEntry)>, MissingTimestamp> {
     if value.role.as_deref() != Some("assistant") {
         return Ok(None);
@@ -161,7 +161,7 @@ pub(super) fn message_value_to_entry(
             mode,
             timestamp: Some(timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     let cost = priced.cost;
     let missing_pricing_model = priced
@@ -245,7 +245,7 @@ mod tests {
             Path::new("/tmp/kilo.db"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
         )
         .unwrap()
         .unwrap();
@@ -275,7 +275,7 @@ mod tests {
             Path::new("/tmp/kilo.db"),
             &jiff::tz::TimeZone::system(),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
         )
         .unwrap()
         .unwrap();
@@ -511,7 +511,7 @@ mod cost_mode_warnings {
                 Path::new("kilo.db"),
                 &JiffTimeZone::UTC,
                 mode,
-                &PricingMap::default(),
+                Some(&PricingMap::default()),
             )
             .unwrap()
             .unwrap();

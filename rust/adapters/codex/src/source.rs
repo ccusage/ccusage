@@ -63,7 +63,7 @@ fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
 pub fn unified_row_from_group(
     period: &str,
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: crate::CodexSpeedPolicy,
     mode: CostMode,
 ) -> SourceRow {
@@ -284,7 +284,7 @@ mod diagnostic_tests {
                 .unwrap()
                 .iter()
                 .map(|(period, group)| {
-                    unified_row_from_group(period, group, &pricing, speed, shared.mode)
+                    unified_row_from_group(period, group, Some(&pricing), speed, shared.mode)
                 })
                 .map(|row| (row.usage.period, row.usage.total_tokens))
                 .collect::<Vec<_>>();
@@ -569,7 +569,7 @@ mod diagnostic_tests {
             let (groups, _) = load_groups_with_diagnostics(
                 &shared,
                 AgentReportKind::Daily,
-                &crate::PricingMap::load_embedded(),
+                Some(&crate::PricingMap::load_embedded()),
                 &diagnostics,
             )
             .unwrap();

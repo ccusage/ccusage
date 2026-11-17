@@ -428,7 +428,7 @@ pub(super) fn dsh_entry_to_loaded(
     entry: DshUsageEntry,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
     let candidates = model_candidates(entry.provider.as_deref(), &entry.model);
     let candidates: Vec<_> = candidates
@@ -445,7 +445,7 @@ pub(super) fn dsh_entry_to_loaded(
             mode,
             timestamp: Some(entry.timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     let cost = priced.cost;
     let missing_pricing_model = priced
@@ -763,7 +763,8 @@ mod tests {
                 },
                 extra_total_tokens: 0,
             };
-            let loaded = dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, CostMode::Auto, &pricing);
+            let loaded =
+                dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, CostMode::Auto, Some(&pricing));
             assert!(loaded.cost > 0.0, "{model} should be priced");
             assert_eq!(loaded.missing_pricing_model, None);
         }
@@ -791,7 +792,7 @@ mod tests {
                 },
                 extra_total_tokens: 0,
             };
-            dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, CostMode::Auto, &pricing).cost
+            dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, CostMode::Auto, Some(&pricing)).cost
         };
         // Tuesday 2026-11-17 02:00Z is a peak window and 12:00Z is off-peak.
         let peak = cost_at(1_794_880_800_000);

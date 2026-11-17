@@ -101,7 +101,6 @@ fn load(
     cx: &LoadContext<'_>,
     progress: ProgressOwner,
 ) -> Result<Vec<LoadedEntry>> {
-    cx.pricing.as_map()?;
     progress.run(
         UsageLoadAgent(source.descriptor().label),
         cx.shared.json,

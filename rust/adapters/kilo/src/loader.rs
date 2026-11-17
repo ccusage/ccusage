@@ -15,7 +15,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let loaded = load_entries_from_databases(&db_paths, cx, pricing);
     let mut entries = dedupe_first_wins(loaded, |(id, _)| id.clone())
         .into_iter()
@@ -28,7 +28,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
 fn load_entries_from_databases(
     db_paths: &[PathBuf],
     cx: &LoadContext<'_>,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> Vec<(String, LoadedEntry)> {
     sqlite_units(
         db_paths,
@@ -281,8 +281,11 @@ mod tests {
                 options: SourceOptions::default(),
                 diagnostics: &diagnostics,
             };
-            let entries =
-                super::load_entries_from_databases(std::slice::from_ref(&path), &cx, &pricing);
+            let entries = super::load_entries_from_databases(
+                std::slice::from_ref(&path),
+                &cx,
+                Some(&pricing),
+            );
             assert!(entries.is_empty());
 
             assert_eq!(diagnostics.skipped(kind), 1, "{}", path.display());

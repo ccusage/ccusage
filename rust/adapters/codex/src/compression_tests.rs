@@ -55,7 +55,7 @@ fn session_tokens_from_codex_home(fixture: &Fixture, single_thread: bool) -> BTr
             ..SharedArgs::default()
         },
         AgentReportKind::Session,
-        &crate::PricingMap::load_embedded(),
+        Some(&crate::PricingMap::load_embedded()),
         &Diagnostics::new("codex"),
     )
     .unwrap();
@@ -441,7 +441,7 @@ fn compressed_rollouts_match_plain_json_reports_for_every_report_mode() {
         report_from_groups(
             &groups,
             kind,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Calculate,
         )

@@ -153,7 +153,7 @@ pub(super) fn to_loaded_entry(
     entry: HermesEntry,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
     let (cost, missing_pricing_model) = price_hermes(&entry, mode, pricing);
     let stored_cost = stored_cost_for_mode(entry.cost_usd.filter(|cost| *cost > 0.0), mode);
@@ -192,7 +192,7 @@ pub(super) fn to_loaded_entry(
 fn price_hermes(
     entry: &HermesEntry,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> (f64, Option<String>) {
     let candidates = model_candidates(entry);
     let candidates: Vec<_> = candidates
@@ -209,7 +209,7 @@ fn price_hermes(
             mode,
             timestamp: Some(entry.timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     (
         priced.cost,
@@ -252,7 +252,7 @@ mod tests {
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{"vendor/sample":{"input_cost_per_token":0,"output_cost_per_token":0},"sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
-            price_hermes(&entry, CostMode::Calculate, &pricing),
+            price_hermes(&entry, CostMode::Calculate, Some(&pricing)),
             (0.0, None)
         );
     }
@@ -288,7 +288,7 @@ mod tests {
                     message_count: 1,
                     cost_usd: stored,
                 };
-                let loaded = to_loaded_entry(entry, &JiffTimeZone::UTC, mode, &pricing);
+                let loaded = to_loaded_entry(entry, &JiffTimeZone::UTC, mode, Some(&pricing));
                 assert!(
                     (loaded.cost - expected).abs() < 1e-12,
                     "{mode:?}: {} vs {expected}",
@@ -366,7 +366,7 @@ mod tests {
             };
 
             assert!(
-                price_hermes(&entry, CostMode::Auto, &pricing).0 > 0.0,
+                price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 > 0.0,
                 "{model} should resolve to embedded pricing"
             );
         }
@@ -396,7 +396,7 @@ mod tests {
         };
 
         assert!(
-            price_hermes(&entry, CostMode::Auto, &pricing).0 > 0.0,
+            price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 > 0.0,
             "subscription-included sessions with token usage should still be priced"
         );
     }
@@ -424,7 +424,7 @@ mod tests {
             cost_usd: Some(0.42),
         };
 
-        assert_eq!(price_hermes(&entry, CostMode::Auto, &pricing).0, 0.42);
+        assert_eq!(price_hermes(&entry, CostMode::Auto, Some(&pricing)).0, 0.42);
     }
 
     #[test]
@@ -488,7 +488,7 @@ mod tests {
             cost_usd: None,
         };
 
-        assert!((price_hermes(&entry, CostMode::Auto, &pricing).0 - 0.44).abs() < 1e-12);
+        assert!((price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - 0.44).abs() < 1e-12);
         assert_eq!(
             model_candidates(&entry)
                 .into_iter()
@@ -545,7 +545,9 @@ mod tests {
             Some(&pricing),
         );
         assert!((provider_cost - raw_model_cost).abs() > 1e-12);
-        assert!((price_hermes(&entry, CostMode::Auto, &pricing).0 - provider_cost).abs() < 1e-12);
+        assert!(
+            (price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - provider_cost).abs() < 1e-12
+        );
     }
 
     #[test]
@@ -586,7 +588,7 @@ mod tests {
                 "deepseek.v4.flash".to_string()
             ]
         );
-        assert!((price_hermes(&entry, CostMode::Auto, &pricing).0 - 0.14).abs() < 1e-12);
+        assert!((price_hermes(&entry, CostMode::Auto, Some(&pricing)).0 - 0.14).abs() < 1e-12);
 
         let longer_entry = HermesEntry {
             model: "deepseek.v4.flash-preview".to_string(),

@@ -1117,11 +1117,11 @@ mod tests {
         group.models.insert("gpt-test".to_string(), usage);
         let speed = codex::CodexSpeedPolicy::Auto(codex::CodexServiceTier::Standard);
 
-        let focused_cost = codex::calculate_group_cost(&group, &pricing, speed);
+        let focused_cost = codex::calculate_group_cost(&group, Some(&pricing), speed);
         let unified = codex::unified_row_from_group(
             "2026-07-22",
             &group,
-            &pricing,
+            Some(&pricing),
             speed,
             CostMode::Calculate,
         );
@@ -1164,7 +1164,7 @@ mod tests {
         let row = codex::unified_row_from_group(
             "2026-08-20",
             &group,
-            &pricing,
+            Some(&pricing),
             codex::CodexSpeedPolicy::Forced(codex::CodexServiceTier::Standard),
             CostMode::Calculate,
         );

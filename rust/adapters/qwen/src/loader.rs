@@ -6,7 +6,7 @@ use super::parser;
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let files = super::paths::discover_chat_files(cx.diagnostics)?;
     let loaded = ccusage_adapter_common::read_units_flat(
         &files,
@@ -17,7 +17,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
                 file,
                 cx.window.timezone(),
                 shared.mode,
-                Some(pricing),
+                pricing,
                 cx.diagnostics,
             )
         },

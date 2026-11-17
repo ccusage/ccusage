@@ -130,7 +130,7 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
         let (_, detected) = crate::aggregate::load_groups_with_diagnostics(
             &shared,
             AgentReportKind::Daily,
-            &crate::PricingMap::load_embedded(),
+            Some(&crate::PricingMap::load_embedded()),
             &ccusage_core::Diagnostics::new("codex"),
         )
         .unwrap();
@@ -210,7 +210,7 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
             report_from_groups(
                 &groups,
                 kind,
-                &pricing,
+                Some(&pricing),
                 CodexSpeedPolicy::Auto(Standard),
                 CostMode::Auto,
             )

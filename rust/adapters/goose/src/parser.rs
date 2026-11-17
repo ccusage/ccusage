@@ -50,7 +50,7 @@ pub(super) fn row_to_entry(
     statement: &sqlite::Statement<'_>,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> Result<Option<LoadedEntry>, RowRejection> {
     let input_tokens = read_token_value(statement, 8)
         .or_else(|| read_token_value(statement, 5))
@@ -121,7 +121,7 @@ pub(super) fn row_to_entry(
             mode,
             timestamp: Some(timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     let cost = priced.cost;
     let missing_pricing_model = priced
@@ -225,7 +225,7 @@ mod tests {
             &row,
             &jiff::tz::TimeZone::UTC,
             super::CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
         )
         .unwrap()
         .unwrap();

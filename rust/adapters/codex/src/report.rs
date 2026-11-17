@@ -16,7 +16,7 @@ use super::speed::CodexSpeedPolicy;
 pub(super) fn report_from_groups(
     groups: &BTreeMap<String, CodexGroup>,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     mode: CostMode,
 ) -> Value {
@@ -56,7 +56,7 @@ fn group_json(
     period: &str,
     group: &CodexGroup,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     mode: CostMode,
 ) -> Value {
@@ -100,7 +100,7 @@ fn group_json(
 pub(super) fn session_detail_json(
     session_id: &str,
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     mode: CostMode,
 ) -> Value {
@@ -146,7 +146,7 @@ fn model_usage_json(usage: &CodexModelUsage) -> Value {
 
 fn totals_json<'a>(
     groups: impl Iterator<Item = &'a CodexGroup>,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> Value {
     let mut input = 0u64;
@@ -183,14 +183,14 @@ fn totals_json<'a>(
 pub fn calculate_codex_model_cost(
     model: &str,
     usage: &CodexModelUsage,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> f64 {
     if !usage.timestamped_usage.is_empty() {
         return sum_costs(usage.timestamped_usage.iter().filter_map(
             |(timestamp, timestamped_usage)| {
                 let pricing =
-                    pricing.find_at(model, crate::TimestampMs::from_millis(*timestamp))?;
+                    pricing?.find_at(model, crate::TimestampMs::from_millis(*timestamp))?;
                 Some(calculate_codex_usage_cost(
                     *timestamped_usage,
                     &pricing,
@@ -200,7 +200,7 @@ pub fn calculate_codex_model_cost(
         ));
     }
 
-    let Some(pricing) = pricing.find(model) else {
+    let Some(pricing) = pricing.and_then(|pricing| pricing.find(model)) else {
         return 0.0;
     };
     calculate_codex_usage_cost(
@@ -312,7 +312,7 @@ fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricin
 
 pub fn calculate_group_cost(
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> f64 {
     sum_costs(
@@ -326,7 +326,7 @@ pub fn calculate_group_cost(
 pub fn codex_model_missing_pricing(
     model: &str,
     usage: &CodexModelUsage,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> bool {
     missing_pricing_model_for_token_total(
         Some(model),
@@ -336,14 +336,14 @@ pub fn codex_model_missing_pricing(
                 .input_tokens
                 .saturating_add(usage.usage.output_tokens),
         ),
-        Some(pricing),
+        pricing,
     )
     .is_some()
 }
 
 pub fn codex_missing_pricing_models(
     groups: &BTreeMap<String, CodexGroup>,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> Vec<String> {
     let mut models = BTreeSet::new();
     for group in groups.values() {
@@ -393,7 +393,7 @@ fn codex_table_row(
     label: &str,
     kind: AgentReportKind,
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     no_cost: bool,
     terminal_width: usize,
@@ -471,7 +471,7 @@ impl CodexTableTotals {
 fn push_codex_breakdown_rows(
     table: &mut SimpleTable,
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) {
@@ -482,7 +482,7 @@ fn push_codex_breakdown_rows(
 
 fn enabled_codex_breakdown_rows(
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Vec<Vec<String>> {
@@ -495,7 +495,7 @@ fn enabled_codex_breakdown_rows(
 
 fn codex_breakdown_rows(
     group: &CodexGroup,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Vec<Vec<String>> {
@@ -590,7 +590,7 @@ fn codex_table_total_row(
 pub(super) fn print_table_from_groups(
     groups: &BTreeMap<String, CodexGroup>,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Result<()> {
@@ -664,7 +664,7 @@ mod tests {
         };
         let totals = totals_json(
             [&group, &group].into_iter(),
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
         for field in [
@@ -711,7 +711,7 @@ mod tests {
         let report = report_from_groups(
             &groups,
             AgentReportKind::Daily,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Calculate,
         );
@@ -752,7 +752,7 @@ mod tests {
         let report = report_from_groups(
             &free,
             AgentReportKind::Daily,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
             CostMode::Calculate,
         );
@@ -795,7 +795,7 @@ mod tests {
         let report = report_from_groups(
             &priced,
             AgentReportKind::Daily,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Calculate,
         );
@@ -824,7 +824,7 @@ mod tests {
         let report = report_from_groups(
             &groups,
             AgentReportKind::Daily,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Display,
         );
@@ -863,7 +863,7 @@ mod tests {
             "2026-08-20",
             AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
             160,
@@ -894,7 +894,7 @@ mod tests {
             "2026-08-20",
             AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
             120,
@@ -904,7 +904,7 @@ mod tests {
             "2026-08-20",
             AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
             120,
@@ -938,7 +938,7 @@ mod tests {
             "2026-08-20",
             AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
             120,
@@ -947,7 +947,7 @@ mod tests {
             "2026-08-21",
             AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             true,
             120,
@@ -1027,7 +1027,7 @@ mod tests {
         };
         let rows = enabled_codex_breakdown_rows(
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             &shared,
         );
@@ -1056,7 +1056,7 @@ mod tests {
             "2026-08-20",
             AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
             160,
@@ -1079,7 +1079,7 @@ mod tests {
             "2026-08-20",
             AgentReportKind::Daily,
             &group,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             false,
             160,
@@ -1089,7 +1089,7 @@ mod tests {
         assert!(
             enabled_codex_breakdown_rows(
                 &group,
-                &PricingMap::default(),
+                Some(&PricingMap::default()),
                 CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
                 &shared,
             )

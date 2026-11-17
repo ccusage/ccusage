@@ -8,7 +8,7 @@ use super::{parser::GrokDedupeKey, paths::discover_session_files};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let sessions = super::paths::discover_session_files(cx.diagnostics)?;
     let loaded = read_typed_units(&sessions, shared.single_thread, cx.diagnostics, |updates| {
         super::parser::parse_session_files_with_diagnostics(

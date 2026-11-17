@@ -145,7 +145,7 @@ mod tests {
         speed: CodexSpeedPolicy,
     ) -> Value {
         let groups = load_rollouts(&[("session.jsonl", lines)], kind);
-        report_from_groups(&groups, kind, pricing, speed, CostMode::Calculate)
+        report_from_groups(&groups, kind, Some(pricing), speed, CostMode::Calculate)
     }
 
     fn usage_line(
@@ -484,7 +484,7 @@ mod tests {
         let report = report_from_groups(
             &groups,
             AgentReportKind::Daily,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Calculate,
         );
@@ -525,13 +525,13 @@ mod tests {
         let reserve_cost = calculate_codex_model_cost(
             "gpt-reserve",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
         let luna_cost = calculate_codex_model_cost(
             "gpt-5.6-luna",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
 
@@ -540,7 +540,7 @@ mod tests {
         assert!(!codex_model_missing_pricing(
             "gpt-reserve",
             &usage,
-            &pricing
+            Some(&pricing)
         ));
     }
 
@@ -618,7 +618,7 @@ mod tests {
             calculate_codex_model_cost(
                 model,
                 &usage,
-                &pricing,
+                Some(&pricing),
                 CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             )
         };
@@ -661,7 +661,7 @@ mod tests {
         let cost = calculate_codex_model_cost(
             "gpt-long",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
 
@@ -730,7 +730,7 @@ mod tests {
         let cost = calculate_codex_model_cost(
             "gpt-long",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
         );
 
@@ -775,13 +775,13 @@ mod tests {
         let flat_cost = calculate_codex_model_cost(
             "gpt-test",
             &flat,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
         let split_cost = calculate_codex_model_cost(
             "gpt-test",
             &split,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
 
@@ -817,13 +817,13 @@ mod tests {
         let standard = calculate_codex_model_cost(
             "gpt-5.3-codex",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
         let fast = calculate_codex_model_cost(
             "gpt-5.3-codex",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
         );
 
@@ -851,13 +851,13 @@ mod tests {
         let standard = calculate_codex_model_cost(
             "gpt-6-astra",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
         let fast = calculate_codex_model_cost(
             "gpt-6-astra",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
         );
 
@@ -886,13 +886,13 @@ mod tests {
             let standard = calculate_codex_model_cost(
                 model,
                 &usage,
-                &pricing,
+                Some(&pricing),
                 CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             );
             let fast = calculate_codex_model_cost(
                 model,
                 &usage,
-                &pricing,
+                Some(&pricing),
                 CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
             );
 
@@ -938,19 +938,19 @@ mod tests {
         let auto = calculate_codex_model_cost(
             "gpt-test",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
         );
         let forced_standard = calculate_codex_model_cost(
             "gpt-test",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
         let forced_fast = calculate_codex_model_cost(
             "gpt-test",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
         );
 
@@ -992,7 +992,7 @@ mod tests {
         let cost = calculate_codex_model_cost(
             "gpt-test",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
         );
 
@@ -1047,7 +1047,7 @@ mod tests {
                 let cost = calculate_codex_model_cost(
                     model,
                     usage,
-                    &pricing,
+                    Some(&pricing),
                     CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
                 );
                 assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
@@ -1084,13 +1084,13 @@ mod tests {
             let standard = calculate_codex_model_cost(
                 model,
                 &usage,
-                &pricing,
+                Some(&pricing),
                 CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             );
             let auto = calculate_codex_model_cost(
                 model,
                 &usage,
-                &pricing,
+                Some(&pricing),
                 CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
             );
 
@@ -1153,7 +1153,7 @@ mod tests {
             )
         };
         let cost = |model: &str, speed: CodexSpeedPolicy| {
-            calculate_codex_model_cost(model, &usage, &pricing, speed)
+            calculate_codex_model_cost(model, &usage, Some(&pricing), speed)
         };
 
         // The alias resolves to Sol, so the Ultrafast cost is Sol's standard cost
@@ -1293,8 +1293,13 @@ mod tests {
                             expected_costs[5],
                         ),
                     ] {
-                        let report =
-                            report_from_groups(&groups, kind, &pricing, speed, CostMode::Calculate);
+                        let report = report_from_groups(
+                            &groups,
+                            kind,
+                            Some(&pricing),
+                            speed,
+                            CostMode::Calculate,
+                        );
                         assert_eq!(report["totals"]["totalTokens"], 50);
                         let actual = report["totals"]["costUSD"].as_f64().unwrap();
                         assert!(
@@ -1334,7 +1339,7 @@ mod tests {
         };
         let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Fast);
 
-        let cost = calculate_codex_model_cost("gpt-test", &usage, &pricing, speed);
+        let cost = calculate_codex_model_cost("gpt-test", &usage, Some(&pricing), speed);
 
         assert!((cost - 50e-6).abs() < f64::EPSILON);
     }
@@ -1366,7 +1371,7 @@ mod tests {
         };
         let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Standard);
 
-        let cost = calculate_codex_model_cost("gpt-test", &usage, &pricing, speed);
+        let cost = calculate_codex_model_cost("gpt-test", &usage, Some(&pricing), speed);
 
         assert!((cost - 40e-6).abs() < f64::EPSILON);
     }
@@ -1399,13 +1404,13 @@ mod tests {
         let standard = calculate_codex_model_cost(
             "gpt-test",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
         let fast = calculate_codex_model_cost(
             "gpt-test",
             &usage,
-            &pricing,
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
         );
 
@@ -1455,7 +1460,7 @@ mod tests {
         let groups = BTreeMap::from([("2026-01-02".to_string(), group)]);
 
         assert_eq!(
-            report::codex_missing_pricing_models(&groups, &pricing),
+            report::codex_missing_pricing_models(&groups, Some(&pricing)),
             vec!["gpt-unknown".to_string()]
         );
     }
@@ -1511,7 +1516,7 @@ mod tests {
                 ],
                 kind,
             );
-            report_from_groups(&groups, kind, &pricing, speed, CostMode::Calculate)
+            report_from_groups(&groups, kind, Some(&pricing), speed, CostMode::Calculate)
         };
         let standard = CodexSpeedPolicy::Forced(CodexServiceTier::Standard);
 

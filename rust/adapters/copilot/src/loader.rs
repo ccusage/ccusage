@@ -30,7 +30,7 @@ use crate::{
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let tz = cx.window.timezone();
     let sources = super::paths::paths(cx.diagnostics)?;
     let parsed = read_typed_units(&sources, shared.single_thread, cx.diagnostics, |source| {
@@ -535,7 +535,7 @@ fn usage_entry_to_loaded(
     entry: CopilotUsageEntry,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &crate::PricingMap,
+    pricing: Option<&crate::PricingMap>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: entry.input_tokens,
@@ -571,7 +571,7 @@ fn usage_entry_to_loaded(
             mode,
             timestamp: Some(entry.timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     let cost = priced.cost;
     let missing_pricing_model = priced
@@ -1003,7 +1003,7 @@ mod tests {
                             entry,
                             &jiff::tz::TimeZone::system(),
                             CostMode::Auto,
-                            &pricing,
+                            Some(&pricing),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -1081,7 +1081,7 @@ mod tests {
                             entry,
                             &jiff::tz::TimeZone::system(),
                             CostMode::Auto,
-                            &pricing,
+                            Some(&pricing),
                         )
                     })
                     .collect::<Vec<_>>()

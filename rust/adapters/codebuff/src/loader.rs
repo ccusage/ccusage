@@ -13,7 +13,7 @@ use ccusage_adapter_common::{
 use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let tz = cx.window.timezone();
     let mut files = discover_chat_files(cx.diagnostics)?;
     files.sort();
@@ -34,7 +34,7 @@ fn to_loaded_entry(
     entry: CodebuffEntry,
     tz: &JiffTimeZone,
     mode: ccusage_core::cli::CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
     let (cost, missing_pricing_model) = price_codebuff(&entry, mode, pricing);
     let data = UsageEntry {

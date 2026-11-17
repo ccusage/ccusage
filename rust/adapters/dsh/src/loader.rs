@@ -11,7 +11,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_session_files(cx.diagnostics)?;
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_session_file(file, cx.diagnostics)
     });

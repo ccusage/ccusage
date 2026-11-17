@@ -170,14 +170,14 @@ struct CodexDedupeMap {
 }
 
 struct CodexDedupe<'a> {
-    pricing: &'a PricingMap,
+    pricing: Option<&'a PricingMap>,
     shards: Vec<Mutex<CodexDedupeMap>>,
     models: Mutex<StringInterner<CodexModel>>,
     sessions: Mutex<StringInterner<CompactString>>,
 }
 
 impl<'a> CodexDedupe<'a> {
-    fn new(files: usize, pricing: &'a PricingMap) -> Self {
+    fn new(files: usize, pricing: Option<&'a PricingMap>) -> Self {
         let count = ccusage_adapter_common::worker_count(false, files);
         Self {
             pricing,
@@ -224,10 +224,13 @@ impl<'a> CodexDedupe<'a> {
                 &model,
                 || CodexModel {
                     name: CompactString::new(&model),
-                    long_context_threshold: self.pricing.find(&model).map_or(
-                        crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
-                        |entry| entry.long_context_split_threshold(),
-                    ),
+                    long_context_threshold: self
+                        .pricing
+                        .and_then(|pricing| pricing.find(&model))
+                        .map_or(
+                            crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+                            |entry| entry.long_context_split_threshold(),
+                        ),
                     time_dependent: crate::has_time_dependent_pricing(&model),
                 },
             )?,
@@ -395,12 +398,14 @@ pub fn load_groups(
     kind: AgentReportKind,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let diagnostics = Diagnostics::new("codex");
-    let pricing = PricingMap::load_with_overrides(
-        shared.offline,
-        crate::log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    );
-    let (groups, _) = load_groups_with_diagnostics(shared, kind, &pricing, &diagnostics)?;
+    let pricing = (shared.mode != crate::cli::CostMode::Display).then(|| {
+        PricingMap::load_with_overrides(
+            shared.offline,
+            crate::log_level() != Some(0),
+            shared.pricing_overrides.iter(),
+        )
+    });
+    let (groups, _) = load_groups_with_diagnostics(shared, kind, pricing.as_ref(), &diagnostics)?;
     diagnostics.emit(shared.debug);
     Ok(groups)
 }
@@ -408,7 +413,7 @@ pub fn load_groups(
 pub(super) fn load_groups_with_diagnostics(
     shared: &SharedArgs,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     load_groups_from_sources_with_diagnostics(
@@ -424,7 +429,7 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
     sources: &[paths::CodexUsageSource],
     shared: &SharedArgs,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
     let file_groups = paths::collect_deduped_codex_usage_files(sources, diagnostics);
@@ -460,7 +465,7 @@ fn aggregate_file_groups(
     available: &[(&Path, &[PathBuf])],
     shared: &SharedArgs,
     kind: AgentReportKind,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let bounded_plan = has_date_bounds(shared).then(|| {
@@ -730,7 +735,7 @@ mod tests {
             is_fallback_model: false,
             service_tier: None,
         };
-        let seen = CodexDedupe::new(1, &pricing);
+        let seen = CodexDedupe::new(1, Some(&pricing));
         seen.record(
             &event,
             AgentReportKind::Session,
@@ -851,7 +856,7 @@ mod tests {
             ..SharedArgs::default()
         };
         let pricing = PricingMap::load_embedded();
-        let seen = CodexDedupe::new(2, &pricing);
+        let seen = CodexDedupe::new(2, Some(&pricing));
         for (event, file_index) in [(&copied, 1), (&first, 0)] {
             seen.record(
                 event,
@@ -904,7 +909,7 @@ mod tests {
             ..SharedArgs::default()
         };
         let pricing = PricingMap::load_embedded();
-        let seen = CodexDedupe::new(2, &pricing);
+        let seen = CodexDedupe::new(2, Some(&pricing));
         for (event, file_index) in [(&copied, 1), (&first, 0)] {
             seen.record(
                 event,
@@ -1126,7 +1131,7 @@ mod tests {
                 &[directory_source(&fixture.path("sessions"))],
                 shared,
                 AgentReportKind::Daily,
-                &PricingMap::load_embedded(),
+                Some(&PricingMap::load_embedded()),
                 &diagnostics,
             )
             .unwrap();
@@ -1287,7 +1292,7 @@ mod tests {
                 );
                 costs.push(crate::calculate_group_cost(
                     group,
-                    &pricing,
+                    Some(&pricing),
                     CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
                 ));
             }

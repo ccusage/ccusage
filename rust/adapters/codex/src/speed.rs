@@ -243,7 +243,7 @@ mod tests {
         let cost = crate::report::calculate_codex_model_cost(
             "gpt-test",
             &usage,
-            &pricing,
+            Some(&pricing),
             super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
         );
 

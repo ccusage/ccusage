@@ -9,7 +9,7 @@ use super::{
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_log_files(cx.diagnostics)?;
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let mut events = read_typed_units_flat(
         &files,
         cx.shared.single_thread,

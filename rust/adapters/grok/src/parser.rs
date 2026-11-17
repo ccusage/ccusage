@@ -205,7 +205,7 @@ pub(super) fn parse_session_files_with_diagnostics(
     updates: &Path,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<(GrokDedupeKey, LoadedEntry)>, UnitError> {
     let meta = load_session_meta(updates, diagnostics);
@@ -531,7 +531,7 @@ fn price_grok_usage(
     cost_usd: Option<f64>,
     timestamp: Option<TimestampMs>,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> (f64, Option<String>) {
     let names = pricing_candidates(raw_model);
     let candidates: Vec<_> = names
@@ -549,7 +549,7 @@ fn price_grok_usage(
             mode,
             timestamp,
         },
-        Some(pricing),
+        pricing,
     );
     (
         priced.cost,
@@ -603,19 +603,33 @@ mod tests {
         };
         for model in ["", "  "] {
             assert_eq!(
-                price_grok_usage(model, usage, None, None, CostMode::Calculate, &pricing),
+                price_grok_usage(
+                    model,
+                    usage,
+                    None,
+                    None,
+                    CostMode::Calculate,
+                    Some(&pricing)
+                ),
                 (0.0, Some(model.to_string()))
             );
             assert_eq!(
-                price_grok_usage(model, usage, None, None, CostMode::Auto, &pricing),
+                price_grok_usage(model, usage, None, None, CostMode::Auto, Some(&pricing)),
                 (0.0, Some(model.to_string()))
             );
             assert_eq!(
-                price_grok_usage(model, usage, Some(1.0), None, CostMode::Auto, &pricing),
+                price_grok_usage(
+                    model,
+                    usage,
+                    Some(1.0),
+                    None,
+                    CostMode::Auto,
+                    Some(&pricing)
+                ),
                 (1.0, None)
             );
             assert_eq!(
-                price_grok_usage(model, usage, None, None, CostMode::Display, &pricing),
+                price_grok_usage(model, usage, None, None, CostMode::Display, Some(&pricing)),
                 (0.0, None)
             );
             assert_eq!(
@@ -625,7 +639,7 @@ mod tests {
                     None,
                     None,
                     CostMode::Calculate,
-                    &pricing
+                    Some(&pricing)
                 ),
                 (0.0, None)
             );
@@ -794,7 +808,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -850,7 +864,15 @@ mod tests {
         };
 
         assert_eq!(
-            price_grok_usage(&model, usage, None, None, CostMode::Calculate, &pricing).0,
+            price_grok_usage(
+                &model,
+                usage,
+                None,
+                None,
+                CostMode::Calculate,
+                Some(&pricing)
+            )
+            .0,
             3.0
         );
     }
@@ -891,7 +913,7 @@ mod tests {
                 None,
                 None,
                 CostMode::Calculate,
-                &pricing
+                Some(&pricing)
             )
             .0,
             0.02
@@ -916,7 +938,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -954,7 +976,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -981,7 +1003,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -1102,7 +1124,7 @@ mod tests {
             &files,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             &diagnostics,
         )
         .unwrap();
@@ -1124,7 +1146,7 @@ mod tests {
             &files,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             &diagnostics,
         )
         .unwrap();
@@ -1161,7 +1183,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &diagnostics,
         )
         .unwrap();
@@ -1208,7 +1230,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -1258,7 +1280,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -1359,7 +1381,7 @@ mod tests {
             &files,
             &jiff::tz::TimeZone::system(),
             CostMode::Display,
-            &pricing,
+            Some(&pricing),
             &Diagnostics::new("grok"),
         )
         .map(|entries| {
@@ -1406,7 +1428,7 @@ mod tests {
                 &files,
                 &jiff::tz::TimeZone::system(),
                 mode,
-                &pricing,
+                Some(&pricing),
                 &Diagnostics::new("grok"),
             )
             .map(|entries| {
@@ -1472,7 +1494,7 @@ mod tests {
                 Some(0.25),
                 None,
                 CostMode::Auto,
-                &pricing
+                Some(&pricing)
             )
             .0,
             0.25
@@ -1484,7 +1506,7 @@ mod tests {
                 Some(0.25),
                 None,
                 CostMode::Calculate,
-                &pricing
+                Some(&pricing)
             )
             .0,
             20.0
@@ -1514,7 +1536,7 @@ mod tests {
                 None,
                 None,
                 CostMode::Auto,
-                &pricing
+                Some(&pricing)
             )
             .0,
             20.0

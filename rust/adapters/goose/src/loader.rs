@@ -25,7 +25,7 @@ WHERE model_config_json IS NOT NULL
 "#;
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let tz = cx.window.timezone();
     let db_paths = goose_db_paths(cx.shared.debug)?;
     let mut entries = load_entries_from_dbs(
@@ -45,7 +45,7 @@ fn load_entries_from_dbs(
     single_thread: bool,
     tz: &JiffTimeZone,
     mode: ccusage_core::cli::CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
     sqlite_units(
@@ -207,7 +207,7 @@ INSERT INTO sessions (
             true,
             &jiff::tz::TimeZone::UTC,
             ccusage_core::cli::CostMode::Auto,
-            &pricing,
+            Some(&pricing),
             &diagnostics,
         );
 
@@ -248,7 +248,7 @@ INSERT INTO sessions (
             true,
             &jiff::tz::TimeZone::UTC,
             ccusage_core::cli::CostMode::Auto,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             &diagnostics,
         );
 
@@ -280,7 +280,7 @@ INSERT INTO sessions (
             true,
             &jiff::tz::TimeZone::UTC,
             ccusage_core::cli::CostMode::Auto,
-            &PricingMap::default(),
+            Some(&PricingMap::default()),
             &diagnostics,
         );
         assert!(entries.is_empty());

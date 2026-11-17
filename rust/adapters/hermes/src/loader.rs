@@ -14,7 +14,7 @@ use super::{
 };
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let tz = cx.window.timezone();
     let db_paths = hermes_state_db_paths()?;
     let loaded = load_state_db_entries(&db_paths, cx.shared.single_thread, cx.diagnostics);
@@ -145,7 +145,7 @@ mod tests {
         let diagnostics = Diagnostics::new("hermes");
         let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics)
             .into_iter()
-            .map(|entry| to_loaded_entry(entry, &tz, shared.mode, &pricing))
+            .map(|entry| to_loaded_entry(entry, &tz, shared.mode, Some(&pricing)))
             .collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);

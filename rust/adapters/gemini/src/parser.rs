@@ -572,7 +572,7 @@ pub(super) fn event_to_loaded(
     event: GeminiUsageEvent,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: event.input_tokens,
@@ -600,7 +600,7 @@ pub(super) fn event_to_loaded(
             mode,
             timestamp: Some(event.timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     let cost = priced.cost;
     let missing_pricing_model = priced

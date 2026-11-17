@@ -38,7 +38,7 @@ pub(super) fn row_to_entry(
     row: ZcodeUsageRow,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     pricing_overrides: &BTreeMap<String, PricingOverride>,
 ) -> std::result::Result<Option<(String, LoadedEntry)>, RowRejection> {
     let cache_read = row.cache_read_input_tokens.min(row.input_tokens);
@@ -113,7 +113,7 @@ pub(super) fn row_to_entry(
             mode,
             timestamp: Some(timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     let cost = priced.cost;
     let missing_pricing_model = (mode != CostMode::Display
@@ -249,7 +249,7 @@ mod tests {
             row(),
             &JiffTimeZone::UTC,
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &BTreeMap::new(),
         )
         .unwrap()
@@ -285,7 +285,7 @@ mod tests {
                     row,
                     &JiffTimeZone::UTC,
                     CostMode::Calculate,
-                    &pricing,
+                    Some(&pricing),
                     &BTreeMap::new(),
                 )
                 .unwrap()
@@ -305,7 +305,7 @@ mod tests {
             row(),
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
             &BTreeMap::new(),
         )
         .unwrap()
@@ -321,7 +321,7 @@ mod tests {
             custom,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
             &BTreeMap::new(),
         )
         .unwrap()
@@ -344,7 +344,7 @@ mod tests {
             row,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &BTreeMap::new(),
         )
         .unwrap()
@@ -366,7 +366,7 @@ mod tests {
                 row,
                 &JiffTimeZone::UTC,
                 CostMode::Calculate,
-                &pricing,
+                Some(&pricing),
                 &BTreeMap::new(),
             )
             .unwrap()
@@ -407,7 +407,7 @@ mod tests {
             row,
             &JiffTimeZone::UTC,
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
             &overrides,
         )
         .unwrap()
@@ -427,7 +427,7 @@ mod tests {
             row,
             &JiffTimeZone::UTC,
             CostMode::Display,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &BTreeMap::new(),
         )
         .unwrap()
@@ -444,7 +444,7 @@ mod tests {
                 row,
                 &JiffTimeZone::UTC,
                 CostMode::Display,
-                &PricingMap::default(),
+                Some(&PricingMap::default()),
                 &BTreeMap::new(),
             )
             .err()

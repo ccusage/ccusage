@@ -18,7 +18,7 @@ use super::paths::{SourceFile, SourceKind};
 pub(super) fn read_file(
     source: &SourceFile,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     timezone: &jiff::tz::TimeZone,
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
@@ -35,7 +35,7 @@ fn parse_extension_messages(
     root: &Value,
     source: &SourceFile,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     timezone: &jiff::tz::TimeZone,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
@@ -111,7 +111,7 @@ fn parse_cli_messages(
     root: &Value,
     source: &SourceFile,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     timezone: &jiff::tz::TimeZone,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
@@ -180,7 +180,7 @@ fn loaded_entry(
     source: &SourceFile,
     input: EntryInput,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     timezone: &jiff::tz::TimeZone,
 ) -> LoadedEntry {
     let EntryInput {
@@ -216,7 +216,7 @@ fn loaded_entry(
             mode,
             timestamp: Some(timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     let cost = priced.cost;
     let missing_pricing_model = priced
@@ -430,7 +430,7 @@ mod tests {
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -477,7 +477,7 @@ mod tests {
             &root,
             &source,
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -573,7 +573,7 @@ mod tests {
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -655,7 +655,7 @@ mod tests {
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -729,7 +729,7 @@ mod tests {
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -773,7 +773,7 @@ mod tests {
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -810,7 +810,7 @@ mod tests {
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -854,7 +854,7 @@ mod tests {
             &root,
             &source,
             CostMode::Auto,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -862,7 +862,7 @@ mod tests {
             &root,
             &source,
             CostMode::Display,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -870,7 +870,7 @@ mod tests {
             &root,
             &source,
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -901,7 +901,7 @@ mod tests {
             &root,
             &source,
             CostMode::Auto,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -909,7 +909,7 @@ mod tests {
             &root,
             &source,
             CostMode::Display,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -917,7 +917,7 @@ mod tests {
             &root,
             &source,
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -946,7 +946,7 @@ mod tests {
             &root,
             &source(SourceKind::Cli),
             CostMode::Auto,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -984,7 +984,7 @@ mod tests {
             &root,
             &source,
             CostMode::Auto,
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );
@@ -1004,7 +1004,7 @@ mod tests {
             &root,
             &source(SourceKind::Extension),
             CostMode::Auto,
-            &pricing,
+            Some(&pricing),
             &jiff::tz::TimeZone::system(),
             &Diagnostics::new("cline"),
         );

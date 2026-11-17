@@ -13,8 +13,6 @@ use serde_json::Value;
 use ccusage_core::{
     Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result, UsageSummary,
     cli::{AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SourceArgs},
-    cli_error,
-    pricing::PendingPricing,
     summary_period,
 };
 
@@ -106,7 +104,7 @@ impl LoadRequest<'_> {
 pub enum ReportPricing<'a> {
     Display,
     Supplied(&'a PricingMap),
-    Pending(PendingPricing),
+    Loaded(Box<PricingMap>),
 }
 
 impl<'a> ReportPricing<'a> {
@@ -116,21 +114,19 @@ impl<'a> ReportPricing<'a> {
         }
         match supplied {
             Some(pricing) => Ok(Self::Supplied(pricing)),
-            None => PricingMap::spawn_load(
+            None => Ok(Self::Loaded(Box::new(PricingMap::load_with_overrides(
                 shared.offline,
                 ccusage_core::log_level() != Some(0),
                 shared.pricing_overrides.iter(),
-            )
-            .map(Self::Pending),
+            )))),
         }
     }
 
-    pub fn get(&self) -> Result<&PricingMap> {
-        static DISPLAY: OnceLock<PricingMap> = OnceLock::new();
+    pub fn get(&self) -> Result<Option<&PricingMap>> {
         match self {
-            Self::Display => Ok(DISPLAY.get_or_init(PricingMap::default)),
-            Self::Supplied(pricing) => Ok(pricing),
-            Self::Pending(pricing) => pricing.join(),
+            Self::Display => Ok(None),
+            Self::Supplied(pricing) => Ok(Some(pricing)),
+            Self::Loaded(pricing) => Ok(Some(pricing)),
         }
     }
 }
@@ -159,14 +155,9 @@ impl<'a> LoaderPricing<'a> {
 
     pub fn as_map(&self) -> Result<Option<&PricingMap>> {
         match self {
-            Self::Pipeline(pricing) => pricing.get().map(Some),
+            Self::Pipeline(pricing) => pricing.get(),
             Self::Source => Ok(None),
         }
-    }
-
-    pub fn get(&self) -> Result<&PricingMap> {
-        self.as_map()?
-            .ok_or_else(|| cli_error("the source owns its pricing"))
     }
 }
 
@@ -458,7 +449,7 @@ mod pricing_tests {
         let supplied = PricingMap::default();
         let pricing = ReportPricing::for_load(&shared, Some(&supplied)).unwrap();
 
-        assert!(std::ptr::eq(pricing.get().unwrap(), &supplied));
+        assert!(std::ptr::eq(pricing.get().unwrap().unwrap(), &supplied));
     }
 
     #[test]
@@ -473,7 +464,8 @@ mod pricing_tests {
         let pricing = ReportPricing::for_load(&shared, Some(&supplied)).unwrap();
 
         assert!(matches!(pricing, ReportPricing::Display));
-        assert!(pricing.get().unwrap().find("gpt-5").is_none());
+        let loader = super::LoaderPricing::Pipeline(pricing);
+        assert!(loader.as_map().unwrap().is_none());
     }
 
     #[test]

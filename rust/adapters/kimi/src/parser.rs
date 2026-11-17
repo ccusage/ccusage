@@ -340,7 +340,7 @@ pub(super) fn kimi_entry_to_loaded(
     entry: KimiUsageEntry,
     tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: entry.input_tokens,
@@ -386,7 +386,7 @@ pub(super) fn kimi_entry_to_loaded(
 fn price_kimi_usage(
     entry: &KimiUsageEntry,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     usage: TokenUsageRaw,
 ) -> (f64, Option<String>) {
     let names = model_candidates(entry);
@@ -404,7 +404,7 @@ fn price_kimi_usage(
             mode,
             timestamp: Some(entry.timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     (
         priced.cost,
@@ -666,13 +666,14 @@ mod tests {
             ..before_cutoff.clone()
         };
 
-        let before_cost = price_kimi_usage(&before_cutoff, CostMode::Calculate, &pricing, usage).0;
-        let at_cost = price_kimi_usage(&at_cutoff, CostMode::Calculate, &pricing, usage).0;
+        let before_cost =
+            price_kimi_usage(&before_cutoff, CostMode::Calculate, Some(&pricing), usage).0;
+        let at_cost = price_kimi_usage(&at_cutoff, CostMode::Calculate, Some(&pricing), usage).0;
         let loaded = kimi_entry_to_loaded(
             at_cutoff,
             &jiff::tz::TimeZone::system(),
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
         );
 
         assert!((before_cost - 0.000226).abs() < f64::EPSILON);

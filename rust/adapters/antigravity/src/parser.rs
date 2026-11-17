@@ -1037,7 +1037,7 @@ pub(super) fn event_to_loaded(
     event: AntigravityUsageEvent,
     timezone: &JiffTimeZone,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> LoadedEntry {
     let usage = TokenUsageRaw {
         input_tokens: event.input_tokens,
@@ -1101,7 +1101,7 @@ fn price_antigravity(
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> (f64, Option<String>) {
     let exact = gemini_flash_pricing_alias(model).is_some();
     let candidates: Vec<_> = model_candidates(model, provider)
@@ -1134,7 +1134,7 @@ fn price_antigravity(
             mode,
             timestamp: Some(timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     (
         priced.cost,
@@ -1650,7 +1650,7 @@ mod tests {
                 },
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing,
+                Some(&pricing),
             )
             .1
         });
@@ -1787,7 +1787,7 @@ mod tests {
             usage,
             TimestampMs::UNIX_EPOCH,
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
         )
         .0;
         assert!(cost > 0.0);
@@ -1798,7 +1798,7 @@ mod tests {
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing
+                Some(&pricing)
             )
             .1
             .is_none()
@@ -1863,7 +1863,7 @@ mod tests {
             },
             TimestampMs::UNIX_EPOCH,
             CostMode::Calculate,
-            &pricing,
+            Some(&pricing),
         )
         .0;
 
@@ -1900,7 +1900,7 @@ mod tests {
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing
+                Some(&pricing)
             )
             .0,
             0.0
@@ -1912,7 +1912,7 @@ mod tests {
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing
+                Some(&pricing)
             )
             .1
             .as_deref(),
@@ -1954,7 +1954,7 @@ mod tests {
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing
+                Some(&pricing)
             )
             .0,
             3.0
@@ -1966,7 +1966,7 @@ mod tests {
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing
+                Some(&pricing)
             )
             .1
             .is_none()
@@ -1978,7 +1978,7 @@ mod tests {
                 usage,
                 TimestampMs::UNIX_EPOCH,
                 CostMode::Calculate,
-                &pricing
+                Some(&pricing)
             )
             .1
             .as_deref(),
@@ -2001,7 +2001,7 @@ mod tests {
                 usage,
                 parse_ts_timestamp(timestamp).unwrap(),
                 CostMode::Calculate,
-                &pricing,
+                Some(&pricing),
             )
             .0
         };

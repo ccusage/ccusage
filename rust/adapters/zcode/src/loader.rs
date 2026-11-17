@@ -40,7 +40,7 @@ struct Schema {
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let pricing = cx.pricing.get()?;
+    let pricing = cx.pricing.as_map()?;
     let tz = cx.window.timezone();
     let db_paths = db_paths(shared)?;
     let loaded = load_entries_from_databases(&db_paths, tz, shared, pricing, cx.diagnostics);
@@ -56,7 +56,7 @@ fn load_entries_from_databases(
     db_paths: &[PathBuf],
     tz: &JiffTimeZone,
     shared: &SharedArgs,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Vec<(String, LoadedEntry)> {
     sqlite_units(
@@ -406,7 +406,7 @@ mod tests {
             &[fixture.path("broken.db"), fixture.path("unsupported.db")],
             &jiff::tz::TimeZone::system(),
             &shared,
-            &pricing,
+            Some(&pricing),
             &diagnostics,
         );
 
@@ -431,7 +431,7 @@ mod tests {
             std::slice::from_ref(&path),
             &jiff::tz::TimeZone::system(),
             &SharedArgs::default(),
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &diagnostics,
         );
 
@@ -468,7 +468,7 @@ mod tests {
             std::slice::from_ref(&path),
             &jiff::tz::TimeZone::system(),
             &SharedArgs::default(),
-            &PricingMap::load_embedded(),
+            Some(&PricingMap::load_embedded()),
             &diagnostics,
         );
 

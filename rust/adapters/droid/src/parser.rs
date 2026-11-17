@@ -138,7 +138,7 @@ fn settings_timestamp(
 pub(super) fn price_droid(
     entry: &DroidEntry,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> (f64, Option<String>) {
     let candidates = droid_model_candidates(entry);
     let candidates: Vec<_> = candidates
@@ -155,7 +155,7 @@ pub(super) fn price_droid(
             mode,
             timestamp: entry.pricing_timestamp,
         },
-        Some(pricing),
+        pricing,
     );
     (
         priced.cost,
@@ -338,7 +338,7 @@ mod tests {
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
-            price_droid(&entry, CostMode::Calculate, &pricing),
+            price_droid(&entry, CostMode::Calculate, Some(&pricing)),
             (0.0, None)
         );
     }
@@ -400,7 +400,7 @@ mod tests {
         };
 
         assert_eq!(
-            price_droid(&entry, CostMode::Auto, &deepseek_pricing()).0,
+            price_droid(&entry, CostMode::Auto, Some(&deepseek_pricing())).0,
             0.14
         );
     }

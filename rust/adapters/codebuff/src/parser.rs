@@ -387,7 +387,7 @@ fn infer_provider(model: &str) -> &'static str {
 pub(super) fn price_codebuff(
     entry: &CodebuffEntry,
     mode: CostMode,
-    pricing: &PricingMap,
+    pricing: Option<&PricingMap>,
 ) -> (f64, Option<String>) {
     let candidates = codebuff_model_candidates(entry);
     let candidates: Vec<_> = candidates
@@ -404,7 +404,7 @@ pub(super) fn price_codebuff(
             mode,
             timestamp: Some(entry.timestamp),
         },
-        Some(pricing),
+        pricing,
     );
     (
         priced.cost,
@@ -474,7 +474,7 @@ mod resolver_differential {
         let mut pricing = PricingMap::default();
         pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
-            price_codebuff(&entry, CostMode::Calculate, &pricing),
+            price_codebuff(&entry, CostMode::Calculate, Some(&pricing)),
             (0.0, None)
         );
     }
