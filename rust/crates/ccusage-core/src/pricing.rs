@@ -2019,7 +2019,13 @@ impl PricingMap {
                 .filter(|(_, exact_only)| !exact_only)
                 .map(|(key, _)| key)
                 .filter(|key| pricing_key_matches(key, model, normalized.as_ref()))
-                .max_by(|left, right| left.len().cmp(&right.len()).then_with(|| right.cmp(left)))
+                .max_by(|left, right| {
+                    let same_id = |key: &str| normalized_pricing_key(key) == normalized;
+                    same_id(left)
+                        .cmp(&same_id(right))
+                        .then_with(|| left.len().cmp(&right.len()))
+                        .then_with(|| right.cmp(left))
+                })
         })
     }
 
@@ -3599,6 +3605,16 @@ mod tests {
             .unwrap();
         assert_eq!(matched, "provider/paid");
         assert_eq!(provider.input, 9.0);
+    }
+
+    #[test]
+    fn respelled_base_model_never_uses_a_longer_model_price() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let price = pricing.find("gpt-5-5").unwrap();
+        assert_eq!(price.input, 5e-6);
+        assert_eq!(price.output, 30e-6);
+        assert_eq!(pricing.find("gpt-5.5-pro").unwrap().input, 30e-6);
     }
 
     #[test]
@@ -6748,7 +6764,7 @@ mod tests {
                 .find("gpt-5-4")
                 .unwrap()
                 .long_context_split_threshold(),
-            200_000
+            272_000
         );
         assert_eq!(Pricing::empty().long_context_split_threshold(), 200_000);
     }
