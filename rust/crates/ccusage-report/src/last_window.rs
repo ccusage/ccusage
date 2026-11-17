@@ -16,7 +16,7 @@ pub fn last_periods_since(
     today: &str,
     start_of_week: WeekDay,
 ) -> Option<String> {
-    let earlier = i64::from(count.max(1) - 1);
+    let earlier = i64::from(count.checked_sub(1)?);
     let start = match unit {
         PeriodUnit::Day => parse_date(today)?
             .checked_sub(Span::new().days(earlier))
@@ -95,10 +95,10 @@ mod tests {
     }
 
     #[test]
-    fn treats_a_zero_count_as_the_current_period() {
+    fn rejects_a_zero_count() {
         assert_eq!(
             last_periods_since(PeriodUnit::Day, 0, "2026-07-27", WeekDay::Monday).as_deref(),
-            Some("20260727")
+            None
         );
     }
 
