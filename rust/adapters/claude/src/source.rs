@@ -153,9 +153,7 @@ mod diagnostic_tests {
             None,
             &diagnostics,
         )
-        .entries
-        .remove(0)
-        .into_loaded();
+        .remove(0);
         assert!(
             counted
                 .retain_uncounted(vec![(entry, Some(std::sync::Arc::from("session-main")))])

@@ -32,14 +32,14 @@ use smallvec::SmallVec;
 use crate::{
     LoadedEntry, PricingMap, Result, Speed, TimestampMs, TokenUsageRaw, UsageEntry, UsageSummary,
     cli::{CostMode, SharedArgs},
+    daily::DedupEntry as _,
     debug_log,
     fast::{FxHashMap, LinePrefilter},
     log_level, progress, resolve_tz,
 };
 
 pub(crate) use paths::{
-    claude_paths, extract_session_parts, split_files_before_since, usage_file_order, usage_files,
-    visit_usage_files,
+    claude_paths, extract_session_parts, split_files_before_since, usage_files, visit_usage_files,
 };
 
 struct DedupeIndex {
@@ -112,7 +112,7 @@ impl DedupedEntries {
                         .map(|(index, session)| (session.as_ref(), &self.entries[*index])),
                 )
                 .filter(|(_, entry)| is_counted(entry))
-                .map(|(session, entry)| (session, entry.date.as_str(), entry.data.is_sidechain)),
+                .map(|(session, entry)| (session, entry.date.as_str(), entry.is_sidechain())),
         )
     }
 }
@@ -180,10 +180,10 @@ pub type SessionDays = HashSet<(Arc<str>, String)>;
 /// (subagent) usage, which a wrapping tool does not record. Dedups the borrowed
 /// pairs before owning them, so the date is cloned once per session day.
 fn main_thread_session_days<'a>(
-    entries: impl Iterator<Item = (&'a str, &'a str, Option<bool>)>,
+    entries: impl Iterator<Item = (&'a str, &'a str, bool)>,
 ) -> SessionDays {
     entries
-        .filter(|(_, _, is_sidechain)| *is_sidechain != Some(true))
+        .filter(|(_, _, is_sidechain)| !is_sidechain)
         .map(|(session_id, date, _)| (session_id, date))
         .collect::<HashSet<_>>()
         .into_iter()
@@ -271,7 +271,7 @@ fn load_entries_with_mode(
             diagnostics,
         )
     };
-    let mut loaded_files = if skip_files_before_since && shared.since.is_some() {
+    let loaded_files = if skip_files_before_since && shared.since.is_some() {
         let files = usage_files(&paths, project_filter, diagnostics);
         debug_log(shared, format!("Found {} JSONL usage files", files.len()));
         let files = split_files_before_since(files, shared, utc_now()).kept;
@@ -302,15 +302,9 @@ fn load_entries_with_mode(
     if loaded_files.is_empty() {
         return Ok(DedupedEntries::default());
     }
-    // Dedup keeps the first copy it meets, so files are folded in listing order.
-    loaded_files.sort_by_cached_key(|(path, _)| usage_file_order(path));
-    let loaded_files = loaded_files
-        .into_iter()
-        .map(|(_, file)| file)
-        .collect::<Vec<_>>();
     let loaded_entry_count = loaded_files
         .iter()
-        .map(|file| file.entries.len())
+        .map(|(_, entries)| entries.len())
         .sum::<usize>();
     debug_log(
         shared,
@@ -319,33 +313,12 @@ fn load_entries_with_mode(
             loaded_files.len()
         ),
     );
-
-    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
-        FxHashMap::with_capacity_and_hasher(loaded_entry_count, Default::default());
-    let mut deduped = Vec::with_capacity(loaded_entry_count);
-    let mut copies = Vec::new();
-    for loaded_file in loaded_files {
-        for entry in loaded_file.entries {
-            if let Some((index, discarded)) =
-                daily::push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
-                && discarded.key.session_id != deduped[index].key.session_id
-                && discarded.key.is_sidechain != Some(true)
-            {
-                copies.push((index, discarded.key.session_id));
-            }
-        }
-    }
+    let (entries, copies) = daily::dedupe_files(loaded_files);
     debug_log(
         shared,
-        format!("Kept {} usage entries after deduplication", deduped.len()),
+        format!("Kept {} usage entries after deduplication", entries.len()),
     );
-    Ok(DedupedEntries {
-        entries: deduped
-            .into_iter()
-            .map(daily::ClaudeEntry::into_loaded)
-            .collect(),
-        copies,
-    })
+    Ok(DedupedEntries { entries, copies })
 }
 
 /// The timezone and pricing a load prices entries with, resolved by the
@@ -495,50 +468,36 @@ fn push_deduped_session_alias(
     }
 }
 
-#[derive(Clone, Debug)]
-struct EntryMetadata {
-    timestamp: String,
-    version: Option<String>,
-    recorded_session_id: Option<String>,
-    raw_model: Option<String>,
-    cost_usd: Option<f64>,
-    is_api_error_message: Option<bool>,
-    usage_limit_reset_time: Option<TimestampMs>,
-    session_id: Arc<str>,
-    project_path: Arc<str>,
-}
+impl daily::DedupEntry for LoadedEntry {
+    fn timestamp(&self) -> TimestampMs {
+        self.timestamp
+    }
 
-impl daily::ClaudeEntry<EntryMetadata> {
-    fn into_loaded(self) -> LoadedEntry {
-        LoadedEntry {
-            data: UsageEntry {
-                timestamp: self.metadata.timestamp,
-                version: self.metadata.version,
-                session_id: self.metadata.recorded_session_id,
-                message: UsageMessage {
-                    id: self.key.message_id,
-                    model: self.metadata.raw_model,
-                    usage: self.usage,
-                },
-                request_id: self.key.request_id,
-                is_sidechain: self.key.is_sidechain,
-                cost_usd: self.metadata.cost_usd,
-                is_api_error_message: self.metadata.is_api_error_message,
-            },
-            timestamp: self.key.timestamp,
-            date: self.date,
-            project: self.project,
-            session_id: self.metadata.session_id,
-            project_path: self.metadata.project_path,
-            cost: self.cost,
-            extra_total_tokens: 0,
-            credits: None,
-            message_count: None,
-            model: self.model,
-            usage_limit_reset_time: self.metadata.usage_limit_reset_time,
-            missing_pricing_model: self.missing_pricing_model,
-            stored_cost: self.stored_cost,
+    fn session_id(&self) -> &str {
+        loaded_entry_session_id(self)
+    }
+
+    fn owned_session_id(&self) -> Arc<str> {
+        match self.data.session_id.as_deref() {
+            Some(session_id) => Arc::from(session_id),
+            None => Arc::clone(&self.session_id),
         }
+    }
+
+    fn message_id(&self) -> Option<&str> {
+        self.data.message.id.as_deref()
+    }
+
+    fn request_id(&self) -> Option<&str> {
+        self.data.request_id.as_deref()
+    }
+
+    fn is_sidechain(&self) -> bool {
+        self.data.is_sidechain == Some(true)
+    }
+
+    fn usage(&self) -> &TokenUsageRaw {
+        &self.data.message.usage
     }
 }
 
@@ -548,37 +507,44 @@ fn read_usage_file_with_diagnostics(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
-) -> daily::UsageFile<EntryMetadata> {
+) -> Vec<LoadedEntry> {
     let (session_id, project_path) = extract_session_parts(path);
     let session_id: Arc<str> = Arc::from(session_id);
     let project_path: Arc<str> = Arc::from(project_path);
-    daily::read_usage_file_with_metadata(
-        path,
-        tz,
-        mode,
-        pricing,
-        diagnostics,
-        |data, line, advisor| EntryMetadata {
-            timestamp: data.timestamp.clone(),
-            version: data.version.clone(),
-            recorded_session_id: data.session_id.clone(),
-            raw_model: advisor
-                .map(|advisor| advisor.model.clone())
-                .or_else(|| data.message.model.clone()),
-            cost_usd: if advisor.is_some() {
-                None
-            } else {
-                data.cost_usd
-            },
-            is_api_error_message: data.is_api_error_message,
+    daily::read_usage_file(path, tz, mode, pricing, diagnostics, |parsed, line| {
+        LoadedEntry {
+            model: daily::ParsedUsage::display_model(parsed.raw_model.clone(), &parsed.usage),
             usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
                 line,
-                data.is_api_error_message,
+                parsed.is_api_error_message,
             ),
+            data: UsageEntry {
+                timestamp: parsed.timestamp_text,
+                version: parsed.version,
+                session_id: parsed.recorded_session_id,
+                message: UsageMessage {
+                    id: parsed.key.message_id,
+                    model: parsed.raw_model,
+                    usage: parsed.usage,
+                },
+                request_id: parsed.key.request_id,
+                is_sidechain: parsed.key.is_sidechain,
+                cost_usd: parsed.cost_usd,
+                is_api_error_message: parsed.is_api_error_message,
+            },
+            timestamp: parsed.key.timestamp,
+            date: parsed.date,
+            project: parsed.project,
             session_id: Arc::clone(&session_id),
             project_path: Arc::clone(&project_path),
-        },
-    )
+            cost: parsed.cost,
+            extra_total_tokens: 0,
+            credits: None,
+            message_count: None,
+            missing_pricing_model: parsed.missing_pricing_model,
+            stored_cost: parsed.stored_cost,
+        }
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -936,56 +902,11 @@ mod tests {
         diagnostics: &Diagnostics,
     ) -> LoadedFile {
         LoadedFile {
-            entries: super::read_usage_file_with_diagnostics(path, tz, mode, pricing, diagnostics)
-                .entries
-                .into_iter()
-                .map(super::daily::ClaudeEntry::into_loaded)
-                .collect(),
+            entries: super::read_usage_file_with_diagnostics(path, tz, mode, pricing, diagnostics),
         }
     }
 
-    fn push_deduped_entry(
-        entry: LoadedEntry,
-        indexes: &mut super::FxHashMap<u64, super::DedupeIndexVec>,
-        entries: &mut Vec<LoadedEntry>,
-    ) -> Option<(usize, LoadedEntry)> {
-        fn composed(entry: LoadedEntry) -> super::daily::ClaudeEntry<super::EntryMetadata> {
-            super::daily::ClaudeEntry {
-                key: super::daily::DedupKey {
-                    timestamp: entry.timestamp,
-                    session_id: Arc::from(super::loaded_entry_session_id(&entry)),
-                    message_id: entry.data.message.id,
-                    request_id: entry.data.request_id,
-                    is_sidechain: entry.data.is_sidechain,
-                },
-                usage: entry.data.message.usage,
-                date: entry.date,
-                project: entry.project,
-                cost: entry.cost,
-                model: entry.model,
-                missing_pricing_model: entry.missing_pricing_model,
-                stored_cost: entry.stored_cost,
-                metadata: super::EntryMetadata {
-                    timestamp: entry.data.timestamp,
-                    version: entry.data.version,
-                    recorded_session_id: entry.data.session_id,
-                    raw_model: entry.data.message.model,
-                    cost_usd: entry.data.cost_usd,
-                    is_api_error_message: entry.data.is_api_error_message,
-                    usage_limit_reset_time: entry.usage_limit_reset_time,
-                    session_id: entry.session_id,
-                    project_path: entry.project_path,
-                },
-            }
-        }
-        let mut compact = std::mem::take(entries).into_iter().map(composed).collect();
-        let discarded = super::daily::push_deduped_entry(composed(entry), indexes, &mut compact);
-        *entries = compact
-            .into_iter()
-            .map(super::daily::ClaudeEntry::into_loaded)
-            .collect();
-        discarded.map(|(index, entry)| (index, entry.into_loaded()))
-    }
+    use super::daily::push_deduped_entry;
 
     fn read_usage_file(
         path: &Path,
