@@ -10,7 +10,7 @@ statusline reports print.
 - `last_window.rs` — `PeriodUnit` and `last_periods_since`.
 - `output.rs` — `summary_json`, `session_summary_json`, and `group_project_output`.
 - `summary.rs` — `filter_and_sort_summaries`.
-- `date_utils.rs` — `format_date`, `format_utc_minute`, `format_utc_second`,
+- `date_utils.rs` — `format_date`, `format_utc_second`,
   `local_parts`, `hour_12`, `am_pm`, and `is_valid_timezone`.
 
 These sit above `ccusage-core` on purpose: no adapter uses them, so editing them
@@ -23,7 +23,6 @@ or `ccusage-adapter-common` needs belongs in core instead.
 - `am_pm`
 - `filter_and_sort_summaries`
 - `format_date`
-- `format_utc_minute`
 - `format_utc_second`
 - `group_project_output`
 - `hour_12`

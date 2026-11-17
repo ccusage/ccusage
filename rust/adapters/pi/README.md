@@ -24,9 +24,8 @@ chunking, and ordered parallel reads.
 
 ## Public surface
 
-- `loader::load_entries_for_store_path`
-- `loader::load_entries`
-- `loader::load_entries_for_store_paths`
+- `NamedStore`
+- `SOURCE`
 - `paths::named_store_paths`
 - `paths::paths as default_paths`
 - `report::report_from_rows`

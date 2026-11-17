@@ -53,7 +53,6 @@ lenient field conversions are unchanged.
 - `types::CodexUsageBucket`
 - `types::merge_codex_service_tiers`
 - `run`
-- `report_json`
 
 ## Depends on
 

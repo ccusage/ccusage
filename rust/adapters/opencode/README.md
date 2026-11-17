@@ -29,10 +29,13 @@ lenient field conversions are unchanged.
 
 ## Public surface
 
-- `loader::load_entries`
+- `SOURCE`
+- `has_data`
+- `loader::LinkedEntry`
+- `loader::load_entries_with_native_sessions`
+- `print_report`
 - `report::report_json`
 - `report::summarize_entries`
-- `run`
 
 ## Depends on
 

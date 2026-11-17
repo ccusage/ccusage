@@ -9,7 +9,7 @@ focused and unified reports.
 - `loader.rs` — read-only SQLite access, schema checks, completed-row filtering, and deduplication
 - `parser.rs` — token normalization, model selection, and cost-mode behavior
 - `paths.rs` — `ZCODE_HOME` root resolution and database discovery
-- `report.rs` — daily, monthly, weekly, and session summary shapes
+- `report.rs` — daily, monthly, and session summary shapes
 
 Source-specific behavior stays here; shared report and pricing behavior belongs
 in `ccusage-core` or `ccusage-adapter-common`.
@@ -47,7 +47,7 @@ deduplicated, and duplicate usage ids keep the first configured root's row.
 
 Only rows with `status = 'completed'` are included. `started_at` is interpreted
 as an epoch-millisecond timestamp and retains millisecond precision. Daily,
-monthly, weekly, and session summaries use the standard ccusage report shapes.
+monthly, and session summaries use the standard ccusage report shapes.
 
 ## Token and cost mapping
 
