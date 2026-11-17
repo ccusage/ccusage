@@ -256,7 +256,7 @@ env | grep -E "CLAUDE|CODEX|LOG_LEVEL"
 LOG_LEVEL=4 ccusage daily
 ```
 
-`--debug` does not trace configuration loading. ccusage reads one configuration file and silently skips a file it cannot read or parse, so if your settings seem ignored, check that the file holds valid JSON with `jq . < .ccusage/ccusage.json` and that no earlier file in the [search order](/guide/config-files#configuration-file-locations) shadows it.
+`--debug` does not trace configuration loading. ccusage warns when a discovered file cannot be read, parsed, or validated, then continues the search. An invalid explicit `--config` file is an error. Unknown keys warn while valid settings remain effective. If settings seem ignored, check the warning and its JSON field path, validate the file with `jq . < .ccusage/ccusage.json`, and check whether an earlier valid file in the [search order](/guide/config-files#configuration-file-locations) shadows it.
 
 ## Best Practices
 
