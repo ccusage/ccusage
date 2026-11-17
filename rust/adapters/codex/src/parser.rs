@@ -914,8 +914,6 @@ fn verbatim_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     has_headless_usage_field(line).then_some(CodexLineKind::Headless)
 }
 
-/// Whether `line` holds `"usage":`, `"input_tokens":` or `"prompt_tokens":`.
-/// One pass over the `":` every key ends with replaces a search per field.
 fn has_headless_usage_field(line: &[u8]) -> bool {
     KEY_END_FINDER.find_iter(line).any(|end| {
         let key = &line[..end];
