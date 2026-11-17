@@ -12,6 +12,12 @@ struct AgentDatabase {
     path: std::path::PathBuf,
 }
 
+impl AsRef<Path> for AgentDatabase {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// Find every per-agent SQLite store under `root`.
 ///
 /// OpenClaw resolves the agent database as
@@ -96,100 +102,68 @@ fn read_agent_database(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
-    let connection = match ccusage_adapter_common::sqlite::open_read_only(&database.path) {
-        Ok(connection) => connection,
-        Err(error) => {
-            error.record(&database.path, diagnostics);
-            return Vec::new();
-        }
-    };
-    match table_exists(&connection) {
-        Ok(true) => {}
-        Ok(false) => {
-            diagnostics.record(Skip::unit(
-                &database.path,
-                SkipKind::Invariant,
-                "OpenClaw database has no transcript_events table",
-            ));
-            return Vec::new();
-        }
-        Err(error) => {
-            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
-            return Vec::new();
-        }
-    }
-    let mut statement = match connection.prepare(
-        "SELECT session_id, seq, event_json, created_at FROM transcript_events ORDER BY session_id ASC, seq ASC",
-    ) {
-        Ok(statement) => statement,
-        Err(error) => {
-            UnitError::sqlite(SqliteStage::Setup, error.code).record(&database.path, diagnostics);
-            return Vec::new();
-        }
-    };
     let prefilter = super::parser::record_prefilter();
-    let mut session: Option<TranscriptReader> = None;
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                let Ok(session_id) = statement.read::<String, _>(0) else {
-                    diagnostics.record(Skip::record(
-                        &database.path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "OpenClaw transcript row has no session id",
+    ccusage_adapter_common::sqlite::sqlite_units_with_state(
+        std::slice::from_ref(database),
+        true,
+        diagnostics,
+        |connection, _| {
+            match table_exists(connection) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(UnitError::new(
+                        SkipKind::Invariant,
+                        "OpenClaw database has no transcript_events table",
                     ));
-                    continue;
-                };
-                let reader = match session.take() {
-                    Some(reader) if reader.session_id() == session_id => session.insert(reader),
-                    _ => session.insert(TranscriptReader::sqlite(session_id)),
-                };
-                let fallback_timestamp = read_i64(&statement, 3).and_then(timestamp_from_millis);
-                let Ok(event_json) = statement.read::<String, _>(2) else {
-                    diagnostics.record(Skip::record(
-                        &database.path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "OpenClaw transcript row has no event data",
-                    ));
-                    continue;
-                };
-                if !prefilter.matches(event_json.as_bytes()) {
-                    continue;
                 }
-                let Some(record) = jsonl::decode_record::<OpenClawLine>(
-                    event_json.as_bytes(),
-                    &database.path,
-                    row_number,
-                    None,
-                    diagnostics,
-                    Some(super::parser::is_usage_envelope),
-                ) else {
-                    continue;
-                };
-                if let Some(entry) = reader.read(
+                Err(error) => return Err(UnitError::sqlite(SqliteStage::Setup, error.code)),
+            }
+            connection.prepare("SELECT session_id, seq, event_json, created_at FROM transcript_events ORDER BY session_id ASC, seq ASC")
+                .map(|statement| (statement, None::<TranscriptReader>))
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |session, statement, database, row_number| {
+            let session_id = statement.read::<String, _>(0).map_err(|_| {
+                UnitError::new(
+                    SkipKind::InvalidData,
+                    "OpenClaw transcript row has no session id",
+                )
+            })?;
+            let reader = match session.take() {
+                Some(reader) if reader.session_id() == session_id => session.insert(reader),
+                _ => session.insert(TranscriptReader::sqlite(session_id)),
+            };
+            let fallback_timestamp = read_i64(statement, 3).and_then(timestamp_from_millis);
+            let event_json = statement.read::<String, _>(2).map_err(|_| {
+                UnitError::new(
+                    SkipKind::InvalidData,
+                    "OpenClaw transcript row has no event data",
+                )
+            })?;
+            if !prefilter.matches(event_json.as_bytes()) {
+                return Ok(None);
+            }
+            let Some(record) = jsonl::decode_record::<OpenClawLine>(
+                event_json.as_bytes(),
+                &database.path,
+                row_number,
+                None,
+                diagnostics,
+                Some(super::parser::is_usage_envelope),
+            ) else {
+                return Ok(None);
+            };
+            Ok(reader
+                .read(
                     &record,
                     &database.path,
                     row_number,
                     fallback_timestamp,
                     diagnostics,
-                ) {
-                    entries.push(entry_to_loaded(entry, tz, mode, pricing));
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code)
-                    .record(&database.path, diagnostics);
-                break;
-            }
-        }
-    }
-    entries
+                )
+                .map(|entry| entry_to_loaded(entry, tz, mode, pricing)))
+        },
+    )
 }
 
 fn table_exists(connection: &sqlite::Connection) -> std::result::Result<bool, sqlite::Error> {

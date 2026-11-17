@@ -27,16 +27,38 @@ where
     P: for<'a> Fn(&'a Connection, &U) -> Result<Statement<'a>, UnitError> + Sync,
     R: Fn(&Statement<'_>, &U, u32) -> Result<Option<T>, UnitError> + Sync,
 {
+    sqlite_units_with_state(
+        units,
+        single_thread,
+        diagnostics,
+        |connection, unit| prepare(connection, unit).map(|statement| (statement, ())),
+        |_, statement, unit, row| read(statement, unit, row),
+    )
+}
+
+pub fn sqlite_units_with_state<U, T, S, P, R>(
+    units: &[U],
+    single_thread: bool,
+    diagnostics: &Diagnostics,
+    prepare: P,
+    read: R,
+) -> Vec<T>
+where
+    U: AsRef<Path> + Sync,
+    T: Send,
+    P: for<'a> Fn(&'a Connection, &U) -> Result<(Statement<'a>, S), UnitError> + Sync,
+    R: Fn(&mut S, &Statement<'_>, &U, u32) -> Result<Option<T>, UnitError> + Sync,
+{
     read_typed_units_flat(units, single_thread, diagnostics, |unit| {
         let connection = open_read_only(unit.as_ref())?;
-        let mut statement = prepare(&connection, unit)?;
+        let (mut statement, mut state) = prepare(&connection, unit)?;
         let mut records = Vec::new();
         let mut row_number = 0_u32;
         loop {
             match statement.next() {
                 Ok(State::Row) => {
                     row_number = row_number.saturating_add(1);
-                    match read(&statement, unit, row_number) {
+                    match read(&mut state, &statement, unit, row_number) {
                         Ok(Some(record)) => records.push(record),
                         Ok(None) => {}
                         Err(error) => error.record_row(unit.as_ref(), row_number, diagnostics),
