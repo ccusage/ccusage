@@ -1,5 +1,6 @@
 use std::{
     fs,
+    ops::ControlFlow,
     path::{Path, PathBuf},
     sync::{Mutex, mpsc},
     thread,
@@ -8,6 +9,7 @@ use std::{
 use ccusage_core::{Diagnostics, LoadedEntry, ReportWindow, Skip, SkipKind, cli::SharedArgs};
 
 pub mod claims;
+pub mod dedupe;
 pub mod jsonl;
 #[cfg(any(test, feature = "testing"))]
 pub mod parity;
@@ -52,39 +54,59 @@ pub fn collect_files_matching(
     files: &mut Vec<PathBuf>,
     diagnostics: &Diagnostics,
 ) {
-    visit_files_matching(dir, matches, &mut |path| files.push(path), diagnostics);
+    let _ = visit_files_matching(
+        dir,
+        matches,
+        &mut |path| {
+            files.push(path);
+            ControlFlow::Continue(())
+        },
+        diagnostics,
+    );
 }
 
 /// Hands each `.jsonl` file under `dir` to `visit` as the walk finds it, like
 /// [`visit_files_matching`].
 pub fn visit_usage_files(dir: &Path, visit: &mut dyn FnMut(PathBuf), diagnostics: &Diagnostics) {
-    visit_files_matching(
+    let _ = visit_files_matching(
         dir,
         &|path| path.extension().is_some_and(|ext| ext == "jsonl"),
-        visit,
+        &mut |path| {
+            visit(path);
+            ControlFlow::Continue(())
+        },
         diagnostics,
     );
 }
 
 /// Like [`collect_files_matching`], but hands each file to `visit` as the walk
 /// finds it, so reading can start before the walk ends.
-fn visit_files_matching(
+pub fn visit_files_matching(
     dir: &Path,
     matches: &dyn Fn(&Path) -> bool,
-    visit: &mut dyn FnMut(PathBuf),
+    visit: &mut dyn FnMut(PathBuf) -> ControlFlow<()>,
     diagnostics: &Diagnostics,
-) {
+) -> ControlFlow<()> {
     for (path, file_type) in dir_entries(dir, diagnostics) {
         if file_type.is_file() && matches(&path) {
-            visit(path);
+            visit(path)?;
         } else if file_type.is_dir() {
-            visit_files_matching(&path, matches, visit, diagnostics);
+            visit_files_matching(&path, matches, visit, diagnostics)?;
         }
     }
+    ControlFlow::Continue(())
+}
+
+pub fn any_file_matching(
+    dir: &Path,
+    matches: &dyn Fn(&Path) -> bool,
+    diagnostics: &Diagnostics,
+) -> bool {
+    visit_files_matching(dir, matches, &mut |_| ControlFlow::Break(()), diagnostics).is_break()
 }
 
 /// The entries directly inside `dir`, each with its own (not a symlink
-/// target's) file type, in the order the directory lists them.
+/// target's) file type, sorted by path.
 ///
 /// A missing `dir` holds no entries. A directory, entry or file type that
 /// cannot be read is recorded in `diagnostics`, so files it hides show up as
@@ -103,7 +125,7 @@ pub fn dir_entries(dir: &Path, diagnostics: &Diagnostics) -> Vec<(PathBuf, fs::F
             return Vec::new();
         }
     };
-    entries
+    let mut entries: Vec<_> = entries
         .filter_map(|entry| {
             let Ok(entry) = entry else {
                 diagnostics.record(Skip::unit(
@@ -126,7 +148,9 @@ pub fn dir_entries(dir: &Path, diagnostics: &Diagnostics) -> Vec<(PathBuf, fs::F
                 }
             }
         })
-        .collect()
+        .collect();
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    entries
 }
 
 pub fn filter_loaded_entries_by_date(entries: &mut Vec<LoadedEntry>, shared: &SharedArgs) {
@@ -313,6 +337,50 @@ mod tests {
         Split, chunk_file_indexes_by_size, collect_files_matching, map_parallel,
         read_files_parallel, worker_count,
     };
+
+    #[test]
+    fn discovery_is_sorted_and_stops_at_the_first_match() {
+        let fixture = Fixture::new();
+        let _ = fixture.write_file("z.jsonl", "");
+        let first = fixture.write_file("a/first.jsonl", "");
+        let _ = fixture.write_file("a/second.jsonl", "");
+        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let mut visited = Vec::new();
+        assert!(super::any_file_matching(
+            fixture.root(),
+            &|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "jsonl")
+            },
+            &diagnostics,
+        ));
+        let result = super::visit_files_matching(
+            fixture.root(),
+            &|_| true,
+            &mut |path| {
+                visited.push(path);
+                std::ops::ControlFlow::Break(())
+            },
+            &diagnostics,
+        );
+        assert_eq!(result, std::ops::ControlFlow::Break(()));
+        assert_eq!(visited, [first]);
+    }
+
+    #[test]
+    fn directory_entries_and_recursive_collection_have_path_order() {
+        let fixture = Fixture::new();
+        for name in ["z.jsonl", "b/z.jsonl", "b/a.jsonl", "a.jsonl"] {
+            let _ = fixture.write_file(name, "");
+        }
+        let diagnostics = ccusage_core::Diagnostics::new("test");
+        let mut files = Vec::new();
+        super::collect_files_with_extension(fixture.root(), "jsonl", &mut files, &diagnostics);
+        assert_eq!(
+            files,
+            ["a.jsonl", "b/a.jsonl", "b/z.jsonl", "z.jsonl"].map(|name| fixture.path(name))
+        );
+    }
 
     #[test]
     fn balances_file_chunks_by_size() {

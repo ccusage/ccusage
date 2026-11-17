@@ -1,4 +1,58 @@
-use sqlite::{Statement, Type};
+use std::path::Path;
+
+use ccusage_core::Diagnostics;
+use sqlite::{Connection, OpenFlags, State, Statement, Type};
+
+use crate::{SqliteStage, UnitError, units::read_typed_units_flat};
+
+pub fn open_read_only(path: &Path) -> Result<Connection, UnitError> {
+    let mut connection = Connection::open_with_flags(path, OpenFlags::new().with_read_only())
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
+    connection
+        .set_busy_timeout(5000)
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
+    Ok(connection)
+}
+
+pub fn sqlite_units<U, T, P, R>(
+    units: &[U],
+    single_thread: bool,
+    diagnostics: &Diagnostics,
+    prepare: P,
+    read: R,
+) -> Vec<T>
+where
+    U: AsRef<Path> + Sync,
+    T: Send,
+    P: for<'a> Fn(&'a Connection, &U) -> Result<Statement<'a>, UnitError> + Sync,
+    R: Fn(&Statement<'_>, &U, u32) -> Result<Option<T>, UnitError> + Sync,
+{
+    read_typed_units_flat(units, single_thread, diagnostics, |unit| {
+        let connection = open_read_only(unit.as_ref())?;
+        let mut statement = prepare(&connection, unit)?;
+        let mut records = Vec::new();
+        let mut row_number = 0_u32;
+        loop {
+            match statement.next() {
+                Ok(State::Row) => {
+                    row_number = row_number.saturating_add(1);
+                    match read(&statement, unit, row_number) {
+                        Ok(Some(record)) => records.push(record),
+                        Ok(None) => {}
+                        Err(error) => error.record_row(unit.as_ref(), row_number, diagnostics),
+                    }
+                }
+                Ok(State::Done) => break,
+                Err(error) => {
+                    UnitError::sqlite(SqliteStage::Rows, error.code)
+                        .record(unit.as_ref(), diagnostics);
+                    break;
+                }
+            }
+        }
+        Ok::<_, UnitError>(records)
+    })
+}
 
 // NOTE(2026-11-17, sqlite 0.37.4): `Statement::read::<i64>` and `read::<f64>` never fail on a valid index; they turn NULL into 0 and clamp an out-of-range REAL, so a numeric column is read by the type SQLite stored, and text keeps SQLite's own numeric conversion.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,6 +110,62 @@ pub fn read_count(statement: &Statement<'_>, index: usize) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{Number, read_count, read_f64, read_i64, read_number};
+
+    #[test]
+    fn sqlite_units_keep_healthy_rows_and_record_rejected_rows() {
+        use crate::UnitError;
+        use ccusage_core::{Diagnostics, SkipKind};
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("rows.db");
+        sqlite::open(&path)
+            .unwrap()
+            .execute(
+                "CREATE TABLE records (value INTEGER); INSERT INTO records VALUES (1), (-1), (3)",
+            )
+            .unwrap();
+        for single_thread in [true, false] {
+            let diagnostics = Diagnostics::new("test");
+            let loaded = super::sqlite_units(
+                std::slice::from_ref(&path),
+                single_thread,
+                &diagnostics,
+                |connection, _| {
+                    connection
+                        .prepare("SELECT value FROM records ORDER BY rowid")
+                        .map_err(|error| UnitError::sqlite(crate::SqliteStage::Setup, error.code))
+                },
+                |statement, _, _| {
+                    let value = read_i64(statement, 0).unwrap();
+                    if value < 0 {
+                        Err(UnitError::new(SkipKind::InvalidData, "invalid record"))
+                    } else {
+                        Ok(Some(value))
+                    }
+                },
+            );
+            assert_eq!(loaded, [1, 3]);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        }
+    }
+
+    #[test]
+    fn read_only_open_never_creates_or_writes_a_database() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let missing = fixture.path("missing.db");
+        assert!(super::open_read_only(&missing).is_err());
+        assert!(!missing.exists());
+        let path = fixture.path("existing.db");
+        sqlite::open(&path)
+            .unwrap()
+            .execute("CREATE TABLE records (value INTEGER)")
+            .unwrap();
+        let connection = super::open_read_only(&path).unwrap();
+        assert!(
+            connection
+                .execute("INSERT INTO records VALUES (1)")
+                .is_err()
+        );
+    }
 
     fn with_row(values: &str, check: impl FnOnce(&sqlite::Statement<'_>)) {
         let fixture = ccusage_test_support::Fixture::new();

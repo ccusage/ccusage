@@ -7,7 +7,7 @@ use std::{
 use ccusage_core::{CliError, Diagnostics, Skip, SkipKind};
 use serde::de::DeserializeOwned;
 
-use crate::read_files_parallel;
+use crate::{Split, map_parallel};
 
 /// Why a whole unit (one file or database) was left out.
 ///
@@ -119,6 +119,11 @@ impl UnitError {
             Fault::Skip(kind) => kind,
             Fault::Unwritten | Fault::Unfinished => SkipKind::InvalidData,
         }
+    }
+
+    #[cfg(feature = "sqlite")]
+    pub(crate) fn record_row(self, unit: &Path, row: u32, diagnostics: &Diagnostics) {
+        diagnostics.record(Skip::record(unit, row, self.kind(), self.detail));
     }
 }
 
@@ -241,13 +246,54 @@ where
     E: Into<UnitError>,
     F: Fn(&Path) -> Result<T, E> + Sync,
 {
-    read_files_parallel(files, single_thread, |file| match read(file) {
-        Ok(value) => Some(value),
-        Err(error) => {
-            error.into().record(file, diagnostics);
-            None
-        }
+    read_typed_units(files, single_thread, diagnostics, |file| {
+        read(file.as_path())
     })
+}
+
+pub fn read_typed_units<U, T, E, F>(
+    units: &[U],
+    single_thread: bool,
+    diagnostics: &Diagnostics,
+    read: F,
+) -> Vec<Option<T>>
+where
+    U: AsRef<Path> + Sync,
+    T: Send,
+    E: Into<UnitError>,
+    F: Fn(&U) -> Result<T, E> + Sync,
+{
+    map_parallel(
+        units,
+        single_thread,
+        Split::BySize(U::as_ref),
+        |unit| match read(unit) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                error.into().record(unit.as_ref(), diagnostics);
+                None
+            }
+        },
+    )
+}
+
+pub fn read_typed_units_flat<U, T, I, E, F>(
+    units: &[U],
+    single_thread: bool,
+    diagnostics: &Diagnostics,
+    read: F,
+) -> Vec<T>
+where
+    U: AsRef<Path> + Sync,
+    I: IntoIterator<Item = T> + Send,
+    E: Into<UnitError>,
+    F: Fn(&U) -> Result<I, E> + Sync,
+{
+    read_typed_units(units, single_thread, diagnostics, read)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect()
 }
 
 /// [`read_units`] for readers that yield a unit's records: the records of
@@ -293,6 +339,46 @@ pub(crate) mod tests {
             .unwrap()
             .set_modified(modified)
             .unwrap();
+    }
+
+    #[test]
+    fn typed_units_keep_metadata_order_and_failed_slots() {
+        struct Unit {
+            path: std::path::PathBuf,
+            id: u32,
+        }
+        impl AsRef<Path> for Unit {
+            fn as_ref(&self) -> &Path {
+                &self.path
+            }
+        }
+        let fixture = Fixture::new();
+        let units = [
+            Unit {
+                path: fixture.write_file("a", "1"),
+                id: 7,
+            },
+            Unit {
+                path: fixture.write_file("b", "2"),
+                id: 3,
+            },
+            Unit {
+                path: fixture.write_file("c", "3"),
+                id: 9,
+            },
+        ];
+        for single_thread in [true, false] {
+            let diagnostics = Diagnostics::new("test");
+            let loaded = super::read_typed_units(&units, single_thread, &diagnostics, |unit| {
+                if unit.id == 3 {
+                    Err(UnitError::new(SkipKind::InvalidData, "rejected"))
+                } else {
+                    Ok(unit.id)
+                }
+            });
+            assert_eq!(loaded, [Some(7), None, Some(9)]);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        }
     }
 
     fn numbers(path: &Path) -> Result<Vec<u32>> {

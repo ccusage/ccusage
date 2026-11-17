@@ -18,6 +18,12 @@ layers.
 - `units::read_units` and `read_units_flat` — `read_files_parallel` with fault
   isolation: a unit whose read fails is recorded in the load's `Diagnostics`
   and the rest of the report goes on, so no call site writes its own skip.
+- `units::read_typed_units` and `read_typed_units_flat` preserve discovered
+  metadata and input order, including a slot for every failed unit.
+- `sqlite::sqlite_units` opens databases read-only with a five-second busy
+  timeout, keeps successfully decoded rows and records row failures.
+- `dedupe` keeps the first or last occurrence of a typed key, preserving the
+  input order of the surviving records.
 - `source` — the contract between a usage source and the reports: `UsageSource`,
   the object-safe trait the unified report holds, and
   `EntrySource`, the hooks of a source whose loader yields `Vec<LoadedEntry>`,
