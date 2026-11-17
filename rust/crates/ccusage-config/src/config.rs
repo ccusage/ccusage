@@ -27,6 +27,7 @@ struct ConfigCommand {
 pub struct ConfigContext {
     command: ConfigCommand,
     pi_stores: Vec<NamedPiStore>,
+    pi_stores_error: Option<String>,
     error: Option<String>,
     layers: BTreeMap<String, crate::layers::Layer>,
     warnings: Vec<String>,
@@ -48,6 +49,7 @@ impl ConfigContext {
         context.warnings = warnings;
         if let Some(file) = file {
             context.pi_stores = file.pi_stores;
+            context.pi_stores_error = file.pi_stores_error;
             context.layers = file.layers;
             context.resolve_context_thresholds(&file.path, scan_config_path(args).is_some());
         }
@@ -62,6 +64,7 @@ impl ConfigContext {
         Self {
             command,
             pi_stores: Vec::new(),
+            pi_stores_error: None,
             error: None,
             layers: BTreeMap::new(),
             warnings: Vec::new(),
@@ -78,6 +81,7 @@ impl ConfigContext {
                 report: report.clone(),
             },
             pi_stores: self.pi_stores.clone(),
+            pi_stores_error: self.pi_stores_error.clone(),
             error: self.error.clone(),
             layers: self.layers.clone(),
             warnings: self.warnings.clone(),
@@ -304,7 +308,10 @@ fn load_config_paths(
                             .strip_prefix("Invalid ccusage config: ")
                             .unwrap_or(&error);
                         let message = config_error(format!("{}: {detail}", path.display()));
-                        return (None, Some(message), warnings);
+                        if explicit {
+                            return (None, Some(message), warnings);
+                        }
+                        file.pi_stores_error = Some(message);
                     }
                 }
                 file.path = path.clone();
@@ -541,15 +548,28 @@ impl ccusage_cli::CliConfig for ConfigContext {
     }
 
     fn config_error(&self) -> Option<&str> {
-        self.error.as_deref().or_else(|| {
-            (self.command.report != "statusline")
-                .then(|| {
-                    self.option_maps()
-                        .into_iter()
-                        .find_map(|layer| layer.date_error.as_deref())
-                })
+        self.error
+            .as_deref()
+            .or_else(|| {
+                (self.command.report != "statusline"
+                    && self.command.report != "blocks"
+                    && self
+                        .command
+                        .agent
+                        .as_deref()
+                        .is_none_or(|agent| agent == "pi"))
+                .then_some(self.pi_stores_error.as_deref())
                 .flatten()
-        })
+            })
+            .or_else(|| {
+                (self.command.report != "statusline")
+                    .then(|| {
+                        self.option_maps()
+                            .into_iter()
+                            .find_map(|layer| layer.date_error.as_deref())
+                    })
+                    .flatten()
+            })
     }
 
     fn apply_shared(&self, shared: &mut SharedArgs) {
@@ -780,6 +800,43 @@ impl From<ConfigCostSource> for CostSource {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn keeps_named_pi_store_errors_gated_to_commands_that_read_them() {
+        for raw in [
+            r#"{"pi":{"stores":[{"name":"codex","path":"/tmp/store"}]}}"#,
+            r#"{"pi":{"stores":[{"name":"custom"}]}}"#,
+        ] {
+            let fixture = fs_fixture!({"ccusage.json": raw});
+            let _guard =
+                ccusage_test_support::EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+            for command in [
+                vec!["statusline"],
+                vec!["claude", "blocks"],
+                vec!["claude", "session"],
+                vec!["codex", "daily"],
+            ] {
+                let args = command
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>();
+                assert!(
+                    ConfigContext::from_args(&args).config_error().is_none(),
+                    "{command:?}"
+                );
+            }
+            for command in [vec!["daily"], vec!["weekly"], vec!["pi", "daily"]] {
+                let args = command
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>();
+                assert!(
+                    ConfigContext::from_args(&args).config_error().is_some(),
+                    "{command:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn discovered_date_errors_only_affect_commands_reading_the_layer() {
         let fixture = ccusage_test_support::fs_fixture!({
@@ -1015,15 +1072,15 @@ mod tests {
     }
 
     #[test]
-    fn discovered_invalid_pi_stores_stay_fatal() {
+    fn discovered_invalid_pi_stores_keep_the_selected_file() {
         for raw in [
             r#"{"pi":{"stores":[{"name":"claude","path":"/tmp/store"}]}}"#,
             r#"{"pi":{"stores":[{"name":"custom"}]}}"#,
         ] {
             let fixture = fs_fixture!({"selected.json": raw});
             let (file, error, _) = load_config_paths(false, vec![fixture.path("selected.json")]);
-            assert!(file.is_none());
-            assert!(error.is_some(), "{raw}");
+            assert!(file.unwrap().pi_stores_error.is_some(), "{raw}");
+            assert!(error.is_none(), "{raw}");
         }
     }
 
@@ -2020,6 +2077,7 @@ mod tests {
                 report: report.to_string(),
             },
             pi_stores: Vec::new(),
+            pi_stores_error: None,
             error,
             warnings,
             context_thresholds: ContextThresholds::default(),

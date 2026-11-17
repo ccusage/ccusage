@@ -28,6 +28,7 @@ pub(crate) struct ConfigFile {
     pub(crate) layers: BTreeMap<String, Layer>,
     pub(crate) warnings: Vec<String>,
     pub(crate) pi_stores: Vec<ccusage_cli::NamedPiStore>,
+    pub(crate) pi_stores_error: Option<String>,
 }
 
 impl ConfigFile {
@@ -87,7 +88,9 @@ impl ConfigFile {
                                 )?;
                             }
                             "stores" if agent == "pi" && !value.is_null() => {
-                                decode::<Vec<PiStoreConfig>>(value, &path)?;
+                                if strict {
+                                    decode::<Vec<PiStoreConfig>>(value, &path)?;
+                                }
                                 let store_schema =
                                     serde_json::to_value(schema_for!(Vec<PiStoreConfig>))
                                         .map_err(|error| error.to_string())?;
@@ -115,6 +118,7 @@ impl ConfigFile {
             layers,
             warnings,
             pi_stores: Vec::new(),
+            pi_stores_error: None,
         })
     }
 }

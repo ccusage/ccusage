@@ -1899,6 +1899,33 @@ fn invalid_explicit_named_stores_fail_statusline() {
 }
 
 #[test]
+fn named_pi_store_validation_does_not_break_statusline() {
+    assert_invalid_discovered_stores_allow(&["statusline"]);
+}
+
+#[test]
+fn named_pi_store_validation_does_not_break_agent_commands() {
+    assert_invalid_discovered_stores_allow(&["codex", "daily"]);
+}
+
+fn assert_invalid_discovered_stores_allow(args: &[&str]) {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{"pi":{"stores":[{"name":"codex","path":"/tmp/omp"}]}}"#,
+    });
+    let _guard = ccusage_test_support::EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+    let config = ccusage_config::ConfigContext::from_args(&args);
+    let parsed = parse_from_with_config(
+        std::iter::once(std::ffi::OsString::from("ccusage"))
+            .chain(args.iter().map(std::ffi::OsString::from)),
+        &config,
+        ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
+        env!("CARGO_PKG_VERSION"),
+    );
+    assert!(parsed.is_ok(), "{parsed:?}");
+}
+
+#[test]
 fn invalid_explicit_named_stores_fail_agent_commands() {
     let fixture = fs_fixture!({
         "ccusage.json": r#"{ "pi": { "stores": [{ "name": "codex", "path": "/tmp/omp" }] } }"#,
