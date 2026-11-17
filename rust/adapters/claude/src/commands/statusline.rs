@@ -39,7 +39,7 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
     let hook: StatuslineHook =
         serde_json::from_str(stdin.trim()).context("Invalid input format")?;
     let shared = statusline_shared(&args);
-    let cache_enabled = args.cache && !args.no_cache;
+    let cache_enabled = args.cache;
     let cache_path = statusline_cache_path(&hook.session_id);
     let transcript_path = Path::new(&hook.transcript_path);
     let current_mtime = transcript_mtime_ms(transcript_path).unwrap_or_default();
@@ -685,7 +685,7 @@ mod tests {
     use std::assert_matches;
     use std::ffi::OsString;
 
-    use ccusage_cli_parser::Cli;
+    use ccusage_cli_parser::parse_from_with_config;
     use ccusage_config::ConfigContext;
     use ccusage_core::cli::{Command, PricingOverride};
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
@@ -734,7 +734,7 @@ mod tests {
             config_path.clone(),
         ];
         let config = ConfigContext::from_args(&config_args);
-        let cli = Cli::parse_from_with_config(
+        let command = parse_from_with_config(
             [
                 "ccusage",
                 "statusline",
@@ -748,9 +748,10 @@ mod tests {
             &config,
             DEFAULT_SESSION_DURATION_HOURS,
             env!("CARGO_PKG_VERSION"),
+            None,
         )
         .unwrap();
-        let Some(Command::Statusline(args)) = cli.command else {
+        let Command::Statusline(args) = command else {
             panic!("expected statusline command");
         };
 

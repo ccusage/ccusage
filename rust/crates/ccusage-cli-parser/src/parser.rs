@@ -8,8 +8,6 @@ use ccusage_cli::{
     StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
-use crate::Cli;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ControlArg {
     Help,
@@ -43,24 +41,6 @@ impl RootOptions {
             by_agent: self.by_agent,
             ..agent_command_args(shared, kind)
         }
-    }
-}
-
-impl Cli {
-    pub fn parse_from_with_config<I>(
-        args: I,
-        config: &dyn CliConfig,
-        default_session_duration_hours: f64,
-        version: &'static str,
-    ) -> Result<Self, String>
-    where
-        I: IntoIterator<Item = OsString>,
-    {
-        parse_from_with_config(args, config, default_session_duration_hours, version, None).map(
-            |command| Self {
-                command: Some(command),
-            },
-        )
     }
 }
 

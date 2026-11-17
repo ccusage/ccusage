@@ -16,25 +16,7 @@ fetch-litellm-pricing = ["ccusage-pricing-snapshots/fetch-litellm-pricing"]
 
 [dependencies]
 ccusage-adapter-all.workspace = true
-ccusage-adapter-amp.workspace = true
-ccusage-adapter-antigravity.workspace = true
 ccusage-adapter-claude.workspace = true
-ccusage-adapter-cline.workspace = true
-ccusage-adapter-codebuff.workspace = true
-ccusage-adapter-codex.workspace = true
-ccusage-adapter-copilot.workspace = true
-ccusage-adapter-droid.workspace = true
-ccusage-adapter-dsh.workspace = true
-ccusage-adapter-gemini.workspace = true
-ccusage-adapter-goose.workspace = true
-ccusage-adapter-grok.workspace = true
-ccusage-adapter-hermes.workspace = true
-ccusage-adapter-kilo.workspace = true
-ccusage-adapter-kimi.workspace = true
-ccusage-adapter-openclaw.workspace = true
-ccusage-adapter-pi.workspace = true
-ccusage-adapter-qwen.workspace = true
-ccusage-adapter-zcode.workspace = true
 ccusage-cli-parser.workspace = true
 ccusage-cli.workspace = true
 ccusage-config.workspace = true
