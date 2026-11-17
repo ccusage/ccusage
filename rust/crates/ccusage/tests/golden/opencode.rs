@@ -817,7 +817,6 @@ fn seed_claude_store(directory: &Path) {
         ),
     )
     .expect("failed to write Claude transcript");
-    // 2026-01-03T00:00:00Z: the Claude loader prunes by mtime under `--since`.
     set_modified(&transcript, instant("2026-01-03T00:00:00Z"));
 }
 
