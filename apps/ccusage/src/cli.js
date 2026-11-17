@@ -7,7 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-/** @type {{ version: string }} */
+/** @type {{ optionalDependencies: Record<string, string>; version: string }} */
 const packageJson = require('../package.json');
 const wrapperVersion = packageJson.version;
 
@@ -28,36 +28,8 @@ const wrapperVersion = packageJson.version;
  * @returns {string | undefined}
  */
 function getNativePackageName(platform = process.platform, arch = process.arch) {
-	if (platform === 'darwin') {
-		if (arch === 'arm64') {
-			return '@ccusage/ccusage-darwin-arm64';
-		}
-		if (arch === 'x64') {
-			return '@ccusage/ccusage-darwin-x64';
-		}
-		return undefined;
-	}
-
-	if (platform === 'linux') {
-		if (arch === 'arm64') {
-			return '@ccusage/ccusage-linux-arm64';
-		}
-		if (arch === 'x64') {
-			return '@ccusage/ccusage-linux-x64';
-		}
-		return undefined;
-	}
-
-	if (platform === 'win32') {
-		if (arch === 'arm64') {
-			return '@ccusage/ccusage-win32-arm64';
-		}
-		if (arch === 'x64') {
-			return '@ccusage/ccusage-win32-x64';
-		}
-	}
-
-	return undefined;
+	const packageName = `@ccusage/ccusage-${platform}-${arch}`;
+	return Object.hasOwn(packageJson.optionalDependencies, packageName) ? packageName : undefined;
 }
 
 /**
