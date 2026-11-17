@@ -1,4 +1,4 @@
-use std::{fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read, ops::ControlFlow, path::Path};
 
 use ccusage_adapter_common::UnitError;
 use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LineReader};
@@ -32,6 +32,32 @@ fn for_each_line_from(
     diagnostics: &Diagnostics,
     mut visit: impl FnMut(Line<'_>),
 ) {
+    let read = visit_lines(reader, |line| {
+        visit(line);
+        ControlFlow::Continue(())
+    });
+    if read.interrupted {
+        diagnostics.record(Skip::unit(
+            path,
+            SkipKind::ReadInterrupted,
+            "file read failed",
+        ));
+    }
+}
+
+pub(super) struct LinesRead {
+    pub(super) stopped: bool,
+    pub(super) interrupted: bool,
+}
+
+pub(super) fn visit_lines(
+    reader: impl Read,
+    mut visit: impl FnMut(Line<'_>) -> ControlFlow<()>,
+) -> LinesRead {
+    let end = |flow: ControlFlow<()>, interrupted| LinesRead {
+        stopped: flow.is_break(),
+        interrupted,
+    };
     let mut lines = LineReader::with_capacity(READ_BUFFER_SIZE, reader);
     let mut index = 0;
     loop {
@@ -41,27 +67,27 @@ fn for_each_line_from(
                     Some(bytes) => (bytes, false),
                     None => (line, true),
                 };
-                visit(Line {
+                let flow = visit(Line {
                     index,
                     bytes,
                     unterminated,
                 });
+                if flow.is_break() {
+                    return end(flow, false);
+                }
             }
-            Ok(None) => return,
+            Ok(None) => return end(ControlFlow::Continue(()), false),
             Err(_) => {
-                diagnostics.record(Skip::unit(
-                    path,
-                    SkipKind::ReadInterrupted,
-                    "file read failed",
-                ));
-                if !lines.rest().is_empty() {
+                let flow = if lines.rest().is_empty() {
+                    ControlFlow::Continue(())
+                } else {
                     visit(Line {
                         index,
                         bytes: lines.rest(),
                         unterminated: true,
-                    });
-                }
-                return;
+                    })
+                };
+                return end(flow, true);
             }
         }
         index += 1;

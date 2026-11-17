@@ -1,8 +1,9 @@
 use ccusage_core::Diagnostics;
 use std::{
     collections::BTreeMap,
+    ops::ControlFlow,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -89,32 +90,48 @@ pub(super) fn load_daily_summaries_inner(
 }
 
 fn has_usage(path: &Path) -> bool {
-    use std::{
-        fs::File,
-        io::{BufRead, BufReader},
-    };
-    let Ok(file) = File::open(path) else {
+    let Ok(file) = std::fs::File::open(path) else {
         return false;
     };
-    let marker = LinePrefilter::all(&[br#""usage":{"#]);
-    let mut reader = BufReader::new(file);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        match reader.read_until(b'\n', &mut line) {
-            Ok(0) | Err(_) => return false,
-            Ok(_) => {
-                if marker.matches(&line)
-                    && let Ok((data, advisor_lookup)) = parse_usage_line(&line)
-                    && is_valid_usage_record(&data)
-                    && parse_ts_timestamp(&data.timestamp).is_some()
-                    && advisor_lookup.usages(&line).is_ok()
-                {
-                    return true;
-                }
-            }
+    super::diagnostics::visit_lines(file, |line| {
+        if admit(line.bytes).is_ok() {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
         }
+    })
+    .stopped
+}
+
+enum Refusal {
+    NotUsage,
+    Rejected(Rejection),
+    InvalidTimestamp,
+}
+
+struct Admitted {
+    record: ClaudeUsageRecord,
+    timestamp: TimestampMs,
+    advisors: Vec<super::AdvisorUsage>,
+}
+
+fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
+    static USAGE_MARKER: LazyLock<LinePrefilter> =
+        LazyLock::new(|| LinePrefilter::all(&[br#""usage":{"#]));
+    if !USAGE_MARKER.matches(line) {
+        return Err(Refusal::NotUsage);
     }
+    let (record, advisor_lookup) = parse_usage_line(line).map_err(Refusal::Rejected)?;
+    let timestamp = parse_ts_timestamp(&record.timestamp).ok_or(Refusal::InvalidTimestamp)?;
+    if !is_valid_usage_record(&record) {
+        return Err(Refusal::Rejected(Rejection::Malformed));
+    }
+    let advisors = advisor_lookup.usages(line).map_err(Refusal::Rejected)?;
+    Ok(Admitted {
+        record,
+        timestamp,
+        advisors,
+    })
 }
 
 /// Deduplicated daily entries plus the sessions of main-thread copies dedup
@@ -552,33 +569,21 @@ pub(super) fn read_usage_file<E>(
     let path_session_id: Arc<str> = Arc::from(path_session_id);
     let mut recorded_session_id = Arc::clone(&path_session_id);
     let mut entries = Vec::new();
-    let usage_marker = LinePrefilter::all(&[br#""usage":{"#]);
     super::diagnostics::for_each_line(path, diagnostics, |current| {
-        let (index, line) = (current.index, current.bytes);
-        if !usage_marker.matches(line) {
-            return;
-        }
-        let (data, advisor_lookup) = match parse_usage_line(line) {
-            Ok(parsed) => parsed,
-            Err(Rejection::NullContract) => return,
-            Err(Rejection::Malformed) => {
+        let line = current.bytes;
+        let Admitted {
+            record: data,
+            timestamp,
+            advisors,
+        } = match admit(line) {
+            Ok(admitted) => admitted,
+            Err(Refusal::NotUsage | Refusal::Rejected(Rejection::NullContract)) => return,
+            Err(Refusal::Rejected(Rejection::Malformed)) => {
                 super::diagnostics::rejected(path, current, diagnostics);
                 return;
             }
-        };
-        let Some(timestamp) = parse_ts_timestamp(&data.timestamp) else {
-            super::diagnostics::invalid_timestamp(path, index, diagnostics);
-            return;
-        };
-        if !is_valid_usage_record(&data) {
-            super::diagnostics::rejected(path, current, diagnostics);
-            return;
-        }
-        let advisors = match advisor_lookup.usages(line) {
-            Ok(advisors) => advisors,
-            Err(Rejection::NullContract) => return,
-            Err(Rejection::Malformed) => {
-                super::diagnostics::rejected(path, current, diagnostics);
+            Err(Refusal::InvalidTimestamp) => {
+                super::diagnostics::invalid_timestamp(path, current.index, diagnostics);
                 return;
             }
         };
