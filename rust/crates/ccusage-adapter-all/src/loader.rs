@@ -21,8 +21,8 @@ use super::{
     report::sort_rows,
     sources::SOURCES,
     types::{
-        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllSectionsLoadResult,
-        LoadedAgentRows,
+        AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllSectionsLoadResult, Bucket,
+        LoadedAgentRows, ReportDay,
     },
 };
 
@@ -36,7 +36,7 @@ pub(super) fn load_rows(
     let pricing = load_pricing(&run_sources);
     let loaded = load_base_rows(LoadKind::for_report(kind), shared, &run_sources, &pricing)?;
     Ok(AllLoadResult {
-        rows: finish_rows(kind, loaded.rows, shared, start_of_week),
+        rows: finish_rows(kind, loaded.rows, shared, start_of_week)?,
         detected_agents: loaded.detected_agents,
         diagnostics: loaded.diagnostics,
     })
@@ -86,11 +86,13 @@ pub(super) fn load_sections(
             session_base
                 .as_ref()
                 .map(|base| finish_rows(*kind, base.rows.clone(), shared, start_of_week))
+                .transpose()?
                 .unwrap_or_default()
         } else {
             daily_base
                 .as_ref()
                 .map(|base| finish_rows(*kind, base.rows.clone(), shared, start_of_week))
+                .transpose()?
                 .unwrap_or_default()
         };
         sections.push((*kind, rows));
@@ -302,8 +304,8 @@ fn finish_rows(
     mut rows: Vec<UnifiedRow>,
     shared: &SharedArgs,
     start_of_week: WeekDay,
-) -> Vec<UnifiedRow> {
-    if kind == AgentReportKind::Session {
+) -> Result<Vec<UnifiedRow>> {
+    let Some(bucket) = Bucket::for_report(kind, start_of_week) else {
         for row in &mut rows {
             row.metadata_agents = None;
         }
@@ -318,12 +320,12 @@ fn finish_rows(
                 .then_with(|| a.period.cmp(&b.period))
                 .then_with(|| a.agent.cmp(b.agent))
         });
-        return rows;
-    }
+        return Ok(rows);
+    };
 
-    let mut aggregated = aggregate_rows(rows, kind, start_of_week);
+    let mut aggregated = aggregate_rows(rows, bucket)?;
     sort_rows(&mut aggregated, &shared.order);
-    aggregated
+    Ok(aggregated)
 }
 
 pub(super) fn load_agent_rows_parallel(
@@ -474,31 +476,18 @@ fn needs_session(kinds: &[AgentReportKind]) -> bool {
     kinds.contains(&AgentReportKind::Session)
 }
 
-pub(super) fn aggregate_rows(
-    rows: Vec<UnifiedRow>,
-    kind: AgentReportKind,
-    start_of_week: WeekDay,
-) -> Vec<UnifiedRow> {
+pub(super) fn aggregate_rows(rows: Vec<UnifiedRow>, bucket: Bucket) -> Result<Vec<UnifiedRow>> {
     let mut groups = BTreeMap::<String, AllAccumulator>::new();
     for mut row in rows {
-        let period = match kind {
-            AgentReportKind::Daily => row.period.clone(),
-            AgentReportKind::Monthly => row
-                .period
-                .get(..7)
-                .map_or_else(|| row.period.clone(), str::to_string),
-            AgentReportKind::Weekly => {
-                crate::week_start(&row.period, start_of_week).unwrap_or_else(|| row.period.clone())
-            }
-            AgentReportKind::Session => row.period.clone(),
-        };
+        let date = ReportDay::parse(&row.period)?;
+        let period = bucket.key(date)?;
         row.period = period.clone();
         groups.entry(period).or_default().add(row);
     }
-    groups
+    Ok(groups
         .into_iter()
         .map(|(period, group)| group.into_row(period))
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -587,6 +576,15 @@ mod tests {
         let mut summary = usage_summary(period, 10);
         summary.total_cost = cost;
         summary_rows(agent, vec![summary], false).pop().unwrap()
+    }
+
+    #[test]
+    fn invalid_daily_periods_cannot_become_report_buckets() {
+        for period in ["invalid", "2026-02-30", "2026-01", "2026-01-02T00:00:00Z"] {
+            for bucket in [Bucket::Day, Bucket::Month, Bucket::Week(WeekDay::Monday)] {
+                assert!(aggregate_rows(vec![sorting_row(period, "amp", 1.0)], bucket).is_err());
+            }
+        }
     }
 
     #[test]
@@ -806,7 +804,7 @@ mod tests {
             sorting_row("z-cheap", "claude", 1.0),
             sorting_row("b-zero", "claude", 0.0),
         ];
-        let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday);
+        let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday).unwrap();
         let keys: Vec<_> = sorted
             .iter()
             .map(|row| (row.period.as_str(), row.agent))
@@ -840,7 +838,8 @@ mod tests {
                 order_explicit,
                 ..SharedArgs::default()
             };
-            let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday);
+            let sorted =
+                finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday).unwrap();
             let keys: Vec<_> = sorted
                 .iter()
                 .map(|row| (row.period.as_str(), row.agent))
@@ -868,6 +867,7 @@ mod tests {
                 &shared,
                 WeekDay::Monday
             )
+            .unwrap()
             .is_empty()
         );
         let rows = finish_rows(
@@ -875,7 +875,8 @@ mod tests {
             vec![sorting_row("only-session", "claude", 0.0)],
             &shared,
             WeekDay::Monday,
-        );
+        )
+        .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].period, "only-session");
     }
@@ -900,7 +901,7 @@ mod tests {
                     order,
                     ..SharedArgs::default()
                 };
-                let sorted = finish_rows(kind, rows, &shared, WeekDay::Monday);
+                let sorted = finish_rows(kind, rows, &shared, WeekDay::Monday).unwrap();
                 let costs: Vec<_> = sorted.iter().map(|row| row.total_cost).collect();
                 assert_eq!(costs, expected_costs, "{kind:?} {order:?}");
             }
@@ -2002,7 +2003,7 @@ mod tests {
             .rows,
         );
 
-        let aggregated = aggregate_rows(rows, AgentReportKind::Daily, WeekDay::Monday);
+        let aggregated = aggregate_rows(rows, Bucket::Day).unwrap();
 
         assert_eq!(aggregated.len(), 1);
         assert_eq!(aggregated[0].metadata_agents, Some(vec!["omp", "pi"]));

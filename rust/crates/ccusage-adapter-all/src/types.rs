@@ -4,6 +4,45 @@ use ccusage_adapter_common::rows::UnifiedRow;
 
 use crate::{Diagnostics, ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
 
+#[derive(Clone, Copy)]
+pub(super) enum Bucket {
+    Day,
+    Month,
+    Week(crate::cli::WeekDay),
+}
+
+pub(super) struct ReportDay(crate::TimestampMs);
+
+impl ReportDay {
+    pub(super) fn parse(value: &str) -> crate::Result<Self> {
+        crate::parse_ts_timestamp(&format!("{value}T00:00:00Z"))
+            .map(Self)
+            .ok_or_else(|| crate::cli_error("source returned an invalid daily period"))
+    }
+}
+
+impl Bucket {
+    pub(super) fn for_report(kind: AgentReportKind, start: crate::cli::WeekDay) -> Option<Self> {
+        match kind {
+            AgentReportKind::Daily => Some(Self::Day),
+            AgentReportKind::Monthly => Some(Self::Month),
+            AgentReportKind::Weekly => Some(Self::Week(start)),
+            AgentReportKind::Session => None,
+        }
+    }
+
+    pub(super) fn key(self, date: ReportDay) -> crate::Result<String> {
+        let parts = date.0.utc_parts();
+        let day = format!("{:04}-{:02}-{:02}", parts.year, parts.month, parts.day);
+        match self {
+            Self::Day => Ok(day),
+            Self::Month => Ok(format!("{:04}-{:02}", parts.year, parts.month)),
+            Self::Week(start) => crate::week_start(&day, start)
+                .ok_or_else(|| crate::cli_error("cannot calculate unified week boundary")),
+        }
+    }
+}
+
 pub(super) struct AllLoadResult {
     pub(super) rows: Vec<UnifiedRow>,
     pub(super) detected_agents: Vec<&'static str>,

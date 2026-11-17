@@ -24,7 +24,7 @@ use crate::{
         all_report_title, all_table_columns, all_table_row, report_json_with_agents,
         sections_report_json,
     },
-    types::{AgentLoadSpec, AgentRows},
+    types::{AgentLoadSpec, AgentRows, Bucket},
 };
 use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
 use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::UnifiedRow};
@@ -129,9 +129,9 @@ fn aggregates_daily_agent_rows_by_period() {
                 model_breakdowns: Vec::new(),
             },
         ],
-        AgentReportKind::Daily,
-        WeekDay::Monday,
-    );
+        Bucket::Day,
+    )
+    .unwrap();
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].period, "2026-01-02");
@@ -158,9 +158,9 @@ fn saturates_unified_daily_and_weekly_reports_for_extreme_counters() {
         extreme_all_row("2099-01-02", u64::MAX),
         extreme_all_row("2099-01-03", 1),
     ];
-    let daily_rows = aggregate_rows(rows.clone(), AgentReportKind::Daily, WeekDay::Monday);
+    let daily_rows = aggregate_rows(rows.clone(), Bucket::Day).unwrap();
     let daily_report = report_json_with_agents(&daily_rows, AgentReportKind::Daily, false);
-    let weekly_rows = aggregate_rows(rows, AgentReportKind::Weekly, WeekDay::Monday);
+    let weekly_rows = aggregate_rows(rows, Bucket::Week(WeekDay::Monday)).unwrap();
     let weekly_report = report_json_with_agents(&weekly_rows, AgentReportKind::Weekly, false);
 
     for report in [daily_report, weekly_report] {
@@ -185,7 +185,8 @@ fn buckets_unified_weekly_rows_by_requested_start_of_week() {
         extreme_all_row("2026-01-05", 1),
     ];
     let periods = |start_of_week| {
-        aggregate_rows(rows.clone(), AgentReportKind::Weekly, start_of_week)
+        aggregate_rows(rows.clone(), Bucket::Week(start_of_week))
+            .unwrap()
             .into_iter()
             .map(|row| row.period)
             .collect::<Vec<_>>()
@@ -295,9 +296,9 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
                 }],
             },
         ],
-        AgentReportKind::Monthly,
-        WeekDay::Monday,
-    );
+        Bucket::Month,
+    )
+    .unwrap();
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].period, "2026-01");
@@ -597,9 +598,9 @@ fn omits_by_agent_json_breakdowns_by_default() {
             agent_breakdowns: None,
             model_breakdowns: Vec::new(),
         }],
-        AgentReportKind::Daily,
-        WeekDay::Monday,
-    );
+        Bucket::Day,
+    )
+    .unwrap();
 
     let report = report_json_with_agents(&rows, AgentReportKind::Daily, false);
 
@@ -623,11 +624,7 @@ fn renders_multi_section_json_with_command_totals() {
         agent_breakdowns: None,
         model_breakdowns: Vec::new(),
     }];
-    let monthly_rows = aggregate_rows(
-        daily_rows.clone(),
-        AgentReportKind::Monthly,
-        WeekDay::Monday,
-    );
+    let monthly_rows = aggregate_rows(daily_rows.clone(), Bucket::Month).unwrap();
     let session_rows = vec![UnifiedRow {
         period: "session-a".to_string(),
         agent: "codex",
@@ -2552,9 +2549,9 @@ fn aggregates_model_breakdowns_across_agents() {
                 ],
             },
         ],
-        AgentReportKind::Daily,
-        WeekDay::Monday,
-    );
+        Bucket::Day,
+    )
+    .unwrap();
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].model_breakdowns.len(), 3);
