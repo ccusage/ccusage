@@ -1,6 +1,6 @@
 # ccusage-report
 
-Report helpers that only the `ccusage` binary calls: the `--last` window math,
+Report helpers for the `ccusage` binary and Claude adapter: the `--last` window math,
 the JSON shapes of the daily, weekly, monthly, and session reports, the
 since/until row filter, and the date and time formatters the blocks and
 statusline reports print.
@@ -13,9 +13,9 @@ statusline reports print.
 - `date_utils.rs` — `format_date`, `format_utc_second`,
   `local_parts`, `hour_12`, `am_pm`, and `is_valid_timezone`.
 
-These sit above `ccusage-core` on purpose: no adapter uses them, so editing them
-does not recompile the adapters the way an edit to core does. Code an adapter
-or `ccusage-adapter-common` needs belongs in core instead.
+These sit above `ccusage-core` so editing them recompiles the Claude adapter
+and binary without rebuilding every source adapter. Helpers shared across
+adapters belong in core or `ccusage-adapter-common`.
 
 ## Public surface
 

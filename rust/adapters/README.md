@@ -1,8 +1,8 @@
 # Agent Adapters
 
 This directory holds one crate per usage source, plus `common/`, the helpers they
-share. The binary reaches them through thin alias modules in
-`rust/crates/ccusage/src/adapter/`.
+share. The binary reaches focused agents through `ccusage-adapter-all::runner`;
+Claude-specific report commands use the Claude adapter directly.
 
 Each agent adapter owns source-specific log discovery, parsing, token mapping,
 model mapping, source metadata, and source-specific pricing behavior. Shared

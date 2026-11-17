@@ -17,6 +17,8 @@ themselves independent of each other.
 ## Public surface
 
 - `run`
+- `runner`
+- `run_opencode`
 
 ## Depends on
 
