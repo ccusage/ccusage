@@ -1,11 +1,14 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, calculate_cost_for_usage_at,
-    cli::CostMode, format_date_tz, missing_pricing_model_for_candidates,
+    LoadedEntry, PricingMap, TokenUsageRaw, UsageEntry, UsageMessage, cli::CostMode, format_date_tz,
 };
 use ccusage_adapter_common::{jsonl, sqlite::read_i64};
 use ccusage_core::SkipKind;
@@ -46,6 +49,7 @@ impl RowRejection {
 pub(super) fn row_to_entry(
     statement: &sqlite::Statement<'_>,
     tz: &JiffTimeZone,
+    mode: CostMode,
     pricing: &PricingMap,
 ) -> Result<Option<LoadedEntry>, RowRejection> {
     let input_tokens = read_token_value(statement, 8)
@@ -99,16 +103,30 @@ pub(super) fn row_to_entry(
         is_api_error_message: None,
         is_sidechain: None,
     };
-    let cost = calculate_goose_cost(
-        &model,
-        &provider_id,
-        usage,
-        reasoning_tokens,
-        timestamp,
-        pricing,
+    let mut candidates = vec![(model.clone(), MatchKind::Fuzzy)];
+    if provider_id != "goose" {
+        candidates.push((format!("{provider_id}/{model}"), MatchKind::Fuzzy));
+    }
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|(name, kind)| (name.as_str(), *kind))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage,
+            reasoning_tokens,
+            residual_tokens: 0,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(timestamp),
+        },
+        Some(pricing),
     );
-    let missing_pricing_model =
-        missing_goose_pricing(&model, &provider_id, usage, reasoning_tokens, pricing);
+    let cost = priced.cost;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
 
     Ok(Some(LoadedEntry {
         date: format_date_tz(timestamp, tz),
@@ -193,67 +211,28 @@ fn normalize_provider(provider: Option<&str>, model: &str) -> String {
     "goose".to_string()
 }
 
-fn calculate_goose_cost(
-    model: &str,
-    provider_id: &str,
-    usage: TokenUsageRaw,
-    reasoning_tokens: u64,
-    timestamp: crate::TimestampMs,
-    pricing: &PricingMap,
-) -> f64 {
-    let cost_usage = TokenUsageRaw {
-        output_tokens: usage.output_tokens.saturating_add(reasoning_tokens),
-        cache_creation: None,
-        ..usage
-    };
-    let raw = calculate_cost_for_usage_at(
-        Some(model),
-        cost_usage,
-        None,
-        Some(timestamp),
-        CostMode::Calculate,
-        Some(pricing),
-    );
-    if raw > 0.0 || provider_id == "goose" {
-        return raw;
-    }
-    let candidate = format!("{provider_id}/{model}");
-    calculate_cost_for_usage_at(
-        Some(&candidate),
-        cost_usage,
-        None,
-        Some(timestamp),
-        CostMode::Calculate,
-        Some(pricing),
-    )
-}
-
-fn missing_goose_pricing(
-    model: &str,
-    provider_id: &str,
-    usage: TokenUsageRaw,
-    reasoning_tokens: u64,
-    pricing: &PricingMap,
-) -> Option<String> {
-    let cost_usage = TokenUsageRaw {
-        output_tokens: usage.output_tokens.saturating_add(reasoning_tokens),
-        cache_creation: None,
-        ..usage
-    };
-    let mut candidates = vec![model.to_string()];
-    if provider_id != "goose" {
-        candidates.push(format!("{provider_id}/{model}"));
-    }
-    missing_pricing_model_for_candidates(
-        model,
-        candidates,
-        crate::total_usage_tokens(cost_usage),
-        Some(pricing),
-    )
-}
-
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn zero_rates_stop_candidate_fallback() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut row = connection.prepare(r#"SELECT 's', '{"model_name":"sample"}', 'vendor', '2026-05-19 00:00:00', 100, 100, 0, 100, 100, 0"#).unwrap();
+        assert_eq!(row.next().unwrap(), sqlite::State::Row);
+        let mut pricing = super::PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        let loaded = super::row_to_entry(
+            &row,
+            &jiff::tz::TimeZone::UTC,
+            super::CostMode::Calculate,
+            &pricing,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(loaded.cost, 0.0);
+        assert_eq!(loaded.missing_pricing_model, None);
+    }
+
     #[test]
     fn mixed_epoch_units_use_one_boundary() {
         for (raw, millis) in [
@@ -266,6 +245,84 @@ mod tests {
                 millis,
                 "{raw}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod resolver_differential {
+    use super::*;
+    use ccusage_core::pricing::MatchKind;
+    #[test]
+    fn ordered_resolver_preserves_legacy_names_and_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
+        for model in [
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4",
+            "claude-opus-5",
+            "anthropic/claude-sonnet-4",
+            "gpt-5",
+            "gpt-5.5",
+            "openai/gpt-5",
+            "gemini-2.5-pro",
+            "gemini-3.8-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.6-flash-low",
+            "gemini-3.8-flash",
+            "qwen3-coder",
+            "qwen3-coder-plus",
+            "qwen3-coder-flash",
+            "glm-5.3",
+            "GLM-5.3",
+            "glm-4.5",
+            "deepseek-v4-flash",
+            "deepseek/deepseek-v4-flash",
+            "grok-4.3",
+            "sample",
+            "vendor/sample",
+            "unpriced-model-xyz",
+        ] {
+            for provider in [
+                "anthropic",
+                "openai",
+                "google",
+                "qwen",
+                "alibaba",
+                "zai",
+                "openrouter",
+                "vendor",
+                "unknown",
+            ] {
+                let candidates = [model.to_string(), format!("{provider}/{model}")];
+                let old = candidates
+                    .iter()
+                    .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
+                let typed: Vec<_> = candidates
+                    .iter()
+                    .map(|name| (name.as_str(), MatchKind::Fuzzy))
+                    .collect();
+                let new = pricing.resolve(&typed);
+                assert!(
+                    old.is_none_or(|(_, rates)| ccusage_core::calculate_cost_from_pricing(
+                        TokenUsageRaw {
+                            input_tokens: 1,
+                            output_tokens: 1,
+                            cache_creation_input_tokens: 1,
+                            cache_read_input_tokens: 1,
+                            ..TokenUsageRaw::default()
+                        },
+                        rates
+                    ) > 0.0),
+                    "{model} / {provider} must exercise the legacy positive-cost path"
+                );
+                assert_eq!(
+                    format!("{old:?}"),
+                    format!("{new:?}"),
+                    "{model} / {provider}"
+                );
+            }
         }
     }
 }

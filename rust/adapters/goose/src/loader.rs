@@ -32,6 +32,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
         &db_paths,
         cx.shared.single_thread,
         tz,
+        cx.shared.mode,
         pricing,
         cx.diagnostics,
     );
@@ -43,6 +44,7 @@ fn load_entries_from_dbs(
     db_paths: &[PathBuf],
     single_thread: bool,
     tz: &JiffTimeZone,
+    mode: ccusage_core::cli::CostMode,
     pricing: &PricingMap,
     diagnostics: &Diagnostics,
 ) -> Vec<LoadedEntry> {
@@ -56,7 +58,7 @@ fn load_entries_from_dbs(
                 .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
         },
         |statement, _, _| {
-            row_to_entry(statement, tz, pricing)
+            row_to_entry(statement, tz, mode, pricing)
                 .map_err(|rejection| UnitError::new(rejection.kind(), rejection.detail()))
         },
     )
@@ -64,6 +66,55 @@ fn load_entries_from_dbs(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn uniform_cost_modes_do_not_calculate_in_display() {
+        let fixture = fs_fixture!({});
+        let _sessions = fixture.create_dir_all("data/sessions");
+        let db_path = fixture.path("data/sessions/sessions.db");
+        create_goose_db(&db_path);
+        insert_session(
+            &db_path,
+            SessionFixture {
+                id: "s",
+                model_config: r#"{"model_name":"sample"}"#,
+                provider: None,
+                created_at: "2026-05-01 01:02:03",
+                total: 150,
+                input: 100,
+                output: 50,
+            },
+        );
+        let _guard = EnvVarGuard::set("GOOSE_PATH_ROOT", fixture.root());
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
+        );
+        for (mode, expected) in [
+            (crate::cli::CostMode::Auto, 0.2),
+            (crate::cli::CostMode::Calculate, 0.2),
+            (crate::cli::CostMode::Display, 0.0),
+        ] {
+            let shared = SharedArgs {
+                mode,
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert!(
+                (entries[0].cost - expected).abs() < 1e-12,
+                "{mode:?}: {} vs {expected}",
+                entries[0].cost
+            );
+            assert_eq!(entries[0].missing_pricing_model, None);
+        }
+    }
+
     use crate::cli::SharedArgs;
     use std::path::Path;
 
@@ -155,6 +206,7 @@ INSERT INTO sessions (
             std::slice::from_ref(&db_path),
             true,
             &jiff::tz::TimeZone::UTC,
+            ccusage_core::cli::CostMode::Auto,
             &pricing,
             &diagnostics,
         );
@@ -195,6 +247,7 @@ INSERT INTO sessions (
             std::slice::from_ref(&db_path),
             true,
             &jiff::tz::TimeZone::UTC,
+            ccusage_core::cli::CostMode::Auto,
             &PricingMap::default(),
             &diagnostics,
         );
@@ -226,6 +279,7 @@ INSERT INTO sessions (
             std::slice::from_ref(&db_path),
             true,
             &jiff::tz::TimeZone::UTC,
+            ccusage_core::cli::CostMode::Auto,
             &PricingMap::default(),
             &diagnostics,
         );
