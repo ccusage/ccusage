@@ -84,7 +84,7 @@ The unified table has an Agent column and no Last Activity column; its JSON keep
 
 ### Session Metrics
 
-- **Session**: The full session ID
+- **Session**: The session ID. When the table is wider than the terminal, long IDs are shortened with `…`, as `sess-be…` is above; the unified table is often shortened because some sources use long IDs. The full ID is `period` in `ccusage session --json`, or `sessionId` in a focused report's JSON such as `ccusage claude session --json`
 - **Input/Output Tokens**: Total tokens exchanged in the conversation
 - **Cache Tokens**: Cache creation and read tokens for context efficiency
 - **Cost**: Estimated USD cost for the usage shown; without a date filter, the entire conversation
