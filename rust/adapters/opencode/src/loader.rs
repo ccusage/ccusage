@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
 };
 
-use ccusage_adapter_common::source::ProgressOwner;
+use ccusage_adapter_common::source::{ProgressOwner, UsageLoadContext};
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
@@ -25,7 +25,7 @@ use super::{
 use crate::{
     LoadedEntry, PricingMap, Result,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    collect_files_with_extension, date_range_bounds_ms, debug_log, resolve_tz,
+    collect_files_with_extension, date_range_bounds_ms, debug_log,
 };
 
 /// An entry and the Claude Code session its `claude-agent` row ran in.
@@ -69,26 +69,18 @@ fn load_directories(
     diagnostics: &Diagnostics,
 ) -> Vec<LinkedEntry> {
     let allow_aggregate_fallback = report_kind == AgentReportKind::Session;
-    let pricing = if shared.mode == CostMode::Display {
-        None
-    } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        ))
-    };
-    let tz = resolve_tz(shared.timezone.as_deref());
-    let window = DateWindow::from_shared(shared, &tz);
+    let context = UsageLoadContext::new(shared);
+    let tz = context.window().timezone();
+    let window = DateWindow::from_shared(shared, tz);
     let mut collector = EntryCollector::default();
     for directory in directories {
         if let Some(db_path) = db_path(directory, diagnostics) {
             load_entries_from_database(
                 &DatabaseLoadContext {
                     db_path: &db_path,
-                    tz: &tz,
+                    tz,
                     mode: shared.mode,
-                    pricing: pricing.as_ref(),
+                    pricing: context.pricing(),
                     shared,
                     window,
                     diagnostics,
@@ -116,7 +108,7 @@ fn load_directories(
         // over the results in their original file order so parallelism never changes
         // which duplicate survives.
         let loaded = read_units_flat(&files, shared.single_thread, diagnostics, |file| {
-            read_message_file(file, &tz, shared.mode, pricing.as_ref(), window)
+            read_message_file(file, tz, shared.mode, context.pricing(), window)
         });
         for entry in loaded {
             collector.push_message((entry, None));
