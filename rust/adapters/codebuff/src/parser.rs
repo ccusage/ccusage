@@ -1,3 +1,7 @@
+use ccusage_core::{
+    cost::{EntryPricing, price_entry},
+    pricing::MatchKind,
+};
 use std::path::Path;
 
 use ccusage_adapter_common::units::{UnitError, read_json};
@@ -5,8 +9,8 @@ use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
 use crate::{
-    PricingMap, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage_at,
-    cli::CostMode, format_rfc3339_millis, missing_pricing_model_for_candidates, parse_ts_timestamp,
+    PricingMap, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, format_rfc3339_millis,
+    parse_ts_timestamp,
 };
 
 const DEFAULT_CODEBUFF_MODEL: &str = "codebuff-unknown";
@@ -380,61 +384,42 @@ fn infer_provider(model: &str) -> &'static str {
     }
 }
 
-pub(super) fn calculate_codebuff_cost(entry: &CodebuffEntry, pricing: &PricingMap) -> f64 {
-    let usage = TokenUsageRaw {
-        output_tokens: entry
-            .usage
-            .output_tokens
-            .saturating_add(entry.extra_total_tokens),
-        cache_creation: None,
-        ..entry.usage
-    };
-    let raw = calculate_cost_for_usage_at(
-        Some(&entry.model),
-        usage,
-        None,
-        Some(entry.timestamp),
-        CostMode::Calculate,
+pub(super) fn price_codebuff(
+    entry: &CodebuffEntry,
+    mode: CostMode,
+    pricing: &PricingMap,
+) -> (f64, Option<String>) {
+    let candidates = codebuff_model_candidates(entry);
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            usage: entry.usage,
+            reasoning_tokens: 0,
+            residual_tokens: entry.extra_total_tokens,
+            candidates: &candidates,
+            stored_cost: None,
+            mode,
+            timestamp: Some(entry.timestamp),
+        },
         Some(pricing),
     );
-    if raw > 0.0
-        || entry.provider == "unknown"
-        || entry.model.starts_with(&format!("{}/", entry.provider))
-    {
-        return raw;
-    }
-    calculate_cost_for_usage_at(
-        Some(&format!("{}/{}", entry.provider, entry.model)),
-        usage,
-        None,
-        Some(entry.timestamp),
-        CostMode::Calculate,
-        Some(pricing),
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
     )
 }
 
-pub(super) fn missing_codebuff_pricing(
-    entry: &CodebuffEntry,
-    pricing: &PricingMap,
-) -> Option<String> {
-    let usage = TokenUsageRaw {
-        output_tokens: entry
-            .usage
-            .output_tokens
-            .saturating_add(entry.extra_total_tokens),
-        cache_creation: None,
-        ..entry.usage
-    };
+fn codebuff_model_candidates(entry: &CodebuffEntry) -> Vec<String> {
     let mut candidates = vec![entry.model.clone()];
     if entry.provider != "unknown" && !entry.model.starts_with(&format!("{}/", entry.provider)) {
         candidates.push(format!("{}/{}", entry.provider, entry.model));
     }
-    missing_pricing_model_for_candidates(
-        &entry.model,
-        candidates,
-        crate::total_usage_tokens(usage),
-        Some(pricing),
-    )
+    candidates
 }
 
 fn object_field<'a>(
@@ -466,4 +451,106 @@ fn pick_u64(record: &serde_json::Map<String, Value>, keys: &[&str]) -> u64 {
 
 fn pick_nested_u64(record: &serde_json::Map<String, Value>, key: &str, keys: &[&str]) -> u64 {
     object_field(record, key).map_or(0, |nested| pick_u64(nested, keys))
+}
+
+#[cfg(test)]
+mod resolver_differential {
+    #[test]
+    fn zero_rates_stop_candidate_fallback() {
+        let entry = CodebuffEntry {
+            timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
+            timestamp_text: String::new(),
+            session_id: "s".into(),
+            model: "sample".into(),
+            provider: "vendor".into(),
+            credits: 0.0,
+            usage: TokenUsageRaw {
+                input_tokens: 100,
+                ..TokenUsageRaw::default()
+            },
+            extra_total_tokens: 0,
+            dedup_key: "k".into(),
+        };
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        assert_eq!(
+            price_codebuff(&entry, CostMode::Calculate, &pricing),
+            (0.0, None)
+        );
+    }
+
+    use super::*;
+    use ccusage_core::pricing::MatchKind;
+    #[test]
+    fn ordered_resolver_preserves_legacy_names_and_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::load_embedded();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
+        for model in [
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4",
+            "claude-opus-5",
+            "anthropic/claude-sonnet-4",
+            "gpt-5",
+            "gpt-5.5",
+            "openai/gpt-5",
+            "gemini-2.5-pro",
+            "gemini-3.8-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.6-flash-low",
+            "gemini-3.8-flash",
+            "qwen3-coder",
+            "qwen3-coder-plus",
+            "qwen3-coder-flash",
+            "glm-5.3",
+            "GLM-5.3",
+            "glm-4.5",
+            "deepseek-v4-flash",
+            "deepseek/deepseek-v4-flash",
+            "grok-4.3",
+            "sample",
+            "vendor/sample",
+            "unpriced-model-xyz",
+        ] {
+            for provider in [
+                "anthropic",
+                "openai",
+                "google",
+                "qwen",
+                "alibaba",
+                "zai",
+                "openrouter",
+                "vendor",
+                "unknown",
+            ] {
+                let candidates = [model.to_string(), format!("{provider}/{model}")];
+                let old = candidates
+                    .iter()
+                    .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
+                let typed: Vec<_> = candidates
+                    .iter()
+                    .map(|name| (name.as_str(), MatchKind::Fuzzy))
+                    .collect();
+                let new = pricing.resolve(&typed);
+                assert!(
+                    old.is_none_or(|(_, rates)| ccusage_core::calculate_cost_from_pricing(
+                        TokenUsageRaw {
+                            input_tokens: 1,
+                            output_tokens: 1,
+                            cache_creation_input_tokens: 1,
+                            cache_read_input_tokens: 1,
+                            ..TokenUsageRaw::default()
+                        },
+                        rates
+                    ) > 0.0),
+                    "{model} / {provider} must exercise the legacy positive-cost path"
+                );
+                assert_eq!(
+                    format!("{old:?}"),
+                    format!("{new:?}"),
+                    "{model} / {provider}"
+                );
+            }
+        }
+    }
 }

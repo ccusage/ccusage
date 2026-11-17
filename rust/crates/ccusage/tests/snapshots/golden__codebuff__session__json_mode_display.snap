@@ -14,7 +14,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0052499999999999995,
+          "cost": 0.0,
           "inputTokens": 100,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 50
@@ -25,7 +25,7 @@ exit: 0
       ],
       "outputTokens": 50,
       "sessionId": "manicode-dev/beta/2025-12-27T22-00-00.000Z",
-      "totalCost": 0.0052499999999999995,
+      "totalCost": 0.0,
       "totalTokens": 150
     },
     {
@@ -35,17 +35,17 @@ exit: 0
       "inputTokens": 1440,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0063,
-          "inputTokens": 100,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 50
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "cost": 0.0,
+          "inputTokens": 800,
+          "modelName": "codebuff-mystery-1",
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 40,
-          "cost": 0.0019050000000000002,
+          "cost": 0.0,
           "inputTokens": 500,
           "modelName": "openai/gpt-5",
           "outputTokens": 120
@@ -53,19 +53,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00042,
-          "inputTokens": 40,
-          "modelName": "grok-4",
-          "outputTokens": 20
-        },
-        {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 6000,
           "cost": 0.0,
-          "inputTokens": 800,
-          "missingPricing": true,
-          "modelName": "codebuff-mystery-1",
-          "outputTokens": 300
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
         },
         {
           "cacheCreationTokens": 0,
@@ -74,6 +65,14 @@ exit: 0
           "inputTokens": 0,
           "modelName": "codebuff-unknown",
           "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 40,
+          "modelName": "grok-4",
+          "outputTokens": 20
         }
       ],
       "modelsUsed": [
@@ -85,7 +84,7 @@ exit: 0
       ],
       "outputTokens": 490,
       "sessionId": "manicode-dev/beta/2026-01-02T10-00-00.000Z",
-      "totalCost": 0.008625,
+      "totalCost": 0.0,
       "totalTokens": 8430
     },
     {
@@ -97,7 +96,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 4000,
-          "cost": 0.008463,
+          "cost": 0.0,
           "inputTokens": 1011,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 207
@@ -105,7 +104,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2500,
-          "cost": 0.006137500000000001,
+          "cost": 0.0,
           "inputTokens": 700,
           "modelName": "gpt-5",
           "outputTokens": 495
@@ -115,7 +114,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 300,
-          "missingPricing": true,
           "modelName": "codebuff-mystery-1",
           "outputTokens": 70
         }
@@ -127,7 +125,7 @@ exit: 0
       ],
       "outputTokens": 772,
       "sessionId": "manicode/alpha/2025-12-30T10-00-00.000Z",
-      "totalCost": 0.0146005,
+      "totalCost": 0.0,
       "totalTokens": 9583
     },
     {
@@ -137,20 +135,20 @@ exit: 0
       "inputTokens": 2100,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 6000,
-          "cost": 0.0084,
-          "inputTokens": 1200,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 200
-        },
-        {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 7000,
-          "cost": 0.00385,
+          "cost": 0.0,
           "inputTokens": 900,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 6000,
+          "cost": 0.0,
+          "inputTokens": 1200,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 200
         }
       ],
       "modelsUsed": [
@@ -159,7 +157,7 @@ exit: 0
       ],
       "outputTokens": 600,
       "sessionId": "manicode/alpha/2025-12-31T23-50-00.000Z",
-      "totalCost": 0.01225,
+      "totalCost": 0.0,
       "totalTokens": 15900
     }
   ],
@@ -169,11 +167,8 @@ exit: 0
     "credits": 8.2,
     "inputTokens": 5651,
     "outputTokens": 1912,
-    "totalCost": 0.0407255,
-    "totalTokens": 34063,
-    "unpricedModels": [
-      "codebuff-mystery-1"
-    ]
+    "totalCost": 0.0,
+    "totalTokens": 34063
   }
 }
 

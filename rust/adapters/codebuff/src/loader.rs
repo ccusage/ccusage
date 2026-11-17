@@ -3,7 +3,7 @@ use std::sync::Arc;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
-    parser::{CodebuffEntry, calculate_codebuff_cost, load_chat_file, missing_codebuff_pricing},
+    parser::{CodebuffEntry, load_chat_file, price_codebuff},
     paths::discover_chat_files,
 };
 use ccusage_adapter_common::{
@@ -26,13 +26,17 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     });
     Ok(entries
         .into_iter()
-        .map(|entry| to_loaded_entry(entry, tz, pricing))
+        .map(|entry| to_loaded_entry(entry, tz, cx.shared.mode, pricing))
         .collect())
 }
 
-fn to_loaded_entry(entry: CodebuffEntry, tz: &JiffTimeZone, pricing: &PricingMap) -> LoadedEntry {
-    let cost = calculate_codebuff_cost(&entry, pricing);
-    let missing_pricing_model = missing_codebuff_pricing(&entry, pricing);
+fn to_loaded_entry(
+    entry: CodebuffEntry,
+    tz: &JiffTimeZone,
+    mode: ccusage_core::cli::CostMode,
+    pricing: &PricingMap,
+) -> LoadedEntry {
+    let (cost, missing_pricing_model) = price_codebuff(&entry, mode, pricing);
     let data = UsageEntry {
         session_id: Some(entry.session_id.clone()),
         timestamp: entry.timestamp_text.clone(),
@@ -67,6 +71,40 @@ fn to_loaded_entry(entry: CodebuffEntry, tz: &JiffTimeZone, pricing: &PricingMap
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn uniform_cost_modes_do_not_calculate_in_display() {
+        let fixture = fs_fixture!({"projects/p/chats/c/chat-messages.json": r#"[{"role":"assistant","timestamp":"2026-05-01T01:02:03Z","metadata":{"model":"sample","usage":{"inputTokens":100,"outputTokens":50}}}]"#});
+        let _guard = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
+        );
+        for (mode, expected) in [
+            (crate::cli::CostMode::Auto, 0.2),
+            (crate::cli::CostMode::Calculate, 0.2),
+            (crate::cli::CostMode::Display, 0.0),
+        ] {
+            let shared = SharedArgs {
+                mode,
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert!(
+                (entries[0].cost - expected).abs() < 1e-12,
+                "{mode:?}: {} vs {expected}",
+                entries[0].cost
+            );
+            assert_eq!(entries[0].missing_pricing_model, None);
+        }
+    }
+
     use super::super::{parser::parse_usage_object, paths::CODEBUFF_DATA_DIR_ENV};
     use super::*;
     use crate::cli::SharedArgs;
