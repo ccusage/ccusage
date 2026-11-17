@@ -735,8 +735,8 @@ impl<'a, T> Table<'a, T> {
 #[derive(Clone, Debug)]
 struct ModelsDevLayer {
     rows: Arc<PricingRows>,
-    excluded_prices: FxHashSet<String>,
-    excluded_limits: FxHashSet<String>,
+    excluded_prices: Arc<FxHashSet<String>>,
+    excluded_limits: Arc<FxHashSet<String>>,
 }
 #[derive(Clone, Copy)]
 enum Lookup {
@@ -1415,8 +1415,8 @@ impl PricingMap {
         self.fill_long_context_rates_from_models_dev(embedded_models_dev);
         self.models_dev[1] = Some(ModelsDevLayer {
             rows: Arc::clone(&embedded_models_dev.rows),
-            excluded_prices: FxHashSet::default(),
-            excluded_limits: FxHashSet::default(),
+            excluded_prices: Arc::default(),
+            excluded_limits: Arc::default(),
         });
         self.clear_find_cache();
     }
@@ -1888,15 +1888,12 @@ impl PricingMap {
     fn merge_models_dev(&mut self, source: &Self) {
         self.models_dev[0] = Some(ModelsDevLayer {
             rows: Arc::clone(&source.rows),
-            excluded_prices: FxHashSet::default(),
-            excluded_limits: FxHashSet::default(),
+            excluded_prices: Arc::default(),
+            excluded_limits: Arc::default(),
         });
         self.clear_find_cache();
     }
     fn refresh_layer_exclusions(&mut self) {
-        if self.models_dev.iter().all(Option::is_none) {
-            return;
-        }
         let mut prices: FxHashSet<_> = self
             .rows
             .entries
@@ -1907,23 +1904,27 @@ impl PricingMap {
         let mut limits: FxHashSet<_> = self.rows.context_limits.keys().cloned().collect();
         for (index, layer) in self.models_dev.iter_mut().enumerate() {
             let Some(layer) = layer else { continue };
-            layer.excluded_prices = layer
-                .rows
-                .entries
-                .keys()
-                .filter(|key| {
-                    self.rows.entries.contains_key(key.as_str())
-                        || prices.contains(normalized_pricing_key(key).as_ref())
-                })
-                .cloned()
-                .collect();
-            layer.excluded_limits = layer
-                .rows
-                .context_limits
-                .keys()
-                .filter(|key| limits.contains(*key))
-                .cloned()
-                .collect();
+            layer.excluded_prices = Arc::new(
+                layer
+                    .rows
+                    .entries
+                    .keys()
+                    .filter(|key| {
+                        self.rows.entries.contains_key(key.as_str())
+                            || prices.contains(normalized_pricing_key(key).as_ref())
+                    })
+                    .cloned()
+                    .collect(),
+            );
+            layer.excluded_limits = Arc::new(
+                layer
+                    .rows
+                    .context_limits
+                    .keys()
+                    .filter(|key| limits.contains(*key))
+                    .cloned()
+                    .collect(),
+            );
             if index == 0 {
                 prices.extend(
                     layer
