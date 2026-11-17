@@ -149,6 +149,7 @@ struct CodexBurst {
 }
 
 impl CodexBurst {
+    // NOTE(2026-07-27, #1501): a Codex session that opens with two usage events written back to back replayed a history it did not spend; one that pauses between them was recording its own turns from the start.
     fn observe(&mut self, timestamp: TimestampMs) {
         if self.decision.is_some() {
             return;
@@ -159,9 +160,11 @@ impl CodexBurst {
         };
         let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
             .contains(&(timestamp.as_millis() - first.as_millis()));
-        let starts_at_fork = self
-            .session_start
-            .is_none_or(|start| first.as_millis().abs_diff(start.as_millis()) <= 1_000);
+        // NOTE(2026-10-26, #1971): a late first request can also produce a dense pair, so the pair must also start at the fork instant.
+        let starts_at_fork = self.session_start.is_none_or(|start| {
+            first.as_millis().abs_diff(start.as_millis())
+                <= CODEX_REWRITTEN_BURST_PAUSE_MS.unsigned_abs()
+        });
         self.decision = Some((is_dense && starts_at_fork).then_some(first));
     }
 }
@@ -244,6 +247,7 @@ impl CodexReplayFilter<'_> {
                         };
                         return;
                     }
+                    // NOTE(2026-07-25, #1435): nothing matched, so the parent stream cannot anchor this replay: the parent log is unavailable, or Codex rewrote the copied history.
                     if index == 0 {
                         let Some(burst) = self.burst.decision else {
                             self.pending.push(CodexPendingReplay::Event(event));
