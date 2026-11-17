@@ -12,6 +12,7 @@
  * network access.
  * Run via `just gen-models-dev-pricing` (see the sibling `default.nix`).
  */
+import { restoreCatalogIdentifiers } from './catalog.ts';
 import { generateCatalog } from './packages/core/src/generate.ts';
 import {
 	buildModelsDevCatalogIndex,
@@ -55,10 +56,21 @@ type EmbeddedModel = {
 	/** Only a request naming this id exactly may use it; see `compact.ts`. */
 	exactOnly?: true;
 };
-const { models, providers } = (await generateCatalog('.')) as {
+const catalog = (await generateCatalog('.')) as {
 	models: Record<string, ModelMetadata>;
 	providers: Record<string, Provider>;
 };
+
+const models = restoreCatalogIdentifiers(catalog.models);
+const providers = Object.fromEntries(
+	Object.entries(restoreCatalogIdentifiers(catalog.providers)).map(([id, provider]) => [
+		id,
+		{
+			...provider,
+			models: restoreCatalogIdentifiers(provider.models ?? {}),
+		},
+	]),
+);
 
 const catalogIndex = buildModelsDevCatalogIndex(models, providers);
 

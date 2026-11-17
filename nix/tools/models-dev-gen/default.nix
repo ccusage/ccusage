@@ -38,6 +38,7 @@ pkgs.runCommand "models-dev-snapshots"
     # same relative name the import expects.
     cp ${./gen.ts} work/gen.ts
     cp ${./compact.ts} work/compact.ts
+    cp ${./catalog.ts} work/catalog.ts
 
     cd work
     mkdir -p "$out"
