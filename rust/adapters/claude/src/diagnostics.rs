@@ -289,10 +289,21 @@ mod tests {
                 Path::new("session.jsonl"),
                 terminated(0, line),
                 &diagnostics,
-                );
+            );
         }
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
         assert_eq!(diagnostics.skipped(SkipKind::UndecodedUsage), 0);
+    }
+
+    #[test]
+    fn a_rejected_wrapped_usage_record_is_invalid_data() {
+        let diagnostics = Diagnostics::new("claude");
+        rejected(
+            Path::new("session.jsonl"),
+            terminated(0, br#"{"data":{"message":{"message":{"usage":{}}}}}"#),
+            &diagnostics,
+        );
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]

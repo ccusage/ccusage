@@ -184,9 +184,6 @@ fn load_deduped_daily_entries(
     Some(DedupedDailyEntries { entries, copies })
 }
 
-/// Folds the entries of `files` into their deduplicated survivors plus the
-/// `(survivor index, session)` of every main-thread copy merged into a
-/// survivor of another session.
 pub(super) fn dedupe_files<E: DedupEntry>(
     mut files: Vec<(PathBuf, Vec<E>)>,
 ) -> (Vec<E>, Vec<(usize, Arc<str>)>) {
@@ -261,22 +258,17 @@ pub(super) struct DedupKey {
     pub(super) is_sidechain: Option<bool>,
 }
 
-/// What dedup reads from an entry, so each report path folds the entry type it
-/// keeps instead of converting a second copy of every survivor afterwards.
 pub(super) trait DedupEntry {
     fn timestamp(&self) -> TimestampMs;
-    /// The recorded session, or the transcript's when the record has none.
     fn session_id(&self) -> &str;
     fn owned_session_id(&self) -> Arc<str>;
     fn message_id(&self) -> Option<&str>;
     fn request_id(&self) -> Option<&str>;
     fn is_sidechain(&self) -> bool;
     fn usage(&self) -> &TokenUsageRaw;
-    /// Whether the record carried a `costUSD`, whatever `--mode` does with it.
     fn records_cost(&self) -> bool;
 }
 
-/// An entry of the daily report path.
 #[derive(Debug)]
 pub(super) struct ClaudeEntry {
     pub(super) key: DedupKey,
@@ -324,8 +316,6 @@ impl DedupEntry for ClaudeEntry {
     }
 }
 
-/// One admitted usage record, priced, with the record fields only some report
-/// paths keep.
 pub(super) struct ParsedUsage {
     pub(super) key: DedupKey,
     pub(super) date: String,
@@ -343,8 +333,6 @@ pub(super) struct ParsedUsage {
 }
 
 impl ParsedUsage {
-    /// The model a report lists: none for Claude Code's `<synthetic>`
-    /// placeholder, and fast-mode usage under its own `-fast` name.
     pub(super) fn display_model(
         raw_model: Option<String>,
         usage: &TokenUsageRaw,
@@ -375,7 +363,6 @@ impl ParsedUsage {
     }
 }
 
-/// A decoded usage record that honors the null contract.
 #[derive(Debug)]
 pub(super) struct ClaudeUsageRecord {
     pub(super) timestamp: String,
@@ -546,9 +533,6 @@ fn read_daily_usage_file_with_diagnostics(
     })
 }
 
-/// Reads the admitted usage records of `path`, each advisor iteration as its
-/// own record after its parent, and lets `build` turn each into the entry its
-/// report path keeps.
 pub(super) fn read_usage_file<E>(
     path: &Path,
     tz: &JiffTimeZone,

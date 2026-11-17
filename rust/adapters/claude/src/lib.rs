@@ -99,8 +99,8 @@ pub(crate) struct DedupedEntries {
 }
 
 impl DedupedEntries {
-    /// Main-thread days of the entries `is_counted` keeps, by recorded session ID. As in
-    /// the daily loader, a merged copy's session counts on the day its survivor does.
+    /// Main-thread days of the entries `is_counted` keeps, by recorded session ID. A
+    /// merged copy's session counts on the day its survivor does.
     pub(crate) fn main_thread_session_days(
         &self,
         is_counted: impl Fn(&LoadedEntry) -> bool,
@@ -374,6 +374,13 @@ fn reports_more_of_the_request<E: daily::DedupEntry>(candidate: &E, existing: &E
     detail(candidate) > detail(existing)
 }
 
+/// Exact-match dedupe key shared by every report path.
+///
+/// Matching message and request IDs identify one response across sessions. Without a request
+/// ID, gateways can reuse one message ID for every response, so the key is scoped to the
+/// session and timestamp instead. Per-response IDs are unique per response, so requestless
+/// entries with one collapse by session across timestamps: Claude Code writes one line per
+/// content block with the same `message.id` but distinct timestamps.
 fn usage_dedupe_hash(
     message_id: &str,
     request_id: Option<&str>,
@@ -551,8 +558,6 @@ fn read_usage_file_with_diagnostics(
     })
 }
 
-/// The top-level `message.usage.iterations` of a line. An AgentProgress line
-/// may carry no top-level message at all.
 #[derive(Debug, Deserialize)]
 struct UsageIterationsEnvelope {
     #[serde(default)]
@@ -576,10 +581,6 @@ pub(crate) struct AdvisorUsage {
     usage: TokenUsageRaw,
 }
 
-/// Reads the advisor turns listed in a line's top-level usage. Only
-/// `advisor_message` iterations with a model are read, so only their members
-/// answer to the null contract; the others are left to core's lenient
-/// iteration reader.
 pub(crate) fn advisor_usages_from_line(
     line: &[u8],
 ) -> std::result::Result<Vec<AdvisorUsage>, Rejection> {
@@ -630,8 +631,6 @@ pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
     serde_json::from_slice(line).map_err(|_| Rejection::Malformed)
 }
 
-/// A record field read as absent (`None`), explicit `null` (`Some(None)`) or a
-/// value, so the null contract is checked on the decoded record.
 pub(crate) type Nullable<T> = Option<Option<T>>;
 
 pub(crate) fn nullable<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
@@ -640,8 +639,6 @@ pub(crate) fn nullable<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
-/// The value of a [`Nullable`] field, or [`Rejection::NullContract`] when the
-/// record wrote `null` there.
 pub(crate) fn non_null<T>(field: Nullable<T>) -> std::result::Result<Option<T>, Rejection> {
     match field {
         Some(None) => Err(Rejection::NullContract),
@@ -650,8 +647,6 @@ pub(crate) fn non_null<T>(field: Nullable<T>) -> std::result::Result<Option<T>, 
     }
 }
 
-/// A `usage` object plus whether one of the members the loader reads, beyond
-/// the required token counts, was an explicit `null`.
 #[derive(Debug)]
 pub(crate) struct GuardedUsage {
     pub(crate) usage: IteratedTokenUsage,
@@ -689,8 +684,6 @@ impl<'de> Deserialize<'de> for GuardedUsage {
     }
 }
 
-/// The optional `usage` members the loader reads, where `null` breaks the
-/// contract instead of meaning absent.
 fn is_guarded_usage_member(key: &str) -> bool {
     matches!(
         key,
@@ -698,8 +691,6 @@ fn is_guarded_usage_member(key: &str) -> bool {
     )
 }
 
-/// Passes a `usage` object through to its typed parse, leaving out a guarded
-/// member whose value is `null` and noting it in `has_null`.
 struct UsageFields<A> {
     map: A,
     pending: Option<serde_json::Value>,
@@ -741,7 +732,6 @@ impl<'de, A: MapAccess<'de>> MapAccess<'de> for UsageFields<A> {
     }
 }
 
-/// A member name, borrowed from the line unless it had to be unescaped.
 enum UsageKey<'de> {
     Borrowed(&'de str),
     Owned(String),

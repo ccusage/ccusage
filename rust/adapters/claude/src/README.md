@@ -62,11 +62,14 @@ Advisor entries:
 
 All reports parse direct assistant records first, then AgentProgress records under
 `data.message.message`. Duplicate selection prefers main-thread usage, then the
-larger token total, then the speed tier and cache-write TTL detail. Stored cost
-does not determine which copy survives.
+larger token total, then the speed tier and cache-write TTL detail, then the copy
+that recorded a `costUSD`. The priced cost never decides, so the survivor does not
+depend on `--mode` or pricing.
 
 Explicit null values in the record fields ccusage reads (`sessionId`, `requestId`,
 `version`, `costUSD`, `isApiErrorMessage`, message `id` and `model`, and usage
 `speed`, `cache_read_input_tokens` and `cache_creation_input_tokens`) reject that
-record quietly. Missing optional fields remain valid. Unread members, including
-`cwd` and nested tool-result metadata, do not impose a null contract.
+record quietly; so does such a null in an advisor iteration that is read. Missing
+optional fields remain valid. Unread members, including `cwd`, nested tool-result
+metadata and non-advisor iterations, do not impose a null contract. An advisor
+iteration that does not decode rejects its line as invalid data.
