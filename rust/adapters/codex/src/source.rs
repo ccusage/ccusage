@@ -67,6 +67,7 @@ pub fn unified_row_from_group(
     speed: crate::CodexSpeedPolicy,
     mode: CostMode,
 ) -> SourceRow {
+    let pricing = pricing.filter(|_| mode != CostMode::Display);
     let mut model_breakdowns = group
         .models
         .iter()

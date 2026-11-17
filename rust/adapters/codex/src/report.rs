@@ -20,6 +20,7 @@ pub(super) fn report_from_groups(
     speed: CodexSpeedPolicy,
     mode: CostMode,
 ) -> Value {
+    let pricing = pricing.filter(|_| mode != CostMode::Display);
     let rows = groups
         .iter()
         .map(|(period, group)| group_json(period, group, kind, pricing, speed, mode))
@@ -60,6 +61,7 @@ fn group_json(
     speed: CodexSpeedPolicy,
     mode: CostMode,
 ) -> Value {
+    let pricing = pricing.filter(|_| mode != CostMode::Display);
     let cost = calculate_group_cost(group, pricing, speed);
     let input_tokens = non_cached_input_tokens(
         group.input_tokens,
@@ -594,6 +596,7 @@ pub(super) fn print_table_from_groups(
     speed: CodexSpeedPolicy,
     shared: &SharedArgs,
 ) -> Result<()> {
+    let pricing = pricing.filter(|_| shared.mode != CostMode::Display);
     if groups.is_empty() {
         eprintln!("No Codex usage data found.");
         return Ok(());
@@ -804,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn display_mode_omits_missing_pricing_metadata() {
+    fn display_mode_ignores_even_supplied_pricing_and_omits_price_metadata() {
         let mut group = CodexGroup::default();
         group.models.insert(
             "gpt-unknown-preview".to_string(),
@@ -820,16 +823,22 @@ mod tests {
             },
         );
         let groups = BTreeMap::from([("2026-08-20".to_string(), group)]);
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{"gpt-unknown-preview":{"input_cost_per_token":1,"output_cost_per_token":2}}"#,
+        );
 
         let report = report_from_groups(
             &groups,
             AgentReportKind::Daily,
-            Some(&PricingMap::default()),
+            Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
             CostMode::Display,
         );
 
         assert!(report["totals"].get("unpricedModels").is_none());
+        assert_eq!(report["totals"]["costUSD"], 0.0);
+        assert_eq!(report["daily"][0]["costUSD"], 0.0);
         assert!(
             report["daily"][0]["models"]["gpt-unknown-preview"]
                 .get("missingPricing")

@@ -9,7 +9,7 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 6570,
-      "costUSD": 0.08065050000000001,
+      "costUSD": 0,
       "inputTokens": 7320,
       "models": {
         "gpt-5": {
@@ -66,7 +66,7 @@ exit: 0
     {
       "cacheCreationTokens": 300,
       "cacheReadTokens": 453880,
-      "costUSD": 0.592285,
+      "costUSD": 0,
       "inputTokens": 105050,
       "models": {
         "codex-mystery-1": {
@@ -124,7 +124,7 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 300,
     "cacheReadTokens": 460450,
-    "costUSD": 0.6729354999999999,
+    "costUSD": 0,
     "inputTokens": 112370,
     "outputTokens": 3952,
     "reasoningOutputTokens": 139,

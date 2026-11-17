@@ -6,6 +6,8 @@
 
 ccusage can read OpenAI Codex CLI session logs as one of its supported local data sources. Codex uses the same unified and focused report model as Claude Code, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI.
 
+Codex logs store no cost, so `--mode display` shows $0. This corrects earlier versions that calculated Codex costs in Display mode; unified reports configured with `mode: "display"` also exclude that calculated share.
+
 ## Focused Views
 
 ```bash
