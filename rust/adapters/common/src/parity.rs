@@ -14,7 +14,7 @@ use ccusage_core::cli::{AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArg
 
 use crate::{
     pipeline,
-    source::{EntrySource, ProgressOwner, SourceOptions, UnifiedRequest},
+    source::{EntrySource, ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
 };
 
 /// A report kind whose focused and unified totals are known to differ, so the
@@ -81,7 +81,7 @@ pub fn assert_focused_matches_unified<S: EntrySource>(
         "{}: the focused report read no usage, so there is nothing to compare; point the source at its fixture first",
         descriptor.id
     );
-    for kind in descriptor.reports.iter().copied() {
+    for kind in source.reports().iter().copied() {
         let focused = focused_totals(source, kind, shared);
         let unified = unified_totals(source, kind, shared);
         let matches = focused.matches(&unified);

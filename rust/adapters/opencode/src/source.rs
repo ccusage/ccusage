@@ -74,7 +74,7 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
 mod diagnostic_tests {
     use super::*;
     use ccusage_adapter_common::source::SourceOptions;
-    use ccusage_core::cli::{CostMode, SharedArgs};
+    use ccusage_core::cli::{AgentReportKind, CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};
     #[test]
     fn specialized_diagnostics_keep_healthy_opencode_usage() {
