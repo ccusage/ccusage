@@ -1,10 +1,20 @@
 #!/usr/bin/env nix
-#! nix shell --inputs-from .. nixpkgs#nushell nixpkgs#nix --command nu
+#! nix shell --inputs-from .. nixpkgs#nushell nixpkgs#nix nixpkgs#git --command nu
 
 export def snapshot-paths [output: path]: nothing -> list<string> {
-    glob ($output | path join '**/*.json')
+    let paths = glob ($output | path join '**/*.json')
     | each {|file| $file | path relative-to $output }
     | sort
+    if ($paths | is-empty) {
+        error make {msg: 'The pricing generator produced no snapshots'}
+    }
+    let tracked = ^git ls-files --error-unmatch -- ...$paths | complete
+    if $tracked.exit_code != 0 {
+        error make {
+            msg: $"The pricing generator writes snapshots git does not track; move them back or update the embedding crate: ($tracked.stderr | str trim)"
+        }
+    }
+    $paths
 }
 
 export def build-snapshots []: nothing -> string {
@@ -18,9 +28,6 @@ export def build-snapshots []: nothing -> string {
 def main []: nothing -> nothing {
     let output = build-snapshots
     let paths = snapshot-paths $output
-    if ($paths | is-empty) {
-        error make {msg: 'The pricing generator produced no snapshots'}
-    }
     $paths | each {|path|
         open --raw ($output | path join $path) | save --force $path
         ^chmod u+w $path
