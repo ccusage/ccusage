@@ -7,7 +7,7 @@ use std::{
 
 use ccusage_adapter_common::{
     claims,
-    rows::UnifiedRow,
+    rows::{SourceRow, UnifiedRow},
     source::{LoadKind, LoadRequest, PricingSupply, ProgressOwner, SourceOptions, UsageSource},
 };
 
@@ -22,7 +22,7 @@ use super::{
     sources::SOURCES,
     types::{
         AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllSectionsLoadResult, Bucket,
-        DayRow, LoadedAgentRows, ReportDay,
+        DayRow, LoadedAgentRows, ReportDay, ReportRow,
     },
 };
 
@@ -254,7 +254,10 @@ fn load_day_rows(
         sources,
         pricing,
         |row, diagnostics| match ReportDay::parse(&row.period) {
-            Some(day) => Some(DayRow { day, row }),
+            Some(day) => Some(DayRow {
+                day,
+                row: SourceRow::from(row),
+            }),
             None => {
                 diagnostics.record(Skip::unit(
                     Path::new(&row.period),
@@ -363,10 +366,12 @@ fn load_specs<'a>(
     specs
 }
 
-fn finish_sessions(mut rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<UnifiedRow> {
-    for row in &mut rows {
-        row.metadata_agents = None;
-    }
+fn finish_sessions(rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<ReportRow> {
+    let mut rows = rows
+        .into_iter()
+        .map(SourceRow::from)
+        .map(ReportRow::Source)
+        .collect::<Vec<_>>();
     rows.sort_by(|a, b| {
         let cost_order = match ccusage_report::session_cost_ordering(shared) {
             crate::cli::SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
@@ -374,12 +379,12 @@ fn finish_sessions(mut rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<Unifie
         };
         cost_order
             .then_with(|| a.period.cmp(&b.period))
-            .then_with(|| a.agent.cmp(b.agent))
+            .then_with(|| a.agent().cmp(b.agent()))
     });
     rows
 }
 
-fn finish_days(rows: Vec<DayRow>, bucket: Bucket, shared: &SharedArgs) -> Vec<UnifiedRow> {
+fn finish_days(rows: Vec<DayRow>, bucket: Bucket, shared: &SharedArgs) -> Vec<ReportRow> {
     let mut aggregated = aggregate_rows(rows, bucket);
     sort_rows(&mut aggregated, &shared.order.unwrap_or_default());
     aggregated
@@ -536,7 +541,7 @@ fn needs_session(kinds: &[AgentReportKind]) -> bool {
     kinds.contains(&AgentReportKind::Session)
 }
 
-pub(super) fn aggregate_rows(rows: Vec<DayRow>, bucket: Bucket) -> Vec<UnifiedRow> {
+pub(super) fn aggregate_rows(rows: Vec<DayRow>, bucket: Bucket) -> Vec<ReportRow> {
     let mut groups = BTreeMap::<String, AllAccumulator>::new();
     for DayRow { day, mut row } in rows {
         let period = bucket.key(day);
@@ -630,7 +635,7 @@ mod tests {
         rows: Vec<UnifiedRow>,
         shared: &SharedArgs,
         start_of_week: WeekDay,
-    ) -> Option<Vec<UnifiedRow>> {
+    ) -> Option<Vec<ReportRow>> {
         match Bucket::for_report(kind, start_of_week) {
             Some(bucket) => aggregate_periods(rows, bucket).map(|mut rows| {
                 sort_rows(&mut rows, &shared.order.unwrap_or_default());
@@ -802,7 +807,10 @@ mod tests {
 
         assert_eq!(daily.rows.len(), 1);
         assert_eq!(daily.rows[0].period, "2099-01-02");
-        assert_eq!(daily.rows[0].metadata_agents, Some(vec!["claude", "pi"]));
+        assert_eq!(
+            daily.rows[0].agents().map(<[_]>::to_vec),
+            Some(vec!["claude", "pi"])
+        );
         assert_eq!(daily.rows[0].input_tokens, 17);
         assert_eq!(daily.rows[0].output_tokens, 8);
         assert!((daily.rows[0].total_cost - 0.01).abs() < f64::EPSILON);
@@ -814,19 +822,19 @@ mod tests {
             sessions
                 .rows
                 .iter()
-                .any(|row| row.agent == "claude" && row.period == "session-a")
+                .any(|row| row.agent() == "claude" && row.period == "session-a")
         );
         assert!(
             !sessions
                 .rows
                 .iter()
-                .any(|row| row.agent == "claude" && row.period == "session-b")
+                .any(|row| row.agent() == "claude" && row.period == "session-b")
         );
         assert!(
             sessions
                 .rows
                 .iter()
-                .any(|row| row.agent == "pi" && row.period == "pi-session")
+                .any(|row| row.agent() == "pi" && row.period == "pi-session")
         );
     }
 
@@ -945,7 +953,7 @@ mod tests {
         let sorted = finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday).unwrap();
         let keys: Vec<_> = sorted
             .iter()
-            .map(|row| (row.period.as_str(), row.agent))
+            .map(|row| (row.period.as_str(), row.agent()))
             .collect();
         assert_eq!(
             keys,
@@ -979,7 +987,7 @@ mod tests {
                 finish_rows(AgentReportKind::Session, rows, &shared, WeekDay::Monday).unwrap();
             let keys: Vec<_> = sorted
                 .iter()
-                .map(|row| (row.period.as_str(), row.agent))
+                .map(|row| (row.period.as_str(), row.agent()))
                 .collect();
             assert_eq!(
                 keys,
@@ -1157,7 +1165,7 @@ mod tests {
         kind: AgentReportKind,
         shared: &SharedArgs,
         pricing: &PricingMap,
-    ) -> Result<Vec<UnifiedRow>> {
+    ) -> Result<Vec<SourceRow>> {
         let (mut entries, _) = ccusage_adapter_common::testing::load_entries(
             &pi::SOURCE,
             shared,
@@ -1176,10 +1184,15 @@ mod tests {
                 ccusage_core::cli::WeekDay::Sunday,
             ),
         )?;
-        Ok(summary_rows("pi", summaries, true))
+        Ok(summary_rows("pi", summaries, true)
+            .into_iter()
+            .map(SourceRow::from)
+            .collect())
     }
 
-    fn usage_fingerprint(rows: &[UnifiedRow]) -> Vec<(String, u64, u64, u64, u64, u64)> {
+    fn usage_fingerprint(
+        rows: &[impl std::ops::Deref<Target = ccusage_adapter_common::rows::RowUsage>],
+    ) -> Vec<(String, u64, u64, u64, u64, u64)> {
         rows.iter()
             .map(|row| {
                 (
@@ -1227,7 +1240,7 @@ mod tests {
         let omp_rows = result
             .rows
             .iter()
-            .filter(|row| row.agent == "omp")
+            .filter(|row| row.agent() == "omp")
             .collect::<Vec<_>>();
         let pi_rows = pi_path_subcommand_rows(
             &store_path,
@@ -1306,13 +1319,16 @@ mod tests {
         ];
 
         for kind in cases {
-            let mut named_rows =
-                load_named_pi_store_rows("omp", &store_path, kind, &shared, &pricing)
-                    .unwrap()
-                    .rows;
-            if let Some(bucket) = Bucket::for_report(kind, ccusage_core::cli::WeekDay::Sunday) {
-                named_rows = aggregate_periods(named_rows, bucket).unwrap();
-            }
+            let named_rows = load_named_pi_store_rows("omp", &store_path, kind, &shared, &pricing)
+                .unwrap()
+                .rows;
+            let named_rows = finish_rows(
+                kind,
+                named_rows,
+                &shared,
+                ccusage_core::cli::WeekDay::Sunday,
+            )
+            .unwrap();
             let pi_rows = pi_path_subcommand_rows(&store_path, kind, &shared, &pricing).unwrap();
 
             assert_eq!(usage_fingerprint(&named_rows), usage_fingerprint(&pi_rows));
@@ -1347,7 +1363,7 @@ mod tests {
         let pi_rows = result
             .rows
             .iter()
-            .filter(|row| row.agent == "pi")
+            .filter(|row| row.agent() == "pi")
             .cloned()
             .collect::<Vec<_>>();
         let pi_path_rows = pi_path_subcommand_rows(
@@ -1396,7 +1412,7 @@ mod tests {
         let claude_rows = result
             .rows
             .iter()
-            .filter(|row| row.agent == "claude")
+            .filter(|row| row.agent() == "claude")
             .cloned()
             .collect::<Vec<_>>();
 
@@ -1773,7 +1789,10 @@ mod tests {
 
         assert!(result.detected_agents.contains(&"omp"));
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].metadata_agents, Some(vec!["omp"]));
+        assert_eq!(
+            result.rows[0].agents().map(<[_]>::to_vec),
+            Some(vec!["omp"])
+        );
         assert_eq!(result.rows[0].models_used, vec!["[omp] gpt-5"]);
         assert_eq!(result.rows[0].input_tokens, 30);
         assert_eq!(result.rows[0].output_tokens, 40);
@@ -1818,7 +1837,7 @@ mod tests {
         assert!(!unified.detected_agents.contains(&"pi"));
         assert!(result.detected_agents.contains(&"pi"));
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].metadata_agents, Some(vec!["pi"]));
+        assert_eq!(result.rows[0].agents().map(<[_]>::to_vec), Some(vec!["pi"]));
         assert_eq!(result.rows[0].input_tokens, 30);
         assert_eq!(result.rows[0].output_tokens, 40);
     }
@@ -1940,8 +1959,11 @@ mod tests {
         let result = load_rows(AgentReportKind::Daily, &shared, &sources, WeekDay::Monday).unwrap();
 
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].metadata_agents, Some(vec!["codex", "pi"]));
-        let breakdowns = result.rows[0].agent_breakdowns.as_ref().unwrap();
+        assert_eq!(
+            result.rows[0].agents().map(<[_]>::to_vec),
+            Some(vec!["codex", "pi"])
+        );
+        let breakdowns = result.rows[0].agent_breakdowns().unwrap();
         let codex_row = breakdowns
             .iter()
             .find(|row| row.agent == "codex")
@@ -2134,8 +2156,7 @@ mod tests {
 
         assert!(result.detected_agents.contains(&"fork"));
         let named_store = result.rows[0]
-            .agent_breakdowns
-            .as_ref()
+            .agent_breakdowns()
             .unwrap()
             .iter()
             .find(|row| row.agent == "fork")
@@ -2178,8 +2199,11 @@ mod tests {
         let aggregated = aggregate_periods(rows, Bucket::Day).unwrap();
 
         assert_eq!(aggregated.len(), 1);
-        assert_eq!(aggregated[0].metadata_agents, Some(vec!["omp", "pi"]));
-        let breakdowns = aggregated[0].agent_breakdowns.as_ref().unwrap();
+        assert_eq!(
+            aggregated[0].agents().map(<[_]>::to_vec),
+            Some(vec!["omp", "pi"])
+        );
+        let breakdowns = aggregated[0].agent_breakdowns().unwrap();
         assert_eq!(
             breakdowns
                 .iter()

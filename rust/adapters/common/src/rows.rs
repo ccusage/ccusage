@@ -25,6 +25,60 @@ pub struct UnifiedRow {
     pub model_breakdowns: Vec<ModelBreakdown>,
 }
 
+#[derive(Debug, Clone)]
+pub struct RowUsage {
+    pub period: String,
+    pub models_used: Vec<String>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost: f64,
+    pub model_breakdowns: Vec<ModelBreakdown>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceRow {
+    pub agent: &'static str,
+    pub usage: RowUsage,
+    pub metadata: Option<Value>,
+}
+
+impl std::ops::Deref for SourceRow {
+    type Target = RowUsage;
+
+    fn deref(&self) -> &Self::Target {
+        &self.usage
+    }
+}
+
+impl std::ops::DerefMut for SourceRow {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.usage
+    }
+}
+
+impl From<UnifiedRow> for SourceRow {
+    fn from(row: UnifiedRow) -> Self {
+        Self {
+            agent: row.agent,
+            usage: RowUsage {
+                period: row.period,
+                models_used: row.models_used,
+                input_tokens: row.input_tokens,
+                output_tokens: row.output_tokens,
+                cache_creation_tokens: row.cache_creation_tokens,
+                cache_read_tokens: row.cache_read_tokens,
+                total_tokens: row.total_tokens,
+                total_cost: row.total_cost,
+                model_breakdowns: row.model_breakdowns,
+            },
+            metadata: row.metadata,
+        }
+    }
+}
+
 /// Converts a source's summaries into its unified rows, dropping the ones with
 /// neither tokens nor cost.
 pub fn summary_rows(

@@ -1,12 +1,76 @@
 use std::collections::BTreeSet;
 
-use ccusage_adapter_common::rows::UnifiedRow;
+use ccusage_adapter_common::rows::{RowUsage, SourceRow};
+use serde_json::Value;
 
 use crate::{
     Diagnostics, ModelBreakdown,
     cli::{AgentReportKind, WeekDay},
     fast::FxHashMap,
 };
+
+#[derive(Debug, Clone)]
+pub(super) struct PeriodRow {
+    pub(super) usage: RowUsage,
+    pub(super) agents: Vec<&'static str>,
+    pub(super) agent_breakdowns: Vec<SourceRow>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum ReportRow {
+    Source(SourceRow),
+    Period(PeriodRow),
+}
+
+impl std::ops::Deref for ReportRow {
+    type Target = RowUsage;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Source(row) => &row.usage,
+            Self::Period(row) => &row.usage,
+        }
+    }
+}
+
+impl std::ops::DerefMut for ReportRow {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Source(row) => &mut row.usage,
+            Self::Period(row) => &mut row.usage,
+        }
+    }
+}
+
+impl ReportRow {
+    pub(super) fn agent(&self) -> &'static str {
+        match self {
+            Self::Source(row) => row.agent,
+            Self::Period(_) => "all",
+        }
+    }
+
+    pub(super) fn agents(&self) -> Option<&[&'static str]> {
+        match self {
+            Self::Source(_) => None,
+            Self::Period(row) => Some(&row.agents),
+        }
+    }
+
+    pub(super) fn metadata(&self) -> Option<&Value> {
+        match self {
+            Self::Source(row) => row.metadata.as_ref(),
+            Self::Period(_) => None,
+        }
+    }
+
+    pub(super) fn agent_breakdowns(&self) -> Option<&[SourceRow]> {
+        match self {
+            Self::Source(_) => None,
+            Self::Period(row) => Some(&row.agent_breakdowns),
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum Bucket {
@@ -20,7 +84,7 @@ pub(super) use ccusage_core::IsoDate as ReportDay;
 #[derive(Clone)]
 pub(super) struct DayRow {
     pub(super) day: ReportDay,
-    pub(super) row: UnifiedRow,
+    pub(super) row: SourceRow,
 }
 
 impl Bucket {
@@ -43,14 +107,14 @@ impl Bucket {
 }
 
 pub(super) struct AllLoadResult {
-    pub(super) rows: Vec<UnifiedRow>,
+    pub(super) rows: Vec<ReportRow>,
     pub(super) detected_agents: Vec<&'static str>,
     /// One per source, in source order.
     pub(super) diagnostics: Vec<Diagnostics>,
 }
 
 pub(super) struct AllSectionsLoadResult {
-    pub(super) sections: Vec<(AgentReportKind, Vec<UnifiedRow>)>,
+    pub(super) sections: Vec<(AgentReportKind, Vec<ReportRow>)>,
     pub(super) daily_detected_agents: Vec<&'static str>,
     pub(super) session_detected_agents: Vec<&'static str>,
     /// One per source, in source order, each covering both loads.
@@ -93,12 +157,12 @@ pub(super) struct AllAccumulator {
     total_cost: f64,
     models: BTreeSet<String>,
     agents: BTreeSet<&'static str>,
-    agent_breakdowns: Vec<UnifiedRow>,
+    agent_breakdowns: Vec<SourceRow>,
     agent_indexes: FxHashMap<&'static str, usize>,
 }
 
 impl AllAccumulator {
-    pub(super) fn add(&mut self, row: UnifiedRow) {
+    pub(super) fn add(&mut self, mut row: SourceRow) {
         self.input_tokens = self.input_tokens.saturating_add(row.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(row.output_tokens);
         self.cache_creation_tokens = self
@@ -108,26 +172,19 @@ impl AllAccumulator {
         self.total_tokens = self.total_tokens.saturating_add(row.total_tokens);
         self.total_cost += row.total_cost;
         self.models.extend(row.models_used.iter().cloned());
-        if let Some(agents) = row.metadata_agents.as_ref() {
-            self.agents.extend(agents.iter().copied());
-        } else if row.agent != "all" {
-            self.agents.insert(row.agent);
-        }
+        self.agents.insert(row.agent);
+        row.metadata = None;
         match self.agent_indexes.get(row.agent).copied() {
             Some(index) => merge_agent_breakdown(&mut self.agent_breakdowns[index], row),
             None => {
                 self.agent_indexes
                     .insert(row.agent, self.agent_breakdowns.len());
-                self.agent_breakdowns.push(UnifiedRow {
-                    metadata_agents: Some(vec![row.agent]),
-                    agent_breakdowns: None,
-                    ..row
-                });
+                self.agent_breakdowns.push(row);
             }
         }
     }
 
-    pub(super) fn into_row(self, period: String) -> UnifiedRow {
+    pub(super) fn into_row(self, period: String) -> ReportRow {
         let mut agent_breakdowns = self.agent_breakdowns;
         for breakdown in &mut agent_breakdowns {
             breakdown.period = period.clone();
@@ -138,25 +195,25 @@ impl AllAccumulator {
                 .iter()
                 .flat_map(|breakdown| &breakdown.model_breakdowns),
         );
-        UnifiedRow {
-            period,
-            agent: "all",
-            models_used: self.models.into_iter().collect(),
-            input_tokens: self.input_tokens,
-            output_tokens: self.output_tokens,
-            cache_creation_tokens: self.cache_creation_tokens,
-            cache_read_tokens: self.cache_read_tokens,
-            total_tokens: self.total_tokens,
-            total_cost: self.total_cost,
-            metadata: None,
-            metadata_agents: Some(self.agents.into_iter().collect()),
-            agent_breakdowns: Some(agent_breakdowns),
-            model_breakdowns,
-        }
+        ReportRow::Period(PeriodRow {
+            usage: RowUsage {
+                period,
+                models_used: self.models.into_iter().collect(),
+                input_tokens: self.input_tokens,
+                output_tokens: self.output_tokens,
+                cache_creation_tokens: self.cache_creation_tokens,
+                cache_read_tokens: self.cache_read_tokens,
+                total_tokens: self.total_tokens,
+                total_cost: self.total_cost,
+                model_breakdowns,
+            },
+            agents: self.agents.into_iter().collect(),
+            agent_breakdowns,
+        })
     }
 }
 
-fn merge_agent_breakdown(target: &mut UnifiedRow, source: UnifiedRow) {
+fn merge_agent_breakdown(target: &mut SourceRow, source: SourceRow) {
     target.input_tokens = target.input_tokens.saturating_add(source.input_tokens);
     target.output_tokens = target.output_tokens.saturating_add(source.output_tokens);
     target.cache_creation_tokens = target
@@ -168,13 +225,13 @@ fn merge_agent_breakdown(target: &mut UnifiedRow, source: UnifiedRow) {
     target.total_tokens = target.total_tokens.saturating_add(source.total_tokens);
     target.total_cost += source.total_cost;
     let mut models: BTreeSet<String> = target.models_used.drain(..).collect();
-    models.extend(source.models_used);
+    models.extend(source.usage.models_used);
     target.models_used = models.into_iter().collect();
     target.model_breakdowns = merge_by_model(
         target
             .model_breakdowns
             .iter()
-            .chain(&source.model_breakdowns),
+            .chain(&source.usage.model_breakdowns),
     );
 }
 

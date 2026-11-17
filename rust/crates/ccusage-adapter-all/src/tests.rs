@@ -21,22 +21,30 @@ use crate::{
     model_aliases::set_model_aliases_for_tests,
     report::{
         all_report_title, all_table_columns, all_table_row, report_json_with_agents,
-        sections_report_json,
+        sections_report_json, source_table_row,
     },
     types::{AgentLoadSpec, AgentRows, Bucket},
-    types::{DayRow, ReportDay},
+    types::{DayRow, PeriodRow, ReportDay, ReportRow},
 };
 use ccusage_adapter_codex::{self as codex, CodexGroup, CodexModelUsage};
-use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::UnifiedRow};
+use ccusage_adapter_common::{
+    filter_loaded_entries_by_date,
+    rows::{RowUsage, SourceRow, UnifiedRow},
+};
 use ccusage_test_support::{EnvVarsGuard, fs_fixture, instant, set_modified};
 
 /// No per-source options, which is how the tests that do not exercise them
 /// call the loader.
 pub(crate) static NO_SOURCES: BTreeMap<String, SourceArgs> = BTreeMap::new();
 
-pub(crate) fn aggregate_periods(rows: Vec<UnifiedRow>, bucket: Bucket) -> Option<Vec<UnifiedRow>> {
+pub(crate) fn aggregate_periods(rows: Vec<UnifiedRow>, bucket: Bucket) -> Option<Vec<ReportRow>> {
     rows.into_iter()
-        .map(|row| ReportDay::parse(&row.period).map(|day| DayRow { day, row }))
+        .map(|row| {
+            ReportDay::parse(&row.period).map(|day| DayRow {
+                day,
+                row: SourceRow::from(row),
+            })
+        })
         .collect::<Option<Vec<_>>>()
         .map(|rows| aggregate_rows(rows, bucket))
 }
@@ -142,7 +150,7 @@ fn aggregates_daily_agent_rows_by_period() {
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].period, "2026-01-02");
-    assert_eq!(rows[0].agent, "all");
+    assert_eq!(rows[0].agent(), "all");
     assert_eq!(rows[0].input_tokens, 150);
     assert_eq!(rows[0].output_tokens, 45);
     assert_eq!(rows[0].cache_read_tokens, 13);
@@ -151,8 +159,11 @@ fn aggregates_daily_agent_rows_by_period() {
         rows[0].models_used,
         vec!["claude-sonnet-4-20250514".to_string(), "gpt-5".to_string()]
     );
-    assert_eq!(rows[0].metadata_agents, Some(vec!["claude", "codex"]));
-    let breakdowns = rows[0].agent_breakdowns.as_ref().unwrap();
+    assert_eq!(
+        rows[0].agents().map(<[_]>::to_vec),
+        Some(vec!["claude", "codex"])
+    );
+    let breakdowns = rows[0].agent_breakdowns().unwrap();
     assert_eq!(breakdowns.len(), 2);
     assert_eq!(breakdowns[0].agent, "claude");
     assert_eq!(breakdowns[0].period, "2026-01-02");
@@ -195,7 +206,7 @@ fn buckets_unified_weekly_rows_by_requested_start_of_week() {
         aggregate_periods(rows.clone(), Bucket::Week(start_of_week))
             .unwrap()
             .into_iter()
-            .map(|row| row.period)
+            .map(|row| row.period.clone())
             .collect::<Vec<_>>()
     };
 
@@ -311,7 +322,7 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
     assert_eq!(rows[0].period, "2026-01");
     assert_eq!(rows[0].input_tokens, 60);
     assert_eq!(rows[0].output_tokens, 30);
-    let breakdowns = rows[0].agent_breakdowns.as_ref().unwrap();
+    let breakdowns = rows[0].agent_breakdowns().unwrap();
     assert_eq!(
         breakdowns.len(),
         2,
@@ -354,21 +365,21 @@ fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
 
 #[test]
 fn renders_all_report_json_with_period_and_agent_metadata() {
-    let rows = vec![UnifiedRow {
-        period: "2026-01-02".to_string(),
-        agent: "all",
-        models_used: vec!["gpt-5".to_string()],
-        input_tokens: 100,
-        output_tokens: 20,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 10,
-        total_tokens: 130,
-        total_cost: 0.01,
-        metadata: None,
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    }];
+    let rows = vec![ReportRow::Period(PeriodRow {
+        usage: RowUsage {
+            period: "2026-01-02".to_string(),
+            models_used: vec!["gpt-5".to_string()],
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 10,
+            total_tokens: 130,
+            total_cost: 0.01,
+            model_breakdowns: Vec::new(),
+        },
+        agents: vec!["codex"],
+        agent_breakdowns: Vec::new(),
+    })];
 
     let report = report_json_with_agents(&rows, AgentReportKind::Daily, false);
 
@@ -380,46 +391,46 @@ fn renders_all_report_json_with_period_and_agent_metadata() {
 
 #[test]
 fn all_report_totals_list_unpriced_models_only_when_present() {
-    let mut row = UnifiedRow {
-        period: "2026-01-02".to_string(),
-        agent: "all",
-        models_used: vec!["new-model".to_string(), "gpt-5".to_string()],
-        input_tokens: 100,
-        output_tokens: 20,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 10,
-        total_tokens: 130,
-        total_cost: 0.01,
-        metadata: None,
-        metadata_agents: None,
-        agent_breakdowns: None,
-        model_breakdowns: vec![
-            ModelBreakdown {
-                model_name: "new-model".to_string(),
-                input_tokens: 50,
-                output_tokens: 10,
-                cache_creation_tokens: 0,
-                cache_read_tokens: 0,
-                cache_creation_1h_tokens: None,
-                extra_total_tokens: 0,
-                cost: 0.0,
-                missing_pricing: true,
-                stored_cost: None,
-            },
-            ModelBreakdown {
-                model_name: "gpt-5".to_string(),
-                input_tokens: 50,
-                output_tokens: 10,
-                cache_creation_tokens: 0,
-                cache_read_tokens: 10,
-                cache_creation_1h_tokens: None,
-                extra_total_tokens: 0,
-                cost: 0.01,
-                missing_pricing: false,
-                stored_cost: None,
-            },
-        ],
-    };
+    let mut row = ReportRow::Period(PeriodRow {
+        usage: RowUsage {
+            period: "2026-01-02".to_string(),
+            models_used: vec!["new-model".to_string(), "gpt-5".to_string()],
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 10,
+            total_tokens: 130,
+            total_cost: 0.01,
+            model_breakdowns: vec![
+                ModelBreakdown {
+                    model_name: "new-model".to_string(),
+                    input_tokens: 50,
+                    output_tokens: 10,
+                    cache_creation_tokens: 0,
+                    cache_read_tokens: 0,
+                    cache_creation_1h_tokens: None,
+                    extra_total_tokens: 0,
+                    cost: 0.0,
+                    missing_pricing: true,
+                    stored_cost: None,
+                },
+                ModelBreakdown {
+                    model_name: "gpt-5".to_string(),
+                    input_tokens: 50,
+                    output_tokens: 10,
+                    cache_creation_tokens: 0,
+                    cache_read_tokens: 10,
+                    cache_creation_1h_tokens: None,
+                    extra_total_tokens: 0,
+                    cost: 0.01,
+                    missing_pricing: false,
+                    stored_cost: None,
+                },
+            ],
+        },
+        agents: Vec::new(),
+        agent_breakdowns: Vec::new(),
+    });
 
     let report = report_json_with_agents(std::slice::from_ref(&row), AgentReportKind::Daily, false);
     assert_eq!(report["totals"]["unpricedModels"], json!(["new-model"]));
@@ -434,10 +445,15 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
     );
 
     let nested = report_json_with_agents(
-        &[UnifiedRow {
-            agent_breakdowns: Some(vec![row.clone()]),
-            ..row.clone()
-        }],
+        &[ReportRow::Period(PeriodRow {
+            usage: (*row).clone(),
+            agents: Vec::new(),
+            agent_breakdowns: vec![SourceRow {
+                agent: "codex",
+                usage: (*row).clone(),
+                metadata: None,
+            }],
+        })],
         AgentReportKind::Daily,
         true,
     );
@@ -446,11 +462,15 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
         true
     );
 
-    let priced_session = UnifiedRow {
-        period: "session-a".to_string(),
-        model_breakdowns: vec![row.model_breakdowns[1].clone()],
-        ..row.clone()
-    };
+    let priced_session = ReportRow::Source(SourceRow {
+        usage: RowUsage {
+            period: "session-a".to_string(),
+            model_breakdowns: vec![row.model_breakdowns[1].clone()],
+            ..(*row).clone()
+        },
+        agent: row.clone().agent(),
+        metadata: None,
+    });
     let sections = sections_report_json(
         &[
             (AgentReportKind::Daily, vec![row.clone()]),
@@ -465,10 +485,14 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
         "sections totals follow the invoked section only"
     );
 
-    let unpriced_session = UnifiedRow {
-        period: "session-b".to_string(),
-        ..row.clone()
-    };
+    let unpriced_session = ReportRow::Source(SourceRow {
+        usage: RowUsage {
+            period: "session-b".to_string(),
+            ..(*row).clone()
+        },
+        agent: row.clone().agent(),
+        metadata: None,
+    });
     let sections = sections_report_json(
         &[
             (AgentReportKind::Daily, Vec::new()),
@@ -491,68 +515,68 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
 
 #[test]
 fn renders_by_agent_json_breakdowns_when_requested() {
-    let rows = vec![UnifiedRow {
-        period: "2026-01-02".to_string(),
-        agent: "all",
-        models_used: vec!["claude-sonnet-4-20250514".to_string(), "gpt-5".to_string()],
-        input_tokens: 150,
-        output_tokens: 45,
-        cache_creation_tokens: 5,
-        cache_read_tokens: 13,
-        total_tokens: 203,
-        total_cost: 0.03,
-        metadata: None,
-        metadata_agents: Some(vec!["claude", "codex"]),
-        agent_breakdowns: Some(vec![
-            UnifiedRow {
-                period: "2026-01-02".to_string(),
-                agent: "claude",
-                models_used: vec!["claude-sonnet-4-20250514".to_string()],
-                input_tokens: 50,
-                output_tokens: 25,
-                cache_creation_tokens: 5,
-                cache_read_tokens: 3,
-                total_tokens: 83,
-                total_cost: 0.02,
-                metadata: None,
-                metadata_agents: Some(vec!["claude"]),
-                agent_breakdowns: None,
-                model_breakdowns: vec![ModelBreakdown {
-                    model_name: "claude-sonnet-4-20250514".to_string(),
+    let rows = vec![ReportRow::Period(PeriodRow {
+        usage: RowUsage {
+            period: "2026-01-02".to_string(),
+            models_used: vec!["claude-sonnet-4-20250514".to_string(), "gpt-5".to_string()],
+            input_tokens: 150,
+            output_tokens: 45,
+            cache_creation_tokens: 5,
+            cache_read_tokens: 13,
+            total_tokens: 203,
+            total_cost: 0.03,
+            model_breakdowns: Vec::new(),
+        },
+        agents: vec!["claude", "codex"],
+        agent_breakdowns: vec![
+            SourceRow {
+                usage: RowUsage {
+                    period: "2026-01-02".to_string(),
+                    models_used: vec!["claude-sonnet-4-20250514".to_string()],
                     input_tokens: 50,
                     output_tokens: 25,
                     cache_creation_tokens: 5,
                     cache_read_tokens: 3,
-                    cost: 0.02,
-                    ..ModelBreakdown::default()
-                }],
-            },
-            UnifiedRow {
-                period: "2026-01-02".to_string(),
-                agent: "codex",
-                models_used: vec!["gpt-5".to_string()],
-                input_tokens: 100,
-                output_tokens: 20,
-                cache_creation_tokens: 0,
-                cache_read_tokens: 10,
-                total_tokens: 120,
-                total_cost: 0.01,
+                    total_tokens: 83,
+                    total_cost: 0.02,
+                    model_breakdowns: vec![ModelBreakdown {
+                        model_name: "claude-sonnet-4-20250514".to_string(),
+                        input_tokens: 50,
+                        output_tokens: 25,
+                        cache_creation_tokens: 5,
+                        cache_read_tokens: 3,
+                        cost: 0.02,
+                        ..ModelBreakdown::default()
+                    }],
+                },
+                agent: "claude",
                 metadata: None,
-                metadata_agents: Some(vec!["codex"]),
-                agent_breakdowns: None,
-                model_breakdowns: vec![ModelBreakdown {
-                    model_name: "gpt-5".to_string(),
+            },
+            SourceRow {
+                usage: RowUsage {
+                    period: "2026-01-02".to_string(),
+                    models_used: vec!["gpt-5".to_string()],
                     input_tokens: 100,
                     output_tokens: 20,
                     cache_creation_tokens: 0,
                     cache_read_tokens: 10,
-                    cost: 0.01,
-                    ..ModelBreakdown::default()
-                }],
+                    total_tokens: 120,
+                    total_cost: 0.01,
+                    model_breakdowns: vec![ModelBreakdown {
+                        model_name: "gpt-5".to_string(),
+                        input_tokens: 100,
+                        output_tokens: 20,
+                        cache_creation_tokens: 0,
+                        cache_read_tokens: 10,
+                        cost: 0.01,
+                        ..ModelBreakdown::default()
+                    }],
+                },
+                agent: "codex",
+                metadata: None,
             },
-        ]),
-        model_breakdowns: Vec::new(),
-    }];
+        ],
+    })];
 
     let report = report_json_with_agents(&rows, AgentReportKind::Daily, true);
 
@@ -616,37 +640,44 @@ fn omits_by_agent_json_breakdowns_by_default() {
 
 #[test]
 fn renders_multi_section_json_with_command_totals() {
-    let daily_rows = vec![UnifiedRow {
-        period: "2026-01-02".to_string(),
-        agent: "all",
-        models_used: vec!["gpt-5".to_string()],
-        input_tokens: 100,
-        output_tokens: 20,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 10,
-        total_tokens: 120,
-        total_cost: 0.01,
-        metadata: None,
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    }];
-    let monthly_rows = aggregate_periods(daily_rows.clone(), Bucket::Month).unwrap();
-    let session_rows = vec![UnifiedRow {
-        period: "session-a".to_string(),
+    let daily_rows = vec![ReportRow::Period(PeriodRow {
+        usage: RowUsage {
+            period: "2026-01-02".to_string(),
+            models_used: vec!["gpt-5".to_string()],
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 10,
+            total_tokens: 120,
+            total_cost: 0.01,
+            model_breakdowns: Vec::new(),
+        },
+        agents: vec!["codex"],
+        agent_breakdowns: Vec::new(),
+    })];
+    let monthly_rows = vec![ReportRow::Period(PeriodRow {
+        usage: RowUsage {
+            period: "2026-01".into(),
+            ..(*daily_rows[0]).clone()
+        },
+        agents: vec!["codex"],
+        agent_breakdowns: Vec::new(),
+    })];
+    let session_rows = vec![ReportRow::Source(SourceRow {
+        usage: RowUsage {
+            period: "session-a".to_string(),
+            models_used: vec!["gpt-5".to_string()],
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 10,
+            total_tokens: 120,
+            total_cost: 0.01,
+            model_breakdowns: Vec::new(),
+        },
         agent: "codex",
-        models_used: vec!["gpt-5".to_string()],
-        input_tokens: 100,
-        output_tokens: 20,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 10,
-        total_tokens: 120,
-        total_cost: 0.01,
         metadata: Some(json!({ "lastActivity": "2026-01-02T00:00:00.000Z" })),
-        metadata_agents: None,
-        agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    }];
+    })];
     let sections = vec![
         (AgentReportKind::Daily, daily_rows.clone()),
         (AgentReportKind::Monthly, monthly_rows.clone()),
@@ -1536,9 +1567,9 @@ fn unified_session_counts_a_claude_agent_session_active_past_until_once() {
             .iter()
             .map(|row| {
                 let agents = row
-                    .metadata_agents
-                    .clone()
-                    .unwrap_or_else(|| vec![row.agent]);
+                    .agents()
+                    .map(<[_]>::to_vec)
+                    .unwrap_or_else(|| vec![row.agent()]);
                 (agents, row.period.as_str(), row.input_tokens)
             })
             .collect();
@@ -1810,7 +1841,7 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     let daily_rows = &sections.sections[0].1;
     assert_eq!(daily_rows.len(), 1);
     assert_eq!(daily_rows[0].period, "2099-01-02");
-    assert_eq!(daily_rows[0].metadata_agents, Some(vec!["pi"]));
+    assert_eq!(daily_rows[0].agents().map(<[_]>::to_vec), Some(vec!["pi"]));
     assert_eq!(daily_rows[0].input_tokens, 1_000);
     assert_eq!(daily_rows[0].output_tokens, 500);
     assert!((daily_rows[0].total_cost - 0.002).abs() < f64::EPSILON);
@@ -1818,9 +1849,9 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     let session_rows = &sections.sections[1].1;
     assert_eq!(session_rows.len(), 1);
     assert_eq!(session_rows[0].period, "in-range");
-    assert_eq!(session_rows[0].agent, "pi");
+    assert_eq!(session_rows[0].agent(), "pi");
     assert_eq!(
-        session_rows[0].metadata.as_ref().unwrap()["projectPath"],
+        session_rows[0].metadata().unwrap()["projectPath"],
         "project-a"
     );
     assert_eq!(session_rows[0].input_tokens, 1_000);
@@ -2181,16 +2212,18 @@ fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
         );
         assert_cline_unified_result_contains_only_accepted_requests(&result.rows, kind);
         if kind == AgentReportKind::Session {
-            assert!(result.rows.iter().all(|row| row.agent == "cline"));
-            assert!(result.rows.iter().all(|row| row.metadata_agents.is_none()));
-        } else {
-            assert!(result.rows.iter().all(|row| row.agent == "all"));
+            assert!(result.rows.iter().all(|row| row.agent() == "cline"));
             assert!(
                 result
                     .rows
                     .iter()
-                    .all(|row| row.metadata_agents.as_deref() == Some(["cline"].as_slice()))
+                    .all(|row| row.agents().map(<[_]>::to_vec).is_none())
             );
+        } else {
+            assert!(result.rows.iter().all(|row| row.agent() == "all"));
+            assert!(result.rows.iter().all(
+                |row| row.agents().map(<[_]>::to_vec).as_deref() == Some(["cline"].as_slice())
+            ));
         }
 
         insta::assert_json_snapshot!(
@@ -2210,7 +2243,7 @@ fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
 }
 
 fn assert_cline_unified_result_contains_only_accepted_requests(
-    rows: &[UnifiedRow],
+    rows: &[ReportRow],
     kind: AgentReportKind,
 ) {
     for (actual, expected, label) in [
@@ -2342,7 +2375,7 @@ fn fixture_shared(since: &str, until: &str) -> SharedArgs {
 }
 
 fn table_snapshot(
-    rows: &[UnifiedRow],
+    rows: &[ReportRow],
     kind: AgentReportKind,
     detected_agents: &[&'static str],
 ) -> Value {
@@ -2353,31 +2386,31 @@ fn table_snapshot(
             "kind": "row",
             "cells": all_table_row(row, false, false, false),
         }));
-        if let Some(agent_breakdowns) = row.agent_breakdowns.as_ref() {
+        if let Some(agent_breakdowns) = row.agent_breakdowns() {
             for breakdown in agent_breakdowns {
                 rendered_rows.push(json!({
                     "kind": "agent-breakdown",
-                    "cells": all_table_row(breakdown, false, true, false),
+                    "cells": source_table_row(breakdown, false, true, false),
                 }));
             }
         }
     }
     let totals = report_json_with_agents(rows, kind, false)["totals"].clone();
-    let total_row = UnifiedRow {
-        period: "Total".to_string(),
-        agent: "all",
-        models_used: Vec::new(),
-        input_tokens: totals["inputTokens"].as_u64().unwrap(),
-        output_tokens: totals["outputTokens"].as_u64().unwrap(),
-        cache_creation_tokens: totals["cacheCreationTokens"].as_u64().unwrap(),
-        cache_read_tokens: totals["cacheReadTokens"].as_u64().unwrap(),
-        total_tokens: totals["totalTokens"].as_u64().unwrap(),
-        total_cost: totals["totalCost"].as_f64().unwrap(),
-        metadata: None,
-        metadata_agents: None,
-        agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    };
+    let total_row = ReportRow::Period(PeriodRow {
+        usage: RowUsage {
+            period: "Total".to_string(),
+            models_used: Vec::new(),
+            input_tokens: totals["inputTokens"].as_u64().unwrap(),
+            output_tokens: totals["outputTokens"].as_u64().unwrap(),
+            cache_creation_tokens: totals["cacheCreationTokens"].as_u64().unwrap(),
+            cache_read_tokens: totals["cacheReadTokens"].as_u64().unwrap(),
+            total_tokens: totals["totalTokens"].as_u64().unwrap(),
+            total_cost: totals["totalCost"].as_f64().unwrap(),
+            model_breakdowns: Vec::new(),
+        },
+        agents: Vec::new(),
+        agent_breakdowns: Vec::new(),
+    });
     let mut total_cells = all_table_row(&total_row, false, false, false);
     total_cells[1].clear();
     total_cells[2].clear();
@@ -2462,7 +2495,7 @@ fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {
     assert_eq!(result.rows.len(), 1);
     assert_eq!(result.detected_agents, vec!["grok"]);
     assert_eq!(
-        result.rows[0].metadata_agents,
+        result.rows[0].agents().map(<[_]>::to_vec),
         (kind != AgentReportKind::Session).then_some(vec!["grok"])
     );
     assert_eq!(result.rows[0].input_tokens, 60);
@@ -2720,7 +2753,11 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
         CostMode::Display,
     );
 
-    let report = report_json_with_agents(&[row], AgentReportKind::Daily, false);
+    let report = report_json_with_agents(
+        &[ReportRow::Source(SourceRow::from(row))],
+        AgentReportKind::Daily,
+        false,
+    );
 
     assert!(report["totals"].get("unpricedModels").is_none());
     assert!(
@@ -2835,21 +2872,21 @@ fn aggregates_model_breakdowns_across_agents() {
 
 #[test]
 fn displays_total_tokens_including_extra_tokens() {
-    let row = UnifiedRow {
-        period: "2026-01-02".to_string(),
+    let row = ReportRow::Source(SourceRow {
+        usage: RowUsage {
+            period: "2026-01-02".to_string(),
+            models_used: vec!["gpt-5".to_string()],
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 10,
+            total_tokens: 135,
+            total_cost: 0.01,
+            model_breakdowns: Vec::new(),
+        },
         agent: "codex",
-        models_used: vec!["gpt-5".to_string()],
-        input_tokens: 100,
-        output_tokens: 20,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 10,
-        total_tokens: 135,
-        total_cost: 0.01,
         metadata: None,
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: None,
-        model_breakdowns: Vec::new(),
-    };
+    });
 
     let cells = all_table_row(&row, false, false, false);
 
@@ -2858,21 +2895,9 @@ fn displays_total_tokens_including_extra_tokens() {
 
 #[test]
 fn all_table_rows_match_main_agent_breakdown_display() {
-    let row = UnifiedRow {
-        period: "2026-01-02".to_string(),
-        agent: "all",
-        models_used: vec!["gpt-5".to_string()],
-        input_tokens: 100,
-        output_tokens: 20,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 10,
-        total_tokens: 130,
-        total_cost: 0.01,
-        metadata: None,
-        metadata_agents: Some(vec!["codex"]),
-        agent_breakdowns: Some(vec![UnifiedRow {
+    let row = ReportRow::Period(PeriodRow {
+        usage: RowUsage {
             period: "2026-01-02".to_string(),
-            agent: "codex",
             models_used: vec!["gpt-5".to_string()],
             input_tokens: 100,
             output_tokens: 20,
@@ -2880,21 +2905,33 @@ fn all_table_rows_match_main_agent_breakdown_display() {
             cache_read_tokens: 10,
             total_tokens: 130,
             total_cost: 0.01,
-            metadata: None,
-            metadata_agents: Some(vec!["codex"]),
-            agent_breakdowns: None,
             model_breakdowns: Vec::new(),
-        }]),
-        model_breakdowns: Vec::new(),
-    };
+        },
+        agents: vec!["codex"],
+        agent_breakdowns: vec![SourceRow {
+            usage: RowUsage {
+                period: "2026-01-02".to_string(),
+                models_used: vec!["gpt-5".to_string()],
+                input_tokens: 100,
+                output_tokens: 20,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 10,
+                total_tokens: 130,
+                total_cost: 0.01,
+                model_breakdowns: Vec::new(),
+            },
+            agent: "codex",
+            metadata: None,
+        }],
+    });
 
     assert_eq!(
         all_table_row(&row, true, false, false),
         vec!["2026-01-02", "All", "", "100", "20", "$0.01"]
     );
     assert_eq!(
-        all_table_row(
-            row.agent_breakdowns.as_ref().unwrap().first().unwrap(),
+        source_table_row(
+            row.agent_breakdowns().unwrap().first().unwrap(),
             true,
             true,
             false,

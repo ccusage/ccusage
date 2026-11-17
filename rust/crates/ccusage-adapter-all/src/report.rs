@@ -15,10 +15,11 @@ use crate::{
     print_box_title, print_missing_pricing_warnings_for_models, should_use_compact_layout,
 };
 
-use ccusage_adapter_common::rows::UnifiedRow;
+use super::types::ReportRow;
+use ccusage_adapter_common::rows::{RowUsage, SourceRow};
 
 pub(super) fn report_json_with_agents(
-    rows: &[UnifiedRow],
+    rows: &[ReportRow],
     kind: AgentReportKind,
     include_agents: bool,
 ) -> Value {
@@ -29,7 +30,7 @@ pub(super) fn report_json_with_agents(
 }
 
 pub(super) fn sections_report_json(
-    sections: &[(AgentReportKind, Vec<UnifiedRow>)],
+    sections: &[(AgentReportKind, Vec<ReportRow>)],
     command_kind: AgentReportKind,
     include_agents: bool,
 ) -> OrderedJsonMap {
@@ -53,7 +54,7 @@ pub(super) fn sections_report_json(
 }
 
 pub(super) fn print_sections_report_json(
-    sections: &[(AgentReportKind, Vec<UnifiedRow>)],
+    sections: &[(AgentReportKind, Vec<ReportRow>)],
     command_kind: AgentReportKind,
     include_agents: bool,
     jq: Option<&str>,
@@ -91,36 +92,39 @@ impl Serialize for OrderedJsonMap {
     }
 }
 
-fn row_json(row: &UnifiedRow, include_agents: bool) -> Value {
-    let mut value = agent_json(row);
+fn row_json(row: &ReportRow, include_agents: bool) -> Value {
+    let mut value = agent_json(row.agent(), row);
     if let Some(obj) = value.as_object_mut() {
         obj.insert("period".to_string(), json!(row.period));
-    }
-    if let (Some(obj), Some(agents)) = (value.as_object_mut(), row.metadata_agents.as_ref()) {
-        obj.insert(
-            "metadata".to_string(),
-            row.metadata
-                .clone()
-                .unwrap_or_else(|| json!({ "agents": agents })),
-        );
-    } else if let (Some(obj), Some(metadata)) = (value.as_object_mut(), row.metadata.as_ref()) {
-        obj.insert("metadata".to_string(), metadata.clone());
-    }
-    if include_agents
-        && let (Some(obj), Some(agent_breakdowns)) =
-            (value.as_object_mut(), row.agent_breakdowns.as_ref())
-    {
-        obj.insert(
-            "agents".to_string(),
-            Value::Array(agent_breakdowns.iter().map(agent_json).collect()),
-        );
+        match row {
+            ReportRow::Source(_) => {
+                if let Some(metadata) = row.metadata() {
+                    obj.insert("metadata".to_string(), metadata.clone());
+                }
+            }
+            ReportRow::Period(period) => {
+                obj.insert("metadata".to_string(), json!({ "agents": row.agents() }));
+                if include_agents {
+                    obj.insert(
+                        "agents".to_string(),
+                        Value::Array(
+                            period
+                                .agent_breakdowns
+                                .iter()
+                                .map(|source| agent_json(source.agent, &source.usage))
+                                .collect(),
+                        ),
+                    );
+                }
+            }
+        }
     }
     value
 }
 
-fn agent_json(row: &UnifiedRow) -> Value {
+fn agent_json(agent: &str, row: &RowUsage) -> Value {
     json!({
-        "agent": row.agent,
+        "agent": agent,
         "modelsUsed": row.models_used,
         "inputTokens": row.input_tokens,
         "outputTokens": row.output_tokens,
@@ -132,7 +136,7 @@ fn agent_json(row: &UnifiedRow) -> Value {
     })
 }
 
-fn totals(rows: &[UnifiedRow]) -> Totals {
+fn totals(rows: &[ReportRow]) -> Totals {
     Totals::from_rows(rows.iter().map(|row| TotalsRow {
         input_tokens: row.input_tokens,
         output_tokens: row.output_tokens,
@@ -145,7 +149,7 @@ fn totals(rows: &[UnifiedRow]) -> Totals {
     }))
 }
 
-fn totals_json(rows: &[UnifiedRow]) -> Value {
+fn totals_json(rows: &[ReportRow]) -> Value {
     let totals = totals(rows);
     let mut value = json!({
         "inputTokens": totals.input_tokens,
@@ -169,7 +173,7 @@ fn rows_key(kind: AgentReportKind) -> &'static str {
 }
 
 pub(super) fn print_table(
-    rows: &[UnifiedRow],
+    rows: &[ReportRow],
     kind: AgentReportKind,
     shared: &SharedArgs,
     detected_agents: &[&'static str],
@@ -194,9 +198,9 @@ pub(super) fn print_table(
 
     for row in rows {
         table.push(all_table_row(row, compact, false, shared.no_cost));
-        if let Some(agent_breakdowns) = row.agent_breakdowns.as_ref() {
+        if let Some(agent_breakdowns) = row.agent_breakdowns() {
             for breakdown in agent_breakdowns {
-                table.push(all_table_row(breakdown, compact, true, shared.no_cost));
+                table.push(source_table_row(breakdown, compact, true, shared.no_cost));
                 if shared.breakdown && !breakdown.model_breakdowns.is_empty() {
                     push_model_breakdown_rows(
                         &mut table,
@@ -277,7 +281,49 @@ fn detected_agent_labels(detected_agents: &[&'static str]) -> String {
 }
 
 pub(super) fn all_table_row(
-    row: &UnifiedRow,
+    row: &ReportRow,
+    compact: bool,
+    breakdown: bool,
+    no_cost: bool,
+) -> Vec<String> {
+    match row {
+        ReportRow::Source(source) => source_table_row(source, compact, breakdown, no_cost),
+        ReportRow::Period(period) => table_row(
+            &period.usage,
+            "All".to_string(),
+            String::new(),
+            compact,
+            breakdown,
+            no_cost,
+        ),
+    }
+}
+
+pub(super) fn source_table_row(
+    row: &SourceRow,
+    compact: bool,
+    breakdown: bool,
+    no_cost: bool,
+) -> Vec<String> {
+    let agent = if breakdown {
+        format!("- {}", agent_label(row.agent))
+    } else {
+        agent_label(row.agent).to_string()
+    };
+    table_row(
+        &row.usage,
+        agent,
+        format_models_multiline(&row.models_used),
+        compact,
+        breakdown,
+        no_cost,
+    )
+}
+
+fn table_row(
+    row: &RowUsage,
+    agent: String,
+    models: String,
     compact: bool,
     breakdown: bool,
     no_cost: bool,
@@ -286,18 +332,6 @@ pub(super) fn all_table_row(
         String::new()
     } else {
         row.period.clone()
-    };
-    let agent = if breakdown {
-        format!("- {}", agent_label(row.agent))
-    } else if row.agent_breakdowns.is_some() {
-        "All".to_string()
-    } else {
-        agent_label(row.agent).to_string()
-    };
-    let models = if row.agent_breakdowns.is_some() {
-        String::new()
-    } else {
-        format_models_multiline(&row.models_used)
     };
 
     if compact {
@@ -435,9 +469,9 @@ pub(super) fn all_table_columns(
     (headers, aligns)
 }
 
-pub(super) fn sort_rows(rows: &mut [UnifiedRow], order: &SortOrder) {
+pub(super) fn sort_rows(rows: &mut [ReportRow], order: &SortOrder) {
     rows.sort_by(|a, b| match a.period.cmp(&b.period) {
-        std::cmp::Ordering::Equal => a.agent.cmp(b.agent),
+        std::cmp::Ordering::Equal => a.agent().cmp(b.agent()),
         order => order,
     });
     if *order == SortOrder::Desc {
