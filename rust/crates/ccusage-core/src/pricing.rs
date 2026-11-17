@@ -2385,6 +2385,31 @@ mod tests {
     }
 
     #[test]
+    fn input_override_moves_default_writes_on_curated_loaded_models() {
+        crate::test_support::install_pricing_snapshots();
+        for (model, expected) in [("gpt-5", 2e-6), ("moonshot/kimi-k2.5", 2.5e-6)] {
+            let mut pricing = PricingMap::default();
+            pricing.load_json(&format!(
+                r#"{{"{model}": {{"input_cost_per_token": 0.00000125, "output_cost_per_token": 0.00001, "litellm_provider": "{}"}}}}"#,
+                if model.starts_with("gpt-") { "openai" } else { "moonshot" }
+            ));
+            pricing.put_builtin_pricing();
+            let overrides = [(
+                model.to_string(),
+                ccusage_cli::PricingOverride {
+                    input_cost_per_token: Some(2e-6),
+                    ..ccusage_cli::PricingOverride::default()
+                },
+            )];
+            let overridden =
+                pricing.with_user_overrides(overrides.iter().map(|(id, value)| (id, value)));
+            let price = overridden.find(model).unwrap();
+            assert_eq!(price.cache_create, None, "{model}");
+            assert_eq!(price.cache_creation_rate(), expected, "{model}");
+        }
+    }
+
+    #[test]
     fn every_curated_row_fills_only_the_rates_a_loaded_row_leaves_out() {
         let mut pricing = PricingMap::default();
         pricing.load_json(

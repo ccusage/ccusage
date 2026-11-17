@@ -1,4 +1,19 @@
-use super::{Pricing, Supplement, rates};
+use super::{Pricing, ProviderFamily, Supplement, rates};
+
+const fn default_write_rates(
+    input: f64,
+    output: f64,
+    cache_read: f64,
+    family: ProviderFamily,
+) -> Pricing {
+    Pricing {
+        input,
+        output,
+        cache_read: Some(cache_read),
+        family,
+        ..Pricing::empty()
+    }
+}
 
 pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     Supplement {
@@ -74,17 +89,17 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     },
     Supplement {
         model: "gpt-5",
-        pricing: rates(1.25e-6, 10e-6, 1.25e-6, 0.125e-6),
+        pricing: default_write_rates(1.25e-6, 10e-6, 0.125e-6, ProviderFamily::OpenAi),
         context_limit: None,
     },
     Supplement {
         model: "gpt-5.1",
-        pricing: rates(1.25e-6, 10e-6, 1.25e-6, 0.125e-6),
+        pricing: default_write_rates(1.25e-6, 10e-6, 0.125e-6, ProviderFamily::OpenAi),
         context_limit: None,
     },
     Supplement {
         model: "gpt-5.5",
-        pricing: rates(5e-6, 30e-6, 5e-6, 0.5e-6),
+        pricing: default_write_rates(5e-6, 30e-6, 0.5e-6, ProviderFamily::OpenAi),
         context_limit: Some(1050000),
     },
     Supplement {
@@ -97,32 +112,32 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     },
     Supplement {
         model: "moonshot/kimi-k2.5",
-        pricing: rates(0.6e-6, 3e-6, 0.75e-6, 0.1e-6),
+        pricing: default_write_rates(0.6e-6, 3e-6, 0.1e-6, ProviderFamily::Unrecorded),
         context_limit: Some(262144),
     },
     Supplement {
         model: "moonshot/kimi-k2.6",
-        pricing: rates(0.95e-6, 4e-6, 1.1875e-6, 0.16e-6),
+        pricing: default_write_rates(0.95e-6, 4e-6, 0.16e-6, ProviderFamily::Unrecorded),
         context_limit: Some(262144),
     },
     Supplement {
         model: "gpt-5.3-codex",
-        pricing: rates(1.75e-6, 14e-6, 1.75e-6, 0.175e-6),
+        pricing: default_write_rates(1.75e-6, 14e-6, 0.175e-6, ProviderFamily::OpenAi),
         context_limit: None,
     },
     Supplement {
         model: "gpt-5.4",
-        pricing: rates(2.5e-6, 15e-6, 2.5e-6, 0.25e-6),
+        pricing: default_write_rates(2.5e-6, 15e-6, 0.25e-6, ProviderFamily::OpenAi),
         context_limit: Some(1050000),
     },
     Supplement {
         model: "gpt-5.4-mini",
-        pricing: rates(0.75e-6, 4.5e-6, 0.75e-6, 0.075e-6),
+        pricing: default_write_rates(0.75e-6, 4.5e-6, 0.075e-6, ProviderFamily::OpenAi),
         context_limit: None,
     },
     Supplement {
         model: "gpt-5.4-nano",
-        pricing: rates(0.2e-6, 1.25e-6, 0.2e-6, 0.02e-6),
+        pricing: default_write_rates(0.2e-6, 1.25e-6, 0.02e-6, ProviderFamily::OpenAi),
         context_limit: None,
     },
     Supplement {
