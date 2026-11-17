@@ -159,7 +159,6 @@ mod tests {
                 .into_iter()
                 .map(std::ffi::OsString::from),
             &ccusage_cli::NoConfig,
-            5.0,
             "test",
         )
         .unwrap();
