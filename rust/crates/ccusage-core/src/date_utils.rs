@@ -1,4 +1,9 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fmt,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use ccusage_cli::WeekDay;
 
 use jiff::{Timestamp as JiffTimestamp, civil::Date as JiffDate, tz::TimeZone as JiffTimeZone};
 
@@ -84,6 +89,29 @@ impl TimestampMs {
 }
 
 impl IsoDate {
+    pub fn parse(value: &str) -> Option<Self> {
+        parse_iso_date(value)
+    }
+
+    pub fn format_month(self) -> String {
+        format!("{:04}-{:02}", self.year, self.month)
+    }
+
+    pub fn week_start(self, start: WeekDay) -> Self {
+        let start = match start {
+            WeekDay::Sunday => 0,
+            WeekDay::Monday => 1,
+            WeekDay::Tuesday => 2,
+            WeekDay::Wednesday => 3,
+            WeekDay::Thursday => 4,
+            WeekDay::Friday => 5,
+            WeekDay::Saturday => 6,
+        };
+        let shift = (i64::from(self.weekday_from_sunday()) - start).rem_euclid(7);
+        let (year, month, day) = civil_from_days(self.days_since_epoch() - shift);
+        Self { year, month, day }
+    }
+
     fn from_ymd(year: i32, month: u32, day: u32) -> Option<Self> {
         if !(1..=12).contains(&month) || day == 0 || day > days_in_month(year, month) {
             return None;
@@ -103,6 +131,16 @@ impl IsoDate {
         let days = self.days_since_epoch().checked_add(days)?;
         let (year, month, day) = civil_from_days(days);
         Some(Self { year, month, day })
+    }
+}
+
+impl fmt::Display for IsoDate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{:04}-{:02}-{:02}",
+            self.year, self.month, self.day
+        )
     }
 }
 
@@ -341,10 +379,6 @@ pub fn format_date_tz(timestamp: TimestampMs, timezone: &JiffTimeZone) -> String
 fn format_utc_date(timestamp: TimestampMs) -> String {
     let parts = timestamp.utc_parts();
     format_date_parts(parts.year, parts.month, parts.day)
-}
-
-pub(crate) fn format_naive_date(date: IsoDate) -> String {
-    format_date_parts(date.year, date.month, date.day)
 }
 
 fn format_date_parts(year: i32, month: u32, day: u32) -> String {

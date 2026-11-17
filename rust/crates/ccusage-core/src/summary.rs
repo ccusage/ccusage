@@ -8,7 +8,7 @@ use crate::{
     cli::{SortOrder, WeekDay},
     cli_error,
     fast::{FxHashMap, FxHashSet},
-    format_naive_date, format_rfc3339_millis, parse_iso_date,
+    format_rfc3339_millis, parse_iso_date,
 };
 
 pub fn summarize_by_key<F, M>(
@@ -281,18 +281,7 @@ where
 
 pub fn week_start(date: &str, start: WeekDay) -> Option<String> {
     let date = parse_iso_date(date)?;
-    let start_num = match start {
-        WeekDay::Sunday => 0,
-        WeekDay::Monday => 1,
-        WeekDay::Tuesday => 2,
-        WeekDay::Wednesday => 3,
-        WeekDay::Thursday => 4,
-        WeekDay::Friday => 5,
-        WeekDay::Saturday => 6,
-    };
-    let day = date.weekday_from_sunday() as i64;
-    let shift = (day - start_num + 7) % 7;
-    Some(format_naive_date(date.checked_add_days(-shift)?))
+    Some(date.week_start(start).to_string())
 }
 
 #[cfg(test)]

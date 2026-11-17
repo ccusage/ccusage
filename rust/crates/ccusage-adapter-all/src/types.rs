@@ -15,28 +15,7 @@ pub(super) enum Bucket {
     Week(WeekDay),
 }
 
-#[derive(Clone, Copy)]
-pub(super) struct ReportDay(crate::TimestampMs);
-
-impl ReportDay {
-    pub(super) fn parse(value: &str) -> Option<Self> {
-        crate::parse_ts_timestamp(&format!("{value}T00:00:00Z")).map(Self)
-    }
-
-    fn days_since_epoch(self) -> i64 {
-        self.0.as_millis().div_euclid(crate::MILLIS_PER_DAY)
-    }
-
-    fn weekday_from_sunday(self) -> i64 {
-        (self.days_since_epoch() + 4).rem_euclid(7)
-    }
-
-    fn minus_days(self, days: i64) -> Self {
-        Self(crate::TimestampMs::from_millis(
-            self.0.as_millis() - days * crate::MILLIS_PER_DAY,
-        ))
-    }
-}
+pub(super) use ccusage_core::IsoDate as ReportDay;
 
 #[derive(Clone)]
 pub(super) struct DayRow {
@@ -55,28 +34,10 @@ impl Bucket {
     }
 
     pub(super) fn key(self, date: ReportDay) -> String {
-        let day = |date: ReportDay| {
-            let parts = date.0.utc_parts();
-            format!("{:04}-{:02}-{:02}", parts.year, parts.month, parts.day)
-        };
         match self {
-            Self::Day => day(date),
-            Self::Month => {
-                let parts = date.0.utc_parts();
-                format!("{:04}-{:02}", parts.year, parts.month)
-            }
-            Self::Week(start) => {
-                let start = match start {
-                    WeekDay::Sunday => 0,
-                    WeekDay::Monday => 1,
-                    WeekDay::Tuesday => 2,
-                    WeekDay::Wednesday => 3,
-                    WeekDay::Thursday => 4,
-                    WeekDay::Friday => 5,
-                    WeekDay::Saturday => 6,
-                };
-                day(date.minus_days((date.weekday_from_sunday() - start).rem_euclid(7)))
-            }
+            Self::Day => date.to_string(),
+            Self::Month => date.format_month(),
+            Self::Week(start) => date.week_start(start).to_string(),
         }
     }
 }
