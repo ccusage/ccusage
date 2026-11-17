@@ -3,9 +3,9 @@ use ccusage_adapter_common::{
     rows::{summarize_entry_sessions, summary_rows},
     source::{LoadKind, LoadRequest, LoadedRows, PricingSupply, UsageSource},
 };
-use ccusage_core::{Diagnostics, ReportWindow, Result};
+use ccusage_core::{Diagnostics, Result};
 
-use crate::{load_daily_summaries_with_detection_progress, load_deduped_entries_with_progress};
+use crate::load_daily_summaries_with_detection_progress;
 
 pub struct Claude;
 
@@ -21,16 +21,14 @@ impl Claude {
         project_filter: Option<&str>,
         diagnostics: &Diagnostics,
     ) -> Result<ClaudeCounted> {
-        let window = ReportWindow::from_shared(shared);
-        let deduped = crate::load_entries_with_mode(
+        let deduped = crate::load_windowed_entries(
             shared,
             project_filter,
-            true,
             diagnostics,
             ccusage_core::cli::CostMode::Display,
         )?;
         Ok(ClaudeCounted::session_days(
-            deduped.main_thread_session_days(|entry| window.contains_date(&entry.date)),
+            deduped.main_thread_session_days(|_| true),
             shared,
         ))
     }
@@ -47,28 +45,21 @@ impl Claude {
 
     fn load(&self, request: &LoadRequest<'_>) -> Result<(LoadedRows, ClaudeCounted)> {
         let shared = request.shared;
-        let window = ReportWindow::from_shared(shared);
         let project_filter = request.options.claude_project;
         let diagnostics = Diagnostics::new("claude");
         if request.kind == LoadKind::Session {
-            let deduped = load_deduped_entries_with_progress(
-                shared,
-                project_filter,
-                request.progress,
-                &diagnostics,
+            let deduped = request.progress.run(
+                ccusage_core::progress::UsageLoadAgent("Claude"),
+                shared.json,
+                || crate::load_windowed_entries(shared, project_filter, &diagnostics, shared.mode),
             )?;
-            let detected = !deduped.entries.is_empty();
+            let detected = deduped.detected;
             let sessions = deduped
-                .main_thread_session_days(|entry| window.contains_date(&entry.date))
+                .main_thread_session_days(|_| true)
                 .into_iter()
                 .map(|(session, _)| session)
                 .collect();
-            let entries = deduped
-                .entries
-                .into_iter()
-                .filter(|entry| window.contains_date(&entry.date))
-                .collect::<Vec<_>>();
-            let summaries = summarize_entry_sessions(&entries)?;
+            let summaries = summarize_entry_sessions(&deduped.entries)?;
             return Ok((
                 LoadedRows {
                     rows: summary_rows("claude", summaries, false),
@@ -120,6 +111,7 @@ impl UsageSource for Claude {
 mod diagnostic_tests {
     use super::*;
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
+    use ccusage_core::ReportWindow;
     use ccusage_core::cli::{AgentReportKind, CostMode, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};
     use std::sync::Arc;

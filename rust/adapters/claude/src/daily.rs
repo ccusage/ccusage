@@ -83,7 +83,7 @@ pub(super) fn load_daily_entries(
     Ok(DailyEntries { deduped, detected })
 }
 
-fn has_usage(path: &Path) -> bool {
+pub(super) fn has_usage(path: &Path) -> bool {
     let Ok(file) = std::fs::File::open(path) else {
         return false;
     };
@@ -145,31 +145,8 @@ pub(super) struct DedupedDailyEntries {
 
 impl DedupedDailyEntries {
     fn retain_entries_in(&mut self, window: &ccusage_core::ReportWindow) {
-        if window.is_unbounded() {
-            return;
-        }
-        if self.copies.is_empty() {
-            self.entries
-                .retain(|entry| window.contains_date(&entry.date));
-            return;
-        }
-        let mut kept_indexes = Vec::with_capacity(self.entries.len());
-        let mut next_index = 0;
-        self.entries.retain(|entry| {
-            let keep = window.contains_date(&entry.date);
-            kept_indexes.push(keep.then_some(next_index));
-            if keep {
-                next_index += 1;
-            }
-            keep
-        });
-        self.copies.retain_mut(|(index, _)| {
-            if let Some(kept_index) = kept_indexes[*index] {
-                *index = kept_index;
-                true
-            } else {
-                false
-            }
+        super::retain_copied_entries(&mut self.entries, &mut self.copies, window, |entry| {
+            &entry.date
         });
     }
 }

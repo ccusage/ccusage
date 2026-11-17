@@ -94,6 +94,7 @@ pub(crate) fn load_deduped_entries_with_progress(
 #[derive(Default)]
 pub(crate) struct DedupedEntries {
     pub(crate) entries: Vec<LoadedEntry>,
+    pub(crate) detected: bool,
     /// `(survivor index, recorded session of the copy)` pairs.
     copies: Vec<(usize, Arc<str>)>,
 }
@@ -139,12 +140,9 @@ pub(crate) fn load_entries_since_with_diagnostics(
     diagnostics: &Diagnostics,
 ) -> Result<Vec<LoadedEntry>> {
     progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, || {
-        load_entries_inner(shared, project_filter, true, diagnostics)
+        load_windowed_entries(shared, project_filter, diagnostics, shared.mode)
     })
-    .map(|mut deduped| {
-        ccusage_adapter_common::filter_loaded_entries_by_date(&mut deduped.entries, shared);
-        deduped.entries
-    })
+    .map(|deduped| deduped.entries)
 }
 
 /// Loads daily Claude summaries inside the requested report window.
@@ -210,6 +208,55 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
     })
 }
 
+pub(crate) fn load_windowed_entries(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
+    mode: CostMode,
+) -> Result<DedupedEntries> {
+    let mut loaded = load_entries_with_mode(shared, project_filter, true, diagnostics, mode)?;
+    retain_copied_entries(
+        &mut loaded.entries,
+        &mut loaded.copies,
+        &crate::ReportWindow::from_shared(shared),
+        |entry| &entry.date,
+    );
+    Ok(loaded)
+}
+
+fn retain_copied_entries<T>(
+    entries: &mut Vec<T>,
+    copies: &mut Vec<(usize, Arc<str>)>,
+    window: &crate::ReportWindow,
+    date: impl Fn(&T) -> &str,
+) {
+    if window.is_unbounded() {
+        return;
+    }
+    if copies.is_empty() {
+        entries.retain(|entry| window.contains_date(date(entry)));
+        return;
+    }
+    let mut kept_indexes = Vec::with_capacity(entries.len());
+    let mut next_index = 0;
+    entries.retain(|entry| {
+        let keep = window.contains_date(date(entry));
+        kept_indexes.push(keep.then_some(next_index));
+        if keep {
+            next_index += 1;
+        }
+        keep
+    });
+    copies.retain_mut(|(index, _)| {
+        if let Some(kept_index) = kept_indexes[*index] {
+            *index = kept_index;
+            true
+        } else {
+            false
+        }
+    });
+}
+
 fn load_entries_inner(
     shared: &SharedArgs,
     project_filter: Option<&str>,
@@ -258,10 +305,13 @@ fn load_entries_with_mode(
             diagnostics,
         )
     };
+    let mut pruned = Vec::new();
     let loaded_files = if skip_files_before_since && shared.since.is_some() {
         let files = usage_files(&paths, project_filter, diagnostics);
         debug_log(shared, format!("Found {} JSONL usage files", files.len()));
-        let files = split_files_before_since(files, shared, utc_now()).kept;
+        let split = split_files_before_since(files, shared, utc_now());
+        pruned = split.pruned;
+        let files = split.kept;
         debug_log(
             shared,
             format!(
@@ -287,7 +337,10 @@ fn load_entries_with_mode(
         loaded_files
     };
     if loaded_files.is_empty() {
-        return Ok(DedupedEntries::default());
+        return Ok(DedupedEntries {
+            detected: pruned.iter().any(|file| daily::has_usage(file)),
+            ..DedupedEntries::default()
+        });
     }
     let loaded_entry_count = loaded_files
         .iter()
@@ -305,7 +358,12 @@ fn load_entries_with_mode(
         shared,
         format!("Kept {} usage entries after deduplication", entries.len()),
     );
-    Ok(DedupedEntries { entries, copies })
+    let detected = !entries.is_empty() || pruned.iter().any(|file| daily::has_usage(file));
+    Ok(DedupedEntries {
+        entries,
+        copies,
+        detected,
+    })
 }
 
 /// The timezone and pricing a load prices entries with, resolved by the
