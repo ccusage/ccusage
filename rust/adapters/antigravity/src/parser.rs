@@ -1745,9 +1745,9 @@ mod tests {
             Some("gemini-3.8-flash")
         );
         for display_name in ["gemini 3.8 flash(high)", "gemini-3.8-flash (high)"] {
-            assert_ne!(
+            assert_eq!(
                 normalize_antigravity_model(display_name).as_deref(),
-                Some("gemini-3.8-flash-high"),
+                Some("gemini-3.8-flash"),
                 "{display_name}"
             );
         }
