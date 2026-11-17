@@ -59,17 +59,17 @@ fn primary_rows() -> Vec<Row> {
             "ses-alpha",
             &json!({"id":"msg-a1","role":"assistant","providerID":"anthropic","modelID":SONNET,"time":{"created":instant("2025-12-30T10:00:00Z").millis(),"completed":instant("2025-12-30T10:01:00Z").millis()},"tokens":{"input":1000,"output":200,"reasoning":50,"cache":{"read":4000,"write":300}},"cost":0.5,"agent":"build","mode":"code"}),
         ),
-        // Timestamp in seconds rather than milliseconds, and no stored cost.
+        // No stored cost.
         row(
             "row-a2",
             "ses-alpha",
-            &json!({"id":"msg-a2","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":instant("2025-12-31T15:30:00Z").secs()},"tokens":{"input":700,"output":150,"cache":{"read":2500,"write":0}}}),
+            &json!({"id":"msg-a2","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":instant("2025-12-31T15:30:00Z").millis()},"tokens":{"input":700,"output":150,"cache":{"read":2500,"write":0}}}),
         ),
         // Replay of msg-a2 under another row id: same embedded id, so dropped.
         row(
             "row-a2-replay",
             "ses-alpha",
-            &json!({"id":"msg-a2","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":instant("2025-12-31T15:31:00Z").secs()},"tokens":{"input":9999,"output":9999,"cache":{"read":9999,"write":9999}},"cost":99.0}),
+            &json!({"id":"msg-a2","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":instant("2025-12-31T15:31:00Z").millis()},"tokens":{"input":9999,"output":9999,"cache":{"read":9999,"write":9999}},"cost":99.0}),
         ),
         row(
             "row-b1",
@@ -208,6 +208,13 @@ fn primary_rows() -> Vec<Row> {
             "row-string-time",
             "ses-alpha",
             &json!({"id":"msg-string-time","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":"2025-12-31T12:00:00.000Z"},"tokens":{"input":8888,"output":8888}}),
+        ),
+        // Microseconds where Kilo writes milliseconds: past the last
+        // representable instant, so skipped.
+        row(
+            "row-micros-time",
+            "ses-alpha",
+            &json!({"id":"msg-micros-time","role":"assistant","providerID":"openai","modelID":GPT5,"time":{"created":ignored_time * 1000},"tokens":{"input":8888,"output":8888}}),
         ),
         row(
             "row-float-time",

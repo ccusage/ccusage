@@ -7,31 +7,9 @@ exit: 0
 {
   "monthly": [
     {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0026875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "month": "1970-01",
-      "outputTokens": 150,
-      "totalCost": 0.0026875,
-      "totalTokens": 3350
-    },
-    {
       "cacheCreationTokens": 500,
-      "cacheReadTokens": 11000,
-      "inputTokens": 2293,
+      "cacheReadTokens": 13500,
+      "inputTokens": 2993,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 300,
@@ -51,11 +29,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00065,
-          "inputTokens": 200,
+          "cacheReadTokens": 2500,
+          "cost": 0.0033374999999999998,
+          "inputTokens": 900,
           "modelName": "gpt-5",
-          "outputTokens": 40
+          "outputTokens": 190
         }
       ],
       "modelsUsed": [
@@ -64,9 +42,9 @@ exit: 0
         "gpt-5"
       ],
       "month": "2025-12",
-      "outputTokens": 717,
-      "totalCost": 0.015123,
-      "totalTokens": 14560
+      "outputTokens": 867,
+      "totalCost": 0.0178105,
+      "totalTokens": 17910
     },
     {
       "cacheCreationTokens": 50,

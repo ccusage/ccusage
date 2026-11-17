@@ -56,8 +56,8 @@ exit: 0
       "cacheCreationTokens": 220,
       "cacheReadTokens": 10000,
       "date": "2025-12-31",
-      "inputTokens": 1850,
-      "messageCount": 16,
+      "inputTokens": 2250,
+      "messageCount": 18,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -74,15 +74,24 @@ exit: 0
           "inputTokens": 1150,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 440
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0024000000000000002,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
         }
       ],
       "modelsUsed": [
         "claude-haiku-4-5-20251001",
-        "gpt-5"
+        "gpt-5",
+        "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 590,
-      "totalCost": 0.254375,
-      "totalTokens": 12720
+      "outputTokens": 670,
+      "totalCost": 0.25677500000000003,
+      "totalTokens": 13200
     },
     {
       "cacheCreationTokens": 50,
@@ -171,10 +180,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 870,
     "cacheReadTokens": 28045,
-    "inputTokens": 6270,
-    "outputTokens": 1640,
-    "totalCost": 1.583244125,
-    "totalTokens": 36935,
+    "inputTokens": 6670,
+    "outputTokens": 1720,
+    "totalCost": 1.585644125,
+    "totalTokens": 37415,
     "unpricedModels": [
       "hermes-mystery-1"
     ]

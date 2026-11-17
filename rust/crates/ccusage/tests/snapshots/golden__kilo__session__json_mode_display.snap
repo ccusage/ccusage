@@ -37,8 +37,8 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gpt-5",
         "claude-sonnet-4-20250514",
+        "gpt-5",
         "kilo-mystery-1"
       ],
       "outputTokens": 847,

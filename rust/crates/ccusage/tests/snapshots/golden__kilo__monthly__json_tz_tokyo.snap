@@ -7,28 +7,6 @@ exit: 0
 {
   "monthly": [
     {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0026875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "month": "1970-01",
-      "outputTokens": 150,
-      "totalCost": 0.0026875,
-      "totalTokens": 3350
-    },
-    {
       "cacheCreationTokens": 300,
       "cacheReadTokens": 4000,
       "inputTokens": 1393,
@@ -72,8 +50,8 @@ exit: 0
     },
     {
       "cacheCreationTokens": 250,
-      "cacheReadTokens": 16000,
-      "inputTokens": 3270,
+      "cacheReadTokens": 18500,
+      "inputTokens": 3970,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -105,11 +83,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.004725000000000001,
-          "inputTokens": 140,
+          "cacheReadTokens": 2500,
+          "cost": 0.007412500000000001,
+          "inputTokens": 840,
           "modelName": "gpt-5",
-          "outputTokens": 375
+          "outputTokens": 525
         },
         {
           "cacheCreationTokens": 0,
@@ -130,17 +108,17 @@ exit: 0
         }
       ],
       "modelsUsed": [
+        "gpt-5",
         "claude-haiku-4-5-20251001",
         "claude-sonnet-4-20250514",
         "kilo-mystery-1",
-        "gpt-5",
         "claude-opus-4-20250514",
         "anthropic/claude-sonnet-4"
       ],
       "month": "2026-01",
-      "outputTokens": 1352,
-      "totalCost": 3.457725,
-      "totalTokens": 20952
+      "outputTokens": 1502,
+      "totalCost": 3.4604125000000003,
+      "totalTokens": 24302
     }
   ],
   "totals": {
@@ -148,7 +126,7 @@ exit: 0
     "cacheReadTokens": 22500,
     "inputTokens": 5363,
     "outputTokens": 1819,
-    "totalCost": 4.0009105,
+    "totalCost": 4.000910500000001,
     "totalTokens": 30362,
     "unpricedModels": [
       "kilo-mystery-1"

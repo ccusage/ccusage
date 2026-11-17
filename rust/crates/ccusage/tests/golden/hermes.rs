@@ -207,15 +207,15 @@ fn seed_profile(path: &Path) {
                 "'p-sonnet-stored-2', 'cli', '{SONNET}', 'claude', {started_at}, 12, 1000, 200, 4000, 300, 0, 0.11, 0.5",
                 started_at = instant("2025-12-30T10:00:00.25Z").secs_f64()
             )),
-            // Integer milliseconds; the id repeats in the same table and only
-            // the first row counts.
+            // Integer seconds; the id repeats in the same table and only the
+            // first row counts.
             session(&format!(
                 "'b-twin', 'cli', '{SONNET}', 'anthropic', {started_at}, 2, 400, 80, 0, 0, 0, NULL, NULL",
-                started_at = instant("2025-12-31T16:00:00Z").millis()
+                started_at = instant("2025-12-31T16:00:00Z").secs()
             )),
             session(&format!(
                 "'b-twin', 'cli', '{SONNET}', 'anthropic', {started_at}, 77, 7777, 7777, 7777, 7777, 7777, 7.77, 7.77",
-                started_at = instant("2025-12-31T17:00:00Z").millis()
+                started_at = instant("2025-12-31T17:00:00Z").secs()
             )),
             // The same day in Asia/Tokyo.
             session(&format!(
@@ -238,6 +238,11 @@ fn seed_profile(path: &Path) {
             )),
             session(&format!(
                 "'b-text-time', 'cli', '{SONNET}', 'anthropic', 'yesterday', 1, 6666, 6666, 0, 0, 0, NULL, 6.66"
+            )),
+            // Milliseconds where Hermes writes seconds: past year 9999, so skipped.
+            session(&format!(
+                "'b-millis-time', 'cli', '{SONNET}', 'anthropic', {started_at}, 1, 8888, 8888, 0, 0, 0, NULL, 8.88",
+                started_at = instant("2025-12-31T16:00:00Z").millis()
             )),
         ],
     );

@@ -8,8 +8,8 @@ exit: 0
   "sessions": [
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 630,
+      "cacheReadTokens": 2500,
+      "inputTokens": 1330,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -23,11 +23,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.034575,
-          "inputTokens": 300,
+          "cacheReadTokens": 2500,
+          "cost": 0.037262500000000004,
+          "inputTokens": 1000,
           "modelName": "gpt-5",
-          "outputTokens": 405,
+          "outputTokens": 555,
           "storedCost": 0.03
         }
       ],
@@ -35,10 +35,10 @@ exit: 0
         "gpt-5",
         "kilo-mystery-1"
       ],
-      "outputTokens": 482,
+      "outputTokens": 632,
       "sessionId": "ses-alpha",
-      "totalCost": 0.234575,
-      "totalTokens": 1192
+      "totalCost": 0.23726250000000002,
+      "totalTokens": 4542
     },
     {
       "cacheCreationTokens": 200,
@@ -76,11 +76,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 200,
-    "cacheReadTokens": 10000,
-    "inputTokens": 2130,
-    "outputTokens": 982,
-    "totalCost": 2.234575,
-    "totalTokens": 13392,
+    "cacheReadTokens": 12500,
+    "inputTokens": 2830,
+    "outputTokens": 1132,
+    "totalCost": 2.2372625,
+    "totalTokens": 16742,
     "unpricedModels": [
       "kilo-mystery-1"
     ]

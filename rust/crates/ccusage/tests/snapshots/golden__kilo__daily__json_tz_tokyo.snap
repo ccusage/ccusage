@@ -8,28 +8,6 @@ exit: 0
   "daily": [
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "date": "1970-01-21",
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0026875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 150,
-      "totalCost": 0.0026875,
-      "totalTokens": 3350
-    },
-    {
-      "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
       "date": "2025-12-28",
       "inputTokens": 100,
@@ -108,9 +86,9 @@ exit: 0
     },
     {
       "cacheCreationTokens": 200,
-      "cacheReadTokens": 10000,
+      "cacheReadTokens": 12500,
       "date": "2026-01-01",
-      "inputTokens": 1930,
+      "inputTokens": 2630,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -133,11 +111,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.004575000000000001,
-          "inputTokens": 100,
+          "cacheReadTokens": 2500,
+          "cost": 0.007262500000000001,
+          "inputTokens": 800,
           "modelName": "gpt-5",
-          "outputTokens": 365
+          "outputTokens": 515
         },
         {
           "cacheCreationTokens": 0,
@@ -150,14 +128,14 @@ exit: 0
         }
       ],
       "modelsUsed": [
+        "gpt-5",
         "claude-haiku-4-5-20251001",
         "claude-sonnet-4-20250514",
-        "kilo-mystery-1",
-        "gpt-5"
+        "kilo-mystery-1"
       ],
-      "outputTokens": 942,
-      "totalCost": 2.204575,
-      "totalTokens": 13152
+      "outputTokens": 1092,
+      "totalCost": 2.2072625,
+      "totalTokens": 16502
     },
     {
       "cacheCreationTokens": 50,

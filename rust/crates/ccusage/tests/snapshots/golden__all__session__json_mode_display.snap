@@ -423,8 +423,8 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gpt-5",
         "claude-sonnet-4-20250514",
+        "gpt-5",
         "kilo-mystery-1"
       ],
       "outputTokens": 847,
@@ -2163,6 +2163,29 @@ exit: 0
       "period": "2026/01/01/rollout-2026-01-01T02-00-00-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       "totalCost": 0.0024975,
       "totalTokens": 1892
+    },
+    {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 400,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0024000000000000002,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "period": "b-twin",
+      "totalCost": 0.0024000000000000002,
+      "totalTokens": 480
     },
     {
       "agent": "codex",
@@ -5392,10 +5415,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17865,
     "cacheReadTokens": 1311217,
-    "inputTokens": 1346769,
-    "outputTokens": 58687,
-    "totalCost": 25.026680125000013,
-    "totalTokens": 2737975,
+    "inputTokens": 1347169,
+    "outputTokens": 58767,
+    "totalCost": 25.029080125000014,
+    "totalTokens": 2738455,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

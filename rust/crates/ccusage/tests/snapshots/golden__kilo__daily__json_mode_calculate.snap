@@ -8,28 +8,6 @@ exit: 0
   "daily": [
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "date": "1970-01-21",
-      "inputTokens": 700,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.0026875,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 150
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 150,
-      "totalCost": 0.0026875,
-      "totalTokens": 3350
-    },
-    {
-      "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
       "date": "2025-12-27",
       "inputTokens": 100,
@@ -83,9 +61,9 @@ exit: 0
     },
     {
       "cacheCreationTokens": 200,
-      "cacheReadTokens": 7000,
+      "cacheReadTokens": 9500,
       "date": "2025-12-31",
-      "inputTokens": 1100,
+      "inputTokens": 1800,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 200,
@@ -97,20 +75,20 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00065,
-          "inputTokens": 200,
+          "cacheReadTokens": 2500,
+          "cost": 0.0033374999999999998,
+          "inputTokens": 900,
           "modelName": "gpt-5",
-          "outputTokens": 40
+          "outputTokens": 190
         }
       ],
       "modelsUsed": [
         "gpt-5",
         "claude-haiku-4-5-20251001"
       ],
-      "outputTokens": 440,
-      "totalCost": 0.0045000000000000005,
-      "totalTokens": 8740
+      "outputTokens": 590,
+      "totalCost": 0.0071874999999999994,
+      "totalTokens": 12090
     },
     {
       "cacheCreationTokens": 0,

@@ -9,37 +9,36 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 2500,
-      "inputTokens": 711,
+      "cacheReadTokens": 0,
+      "inputTokens": 11,
       "metadata": {
         "agents": [
-          "kilo",
           "zcode"
         ]
       },
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
+          "cacheReadTokens": 0,
           "cost": 0.0,
-          "inputTokens": 711,
+          "inputTokens": 11,
           "modelName": "gpt-5",
-          "outputTokens": 157
+          "outputTokens": 7
         }
       ],
       "modelsUsed": [
         "gpt-5"
       ],
-      "outputTokens": 157,
+      "outputTokens": 7,
       "period": "1970-01",
       "totalCost": 0,
-      "totalTokens": 3368
+      "totalTokens": 18
     },
     {
       "agent": "all",
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 292809,
-      "inputTokens": 112080,
+      "cacheReadTokens": 295309,
+      "inputTokens": 113180,
       "metadata": {
         "agents": [
           "amp",
@@ -92,10 +91,10 @@ exit: 0
         {
           "cacheCreationTokens": 4200,
           "cacheReadTokens": 65960,
-          "cost": 2.982063,
-          "inputTokens": 21021,
+          "cost": 2.984463,
+          "inputTokens": 21421,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 6175
+          "outputTokens": 6255
         },
         {
           "cacheCreationTokens": 200,
@@ -132,11 +131,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 17980,
+          "cacheReadTokens": 20480,
           "cost": 0.30967,
-          "inputTokens": 9682,
+          "inputTokens": 10382,
           "modelName": "gpt-5",
-          "outputTokens": 2150
+          "outputTokens": 2300
         },
         {
           "cacheCreationTokens": 100,
@@ -502,10 +501,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 29566,
+      "outputTokens": 29796,
       "period": "2025-12",
-      "totalCost": 20.618275999999994,
-      "totalTokens": 448750
+      "totalCost": 20.620675999999996,
+      "totalTokens": 452580
     },
     {
       "agent": "all",
@@ -1168,10 +1167,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1309617,
-    "inputTokens": 1345208,
-    "outputTokens": 58421,
-    "totalCost": 24.242755124999995,
-    "totalTokens": 2734428,
+    "inputTokens": 1345608,
+    "outputTokens": 58501,
+    "totalCost": 24.245155124999997,
+    "totalTokens": 2734908,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

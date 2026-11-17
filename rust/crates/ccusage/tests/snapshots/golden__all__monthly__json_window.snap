@@ -9,8 +9,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 6111,
-      "cacheReadTokens": 183416,
-      "inputTokens": 65814,
+      "cacheReadTokens": 185916,
+      "inputTokens": 66914,
       "metadata": {
         "agents": [
           "amp",
@@ -73,21 +73,21 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 15830,
-          "cost": 0.302731875,
-          "inputTokens": 7160,
+          "cacheReadTokens": 18330,
+          "cost": 0.305419375,
+          "inputTokens": 7860,
           "modelName": "gpt-5",
-          "outputTokens": 1477,
+          "outputTokens": 1627,
           "storedCost": 0.28
         },
         {
           "cacheCreationTokens": 1500,
           "cacheReadTokens": 33060,
-          "cost": 0.253388,
-          "inputTokens": 8920,
+          "cost": 0.255788,
+          "inputTokens": 9320,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 3350,
+          "outputTokens": 3430,
           "storedCost": 0.19999999999999998
         },
         {
@@ -385,10 +385,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 19632,
+      "outputTokens": 19862,
       "period": "2025-12",
-      "totalCost": 11.659129255,
-      "totalTokens": 275583
+      "totalCost": 11.664216755,
+      "totalTokens": 279413
     },
     {
       "agent": "all",
@@ -917,11 +917,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 9001,
-    "cacheReadTokens": 665744,
-    "inputTokens": 1170393,
-    "outputTokens": 37125,
-    "totalCost": 15.361267825,
-    "totalTokens": 1883925,
+    "cacheReadTokens": 668244,
+    "inputTokens": 1171493,
+    "outputTokens": 37355,
+    "totalCost": 15.366355325,
+    "totalTokens": 1887755,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

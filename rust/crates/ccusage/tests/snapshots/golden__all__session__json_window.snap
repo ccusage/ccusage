@@ -419,8 +419,8 @@ exit: 0
     {
       "agent": "kilo",
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 630,
+      "cacheReadTokens": 2500,
+      "inputTokens": 1330,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -434,11 +434,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.034575,
-          "inputTokens": 300,
+          "cacheReadTokens": 2500,
+          "cost": 0.037262500000000004,
+          "inputTokens": 1000,
           "modelName": "gpt-5",
-          "outputTokens": 405,
+          "outputTokens": 555,
           "storedCost": 0.03
         }
       ],
@@ -446,10 +446,10 @@ exit: 0
         "gpt-5",
         "kilo-mystery-1"
       ],
-      "outputTokens": 482,
+      "outputTokens": 632,
       "period": "ses-alpha",
-      "totalCost": 0.234575,
-      "totalTokens": 1192
+      "totalCost": 0.23726250000000002,
+      "totalTokens": 4542
     },
     {
       "agent": "openclaw",
@@ -2053,6 +2053,29 @@ exit: 0
       "totalTokens": 1892
     },
     {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 400,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0024000000000000002,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "period": "b-twin",
+      "totalCost": 0.0024000000000000002,
+      "totalTokens": 480
+    },
+    {
       "agent": "codex",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 400,
@@ -3031,11 +3054,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 9001,
-    "cacheReadTokens": 566064,
-    "inputTokens": 871519,
-    "outputTokens": 35405,
-    "totalCost": 15.043998425000005,
-    "totalTokens": 1483701,
+    "cacheReadTokens": 568564,
+    "inputTokens": 872619,
+    "outputTokens": 35635,
+    "totalCost": 15.049085925000005,
+    "totalTokens": 1487531,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

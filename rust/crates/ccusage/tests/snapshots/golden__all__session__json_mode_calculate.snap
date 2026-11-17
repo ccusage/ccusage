@@ -1440,13 +1440,13 @@ exit: 0
         }
       ],
       "modelsUsed": [
-        "gpt-5",
         "claude-sonnet-4-20250514",
+        "gpt-5",
         "kilo-mystery-1"
       ],
       "outputTokens": 847,
       "period": "ses-alpha",
-      "totalCost": 0.017392499999999998,
+      "totalCost": 0.0173925,
       "totalTokens": 10167
     },
     {
@@ -3129,6 +3129,29 @@ exit: 0
       "period": "2026/01/01/rollout-2026-01-01T02-00-00-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       "totalCost": 0.0024975,
       "totalTokens": 1892
+    },
+    {
+      "agent": "hermes",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 400,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0024000000000000002,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "period": "b-twin",
+      "totalCost": 0.0024000000000000002,
+      "totalTokens": 480
     },
     {
       "agent": "pi",
@@ -5425,10 +5448,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17825,
     "cacheReadTokens": 1311187,
-    "inputTokens": 1346759,
-    "outputTokens": 58667,
-    "totalCost": 9.811512299999995,
-    "totalTokens": 2737875,
+    "inputTokens": 1347159,
+    "outputTokens": 58747,
+    "totalCost": 9.813912299999995,
+    "totalTokens": 2738355,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
