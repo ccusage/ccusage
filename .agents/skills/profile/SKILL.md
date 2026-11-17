@@ -28,11 +28,11 @@ profile of it covers launcher startup, not the work the binary does:
 LOG_LEVEL=0 node --cpu-prof --cpu-prof-dir /tmp/ccusage-profiles apps/ccusage/src/cli.js daily --offline --json
 ```
 
-Nothing else here runs on `node`. The tools under `nix/tools/` are built with
-`bunCli`/`bunNodeModules` and run under Bun; scripts in `apps/ccusage/scripts/`
-carry `nix shell` shebangs that pick nushell, babashka, or bun. Time those
-scripts directly and profile with their own runtime's tooling rather than
-`NODE_OPTIONS`.
+The tools under `nix/tools/` are built with `bunCli`/`bunNodeModules` and run
+under Bun; scripts in `apps/ccusage/scripts/` carry `nix shell` shebangs that
+pick nushell, babashka, or node (`generate-large-fixture.ts`). Time those
+scripts directly and profile with their own runtime's tooling; only the fixture
+generator takes `node --cpu-prof`.
 
 Point `--cpu-prof-dir` outside the worktree — nothing here ignores a `profiles/`
 directory.

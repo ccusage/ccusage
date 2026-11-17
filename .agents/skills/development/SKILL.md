@@ -18,11 +18,11 @@ validation.
 packages live in `packages/ccusage-<platform>-<arch>` and ship nothing but
 `bin/ccusage`.
 
-The Nushell scripts in `apps/ccusage/scripts/` own the binary side and share
-`native-binary.nu`: `ensure-native-binary.nu` puts a usable, portable binary in
-place for a local build, `stage-native-package.nu` fills one platform package,
-and `verify-native-package.nu` runs from each platform package's `prepack`. A
-packaging change usually touches the launcher and those scripts together.
+Nix builds the binary. Two Nushell scripts in `apps/ccusage/scripts/` own the
+platform packages: `stage-native-package.nu` copies a built binary into one,
+and `verify-native-package.nu` runs from each platform package's `prepack`. The
+`ccusage` package's own `build` is `publint`. A packaging change usually
+touches the launcher and those scripts together.
 
 ## Gotchas
 

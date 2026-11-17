@@ -16,7 +16,7 @@ not here, unless the user scopes work to the package layer. What remains in
 TypeScript and JavaScript:
 
 - `apps/ccusage/src/cli.js` — native binary launcher, covered by `cli.test.ts` beside it.
-- `apps/ccusage/scripts/generate-large-fixture.ts` — benchmark fixture generator, run through `just generate-large-fixture`; it executes under Bun via a Nix shebang, and apart from its `bun-globals.d.ts` the rest of that directory is Nushell and Babashka.
+- `apps/ccusage/scripts/generate-large-fixture.ts` — benchmark fixture generator, run through `just generate-large-fixture`; it executes under Node via a Nix shebang with no type shim, and the rest of that directory is Nushell and Babashka.
 - `nix/tools/models-dev-gen/` — models.dev pricing snapshot generator; `just gen-models-dev-pricing` reruns it, `just gen-bun-nix` refreshes its `bun.nix`.
 - `docs/.vitepress/config.ts` and root TypeScript configuration or scripts, when the change is not docs-content-only.
 

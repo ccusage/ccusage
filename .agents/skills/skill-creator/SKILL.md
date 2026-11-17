@@ -49,7 +49,7 @@ after a change. Restating good practice the model already applies only competes 
 - **One home per rule.** A rule in both `AGENTS.md` and a skill costs tokens twice and drifts.
   `AGENTS.md` keeps the one-line routing; the skill keeps the rule. Between two skills, cross-link
   by name instead of copying, and merge only when neither half earns its own trigger.
-- **Point at real code.** `rust/adapters/codex/src/loader.rs`, a fixture, or an existing test beats
+- **Point at real code.** `rust/adapters/codex/src/source.rs`, a fixture, or an existing test beats
   a paragraph paraphrasing the pattern.
 - **Never transcribe CLI help.** Usage lines, flag lists, and subcommand tables go stale and the
   agent can run `<tool> --help`. Write the judgment help output cannot give — when to reach for the

@@ -18,7 +18,7 @@ A fixture owns an `assert_fs::TempDir` and deletes it when the fixture variable
 drops, so keep that variable alive as long as paths under it are used — returning
 only a `PathBuf` out of an inner scope loses the directory.
 
-Working examples: `rust/adapters/codex/src/loader.rs`,
+Working examples: `rust/adapters/codex/src/loader_tests.rs`,
 `rust/adapters/gemini/src/paths.rs`.
 
 ## Snapshots
