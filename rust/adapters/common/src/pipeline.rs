@@ -155,8 +155,6 @@ pub(crate) fn retain_sessions_last_active_in(rows: &mut Vec<UsageSummary>, windo
 mod tests {
     use std::{collections::BTreeMap, sync::atomic::Ordering};
 
-    use serde_json::json;
-
     use ccusage_core::{
         PricingMap, ReportWindow, UsageSummary,
         cli::{AgentCommandArgs, AgentReportKind, SharedArgs, SortOrder},
@@ -419,10 +417,10 @@ mod tests {
             load_rows(source, &request).unwrap().rows[0]
                 .metadata
                 .as_ref()
-                .and_then(|metadata| metadata.get("projectPath").cloned())
+                .and_then(|metadata| metadata.project_path.clone())
         };
 
-        assert_eq!(project_path(&with_path), Some(json!("project")));
+        assert_eq!(project_path(&with_path), Some("project".to_string()));
         assert_eq!(project_path(&without_path), None);
     }
 

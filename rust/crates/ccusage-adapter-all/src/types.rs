@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
-use ccusage_adapter_common::rows::{RowUsage, SourceRow};
-use serde_json::Value;
+use ccusage_adapter_common::rows::{RowUsage, SessionMetadata, SourceRow};
 
 use crate::{
     Diagnostics, ModelBreakdown,
@@ -57,7 +56,7 @@ impl ReportRow {
         }
     }
 
-    pub(super) fn metadata(&self) -> Option<&Value> {
+    pub(super) fn metadata(&self) -> Option<&SessionMetadata> {
         match self {
             Self::Source(row) => row.metadata.as_ref(),
             Self::Period(_) => None,
@@ -162,7 +161,7 @@ pub(super) struct AllAccumulator {
 }
 
 impl AllAccumulator {
-    pub(super) fn add(&mut self, mut row: SourceRow) {
+    pub(super) fn add(&mut self, row: SourceRow) {
         self.input_tokens = self.input_tokens.saturating_add(row.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(row.output_tokens);
         self.cache_creation_tokens = self
@@ -173,7 +172,6 @@ impl AllAccumulator {
         self.total_cost += row.total_cost;
         self.models.extend(row.models_used.iter().cloned());
         self.agents.insert(row.agent);
-        row.metadata = None;
         match self.agent_indexes.get(row.agent).copied() {
             Some(index) => merge_agent_breakdown(&mut self.agent_breakdowns[index], row),
             None => {

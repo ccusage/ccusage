@@ -1,8 +1,7 @@
 use ccusage_core::Diagnostics;
-use serde_json::json;
 
 use ccusage_adapter_common::{
-    rows::{RowUsage, SourceRow},
+    rows::{RowUsage, SessionMetadata, SourceRow},
     source::{LoadRequest, LoadedRows, UsageSource},
 };
 use ccusage_core::{ModelBreakdown, PricingMap, Result, cli::CostMode, progress::UsageLoadAgent};
@@ -50,7 +49,9 @@ fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     )?;
     let rows = groups
         .iter()
-        .map(|(period, group)| unified_row_from_group(period, group, pricing, speed, shared.mode))
+        .map(|(period, group)| {
+            unified_row_from_group(request.kind, period, group, pricing, speed, shared.mode)
+        })
         .collect();
 
     Ok(LoadedRows {
@@ -61,6 +62,7 @@ fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
 }
 
 pub fn unified_row_from_group(
+    kind: ccusage_adapter_common::source::LoadKind,
     period: &str,
     group: &CodexGroup,
     pricing: Option<&PricingMap>,
@@ -96,10 +98,13 @@ pub fn unified_row_from_group(
 
     SourceRow {
         agent: "codex",
-        metadata: Some(json!({
-            "lastActivity": group.last_activity,
-            "reasoningOutputTokens": group.reasoning_output_tokens,
-        })),
+        metadata: (kind == ccusage_adapter_common::source::LoadKind::Session).then(|| {
+            SessionMetadata {
+                last_activity: Some(group.last_activity.clone()),
+                reasoning_output_tokens: Some(group.reasoning_output_tokens),
+                ..Default::default()
+            }
+        }),
         usage: RowUsage {
             period: period.to_string(),
             models_used: group.models.keys().cloned().collect(),
@@ -125,6 +130,7 @@ mod diagnostic_tests {
     use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
     use ccusage_core::cli::{AgentReportKind, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};
+    use serde_json::json;
 
     #[test]
     fn pending_pricing_is_resolved_before_codex_tier_aggregation() {
@@ -285,7 +291,14 @@ mod diagnostic_tests {
                 .unwrap()
                 .iter()
                 .map(|(period, group)| {
-                    unified_row_from_group(period, group, Some(&pricing), speed, shared.mode)
+                    unified_row_from_group(
+                        ccusage_adapter_common::source::LoadKind::for_report(kind),
+                        period,
+                        group,
+                        Some(&pricing),
+                        speed,
+                        shared.mode,
+                    )
                 })
                 .map(|row| (row.usage.period, row.usage.total_tokens))
                 .collect::<Vec<_>>();

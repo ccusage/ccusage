@@ -671,7 +671,10 @@ fn renders_multi_section_json_with_command_totals() {
             model_breakdowns: Vec::new(),
         },
         agent: "codex",
-        metadata: Some(json!({ "lastActivity": "2026-01-02T00:00:00.000Z" })),
+        metadata: Some(ccusage_adapter_common::rows::SessionMetadata {
+            last_activity: Some(Some("2026-01-02T00:00:00.000Z".into())),
+            ..Default::default()
+        }),
     })];
     let sections = vec![
         (AgentReportKind::Daily, daily_rows.clone()),
@@ -1966,7 +1969,12 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
     assert_eq!(session_rows[0].period, "in-range");
     assert_eq!(session_rows[0].agent(), "pi");
     assert_eq!(
-        session_rows[0].metadata().unwrap()["projectPath"],
+        session_rows[0]
+            .metadata()
+            .unwrap()
+            .project_path
+            .as_deref()
+            .unwrap(),
         "project-a"
     );
     assert_eq!(session_rows[0].input_tokens, 1_000);
@@ -2008,7 +2016,14 @@ fn bounded_codex_reports_match_focused_rows_after_unified_bucketing() {
             .unwrap()
             .iter()
             .map(|(period, group)| {
-                codex::unified_row_from_group(period, group, Some(&pricing), speed, shared.mode)
+                codex::unified_row_from_group(
+                    ccusage_adapter_common::source::LoadKind::Session,
+                    period,
+                    group,
+                    Some(&pricing),
+                    speed,
+                    shared.mode,
+                )
             })
             .collect::<Vec<_>>();
         let mut unified = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday)
@@ -2760,6 +2775,7 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
         },
     );
     let row = adapter::codex::unified_row_from_group(
+        ccusage_adapter_common::source::LoadKind::Session,
         "2026-01-02",
         &group,
         Some(&PricingMap::default()),
@@ -2829,6 +2845,7 @@ fn includes_codex_model_breakdowns_in_all_rows() {
     );
 
     let row = adapter::codex::unified_row_from_group(
+        ccusage_adapter_common::source::LoadKind::Session,
         "2026-01-02",
         &group,
         Some(&pricing),
@@ -2861,6 +2878,7 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
         },
     );
     let row = adapter::codex::unified_row_from_group(
+        ccusage_adapter_common::source::LoadKind::Session,
         "2026-01-02",
         &group,
         Some(&PricingMap::default()),

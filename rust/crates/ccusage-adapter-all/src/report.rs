@@ -99,7 +99,7 @@ fn row_json(row: &ReportRow, include_agents: bool) -> Value {
         match row {
             ReportRow::Source(_) => {
                 if let Some(metadata) = row.metadata() {
-                    obj.insert("metadata".to_string(), metadata.clone());
+                    obj.insert("metadata".to_string(), json!(metadata));
                 }
             }
             ReportRow::Period(period) => {

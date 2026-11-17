@@ -1119,6 +1119,7 @@ mod tests {
 
         let focused_cost = codex::calculate_group_cost(&group, Some(&pricing), speed);
         let unified = codex::unified_row_from_group(
+            ccusage_adapter_common::source::LoadKind::Session,
             "2026-07-22",
             &group,
             Some(&pricing),
@@ -1162,6 +1163,7 @@ mod tests {
         group.models.insert("gpt-5.6-terra".to_string(), usage);
 
         let row = codex::unified_row_from_group(
+            ccusage_adapter_common::source::LoadKind::Session,
             "2026-08-20",
             &group,
             Some(&pricing),
@@ -1461,8 +1463,14 @@ mod tests {
         assert_eq!(rows.rows.len(), 1);
         assert_eq!(rows.rows[0].agent, "pi");
         assert_eq!(
-            rows.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("archive")
+            rows.rows[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .project_path
+                .as_ref()
+                .unwrap(),
+            "archive"
         );
     }
 
@@ -1490,8 +1498,14 @@ mod tests {
         assert_eq!(rows.rows[0].agent, "omp");
         assert_eq!(rows.rows[0].models_used, vec!["[omp] gpt-5"]);
         assert_eq!(
-            rows.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("project-a")
+            rows.rows[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .project_path
+                .as_ref()
+                .unwrap(),
+            "project-a"
         );
     }
 
@@ -1537,7 +1551,13 @@ mod tests {
                 .iter()
                 .map(|row| {
                     (
-                        row.metadata.as_ref().unwrap()["projectPath"].clone(),
+                        row.metadata
+                            .as_ref()
+                            .unwrap()
+                            .project_path
+                            .as_ref()
+                            .unwrap()
+                            .clone(),
                         row.input_tokens,
                     )
                 })
@@ -1545,7 +1565,7 @@ mod tests {
         };
         assert_eq!(
             sessions(&named),
-            [(json!("project-a"), 10), (json!("project-b"), 20)]
+            [("project-a".to_string(), 10), ("project-b".to_string(), 20)]
         );
         assert_eq!(sessions(&named), sessions(&default));
     }
@@ -1579,12 +1599,24 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            plain_root.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("project-b")
+            plain_root.rows[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .project_path
+                .as_ref()
+                .unwrap(),
+            "project-b"
         );
         assert_eq!(
-            earlier_sessions_root.rows[0].metadata.as_ref().unwrap()["projectPath"],
-            json!("project-c")
+            earlier_sessions_root.rows[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .project_path
+                .as_ref()
+                .unwrap(),
+            "project-c"
         );
     }
 

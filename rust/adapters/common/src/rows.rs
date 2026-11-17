@@ -1,10 +1,8 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use serde_json::{Value, json};
+use serde::{Serialize, Serializer};
 
-use ccusage_core::{
-    LoadedEntry, ModelBreakdown, Result, SessionAccumulator, UsageSummary, json_float,
-};
+use ccusage_core::{LoadedEntry, ModelBreakdown, Result, SessionAccumulator, UsageSummary};
 
 #[derive(Debug, Clone)]
 pub struct RowUsage {
@@ -23,7 +21,30 @@ pub struct RowUsage {
 pub struct SourceRow {
     pub agent: &'static str,
     pub usage: RowUsage,
-    pub metadata: Option<Value>,
+    pub metadata: Option<SessionMetadata>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMetadata {
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_credits"
+    )]
+    pub credits: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_activity: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_output_tokens: Option<u64>,
+}
+
+fn serialize_credits<S: Serializer>(
+    credits: &Option<f64>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    credits.map(ccusage_core::json_float).serialize(serializer)
 }
 
 impl std::ops::Deref for SourceRow {
@@ -126,24 +147,21 @@ fn session_groups(
     groups
 }
 
-fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Option<Value> {
-    let mut metadata = serde_json::Map::new();
-    if let Some(credits) = summary.credits {
-        metadata.insert("credits".to_string(), json_float(credits));
-    }
-    if summary.session_id.is_some() {
-        if let Some(last_activity) = summary.last_activity.as_ref() {
-            metadata.insert("lastActivity".to_string(), json!(last_activity));
-        }
-        if include_project_path && let Some(project_path) = summary.project_path.as_ref() {
-            metadata.insert("projectPath".to_string(), json!(project_path));
-        }
-    }
-    if metadata.is_empty() {
-        None
-    } else {
-        Some(Value::Object(metadata))
-    }
+fn summary_metadata(summary: &UsageSummary, include_project_path: bool) -> Option<SessionMetadata> {
+    summary.session_id.as_ref()?;
+    let metadata = SessionMetadata {
+        credits: summary.credits,
+        last_activity: summary.last_activity.clone().map(Some),
+        project_path: summary
+            .project_path
+            .clone()
+            .filter(|_| include_project_path),
+        reasoning_output_tokens: None,
+    };
+    (metadata.credits.is_some()
+        || metadata.last_activity.is_some()
+        || metadata.project_path.is_some())
+    .then_some(metadata)
 }
 
 pub fn summarize_entries(
@@ -192,6 +210,20 @@ mod tests {
         test_source::entry,
     };
     use ccusage_core::cli::WeekDay;
+
+    #[test]
+    fn period_rows_do_not_construct_session_metadata() {
+        let mut summaries = summarize_entries(
+            &[entry("s", "2026-01-01T00:00:00Z", 10)],
+            SummaryKind::Daily,
+            SessionShape::WithActivity,
+            SessionScope::Source,
+        )
+        .unwrap();
+        summaries[0].credits = Some(3.0);
+        let rows = summary_rows("test", summaries, true);
+        assert!(rows[0].metadata.is_none());
+    }
 
     #[test]
     fn source_session_scope_treats_project_path_as_latest_metadata() {
