@@ -207,6 +207,8 @@ bun x ccusage statusline --cost-source both
 
 **Output differences:**
 
+The ccusage portion honors the configured `defaults.mode` (or `--mode`): `display` uses recorded costs, `calculate` prices tokens, and `auto` uses the report's stored-cost preference. `--cost-source` independently chooses whether to show Claude Code's value, ccusage's value, or both.
+
 - **Single cost modes** (`auto`, `ccusage`, `cc`): `💰 $1.23 session`
 - **Both mode**: `💰 ($1.23 cc / $0.19 ccusage) session`
 

@@ -1522,6 +1522,38 @@ fn parses_statusline_options() {
 }
 
 #[test]
+fn statusline_keeps_configured_cost_mode_with_each_cost_source() {
+    let fixture = fs_fixture!({"ccusage.json": r#"{"defaults":{"mode":"display"}}"#});
+    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    for (source, expected) in [
+        ("auto", CostSource::Auto),
+        ("ccusage", CostSource::Ccusage),
+        ("cc", CostSource::Cc),
+        ("both", CostSource::Both),
+    ] {
+        let args = ["statusline", "--config", &path, "--cost-source", source];
+        let config = ccusage_config::ConfigContext::from_args(
+            &args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
+        );
+        let Command::Statusline(statusline) = parse_with_config(
+            &[
+                "ccusage",
+                "statusline",
+                "--config",
+                &path,
+                "--cost-source",
+                source,
+            ],
+            &config,
+        ) else {
+            panic!("expected statusline");
+        };
+        assert_eq!(statusline.mode, CostMode::Display);
+        assert_eq!(statusline.cost_source, expected);
+    }
+}
+
+#[test]
 fn parses_codex_default_daily_options() {
     let cli = parse(&["ccusage", "codex", "--json", "--since", "20260102"]);
     let Command::Agent(StandardAgent::Codex, args) = cli else {
