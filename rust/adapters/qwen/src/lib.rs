@@ -239,7 +239,7 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Qwen, &shared, &[]);
 
         let outside_window = SharedArgs {
             since: Some("20270101".to_string()),

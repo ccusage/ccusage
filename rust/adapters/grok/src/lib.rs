@@ -150,7 +150,7 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Grok, &shared, &[]);
     }
 
     #[test]

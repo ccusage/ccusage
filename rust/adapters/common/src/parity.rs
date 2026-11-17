@@ -10,11 +10,13 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use ccusage_core::cli::{AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, WeekDay};
+use ccusage_core::cli::{
+    AgentCommandArgs, AgentId, AgentReportKind, CodexSpeed, SharedArgs, WeekDay,
+};
 
 use crate::{
     pipeline,
-    source::{EntrySource, ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
+    source::{EntrySource, ProgressOwner, SourceOptions, UnifiedRequest},
 };
 
 /// A report kind whose focused and unified totals are known to differ, so the
@@ -66,6 +68,7 @@ impl Totals {
 /// differs without being listed, or when a listed kind no longer differs.
 pub fn assert_focused_matches_unified<S: EntrySource>(
     source: &S,
+    agent: AgentId,
     shared: &SharedArgs,
     known: &[KnownDivergence],
 ) {
@@ -81,11 +84,12 @@ pub fn assert_focused_matches_unified<S: EntrySource>(
         "{}: the focused report read no usage, so there is nothing to compare; point the source at its fixture first",
         descriptor.id
     );
-    assert!(
-        !source.reports().is_empty(),
-        "source has no registered reports"
+    assert_eq!(
+        descriptor.id,
+        agent.spec().name,
+        "the source is not the agent whose reports it is checked for"
     );
-    for kind in source.reports().iter().copied() {
+    for kind in agent.spec().reports.iter().copied() {
         let focused = focused_totals(source, kind, shared);
         let unified = unified_totals(source, kind, shared);
         let matches = focused.matches(&unified);
@@ -182,7 +186,7 @@ fn unified_totals<S: EntrySource>(
 
 #[cfg(test)]
 mod tests {
-    use ccusage_core::cli::AgentReportKind;
+    use ccusage_core::cli::{AgentId, AgentReportKind};
 
     use super::{KnownDivergence, assert_focused_matches_unified};
     use crate::test_source::{Fake, entries, shared};
@@ -219,15 +223,15 @@ mod tests {
     fn passes_a_source_whose_reports_agree() {
         let source = Fake::new(descriptor(), entries());
 
-        assert_focused_matches_unified(&source, &shared(None, None), &[]);
-        assert_focused_matches_unified(&source, &shared(Some("20260102"), None), &[]);
+        assert_focused_matches_unified(&source, AgentId::Amp, &shared(None, None), &[]);
+        assert_focused_matches_unified(&source, AgentId::Amp, &shared(Some("20260102"), None), &[]);
     }
 
     #[test]
     fn compares_a_window_that_leaves_nothing() {
         let source = Fake::new(descriptor(), entries());
 
-        assert_focused_matches_unified(&source, &shared(Some("20300101"), None), &[]);
+        assert_focused_matches_unified(&source, AgentId::Amp, &shared(Some("20300101"), None), &[]);
     }
 
     #[test]
@@ -235,18 +239,23 @@ mod tests {
     fn fails_a_source_that_reads_no_usage() {
         let source = Fake::new(descriptor(), Vec::new());
 
-        assert_focused_matches_unified(&source, &shared(None, None), &[]);
+        assert_focused_matches_unified(&source, AgentId::Amp, &shared(None, None), &[]);
     }
 
     #[test]
     #[should_panic(expected = "differ from the unified slice")]
     fn fails_a_source_whose_unified_slice_drifted() {
-        assert_focused_matches_unified(&drifted(), &shared(None, None), &[]);
+        assert_focused_matches_unified(&drifted(), AgentId::Amp, &shared(None, None), &[]);
     }
 
     #[test]
     fn accepts_a_divergence_that_is_on_record() {
-        assert_focused_matches_unified(&drifted(), &shared(None, None), &every_kind_diverges());
+        assert_focused_matches_unified(
+            &drifted(),
+            AgentId::Amp,
+            &shared(None, None),
+            &every_kind_diverges(),
+        );
     }
 
     #[test]
@@ -254,6 +263,11 @@ mod tests {
     fn fails_a_recorded_divergence_that_no_longer_exists() {
         let source = Fake::new(descriptor(), entries());
 
-        assert_focused_matches_unified(&source, &shared(None, None), &every_kind_diverges());
+        assert_focused_matches_unified(
+            &source,
+            AgentId::Amp,
+            &shared(None, None),
+            &every_kind_diverges(),
+        );
     }
 }

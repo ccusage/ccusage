@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use ccusage_core::{
     Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result, UsageSummary,
-    cli::{AgentCommandArgs, AgentId, AgentReportKind, CodexSpeed, SharedArgs, SourceArgs},
+    cli::{AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SourceArgs},
     cli_error, summary_period,
 };
 
@@ -23,11 +23,6 @@ pub trait UsageSource: Sync {
 
     /// The name progress output shows while the source loads, such as `Amp`.
     fn label(&self) -> &'static str;
-
-    /// The report kinds `ccusage <id> <kind>` accepts.
-    fn reports(&self) -> &'static [AgentReportKind] {
-        AgentId::from_name(self.id()).map_or(&[], |agent| agent.spec().reports)
-    }
 
     fn pricing_supply(&self) -> PricingSupply {
         PricingSupply::Pipeline

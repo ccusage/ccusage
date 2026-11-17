@@ -155,7 +155,12 @@ mod tests {
         assert_eq!(entries[1].session_id.as_ref(), "project-a-file-stem");
         assert_eq!(entries[1].project_path.as_ref(), "project-a");
 
-        ccusage_adapter_common::parity::assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        ccusage_adapter_common::parity::assert_focused_matches_unified(
+            &SOURCE,
+            ccusage_core::cli::AgentId::Qwen,
+            &shared,
+            &[],
+        );
         for kind in [
             AgentReportKind::Daily,
             AgentReportKind::Monthly,

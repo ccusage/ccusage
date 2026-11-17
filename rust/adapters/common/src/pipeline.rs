@@ -444,7 +444,6 @@ mod tests {
 
         assert_eq!(source.id(), "fake");
         assert_eq!(source.label(), "Fake");
-        assert!(source.reports().is_empty());
         assert_eq!(
             source
                 .unified_rows(&request(AgentReportKind::Daily, &shared(None, None)))

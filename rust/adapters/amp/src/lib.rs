@@ -105,7 +105,7 @@ mod tests {
             shared(Some("2026"), Some("202602"), "UTC"),
             shared(Some("20270101"), None, "UTC"),
         ] {
-            assert_focused_matches_unified(&SOURCE, &shared, &[]);
+            assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Amp, &shared, &[]);
         }
     }
 

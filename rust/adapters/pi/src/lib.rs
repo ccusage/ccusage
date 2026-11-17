@@ -165,7 +165,7 @@ mod tests {
             ..crate::cli::SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&SOURCE, &shared, &[]);
+        assert_focused_matches_unified(&SOURCE, ccusage_core::cli::AgentId::Pi, &shared, &[]);
         let entries = load_entries(&shared, None, None).unwrap();
         let focused = summarize_entries(&entries, AgentReportKind::Session).unwrap();
         let unified =

@@ -224,7 +224,12 @@ mod tests {
             ..SharedArgs::default()
         };
 
-        assert_focused_matches_unified(&crate::SOURCE, &shared, &[]);
+        assert_focused_matches_unified(
+            &crate::SOURCE,
+            ccusage_core::cli::AgentId::Droid,
+            &shared,
+            &[],
+        );
     }
 
     #[test]
