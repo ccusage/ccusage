@@ -84,7 +84,7 @@ exit: 0
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 7000,
-          "cost": 0.01155,
+          "cost": 0.01,
           "inputTokens": 900,
           "modelName": "anthropic/claude-sonnet-4",
           "outputTokens": 400
@@ -96,7 +96,7 @@ exit: 0
         "anthropic/claude-sonnet-4"
       ],
       "outputTokens": 1300,
-      "totalCost": 0.078825,
+      "totalCost": 0.077275,
       "totalTokens": 20800
     },
     {
@@ -186,7 +186,7 @@ exit: 0
     "cacheReadTokens": 31500,
     "inputTokens": 9450,
     "outputTokens": 2735,
-    "totalCost": 0.10212500000000001,
+    "totalCost": 0.100575,
     "totalTokens": 44735,
     "unpricedModels": [
       "cline-mystery-1"

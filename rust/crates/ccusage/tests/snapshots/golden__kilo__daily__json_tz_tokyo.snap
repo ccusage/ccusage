@@ -177,7 +177,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.003,
+          "cost": 0.0026,
           "inputTokens": 500,
           "modelName": "anthropic/claude-sonnet-4",
           "outputTokens": 100
@@ -197,7 +197,7 @@ exit: 0
         "gpt-5"
       ],
       "outputTokens": 410,
-      "totalCost": 1.25315,
+      "totalCost": 1.25275,
       "totalTokens": 7800
     }
   ],
@@ -206,7 +206,7 @@ exit: 0
     "cacheReadTokens": 22500,
     "inputTokens": 5363,
     "outputTokens": 1819,
-    "totalCost": 4.0009105,
+    "totalCost": 4.0005105,
     "totalTokens": 30362,
     "unpricedModels": [
       "kilo-mystery-1"
