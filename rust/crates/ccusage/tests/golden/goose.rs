@@ -231,8 +231,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         "20251231_120000.jsonl",
         &format!(
             r#"{{"working_dir":"/work/project","total_tokens":17776,"input_tokens":9999,"output_tokens":7777,"model_config":{{"model_name":"{SONNET}"}}}}
-{{"role":"assistant","created":{fixture_time_0},"content":[{{"type":"text","te"#,
-            fixture_time_0 = instant("2025-12-31T12:00:00Z").secs()
+{{"role":"assistant","created":{created},"content":[{{"type":"text","te"#,
+            created = instant("2025-12-31T12:00:00Z").secs()
         ),
     );
 

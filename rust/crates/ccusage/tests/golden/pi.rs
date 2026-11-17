@@ -213,9 +213,9 @@ fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
             ),
             message("2025-12-31 12:00:00", SONNET, &tokens(6666, 6666, 0, 0)),
             format!(
-                r#"{{"type":"message","timestamp":{fixture_time_0},"message":{{"role":"assistant","model":"{SONNET}","usage":{{{}}}}}}}"#,
+                r#"{{"type":"message","timestamp":{timestamp},"message":{{"role":"assistant","model":"{SONNET}","usage":{{{}}}}}}}"#,
                 tokens(5555, 5555, 0, 0),
-                fixture_time_0 = instant("2026-01-01T00:00:00Z").millis()
+                timestamp = instant("2026-01-01T00:00:00Z").millis()
             ),
             String::new(),
             "not json".to_string(),

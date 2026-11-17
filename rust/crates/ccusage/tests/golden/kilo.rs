@@ -274,9 +274,11 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         .execute(
             format!("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('row-integer-data', 'ses-alpha', 0, 0, 7777);
              CREATE TABLE session (id TEXT, title TEXT, data TEXT);
-             INSERT INTO session VALUES ('ses-alpha', 'Alpha', '{{\"role\":\"assistant\",\"modelID\":\"gpt-5\",\"time\":{{\"created\":{fixture_time_0}}},\"tokens\":{{\"input\":5555,\"output\":5555}}}}');
+             INSERT INTO session VALUES ('ses-alpha', 'Alpha', '{{\"role\":\"assistant\",\"modelID\":\"gpt-5\",\"time\":{{\"created\":{created}}},\"tokens\":{{\"input\":5555,\"output\":5555}}}}');
              CREATE TABLE part (id TEXT, message_id TEXT, session_id TEXT, data TEXT);
-             INSERT INTO part VALUES ('part-1', 'row-a1', 'ses-alpha', '{{\"type\":\"step-finish\",\"tokens\":{{\"input\":5555,\"output\":5555}},\"cost\":55.0}}');", fixture_time_0 = instant("2025-12-31T12:00:00Z").millis()),
+             INSERT INTO part VALUES ('part-1', 'row-a1', 'ses-alpha', '{{\"type\":\"step-finish\",\"tokens\":{{\"input\":5555,\"output\":5555}},\"cost\":55.0}}');",
+                created = instant("2025-12-31T12:00:00Z").millis()
+            ),
         )
         .expect("failed to add extra Kilo rows and tables");
     drop(primary);
@@ -291,7 +293,9 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         .expect("failed to create Kilo database")
         .execute(
             format!("CREATE TABLE messages (id TEXT, session_id TEXT, data TEXT);
-             INSERT INTO messages VALUES ('row-wrong-table', 'ses-alpha', '{{\"id\":\"msg-wrong-table\",\"role\":\"assistant\",\"modelID\":\"gpt-5\",\"time\":{{\"created\":{fixture_time_0}}},\"tokens\":{{\"input\":5555,\"output\":5555}}}}');", fixture_time_0 = instant("2025-12-31T12:00:00Z").millis()),
+             INSERT INTO messages VALUES ('row-wrong-table', 'ses-alpha', '{{\"id\":\"msg-wrong-table\",\"role\":\"assistant\",\"modelID\":\"gpt-5\",\"time\":{{\"created\":{created}}},\"tokens\":{{\"input\":5555,\"output\":5555}}}}');",
+                created = instant("2025-12-31T12:00:00Z").millis()
+            ),
         )
         .expect("failed to create table in Kilo database");
 

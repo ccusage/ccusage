@@ -268,12 +268,13 @@ service_tier = "fast"
                 .to_string(),
             r#"{"timestamp":"2026-01-01T13:02:00.000Z","type":"event_msg","payload":{"type":"agent_message","message":"token_count 9999"}}"#
                 .to_string(),
-            // Epoch-seconds timestamp: 2026-01-02T08:00:00Z.
+            // Epoch-seconds timestamp.
             format!(
-                r#"{{"timestamp":{fixture_time_0},"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{},"total_token_usage":{}}}}}}}"#,
+                r#"{{"timestamp":{timestamp},"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{},"total_token_usage":{}}}}}}}"#,
                 usage(600, 200, 60, 0),
                 usage(1000, 350, 100, 0),
-        fixture_time_0 = instant("2026-01-02T08:00:00Z").secs()),
+                timestamp = instant("2026-01-02T08:00:00Z").secs()
+            ),
             format!(
                 r#"{{"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{}}}}}}}"#,
                 usage(9999, 0, 9999, 0)
@@ -573,10 +574,11 @@ service_tier = "fast"
             r#"{"timestamp":"2026-01-01T03:30:00.000Z","usage":{"input_tokens":0,"output_tokens":0}}"#
                 .to_string(),
             r#"{"timestamp":"2026-01-01T03:31:00.000Z","usage":"n/a","note":"9999"}"#.to_string(),
-            // Epoch seconds: 2026-01-02T03:00:00Z.
+            // Epoch seconds.
             format!(
-                r#"{{"created_at":{fixture_time_0},"response":{{"model":"{GPT5}","usage":{{"input_tokens":150,"output_tokens":15,"total_tokens":0}}}}}}"#,
-        fixture_time_0 = instant("2026-01-02T03:00:00Z").secs()),
+                r#"{{"created_at":{created_at},"response":{{"model":"{GPT5}","usage":{{"input_tokens":150,"output_tokens":15,"total_tokens":0}}}}}}"#,
+                created_at = instant("2026-01-02T03:00:00Z").secs()
+            ),
             r#"{"result":{"usage":{"input":120,"output":12}}}"#.to_string(),
             // A model of the wrong type takes the untyped parsing path.
             r#"{"timestamp":"2026-01-02T05:00:00Z","model":5,"usage":{"input_tokens":80,"output_tokens":8}}"#

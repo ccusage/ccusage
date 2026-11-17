@@ -36,14 +36,14 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
   {{"id":"a1","role":"assistant","timestamp":"2025-12-30T10:00:01.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":1000,"outputTokens":200,"cacheCreationInputTokens":300,"cacheReadInputTokens":4000}}}},"credits":1.5}},
   {{"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{{"model":"gpt-5","usage":{{"inputTokens":9999,"outputTokens":9999}}}},"credits":9.0}},
   {{"id":"a2","variant":"ai","timestamp":"2025-12-31T15:30:00.000Z","metadata":{{"usage":{{"model":"gpt-5","input_tokens":700,"output_tokens":150,"cache_read_input_tokens":2500,"credits":0.75}}}}}},
-  {{"id":"a3","variant":"agent","createdAt":{fixture_time_0},"metadata":{{"codebuff":{{"usage":{{"model":"codebuff-mystery-1","promptTokens":300,"completionTokens":70}}}}}},"credits":0.2}},
-  {{"id":"a4","role":"assistant","metadata":{{"timestamp":{fixture_time_1},"model":"gpt-5","usage":{{"totalTokens":345}}}}}},
+  {{"id":"a3","variant":"agent","createdAt":{created_at},"metadata":{{"codebuff":{{"usage":{{"model":"codebuff-mystery-1","promptTokens":300,"completionTokens":70}}}}}},"credits":0.2}},
+  {{"id":"a4","role":"assistant","metadata":{{"timestamp":{timestamp},"model":"gpt-5","usage":{{"totalTokens":345}}}}}},
   {{"id":"a5","role":"assistant","timestamp":"2026-01-01T13:00:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":0,"outputTokens":0}}}}}},
   {{"id":"a6","variant":"user","role":"assistant","timestamp":"2026-01-01T13:10:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":8888,"outputTokens":8888}}}}}},
   {{"id":"a7","variant":"tool","timestamp":"2026-01-01T13:20:00.000Z","metadata":{{"model":"claude-sonnet-4-20250514","usage":{{"inputTokens":7777,"outputTokens":7777}}}},"credits":7.0}}
 ]"#,
-            fixture_time_0 = instant("2026-01-01T12:00:00Z").secs(),
-            fixture_time_1 = instant("2026-01-01T12:30:00Z").millis()
+            created_at = instant("2026-01-01T12:00:00Z").secs(),
+            timestamp = instant("2026-01-01T12:30:00Z").millis()
         ),
     );
     let chat_dir = ledger_chat.parent().expect("chat file has a parent");

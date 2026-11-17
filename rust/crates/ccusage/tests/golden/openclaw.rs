@@ -78,8 +78,8 @@ fn seed_legacy_sessions(state: &Path) {
     // The replayed line is deduped. Its near miss differs only in the stored
     // cost; the agent database's migrated copy of the event replaces both.
     let replayed = &format!(
-        r#"{{"type":"message","id":"a-4","message":{{"role":"assistant","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.5}}}},"timestamp":{fixture_time_0}}}}}"#,
-        fixture_time_0 = instant("2025-12-30T10:00:00Z").millis()
+        r#"{{"type":"message","id":"a-4","message":{{"role":"assistant","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.5}}}},"timestamp":{timestamp}}}}}"#,
+        timestamp = instant("2025-12-30T10:00:00Z").millis()
     );
     write_session(
         &sessions.join("alpha.jsonl"),
@@ -92,8 +92,8 @@ fn seed_legacy_sessions(state: &Path) {
             replayed,
             replayed,
             &format!(
-                r#"{{"type":"message","id":"a-6","message":{{"role":"assistant","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.75}}}},"timestamp":{fixture_time_0}}}}}"#,
-                fixture_time_0 = instant("2025-12-30T10:00:00Z").millis()
+                r#"{{"type":"message","id":"a-6","message":{{"role":"assistant","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.75}}}},"timestamp":{timestamp}}}}}"#,
+                timestamp = instant("2025-12-30T10:00:00Z").millis()
             ),
             r#"{"type":"message","message":{"role":"assistant","model":"gpt-5","usage":{"input":120,"output":30}}}"#,
             r#"{"type":"message","message":{"role":"assistant","usage":{"input":9999,"outp"#,
@@ -102,8 +102,8 @@ fn seed_legacy_sessions(state: &Path) {
             // Record-level timestamp; the agent database holds a migrated copy.
             r#"{"type":"message","timestamp":"2025-12-31T15:30:00.000Z","message":{"role":"assistant","usage":{"input":700,"output":150,"cacheRead":2500,"cost":{"total":0.02}}}}"#,
             &format!(
-                r#"{{"type":"message","message":{{"role":"assistant","usage":{{"totalTokens":345}},"timestamp":{fixture_time_0}}}}}"#,
-                fixture_time_0 = instant("2025-12-31T16:00:00.00075Z").millis_f64()
+                r#"{{"type":"message","message":{{"role":"assistant","usage":{{"totalTokens":345}},"timestamp":{timestamp}}}}}"#,
+                timestamp = instant("2025-12-31T16:00:00.00075Z").millis_f64()
             ),
             r#"{"type":"message","message":{"role":"assistant","usage":{"input":0,"output":0},"timestamp":"2025-12-31T17:00:00.000Z"}}"#,
             r#"{"type":"message","message":{"role":"assistant","usage":{"input":"9999","output":-5,"cacheRead":9999.5},"timestamp":"2025-12-31T17:01:00.000Z"}}"#,
@@ -141,14 +141,14 @@ fn seed_legacy_sessions(state: &Path) {
     // Same content as alpha's replayed line, but in another session.
     write_session(
         &sessions.join(format!(
-            "gamma.jsonl.deleted.{fixture_time_0}",
-            fixture_time_0 = instant("2025-12-29T09:20:00Z").millis()
+            "gamma.jsonl.deleted.{deleted_at}",
+            deleted_at = instant("2025-12-29T09:20:00Z").millis()
         )),
         &[
             r#"{"type":"message","message":{"role":"assistant","model":"claude-opus-4-20250514","usage":{"input":100,"output":50,"cost":{"total":0.01}},"timestamp":"2025-12-27T23:00:00Z"}}"#,
             &format!(
-                r#"{{"type":"message","message":{{"role":"assistant","model":"claude-sonnet-4-20250514","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.5}}}},"timestamp":{fixture_time_0}}}}}"#,
-                fixture_time_0 = instant("2025-12-30T10:00:00Z").millis()
+                r#"{{"type":"message","message":{{"role":"assistant","model":"claude-sonnet-4-20250514","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.5}}}},"timestamp":{timestamp}}}}}"#,
+                timestamp = instant("2025-12-30T10:00:00Z").millis()
             ),
         ],
         instant("2025-12-28T22:00:00Z"),
@@ -232,8 +232,8 @@ fn seed_agent_databases(state: &Path) {
                 "alpha",
                 0,
                 &format!(
-                    r#"{{"id":"evt-a4","type":"message","message":{{"role":"assistant","model":"claude-sonnet-4-20250514","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.6}}}},"timestamp":{fixture_time_0}}}}}"#,
-                    fixture_time_0 = instant("2025-12-30T10:00:00Z").millis()
+                    r#"{{"id":"evt-a4","type":"message","message":{{"role":"assistant","model":"claude-sonnet-4-20250514","usage":{{"input":1000,"output":200,"cacheRead":4000,"cacheWrite":300,"cost":{{"total":0.6}}}},"timestamp":{timestamp}}}}}"#,
+                    timestamp = instant("2025-12-30T10:00:00Z").millis()
                 ),
             ),
             // Same content and cost as a legacy beta line, but no event id.
@@ -251,8 +251,8 @@ fn seed_agent_databases(state: &Path) {
                 "delta",
                 instant("2026-01-01T12:00:00Z").millis(),
                 &format!(
-                    r#"{{"id":"evt-d1","type":"message","message":{{"role":"assistant","usage":{{"input":2000,"output":500,"cacheRead":10000,"cacheWrite":1000,"cost":{{"total":0.11}}}},"timestamp":{fixture_time_0}}}}}"#,
-                    fixture_time_0 = instant("2025-12-31T15:00:00Z").millis()
+                    r#"{{"id":"evt-d1","type":"message","message":{{"role":"assistant","usage":{{"input":2000,"output":500,"cacheRead":10000,"cacheWrite":1000,"cost":{{"total":0.11}}}},"timestamp":{timestamp}}}}}"#,
+                    timestamp = instant("2025-12-31T15:00:00Z").millis()
                 ),
             ),
             // Reused event id within the session.
@@ -260,8 +260,8 @@ fn seed_agent_databases(state: &Path) {
                 "delta",
                 instant("2026-01-01T12:00:00Z").millis(),
                 &format!(
-                    r#"{{"id":"evt-d1","type":"message","message":{{"role":"assistant","usage":{{"input":8888,"output":8888}},"timestamp":{fixture_time_0}}}}}"#,
-                    fixture_time_0 = instant("2025-12-31T15:01:00Z").millis()
+                    r#"{{"id":"evt-d1","type":"message","message":{{"role":"assistant","usage":{{"input":8888,"output":8888}},"timestamp":{timestamp}}}}}"#,
+                    timestamp = instant("2025-12-31T15:01:00Z").millis()
                 ),
             ),
             (
@@ -308,8 +308,8 @@ fn seed_agent_databases(state: &Path) {
                 "delta",
                 instant("2026-01-01T12:00:00Z").millis(),
                 &format!(
-                    r#"{{"id":"evt-d1","type":"message","message":{{"role":"assistant","model":"gpt-5","usage":{{"input":6666,"output":6666}},"timestamp":{fixture_time_0}}}}}"#,
-                    fixture_time_0 = instant("2025-12-31T15:02:00Z").millis()
+                    r#"{{"id":"evt-d1","type":"message","message":{{"role":"assistant","model":"gpt-5","usage":{{"input":6666,"output":6666}},"timestamp":{timestamp}}}}}"#,
+                    timestamp = instant("2025-12-31T15:02:00Z").millis()
                 ),
             ),
             (

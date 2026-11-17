@@ -85,7 +85,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             r#"{"type":"assistant","timestamp":"2026-01-02T08:00:00.000Z","usageMetadata":{"promptTokenCount":70,"candidatesTokenCount":30}}"#.to_string(),
             assistant("sess-a", "yesterday", CODER, r#""promptTokenCount":60,"candidatesTokenCount":15"#),
             r#"{"type":"assistant","sessionId":"sess-a","model":"qwen3-coder-plus","usageMetadata":{"promptTokenCount":61,"candidatesTokenCount":16}}"#.to_string(),
-            format!(r#"{{"type":"assistant","sessionId":"sess-a","timestamp":{fixture_time_0},"model":"qwen3-coder-plus","usageMetadata":{{"promptTokenCount":61,"candidatesTokenCount":16}}}}"#, fixture_time_0 = instant("2026-01-01T00:00:00Z").millis()),
+            format!(r#"{{"type":"assistant","sessionId":"sess-a","timestamp":{timestamp},"model":"qwen3-coder-plus","usageMetadata":{{"promptTokenCount":61,"candidatesTokenCount":16}}}}"#, timestamp = instant("2026-01-01T00:00:00Z").millis()),
         ]
         .join("\n"),
         instant("2026-01-02T12:00:00Z"),

@@ -147,8 +147,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 "<synthetic>",
                 r#""input_tokens":0,"output_tokens":0"#,
                 &format!(
-                    r#","isApiErrorMessage":true,"content":[{{"type":"text","text":"Claude AI usage limit reached|{fixture_time_0}"}}]"#,
-                    fixture_time_0 = instant("2026-01-02T09:00:00Z").secs()
+                    r#","isApiErrorMessage":true,"content":[{{"type":"text","text":"Claude AI usage limit reached|{reset_at}"}}]"#,
+                    reset_at = instant("2026-01-02T09:00:00Z").secs()
                 ),
             ),
         ],

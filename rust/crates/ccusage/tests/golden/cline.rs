@@ -59,8 +59,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
         "tasks/task-alpha/ui_messages.json",
         &document(&[
             format!(
-                r#"{{"ts":{fixture_time_0},"type":"say","say":"text","text":"hello"}}"#,
-                fixture_time_0 = instant("2025-12-30T09:58:20Z").millis()
+                r#"{{"ts":{ts},"type":"say","say":"text","text":"hello"}}"#,
+                ts = instant("2025-12-30T09:58:20Z").millis()
             ),
             request(
                 instant("2025-12-30T10:00:00Z").millis(),
@@ -141,18 +141,15 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
             ),
             say(
                 "api_req_started",
-                &format!(
-                    "\"{fixture_time_0}\"",
-                    fixture_time_0 = instant("2025-12-31T12:00:00Z").millis()
-                ),
+                &format!("\"{ts}\"", ts = instant("2025-12-31T12:00:00Z").millis()),
                 &sonnet,
                 ignored,
             ),
             say(
                 "api_req_started",
                 &format!(
-                    "{fixture_time_0}",
-                    fixture_time_0 = instant("2025-12-31T12:00:00.0005Z").millis_f64()
+                    "{ts}",
+                    ts = instant("2025-12-31T12:00:00.0005Z").millis_f64()
                 ),
                 &sonnet,
                 ignored,

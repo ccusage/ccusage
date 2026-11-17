@@ -21,8 +21,8 @@ fn opencode_fixture() -> Fixture {
     )
     .unwrap();
     let assistant = format!(
-        r#"{{"model":{MODEL},"time":{{"created":{fixture_time_0}}},"content":[],"tokens":{{"input":10,"output":2,"reasoning":0,"cache":{{"read":0,"write":0}}}},"cost":0.01}}"#,
-        fixture_time_0 = instant("2026-01-02T00:00:00Z").millis()
+        r#"{{"model":{MODEL},"time":{{"created":{created}}},"content":[],"tokens":{{"input":10,"output":2,"reasoning":0,"cache":{{"read":0,"write":0}}}},"cost":0.01}}"#,
+        created = instant("2026-01-02T00:00:00Z").millis()
     );
     let compaction = |created: i64| {
         format!(
@@ -74,9 +74,11 @@ fn opencode_fixture() -> Fixture {
         while statement.next().unwrap() != sqlite::State::Done {}
     }
     db.execute(format!(
-        "INSERT INTO session VALUES ('mixed-session', {fixture_time_0}, 9.99, 9999, 9999, 0, 0, 0, '{MODEL}');
-         INSERT INTO session VALUES ('lone-session', {fixture_time_1}, 0.05, 300, 40, 30, 5, 7, '{MODEL}');",
-        fixture_time_0 = instant("2026-01-02T00:00:00Z").millis(), fixture_time_1 = instant("2026-02-02T00:00:00Z").millis()))
+        "INSERT INTO session VALUES ('mixed-session', {mixed_created}, 9.99, 9999, 9999, 0, 0, 0, '{MODEL}');
+         INSERT INTO session VALUES ('lone-session', {lone_created}, 0.05, 300, 40, 30, 5, 7, '{MODEL}');",
+        mixed_created = instant("2026-01-02T00:00:00Z").millis(),
+        lone_created = instant("2026-02-02T00:00:00Z").millis()
+    ))
     .unwrap();
     fixture
 }
