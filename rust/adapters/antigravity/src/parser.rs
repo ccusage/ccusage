@@ -1139,9 +1139,12 @@ fn gemini_flash_pricing_alias(model: &str) -> Option<&'static str> {
 }
 
 fn gemini_flash_effort_variant(display_name: &str) -> Option<String> {
-    let (base, rest) = display_name.split_once('(')?;
+    let (base, rest) = display_name.split_once(" (")?;
     let effort = rest.strip_suffix(')')?;
-    let variant = format!("{}-{effort}", base.trim().replace(' ', "-"));
+    if base.contains('-') {
+        return None;
+    }
+    let variant = format!("{}-{effort}", base.replace(' ', "-"));
     gemini_flash_pricing_alias(&variant)
         .is_some()
         .then_some(variant)
@@ -1741,6 +1744,13 @@ mod tests {
             normalize_antigravity_model("Gemini 3.8 Flash").as_deref(),
             Some("gemini-3.8-flash")
         );
+        for display_name in ["gemini 3.8 flash(high)", "gemini-3.8-flash (high)"] {
+            assert_ne!(
+                normalize_antigravity_model(display_name).as_deref(),
+                Some("gemini-3.8-flash-high"),
+                "{display_name}"
+            );
+        }
     }
 
     #[test]
