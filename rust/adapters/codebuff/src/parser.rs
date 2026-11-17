@@ -45,8 +45,7 @@ pub(super) fn load_chat_file(
 ) -> std::result::Result<Vec<CodebuffEntry>, UnitError> {
     let messages = read_json::<Vec<Value>>(path)?;
     let context = derive_context(path);
-    let fallback_timestamp = parse_codebuff_chat_id_timestamp(&context.chat_id)
-        .or_else(|| ccusage_adapter_common::timestamps::file_mtime(path));
+    let chat_timestamp = parse_codebuff_chat_id_timestamp(&context.chat_id);
     let mut entries = Vec::new();
     for (ordinal, message) in messages.iter().enumerate() {
         let Some(message) = message.as_object() else {
@@ -59,12 +58,12 @@ pub(super) fn load_chat_file(
         if !has_signal(&usage) {
             continue;
         }
-        let Some(timestamp) = message_timestamp(message).or(fallback_timestamp) else {
+        let Some(timestamp) = message_timestamp(message).or(chat_timestamp) else {
             diagnostics.record(Skip::record(
                 path,
                 Skip::line_number(ordinal),
                 SkipKind::InvalidTimestamp,
-                "Codebuff usage record has no valid message, chat or file modification timestamp",
+                "Codebuff usage record has no valid message or chat timestamp",
             ));
             continue;
         };

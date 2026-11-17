@@ -163,14 +163,6 @@ mod tests {
                 {"role":"assistant","metadata":{"usage":{}}}
             ]"#
         });
-        let path = fixture.path("projects/project-a/chats/chat-a/chat-messages.json");
-        std::fs::File::open(&path)
-            .unwrap()
-            .set_times(
-                std::fs::FileTimes::new()
-                    .set_modified(std::time::UNIX_EPOCH - std::time::Duration::from_secs(1)),
-            )
-            .unwrap();
         let _guard = EnvVarGuard::set(CODEBUFF_DATA_DIR_ENV, fixture.root());
         let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
             &crate::SOURCE,
@@ -185,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn uses_file_mtime_for_an_untimed_whole_chat_document() {
+    fn ignores_file_mtime_for_an_untimed_chat_document() {
         let fixture = fs_fixture!({
             "projects/project-a/chats/chat-a/chat-messages.json": r#"[
                 {"role":"assistant","metadata":{"usage":{"inputTokens":1}}}
@@ -200,9 +192,8 @@ mod tests {
             .unwrap();
         let diagnostics = Diagnostics::new("codebuff");
         let entries = load_chat_file(&path, &diagnostics).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].timestamp.as_millis(), 1_767_312_000_000);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
+        assert!(entries.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
     }
 
     #[test]

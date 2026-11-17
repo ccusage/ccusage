@@ -161,38 +161,16 @@ exit: 0
       "sessionId": "manicode/alpha/2025-12-31T23-50-00.000Z",
       "totalCost": 0.01225,
       "totalTokens": 15900
-    },
-    {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 80,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00028,
-          "inputTokens": 80,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 40
-        }
-      ],
-      "modelsUsed": [
-        "claude-haiku-4-5-20251001"
-      ],
-      "outputTokens": 40,
-      "sessionId": "manicode/alpha/untimed-chat",
-      "totalCost": 0.00028,
-      "totalTokens": 120
     }
   ],
   "totals": {
     "cacheCreationTokens": 610,
     "cacheReadTokens": 25540,
     "credits": 8.2,
-    "inputTokens": 5731,
-    "outputTokens": 1952,
-    "totalCost": 0.0410055,
-    "totalTokens": 34183,
+    "inputTokens": 5651,
+    "outputTokens": 1912,
+    "totalCost": 0.0407255,
+    "totalTokens": 34063,
     "unpricedModels": [
       "codebuff-mystery-1"
     ]

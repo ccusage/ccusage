@@ -440,13 +440,12 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 160,
       "cacheReadTokens": 27930,
-      "inputTokens": 23332,
+      "inputTokens": 23252,
       "metadata": {
         "agents": [
           "antigravity",
           "claude",
           "cline",
-          "codebuff",
           "codex",
           "copilot",
           "droid",
@@ -549,10 +548,10 @@ exit: 0
         {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 500,
-          "cost": 0.0015049999999999998,
-          "inputTokens": 730,
+          "cost": 0.001225,
+          "inputTokens": 650,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 140
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 0,
@@ -635,10 +634,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 4174,
+      "outputTokens": 4134,
       "period": "2025-12-31",
-      "totalCost": 0.46281958,
-      "totalTokens": 55806
+      "totalCost": 0.46253957999999995,
+      "totalTokens": 55686
     },
     {
       "agent": "all",
@@ -1701,10 +1700,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1309617,
-    "inputTokens": 1346288,
-    "outputTokens": 58561,
-    "totalCost": 28.1350933,
-    "totalTokens": 2735648,
+    "inputTokens": 1346208,
+    "outputTokens": 58521,
+    "totalCost": 28.134813299999998,
+    "totalTokens": 2735528,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

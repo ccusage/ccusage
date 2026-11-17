@@ -3774,27 +3774,6 @@ exit: 0
       "totalTokens": 150
     },
     {
-      "agent": "codebuff",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 80,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 80,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 40
-        }
-      ],
-      "modelsUsed": [
-        "claude-haiku-4-5-20251001"
-      ],
-      "outputTokens": 40,
-      "period": "manicode/alpha/untimed-chat",
-      "totalTokens": 120
-    },
-    {
       "agent": "hermes",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1000,
@@ -5009,9 +4988,9 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17865,
     "cacheReadTokens": 1311217,
-    "inputTokens": 1347849,
-    "outputTokens": 58827,
-    "totalTokens": 2739195,
+    "inputTokens": 1347769,
+    "outputTokens": 58787,
+    "totalTokens": 2739075,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

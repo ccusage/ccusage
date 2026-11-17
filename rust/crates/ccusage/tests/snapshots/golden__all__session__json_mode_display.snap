@@ -2438,29 +2438,6 @@ exit: 0
       "totalTokens": 150
     },
     {
-      "agent": "codebuff",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 80,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00028,
-          "inputTokens": 80,
-          "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 40
-        }
-      ],
-      "modelsUsed": [
-        "claude-haiku-4-5-20251001"
-      ],
-      "outputTokens": 40,
-      "period": "manicode/alpha/untimed-chat",
-      "totalCost": 0.00028,
-      "totalTokens": 120
-    },
-    {
       "agent": "hermes",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1000,
@@ -5415,10 +5392,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17865,
     "cacheReadTokens": 1311217,
-    "inputTokens": 1346849,
-    "outputTokens": 58727,
-    "totalCost": 25.026960125000013,
-    "totalTokens": 2738095,
+    "inputTokens": 1346769,
+    "outputTokens": 58687,
+    "totalCost": 25.026680125000013,
+    "totalTokens": 2737975,
     "unpricedModels": [
       "codebuff-mystery-1",
       "droid-mystery-1",

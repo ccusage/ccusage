@@ -8,10 +8,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 9001,
     "cacheReadTokens": 665744,
-    "inputTokens": 1170473,
-    "outputTokens": 37165,
-    "totalCost": 15.361547825000002,
-    "totalTokens": 1884045,
+    "inputTokens": 1170393,
+    "outputTokens": 37125,
+    "totalCost": 15.361267825000002,
+    "totalTokens": 1883925,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -45,7 +45,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 9001,
       "cacheReadTokens": 665744,
-      "inputTokens": 1170473,
+      "inputTokens": 1170393,
       "metadata": {
         "agents": [
           "amp",
@@ -74,10 +74,10 @@ exit: 0
         {
           "cacheCreationTokens": 1620,
           "cacheReadTokens": 52700,
-          "cost": 4.031395,
-          "inputTokens": 10960,
+          "cost": 4.031115,
+          "inputTokens": 10880,
           "modelName": "claude-haiku-4-5-20251001",
-          "outputTokens": 4128,
+          "outputTokens": 4088,
           "storedCost": 4.0
         },
         {
@@ -691,10 +691,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 37165,
+      "outputTokens": 37125,
       "period": "2025-12-29",
-      "totalCost": 15.361547825000002,
-      "totalTokens": 1884045
+      "totalCost": 15.361267825000002,
+      "totalTokens": 1883925
     }
   ]
 }

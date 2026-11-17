@@ -93,7 +93,7 @@ pub fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
     );
 
     // Neither the messages nor the chat id carry a usable timestamp, so both
-    // messages take the file's mtime (2025-12-31T09:00:00Z).
+    // messages are skipped as invalid timestamps; the file's mtime is ignored.
     let mtime_chat = write_chat(
         &manicode,
         "alpha",
