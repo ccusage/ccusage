@@ -55,7 +55,7 @@ Goose does not expose cache read/write token columns in this database, so cache 
 
 ## Cost Calculation
 
-Goose rows do not store recorded USD cost, so ccusage estimates cost from token counts and LiteLLM pricing. Any positive total-token remainder beyond input and output is treated as output-priced usage for cost estimation.
+Goose rows do not store recorded USD cost. Auto and Calculate estimate cost from tokens and model pricing; Display reports $0 while retaining token usage. See [Cost Modes](/guide/cost-modes). Any positive total-token remainder beyond input and output is treated as output-priced usage for cost estimation.
 
 Use `--offline` to rely on cached pricing data:
 

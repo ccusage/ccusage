@@ -166,7 +166,7 @@ The `--cost-source` option controls how session costs are calculated and display
 **Available modes:**
 
 - `auto` (default): Prefer Claude Code's pre-calculated cost when available, fallback to ccusage calculation
-- `ccusage`: Always calculate costs using ccusage's token-based calculation with LiteLLM pricing
+- `ccusage`: Use ccusage's report cost with the selected `--mode`
 - `cc`: Always use Claude Code's pre-calculated cost from session data
 - `both`: Display both Claude Code and ccusage costs side by side for comparison
 
@@ -223,9 +223,9 @@ You can customize the context usage color thresholds using command-line options 
 
 **Validation and Safety Features:**
 
-- Values are automatically validated to be integers in the 0-100 range
+- Values must be integers from 0 to 255
 - The `LOW` threshold must be less than the `MEDIUM` threshold
-- Invalid configurations will show clear error messages
+- An invalid field in a discovered config is dropped with a warning while valid settings are retained. An invalid explicit `--config` file is an error.
 
 **Command-line usage:**
 

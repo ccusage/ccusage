@@ -62,14 +62,11 @@ A session report without a date range uses OpenCode's cumulative session totals 
 
 The `claude-agent` provider runs Claude Code under the hood, so each turn is also saved in Claude Code's own logs. In [unified reports](/guide/all-reports) such as `ccusage daily`, ccusage skips the OpenCode copy of turns the Claude source already counts, so they are priced from the Claude Code logs. OpenCode stores only a model alias such as `opus`, while Claude Code records the exact model, so its costs are accurate.
 
-ccusage matches OpenCode rows to Claude usage by Claude Code session, not by individual turn:
+Matching uses the native Claude Code session ID, including session aliases retained when repeated calls are deduplicated. An OpenCode turn is excluded when Claude main-thread usage claims that session, even when the turn and its model calls fall on different dates.
 
-- **Daily, weekly, and monthly reports** skip an OpenCode `claude-agent` row when the Claude source counted usage from the same Claude Code session on the row's date, in the Claude source's timezone. Rows still count when the Claude Code log is gone, holds no usage for that day, holds only subagent usage, or falls outside the Claude source's date range.
-- **Session reports** count only the usage of each Claude Code session inside the Claude source's date range. They skip an OpenCode `claude-agent` row when the Claude source counted main-thread usage from the same session in that range and the row's date is in the range too. Resumed and forked transcripts repeat earlier turns, and ccusage keeps one copy of each repeated turn; the session of a dropped copy counts on the day of the kept one, as in daily reports.
+With date bounds, claim discovery includes one calendar day on each side of the Claude source's window to cover turns crossing midnight. The report still contains only Claude usage inside the requested window. OpenCode rows remain when there is no main-thread Claude claim, for example when the native logs are missing, contain only subagent usage, or are outside that discovery margin.
 
-Because OpenCode dates a turn by when it started and Claude Code dates each model call, a turn that runs across midnight can be off in the daily family. It is counted twice when Claude has no usage from that session on the day the turn started. With `--until` on that day, the calls Claude logs after midnight are left out, even though OpenCode dates the whole turn on the earlier day.
-
-`ccusage opencode` skips the rows that `ccusage claude` counts. Every `ccusage opencode` report, session reports included, matches them by Claude Code session and date, because `ccusage claude` counts only usage dated inside its date range. This way the totals of `ccusage claude` and `ccusage opencode` for the same range add up to the matching unified report, such as `ccusage daily`, and tools that read each source separately count these turns once. These turns appear under Claude. Pass `--include-claude-agent` to show every `claude-agent` row in the OpenCode report:
+Focused OpenCode reports use the same session claims. Pass `--include-claude-agent` to include every `claude-agent` row:
 
 ```bash
 ccusage opencode daily --include-claude-agent
@@ -87,7 +84,9 @@ Those rows are priced from the `opus` alias, so their cost can differ from the C
 
 ## Cost Calculation
 
-OpenCode stores `cost: 0` in message files. Costs are calculated from token counts using LiteLLM pricing. Model aliases (e.g., `gemini-3-pro-high` → `gemini-3-pro-preview`) are handled automatically.
+`--mode auto` uses a positive recorded cost when available and otherwise prices tokens. `--mode calculate` always prices tokens, ignoring recorded cost. `--mode display` shows recorded cost only; tokens without a recorded cost contribute $0.
+
+OpenCode uses `cost: 0` as an unknown-cost sentinel, so Auto still calculates those entries. Model aliases (for example, `gemini-3-pro-high` → `gemini-3-pro-preview`) are resolved automatically. See [Cost Modes](/guide/cost-modes).
 
 ## Troubleshooting
 

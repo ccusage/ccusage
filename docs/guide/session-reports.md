@@ -92,6 +92,8 @@ The unified table has an Agent column and no Last Activity column; its JSON keep
 
 ### Sorting
 
+Claude session reports also default to highest cost first. Use `ccusage claude session --order asc` for lowest cost first; configured order is used unless a CLI flag overrides it.
+
 Unified session reports are sorted by cost (highest first) by default. Use `ccusage session --order asc` for lowest cost first or `--order desc` for highest cost first. Equal costs sort by session ID, then agent, in ascending order.
 
 The `order` configuration option also controls this direction; an explicit CLI flag takes precedence. With mixed `--sections` reports, the selected order applies to session costs and chronological periods. Without an order option, sessions use descending cost while daily, weekly, and monthly sections stay chronological (ascending).

@@ -107,7 +107,7 @@ ccusage blocks --token-limit max
 ccusage blocks -t max
 ```
 
-Percentages above 100% are highlighted in red.
+The limit must be `max` or a positive integer; zero and invalid text are rejected. Percentages above 100% are highlighted in red.
 
 ### Live Monitoring
 
@@ -117,7 +117,7 @@ Percentages above 100% are highlighted in red.
 
 Change the block duration (default is 5 hours):
 
-Fractional hours are rounded to the nearest millisecond. For example, a `4.35`-hour block starting at `10:00:00` ends at `14:21:00.000`.
+Session lengths must be finite, positive, and representable as at least one millisecond. Fractional hours are stored in whole milliseconds. For example, a `4.35`-hour block starting at `10:00:00` ends at `14:21:00.000`.
 
 ```bash
 # 3-hour blocks

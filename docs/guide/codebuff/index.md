@@ -66,7 +66,7 @@ These views support `--json` for structured output, `--compact` for narrow termi
 - **Token usage** - Assistant messages can provide input and output token counts from `metadata.usage`, `metadata.codebuff.usage`, or nested run-state provider usage.
 - **Cache tokens** - Cache creation and cache read tokens are included when the Codebuff message metadata records them.
 - **Credits** - Codebuff credit values are summed in row metadata and included in per-agent JSON output.
-- **Pricing** - Costs are estimated from LiteLLM pricing data for Anthropic, OpenAI, Google, xAI, and provider-prefixed model names.
+- **Pricing** - Auto and Calculate estimate USD costs from model pricing. Codebuff records credits rather than USD costs, so Display reports $0; credit and token totals remain available. See [Cost Modes](/guide/cost-modes).
 
 ## Environment Variables
 

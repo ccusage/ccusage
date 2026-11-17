@@ -2,7 +2,16 @@
 
 Use `--mode auto`, `--mode calculate`, or `--mode display` to select how a report obtains costs. The default is `auto`.
 
-The rules below describe Claude Code reports. Other sources can provide their own stored-cost and pricing behavior; see the relevant source guide.
+The entry rules below describe Claude Code. Auto's stored-cost preference depends on the source:
+
+| Source                        | Auto                                                         | Calculate | Display                                     |
+| ----------------------------- | ------------------------------------------------------------ | --------- | ------------------------------------------- |
+| Claude Code                   | Recorded cost when present, including zero; otherwise tokens | Tokens    | Recorded cost only                          |
+| Codex, Goose, Droid, Codebuff | Tokens                                                       | Tokens    | $0; these logs contain no recorded USD cost |
+| Hermes                        | Positive recorded actual/estimated cost; otherwise tokens    | Tokens    | Recorded actual/estimated cost only         |
+| OpenCode                      | Positive recorded cost; otherwise tokens                     | Tokens    | Recorded cost only                          |
+
+Tokens remain in Display reports even when their cost is zero. Display does not need a pricing table to obtain recorded costs. Other sources retain their documented stored-cost policies; see their source guide.
 
 ## auto (Default)
 
@@ -48,7 +57,7 @@ cost = inputTokens         × input price
 
 When a record includes a cache-write duration split, the calculation uses its 5-minute and 1-hour counts. Otherwise, all `cache_creation_input_tokens` use the standard cache creation rate.
 
-The one-hour rate uses the published duration price or `cacheCreationInputTokenCostAbove1hr` override, and above 200K tokens the published long-context one-hour price. When a model publishes no cache rate, the default depends on its provider: OpenAI models bill cache writes, one-hour cache writes, and cache reads at the input price; Anthropic and other models use 1.25×, 2×, and 0.1× the input price.
+The one-hour rate uses the published duration price or `cacheCreationInputTokenCostAbove1hr` override, and above 200K tokens the published long-context one-hour price. When a model publishes no cache rate, the default depends on its provider: OpenAI models use the input price for cache writes of either duration; Anthropic and other models use 1.25× for five-minute writes and 2× for one-hour writes. An absent cache-read rate defaults to 0.1× input for every family.
 
 For pricing entries with a context threshold, the request input context (including cache reads and writes) selects the rate tier for the whole request. Other entries with above-200K rates apply the higher rate only to the portion of each token category above 200,000. Fast-mode usage applies the model fast multiplier.
 
