@@ -63,7 +63,9 @@ pub fn focused_rows(
             crate::source::SummaryKind::for_report(kind, args.start_of_week),
         )
     })?;
-    sort_summaries(&mut rows, &shared.order, |row| source.sort_key(row));
+    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
+        source.sort_key(row)
+    });
     Ok(rows)
 }
 
@@ -305,7 +307,7 @@ mod tests {
     fn focused_rows_follow_the_requested_order() {
         let source = Fake::new(descriptor(), entries());
         let shared = SharedArgs {
-            order: SortOrder::Desc,
+            order: Some(SortOrder::Desc),
             ..shared(None, None)
         };
 

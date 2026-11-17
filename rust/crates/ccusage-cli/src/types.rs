@@ -70,9 +70,7 @@ pub struct SharedArgs {
     pub mode: CostMode,
     pub debug: bool,
     pub debug_samples: usize,
-    pub order: SortOrder,
-    /// Whether the CLI or configuration supplied an order, rather than the default.
-    pub order_explicit: bool,
+    pub order: Option<SortOrder>,
     pub breakdown: bool,
     pub offline: bool,
     pub color: ColorChoice,
@@ -87,14 +85,13 @@ pub struct SharedArgs {
 
 impl SharedArgs {
     pub fn requested_order(&self) -> Option<SortOrder> {
-        self.order_explicit.then_some(self.order)
+        self.order
     }
 
     pub fn with_defaults() -> Self {
         Self {
             mode: CostMode::Auto,
             debug_samples: 5,
-            order: SortOrder::Asc,
             ..Self::default()
         }
     }

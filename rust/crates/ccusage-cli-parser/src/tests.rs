@@ -58,8 +58,7 @@ impl CliConfig for TestConfig {
             shared.json = json;
         }
         if let Some(order) = self.shared_order {
-            shared.order = order;
-            shared.order_explicit = true;
+            shared.order = Some(order);
         }
         if let Some(since) = self.shared_since {
             shared.since = Some(since.to_string());
@@ -129,7 +128,7 @@ fn shared_snapshot(shared: &SharedArgs) -> Value {
         "mode": format!("{:?}", shared.mode),
         "debug": shared.debug,
         "debugSamples": shared.debug_samples,
-        "order": format!("{:?}", shared.order),
+        "order": format!("{:?}", shared.order.unwrap_or_default()),
         "breakdown": shared.breakdown,
         "offline": shared.offline,
         "color": format!("{:?}", shared.color),
@@ -911,7 +910,7 @@ fn applies_config_defaults_and_command_options_before_cli_options() {
     };
     assert!(args.shared.json);
     assert_eq!(args.shared.since.as_deref(), Some("20260102"));
-    assert_eq!(args.shared.order, SortOrder::Asc);
+    assert_eq!(args.shared.order, Some(SortOrder::Asc));
 }
 
 #[test]
@@ -1935,8 +1934,7 @@ fn preserves_whether_report_order_was_supplied() {
         let Command::All(report) = parse(&args) else {
             panic!("expected unified report");
         };
-        assert_eq!(report.shared.order, order);
-        assert_eq!(report.shared.order_explicit, explicit);
+        assert_eq!(report.shared.order, explicit.then_some(order));
     }
 }
 
@@ -1993,8 +1991,11 @@ fn preserves_configured_order_and_cli_precedence() {
         let Command::All(report) = parse_with_config(&args, &config) else {
             panic!("expected unified report");
         };
-        assert_eq!(report.shared.order, expected, "{config_json}");
-        assert_eq!(report.shared.order_explicit, explicit, "{config_json}");
+        assert_eq!(
+            report.shared.order,
+            explicit.then_some(expected),
+            "{config_json}"
+        );
     }
 }
 

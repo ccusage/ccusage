@@ -28,7 +28,7 @@ pub fn run_daily(args: DailyArgs) -> Result<()> {
         args.project.as_deref(),
         args.instances || args.project.is_some(),
     )?;
-    sort_summaries(&mut rows, &shared.order, |row| {
+    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
         row.date.as_deref().unwrap_or_default()
     });
 
@@ -68,15 +68,19 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
         |key| (key.to_string(), None),
         KeyTarget::Date,
     )?;
-    sort_summaries(&mut daily, &shared.order, |row| {
+    sort_summaries(&mut daily, &shared.order.unwrap_or_default(), |row| {
         row.date.as_deref().unwrap_or_default()
     });
 
     let mut buckets = summarize_bucket(&daily, bucket);
-    sort_summaries(&mut buckets, &shared.order, |row| match bucket {
-        Bucket::Monthly => row.month.as_deref().unwrap_or_default(),
-        Bucket::Weekly(_) => row.week.as_deref().unwrap_or_default(),
-    });
+    sort_summaries(
+        &mut buckets,
+        &shared.order.unwrap_or_default(),
+        |row| match bucket {
+            Bucket::Monthly => row.month.as_deref().unwrap_or_default(),
+            Bucket::Weekly(_) => row.week.as_deref().unwrap_or_default(),
+        },
+    );
 
     if wants_json(&shared) {
         let key = match bucket {
@@ -106,12 +110,12 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
     }
 
     let mut session_shared = shared.clone();
-    session_shared.order = SortOrder::Desc;
+    session_shared.order = Some(SortOrder::Desc);
     let mut rows = load_session_rows(&session_shared)?;
     rows.retain(|row| {
         row.input_tokens + row.output_tokens + row.cache_creation_tokens + row.cache_read_tokens > 0
     });
-    rows.sort_by(|a, b| match session_shared.order {
+    rows.sort_by(|a, b| match session_shared.order.unwrap_or_default() {
         SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
         SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
     });
@@ -227,7 +231,7 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
     let mut blocks = identify_session_blocks(entries, args.session_length, now);
     let window = ReportWindow::from_shared(&shared);
     filter_blocks_by_date(&mut blocks, &window);
-    sort_blocks(&mut blocks, &shared.order);
+    sort_blocks(&mut blocks, &shared.order.unwrap_or_default());
 
     if args.recent {
         let cutoff = now

@@ -13,7 +13,7 @@ where
             )
         });
     }
-    sort_summaries(rows, &shared.order, date_fn);
+    sort_summaries(rows, &shared.order.unwrap_or_default(), date_fn);
 }
 
 #[cfg(test)]
@@ -56,7 +56,7 @@ mod tests {
         let shared = SharedArgs {
             since: Some("20260102".to_string()),
             until: Some("20260110".to_string()),
-            order: SortOrder::Desc,
+            order: Some(SortOrder::Desc),
             ..SharedArgs::default()
         };
 
@@ -90,7 +90,7 @@ mod tests {
             ];
             let shared = SharedArgs {
                 since: normalize_date_bound(since),
-                order: SortOrder::Asc,
+                order: Some(SortOrder::Asc),
                 ..SharedArgs::default()
             };
 

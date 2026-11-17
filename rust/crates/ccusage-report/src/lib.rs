@@ -36,8 +36,7 @@ mod ordering_tests {
         );
         for order in [SortOrder::Asc, SortOrder::Desc] {
             let shared = SharedArgs {
-                order,
-                order_explicit: true,
+                order: Some(order),
                 ..SharedArgs::default()
             };
             assert_eq!(session_cost_ordering(&shared), order);

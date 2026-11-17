@@ -368,10 +368,9 @@ fn finish_sessions(mut rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<Unifie
         row.metadata_agents = None;
     }
     rows.sort_by(|a, b| {
-        let cost_order = if shared.requested_order() == Some(crate::cli::SortOrder::Asc) {
-            a.total_cost.total_cmp(&b.total_cost)
-        } else {
-            b.total_cost.total_cmp(&a.total_cost)
+        let cost_order = match ccusage_report::session_cost_ordering(shared) {
+            crate::cli::SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
+            crate::cli::SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
         };
         cost_order
             .then_with(|| a.period.cmp(&b.period))
@@ -382,7 +381,7 @@ fn finish_sessions(mut rows: Vec<UnifiedRow>, shared: &SharedArgs) -> Vec<Unifie
 
 fn finish_days(rows: Vec<DayRow>, bucket: Bucket, shared: &SharedArgs) -> Vec<UnifiedRow> {
     let mut aggregated = aggregate_rows(rows, bucket);
-    sort_rows(&mut aggregated, &shared.order);
+    sort_rows(&mut aggregated, &shared.order.unwrap_or_default());
     aggregated
 }
 
@@ -634,7 +633,7 @@ mod tests {
     ) -> Option<Vec<UnifiedRow>> {
         match Bucket::for_report(kind, start_of_week) {
             Some(bucket) => aggregate_periods(rows, bucket).map(|mut rows| {
-                sort_rows(&mut rows, &shared.order);
+                sort_rows(&mut rows, &shared.order.unwrap_or_default());
                 rows
             }),
             None => Some(finish_sessions(rows, shared)),
@@ -932,8 +931,7 @@ mod tests {
     #[test]
     fn session_cost_order_honors_explicit_ascending_order() {
         let shared = SharedArgs {
-            order: crate::cli::SortOrder::Asc,
-            order_explicit: true,
+            order: Some(crate::cli::SortOrder::Asc),
             ..SharedArgs::default()
         };
         let rows = vec![
@@ -972,8 +970,7 @@ mod tests {
                 sorting_row("c-cheap", "codex", 1.0),
             ];
             let shared = SharedArgs {
-                order,
-                order_explicit,
+                order: order_explicit.then_some(order),
                 ..SharedArgs::default()
             };
             let sorted =
@@ -1036,7 +1033,7 @@ mod tests {
                     sorting_row("2026-02-02", "claude", 20.0),
                 ];
                 let shared = SharedArgs {
-                    order,
+                    order: Some(order),
                     ..SharedArgs::default()
                 };
                 let sorted = finish_rows(kind, rows, &shared, WeekDay::Monday).unwrap();

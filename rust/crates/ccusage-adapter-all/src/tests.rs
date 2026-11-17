@@ -743,8 +743,7 @@ fn unified_sessions_sort_by_cost_in_json_and_table() {
         ),
     ] {
         let shared = SharedArgs {
-            order,
-            order_explicit,
+            order: order_explicit.then_some(order),
             ..shared.clone()
         };
         let result = load_rows(

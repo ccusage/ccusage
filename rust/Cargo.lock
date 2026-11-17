@@ -160,6 +160,7 @@ dependencies = [
  "ccusage-adapter-zcode",
  "ccusage-cli",
  "ccusage-core",
+ "ccusage-report",
  "ccusage-test-support",
  "insta",
  "serde",

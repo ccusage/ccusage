@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn leaves_commands_without_last_untouched() {
         let mut command = Command::Monthly(SharedArgs {
-            order: SortOrder::Desc,
+            order: Some(SortOrder::Desc),
             ..SharedArgs::with_defaults()
         });
         resolve(&mut command).unwrap();

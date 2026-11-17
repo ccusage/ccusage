@@ -30,13 +30,15 @@ pub fn print_report(args: &AgentCommandArgs, mut entries: Vec<LoadedEntry>) -> R
     filter_loaded_entries_by_date(&mut entries, shared);
     if wants_json(shared) {
         return print_json_or_jq(
-            report_json(&entries, kind, &shared.order)?,
+            report_json(&entries, kind, &shared.order.unwrap_or_default())?,
             shared.jq.as_deref(),
             shared.no_cost,
         );
     }
     let mut rows = summarize_entries(&entries, kind)?;
-    sort_summaries(&mut rows, &shared.order, |row| summary_period(row));
+    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
+        summary_period(row)
+    });
     ccusage_adapter_common::report::print_table(
         ccusage_adapter_common::source::EntryDescriptor::standard("opencode", "OpenCode"),
         &rows,

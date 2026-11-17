@@ -28,6 +28,7 @@ ccusage-adapter-qwen.workspace = true
 ccusage-adapter-zcode.workspace = true
 ccusage-cli.workspace = true
 ccusage-core.workspace = true
+ccusage-report.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

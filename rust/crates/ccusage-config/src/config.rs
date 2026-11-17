@@ -598,8 +598,7 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
         shared.debug_samples = debug_samples;
     }
     if let Some(order) = options.order {
-        shared.order = order.into();
-        shared.order_explicit = true;
+        shared.order = Some(order.into());
     }
     if let Some(breakdown) = options.breakdown {
         shared.breakdown = breakdown;
@@ -949,7 +948,7 @@ mod tests {
         assert_eq!(shared.mode, CostMode::Calculate);
         assert!(shared.debug);
         assert_eq!(shared.debug_samples, 9);
-        assert_eq!(shared.order, SortOrder::Desc);
+        assert_eq!(shared.order, Some(SortOrder::Desc));
         assert!(shared.breakdown);
         assert!(!shared.offline);
         assert_eq!(shared.color, ColorChoice::Never);
