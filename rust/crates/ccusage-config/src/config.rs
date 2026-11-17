@@ -7,9 +7,9 @@ use std::{
 use serde_json::Value;
 
 use ccusage_cli::{
-    AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, CostMode, CostSource, DailyArgs,
-    NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay,
-    WeeklyArgs,
+    AgentOptions, BlocksArgs, CodexSpeed, ColorChoice, ContextThresholds, CostMode, CostSource,
+    DailyArgs, NamedPiStore, PricingOverride, SharedArgs, SortOrder, StatuslineArgs,
+    VisualBurnRate, WeekDay, WeeklyArgs,
 };
 
 use crate::config_schema::{
@@ -29,6 +29,7 @@ pub struct ConfigContext {
     error: Option<String>,
     layers: BTreeMap<String, crate::layers::Layer>,
     warnings: Vec<String>,
+    context_thresholds: ContextThresholds,
 }
 
 impl ConfigContext {
@@ -47,6 +48,7 @@ impl ConfigContext {
         if let Some(file) = file {
             context.pi_stores = file.pi_stores;
             context.layers = file.layers;
+            context.resolve_context_thresholds(&file.path, scan_config_path(args).is_some());
         }
         context
     }
@@ -62,6 +64,7 @@ impl ConfigContext {
             error: None,
             layers: BTreeMap::new(),
             warnings: Vec::new(),
+            context_thresholds: ContextThresholds::default(),
         }
     }
 
@@ -77,10 +80,63 @@ impl ConfigContext {
             error: self.error.clone(),
             layers: self.layers.clone(),
             warnings: self.warnings.clone(),
+            context_thresholds: self.context_thresholds,
         }
     }
 
-    fn option_maps(&self) -> Vec<&crate::layers::Layer> {
+    fn resolve_context_thresholds(&mut self, file: &Path, strict: bool) {
+        if self.command.report != "statusline" {
+            return;
+        }
+        let mut lows = Vec::new();
+        let mut mediums = Vec::new();
+        for (index, path) in self.option_paths().into_iter().enumerate() {
+            if let Some(layer) = self.layers.get(&path) {
+                if let Some(value) = layer.statusline.context_low_threshold {
+                    lows.push((index, path.clone(), value));
+                }
+                if let Some(value) = layer.statusline.context_medium_threshold {
+                    mediums.push((index, path, value));
+                }
+            }
+        }
+        let defaults = ContextThresholds::default();
+        loop {
+            let low = lows.last().map_or(defaults.low(), |(_, _, value)| *value);
+            let medium = mediums
+                .last()
+                .map_or(defaults.medium(), |(_, _, value)| *value);
+            match ContextThresholds::new(low, medium) {
+                Ok(thresholds) => {
+                    self.context_thresholds = thresholds;
+                    return;
+                }
+                Err(error) => {
+                    let drop_low = lows.last().is_some_and(|(index, _, _)| {
+                        mediums.last().is_none_or(|(other, _, _)| index >= other)
+                    });
+                    let (field, invalid) = if drop_low {
+                        ("contextLowThreshold", lows.pop())
+                    } else {
+                        ("contextMediumThreshold", mediums.pop())
+                    };
+                    let Some((_, path, _)) = invalid else {
+                        self.error = Some(config_error(error));
+                        return;
+                    };
+                    let message = format!("{}: {path}.{field}: {error}", file.display());
+                    if strict {
+                        self.error = Some(config_error(message));
+                        return;
+                    }
+                    self.warnings
+                        .push(format!("Invalid ccusage config field: {message}"));
+                }
+            }
+        }
+    }
+
+    fn option_paths(&self) -> Vec<String> {
         let report = &self.command.report;
         let mut paths = vec!["defaults".to_string()];
         if let Some(agent) = &self.command.agent {
@@ -95,6 +151,10 @@ impl ConfigContext {
             paths.push(format!("commands.{}", self.command.raw));
         }
         paths
+    }
+
+    fn option_maps(&self) -> Vec<&crate::layers::Layer> {
+        self.option_paths()
             .iter()
             .filter_map(|path| self.layers.get(path))
             .collect()
@@ -241,6 +301,7 @@ fn load_config_paths(
                         return (None, Some(message), warnings);
                     }
                 }
+                file.path = path.clone();
                 warnings.extend(
                     file.warnings
                         .drain(..)
@@ -432,7 +493,7 @@ fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
             args.recent = recent;
         }
         if let Some(token_limit) = options.token_limit {
-            args.token_limit = Some(token_limit.into());
+            args.token_limit = Some(token_limit);
         }
         if let Some(session_length) = options.session_length {
             args.session_length = session_length;
@@ -441,6 +502,7 @@ fn apply_config_to_blocks_args(args: &mut BlocksArgs, config: &ConfigContext) {
 }
 
 fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigContext) {
+    args.context_thresholds = config.context_thresholds;
     for options in config.option_maps() {
         let options = options.statusline.clone();
         if let Some(offline) = options.offline {
@@ -463,12 +525,6 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
         }
         if let Some(refresh_interval) = options.refresh_interval {
             args.refresh_interval = refresh_interval;
-        }
-        if let Some(threshold) = options.context_low_threshold {
-            args.context_low_threshold = threshold;
-        }
-        if let Some(threshold) = options.context_medium_threshold {
-            args.context_medium_threshold = threshold;
         }
         if let Some(timezone) = options.timezone {
             args.timezone = Some(timezone);
@@ -749,6 +805,122 @@ impl From<ConfigCostSource> for CostSource {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn invalid_discovered_block_limits_drop_only_the_field() {
+        for (field, value) in [
+            ("tokenLimit", json!(0)),
+            ("tokenLimit", json!("0")),
+            ("tokenLimit", json!("abc")),
+            ("sessionLength", json!(0)),
+            ("sessionLength", json!(-1)),
+            ("sessionLength", json!(1e300)),
+            ("sessionLength", json!("NaN")),
+        ] {
+            let raw = json!({"commands": {"blocks": {field: value, "active": true, "json": true}}});
+            let fixture = fs_fixture!({"selected.json": raw.to_string()});
+            let (file, error, warnings) =
+                load_config_paths(false, vec![fixture.path("selected.json")]);
+            assert!(error.is_none(), "{error:?}");
+            let file = file.unwrap();
+            let options = &file.layers["commands.blocks"];
+            assert_eq!(options.blocks.active, Some(true));
+            assert_eq!(options.shared.json, Some(true));
+            assert!(options.blocks.token_limit.is_none());
+            assert!(options.blocks.session_length.is_none());
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(
+                warnings[0].contains(&format!("commands.blocks.{field}")),
+                "{warnings:?}"
+            );
+            assert!(warnings[0].contains("selected.json"));
+        }
+    }
+
+    #[test]
+    fn invalid_explicit_block_limits_are_errors() {
+        for (field, value) in [
+            ("tokenLimit", json!(0)),
+            ("tokenLimit", json!("abc")),
+            ("sessionLength", json!(0)),
+            ("sessionLength", json!(-1)),
+            ("sessionLength", json!(1e300)),
+        ] {
+            let raw = json!({"commands": {"blocks": {field: value, "json": true}}});
+            let fixture = fs_fixture!({"selected.json": raw.to_string()});
+            let (file, error, _) = load_config_paths(true, vec![fixture.path("selected.json")]);
+            assert!(file.is_none());
+            assert!(error.unwrap().contains(&format!("commands.blocks.{field}")));
+        }
+    }
+
+    #[test]
+    fn context_thresholds_validate_the_merged_layers() {
+        let raw = json!({
+            "defaults": {"contextLowThreshold": 90},
+            "commands": {"statusline": {"contextMediumThreshold": 95}}
+        });
+        let fixture = fs_fixture!({"selected.json": raw.to_string()});
+        let config = ConfigContext::from_args(&[
+            "statusline".into(),
+            "--config".into(),
+            fixture.path("selected.json").display().to_string(),
+        ]);
+        assert!(
+            config.config_error().is_none(),
+            "{:?}",
+            config.config_error()
+        );
+        let mut args = StatuslineArgs::default();
+        config.apply_statusline_args(&mut args);
+        assert_eq!(
+            args.context_thresholds,
+            ContextThresholds::new(90, 95).unwrap()
+        );
+    }
+
+    #[test]
+    fn discovered_context_thresholds_drop_the_invalid_override() {
+        let mut config = context(
+            json!({
+                "defaults": {"contextLowThreshold": 70},
+                "commands": {"statusline": {"contextMediumThreshold": 60, "cache": false}}
+            }),
+            "statusline",
+            None,
+            "statusline",
+        );
+        config.resolve_context_thresholds(Path::new("selected.json"), false);
+        assert!(config.config_error().is_none());
+        let mut args = StatuslineArgs::default();
+        config.apply_statusline_args(&mut args);
+        assert_eq!(
+            args.context_thresholds,
+            ContextThresholds::new(70, 80).unwrap()
+        );
+        assert!(!args.cache);
+        assert_eq!(config.warnings().len(), 1);
+        assert!(
+            config.warnings()[0]
+                .contains("selected.json: commands.statusline.contextMediumThreshold")
+        );
+    }
+
+    #[test]
+    fn explicit_unordered_context_thresholds_are_errors() {
+        let fixture = fs_fixture!({"selected.json": r#"{"commands":{"statusline":{"contextLowThreshold":80,"cache":false}}}"#});
+        let config = ConfigContext::from_args(&[
+            "statusline".into(),
+            "--config".into(),
+            fixture.path("selected.json").display().to_string(),
+        ]);
+        assert!(
+            config
+                .config_error()
+                .unwrap()
+                .contains("commands.statusline.contextLowThreshold")
+        );
+    }
+
+    #[test]
     fn unreadable_discovered_config_does_not_select_another_file() {
         let fixture = fs_fixture!({"lower.json": r#"{"defaults":{"json":true}}"#});
         let selected = fixture.create_dir_all("selected.json");
@@ -778,10 +950,10 @@ mod tests {
                 active: false,
                 recent: false,
                 token_limit: None,
-                session_length: 5.0,
+                session_length: ccusage_cli::SessionLength::DEFAULT,
             };
             config.apply_blocks_args(&mut args);
-            assert_eq!(args.token_limit.as_deref(), Some("500000"));
+            assert_eq!(args.token_limit, Some("500000".parse().unwrap()));
         }
     }
     #[test]
@@ -927,7 +1099,6 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use ccusage_cli::DEFAULT_SESSION_DURATION_HOURS;
     use ccusage_cli::{
         BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
         WeekDay, WeeklyArgs,
@@ -1018,16 +1189,16 @@ mod tests {
             active: false,
             recent: false,
             token_limit: None,
-            session_length: DEFAULT_SESSION_DURATION_HOURS,
+            session_length: ccusage_cli::SessionLength::DEFAULT,
         };
         apply_config_to_blocks_args(&mut blocks, &config);
 
         assert!(blocks.active);
         assert!(blocks.recent);
-        assert_eq!(blocks.token_limit.as_deref(), Some("500000"));
-        assert_eq!(blocks.session_length, 6.5);
+        assert_eq!(blocks.token_limit, Some("500000".parse().unwrap()));
+        assert_eq!(blocks.session_length.as_millis(), 23_400_000);
 
-        let config = context(
+        let mut config = context(
             json!({
                 "commands": {
                     "statusline": {
@@ -1049,6 +1220,7 @@ mod tests {
             None,
             "statusline",
         );
+        config.resolve_context_thresholds(Path::new("config.json"), true);
         let mut statusline = StatuslineArgs::default();
         apply_config_to_statusline_args(&mut statusline, &config);
 
@@ -1057,8 +1229,8 @@ mod tests {
         assert_eq!(statusline.cost_source, ccusage_cli::CostSource::Both);
         assert!(!statusline.cache);
         assert_eq!(statusline.refresh_interval, 3);
-        assert_eq!(statusline.context_low_threshold, 45);
-        assert_eq!(statusline.context_medium_threshold, 75);
+        assert_eq!(statusline.context_thresholds.low(), 45);
+        assert_eq!(statusline.context_thresholds.medium(), 75);
         assert_eq!(statusline.timezone.as_deref(), Some("Asia/Tokyo"));
         assert!(statusline.debug);
     }
@@ -1813,6 +1985,7 @@ mod tests {
             pi_stores: Vec::new(),
             error,
             warnings,
+            context_thresholds: ContextThresholds::default(),
         }
     }
 

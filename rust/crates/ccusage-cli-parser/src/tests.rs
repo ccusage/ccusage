@@ -33,6 +33,55 @@ fn parse_error(args: &[&str]) -> String {
     }
 }
 
+#[test]
+fn blocks_reject_invalid_token_limits() {
+    for value in ["abc", "0"] {
+        assert!(
+            parse_error(&["ccusage", "blocks", "--token-limit", value])
+                .contains("Invalid value for --token-limit")
+        );
+    }
+}
+
+#[test]
+fn blocks_reject_invalid_session_lengths() {
+    for value in ["NaN", "inf", "0", "1e300", "0.0000000001"] {
+        assert!(
+            parse_error(&["ccusage", "blocks", "--session-length", value])
+                .contains("Invalid value for --session-length")
+        );
+    }
+}
+
+#[test]
+fn blocks_reject_negative_limits() {
+    for flag in ["--token-limit=-1", "--session-length=-1"] {
+        assert!(parse_error(&["ccusage", "blocks", flag]).contains("Invalid value"));
+    }
+}
+
+#[test]
+fn statusline_rejects_unordered_context_thresholds() {
+    assert!(
+        parse_error(&["ccusage", "statusline", "--context-low-threshold", "80"])
+            .contains("must be less than medium threshold")
+    );
+}
+
+#[test]
+fn statusline_threshold_overrides_are_validated_together() {
+    let Command::Statusline(_) = parse(&[
+        "ccusage",
+        "statusline",
+        "--context-low-threshold",
+        "90",
+        "--context-medium-threshold",
+        "95",
+    ]) else {
+        panic!("expected statusline")
+    };
+}
+
 #[derive(Default)]
 struct TestConfig {
     shared_json: Option<bool>,
@@ -82,10 +131,10 @@ impl CliConfig for TestConfig {
             args.active = active;
         }
         if let Some(token_limit) = self.blocks_token_limit {
-            args.token_limit = Some(token_limit.to_string());
+            args.token_limit = Some(token_limit.parse().unwrap());
         }
         if let Some(session_length) = self.blocks_session_length {
-            args.session_length = session_length;
+            args.session_length = ccusage_cli::SessionLength::from_hours(session_length).unwrap();
         }
     }
 
@@ -174,8 +223,8 @@ fn command_snapshot(command: Command) -> Value {
             "shared": shared_snapshot(&args.shared),
             "active": args.active,
             "recent": args.recent,
-            "tokenLimit": args.token_limit,
-            "sessionLength": args.session_length,
+            "tokenLimit": args.token_limit.map(|value| value.to_string()),
+            "sessionLength": args.session_length.as_millis() as f64 / 3_600_000.0,
         }),
         Command::Statusline(args) => json!({
             "type": "statusline",
@@ -184,8 +233,8 @@ fn command_snapshot(command: Command) -> Value {
             "costSource": format!("{:?}", args.cost_source),
             "cache": args.cache,
             "refreshInterval": args.refresh_interval,
-            "contextLowThreshold": args.context_low_threshold,
-            "contextMediumThreshold": args.context_medium_threshold,
+            "contextLowThreshold": args.context_thresholds.low(),
+            "contextMediumThreshold": args.context_thresholds.medium(),
             "debug": args.debug,
         }),
         Command::Agent(agent, args) => agent_command_snapshot(agent.spec().name, args),
@@ -987,8 +1036,8 @@ fn applies_schema_documented_config_file_options() {
         panic!("expected blocks command");
     };
     assert!(args.active);
-    assert_eq!(args.token_limit.as_deref(), Some("500000"));
-    assert_eq!(args.session_length, 6.0);
+    assert_eq!(args.token_limit, Some("500000".parse().unwrap()));
+    assert_eq!(args.session_length.as_millis(), 21_600_000);
 
     let cli = parse_with_config(&["ccusage", "claude", "statusline"], &config);
     let Command::Statusline(args) = cli else {
@@ -1436,8 +1485,8 @@ fn parses_blocks_defaults_and_values() {
         panic!("expected blocks command");
     };
     assert!(args.active);
-    assert_eq!(args.token_limit.as_deref(), Some("max"));
-    assert_eq!(args.session_length, 6.0);
+    assert_eq!(args.token_limit, Some(TokenLimit::Max));
+    assert_eq!(args.session_length.as_millis(), 21_600_000);
 }
 
 #[test]

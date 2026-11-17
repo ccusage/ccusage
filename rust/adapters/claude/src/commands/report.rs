@@ -221,7 +221,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 }
 
 pub fn run_blocks(args: BlocksArgs) -> Result<()> {
-    let session_duration = crate::blocks::SessionDuration::from_hours(args.session_length)?;
+    let session_duration = args.session_length;
     let shared = args.shared.clone();
     let now = utc_now();
     let entries = load_entries(&shared, None)?;
@@ -248,9 +248,13 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
         .max()
         .unwrap_or(0);
 
+    let token_limit = args
+        .token_limit
+        .unwrap_or(ccusage_core::cli::TokenLimit::Max)
+        .resolve(max_tokens);
     if wants_json(&shared) {
         let output = json!({
-            "blocks": blocks.iter().map(|block| block_json(block, args.token_limit.as_deref(), max_tokens, now)).collect::<Vec<_>>(),
+            "blocks": blocks.iter().map(|block| block_json(block, args.token_limit.and(token_limit), now)).collect::<Vec<_>>(),
         });
         print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost)?;
         return Ok(());
@@ -261,24 +265,10 @@ pub fn run_blocks(args: BlocksArgs) -> Result<()> {
         return Ok(());
     }
     if args.active && blocks.len() == 1 {
-        print_active_block_detail(
-            &blocks[0],
-            args.token_limit.as_deref(),
-            max_tokens,
-            &shared,
-            now,
-            window.timezone(),
-        )?;
+        print_active_block_detail(&blocks[0], token_limit, &shared, now, window.timezone())?;
         return Ok(());
     }
-    print_blocks_table(
-        &blocks,
-        args.token_limit.as_deref(),
-        max_tokens,
-        &shared,
-        now,
-        window.timezone(),
-    )?;
+    print_blocks_table(&blocks, token_limit, &shared, now, window.timezone())?;
     Ok(())
 }
 

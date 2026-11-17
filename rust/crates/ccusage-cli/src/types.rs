@@ -1,4 +1,4 @@
-use crate::StandardAgent;
+use crate::{ContextThresholds, SessionLength, StandardAgent, TokenLimit};
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -175,8 +175,8 @@ pub struct BlocksArgs {
     pub shared: SharedArgs,
     pub active: bool,
     pub recent: bool,
-    pub token_limit: Option<String>,
-    pub session_length: f64,
+    pub token_limit: Option<TokenLimit>,
+    pub session_length: SessionLength,
 }
 
 #[derive(Clone)]
@@ -188,8 +188,7 @@ pub struct StatuslineArgs {
     pub cost_source: CostSource,
     pub cache: bool,
     pub refresh_interval: u64,
-    pub context_low_threshold: u8,
-    pub context_medium_threshold: u8,
+    pub context_thresholds: ContextThresholds,
     pub timezone: Option<String>,
     pub debug: bool,
     pub model_label_aliases: HashMap<String, String>,
@@ -302,8 +301,7 @@ impl Default for StatuslineArgs {
             cost_source: CostSource::Auto,
             cache: true,
             refresh_interval: 1,
-            context_low_threshold: 50,
-            context_medium_threshold: 80,
+            context_thresholds: ContextThresholds::default(),
             timezone: None,
             debug: false,
             model_label_aliases: HashMap::new(),

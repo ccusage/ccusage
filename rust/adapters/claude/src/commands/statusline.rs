@@ -26,13 +26,6 @@ use crate::{
 };
 
 pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
-    if args.context_low_threshold >= args.context_medium_threshold {
-        return Err(cli_error(format!(
-            "Context low threshold ({}) must be less than medium threshold ({})",
-            args.context_low_threshold, args.context_medium_threshold
-        )));
-    }
-
     let mut stdin = String::new();
     io::stdin().read_to_string(&mut stdin)?;
     if stdin.trim().is_empty() {
@@ -299,7 +292,7 @@ fn load_statusline_active_block(
     now: TimestampMs,
     diagnostics: &Diagnostics,
 ) -> Option<SessionBlock> {
-    let session_ms = crate::blocks::SessionDuration::DEFAULT.as_millis();
+    let session_ms = ccusage_core::cli::SessionLength::DEFAULT.as_millis();
     for lookback_days in STATUSLINE_BLOCK_LOOKBACK_DAYS {
         let window_shared = statusline_block_shared(args, shared, now, lookback_days);
         let mut entries =
@@ -326,7 +319,7 @@ fn load_statusline_active_block(
 }
 
 fn find_active_block(entries: Vec<LoadedEntry>, now: TimestampMs) -> Option<SessionBlock> {
-    identify_session_blocks(entries, crate::blocks::SessionDuration::DEFAULT, now)
+    identify_session_blocks(entries, ccusage_core::cli::SessionLength::DEFAULT, now)
         .into_iter()
         .find(|block| block.is_active && !block.is_gap)
 }
@@ -384,7 +377,7 @@ fn statusline_block_shared(
     lookback_days: i64,
 ) -> SharedArgs {
     let lookback =
-        crate::blocks::SessionDuration::DEFAULT.as_millis() + lookback_days * MILLIS_PER_DAY;
+        ccusage_core::cli::SessionLength::DEFAULT.as_millis() + lookback_days * MILLIS_PER_DAY;
     let since = format_date(
         TimestampMs::from_millis(now.as_millis() - lookback),
         args.timezone.as_deref(),
@@ -429,9 +422,9 @@ fn format_statusline_context(
 }
 
 fn statusline_context_color(percentage: u64, args: &StatuslineArgs) -> Color {
-    if percentage < u64::from(args.context_low_threshold) {
+    if percentage < u64::from(args.context_thresholds.low()) {
         Color::Green
-    } else if percentage < u64::from(args.context_medium_threshold) {
+    } else if percentage < u64::from(args.context_thresholds.medium()) {
         Color::Yellow
     } else {
         Color::Red

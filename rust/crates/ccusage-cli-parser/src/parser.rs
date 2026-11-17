@@ -4,9 +4,9 @@ use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
     AgentCommandArgs, AgentId, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, ColorChoice,
-    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DEFAULT_SESSION_DURATION_HOURS, DailyArgs,
-    SessionArgs, SharedArgs, SortOrder, StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay,
-    WeeklyArgs, normalize_date_bound,
+    Command, ContextThresholds, CostMode, CostSource, DATE_BOUND_FORMATS,
+    DEFAULT_SESSION_DURATION_HOURS, DailyArgs, SessionArgs, SessionLength, SharedArgs, SortOrder,
+    StandardAgent, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -236,7 +236,7 @@ fn parse_blocks_command(
         active: false,
         recent: false,
         token_limit: None,
-        session_length: default_session_duration_hours,
+        session_length: SessionLength::from_hours(default_session_duration_hours)?,
     };
     config.apply_blocks_args(&mut args);
     while parser.peek().is_some() {
@@ -246,7 +246,9 @@ fn parse_blocks_command(
         match parser.next_flag()?.as_str() {
             "-a" | "--active" => args.active = true,
             "-r" | "--recent" => args.recent = true,
-            "-t" | "--token-limit" => args.token_limit = Some(parser.value_for("--token-limit")?),
+            "-t" | "--token-limit" => {
+                args.token_limit = Some(parser.value_for("--token-limit")?.parse()?)
+            }
             "-n" | "--session-length" => {
                 args.session_length = parser
                     .value_for("--session-length")?
@@ -275,6 +277,8 @@ fn parse_statusline_command(
     args.color = shared.color;
     args.mode = shared.mode;
     args.pricing_overrides = shared.pricing_overrides.clone();
+    let mut low = args.context_thresholds.low();
+    let mut medium = args.context_thresholds.medium();
     while parser.peek().is_some() {
         match parser.next_flag()?.as_str() {
             "-O" | "--offline" => args.offline = true,
@@ -295,13 +299,13 @@ fn parse_statusline_command(
                     .map_err(|_| "Invalid value for --refresh-interval".to_string())?
             }
             "--context-low-threshold" => {
-                args.context_low_threshold = parser
+                low = parser
                     .value_for("--context-low-threshold")?
                     .parse()
                     .map_err(|_| "Invalid value for --context-low-threshold".to_string())?
             }
             "--context-medium-threshold" => {
-                args.context_medium_threshold = parser
+                medium = parser
                     .value_for("--context-medium-threshold")?
                     .parse()
                     .map_err(|_| "Invalid value for --context-medium-threshold".to_string())?
@@ -314,6 +318,7 @@ fn parse_statusline_command(
             flag => return Err(format!("Unknown statusline option '{flag}'")),
         }
     }
+    args.context_thresholds = ContextThresholds::new(low, medium)?;
     Ok(Command::Statusline(args))
 }
 

@@ -22,6 +22,7 @@ pub(crate) struct Layer {
 }
 
 pub(crate) struct ConfigFile {
+    pub(crate) path: std::path::PathBuf,
     pub(crate) value: Value,
     pub(crate) layers: BTreeMap<String, Layer>,
     pub(crate) warnings: Vec<String>,
@@ -108,6 +109,7 @@ impl ConfigFile {
             }
         }
         Ok(Self {
+            path: std::path::PathBuf::new(),
             value,
             layers,
             warnings,

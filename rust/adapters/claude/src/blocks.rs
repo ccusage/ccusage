@@ -1,10 +1,11 @@
-use std::io::IsTerminal;
+use ccusage_core::cli::SessionLength;
+use std::{io::IsTerminal, num::NonZeroU64};
 
 use ccusage_core::{
     Align, Color, LoadedEntry, MILLIS_PER_HOUR, MILLIS_PER_MINUTE, ReportWindow, Result,
     SimpleTable, TimestampMs, TokenCounts,
     cli::{SharedArgs, SortOrder},
-    cli_error, color,
+    color,
     fast::FxHashSet,
     format_currency, format_models_multiline, format_number, format_rfc3339_millis, json_float,
     model_aliases, print_box_title, should_use_compact_layout, terminal_style, terminal_width,
@@ -18,29 +19,6 @@ use serde_json::{Value, json};
 const BLOCKS_WARNING_THRESHOLD: f64 = 0.8;
 /// Terminal width below which the blocks table drops columns.
 const BLOCKS_COMPACT_WIDTH_THRESHOLD: usize = 120;
-
-#[derive(Clone, Copy)]
-pub(crate) struct SessionDuration(i64);
-
-impl SessionDuration {
-    pub(crate) const DEFAULT: Self = Self(5 * MILLIS_PER_HOUR);
-
-    pub(crate) fn from_hours(hours: f64) -> Result<Self> {
-        let error =
-            || cli_error("Session length must be a positive, representable number of hours");
-        if !hours.is_finite() || hours <= 0.0 {
-            return Err(error());
-        }
-        let duration =
-            std::time::Duration::try_from_secs_f64(hours * 3600.0).map_err(|_| error())?;
-        let millis = i64::try_from(duration.as_millis()).map_err(|_| error())?;
-        Ok(Self(millis))
-    }
-
-    pub(crate) const fn as_millis(self) -> i64 {
-        self.0
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct SessionBlock {
@@ -75,7 +53,7 @@ pub struct Projection {
 
 pub(crate) fn identify_session_blocks(
     mut entries: Vec<LoadedEntry>,
-    session_duration: SessionDuration,
+    session_duration: SessionLength,
     now: TimestampMs,
 ) -> Vec<SessionBlock> {
     if entries.is_empty() {
@@ -205,8 +183,7 @@ pub fn sort_blocks(blocks: &mut [SessionBlock], order: &SortOrder) {
 
 pub fn block_json(
     block: &SessionBlock,
-    token_limit: Option<&str>,
-    max_tokens: u64,
+    token_limit: Option<NonZeroU64>,
     now: TimestampMs,
 ) -> Value {
     let burn_rate = if block.is_active {
@@ -220,13 +197,15 @@ pub fn block_json(
         None
     };
     let token_limit_status = projection.and_then(|projection| {
-        let limit = token_limit.and_then(|_| parse_token_limit(token_limit, max_tokens))?;
+        let limit = token_limit?;
+        let status = limit_status(projection.total_tokens, limit);
+        let limit = limit.get();
         let percent = projection.total_tokens as f64 / limit as f64 * 100.0;
         Some(json!({
             "limit": limit,
             "projectedUsage": projection.total_tokens,
             "percentUsed": percent,
-            "status": if projection.total_tokens > limit { "exceeds" } else if projection.total_tokens as f64 > limit as f64 * BLOCKS_WARNING_THRESHOLD { "warning" } else { "ok" },
+            "status": status,
         }))
     });
     let mut value = json!({
@@ -369,8 +348,7 @@ fn format_block_started(timestamp: TimestampMs, zone: &TimeZone) -> Result<Strin
 
 pub fn print_blocks_table(
     blocks: &[SessionBlock],
-    token_limit: Option<&str>,
-    max_tokens: u64,
+    token_limit: Option<NonZeroU64>,
     shared: &SharedArgs,
     now: TimestampMs,
     zone: &TimeZone,
@@ -387,19 +365,17 @@ pub fn print_blocks_table(
         terminal_width,
         BLOCKS_COMPACT_WIDTH_THRESHOLD,
     );
-    let actual_limit = parse_token_limit(token_limit, max_tokens);
+    let actual_limit = token_limit.map(NonZeroU64::get);
     print_box_title("Claude Code Token Usage Report - Session Blocks", shared);
     let mut headers = vec!["Block Start", "Duration/Status", "Models", "Tokens"];
     let mut aligns = vec![Align::Left, Align::Left, Align::Left, Align::Right];
-    if actual_limit.is_some_and(|limit| limit > 0) {
+    if actual_limit.is_some() {
         headers.push("%");
         aligns.push(Align::Right);
     }
-    headers.push("Cost");
-    aligns.push(Align::Right);
-    if shared.no_cost {
-        headers.pop();
-        aligns.pop();
+    if !shared.no_cost {
+        headers.push("Cost");
+        aligns.push(Align::Right);
     }
     let mut table = SimpleTable::new(headers, aligns, terminal_style(shared))
         .with_terminal_width(terminal_width);
@@ -415,7 +391,7 @@ pub fn print_blocks_table(
                 color(shared, "-", Color::Grey),
                 color(shared, "-", Color::Grey),
             ];
-            if actual_limit.is_some_and(|limit| limit > 0) {
+            if actual_limit.is_some() {
                 row.push(color(shared, "-", Color::Grey));
             }
             if !shared.no_cost {
@@ -435,7 +411,7 @@ pub fn print_blocks_table(
             format_block_models(&block.models),
             format_number(total),
         ];
-        if let Some(limit) = actual_limit.filter(|limit| *limit > 0) {
+        if let Some(limit) = actual_limit {
             let percentage = total as f64 / limit as f64 * 100.0;
             let percent_text = format!("{percentage:.1}%");
             row.push(if percentage > 100.0 {
@@ -450,7 +426,7 @@ pub fn print_blocks_table(
         table.push(row);
 
         if block.is_active {
-            if let Some(limit) = actual_limit.filter(|limit| *limit > 0) {
+            if let Some(limit) = actual_limit {
                 table.separator();
                 let remaining = limit.saturating_sub(total);
                 let remaining_percent = (limit.saturating_sub(total) as f64 / limit as f64) * 100.0;
@@ -492,7 +468,7 @@ pub fn print_blocks_table(
                         _ => format_number(projection.total_tokens),
                     },
                 ];
-                if let Some(limit) = actual_limit.filter(|limit| *limit > 0) {
+                if let Some(limit) = actual_limit {
                     let percentage = projection.total_tokens as f64 / limit as f64 * 100.0;
                     projected_row.push(format!("{percentage:.1}%"));
                 }
@@ -509,8 +485,7 @@ pub fn print_blocks_table(
 
 pub fn print_active_block_detail(
     block: &SessionBlock,
-    token_limit: Option<&str>,
-    max_tokens: u64,
+    token_limit: Option<NonZeroU64>,
     shared: &SharedArgs,
     now: TimestampMs,
     zone: &TimeZone,
@@ -585,17 +560,16 @@ pub fn print_active_block_detail(
             );
         }
 
-        if let Some(limit) = parse_token_limit(token_limit, max_tokens) {
+        if let Some(limit) = token_limit {
+            let status = match limit_status(projection.total_tokens, limit) {
+                LimitStatus::Exceeds => color(shared, "EXCEEDS LIMIT", Color::Red),
+                LimitStatus::Warning => color(shared, "WARNING", Color::Yellow),
+                LimitStatus::Ok => color(shared, "OK", Color::Green),
+            };
+            let limit = limit.get();
             let current = block.token_counts.total();
             let remaining_tokens = limit.saturating_sub(current);
             let percent = projection.total_tokens as f64 / limit as f64 * 100.0;
-            let status = if projection.total_tokens > limit {
-                color(shared, "EXCEEDS LIMIT", Color::Red)
-            } else if projection.total_tokens as f64 > limit as f64 * BLOCKS_WARNING_THRESHOLD {
-                color(shared, "WARNING", Color::Yellow)
-            } else {
-                color(shared, "OK", Color::Green)
-            };
             println!();
             println!("{}", color(shared, "Token Limit Status:", Color::Blue));
             println!("  Limit:            {} tokens", format_number(limit));
@@ -650,10 +624,22 @@ fn project_block_usage(block: &SessionBlock, now: TimestampMs) -> Option<Project
     })
 }
 
-fn parse_token_limit(value: Option<&str>, max_tokens: u64) -> Option<u64> {
-    match value {
-        None | Some("") | Some("max") => (max_tokens > 0).then_some(max_tokens),
-        Some(value) => value.parse().ok(),
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum LimitStatus {
+    Exceeds,
+    Warning,
+    Ok,
+}
+
+fn limit_status(projected: u64, limit: NonZeroU64) -> LimitStatus {
+    let limit = limit.get();
+    if projected > limit {
+        LimitStatus::Exceeds
+    } else if projected as f64 > limit as f64 * BLOCKS_WARNING_THRESHOLD {
+        LimitStatus::Warning
+    } else {
+        LimitStatus::Ok
     }
 }
 
@@ -734,7 +720,7 @@ mod tests {
             .unwrap();
             let blocks = identify_session_blocks(
                 entries,
-                SessionDuration::DEFAULT,
+                SessionLength::DEFAULT,
                 crate::parse_ts_timestamp("2026-01-02T16:00:00Z").unwrap(),
             );
             assert_eq!(blocks.len(), expected_blocks, "{next}");

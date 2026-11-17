@@ -1,8 +1,10 @@
 mod agents;
 pub mod home;
+mod limits;
 mod types;
 
 pub use agents::{AGENTS, AgentId, AgentSpec, BUILT_IN_AGENT_NAMES, StandardAgent};
+pub use limits::{ContextThresholds, SessionLength, TokenLimit};
 pub use types::{
     AgentCommandArgs, AgentOptions, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed,
     ColorChoice, Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, NamedPiStore,

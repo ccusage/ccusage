@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
-use serde::Deserialize;
+use ccusage_cli::{SessionLength, TokenLimit};
+use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value, json};
 
 use schemars::{JsonSchema, r#gen::SchemaSettings};
@@ -534,9 +535,13 @@ pub struct BlocksSpecificOptions {
     /// Show recent session blocks.
     pub recent: Option<bool>,
     /// Token limit for session block calculations.
-    pub token_limit: Option<ConfigTokenLimit>,
+    #[serde(default, deserialize_with = "deserialize_token_limit")]
+    #[schemars(with = "Option<ConfigTokenLimit>")]
+    pub token_limit: Option<TokenLimit>,
     /// Session block duration in hours.
-    pub session_length: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_session_length")]
+    #[schemars(with = "Option<f64>")]
+    pub session_length: Option<SessionLength>,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
@@ -546,13 +551,26 @@ pub enum ConfigTokenLimit {
     Number(u64),
 }
 
-impl From<ConfigTokenLimit> for String {
-    fn from(value: ConfigTokenLimit) -> Self {
-        match value {
-            ConfigTokenLimit::Text(value) => value,
-            ConfigTokenLimit::Number(value) => value.to_string(),
-        }
-    }
+fn deserialize_token_limit<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<TokenLimit>, D::Error> {
+    Option::<ConfigTokenLimit>::deserialize(deserializer)?
+        .map(|value| {
+            let text = match value {
+                ConfigTokenLimit::Text(value) => value,
+                ConfigTokenLimit::Number(value) => value.to_string(),
+            };
+            text.parse().map_err(serde::de::Error::custom)
+        })
+        .transpose()
+}
+
+fn deserialize_session_length<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SessionLength>, D::Error> {
+    Option::<f64>::deserialize(deserializer)?
+        .map(|value| SessionLength::from_hours(value).map_err(serde::de::Error::custom))
+        .transpose()
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]

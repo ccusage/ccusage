@@ -36,6 +36,9 @@ renderer, and the help JSON live in `ccusage-cli-parser` instead.
 - `types::ColorChoice`
 - `types::Command`
 - `types::CostMode`
+- `ContextThresholds`
+- `SessionLength`
+- `TokenLimit`
 - `types::CostSource`
 - `types::DATE_BOUND_FORMATS`
 - `types::DailyArgs`
