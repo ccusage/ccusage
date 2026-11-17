@@ -1894,6 +1894,9 @@ impl PricingMap {
         self.clear_find_cache();
     }
     fn refresh_layer_exclusions(&mut self) {
+        if self.models_dev.iter().all(Option::is_none) {
+            return;
+        }
         let mut prices: FxHashSet<_> = self
             .rows
             .entries
