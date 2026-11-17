@@ -205,10 +205,10 @@ ccusage daily --by-agent --json
 	"totals": {
 		"cacheCreationTokens": 17765,
 		"cacheReadTokens": 1309617,
-		"inputTokens": 1346608,
-		"outputTokens": 58601,
-		"totalCost": 28.137213300000003,
-		"totalTokens": 2736008,
+		"inputTokens": 1346544,
+		"outputTokens": 58595,
+		"totalCost": 28.136743300000003,
+		"totalTokens": 2735938,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -372,10 +372,10 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 	"totals": {
 		"cacheCreationTokens": 17765,
 		"cacheReadTokens": 1309617,
-		"inputTokens": 1346608,
-		"outputTokens": 58601,
-		"totalCost": 28.137213300000003,
-		"totalTokens": 2736008,
+		"inputTokens": 1346544,
+		"outputTokens": 58595,
+		"totalCost": 28.136743300000003,
+		"totalTokens": 2735938,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -578,7 +578,7 @@ This excerpt shows one session; `totals` covers the complete report.
 					{
 						"cacheCreationTokens": 300,
 						"cacheReadTokens": 4000,
-						"cost": 0.05,
+						"cost": 0.0012,
 						"inputTokens": 1000,
 						"modelName": "claude-sonnet-4-20250514",
 						"outputTokens": 200,
