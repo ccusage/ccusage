@@ -14,23 +14,14 @@ ccusage qwen monthly
 
 ## Example Output
 
-```
-╭─────────────────────────────────────────────╮
-│                                             │
-│  Claude Code Token Usage Report - Monthly  │
-│                                             │
-╰─────────────────────────────────────────────╯
+Excerpt from the fixture report; additional rows are omitted.
 
-┌─────────┬────────────────────┬─────────┬──────────┬──────────────┬────────────┬──────────────┬────────────┐
-│ Month   │ Models             │ Input   │ Output   │ Cache Create │ Cache Read │ Total Tokens │ Cost (USD) │
-├─────────┼────────────────────┼─────────┼──────────┼──────────────┼────────────┼──────────────┼────────────┤
-│ 2026-05 │ • opus-4-1         │  45,231 │  892,456 │        2,048 │      4,096 │      943,831 │   $1,247.92│
-│         │ • sonnet-4-5       │         │          │              │            │              │            │
-│ 2026-04 │ • sonnet-4-5       │  38,917 │  756,234 │        1,536 │      3,072 │      799,759 │     $892.15│
-│ 2026-03 │ • opus-4-1         │  22,458 │  534,789 │        1,024 │      2,048 │      560,319 │     $678.43│
-├─────────┼────────────────────┼─────────┼──────────┼──────────────┼────────────┼──────────────┼────────────┤
-│ Total   │                  │ 106,606 │2,183,479 │        4,608 │      9,216 │    2,303,909 │   $2,818.50│
-└─────────┴────────────────────┴─────────┴──────────┴──────────────┴────────────┴──────────────┴────────────┘
+```text
+┌──────────┬──────────────────────┬───────────────────────────┬────────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Agent                │ Models                    │      Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 1970-01  │ All                  │                           │         33 │         9 │             0 │           0 │            42 │       $0.00 │
+└──────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
 ## Understanding Monthly Data
@@ -47,7 +38,7 @@ Months are displayed in YYYY-MM format:
 All usage within a calendar month is aggregated:
 
 - Input/output tokens summed across all days
-- Costs calculated from total token usage
+- Costs summed across all entries, each priced under the selected [cost mode](/guide/cost-modes)
 - Models listed if used at any point in the month
 
 ## Command Options
@@ -68,7 +59,7 @@ ccusage monthly --since $(date -d '6 months ago' +%Y%m%d)
 ```
 
 ::: tip Date Filtering
-Even though you specify full dates (YYYYMMDD), monthly reports group by month. The filters determine which months to include.
+Even though you specify full dates (YYYYMMDD), monthly reports group by month. The filters select individual entries before monthly aggregation, so a boundary month can contain only part of that month.
 :::
 
 ### Recent Months
@@ -88,11 +79,11 @@ ccusage monthly --last 6
 ### Sort Order
 
 ```bash
-# Newest months first (default)
-ccusage monthly --order desc
-
-# Oldest months first
+# Oldest months first (default)
 ccusage monthly --order asc
+
+# Newest months first
+ccusage monthly --order desc
 ```
 
 ### Cost Calculation Modes
@@ -118,37 +109,138 @@ ccusage monthly --breakdown
 
 Example with breakdown:
 
-```
-┌─────────┬──────────────────────┬─────────┬──────────┬────────────┐
-│ Month   │ Models               │ Input   │ Output   │ Cost (USD) │
-├─────────┼──────────────────────┼─────────┼──────────┼────────────┤
-│ 2026-05 │ opus-4-1, sonnet-4-5 │  45,231 │  892,456 │  $1,247.92 │
-├─────────┼──────────────────────┼─────────┼──────────┼────────────┤
-│  └─ opus-4-1                   │  20,000 │  400,000 │    $750.50 │
-├─────────┼──────────────────────┼─────────┼──────────┼────────────┤
-│  └─ sonnet-4-5                 │  25,231 │  492,456 │    $497.42 │
-└─────────┴──────────────────────┴─────────┴──────────┴────────────┘
+Excerpt from the fixture report; additional rows are omitted.
+
+```text
+┌──────────┬──────────────┬──────────────┬────────────┬───────────┬────────────┬─────────────┬─────────────┬───────────┐
+│ Month    │ Agent        │ Models       │      Input │    Output │      Cache │  Cache Read │       Total │      Cost │
+│          │              │              │            │           │     Create │             │      Tokens │     (USD) │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+└──────────┴──────────────┴──────────────┴────────────┴───────────┴────────────┴─────────────┴─────────────┴───────────┘
 ```
 
 ### JSON Output
+
+The following output excerpt omits other rows and some per-row fields; `totals` covers the complete report.
 
 ```bash
 ccusage monthly --json
 ```
 
+Rows use the same fields as [daily JSON](/guide/daily-reports#json-output), with the month in `period`:
+
 ```json
-[
-	{
-		"month": "2026-05",
-		"models": ["opus-4-1", "sonnet-4-5"],
-		"inputTokens": 45231,
-		"outputTokens": 892456,
-		"cacheCreationTokens": 2048,
-		"cacheReadTokens": 4096,
-		"totalTokens": 943831,
-		"totalCost": 1247.92
+{
+	"monthly": [
+		{
+			"agent": "all",
+			"period": "2025-12",
+			"inputTokens": 67294,
+			"outputTokens": 19952,
+			"cacheCreationTokens": 6111,
+			"cacheReadTokens": 185916,
+			"totalTokens": 279883,
+			"totalCost": 11.418334255000001,
+			"metadata": {
+				"agents": [
+					"amp",
+					"antigravity",
+					"claude",
+					"cline",
+					"codebuff",
+					"codex",
+					"copilot",
+					"droid",
+					"dsh",
+					"gemini",
+					"goose",
+					"grok",
+					"hermes",
+					"kilo",
+					"kimi",
+					"openclaw",
+					"opencode",
+					"pi",
+					"qwen",
+					"zcode"
+				]
+			},
+			"modelsUsed": [
+				"GLM-5.3",
+				"GLM-5.3-Flash",
+				"[openclaw] claude-haiku-4-5-20251001",
+				"[openclaw] gpt-5",
+				"[openclaw] openclaw-mystery-1",
+				"[pi] claude-haiku-4-5-20251001",
+				"[pi] claude-sonnet-4-20250514",
+				"anthropic/claude-sonnet-4",
+				"claude-haiku-4-5-20251001",
+				"claude-opus-4-20250514",
+				"claude-sonnet-4-20250514",
+				"copilot-mystery-1",
+				"deepseek-v4-pro",
+				"droid-mystery-1",
+				"dsh-mystery-1",
+				"gemini-2-5-pro",
+				"gemini-2.5-pro",
+				"gemini-3-flash-preview",
+				"gemini-3-pro",
+				"gemini-3.5-flash-high",
+				"gemini-mystery-1",
+				"gpt-5",
+				"gpt-5-codex",
+				"gpt-5.2-codex",
+				"gpt-5.5",
+				"grok-4.5-build",
+				"grok-4.7-build",
+				"grok-code-fast-1",
+				"grok-mystery-1",
+				"kimi-for-coding",
+				"kimi-k2-thinking",
+				"qwen-2.5-72b-instruct",
+				"qwen-3-235b",
+				"qwen-mystery-1",
+				"qwen3-coder-plus",
+				"unknown"
+			]
+		}
+	],
+	"totals": {
+		"cacheCreationTokens": 9001,
+		"cacheReadTokens": 671244,
+		"inputTokens": 1172663,
+		"outputTokens": 37582,
+		"totalCost": 15.123121700000002,
+		"totalTokens": 1892152,
+		"unpricedModels": [
+			"GLM-5.3",
+			"[openclaw] openclaw-mystery-1",
+			"[pi] pi-mystery-1",
+			"amp-mystery-1",
+			"antigravity-mystery-1",
+			"claude-sonnet-4-20250514",
+			"cline-mystery-1",
+			"codebuff-mystery-1",
+			"codex-mystery-1",
+			"copilot-mystery-1",
+			"droid-mystery-1",
+			"dsh-mystery-1",
+			"gemini-mystery-1",
+			"goose-mystery-1",
+			"gpt-unknown",
+			"grok-mystery-1",
+			"grok-unknown",
+			"hermes-mystery-1",
+			"kilo-mystery-1",
+			"kimi-mystery-1",
+			"mystery-model-9000",
+			"opencode-mystery-1",
+			"qwen-mystery-1",
+			"unknown",
+			"zcode-mystery-1"
+		]
 	}
-]
+}
 ```
 
 ### Offline Mode

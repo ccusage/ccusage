@@ -63,40 +63,32 @@ For Codex, use the `sessionId` from `ccusage codex session --json`. The lookup a
 
 ## Example Output
 
-```
-╭───────────────────────────────────────────────╮
-│                                               │
-│  Claude Code Token Usage Report - By Session  │
-│                                               │
-╰───────────────────────────────────────────────╯
+`ccusage session`:
 
-┌────────────┬────────────────────┬────────┬─────────┬──────────────┬────────────┬──────────────┬────────────┬───────────────┐
-│ Session    │ Models             │ Input  │ Output  │ Cache Create │ Cache Read │ Total Tokens │ Cost (USD) │ Last Activity │
-├────────────┼────────────────────┼────────┼─────────┼──────────────┼────────────┼──────────────┼────────────┼───────────────┤
-│ abc123-def │ • opus-4-1         │  4,512 │ 350,846 │          512 │      1,024 │      356,894 │    $156.40 │ 2026-05-16    │
-│            │ • sonnet-4-5       │        │         │              │            │              │            │               │
-│ ghi456-jkl │ • sonnet-4-5       │  2,775 │ 186,645 │          256 │        768 │      190,444 │     $98.45 │ 2026-05-15    │
-│ mno789-pqr │ • opus-4-1         │  1,887 │ 183,055 │          128 │        512 │      185,582 │     $81.73 │ 2026-05-14    │
-├────────────┼────────────────────┼────────┼─────────┼──────────────┼────────────┼──────────────┼────────────┼───────────────┤
-│ Total      │                  │  9,174 │ 720,546 │          896 │      2,304 │      732,920 │    $336.58 │               │
-└────────────┴────────────────────┴────────┴─────────┴──────────────┴────────────┴──────────────┴────────────┴───────────────┘
+Excerpt from the fixture report; additional rows are omitted.
+
+```text
+┌──────────┬────────────────────┬───────────────────────────┬────────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Session  │ Agent              │ Models                    │      Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ sess-be… │ pi-agent           │ - [pi] claude-haiku-4-5   │      5,055 │     2,126 │           400 │      18,000 │        25,831 │       $4.02 │
+│          │                    │ - [pi] claude-opus-4      │            │           │               │             │               │             │
+│          │                    │ - [pi] claude-sonnet-4    │            │           │               │             │               │             │
+│          │                    │ - [pi] gpt-5              │            │           │               │             │               │             │
+└──────────┴────────────────────┴───────────────────────────┴────────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
+
+The unified table has an Agent column and no Last Activity column; its JSON keeps the timestamp in `metadata.lastActivity`. Focused Claude tables include Last Activity.
 
 ## Understanding Session Data
 
-### Session Identification
-
-Sessions are displayed using the last two segments of their full identifier:
-
-- Full session ID: `project-20260516-session-abc123-def456`
-- Displayed as: `abc123-def`
-
 ### Session Metrics
 
+- **Session**: The full session ID
 - **Input/Output Tokens**: Total tokens exchanged in the conversation
 - **Cache Tokens**: Cache creation and read tokens for context efficiency
 - **Cost**: Estimated USD cost for the usage shown; without a date filter, the entire conversation
-- **Last Activity**: Date of the most recent message included in the report, shown in the report timezone (`--timezone`); JSON output keeps the full RFC 3339 [`lastActivity`](/guide/json-output#session-reports-1) timestamp
+- **Last Activity**: Date of the most recent message included in the report, shown in the report timezone (`--timezone`); JSON output keeps the full RFC 3339 [`lastActivity`](/guide/json-output#session-reports) timestamp
 
 ### Sorting
 
@@ -164,24 +156,24 @@ ccusage session --mode display
 See per-model cost breakdown within each session:
 
 ```bash
-ccusage session --breakdown
+ccusage claude session --breakdown
 ```
 
 Example with breakdown:
 
-```
-┌───────────────┬──────────────────────┬────────┬─────────┬────────────┬───────────────┐
-│ Session       │ Models               │ Input  │ Output  │ Cost (USD) │ Last Activity │
-├───────────────┼──────────────────────┼────────┼─────────┼────────────┼───────────────┤
-│ abc123-def    │ opus-4-1, sonnet-4-5 │  4,512 │ 350,846 │    $156.40 │ 2026-05-16    │
-├───────────────┼──────────────────────┼────────┼─────────┼────────────┼───────────────┤
-│   └─ opus-4-1 │                      │  2,000 │ 200,000 │     $95.50 │               │
-├───────────────┼──────────────────────┼────────┼─────────┼────────────┼───────────────┤
-│   └─ sonnet-4-5                      │  2,512 │ 150,846 │     $60.90 │               │
-└───────────────┴──────────────────────┴────────┴─────────┴────────────┴───────────────┘
+Excerpt from the fixture report; additional rows are omitted.
+
+```text
+┌──────────┬──────────────┬──────────────┬────────────┬───────────┬────────────┬─────────────┬─────────────┬───────────┐
+│ Session  │ Agent        │ Models       │      Input │    Output │      Cache │  Cache Read │       Total │      Cost │
+│          │              │              │            │           │     Create │             │      Tokens │     (USD) │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+└──────────┴──────────────┴──────────────┴────────────┴───────────┴────────────┴─────────────┴─────────────┴───────────┘
 ```
 
 ### JSON Output
+
+The following output excerpt omits other rows and some per-row fields; `totals` covers the complete report.
 
 Export session data as JSON for further analysis:
 
@@ -189,37 +181,70 @@ Export session data as JSON for further analysis:
 ccusage session --json
 ```
 
+Each unified session row carries its `agent`, and `period` holds the session ID:
+
 ```json
 {
-	"sessions": [
+	"session": [
 		{
-			"sessionId": "abc123-def",
-			"inputTokens": 4512,
-			"outputTokens": 350846,
-			"cacheCreationTokens": 512,
-			"cacheReadTokens": 1024,
-			"totalTokens": 356894,
-			"totalCost": 156.4,
-			"firstActivity": "2026-05-15T09:30:00.000Z",
-			"lastActivity": "2026-05-16T17:45:30.000Z",
-			"modelsUsed": ["opus-4-1", "sonnet-4-5"],
-			"modelBreakdowns": [
-				{
-					"model": "opus-4-1",
-					"inputTokens": 2000,
-					"outputTokens": 200000,
-					"totalCost": 95.5
-				}
+			"agent": "pi",
+			"period": "sess-beta-legacy",
+			"inputTokens": 2515,
+			"outputTokens": 1516,
+			"cacheCreationTokens": 400,
+			"cacheReadTokens": 18000,
+			"totalTokens": 22681,
+			"totalCost": 4.01685,
+			"metadata": {
+				"lastActivity": "2026-01-01T00:50:00.000Z",
+				"projectPath": "--Users-dev-beta--"
+			},
+			"modelsUsed": [
+				"[pi] claude-haiku-4-5-20251001",
+				"[pi] claude-sonnet-4-20250514",
+				"[pi] gpt-5",
+				"[pi] claude-opus-4-20250514"
 			]
 		}
 	],
 	"totals": {
-		"inputTokens": 9174,
-		"outputTokens": 720546,
-		"totalCost": 336.58
+		"cacheCreationTokens": 9001,
+		"cacheReadTokens": 569584,
+		"inputTokens": 868845,
+		"outputTokens": 34170,
+		"totalCost": 14.790176300000002,
+		"totalTokens": 1483095,
+		"unpricedModels": [
+			"GLM-5.3",
+			"[openclaw] openclaw-mystery-1",
+			"[pi] pi-mystery-1",
+			"amp-mystery-1",
+			"antigravity-mystery-1",
+			"claude-sonnet-4-20250514",
+			"cline-mystery-1",
+			"codebuff-mystery-1",
+			"codex-mystery-1",
+			"copilot-mystery-1",
+			"droid-mystery-1",
+			"dsh-mystery-1",
+			"gemini-mystery-1",
+			"goose-mystery-1",
+			"gpt-unknown",
+			"grok-mystery-1",
+			"grok-unknown",
+			"hermes-mystery-1",
+			"kilo-mystery-1",
+			"kimi-mystery-1",
+			"mystery-model-9000",
+			"opencode-mystery-1",
+			"unknown",
+			"zcode-mystery-1"
+		]
 	}
 }
 ```
+
+`ccusage claude session --json` uses the Claude shape instead: a `sessions` array whose rows carry `sessionId`, `projectPath`, `firstActivity`, and `lastActivity` at the top level. See [JSON Output](/guide/json-output#session-reports).
 
 ### Offline Mode
 
@@ -278,7 +303,7 @@ This helps understand:
 ccusage session --json > sessions.json
 
 # Find sessions above a certain cost threshold
-ccusage session --json | jq '.sessions[] | select(.totalCost > 50)'
+ccusage session --json | jq '.session[] | select(.totalCost > 50)'
 ```
 
 ## Tips for Session Analysis
@@ -319,8 +344,8 @@ Compare sessions to understand:
 
 Session reports adapt to your terminal width:
 
-- **Wide terminals (≥100 chars)**: Shows all columns including cache metrics
-- **Narrow terminals (<100 chars)**: Compact mode with essential columns (Session, Models, Input, Output, Cost, Last Activity)
+- **Wide terminals**: Show the full table when it fits
+- **Narrow terminals**: Use a compact layout; `--compact` also selects it
 
 When in compact mode, ccusage displays a message explaining how to see the full data.
 

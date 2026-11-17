@@ -81,7 +81,7 @@ ccusage pi daily --breakdown
 | Variable       | Description                                                             |
 | -------------- | ----------------------------------------------------------------------- |
 | `PI_AGENT_DIR` | Custom path, or comma-separated paths, to pi-agent sessions directories |
-| `LOG_LEVEL`    | Adjust logging verbosity (0 silent … 5 trace)                           |
+| `LOG_LEVEL`    | `0` silences warnings and progress output                               |
 
 ## Daily View
 
@@ -105,18 +105,19 @@ npx ccusage@latest pi daily
 | `--json`      |       | Emit structured JSON instead of a table                                 |
 | `--breakdown` | `-b`  | Show per-model token breakdown                                          |
 | `--pi-path`   |       | Custom path, or comma-separated paths, to pi-agent sessions directories |
-| `--order`     |       | Sort order: `asc` or `desc` (default: `desc`)                           |
+| `--order`     |       | Sort order: `asc` (default) or `desc`                                   |
 
 ### Example Output
 
-```
-┌────────────┬────────────┬─────────────┬───────────┬───────────┬────────┬─────────┐
-│ Date       │ Input      │ Output      │ Cache Cr. │ Cache Rd. │ Cost   │ Models  │
-├────────────┼────────────┼─────────────┼───────────┼───────────┼────────┼─────────┤
-│ 2026-05-16 │ 567,890    │ 123,456     │ 5,678     │ 45,678    │ $0.89  │ opus-4-1  │
-├────────────┼────────────┼─────────────┼───────────┼───────────┼────────┼─────────┤
-│ Total      │ 567,890    │ 123,456     │ 5,678     │ 45,678    │ $0.89  │         │
-└────────────┴────────────┴─────────────┴───────────┴───────────┴────────┴─────────┘
+Excerpt from the fixture report; additional rows are omitted.
+
+```text
+┌────────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Date       │ Models                  │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-30 │ - [pi] claude-opus-4    │     2,070 │       450 │           400 │       8,000 │        10,920 │       $1.17 │
+│            │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+└────────────┴─────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
 ### JSON Output
@@ -127,32 +128,31 @@ Use `--json` for automation and scripting:
 ccusage pi daily --json
 ```
 
-Returns structured data:
-
-<!-- eslint-skip -->
+This excerpt shows one row and omits per-model details; `totals` covers the complete report. Model names carry the `[pi]` prefix, and `storedCost` is the part of `cost` that pi-agent recorded itself:
 
 ```json
 {
-  "daily": [
-    {
-      "date": "2026-05-16",
-      "source": "pi-agent",
-      "inputTokens": 567890,
-      "outputTokens": 123456,
-      "cacheCreationTokens": 5678,
-      "cacheReadTokens": 45678,
-      "totalCost": 0.89,
-      "modelsUsed": ["claude-opus-4-1-20250805"],
-      "modelBreakdowns": [...]
-    }
-  ],
-  "totals": {
-    "inputTokens": 567890,
-    "outputTokens": 123456,
-    "cacheCreationTokens": 5678,
-    "cacheReadTokens": 45678,
-    "totalCost": 0.89
-  }
+	"daily": [
+		{
+			"date": "2025-12-31",
+			"inputTokens": 2550,
+			"outputTokens": 956,
+			"cacheCreationTokens": 501,
+			"cacheReadTokens": 19006,
+			"totalTokens": 23013,
+			"totalCost": 4.020076850000001,
+			"modelsUsed": ["[pi] claude-sonnet-4-20250514", "[pi] claude-haiku-4-5-20251001"]
+		}
+	],
+	"totals": {
+		"cacheCreationTokens": 701,
+		"cacheReadTokens": 30006,
+		"inputTokens": 4465,
+		"outputTokens": 2141,
+		"totalCost": 4.066926850000001,
+		"totalTokens": 37563,
+		"unpricedModels": ["[pi] pi-mystery-1"]
+	}
 }
 ```
 
@@ -190,18 +190,23 @@ npx ccusage@latest pi monthly
 | `--json`      |       | Emit structured JSON instead of a table                                 |
 | `--breakdown` | `-b`  | Show per-model token breakdown                                          |
 | `--pi-path`   |       | Custom path, or comma-separated paths, to pi-agent sessions directories |
-| `--order`     |       | Sort order: `asc` or `desc` (default: `desc`)                           |
+| `--order`     |       | Sort order: `asc` (default) or `desc`                                   |
 
 ### Example Output
 
-```
-┌─────────┬────────────┬─────────────┬───────────┬───────────┬─────────┬─────────┐
-│ Month   │ Input      │ Output      │ Cache Cr. │ Cache Rd. │ Cost    │ Models  │
-├─────────┼────────────┼─────────────┼───────────┼───────────┼─────────┼─────────┤
-│ 2026-05 │ 12,345,678 │ 2,345,678   │ 123,456   │ 987,654   │ $12.34  │ opus-4-1  │
-├─────────┼────────────┼─────────────┼───────────┼───────────┼─────────┼─────────┤
-│ Total   │ 12,345,678 │ 2,345,678   │ 123,456   │ 987,654   │ $12.34  │         │
-└─────────┴────────────┴─────────────┴───────────┴───────────┴─────────┴─────────┘
+Excerpt from the fixture report; additional rows are omitted.
+
+```text
+┌──────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models                  │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - [pi] claude-haiku-4-5 │    10,032 │     1,948 │         2,035 │      27,449 │        41,464 │       $8.57 │
+│          │ - [pi] claude-opus-4    │           │           │               │             │               │             │
+│          │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+│          │ - [pi] gpt-5            │           │           │               │             │               │             │
+│          │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
+│          │ - [pi] pi-mystery-2     │           │           │               │             │               │             │
+└──────────┴─────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
 ### JSON Output
@@ -212,34 +217,7 @@ Use `--json` for automation and scripting:
 ccusage pi monthly --json
 ```
 
-Returns structured data:
-
-<!-- eslint-skip -->
-
-```json
-{
-  "monthly": [
-    {
-      "month": "2026-05",
-      "source": "pi-agent",
-      "inputTokens": 12345678,
-      "outputTokens": 2345678,
-      "cacheCreationTokens": 123456,
-      "cacheReadTokens": 987654,
-      "totalCost": 12.34,
-      "modelsUsed": ["claude-opus-4-1-20250805"],
-      "modelBreakdowns": [...]
-    }
-  ],
-  "totals": {
-    "inputTokens": 12345678,
-    "outputTokens": 2345678,
-    "cacheCreationTokens": 123456,
-    "cacheReadTokens": 987654,
-    "totalCost": 12.34
-  }
-}
-```
+Returns the same fields as the [daily JSON](#json-output), with `month` in place of `date`.
 
 ### Filtering by Date Range
 
@@ -275,28 +253,24 @@ npx ccusage@latest pi session
 | `--json`      |       | Emit structured JSON instead of a table                                 |
 | `--breakdown` | `-b`  | Show per-model token breakdown                                          |
 | `--pi-path`   |       | Custom path, or comma-separated paths, to pi-agent sessions directories |
-| `--order`     |       | Sort order: `asc` or `desc` (default: `desc`)                           |
+| `--order`     |       | Sort order: `asc` or `desc`                                             |
 
 ### Example Output
 
-Sessions are sorted by last activity:
+Excerpt from the fixture report; additional rows are omitted.
 
-```
-┌──────────────────────────────┬────────────┬───────────┬───────────┬───────────┬────────┬─────────┐
-│ Session                      │ Input      │ Output    │ Cache Cr. │ Cache Rd. │ Cost   │ Models  │
-├──────────────────────────────┼────────────┼───────────┼───────────┼───────────┼────────┼─────────┤
-│ my-project                   │ 123,456    │ 23,456    │ 1,234     │ 9,876     │ $0.12  │ opus-4-1  │
-│ another-repo                 │ 345,678    │ 67,890    │ 3,456     │ 29,876    │ $0.34  │ sonnet-4-5│
-├──────────────────────────────┼────────────┼───────────┼───────────┼───────────┼────────┼─────────┤
-│ Total                        │ 469,134    │ 91,346    │ 4,690     │ 39,752    │ $0.46  │         │
-└──────────────────────────────┴────────────┴───────────┴───────────┴───────────┴────────┴─────────┘
+```text
+┌────────────────────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┬───────────────┐
+│ Session                │ Models                  │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │ Last Activity │
+├────────────────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ sess-alpha-fork        │ - [pi] claude-haiku-4-5 │     1,150 │       450 │           200 │       7,000 │         8,800 │       $0.03 │ 2026-01-02    │
+│                        │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │               │
+└────────────────────────┴─────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┴───────────────┘
 ```
 
 ### Session Identification
 
-Sessions are identified by the project folder name from `~/.pi/agent/sessions/{project}/`.
-
-Long project names are truncated to 25 characters with `...` suffix for readability.
+The Session column shows the full session ID. In JSON output, `projectPath` holds the project folder name from `~/.pi/agent/sessions/{project}/`.
 
 ### JSON Output
 
@@ -306,47 +280,46 @@ Use `--json` for detailed session data:
 ccusage pi session --json
 ```
 
-Returns structured data including full paths:
-
-<!-- eslint-skip -->
+This excerpt omits other sessions and per-model details; `totals` covers the complete report. Each session row carries its `sessionId`, `projectPath`, `firstActivity`, and `lastActivity`:
 
 ```json
 {
-  "sessions": [
-    {
-      "sessionId": "abc123-def456",
-      "projectPath": "my-project",
-      "source": "pi-agent",
-      "inputTokens": 123456,
-      "outputTokens": 23456,
-      "cacheCreationTokens": 1234,
-      "cacheReadTokens": 9876,
-      "totalCost": 0.12,
-      "firstActivity": "2026-05-15T09:30:00.000Z",
-      "lastActivity": "2026-05-16T17:45:30.000Z",
-      "modelsUsed": ["claude-opus-4-1-20250805"],
-      "modelBreakdowns": [...]
-    }
-  ],
-  "totals": {
-    "inputTokens": 123456,
-    "outputTokens": 23456,
-    "cacheCreationTokens": 1234,
-    "cacheReadTokens": 9876,
-    "totalCost": 0.12
-  }
+	"sessions": [
+		{
+			"sessionId": "sess-alpha-fork",
+			"projectPath": "--Users-dev-alpha--",
+			"firstActivity": "2026-01-01T13:10:00.000Z",
+			"lastActivity": "2026-01-01T13:10:00.000Z",
+			"inputTokens": 900,
+			"outputTokens": 400,
+			"cacheCreationTokens": 200,
+			"cacheReadTokens": 7000,
+			"totalTokens": 8500,
+			"totalCost": 0.03,
+			"modelsUsed": ["[pi] claude-haiku-4-5-20251001"]
+		}
+	],
+	"totals": {
+		"cacheCreationTokens": 701,
+		"cacheReadTokens": 30006,
+		"inputTokens": 4465,
+		"outputTokens": 2141,
+		"totalCost": 4.06692685,
+		"totalTokens": 37563,
+		"unpricedModels": ["[pi] pi-mystery-1"]
+	}
 }
 ```
 
 ### Filtering Sessions
 
-Filter sessions by their last activity date:
+Filter entries by date before grouping them into sessions. Session totals include only usage inside the selected window:
 
 ```bash
-# Sessions active today
+# Session usage on one day
 ccusage pi session --since 2026-05-16 --until 2026-05-16
 
-# Sessions from the past week
+# Session usage since a date
 ccusage pi session --since 2026-05-09
 ```
 

@@ -47,8 +47,8 @@ The daily command is the default, so you can omit it when running ccusage.
 
 ccusage automatically adapts to your terminal width:
 
-- **Wide terminals (≥100 chars)**: Shows all columns
-- **Narrow terminals (<100 chars)**: Compact mode with essential columns only
+- **Wide terminals**: Show the full table when it fits
+- **Narrow terminals**: Use a compact layout; `--compact` also selects it
 
 ## Command Options
 
@@ -86,11 +86,11 @@ ccusage daily --last 7
 Control the order of dates:
 
 ```bash
-# Newest dates first (default)
-ccusage daily --order desc
-
-# Oldest dates first
+# Oldest dates first (default)
 ccusage daily --order asc
+
+# Newest dates first
+ccusage daily --order desc
 ```
 
 ### Cost Calculation Modes
@@ -118,19 +118,19 @@ ccusage daily --breakdown
 
 This shows costs split by individual models:
 
-```
-┌──────────────┬──────────────────┬────────┬─────────┬────────────┐
-│ Date         │ Models           │ Input  │ Output  │ Cost (USD) │
-├──────────────┼──────────────────┼────────┼─────────┼────────────┤
-│ 2026-05-16   │ opus-4-1, sonnet-4-5 │    277 │  31,456 │     $17.58 │
-├──────────────┼──────────────────┼────────┼─────────┼────────────┤
-│   └─ opus-4-1  │                  │    100 │  15,000 │     $10.25 │
-├──────────────┼──────────────────┼────────┼─────────┼────────────┤
-│   └─ sonnet-4-5│                  │    177 │  16,456 │      $7.33 │
-└──────────────┴──────────────────┴────────┴─────────┴────────────┘
+Excerpt from the fixture report; additional rows are omitted.
+
+```text
+┌──────────┬──────────────┬──────────────┬────────────┬───────────┬────────────┬─────────────┬─────────────┬───────────┐
+│ Date     │ Agent        │ Models       │      Input │    Output │      Cache │  Cache Read │       Total │      Cost │
+│          │              │              │            │           │     Create │             │      Tokens │     (USD) │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+└──────────┴──────────────┴──────────────┴────────────┴───────────┴────────────┴─────────────┴─────────────┴───────────┘
 ```
 
 ### JSON Output
+
+The following output excerpt omits other rows and some per-row fields; `totals` covers the complete report.
 
 Export data as JSON for further analysis:
 
@@ -138,28 +138,118 @@ Export data as JSON for further analysis:
 ccusage daily --json
 ```
 
+Each row is one `period` (the date) with `agent: "all"`; `metadata.agents` lists the sources that contributed to it. See [JSON Output](/guide/json-output) for every field.
+
 ```json
 {
-	"type": "daily",
-	"data": [
+	"daily": [
 		{
-			"date": "2026-05-16",
-			"models": ["claude-opus-4-1-20250805", "claude-sonnet-4-5-20250929"],
-			"inputTokens": 277,
-			"outputTokens": 31456,
-			"cacheCreationTokens": 512,
-			"cacheReadTokens": 1024,
-			"totalTokens": 33269,
-			"costUSD": 17.58
+			"agent": "all",
+			"period": "2025-12-31",
+			"inputTokens": 67294,
+			"outputTokens": 19952,
+			"cacheCreationTokens": 6111,
+			"cacheReadTokens": 185916,
+			"totalTokens": 279883,
+			"totalCost": 11.418334255000001,
+			"metadata": {
+				"agents": [
+					"amp",
+					"antigravity",
+					"claude",
+					"cline",
+					"codebuff",
+					"codex",
+					"copilot",
+					"droid",
+					"dsh",
+					"gemini",
+					"goose",
+					"grok",
+					"hermes",
+					"kilo",
+					"kimi",
+					"openclaw",
+					"opencode",
+					"pi",
+					"qwen",
+					"zcode"
+				]
+			},
+			"modelsUsed": [
+				"GLM-5.3",
+				"GLM-5.3-Flash",
+				"[openclaw] claude-haiku-4-5-20251001",
+				"[openclaw] gpt-5",
+				"[openclaw] openclaw-mystery-1",
+				"[pi] claude-haiku-4-5-20251001",
+				"[pi] claude-sonnet-4-20250514",
+				"anthropic/claude-sonnet-4",
+				"claude-haiku-4-5-20251001",
+				"claude-opus-4-20250514",
+				"claude-sonnet-4-20250514",
+				"copilot-mystery-1",
+				"deepseek-v4-pro",
+				"droid-mystery-1",
+				"dsh-mystery-1",
+				"gemini-2-5-pro",
+				"gemini-2.5-pro",
+				"gemini-3-flash-preview",
+				"gemini-3-pro",
+				"gemini-3.5-flash-high",
+				"gemini-mystery-1",
+				"gpt-5",
+				"gpt-5-codex",
+				"gpt-5.2-codex",
+				"gpt-5.5",
+				"grok-4.5-build",
+				"grok-4.7-build",
+				"grok-code-fast-1",
+				"grok-mystery-1",
+				"kimi-for-coding",
+				"kimi-k2-thinking",
+				"qwen-2.5-72b-instruct",
+				"qwen-3-235b",
+				"qwen-mystery-1",
+				"qwen3-coder-plus",
+				"unknown"
+			]
 		}
 	],
-	"summary": {
-		"totalInputTokens": 277,
-		"totalOutputTokens": 31456,
-		"totalCacheCreationTokens": 512,
-		"totalCacheReadTokens": 1024,
-		"totalTokens": 33269,
-		"totalCostUSD": 17.58
+	"totals": {
+		"cacheCreationTokens": 9001,
+		"cacheReadTokens": 671244,
+		"inputTokens": 1172663,
+		"outputTokens": 37582,
+		"totalCost": 15.123121700000002,
+		"totalTokens": 1892152,
+		"unpricedModels": [
+			"GLM-5.3",
+			"[openclaw] openclaw-mystery-1",
+			"[pi] pi-mystery-1",
+			"amp-mystery-1",
+			"antigravity-mystery-1",
+			"claude-sonnet-4-20250514",
+			"cline-mystery-1",
+			"codebuff-mystery-1",
+			"codex-mystery-1",
+			"copilot-mystery-1",
+			"droid-mystery-1",
+			"dsh-mystery-1",
+			"gemini-mystery-1",
+			"goose-mystery-1",
+			"gpt-unknown",
+			"grok-mystery-1",
+			"grok-unknown",
+			"hermes-mystery-1",
+			"kilo-mystery-1",
+			"kimi-mystery-1",
+			"mystery-model-9000",
+			"opencode-mystery-1",
+			"qwen-mystery-1",
+			"unknown",
+			"zcode-mystery-1"
+		]
 	}
 }
 ```
@@ -176,44 +266,72 @@ ccusage daily -O
 
 ### Project Analysis
 
-Group usage by project instead of aggregating across all projects:
+Claude Code records the project of every request, so its daily report can group usage by project instead of aggregating across all projects:
 
 ```bash
 # Group daily usage by project
-ccusage daily --instances
-ccusage daily -i
+ccusage claude daily --instances
+ccusage claude daily -i
 ```
 
 When using `--instances`, the report shows usage for each project separately:
 
-```
-┌──────────────┬────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Project: my-project                                                                                     │
-├──────────────┬──────────────────┬────────┬─────────┬────────────┬────────────┬─────────────┬──────────┤
-│ Date         │ Models           │ Input  │ Output  │ Cache Create│ Cache Read │ Total Tokens│ Cost (USD)│
-├──────────────┼──────────────────┼────────┼─────────┼────────────┼────────────┼─────────────┼──────────┤
-│ 2026-05-16   │ • sonnet-4-5       │    277 │  31,456 │         512│      1,024 │      33,269 │     $7.33│
-└──────────────┴──────────────────┴────────┴─────────┴────────────┴────────────┴─────────────┴──────────┘
-
-┌──────────────┬────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Project: other-project                                                                                  │
-├──────────────┬──────────────────┬────────┬─────────┬────────────┬────────────┬─────────────┬──────────┤
-│ Date         │ Models           │ Input  │ Output  │ Cache Create│ Cache Read │ Total Tokens│ Cost (USD)│
-├──────────────┼──────────────────┼────────┼─────────┼────────────┼────────────┼─────────────┼──────────┤
-│ 2026-05-16   │ • opus-4-1         │    100 │  15,000 │         256│        512 │      15,868 │    $10.25│
-└──────────────┴──────────────────┴────────┴─────────┴────────────┴────────────┴─────────────┴──────────┘
+```text
+┌────────────────┬──────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Date           │ Models               │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Project: gamma │                      │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-27     │ - sonnet-4           │       100 │        50 │             0 │           0 │           150 │       $0.01 │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Project: alpha │                      │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-30     │ - haiku-4-5          │     1,550 │     1,020 │           900 │      13,100 │        16,570 │       $0.15 │
+│                │ - opus-4             │           │           │               │             │               │             │
+│                │ - sonnet-4           │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-31     │ - sonnet-4           │       820 │       490 │           100 │       7,000 │         8,410 │       $0.03 │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Project: beta  │                      │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-31     │ - opus-4             │       900 │       400 │           200 │       7,000 │         8,500 │       $0.06 │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Project: alpha │                      │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-01     │ - mystery-model-9000 │       950 │       220 │             0 │       2,300 │         3,470 │       $0.01 │
+│                │ - opus-4             │           │           │               │             │               │             │
+│                │ - sonnet-4           │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Project: beta  │                      │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-01     │ - opus-5             │     2,657 │       504 │         1,250 │       6,000 │        10,411 │       $0.53 │
+│                │ - sonnet-4           │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Project: alpha │                      │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-02     │ - opus-5-fast        │       200 │        50 │             0 │         300 │           550 │       $0.00 │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Project: beta  │                      │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-02     │ - opus-4             │       950 │       900 │            50 │       8,500 │        10,400 │       $0.06 │
+│                │ - sonnet-4           │           │           │               │             │               │             │
+├────────────────┼──────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total          │                      │     8,127 │     3,634 │         2,500 │      44,200 │        58,461 │       $0.84 │
+└────────────────┴──────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
 Filter to a specific project:
 
 ```bash
 # Show only usage from "my-project"
-ccusage daily --project my-project
-ccusage daily -p my-project
+ccusage claude daily --project my-project
+ccusage claude daily -p my-project
 
 # Combine with instances flag
-ccusage daily --instances --project my-project
+ccusage claude daily --instances --project my-project
 ```
+
+`--instances` and `--project` belong to `ccusage claude daily`; the unified `ccusage daily` rejects them. To filter the Claude rows of a unified daily report, set `claude.commands.daily.project` in a [configuration file](/guide/config-files#source-specific-configuration).
 
 ## Common Use Cases
 
@@ -226,9 +344,11 @@ ccusage daily --since 20260501 --until 20260516
 
 ### Find Expensive Days
 
+`--order` sorts dates, not costs, so rank the days with `jq`:
+
 ```bash
-# Sort by cost (highest first)
-ccusage daily --order desc
+# The five most expensive days, highest first
+ccusage daily --json | jq -r '.daily | sort_by(-.totalCost) | .[:5][] | "\(.period) \(.totalCost)"'
 ```
 
 ### Export for Spreadsheet Analysis
@@ -255,26 +375,129 @@ ccusage daily --since $(date -d '7 days ago' +%Y%m%d)
 
 ```bash
 # See usage breakdown by project
-ccusage daily --instances
+ccusage claude daily --instances
 
 # Track specific project costs
-ccusage daily --project my-important-project --since 20260501
+ccusage claude daily --project my-important-project --since 20260501
 
 # Compare project usage with JSON export
-ccusage daily --instances --json > project-analysis.json
+ccusage claude daily --instances --json > project-analysis.json
 ```
 
 ### Team Usage Analysis
 
-Use project aliases to replace cryptic or long project directory names with readable labels:
+Use project aliases in `.ccusage/ccusage.json` to replace cryptic or long project directory names with readable labels:
 
 ```json
-// .ccusage/ccusage.json - Set custom project names for better reporting
 {
-	"commands": {
-		"daily": {
-			"projectAliases": "uuid-project=Frontend App,long-name=Backend API"
+	"daily": [
+		{
+			"agent": "all",
+			"period": "2025-12-31",
+			"inputTokens": 67294,
+			"outputTokens": 19952,
+			"cacheCreationTokens": 6111,
+			"cacheReadTokens": 185916,
+			"totalTokens": 279883,
+			"totalCost": 11.418334255000001,
+			"metadata": {
+				"agents": [
+					"amp",
+					"antigravity",
+					"claude",
+					"cline",
+					"codebuff",
+					"codex",
+					"copilot",
+					"droid",
+					"dsh",
+					"gemini",
+					"goose",
+					"grok",
+					"hermes",
+					"kilo",
+					"kimi",
+					"openclaw",
+					"opencode",
+					"pi",
+					"qwen",
+					"zcode"
+				]
+			},
+			"modelsUsed": [
+				"GLM-5.3",
+				"GLM-5.3-Flash",
+				"[openclaw] claude-haiku-4-5-20251001",
+				"[openclaw] gpt-5",
+				"[openclaw] openclaw-mystery-1",
+				"[pi] claude-haiku-4-5-20251001",
+				"[pi] claude-sonnet-4-20250514",
+				"anthropic/claude-sonnet-4",
+				"claude-haiku-4-5-20251001",
+				"claude-opus-4-20250514",
+				"claude-sonnet-4-20250514",
+				"copilot-mystery-1",
+				"deepseek-v4-pro",
+				"droid-mystery-1",
+				"dsh-mystery-1",
+				"gemini-2-5-pro",
+				"gemini-2.5-pro",
+				"gemini-3-flash-preview",
+				"gemini-3-pro",
+				"gemini-3.5-flash-high",
+				"gemini-mystery-1",
+				"gpt-5",
+				"gpt-5-codex",
+				"gpt-5.2-codex",
+				"gpt-5.5",
+				"grok-4.5-build",
+				"grok-4.7-build",
+				"grok-code-fast-1",
+				"grok-mystery-1",
+				"kimi-for-coding",
+				"kimi-k2-thinking",
+				"qwen-2.5-72b-instruct",
+				"qwen-3-235b",
+				"qwen-mystery-1",
+				"qwen3-coder-plus",
+				"unknown"
+			]
 		}
+	],
+	"totals": {
+		"cacheCreationTokens": 9001,
+		"cacheReadTokens": 671244,
+		"inputTokens": 1172663,
+		"outputTokens": 37582,
+		"totalCost": 15.123121700000002,
+		"totalTokens": 1892152,
+		"unpricedModels": [
+			"GLM-5.3",
+			"[openclaw] openclaw-mystery-1",
+			"[pi] pi-mystery-1",
+			"amp-mystery-1",
+			"antigravity-mystery-1",
+			"claude-sonnet-4-20250514",
+			"cline-mystery-1",
+			"codebuff-mystery-1",
+			"codex-mystery-1",
+			"copilot-mystery-1",
+			"droid-mystery-1",
+			"dsh-mystery-1",
+			"gemini-mystery-1",
+			"goose-mystery-1",
+			"gpt-unknown",
+			"grok-mystery-1",
+			"grok-unknown",
+			"hermes-mystery-1",
+			"kilo-mystery-1",
+			"kimi-mystery-1",
+			"mystery-model-9000",
+			"opencode-mystery-1",
+			"qwen-mystery-1",
+			"unknown",
+			"zcode-mystery-1"
+		]
 	}
 }
 ```
@@ -287,7 +510,7 @@ The `projectAliases` setting uses a comma-separated format of `original-name=dis
 
 ```bash
 # Generate team report with readable project names
-ccusage daily --instances --since 20260501
+ccusage claude daily --instances --since 20260501
 # Now shows "Frontend App" instead of "uuid-project"
 ```
 

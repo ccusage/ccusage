@@ -30,6 +30,8 @@ Put frequently used options in `defaults`:
 
 ### 3. Override for Specific Commands
 
+Only daily reports show the breakdown here:
+
 ```json
 {
 	"$schema": "https://ccusage.com/config-schema.json",
@@ -38,11 +40,13 @@ Put frequently used options in `defaults`:
 	},
 	"commands": {
 		"daily": {
-			"breakdown": true // Only daily needs breakdown
+			"breakdown": true
 		}
 	}
 }
 ```
+
+Configuration files are plain JSON: comments are not allowed, and a file with a syntax error is skipped as if it did not exist.
 
 ### 4. Convert CLI Arguments to Config
 
@@ -50,14 +54,13 @@ If you find yourself repeating CLI arguments:
 
 ```bash
 # Before (repeated CLI arguments)
-ccusage daily --breakdown --instances --timezone UTC
+ccusage claude daily --breakdown --instances --timezone UTC
 ccusage monthly --breakdown --timezone UTC
 ```
 
-Convert them to a config file:
+Convert them to a `ccusage.json` config file:
 
 ```json
-// ccusage.json
 {
 	"$schema": "https://ccusage.com/config-schema.json",
 	"defaults": {
@@ -75,23 +78,20 @@ Convert them to a config file:
 Now simpler commands:
 
 ```bash
-ccusage daily
+ccusage claude daily
 ccusage monthly
 ```
 
 ## Configuration File Locations
 
-ccusage searches for configuration files in these locations (in priority order):
+ccusage searches for configuration files in these locations, in order:
 
-1. **Local project**: `.ccusage/ccusage.json` (higher priority)
-2. **User config**: `ccusage.json` in the Claude Code directories (lower priority), described below
+1. **Local project**: `.ccusage/ccusage.json` in the current directory
+2. **User config**: `ccusage.json` in the Claude Code directories, described below
 
-The user config lives in the same Claude Code directories ccusage reads usage logs from: `$XDG_CONFIG_HOME/claude/ccusage.json` (`~/.config/claude/ccusage.json` when `XDG_CONFIG_HOME` is unset or empty), then `~/.claude/ccusage.json`. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its comma-separated directories instead, in the order they are listed. An entry of `~` or starting with `~/` is resolved against your home directory (`~user` and `~\` are not expanded), and an entry pointing at a `projects/` directory is read as its parent.
+The user config lives in the same Claude Code directories ccusage reads usage logs from: `$XDG_CONFIG_HOME/claude/ccusage.json` (`~/.config/claude/ccusage.json` when `XDG_CONFIG_HOME` is unset or empty), then `~/.claude/ccusage.json`. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its comma-separated directories instead, in the order they are listed. An entry of `~` or starting with `~/` is resolved against your home directory (`~user` and `~\` are not expanded), and an entry pointing at an existing `projects/` directory is read as its parent.
 
-Configuration files are merged in priority order, with local project settings overriding user settings.
-If you pass a custom config file using `--config`, it will override both local and user configs.
-Note that configuration files are not required; if none are found, ccusage will use built-in defaults.
-Also, if you have multiple config files, only the first one found will be used.
+ccusage uses only the first file in that order that exists and holds a JSON object; files are never merged, so a local project config replaces your user config rather than extending it. A file that cannot be read or does not parse is skipped without a warning and the search continues. If you pass a custom config file using `--config`, ccusage reads only that file and does not search; if it cannot be read or parsed, the built-in defaults apply. Configuration files are not required; if none is found, ccusage uses built-in defaults.
 
 ## Basic Configuration
 
@@ -133,7 +133,7 @@ You can also reference a local schema file after installing ccusage:
 
 ### Global Defaults
 
-The `defaults` section sets shared default values for unified reports and legacy Claude commands:
+The `defaults` section sets shared default values for unified and source-focused reports:
 
 ```json
 {
@@ -158,7 +158,7 @@ Set `noCost` to `true` to hide cost columns in tables and remove cost fields fro
 
 ### Command-Specific Configuration
 
-Override shared defaults for specific unified reports and legacy Claude commands using the `commands` section:
+Override shared defaults for specific unified and source-focused reports using the `commands` section:
 
 ```json
 {
@@ -366,15 +366,16 @@ For a source-focused command, or each source within a unified report, options ar
 }
 ```
 
+`instances`, `project`, and `projectAliases` apply to `ccusage claude daily`.
+
 ### Session Command
 
 ```json
 {
 	"commands": {
 		"session": {
-			"id": "abc123-session",
-			"project": "my-project",
-			"json": true
+			"json": true,
+			"order": "desc"
 		}
 	}
 }
@@ -389,9 +390,7 @@ For a source-focused command, or each source within a unified report, options ar
 			"active": true,
 			"recent": false,
 			"tokenLimit": "max",
-			"sessionLength": 5,
-			"live": false,
-			"refreshInterval": 1
+			"sessionLength": 5
 		}
 	}
 }
@@ -460,7 +459,7 @@ Keys in `pricingOverrides` should match the model label reported by ccusage, inc
 | Named Pi store                         | `[name] ` | `[omp] gpt-5.4`                |
 | Others (Claude, Codex, OpenCode, etc.) | none      | `claude-sonnet-4-5`, `gpt-5.5` |
 
-To find the exact name, run `ccusage <agent> daily --json` and look at the `model` field in the per-row breakdown.
+To find the exact name, run `ccusage <agent> daily --json` and look at the `modelName` field in each row's `modelBreakdowns`.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
 If a key has no pricing entry of its own but is a model alias, unspecified fields come from the alias target's entry.
 
@@ -481,7 +480,7 @@ The Ultrafast multiplier comes only from published rates and cannot be set in `p
 
 `--offline` and `pricingOverrides` are independent:
 
-- `--offline` controls the **data source** — skip the network refresh and use the embedded LiteLLM snapshot only.
+- `--offline` controls the **data source** — skip the network refresh and use embedded LiteLLM and models.dev pricing.
 - `pricingOverrides` controls **specific entries** — patch in or replace prices for individual models.
 
 Overrides apply in both online and offline modes.
@@ -496,27 +495,23 @@ This is useful for:
 
 ## Configuration Example
 
-For a complete configuration example, see [`/ccusage.example.json`](/ccusage.example.json) in the repository root, which demonstrates:
+For a complete configuration example, see [`ccusage.example.json`](https://github.com/ccusage/ccusage/blob/main/ccusage.example.json) in the repository root, which demonstrates:
 
 - Global defaults configuration
 - Command-specific overrides
-- All available options with proper types
+- Examples of supported options and types
 
 ## Configuration Priority
 
 Settings are applied in this priority order (highest to lowest):
 
 1. **Command-line arguments** (e.g., `--json`, `--offline`)
-2. **Custom config file** (specified with `--config /path/to/config.json`)
-3. **Local project config** (`.ccusage/ccusage.json`)
-4. **User config** (`~/.config/claude/ccusage.json`)
-5. **Legacy config** (`~/.claude/ccusage.json`)
-6. **Built-in defaults**
+2. **The one configuration file ccusage reads**: the `--config` file, or else the first valid file among `.ccusage/ccusage.json`, `~/.config/claude/ccusage.json`, and `~/.claude/ccusage.json` (see [Configuration File Locations](#configuration-file-locations))
+3. **Built-in defaults**
 
-Example:
+Example, in `.ccusage/ccusage.json`:
 
 ```json
-// .ccusage/ccusage.json
 {
 	"defaults": {
 		"mode": "calculate"
@@ -530,52 +525,6 @@ ccusage daily  # Uses mode: calculate
 
 # But CLI argument overrides it
 ccusage daily --mode display  # Uses mode: display
-```
-
-## Debugging Configuration
-
-Use the `--debug` flag to see configuration loading details:
-
-```bash
-# Debug configuration loading
-ccusage daily --debug
-
-# Debug custom config file
-ccusage daily --debug --config ./my-config.json
-```
-
-Debug output shows:
-
-- Which config files are checked and found
-- Schema and option details from loaded configs
-- How options are merged from different sources
-- Final values used for each option
-
-Example debug output:
-
-```
-[ccusage] ℹ Debug mode enabled - showing config loading details
-
-[ccusage] ℹ Searching for config files:
-  • Checking: .ccusage/ccusage.json (found ✓)
-  • Checking: ~/.config/claude/ccusage.json (found ✓)
-  • Checking: ~/.claude/ccusage.json (not found)
-
-[ccusage] ℹ Loaded config from: .ccusage/ccusage.json
-  • Schema: https://ccusage.com/config-schema.json
-  • Has defaults: yes (3 options)
-  • Has command configs: yes (daily)
-
-[ccusage] ℹ Merging options for 'daily' command:
-  • From defaults: mode="auto", offline=false
-  • From command config: instances=true
-  • From CLI args: debug=true
-  • Final merged options: {
-      mode: "auto" (from defaults),
-      offline: false (from defaults),
-      instances: true (from command config),
-      debug: true (from CLI)
-    }
 ```
 
 ## Best Practices
@@ -604,10 +553,12 @@ team-configs/
 
 ### Config Not Being Applied
 
-1. Check file location is correct
-2. Verify JSON syntax is valid
-3. Use `--debug` to see loading details
-4. Ensure option names match exactly
+ccusage does not report why a configuration file was ignored, so check each cause:
+
+1. Check the file location is correct, and that no earlier file in the [search order](#configuration-file-locations) exists and shadows it
+2. Verify the JSON syntax is valid; a file that does not parse is skipped
+3. Ensure option names match exactly; unknown keys are ignored
+4. Ensure option values have the expected types; a value of the wrong type is ignored
 
 ### Invalid JSON
 
@@ -620,14 +571,19 @@ jq . < ccusage.json
 
 ### Schema Validation Errors
 
-Ensure option values match expected types:
+Add `$schema` and let your editor check option names and value types against it:
 
 ```json
 {
-	"defaults": {
-		"tokenLimit": "500000", // ✅ String or number
-		"active": true, // ✅ Boolean
-		"refreshInterval": 2 // ✅ Number
+	"$schema": "https://ccusage.com/config-schema.json",
+	"commands": {
+		"blocks": {
+			"tokenLimit": "500000",
+			"active": true
+		},
+		"statusline": {
+			"refreshInterval": 2
+		}
 	}
 }
 ```

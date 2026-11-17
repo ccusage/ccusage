@@ -22,8 +22,6 @@ The CLI reads Kilo messages from `KILO_DATA_DIR` (defaults to `~/.local/share/ki
 KILO_DATA_DIR="$HOME/.local/share/kilo,/backup/kilo" ccusage kilo daily
 ```
 
-<!-- eslint-skip -->
-
 ```text
 ~/.local/share/kilo/
 └── kilo.db
@@ -44,11 +42,11 @@ These views support `--json` for structured output and `--compact` for narrow te
 | Variable        | Description                                                                            |
 | --------------- | -------------------------------------------------------------------------------------- |
 | `KILO_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Kilo data |
-| `LOG_LEVEL`     | Adjust verbosity (0 silent ... 5 trace)                                                |
+| `LOG_LEVEL`     | `0` hides aggregated warnings, progress, and table titles                              |
 
 ## Cost Calculation
 
-When Kilo records a cost (including `0`), ccusage uses that value. Otherwise, costs are calculated from token counts using LiteLLM pricing.
+In `auto` mode, ccusage uses a recorded cost, including `0`, when present; otherwise it calculates from tokens and model pricing. `calculate` always prices tokens, while `display` uses recorded costs only.
 
 ## Troubleshooting
 
@@ -57,5 +55,5 @@ Ensure the data directory exists at `~/.local/share/kilo/` and contains `kilo.db
 :::
 
 ::: details Costs showing as $0.00
-If Kilo did not record a cost and the model is not in LiteLLM's database, the cost will be $0.00. [Open an issue](https://github.com/ccusage/ccusage/issues/new) to request alias support.
+If Kilo did not record a cost and ccusage cannot resolve a model price, the calculated cost is $0.00. [Open an issue](https://github.com/ccusage/ccusage/issues/new) to request alias support.
 :::

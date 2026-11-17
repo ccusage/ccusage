@@ -8,7 +8,6 @@ export default defineConfig({
 	description: 'Usage analysis tool for coding (agent) CLIs',
 	base: '/',
 	cleanUrls: true,
-	ignoreDeadLinks: true,
 
 	head: [
 		['link', { rel: 'icon', href: '/favicon.svg' }],
@@ -162,8 +161,9 @@ export default defineConfig({
 					{ from: '/guide/custom-paths', to: '/guide/claude/', status: 301 },
 					{ from: '/guide/directory-detection', to: '/guide/claude/', status: 301 },
 					{ from: '/guide/related-projects', to: '/guide/community-projects', status: 301 },
+					{ from: '/guide/live-monitoring', to: '/guide/statusline', status: 301 },
 				],
-			}) as any,
+			}),
 			groupIconVitePlugin(),
 			...llmstxt(),
 		],
@@ -171,8 +171,7 @@ export default defineConfig({
 
 	markdown: {
 		config(md) {
-			// eslint-disable-next-line ts/no-unsafe-argument -- markdown-it type mismatch between vitepress and plugin
-			md.use(groupIconMdPlugin as any);
+			md.use(groupIconMdPlugin);
 		},
 	},
 });
