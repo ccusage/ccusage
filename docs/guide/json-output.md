@@ -457,7 +457,7 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 		"cacheReadTokens": 1311217,
 		"inputTokens": 1348169,
 		"outputTokens": 58867,
-		"totalCost": 28.920893300000024,
+		"totalCost": 28.924607300000023,
 		"totalTokens": 2739555,
 		"unpricedModels": [
 			"GLM-5.3",
