@@ -365,7 +365,7 @@ pub fn print_blocks_table(
         terminal_width,
         BLOCKS_COMPACT_WIDTH_THRESHOLD,
     );
-    let actual_limit = token_limit.map(NonZeroU64::get);
+    let actual_limit = token_limit;
     print_box_title("Claude Code Token Usage Report - Session Blocks", shared);
     let mut headers = vec!["Block Start", "Duration/Status", "Models", "Tokens"];
     let mut aligns = vec![Align::Left, Align::Left, Align::Left, Align::Right];
@@ -412,9 +412,9 @@ pub fn print_blocks_table(
             format_number(total),
         ];
         if let Some(limit) = actual_limit {
-            let percentage = total as f64 / limit as f64 * 100.0;
+            let percentage = total as f64 / limit.get() as f64 * 100.0;
             let percent_text = format!("{percentage:.1}%");
-            row.push(if percentage > 100.0 {
+            row.push(if limit_status(total, limit) == LimitStatus::Exceeds {
                 color(shared, percent_text, Color::Red)
             } else {
                 percent_text
@@ -428,12 +428,13 @@ pub fn print_blocks_table(
         if block.is_active {
             if let Some(limit) = actual_limit {
                 table.separator();
-                let remaining = limit.saturating_sub(total);
-                let remaining_percent = (limit.saturating_sub(total) as f64 / limit as f64) * 100.0;
+                let remaining = limit.get().saturating_sub(total);
+                let remaining_percent =
+                    (limit.get().saturating_sub(total) as f64 / limit.get() as f64) * 100.0;
                 let mut remaining_row = vec![
                     color(
                         shared,
-                        format!("(assuming {} token limit)", format_number(limit)),
+                        format!("(assuming {} token limit)", format_number(limit.get())),
                         Color::Grey,
                     ),
                     color(shared, "REMAINING", Color::Blue),
@@ -462,14 +463,17 @@ pub fn print_blocks_table(
                     color(shared, "PROJECTED", Color::Yellow),
                     String::new(),
                     match actual_limit {
-                        Some(limit) if limit > 0 && projection.total_tokens > limit => {
+                        Some(limit)
+                            if limit_status(projection.total_tokens, limit)
+                                == LimitStatus::Exceeds =>
+                        {
                             color(shared, format_number(projection.total_tokens), Color::Red)
                         }
                         _ => format_number(projection.total_tokens),
                     },
                 ];
                 if let Some(limit) = actual_limit {
-                    let percentage = projection.total_tokens as f64 / limit as f64 * 100.0;
+                    let percentage = projection.total_tokens as f64 / limit.get() as f64 * 100.0;
                     projected_row.push(format!("{percentage:.1}%"));
                 }
                 if !shared.no_cost {
