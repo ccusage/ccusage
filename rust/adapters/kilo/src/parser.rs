@@ -271,6 +271,7 @@ mod tests {
 
     #[test]
     fn keeps_kilo_record_when_cache_field_is_not_an_object() {
+        ccusage_test_support::install_pricing_snapshots();
         let value = serde_json::from_value::<KiloMessage>(serde_json::json!({
             "id": "msg-1",
             "role": "assistant",
@@ -299,6 +300,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_total_tokens_when_kilo_parts_are_missing() {
+        ccusage_test_support::install_pricing_snapshots();
         let value = serde_json::from_value::<KiloMessage>(serde_json::json!({
             "id": "msg-1",
             "role": "assistant",

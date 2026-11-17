@@ -134,6 +134,7 @@ mod tests {
 
     #[test]
     fn loads_usage_from_droid_settings_files() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -174,6 +175,7 @@ mod tests {
 
     #[test]
     fn malformed_settings_file_is_reported_and_an_unwritten_one_is_not() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -206,6 +208,7 @@ mod tests {
 
     #[test]
     fn focused_and_unified_reports_agree() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session-a.settings.json": r#"{
                 "model": "Claude-Sonnet-4-[Anthropic]",
@@ -226,6 +229,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_sidecar_jsonl_model() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session-b.settings.json": r#"{
                 "providerLock": "anthropic",
@@ -248,6 +252,7 @@ mod tests {
 
     #[test]
     fn keeps_latest_snapshot_for_duplicate_session_ids() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "archive/session-c.settings.json": r#"{
                 "model": "gpt-5",

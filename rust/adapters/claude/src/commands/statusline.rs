@@ -702,6 +702,7 @@ mod tests {
 
     #[test]
     fn statusline_invocation_passes_config_pricing_overrides_to_cost_loading() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "ccusage.json": r#"{
                 "defaults": {
@@ -804,6 +805,7 @@ mod tests {
 
     #[test]
     fn uses_model_context_limit_for_transcript_context_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "transcript.jsonl": r#"{"type":"assistant","message":{"usage":{"input_tokens":1000}}}"#,
         });

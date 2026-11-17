@@ -167,6 +167,7 @@ mod tests {
 
     #[test]
     fn builds_codex_daily_json_report() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let lines = [usage_line(
             "2026-01-02T00:00:01.000Z",
@@ -203,6 +204,7 @@ mod tests {
 
     #[test]
     fn prices_codex_versioned_and_fast_models_from_embedded_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let cost = |line: String, tier: CodexServiceTier| {
             rollout_report(
@@ -224,6 +226,7 @@ mod tests {
 
     #[test]
     fn applies_codex_fast_speed_multiplier_to_report_costs() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -307,6 +310,7 @@ mod tests {
 
     #[test]
     fn loads_directory_groups_with_date_filter_without_global_event_vector() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/session.jsonl": [
                 r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150}}}}"#,
@@ -335,6 +339,7 @@ mod tests {
 
     #[test]
     fn dedupes_matching_grouped_codex_usage_events_from_distinct_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let usage_line = r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50,"reasoning_output_tokens":0,"total_tokens":150}}}}"#;
         let fixture = fs_fixture!({
             "sessions/session-a.jsonl": usage_line,
@@ -359,6 +364,7 @@ mod tests {
 
     #[test]
     fn reports_non_cached_codex_input_separately_from_cached_input() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::default();
         let report = rollout_report(
             &[usage_line(
@@ -392,6 +398,7 @@ mod tests {
 
     #[test]
     fn prices_mixed_deepseek_timestamps_in_model_totals() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -424,6 +431,7 @@ mod tests {
 
     #[test]
     fn reports_codex_cache_write_tokens_and_cost_for_gpt_5_6_terra() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session.jsonl": [
                 json!({
@@ -496,6 +504,7 @@ mod tests {
 
     #[test]
     fn prices_gpt_reserve_as_gpt_5_6_luna() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = CodexModelUsage {
             input_tokens: 1_000,
@@ -528,6 +537,7 @@ mod tests {
 
     #[test]
     fn reports_codex_model_aliases_without_raw_model_names() {
+        ccusage_test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([
             ("private-codex-alpha", "gpt-5.5"),
             ("private-codex-beta", "gpt-5.5"),
@@ -775,6 +785,7 @@ mod tests {
 
     #[test]
     fn applies_gpt_6_astra_fast_multiplier_without_changing_standard_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = CodexModelUsage {
             input_tokens: 1_000_000,
@@ -804,6 +815,7 @@ mod tests {
 
     #[test]
     fn applies_documented_gpt_6_fast_multipliers() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = CodexModelUsage {
             input_tokens: 1_000_000,
@@ -916,6 +928,7 @@ mod tests {
 
     #[test]
     fn prices_recorded_ultrafast_usage_at_published_rates() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let ultrafast = |usage: CodexUsageBucket| CodexModelUsage {
             input_tokens: usage.input_tokens,
@@ -1080,6 +1093,7 @@ mod tests {
 
     #[test]
     fn prices_rollout_service_tiers_across_loading_and_report_modes() {
+        ccusage_test_support::install_pricing_snapshots();
         for (model, expected_costs) in [
             ("gpt-test", [55e-6, 50e-6, 65e-6, 25e-6, 50e-6, 100e-6]),
             (
@@ -1336,6 +1350,7 @@ mod tests {
 
     #[test]
     fn snapshots_codex_reports_for_periods_sessions_costs_and_fallback_models() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{

@@ -13,6 +13,14 @@ use assert_fs::{
 pub mod mutation;
 pub mod zcode;
 
+pub fn install_pricing_snapshots() {
+    ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
+        litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
+        models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
+        models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
+    });
+}
+
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn env_lock() -> MutexGuard<'static, ()> {

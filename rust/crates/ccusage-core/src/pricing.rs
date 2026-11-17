@@ -41,7 +41,8 @@ static EMBEDDED_SNAPSHOTS: OnceLock<EmbeddedSnapshots> = OnceLock::new();
 /// Installs the embedded pricing snapshots.
 ///
 /// The binary calls this at startup, before anything loads pricing; later calls
-/// are ignored. Tests enable the `test-snapshots` feature instead.
+/// are ignored. Tests install them through
+/// `ccusage_test_support::install_pricing_snapshots`.
 ///
 /// # Example
 ///
@@ -57,12 +58,6 @@ pub fn set_embedded_snapshots(snapshots: EmbeddedSnapshots) {
 }
 
 fn embedded_snapshots() -> &'static EmbeddedSnapshots {
-    #[cfg(any(test, feature = "test-snapshots"))]
-    set_embedded_snapshots(EmbeddedSnapshots {
-        litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
-        models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
-        models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
-    });
     EMBEDDED_SNAPSHOTS
         .get()
         .expect("embedded pricing snapshots must be installed with set_embedded_snapshots")
@@ -2508,6 +2503,7 @@ mod tests {
 
     #[test]
     fn loads_embedded_claude_pricing() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         assert!(pricing.len() > 0);
         assert!(pricing.find("claude-sonnet-4-20250514").is_some());
@@ -2767,6 +2763,7 @@ mod tests {
 
     #[test]
     fn offline_embedded_pricing_uses_the_deepseek_v4_schedule() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_with_overrides(
             true,
             false,
@@ -2783,6 +2780,7 @@ mod tests {
 
     #[test]
     fn prewarm_skips_a_build_once_the_base_pricing_is_loaded() {
+        crate::test_support::install_pricing_snapshots();
         PricingMap::load_with_overrides(
             true,
             false,
@@ -2795,6 +2793,7 @@ mod tests {
 
     #[test]
     fn user_deepseek_v4_overrides_remain_authoritative() {
+        crate::test_support::install_pricing_snapshots();
         let model = "deepseek-v4-flash".to_string();
         let override_value = ccusage_cli::PricingOverride {
             input_cost_per_token: Some(9e-6),
@@ -2816,6 +2815,7 @@ mod tests {
 
     #[test]
     fn partial_deepseek_v4_override_keeps_schedule_for_unspecified_fields() {
+        crate::test_support::install_pricing_snapshots();
         let model = "deepseek-v4-flash".to_string();
         let override_value = ccusage_cli::PricingOverride {
             input_cost_per_token: Some(9e-6),
@@ -2842,6 +2842,7 @@ mod tests {
 
     #[test]
     fn each_pricing_loader_loads_only_its_own_document() {
+        crate::test_support::install_pricing_snapshots();
         let litellm =
             r#"{"gpt-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
         let models_dev =
@@ -2861,6 +2862,7 @@ mod tests {
 
     #[test]
     fn accepts_a_fetched_models_dev_body_only_when_it_prices_a_model() {
+        crate::test_support::install_pricing_snapshots();
         let models_dev =
             r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
         let litellm =
@@ -2910,6 +2912,7 @@ mod tests {
 
     #[test]
     fn reads_embedded_model_context_limits() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         let _ = pricing.context_limit("anthropic.claude-3-5-sonnet-20240620-v1:0");
@@ -2917,6 +2920,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_includes_hermes_frontier_models() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         assert!(pricing.find("gpt-5.5").is_some());
@@ -2926,6 +2930,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_includes_moonshot_kimi_for_offline_reports() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let kimi_k25 = pricing.find("moonshot/kimi-k2.5").unwrap();
         let kimi_k26 = pricing.find("moonshot/kimi-k2.6").unwrap();
@@ -2944,6 +2949,7 @@ mod tests {
 
     #[test]
     fn offline_prices_models_outside_the_claude_and_moonshot_families() {
+        crate::test_support::install_pricing_snapshots();
         // The snapshot used to be filtered by a model-name pattern, so families
         // nobody had added to it were unpriced offline even when models.dev
         // published them and LiteLLM did not.
@@ -2960,6 +2966,7 @@ mod tests {
 
     #[test]
     fn embedded_models_dev_omits_models_priced_per_asset() {
+        crate::test_support::install_pricing_snapshots();
         // These rates are per second of audio and per generated image. The
         // runtime divides by a million and multiplies by token counts, so
         // embedding them reports a wrong cost rather than no cost.
@@ -2983,6 +2990,7 @@ mod tests {
 
     #[test]
     fn embedded_models_dev_prices_resold_models_from_their_author() {
+        crate::test_support::install_pricing_snapshots();
         // models.dev lists kimi-k2.7-code once per catalog that serves it, and
         // reseller catalogs publish their own promotional rates. Selecting one of
         // those would undercharge every Kimi report.
@@ -2996,6 +3004,7 @@ mod tests {
 
     #[test]
     fn exact_only_fallback_beats_a_fuzzy_primary_match() {
+        crate::test_support::install_pricing_snapshots();
         // The snapshot lives in its own map, consulted only after the primary
         // one misses, so marking `claude-opus-5-fast` exact-only there is not
         // enough on its own: a primary or live fuzzy scan could answer with the
@@ -3025,6 +3034,7 @@ mod tests {
 
     #[test]
     fn live_exact_only_fallback_beats_a_fuzzy_primary_match() {
+        crate::test_support::install_pricing_snapshots();
         // The live catalog can add a separately priced tier before the
         // embedded snapshot is regenerated. Its exact-only verdict must gate
         // the primary map's fuzzy scan or that scan bills the base model.
@@ -3110,6 +3120,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_carries_exact_only_catalog_entries() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let embedded = embedded_models_dev_pricing();
 
@@ -3135,6 +3146,7 @@ mod tests {
 
     #[test]
     fn a_separator_spelling_of_an_exact_only_id_is_priced_as_that_id() {
+        crate::test_support::install_pricing_snapshots();
         // `pricing_key_matches` reads `@`, `.` and `-` as one separator, so
         // `claude-opus-5-eu` fuzzy-matches LiteLLM's base `claude-opus-5` exactly
         // as `claude-opus-5@eu` would. Gating only the spelling the catalog wrote
@@ -3162,6 +3174,7 @@ mod tests {
 
     #[test]
     fn a_dotted_spelling_of_a_dash_spelled_exact_only_id_is_priced_as_that_id() {
+        crate::test_support::install_pricing_snapshots();
         // The catalog writes most exact-only ids with dashes alone, and those
         // have to be indexed under their normalized spelling too: a request for
         // `claude-opus-5.fast` normalizes to the id the snapshot carries, so
@@ -3192,6 +3205,7 @@ mod tests {
 
     #[test]
     fn exact_fallback_lookup_resolves_separator_spellings_of_exact_only_ids() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let expected = pricing
             .find_exact_with_fallback("claude-opus-5@eu")
@@ -3213,6 +3227,7 @@ mod tests {
 
     #[test]
     fn exact_fallback_lookup_prefers_primary_normalized_entries() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::load_embedded();
         pricing.load_json(
             r#"{
@@ -3303,6 +3318,7 @@ mod tests {
 
     #[test]
     fn configured_alias_of_an_exact_only_tier_beats_a_fuzzy_match_on_the_alias() {
+        crate::test_support::install_pricing_snapshots();
         // The alias target is only tried after this map has answered for the
         // recorded spelling, and that spelling can fuzzy-match a different model
         // in the primary or live source - here the base `claude-opus-5` - which
@@ -3360,6 +3376,7 @@ mod tests {
 
     #[test]
     fn offline_prices_kimi_k3_from_embedded_models_dev() {
+        crate::test_support::install_pricing_snapshots();
         // LiteLLM may lag new Moonshot releases; offline pricing should still
         // resolve from the embedded models.dev snapshot (see #1462).
         let pricing = PricingMap::load_embedded();
@@ -3383,6 +3400,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_includes_z_ai_glm_models_for_offline_reports() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         let glm_51 = pricing.find("glm-5.1").unwrap();
@@ -3464,6 +3482,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_patches_z_ai_glm_entries_without_litellm_cache_rates() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         let glm_45_air = pricing.find("zai/glm-4.5-air").unwrap();
@@ -3569,6 +3588,7 @@ mod tests {
 
     #[test]
     fn keeps_models_dev_fallback_disabled_for_embedded_and_offline_pricing() {
+        crate::test_support::install_pricing_snapshots();
         use ccusage_cli::PricingOverride;
         assert!(!PricingMap::load_embedded().models_dev_fallback_enabled());
         assert!(
@@ -3606,6 +3626,7 @@ mod tests {
 
     #[test]
     fn keeps_the_models_dev_pricing_its_one_attempt_loaded() {
+        crate::test_support::install_pricing_snapshots();
         let cell = std::sync::OnceLock::new();
         let loaded = super::load_models_dev_pricing_once(&cell, |load| {
             load(
@@ -3652,6 +3673,7 @@ mod tests {
 
     #[test]
     fn loads_missing_models_dev_pricing_without_overriding_litellm() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -3743,6 +3765,7 @@ mod tests {
 
     #[test]
     fn applies_fast_multiplier_override_to_models_dev_fallback() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         let models_dev_json = r#"{
             "openai": {
@@ -3775,6 +3798,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_prefers_the_authoring_catalog_over_resellers() {
+        crate::test_support::install_pricing_snapshots();
         // The same model id appears in every catalog that serves it, and the
         // first one loaded keeps it. Reseller rates are their own, so loading a
         // reseller before the author would bill at a promotional price.
@@ -3815,6 +3839,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_skips_models_priced_per_asset() {
+        crate::test_support::install_pricing_snapshots();
         // The embedded snapshot excludes these, so the online refresh has to as
         // well or `--offline` and the default path disagree. The authored
         // catalog's verdict is carried in, so a reseller calling an image model
@@ -3857,6 +3882,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_keys_asset_pricing_on_the_source_model_id() {
+        crate::test_support::install_pricing_snapshots();
         // `assetPricedModelIds` records the authored source ids generation
         // matches on, so a catalog serving one under a different `id` must be
         // rejected on its key, not on the pricing key that key resolves to.
@@ -3883,6 +3909,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_rejects_explicitly_empty_modalities() {
+        crate::test_support::install_pricing_snapshots();
         // `isTokenPricedModel` defaults only a *missing* list to `['text']`, so an
         // empty one has to fail here too or the snapshot and the online refresh
         // disagree about the same payload.
@@ -3913,6 +3940,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_carries_the_reseller_ids_generation_carries() {
+        crate::test_support::install_pricing_snapshots();
         // Generation prunes no ids any more: every id a catalog publishes is
         // embedded, and the fuzzy lookup is gated instead. Pruning here would
         // price a smaller set of ids online than `--offline` carries, and leave
@@ -3958,6 +3986,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_prefers_the_more_detailed_entry_within_a_tier() {
+        crate::test_support::install_pricing_snapshots();
         // Generation breaks same-tier ties by how much pricing detail an entry
         // carries, so the online path has to as well or the two disagree.
         // `kimi-k2.6-nitro` is a separately priced tier of a carried model, so it
@@ -3995,6 +4024,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_keeps_authored_token_models_a_catalog_mislabels() {
+        crate::test_support::install_pricing_snapshots();
         // A catalog serving claude-opus-5 as image-output would drop a model the
         // snapshot carries. The authored classification settles it both ways, so
         // only models the authored catalog never listed fall back to the live
@@ -4017,6 +4047,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_ranks_by_the_catalog_s_own_provider_id() {
+        crate::test_support::install_pricing_snapshots();
         // The generator reads `provider.id ?? providerId`, so a catalog filed
         // under a different key than its id must still rank as its id - here the
         // authoring catalog, which has to win over the reseller.
@@ -4046,6 +4077,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_orders_detail_the_way_generation_does() {
+        crate::test_support::install_pricing_snapshots();
         // Generation compares cache-read, then cache-write, then context limit, so
         // a cache-read-only entry outranks one carrying the other two. Counting
         // fields instead would pick the other catalog online.
@@ -4076,6 +4108,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_drops_the_context_limit_of_a_replaced_catalog() {
+        crate::test_support::install_pricing_snapshots();
         // The winning catalog publishes no limit, so keeping the loser's would
         // report a context window the selected rates do not belong to.
         let json = r#"{
@@ -4105,6 +4138,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_resolves_duplicate_ids_inside_one_catalog_stably() {
+        crate::test_support::install_pricing_snapshots();
         // Two source keys can carry the same `id`. Generation walks a catalog in
         // key order and keeps the first of an equal-strength tie, so the lower key
         // has to win here too rather than whichever the hash map yields first.
@@ -4131,6 +4165,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_merges_spelling_duplicates_onto_one_entry() {
+        crate::test_support::install_pricing_snapshots();
         // The dotted and dashed spellings name one model. Kept apart, the fuzzy
         // lookup ties between them by length and can return whichever, so the
         // flat reseller spelling must lose its slot to the tiered owner one
@@ -4171,6 +4206,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_prefers_a_tiered_catalog_within_a_trust_tier() {
+        crate::test_support::install_pricing_snapshots();
         // Within one trust tier, the catalog publishing a long-context band
         // outranks one with more cache detail: the band is the rate data
         // hardest to come by.
@@ -4206,6 +4242,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_stores_a_model_with_an_empty_declared_id_by_its_key() {
+        crate::test_support::install_pricing_snapshots();
         // A live catalog can declare `id` as an empty string. The generator's
         // `selectModelsDevPricingKey` falls back to the source key; keeping ""
         // would store the model under a name no lookup ever asks for.
@@ -4228,6 +4265,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_orders_same_id_catalogs_by_their_map_key() {
+        crate::test_support::install_pricing_snapshots();
         // Two catalogs can declare the same provider id. The declared id ties,
         // so the unique map key settles the order - the same order generation's
         // provider-key walk uses - instead of hash iteration.
@@ -4258,6 +4296,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_breaks_exact_ties_by_source_key_across_same_id_catalogs() {
+        crate::test_support::install_pricing_snapshots();
         // Two catalogs declaring the same provider id are one provider to
         // generation, which breaks exact-strength ties by the source model key.
         // The smaller source key lives in the catalog with the LARGER map key
@@ -4291,6 +4330,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_skips_flat_fee_catalogs() {
+        crate::test_support::install_pricing_snapshots();
         // `kimi-for-coding` is a subscription plan, so it publishes zero token
         // costs. Loading it would make the model free for everyone. The rule is
         // about the rates rather than about who publishes them, so an authoring
@@ -4320,6 +4360,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_keeps_a_tier_out_of_the_fuzzy_lookup() {
+        crate::test_support::install_pricing_snapshots();
         // `exactOnly` is a field the generator writes, and a live catalog has no
         // such field, so the verdict has to be rederived here. Otherwise the
         // premium tier stays a fuzzy candidate and wins the base model's lookup,
@@ -4347,6 +4388,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_marks_a_regional_alias_of_a_model_exact_only() {
+        crate::test_support::install_pricing_snapshots();
         // Vertex spells its regional entries with `@`, which the tier check has
         // to fold the way `normalizeModelId` does or `claude-opus-5@eu` stays a
         // fuzzy candidate online while the snapshot marks it exact-only.
@@ -4367,6 +4409,7 @@ mod tests {
 
     #[test]
     fn live_models_dev_pricing_keeps_an_unversioned_id_out_of_the_fuzzy_lookup() {
+        crate::test_support::install_pricing_snapshots();
         // `auto` names no particular model, so as a fuzzy candidate it answered
         // `codex-auto-review`, a label the Codex adapter resolves by date.
         let json = r#"{
@@ -4414,6 +4457,7 @@ mod tests {
 
     #[test]
     fn loads_flat_models_dev_pricing_snapshot() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         let models_dev_json = r#"{
                 "claude-fallback": {
@@ -4444,6 +4488,7 @@ mod tests {
 
     #[test]
     fn applies_speed_multipliers_to_qualified_flat_models_dev_models() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         let models_dev_json = r#"{
                 "openai/gpt-6-astra": {
@@ -4498,6 +4543,7 @@ mod tests {
 
     #[test]
     fn embedded_models_dev_snapshot_is_parseable() {
+        crate::test_support::install_pricing_snapshots();
         let mut map = PricingMap::default();
         assert!(
             map.load_models_dev_json_missing(build_time_models_dev_json())
@@ -4507,6 +4553,7 @@ mod tests {
 
     #[test]
     fn offline_resolves_models_only_in_embedded_models_dev() {
+        crate::test_support::install_pricing_snapshots();
         use ccusage_cli::PricingOverride;
         let offline = PricingMap::load_with_overrides(
             true,
@@ -4528,6 +4575,7 @@ mod tests {
 
     #[test]
     fn offline_prices_new_anthropic_model_from_embedded_models_dev() {
+        crate::test_support::install_pricing_snapshots();
         use ccusage_cli::PricingOverride;
         assert!(
             embedded_models_dev_pricing()
@@ -4545,6 +4593,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_resolves_overlapping_model_keys_exactly() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let sonnet_4 = pricing.find("claude-sonnet-4-20250514").unwrap();
         let sonnet_45 = pricing.find("claude-sonnet-4-5-20250929").unwrap();
@@ -4572,6 +4621,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_includes_gpt_5_5_for_offline_codex_reports() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let gpt_55 = pricing.find("gpt-5.5").unwrap();
 
@@ -4585,6 +4635,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_preserves_gpt_5_6_generated_sources() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let mut litellm_snapshot = PricingMap::default();
         litellm_snapshot.load_json(build_time_pricing_json());
@@ -4722,6 +4773,7 @@ mod tests {
 
     #[test]
     fn gpt_5_6_alias_resolves_to_sol_when_the_generic_entry_is_missing() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         pricing.load_json(
             r#"{
@@ -4759,6 +4811,7 @@ mod tests {
 
     #[test]
     fn embedded_gpt_5_6_exact_entry_wins_over_the_sol_alias() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let exact = pricing.find_exact("gpt-5.6").unwrap();
         let resolved = pricing.find("gpt-5.6").unwrap();
@@ -4781,6 +4834,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_fills_gpt_long_context_tier_rates() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         let gpt_55 = pricing.find("gpt-5.5").unwrap();
@@ -4802,6 +4856,7 @@ mod tests {
 
     #[test]
     fn long_context_overlay_survives_litellm_refresh_and_defers_to_upstream() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::load_embedded();
         // A live LiteLLM refresh replaces whole entries with flat rates and
         // may add date-pinned keys.
@@ -4846,6 +4901,7 @@ mod tests {
 
     #[test]
     fn embedded_models_dev_carries_grok_long_context_tiers() {
+        crate::test_support::install_pricing_snapshots();
         // xAI bills grok-4.5 and grok-4.6 at double rates above 200K input
         // tokens. LiteLLM's embed does not carry xai keys at all, so these come
         // from the models.dev snapshot's `cost.tiers` - without them every
@@ -4870,6 +4926,7 @@ mod tests {
 
     #[test]
     fn long_context_split_threshold_is_per_model() {
+        crate::test_support::install_pricing_snapshots();
         // OpenAI two-stage models switch tiers above 272K input tokens.
         assert_eq!(long_context_split_threshold("gpt-5.6-sol"), 272_000);
         assert_eq!(long_context_split_threshold("gpt-5.5"), 272_000);
@@ -4899,6 +4956,7 @@ mod tests {
 
     #[test]
     fn pricing_lookup_resolves_model_aliases() {
+        crate::test_support::install_pricing_snapshots();
         let _aliases =
             crate::model_aliases::set_model_aliases_for_tests([("private-gpt-55", "gpt-5.5")]);
         let pricing = PricingMap::load_embedded();
@@ -4912,6 +4970,7 @@ mod tests {
 
     #[test]
     fn pricing_lookup_prefers_known_original_model_before_alias() {
+        crate::test_support::install_pricing_snapshots();
         let _aliases =
             crate::model_aliases::set_model_aliases_for_tests([("claude-opus-4-8", "mythos-5")]);
         let pricing = PricingMap::load_embedded();
@@ -5031,6 +5090,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_includes_codex_priority_multiplier() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         assert_eq!(pricing.find("gpt-5.6-sol").unwrap().fast_multiplier, 2.0);
@@ -5045,6 +5105,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_includes_all_openai_flex_models() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         for model in [
@@ -5107,6 +5168,7 @@ mod tests {
 
     #[test]
     fn resolves_ultrafast_multiplier_with_the_standard_pricing_entry() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         for (model, expected) in [
@@ -5161,6 +5223,7 @@ mod tests {
 
     #[test]
     fn keeps_published_speed_multipliers_for_user_price_overrides() {
+        crate::test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([
             ("private-sol", "gpt-6.1-sol"),
             ("private-dated-sol", "gpt-6.1-sol-2026-09-24"),
@@ -5191,6 +5254,7 @@ mod tests {
 
     #[test]
     fn alias_cycle_overrides_build_on_the_snapshot_not_on_each_other() {
+        crate::test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([
             ("cycle-a", "cycle-b"),
             ("cycle-b", "cycle-a"),
@@ -5234,6 +5298,7 @@ mod tests {
 
     #[test]
     fn applies_target_overrides_before_aliases_that_sort_first() {
+        crate::test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([
             ("a-private-sol", "gpt-6.1-sol"),
             ("cycle-a", "cycle-b"),
@@ -5320,6 +5385,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_does_not_resolve_undated_codex_auto_review_model() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         assert!(pricing.find("codex-auto-review").is_none());
@@ -5328,6 +5394,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_resolves_codex_spark_short_model_alias() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let short_spark = pricing
             .find("gpt-5.3-spark")
@@ -5344,6 +5411,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_resolves_codex_gpt_reserve_to_gpt_5_6_luna() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let reserve = pricing
             .find("gpt-reserve")
@@ -5380,6 +5448,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_includes_claude_fast_multiplier_for_provider_models() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         assert_eq!(
@@ -5407,6 +5476,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_resolves_opus_47_dot_model_names() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let opus_47 = pricing.find("claude-opus-4-7").unwrap();
 
@@ -5422,6 +5492,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_resolves_opus_48_dot_model_names() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let canonical = pricing.find("claude-opus-4-8").unwrap();
 
@@ -5438,6 +5509,7 @@ mod tests {
 
     #[test]
     fn embedded_pricing_resolves_separator_aliases_for_other_claude_models() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let sonnet_46 = pricing.find("claude-sonnet-4-6").unwrap();
         let haiku_45 = pricing.find("claude-haiku-4-5").unwrap();
@@ -5537,6 +5609,7 @@ mod tests {
 
     #[test]
     fn fuzzy_match_allows_date_like_suffixes_for_known_numeric_model_versions() {
+        crate::test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
 
         assert!(pricing.find("claude-opus-4-8-20270898").is_some());
@@ -5647,6 +5720,7 @@ mod tests {
 
     #[test]
     fn embedded_build_time_pricing_is_filtered() {
+        crate::test_support::install_pricing_snapshots();
         let json = build_time_pricing_json();
         assert!(json.len() < 200_000);
         assert!(!json.contains("\"source\""));
@@ -5762,6 +5836,7 @@ mod tests {
 
         #[test]
         fn exact_override_wins_over_gpt_5_6_alias() {
+            crate::test_support::install_pricing_snapshots();
             let mut pricing = PricingMap::load_embedded();
             let sol = pricing.find("gpt-5.6-sol").unwrap();
             let overrides = build_overrides("gpt-5.6", |o| {

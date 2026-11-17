@@ -759,6 +759,7 @@ mod tests {
 
     #[test]
     fn exact_raw_model_pricing_override_beats_normalized_fallback() {
+        ccusage_test_support::install_pricing_snapshots();
         let model = "grok-4.3-build".to_string();
         let pricing_override = crate::cli::PricingOverride {
             input_cost_per_token: Some(1.0),
@@ -780,6 +781,7 @@ mod tests {
 
     #[test]
     fn prices_via_the_stripped_candidate_when_the_build_form_is_missing() {
+        ccusage_test_support::install_pricing_snapshots();
         // The model is one no pricing table carries, so only the override key
         // can answer it. That key carries a suffix of its own, which no
         // `-build` candidate can reach: pricing the model therefore proves the
@@ -820,6 +822,7 @@ mod tests {
 
     #[test]
     fn reports_an_unpriced_model_as_missing_pricing_instead_of_dropping_it() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": turn_line(
                 "evt-miss",
@@ -854,6 +857,7 @@ mod tests {
 
     #[test]
     fn turn_completed_model_usage_maps_tokens_without_double_count() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"sess-1","cwd":"D:\\work\\proj"},"current_model_id":"grok-4.5"}"#,
@@ -888,6 +892,7 @@ mod tests {
 
     #[test]
     fn does_not_add_reasoning_tokens_to_the_total() {
+        ccusage_test_support::install_pricing_snapshots();
         let tokens = TurnTokens {
             input: 0,
             output: 0,
@@ -905,6 +910,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_top_level_usage_when_model_usage_is_absent() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-top","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":50,"outputTokens":5,"cachedReadTokens":10,"reasoningTokens":2}},"_meta":{"eventId":"evt-top"}}}"#;
         let summary =
             r#"{"info":{"id":"sess-top","cwd":"/tmp/proj"},"current_model_id":"grok-4.5-build"}"#;
@@ -920,6 +926,7 @@ mod tests {
 
     #[test]
     fn names_top_level_usage_unknown_when_summary_has_no_default_model() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-u","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}},"_meta":{"eventId":"evt-u"}}}"#;
         let entries = parse_lines(line, None);
 
@@ -929,6 +936,7 @@ mod tests {
 
     #[test]
     fn prefers_agent_timestamp_ms_over_envelope_seconds() {
+        ccusage_test_support::install_pricing_snapshots();
         let tokens = TurnTokens {
             input: 10,
             output: 1,
@@ -951,6 +959,7 @@ mod tests {
 
     #[test]
     fn converts_envelope_unix_seconds_to_millis_when_agent_ms_is_absent() {
+        ccusage_test_support::install_pricing_snapshots();
         let tokens = TurnTokens {
             input: 10,
             output: 1,
@@ -967,6 +976,7 @@ mod tests {
 
     #[test]
     fn uses_unix_epoch_when_no_timestamp_fields_are_present() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = r#"{"params":{"sessionId":"sess-e","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":1,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-e"}}}"#;
         let entries = parse_lines(line, None);
 
@@ -976,6 +986,7 @@ mod tests {
 
     #[test]
     fn summary_cwd_overrides_path_derived_project_and_fills_session_when_line_omits_it() {
+        ccusage_test_support::install_pricing_snapshots();
         // No params.sessionId — meta from summary.json should supply the session id.
         let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-meta"}}}"#;
         let summary = r#"{"info":{"id":"canonical-session","cwd":"D:\\canonical\\cwd"},"git_root_dir":"should-not-win"}"#;
@@ -987,6 +998,7 @@ mod tests {
 
     #[test]
     fn a_malformed_summary_falls_back_to_path_metadata_without_a_skip() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"SECRET_CANARY""#,
@@ -1025,6 +1037,7 @@ mod tests {
 
     #[test]
     fn line_session_id_beats_summary_id() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = sample_turn_completed_line();
         let summary = r#"{"info":{"id":"canonical-session","cwd":"D:\\canonical\\cwd"}}"#;
         let entries = parse_lines(&line, Some(summary));
@@ -1035,6 +1048,7 @@ mod tests {
 
     #[test]
     fn url_decodes_project_segment_when_summary_is_absent() {
+        ccusage_test_support::install_pricing_snapshots();
         // Omit params.sessionId so the session directory name becomes the id.
         let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-url"}}}"#;
         let fixture = fs_fixture!({
@@ -1080,6 +1094,7 @@ mod tests {
 
     #[test]
     fn url_decodes_multi_byte_project_segment() {
+        ccusage_test_support::install_pricing_snapshots();
         // `%C3%A9` is one UTF-8 code point split across two percent triplets.
         let line = r#"{"timestamp":1750000000,"params":{"update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-utf8"}}}"#;
         let fixture = fs_fixture!({
@@ -1105,6 +1120,7 @@ mod tests {
 
     #[test]
     fn skips_turn_completed_without_usage_and_zero_rows() {
+        ccusage_test_support::install_pricing_snapshots();
         let lines = [
             r#"{"timestamp":1750000001,"params":{"update":{"sessionUpdate":"tool_call"}}}"#,
             r#"{"timestamp":1750000002,"params":{"update":{"sessionUpdate":"turn_completed"},"_meta":{"eventId":"no-usage"}}}"#,
@@ -1120,6 +1136,7 @@ mod tests {
 
     #[test]
     fn multi_model_turn_emits_one_entry_per_model() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = r#"{"timestamp":1750000100,"params":{"sessionId":"sess-m","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"model-a":{"inputTokens":10,"outputTokens":2,"cachedReadTokens":0,"reasoningTokens":1},"model-b":{"inputTokens":20,"outputTokens":4,"cachedReadTokens":5,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-multi"}}}"#;
         let mut entries = parse_lines(line, None);
         entries.sort_by(|a, b| a.model.cmp(&b.model));
@@ -1134,6 +1151,7 @@ mod tests {
 
     #[test]
     fn dedupes_same_event_id_and_model() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = sample_turn_completed_line();
         let content = format!("{line}\n{line}\n");
         let entries = parse_lines(&content, None);
@@ -1142,6 +1160,7 @@ mod tests {
 
     #[test]
     fn dedupes_identical_rows_without_event_id_by_content_key() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-d","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":10}}}}}}"#;
         let content = format!("{line}\n{line}\n");
         let entries = parse_lines(&content, None);
@@ -1150,6 +1169,7 @@ mod tests {
 
     #[test]
     fn keeps_rows_without_event_id_that_differ_only_in_cache_creation() {
+        ccusage_test_support::install_pricing_snapshots();
         // Both turns leave 80 uncached input, so cache creation is the only
         // discriminator left; dropping one would undercount 20 tokens.
         let with_creation = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-cc","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":5,"cachedReadTokens":0,"cacheCreationTokens":20,"reasoningTokens":0}}}}}}"#;
@@ -1166,6 +1186,7 @@ mod tests {
 
     #[test]
     fn keeps_distinct_models_that_share_an_event_id() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = r#"{"timestamp":1750000100,"params":{"sessionId":"sess-m","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"model-a":{"inputTokens":10,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0},"model-b":{"inputTokens":20,"outputTokens":2,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-shared"}}}"#;
         let entries = parse_lines(line, None);
         assert_eq!(entries.len(), 2);
@@ -1173,6 +1194,7 @@ mod tests {
 
     #[test]
     fn display_mode_cost_is_zero_and_does_not_flag_missing_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": sample_turn_completed_line(),
         });
@@ -1195,6 +1217,7 @@ mod tests {
 
     #[test]
     fn reads_the_recorded_cost_usd_ticks() {
+        ccusage_test_support::install_pricing_snapshots();
         // Verbatim from a Grok CLI 1.0.0 turn: 185_192_000 ticks is $0.0185192,
         // which is exactly the xAI list price for these token counts.
         let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":18444,"outputTokens":130,"cachedReadTokens":11264,"reasoningTokens":73,"costUsdTicks":185192000,"modelUsage":{"grok-4.5-build":{"inputTokens":18444,"outputTokens":130,"cachedReadTokens":11264,"reasoningTokens":73,"costUsdTicks":185192000}}}},"_meta":{"eventId":"evt-cost"}}}"#;
@@ -1213,6 +1236,7 @@ mod tests {
 
     #[test]
     fn auto_mode_marks_recorded_ticks_as_stored_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/proj/sess-1/updates.jsonl": r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":18444,"outputTokens":130,"costUsdTicks":185192000,"modelUsage":{"grok-4.5-build":{"inputTokens":18444,"outputTokens":130,"costUsdTicks":185192000}}}},"_meta":{"eventId":"evt-cost"}}}"#,
         });
@@ -1242,6 +1266,7 @@ mod tests {
 
     #[test]
     fn reads_cache_creation_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"cacheCreationTokens":25,"reasoningTokens":10,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"cacheCreationTokens":25,"reasoningTokens":10}}}},"_meta":{"eventId":"evt-cc"}}}"#;
         let entries = parse_lines(line, None);
 
@@ -1257,6 +1282,7 @@ mod tests {
 
     #[test]
     fn auto_prefers_recorded_ticks_while_calculate_recomputes() {
+        ccusage_test_support::install_pricing_snapshots();
         let key = "grok-4.5".to_string();
         let pricing_override = crate::cli::PricingOverride {
             input_cost_per_token: Some(1.0),
@@ -1294,6 +1320,7 @@ mod tests {
 
     #[test]
     fn auto_falls_back_to_the_pricing_table_without_ticks() {
+        ccusage_test_support::install_pricing_snapshots();
         let key = "grok-4.5".to_string();
         let pricing_override = crate::cli::PricingOverride {
             input_cost_per_token: Some(1.0),

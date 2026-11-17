@@ -103,6 +103,7 @@ mod tests {
 
     #[test]
     fn loads_assistant_usage_from_chat_messages() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "projects/project-a/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
                 {"role":"user","text":"hello"},
@@ -137,6 +138,7 @@ mod tests {
 
     #[test]
     fn malformed_chat_file_is_reported_and_an_unwritten_one_is_not() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "projects/project-a/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
                 {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}
@@ -166,6 +168,7 @@ mod tests {
 
     #[test]
     fn focused_and_unified_reports_agree() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "projects/project-a/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
                 {"id":"assistant-message","role":"assistant","timestamp":"2026-01-02T03:04:06.000Z","metadata":{"model":"claude-sonnet-4-20250514","usage":{"inputTokens":100,"outputTokens":50}}}
@@ -183,6 +186,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_run_state_provider_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "projects/project-a/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
                 {"variant":"agent","metadata":{"runState":{"sessionState":{"mainAgentState":{"messageHistory":[

@@ -120,6 +120,7 @@ mod tests {
 
     #[test]
     fn loads_session_tree_with_uncached_split() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = turn("evt-load", "grok-4.5-build", 100, 20, 40, 10, 1_750_000_000);
         let fixture = fs_fixture!({
             "sessions/proj/sess-load/updates.jsonl": line,
@@ -143,6 +144,7 @@ mod tests {
 
     #[test]
     fn dedupes_the_same_event_across_session_files() {
+        ccusage_test_support::install_pricing_snapshots();
         // The same server event can land in more than one session export; count it once.
         let shared_event = turn("evt-shared", "grok-4.5-build", 100, 20, 0, 0, 1_750_000_000);
         let other = turn("evt-other", "grok-4.5-build", 50, 5, 0, 0, 1_750_000_100);
@@ -167,6 +169,7 @@ mod tests {
 
     #[test]
     fn keeps_usage_from_a_readable_session_when_a_sibling_file_is_corrupt() {
+        ccusage_test_support::install_pricing_snapshots();
         let good = turn("evt-good", "grok-4.5-build", 80, 8, 0, 0, 1_750_000_000);
         let fixture = fs_fixture!({
             "sessions/proj/sess-good/updates.jsonl": good,
@@ -186,6 +189,7 @@ mod tests {
 
     #[test]
     fn keeps_event_id_less_turns_that_differ_only_in_reasoning() {
+        ccusage_test_support::install_pricing_snapshots();
         let base = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-nr","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":40,"reasoningTokens":REASONING}}}}}}"#;
         let fixture = fs_fixture!({
             "sessions/proj/sess-nr/updates.jsonl": format!(
@@ -211,6 +215,7 @@ mod tests {
 
     #[test]
     fn sorts_entries_by_timestamp_across_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let early = turn("evt-early", "grok-4.5-build", 10, 1, 0, 0, 1_750_000_000);
         let late = turn("evt-late", "grok-4.5-build", 20, 2, 0, 0, 1_750_100_000);
         let fixture = fs_fixture!({

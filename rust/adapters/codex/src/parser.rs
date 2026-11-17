@@ -1805,6 +1805,7 @@ mod tests {
 
     #[test]
     fn routes_codex_auto_review_through_models_the_embedded_pricing_knows() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = crate::PricingMap::load_embedded();
 
         for fallback in CODEX_AUTO_REVIEW_FALLBACKS {

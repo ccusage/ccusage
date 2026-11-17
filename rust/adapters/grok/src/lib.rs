@@ -116,6 +116,7 @@ mod tests {
 
     #[test]
     fn focused_reports_match_the_unified_slice() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = serde_json::json!({
             "timestamp": 1_770_000_000_i64,
             "params": {
@@ -154,6 +155,7 @@ mod tests {
 
     #[test]
     fn malformed_selected_update_is_reported_and_detected_outside_the_window() {
+        ccusage_test_support::install_pricing_snapshots();
         let good = serde_json::json!({
             "timestamp": 1_770_000_000_i64,
             "params": {

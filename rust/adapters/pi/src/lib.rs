@@ -144,6 +144,7 @@ mod tests {
 
     #[test]
     fn unified_sessions_keep_project_paths_and_focused_totals() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/project-a/agent_same-session.jsonl": [
                 r#"{"type":"session","id":"same-session","timestamp":"2026-01-01T00:00:00.000Z"}"#,
@@ -183,6 +184,7 @@ mod tests {
 
     #[test]
     fn malformed_selected_message_is_diagnosed_without_dropping_following_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": [
                 r#"{"type":"session","id":"session-a","timestamp":"2026-01-01T00:00:00.000Z"}"#,

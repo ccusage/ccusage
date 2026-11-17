@@ -252,6 +252,7 @@ fn leaves_unmarked_and_unsupported_service_tiers_unclassified() {
 
 #[test]
 fn dedupes_copied_branch_history_across_session_files() {
+    ccusage_test_support::install_pricing_snapshots();
     let parent_history = [
         json!({
             "timestamp": "2026-05-12T08:00:00.000Z",
@@ -2320,6 +2321,7 @@ fn skips_repeated_last_usage_when_cumulative_total_is_unchanged() {
 
 #[test]
 fn bounded_loading_resolves_thread_id_rollout_parent_by_payload_id() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/2025/01/01/2025-01-01T08-00-00-thread_id_rollout.jsonl": [
             replay_metadata("2025-01-01T08:00:00.000Z", "parent-id", None),
@@ -2375,6 +2377,7 @@ fn bounded_loading_resolves_thread_id_rollout_parent_by_payload_id() {
 
 #[test]
 fn bounded_loading_does_not_select_a_misleading_filename() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/2025/01/01/aaa-target-id.jsonl": [
             replay_metadata("2025-01-01T08:00:00.000Z", "different-id", None),
@@ -2438,6 +2441,7 @@ fn bounded_loading_does_not_select_a_misleading_filename() {
 
 #[test]
 fn bounded_loading_uses_the_first_duplicate_parent_id() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/2025/01/01/aaa-first-parent.jsonl": [
             replay_metadata("2025-01-01T08:00:00.000Z", "parent-id", None),
@@ -2501,6 +2505,7 @@ fn bounded_loading_uses_the_first_duplicate_parent_id() {
 
 #[test]
 fn bounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/2025/01/01/aaa-child.jsonl": [
             replay_metadata(
@@ -2560,6 +2565,7 @@ fn bounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
 
 #[test]
 fn unbounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/2025/01/01/aaa-child.jsonl": [
             replay_metadata(
@@ -2609,6 +2615,7 @@ fn unbounded_loading_skips_a_self_parent_candidate_for_a_duplicate_parent_id() {
 
 #[test]
 fn bounded_loading_metadata_probes_history_but_reads_parent_usage_only() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/2025/01/01/parent.jsonl": [
             replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
@@ -2689,6 +2696,7 @@ fn loads_codex_token_count_events() {
 
 #[test]
 fn loads_codex_token_count_groups_in_parallel() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/session-a.jsonl": [
             r#"{"timestamp":"2026-01-02T00:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5"}}"#,
@@ -2762,6 +2770,7 @@ fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
 
 #[test]
 fn the_fused_fork_pass_records_a_parent_skip_once() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/2025/01/01/parent.jsonl": [
             replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),
@@ -2801,6 +2810,7 @@ fn the_fused_fork_pass_records_a_parent_skip_once() {
 
 #[test]
 fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "sessions/2025/01/01/parent.jsonl": [
             replay_metadata("2025-01-01T08:00:00.000Z", "parent", None),

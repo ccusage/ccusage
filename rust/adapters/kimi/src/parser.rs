@@ -522,6 +522,7 @@ mod tests {
 
     #[test]
     fn prices_default_kimi_model_by_timestamp_without_changing_display_model() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = TokenUsageRaw {
             input_tokens: 100,

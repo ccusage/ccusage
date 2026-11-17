@@ -277,6 +277,7 @@ mod tests {
 
     #[test]
     fn calculates_cost_for_hermes_frontier_models_from_embedded_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         for model in ["gpt-5.5", "grok-4.3"] {
             let entry = HermesEntry {
@@ -307,6 +308,7 @@ mod tests {
 
     #[test]
     fn recorded_zero_cost_falls_back_to_pricing_calculation() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
@@ -335,6 +337,7 @@ mod tests {
 
     #[test]
     fn recorded_positive_cost_is_trusted() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00.000Z").unwrap(),
@@ -423,6 +426,7 @@ mod tests {
 
     #[test]
     fn uses_exact_provider_pricing_from_embedded_fallback_before_timestamped_raw_model() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let entry = HermesEntry {
             timestamp: crate::parse_ts_timestamp("2026-08-17T01:00:00Z").unwrap(),

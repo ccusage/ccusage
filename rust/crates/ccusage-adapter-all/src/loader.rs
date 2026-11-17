@@ -688,6 +688,7 @@ mod tests {
 
     #[test]
     fn pricing_maps_exclude_sources_that_load_their_own_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let shared = SharedArgs {
             offline: true,
             ..SharedArgs::default()
@@ -715,6 +716,7 @@ mod tests {
 
     #[test]
     fn source_claude_project_filters_daily_and_session_rows_without_filtering_other_sources() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "claude-config/projects/project-a/session-a.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"session-a","costUSD":0.01,"message":{"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"model":"claude-sonnet-4-20250514","id":"msg-a"}}"#,
             "claude-config/projects/project-b/session-b.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"session-b","costUSD":0.02,"message":{"usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"model":"claude-sonnet-4-20250514","id":"msg-b"}}"#,
@@ -1032,6 +1034,7 @@ mod tests {
 
     #[test]
     fn unified_row_reports_codex_cache_write_tokens_and_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = CodexModelUsage {
             input_tokens: 935_040,
@@ -1112,6 +1115,7 @@ mod tests {
 
     #[test]
     fn load_rows_filters_named_pi_store_sessions_like_pi_path_subcommand() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "omp/sessions/project-a/agent_inside-session.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
             "omp/sessions/project-a/agent_outside-session.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
@@ -1232,6 +1236,7 @@ mod tests {
 
     #[test]
     fn default_pi_unified_session_window_keeps_until_day_like_pi_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "pi/sessions/project-a/agent_until-day.jsonl": r#"{"type":"message","timestamp":"2026-07-04T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
             "pi/sessions/project-a/agent_after-day.jsonl": r#"{"type":"message","timestamp":"2026-07-05T18:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":20,"output":2}}}"#,
@@ -1280,6 +1285,7 @@ mod tests {
 
     #[test]
     fn unified_claude_session_window_keeps_sessions_last_active_on_the_until_day() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "claude-config/projects/project-a/until-day.jsonl": r#"{"timestamp":"2026-07-05T03:00:00.000Z","sessionId":"until-day","costUSD":0.01,"message":{"usage":{"input_tokens":10,"output_tokens":1},"model":"claude-sonnet-4-20250514","id":"msg-until"}}"#,
             "claude-config/projects/project-a/after-day.jsonl": r#"{"timestamp":"2026-07-06T03:00:00.000Z","sessionId":"after-day","costUSD":0.02,"message":{"usage":{"input_tokens":20,"output_tokens":2},"model":"claude-sonnet-4-20250514","id":"msg-after"}}"#,
@@ -1486,6 +1492,7 @@ mod tests {
 
     #[test]
     fn load_rows_rejects_named_pi_store_that_collides_with_default_pi_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
@@ -1524,6 +1531,7 @@ mod tests {
 
     #[test]
     fn load_rows_rejects_named_pi_store_that_collides_with_another_store() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
@@ -1567,6 +1575,7 @@ mod tests {
 
     #[test]
     fn load_rows_rejects_named_pi_store_nested_inside_default_pi_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             ".pi/agent/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
@@ -1605,6 +1614,7 @@ mod tests {
 
     #[test]
     fn load_rows_rejects_named_pi_store_partially_overlapping_another_store() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "shared/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":20}}}"#,
         });
@@ -1649,6 +1659,7 @@ mod tests {
 
     #[test]
     fn load_rows_includes_named_pi_store_through_production_wiring() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "omp/sessions/project-a/agent_omp-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
@@ -1685,6 +1696,7 @@ mod tests {
 
     #[test]
     fn load_rows_reads_the_default_pi_store_from_its_source_pi_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
@@ -1726,6 +1738,7 @@ mod tests {
 
     #[test]
     fn load_rows_filters_a_source_by_its_own_date_window() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "pi/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
@@ -1767,6 +1780,7 @@ mod tests {
 
     #[test]
     fn loads_codex_and_pi_with_source_pricing_speed_and_date_options() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "codex-home/sessions/2026/07/21/before.jsonl": codex_rollout(
                 "2026-07-21",
@@ -1856,6 +1870,7 @@ mod tests {
 
     #[test]
     fn loads_codex_with_source_pricing_speed_without_date_bounds() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "codex-home/sessions/2026/07/22/in-range.jsonl": codex_rollout(
                 "2026-07-22",
@@ -1901,6 +1916,7 @@ mod tests {
 
     #[test]
     fn reads_openclaw_entries_from_the_source_custom_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "custom-openclaw/agents/main/sessions/custom.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1660,"output":55,"totalTokens":1715,"cost":{"total":0.02}},"timestamp":1769753935279}}"#,
         });
@@ -1936,6 +1952,7 @@ mod tests {
 
     #[test]
     fn rejects_named_pi_store_overlapping_the_source_custom_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "custom/pi/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
         });
@@ -1972,6 +1989,7 @@ mod tests {
 
     #[test]
     fn named_pi_stores_keep_unified_shared_and_pricing_options() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "fork/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-named-source-config","usage":{"input":1000,"output":500}}}"#,
         });

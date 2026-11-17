@@ -241,6 +241,7 @@ mod tests {
 
     #[test]
     fn normalizes_both_inclusive_cache_buckets() {
+        ccusage_test_support::install_pricing_snapshots();
         let entry = row_to_entry(
             row(),
             &JiffTimeZone::UTC,
@@ -264,6 +265,7 @@ mod tests {
 
     #[test]
     fn prices_current_zai_account_and_builtin_plan_ids() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         for provider in [
             "account:zai-individual-coding-plan",
@@ -291,6 +293,7 @@ mod tests {
 
     #[test]
     fn prices_zai_models_but_not_unknown_custom_providers() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let priced = row_to_entry(
             row(),
@@ -325,6 +328,7 @@ mod tests {
 
     #[test]
     fn prices_legacy_bigmodel_provider_with_provider_qualified_glm_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut row = row();
         row.provider_id = Some("builtin:bigmodel-coding-plan".to_string());
 
@@ -344,6 +348,7 @@ mod tests {
 
     #[test]
     fn prices_zai_cache_creation_at_standard_input_rate_for_glm_52_and_53() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let priced = |model: &str| {
             let mut row = row();
@@ -372,6 +377,7 @@ mod tests {
 
     #[test]
     fn honors_raw_model_overrides_for_custom_providers() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut row = row();
         row.provider_id = Some("847d13c9-0568-4f2f-818e-8bd498e5d920".to_string());
         row.model_id = Some("deepseek-v4-flash".to_string());
@@ -403,6 +409,7 @@ mod tests {
 
     #[test]
     fn routes_unaccounted_total_tokens_to_extra_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let mut row = row();
         row.computed_total_tokens = 123;
         let entry = row_to_entry(

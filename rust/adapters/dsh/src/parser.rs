@@ -745,6 +745,7 @@ mod tests {
 
     #[test]
     fn prices_default_deepseek_models_offline() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         for model in ["deepseek-v4-pro", "deepseek-flash"] {
             let entry = DshUsageEntry {
@@ -772,6 +773,7 @@ mod tests {
 
     #[test]
     fn applies_the_deepseek_time_of_day_schedule_to_first_party_routes() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let cost_at = |millis: i64| {
             let entry = DshUsageEntry {

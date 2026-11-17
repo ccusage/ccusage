@@ -21,8 +21,8 @@ constants that `ccusage-core` inflates once the binary hands them over through
 
 The snapshots used to live in `ccusage-core`, where every scheduled snapshot
 refresh recompiled that crate and every adapter built on it. Here only the
-binary depends on them; tests reach them through `ccusage-core`'s
-`test-snapshots` feature, enabled from `[dev-dependencies]`.
+binary and `ccusage-test-support`, whose `install_pricing_snapshots` tests
+call, depend on them.
 
 ## Depends on
 

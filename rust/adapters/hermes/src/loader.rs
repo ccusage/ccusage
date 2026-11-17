@@ -131,6 +131,7 @@ mod tests {
 
     #[test]
     fn loads_billable_hermes_sessions_from_state_db() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let db_path = fixture.path("state.db");
         create_state_db(&db_path);
@@ -195,6 +196,7 @@ mod tests {
 
     #[test]
     fn classifies_state_database_query_failures_and_keeps_healthy_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "good/state.db": "",
             "broken/state.db": "not a SQLite database",
@@ -293,6 +295,7 @@ mod tests {
 
     #[test]
     fn focused_and_unified_reports_agree() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"state.db": ""});
         let db_path = fixture.path("state.db");
         create_state_db(&db_path);

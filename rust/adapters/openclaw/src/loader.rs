@@ -112,6 +112,7 @@ mod tests {
 
     #[test]
     fn calculates_cost_from_pricing_overrides() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "agents/main/sessions/abc.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":1000,"output":500,"cost":{"total":0.99}},"timestamp":1769753935279}}"#,
         });

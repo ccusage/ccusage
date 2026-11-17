@@ -534,6 +534,8 @@ name = "ccusage-test-support"
 version = "0.0.0"
 dependencies = [
  "assert_fs",
+ "ccusage-core",
+ "ccusage-pricing-snapshots",
  "jiff",
  "sqlite",
 ]

@@ -44,6 +44,7 @@ mod tests {
 
     #[test]
     fn loads_status_update_token_usage_from_wire_files() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "config.json": r#"{"model":"kimi-k2"}"#,
             "sessions/group/session-a/wire.jsonl": [
@@ -75,6 +76,7 @@ mod tests {
 
     #[test]
     fn loads_kimi_code_usage_record_format() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/workspace/session-b/agents/agent-1/wire.jsonl": [
                 r#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{"inputOther":3064,"output":76,"inputCacheRead":14848,"inputCacheCreation":0},"usageScope":"turn","time":1782113184943}"#,
@@ -100,6 +102,7 @@ mod tests {
 
     #[test]
     fn skips_malformed_and_zero_token_wire_lines() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/group/session-a/wire.jsonl": [
                 "not json",

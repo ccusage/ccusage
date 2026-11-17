@@ -378,6 +378,7 @@ mod tests {
 
     #[test]
     fn claude_session_calculate_uses_each_deepseek_v4_event_timestamp() {
+        ccusage_test_support::install_pricing_snapshots();
         let rows = claude_session_rows(
             &[
                 r#"{"timestamp":"2026-08-15T23:59:59.000Z","sessionId":"session-a","requestId":"request-old","message":{"id":"message-old","model":"deepseek-v4-flash","usage":{"input_tokens":1000000,"output_tokens":0}}}"#,

@@ -1740,6 +1740,7 @@ mod tests {
 
     #[test]
     fn maps_claude_opus_5_5_id_and_placeholder_to_priced_model() {
+        ccusage_test_support::install_pricing_snapshots();
         assert_eq!(model_from_id(1402).as_deref(), Some("claude-opus-5-5"));
         assert_eq!(
             normalize_antigravity_model("model_placeholder_m402").as_deref(),
@@ -1947,6 +1948,7 @@ mod tests {
 
     #[test]
     fn legacy_models_keep_timestamp_aware_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = TokenUsageRaw {
             input_tokens: 1_000_000,

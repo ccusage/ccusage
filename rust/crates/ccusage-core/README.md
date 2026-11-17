@@ -34,8 +34,9 @@ The snapshot bytes themselves live in `ccusage-pricing-snapshots`, which only
 the binary depends on, so the scheduled snapshot refreshes do not recompile
 this crate or any adapter. The binary installs them at startup with
 `pricing::set_embedded_snapshots`, and the runtime inflates each one once, on
-first use. Tests enable the `test-snapshots` feature from `[dev-dependencies]`
-instead, which falls back to that crate when nothing was installed.
+first use. Tests install them explicitly with
+`ccusage_test_support::install_pricing_snapshots`, so no build of the binary
+can skip its own install.
 
 ## Depends on
 
@@ -48,8 +49,6 @@ instead, which falls back to that crate when nothing was installed.
 - `serde`
 - `serde_json`
 - `smallvec`
-- `ccusage-pricing-snapshots` — optional, behind the test-only `test-snapshots`
-  feature
 
 ## Build layer
 

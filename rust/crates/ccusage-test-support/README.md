@@ -11,6 +11,9 @@ Test-only helpers: filesystem fixtures and environment-variable guards.
 - `mutation::assert_parser_survives_mutations` — run a parser over every damaged
   variant of a fixture (truncated, values nulled, number and string types
   swapped) and fail when it panics, since a panic aborts the release binary.
+- `install_pricing_snapshots` — hand the embedded pricing snapshots to
+  `ccusage-core`, as the binary does at startup; a test that loads pricing calls
+  it first.
 - `zcode::create_fixture` — create the representative ZCode SQLite schema and
   usage rows shared by adapter and unified report tests.
 
@@ -22,12 +25,15 @@ at runtime.
 - `EnvVarGuard`
 - `EnvVarsGuard`
 - `Fixture`
+- `install_pricing_snapshots`
 - `mutation::assert_parser_survives_mutations`
 - `zcode::create_fixture`
 
 ## Depends on
 
 - `assert_fs`
+- `ccusage-core`
+- `ccusage-pricing-snapshots`
 - `jiff`
 - `sqlite`
 

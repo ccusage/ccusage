@@ -483,6 +483,7 @@ mod tests {
 
     #[test]
     fn reports_sqlite_corruption_during_schema_probe_as_invalid_data() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "agents/main/agent/openclaw-agent.sqlite": "not a SQLite database",
         });

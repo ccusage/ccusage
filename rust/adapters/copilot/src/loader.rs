@@ -1304,6 +1304,7 @@ mod tests {
 
     #[test]
     fn normalizes_copilot_model_suffixes_for_pricing_and_otel_dedupe() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "home/.copilot/session-state/session-1/events.jsonl": format!(
                 "{}\n",

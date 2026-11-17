@@ -18,7 +18,6 @@ smallvec.workspace = true
 [dev-dependencies]
 ccusage-cli-parser.workspace = true
 ccusage-config.workspace = true
-ccusage-core = { workspace = true, features = ["test-snapshots"] }
 ccusage-test-support.workspace = true
 
 [lints]

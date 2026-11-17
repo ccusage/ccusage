@@ -406,6 +406,7 @@ mod tests {
 
     #[test]
     fn prices_two_stage_model_as_whole_request_at_long_context_rates() {
+        crate::test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();
         assert_eq!(
             pricing.load_models_dev_json_for_tests(
@@ -484,6 +485,7 @@ mod tests {
 
     #[test]
     fn cached_context_selects_the_long_context_tier() {
+        crate::test_support::install_pricing_snapshots();
         // The tier is chosen by the whole context the request carried, and on
         // agents with aggressive prompt caching almost all of it is cache
         // reads: a Grok turn re-reading megabytes of cached context with a few

@@ -17,6 +17,9 @@ pub mod types;
 pub mod utils;
 pub mod window;
 
+#[cfg(test)]
+mod test_support;
+
 pub mod cli {
     pub use ccusage_cli::*;
 }

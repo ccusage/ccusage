@@ -387,6 +387,7 @@ mod tests {
 
     #[test]
     fn parses_completed_extension_requests_and_skips_partial_or_malformed_records() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!([
             {
                 "ts": 1790000000000_i64,
@@ -441,6 +442,7 @@ mod tests {
 
     #[test]
     fn skips_extension_request_when_model_is_only_in_task_metadata() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = ccusage_test_support::fs_fixture!({
             "tasks/task-a/ui_messages.json": "[]",
             "tasks/task-a/task_metadata.json": r#"{
@@ -474,6 +476,7 @@ mod tests {
 
     #[test]
     fn extension_requires_all_integer_counters_and_drops_rollup_events() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!([
             {
                 "ts": 1700000000000_i64,
@@ -575,6 +578,7 @@ mod tests {
 
     #[test]
     fn extension_requires_its_own_valid_timestamp_and_known_model_id() {
+        ccusage_test_support::install_pricing_snapshots();
         let complete_text =
             r#"{"tokensIn":1,"tokensOut":1,"cacheReads":0,"cacheWrites":0,"cost":0.5}"#;
         let root = json!([
@@ -649,6 +653,7 @@ mod tests {
 
     #[test]
     fn cli_requires_complete_usage_model_and_valid_request_timestamp() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({
             "messages": [
                 {
@@ -730,6 +735,7 @@ mod tests {
 
     #[test]
     fn cli_rejects_inconsistent_cache_totals_instead_of_saturating() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({
             "messages": [{
                 "role": "assistant",
@@ -762,6 +768,7 @@ mod tests {
 
     #[test]
     fn parses_cli_transcript_assistant_metrics_and_subtracts_cached_input() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({
             "messages": [
                 {"role": "user", "timestamp": "2026-10-01T12:00:00Z", "metrics": {"inputTokens": 10}},
@@ -815,6 +822,7 @@ mod tests {
 
     #[test]
     fn cost_modes_preserve_reported_zero_and_calculate_known_models() {
+        ccusage_test_support::install_pricing_snapshots();
         let source = source(SourceKind::Cli);
         let root = json!({
             "messages": [{
@@ -858,6 +866,7 @@ mod tests {
 
     #[test]
     fn cost_modes_only_use_pricing_when_cost_was_not_reported() {
+        ccusage_test_support::install_pricing_snapshots();
         let source = source(SourceKind::Cli);
         let root = json!({
             "messages": [{
@@ -900,6 +909,7 @@ mod tests {
 
     #[test]
     fn preserves_custom_unpriced_model_ids_when_cost_is_missing() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({
             "messages": [{
                 "role": "assistant",
@@ -929,6 +939,7 @@ mod tests {
 
     #[test]
     fn malformed_task_metadata_does_not_drop_extension_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = ccusage_test_support::fs_fixture!({
             "tasks/task-a/ui_messages.json": "[]",
             "tasks/task-a/task_metadata.json": "{malformed",
@@ -961,6 +972,7 @@ mod tests {
 
     #[test]
     fn skips_invalid_or_incomplete_extension_documents() {
+        ccusage_test_support::install_pricing_snapshots();
         let root = json!({"other": []});
         let pricing = PricingMap::load_embedded();
 

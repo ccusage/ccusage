@@ -691,6 +691,7 @@ fn renders_multi_section_json_keys_in_invoked_section_order_with_totals_last() {
 
 #[test]
 fn unified_sessions_sort_by_cost_in_json_and_table() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     for (id, cost) in [("a-cheap", 1.0), ("m-medium", 3.0), ("z-expensive", 20.0)] {
         let _ = fixture.write_file(
@@ -776,6 +777,7 @@ fn unified_sessions_sort_by_cost_in_json_and_table() {
 
 #[test]
 fn multi_section_claude_fixture_matches_standalone_sections_for_daily_and_session_invocations() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "projects/project-a/session-a.jsonl": [
             r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"session-a","requestId":"req-direct","costUSD":0.01,"message":{"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"model":"claude-sonnet-4-20250514","id":"msg-direct"}}"#,
@@ -867,6 +869,7 @@ fn unified_totals(
 
 #[test]
 fn unified_reports_count_claude_agent_sessions_once() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -954,6 +957,7 @@ fn write_claude_agent_fixture(fixture: &ccusage_test_support::Fixture) {
 
 #[test]
 fn focused_opencode_reports_leave_claude_agent_turns_to_claude() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     write_claude_agent_fixture(&fixture);
     let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
@@ -1069,6 +1073,7 @@ fn focused_opencode_reports_keep_claude_agent_turns_without_a_claude_source() {
 
 #[test]
 fn focused_opencode_reports_fail_like_unified_reports_on_claude_errors() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     write_claude_agent_fixture(&fixture);
     let _env = claude_opencode_env(&fixture, fixture.path("missing-claude").into_os_string());
@@ -1092,6 +1097,7 @@ fn focused_opencode_reports_fail_like_unified_reports_on_claude_errors() {
 
 #[test]
 fn unified_reports_keep_claude_agent_rows_whose_transcript_has_no_usage() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "claude/projects/project-a/claude-native-a.jsonl": r#"{"timestamp":"2099-01-02T00:00:00.000Z","sessionId":"claude-native-a","type":"user","message":{"role":"user","content":"hi"}}"#,
     });
@@ -1118,6 +1124,7 @@ fn unified_reports_keep_claude_agent_rows_whose_transcript_has_no_usage() {
 
 #[test]
 fn unified_reports_keep_claude_agent_rows_whose_transcript_holds_only_subagent_usage() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ =
         fixture.write_file(
@@ -1148,6 +1155,7 @@ fn unified_reports_keep_claude_agent_rows_whose_transcript_holds_only_subagent_u
 
 #[test]
 fn unified_daily_keeps_claude_agent_rows_on_days_the_claude_window_excludes() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1183,6 +1191,7 @@ fn unified_daily_keeps_claude_agent_rows_on_days_the_claude_window_excludes() {
 
 #[test]
 fn unified_daily_keeps_claude_agent_rows_after_a_since_that_excludes_the_claude_turn() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1219,6 +1228,7 @@ fn unified_daily_keeps_claude_agent_rows_after_a_since_that_excludes_the_claude_
 
 #[test]
 fn unified_reports_keep_the_turns_of_a_mixed_session_that_claude_did_not_count() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1266,6 +1276,7 @@ fn unified_reports_keep_the_turns_of_a_mixed_session_that_claude_did_not_count()
 
 #[test]
 fn unified_reports_match_claude_agent_rows_against_every_claude_config_root() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude-a/projects/project-a/other-session.jsonl",
@@ -1305,6 +1316,7 @@ fn unified_reports_match_claude_agent_rows_against_every_claude_config_root() {
 
 #[test]
 fn unified_daily_dates_claude_agent_rows_in_the_claude_source_timezone() {
+    ccusage_test_support::install_pricing_snapshots();
     let tokyo_day_three = CLAUDE_AGENT_DAY_ONE + 20 * 3_600_000;
     let tokyo_day_four = CLAUDE_AGENT_DAY_TWO + 16 * 3_600_000;
     let fixture = fs_fixture!({});
@@ -1350,6 +1362,7 @@ fn unified_daily_dates_claude_agent_rows_in_the_claude_source_timezone() {
 
 #[test]
 fn unified_daily_counts_a_claude_agent_turn_twice_when_claude_logs_it_after_midnight() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1382,6 +1395,7 @@ fn unified_daily_counts_a_claude_agent_turn_twice_when_claude_logs_it_after_midn
 
 #[test]
 fn unified_daily_drops_a_claude_agent_turn_whose_later_calls_fall_after_until() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1415,6 +1429,7 @@ fn unified_daily_drops_a_claude_agent_turn_whose_later_calls_fall_after_until() 
 
 #[test]
 fn unified_session_counts_a_claude_agent_session_active_past_until_once() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1461,6 +1476,7 @@ fn unified_session_counts_a_claude_agent_session_active_past_until_once() {
 
 #[test]
 fn unified_session_skips_claude_agent_rows_of_a_counted_session_before_the_claude_window() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1500,6 +1516,7 @@ fn unified_session_skips_claude_agent_rows_of_a_counted_session_before_the_claud
 
 #[test]
 fn unified_reports_match_claude_agent_rows_against_sessions_holding_deduplicated_copies() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1545,6 +1562,7 @@ fn unified_reports_match_claude_agent_rows_against_sessions_holding_deduplicated
 
 #[test]
 fn unified_reports_keep_claude_agent_rows_of_a_session_the_claude_window_leaves_out() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1595,6 +1613,7 @@ fn unified_reports_keep_claude_agent_rows_of_a_session_the_claude_window_leaves_
 
 #[test]
 fn unified_reports_skip_claude_agent_rows_of_a_fork_counted_without_its_parent() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/claude-native-a.jsonl",
@@ -1643,6 +1662,7 @@ fn unified_reports_skip_claude_agent_rows_of_a_fork_counted_without_its_parent()
 
 #[test]
 fn unified_reports_match_claude_agent_rows_by_the_recorded_claude_session_id() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
         "claude/projects/project-a/renamed-transcript.jsonl",
@@ -1671,6 +1691,7 @@ fn unified_reports_match_claude_agent_rows_by_the_recorded_claude_session_id() {
 
 #[test]
 fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "custom/pi/sessions/project-a/agent_in-range.jsonl": r#"{"type":"message","timestamp":"2099-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":1000,"output":500}}}"#,
         "custom/pi/sessions/project-b/agent_out-of-range.jsonl": r#"{"type":"message","timestamp":"2099-01-03T00:00:00.000Z","message":{"role":"assistant","model":"gpt-source-config","usage":{"input":10000,"output":5000}}}"#,
@@ -1735,6 +1756,7 @@ fn multi_section_pi_load_uses_source_options_for_daily_and_session_rows() {
 
 #[test]
 fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session_invocations() {
+    ccusage_test_support::install_pricing_snapshots();
     let _aliases = set_model_aliases_for_tests([("private-alpha", "gpt-5.2")]);
     let duplicate_session_usage = codex_usage_line("2099-02-01T08:01:00.000Z", "gpt-5.2", 1_000);
     let alias_usage = codex_usage_line("2099-02-02T08:01:00.000Z", "private-alpha", 2_000);
@@ -1757,6 +1779,7 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
 
 #[test]
 fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.create_dir_all("zcode/cli/db");
     let db_path = fixture.path("zcode/cli/db/db.sqlite");
@@ -1872,6 +1895,7 @@ fn zcode_fixture_reports_daily_monthly_session_json_and_table_snapshots() {
 
 #[test]
 fn cline_fixture_reports_all_kinds_through_unified_json_and_tables() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "cline/tasks/session-a/ui_messages.json": include_str!(
             "../../../adapters/cline/tests/fixtures/extension/ui_messages.json"
@@ -2003,6 +2027,7 @@ fn assert_cline_unified_result_contains_only_accepted_requests(
 
 #[test]
 fn unified_report_omits_zcode_without_usage_database() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _env = isolated_agent_env(
         &fixture,
@@ -2025,6 +2050,7 @@ fn unified_report_omits_zcode_without_usage_database() {
 
 #[test]
 fn unified_report_filters_codex_paths_before_loading_historical_rows() {
+    ccusage_test_support::install_pricing_snapshots();
     let resumed_usage = codex_usage_line("2026-03-15T08:01:00.000Z", "gpt-5", 1_000);
     let historical_usage = codex_usage_line("2026-03-15T08:02:00.000Z", "gpt-5", 9_999);
     let fixture = fs_fixture!({
@@ -2212,16 +2238,19 @@ fn assert_unified_rows_use_grok_home(kind: AgentReportKind) {
 
 #[test]
 fn unified_daily_rows_use_grok_home() {
+    ccusage_test_support::install_pricing_snapshots();
     assert_unified_rows_use_grok_home(AgentReportKind::Daily);
 }
 
 #[test]
 fn unified_session_rows_use_grok_home() {
+    ccusage_test_support::install_pricing_snapshots();
     assert_unified_rows_use_grok_home(AgentReportKind::Session);
 }
 
 #[test]
 fn unified_weekly_rows_and_sections_honor_start_of_week() {
+    ccusage_test_support::install_pricing_snapshots();
     let line = r#"{"timestamp":1750000000,"params":{"sessionId":"sess-grok","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":100,"outputTokens":20,"modelUsage":{"grok-4.5-build":{"inputTokens":100,"outputTokens":20}}}},"_meta":{"eventId":"evt-grok"}}}"#;
     let fixture = fs_fixture!({
         "grok/sessions/proj/sess-grok/updates.jsonl": line,
@@ -2679,6 +2708,7 @@ fn full_table_columns_include_cache_and_total_token_metrics() {
 
 #[test]
 fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "antigravity/conversations/not-a-database.db": "not sqlite",
     });
@@ -2718,6 +2748,7 @@ fn unified_reports_return_antigravity_skip_warnings_once_instead_of_printing() {
 
 #[test]
 fn sections_report_one_skip_count_when_their_loads_read_different_files() {
+    ccusage_test_support::install_pricing_snapshots();
     let good = r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"id":"good","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":1}}}"#;
     let bad = r#"{"timestamp":"2026-01-02T00:00:00Z","message":{"usage":{"input_tokens":"bad"}}}"#;
     let fixture = fs_fixture!({
@@ -2761,6 +2792,7 @@ fn sections_report_one_skip_count_when_their_loads_read_different_files() {
 
 #[test]
 fn dsh_fixture_reports_all_kinds_through_unified_json_and_tables() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "dsh/sessions/--home-user-project--/dsh-parent/session.v4.jsonl": include_str!(
             "../../../adapters/dsh/tests/fixtures/parent/session.v4.jsonl"

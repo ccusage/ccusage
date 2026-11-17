@@ -951,6 +951,7 @@ mod tests {
 
     #[test]
     fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
+        ccusage_test_support::install_pricing_snapshots();
         let first = CodexTokenUsageEvent {
             session_id: "first-session".into(),
             response_id: Some("response-1".into()),
@@ -1030,6 +1031,7 @@ mod tests {
 
     #[test]
     fn stores_timestamped_usage_only_for_time_dependent_models() {
+        ccusage_test_support::install_pricing_snapshots();
         let line = |model: &str| {
             token_count_line(
                 "2026-08-17T01:00:00.000Z",
@@ -1052,6 +1054,7 @@ mod tests {
 
     #[test]
     fn records_flex_usage_in_model_buckets() {
+        ccusage_test_support::install_pricing_snapshots();
         let rollout = [
             service_tier_line("2026-08-17T00:59:00.000Z", "flex"),
             token_count_line(
@@ -1120,6 +1123,7 @@ mod tests {
 
     #[test]
     fn skips_historical_files_before_parsing_but_keeps_long_running_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let usage_line = |timestamp: &str, input_tokens: u64| {
             json!({
                 "timestamp": timestamp,
@@ -1222,6 +1226,7 @@ mod tests {
 
     #[test]
     fn retains_next_utc_path_day_for_local_until_boundary() {
+        ccusage_test_support::install_pricing_snapshots();
         let late_utc = [
             json!({
                 "timestamp": "2026-03-16T06:29:00.000Z",
@@ -1269,6 +1274,7 @@ mod tests {
 
     #[test]
     fn dedupes_copied_token_usage_across_session_files() {
+        ccusage_test_support::install_pricing_snapshots();
         let usage_line = json!({
             "timestamp": "2026-05-29T08:01:00.000Z",
             "type": "event_msg",
@@ -1355,6 +1361,7 @@ mod tests {
 
     #[test]
     fn resolves_conflicting_duplicate_tiers_as_standard() {
+        ccusage_test_support::install_pricing_snapshots();
         let usage_line = json!({
             "timestamp": "2026-05-29T08:01:00.000Z",
             "type": "event_msg",
@@ -1420,6 +1427,7 @@ mod tests {
 
     #[test]
     fn tracks_long_context_token_split_per_request() {
+        ccusage_test_support::install_pricing_snapshots();
         let usage_line = |input: u64, cached: u64, output: u64| {
             json!({
                 "timestamp": "2026-07-09T08:01:00.000Z",
@@ -1499,6 +1507,7 @@ mod tests {
 
     #[test]
     fn parallel_merge_preserves_speed_and_long_context_buckets() {
+        ccusage_test_support::install_pricing_snapshots();
         let rollout = |marker_timestamp: &str,
                        usage_timestamp: &str,
                        service_tier: &str,
@@ -1631,6 +1640,7 @@ mod tests {
 
     #[test]
     fn dedupes_copied_token_usage_after_model_alias_resolution() {
+        ccusage_test_support::install_pricing_snapshots();
         let _aliases = set_model_aliases_for_tests([("private-alpha", "gpt-5.2")]);
         let private_usage_line = json!({
             "timestamp": "2026-05-29T08:01:00.000Z",
@@ -1695,6 +1705,7 @@ mod tests {
 
     #[test]
     fn keeps_matching_token_usage_in_distinct_session_groups() {
+        ccusage_test_support::install_pricing_snapshots();
         let usage_line = json!({
             "timestamp": "2026-05-29T08:01:00.000Z",
             "type": "event_msg",
@@ -1739,6 +1750,7 @@ mod tests {
 
     #[test]
     fn aggregates_active_copy_when_archived_file_has_same_relative_path() {
+        ccusage_test_support::install_pricing_snapshots();
         let active_usage = [
             json!({
                 "timestamp": "2026-05-12T08:00:00.000Z",
@@ -1867,6 +1879,7 @@ mod tests {
 
     #[test]
     fn skips_replayed_history_of_forks_read_during_the_pass() {
+        ccusage_test_support::install_pricing_snapshots();
         let parent = [
             json!({
                 "timestamp": "2026-05-12T08:00:00.000Z",
@@ -2002,6 +2015,7 @@ mod tests {
 
     #[test]
     fn counts_identical_requests_within_one_rollout() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/2026/11/01/rollout-2026-11-01T09-42-09-01a1967c-0000-7000-8000-00000000000a.jsonl":
                 IDENTICAL_REQUESTS_ROLLOUT,
@@ -2052,6 +2066,7 @@ mod tests {
 
     #[test]
     fn counts_each_copied_request_once_across_rollouts() {
+        ccusage_test_support::install_pricing_snapshots();
         let request = identical_request_line();
         let both_requests = format!("{request}\n{request}");
         let scenarios = [

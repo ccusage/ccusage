@@ -57,6 +57,7 @@ mod tests {
 
     #[test]
     fn loads_extension_and_cli_fixture_records_with_source_namespaced_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         assert!(
             fixture
@@ -172,6 +173,7 @@ mod tests {
 
     #[test]
     fn keeps_healthy_cline_files_when_another_file_is_invalid_json() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _ = fixture.write_file(
             "tasks/healthy/ui_messages.json",

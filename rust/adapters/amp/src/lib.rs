@@ -94,6 +94,7 @@ mod tests {
 
     #[test]
     fn focused_totals_match_the_unified_slice() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
         let _guard = EnvVarGuard::set("AMP_DATA_DIR", fixture.root());
 
@@ -110,6 +111,7 @@ mod tests {
 
     #[test]
     fn a_thread_file_cut_mid_write_is_noted_under_debug_and_the_rest_still_counts() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fixture();
         let _guard = EnvVarGuard::set("AMP_DATA_DIR", fixture.root());
         let quiet = shared(None, None, "UTC");

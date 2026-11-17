@@ -2945,6 +2945,7 @@ mod tests {
 
     #[test]
     fn loads_channel_sqlite_database() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path("opencode-beta.db"),

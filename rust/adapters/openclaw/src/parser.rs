@@ -717,6 +717,7 @@ mod tests {
 
     #[test]
     fn calculates_decorated_deepseek_models_with_the_raw_pricing_identity() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","usage":{"input":1000000,"output":0,"totalTokens":1000000},"timestamp":"2026-08-17T01:00:00Z"}}"#,
         });

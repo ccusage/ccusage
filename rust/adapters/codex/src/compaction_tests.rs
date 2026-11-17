@@ -99,6 +99,7 @@ fn parent_compaction_records_do_not_change_the_normal_replay_prefix() {
 
 #[test]
 fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "2026/09/01/parent.jsonl": [
             json!({"type": "session_meta", "payload": {"id": "parent"}}).to_string(),
@@ -140,6 +141,7 @@ fn bounded_reports_exclude_parent_compactions_but_keep_child_requests() {
 
 #[test]
 fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "2026/09/01/parent.jsonl": [
             r#"{"type":"session_meta","payload":{"id":"parent"}}"#,
@@ -177,6 +179,7 @@ fn bounded_reports_exclude_counted_parent_compactions_without_a_copied_snapshot(
 
 #[test]
 fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "a-first.jsonl": compaction_log("2026-09-01T00:00:01Z", "gpt-5", 300),
         "b-copy.jsonl": [
@@ -220,6 +223,7 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
 
 #[test]
 fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
+    ccusage_test_support::install_pricing_snapshots();
     let rollout = |tier: Option<CodexServiceTier>| {
         let marker = tier.map(|tier| {
             let name = match tier {
@@ -311,6 +315,7 @@ fn compaction_records_without_a_valid_pair_are_ignored() {
 
 #[test]
 fn local_compaction_usage_already_in_cumulative_counts_is_not_added_again() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "session.jsonl": [
             r#"{"type":"turn_context","payload":{"model":"gpt-5"}}"#,

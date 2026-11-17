@@ -105,6 +105,7 @@ mod tests {
 
     #[test]
     fn loads_zstd_sessions_split_across_frames_and_notes_a_tail_still_being_written() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({ "sessions/--home-u-proj--/sid-1/.keep": "" });
         fs::write(
             fixture.path(SESSION_FILE),
@@ -131,6 +132,7 @@ mod tests {
 
     #[test]
     fn skips_a_torn_tail_left_alone_and_keeps_the_records_before_it() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({ "sessions/--home-u-proj--/sid-1/.keep": "" });
         fs::write(
             fixture.path(SESSION_FILE),
@@ -154,6 +156,7 @@ mod tests {
 
     #[test]
     fn reports_corrupt_zstd_sessions_as_invalid_data() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/p/not-zstd/session.v4.jsonl.zstd": "not a zstd frame",
             "sessions/--home-u-proj--/sid-1/.keep": "",
@@ -178,6 +181,7 @@ mod tests {
 
     #[test]
     fn reads_only_the_newest_generation_and_dedupes_across_roots() {
+        ccusage_test_support::install_pricing_snapshots();
         let first = fs_fixture!({
             "sessions/p/sid-1/session.v3.jsonl": SESSION,
             "sessions/p/sid-1/session.v4.jsonl": SESSION,

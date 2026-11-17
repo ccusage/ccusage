@@ -105,6 +105,7 @@ fn loads_compressed_rollouts_with_the_plain_session_id() {
 
 #[test]
 fn discovers_compressed_rollouts_in_sessions_and_archived_sessions() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let _ = write_compressed(
         &fixture,
@@ -156,6 +157,7 @@ fn counts_a_rollout_with_plain_and_compressed_copies_once() {
 
 #[test]
 fn keeps_active_rollout_when_archive_uses_a_different_encoding() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let _ = write_compressed(
         &fixture,
@@ -288,6 +290,7 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
 
 #[test]
 fn removes_inherited_usage_when_parent_and_child_are_compressed() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let _ = write_compressed(
         &fixture,
@@ -325,6 +328,7 @@ fn removes_inherited_usage_when_parent_and_child_are_compressed() {
 
 #[test]
 fn uses_a_compressed_archived_parent_outside_the_selected_date_range() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let parent = write_compressed(
         &fixture,
@@ -389,6 +393,7 @@ fn detects_a_rewritten_burst_in_a_compressed_child_without_its_parent() {
 
 #[test]
 fn counts_compaction_records_in_a_compressed_archive_once() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let record = json!({"timestamp": "2026-10-14T00:00:02Z", "type": "token_usage_record",
     "payload": {
@@ -420,6 +425,7 @@ fn counts_compaction_records_in_a_compressed_archive_once() {
 
 #[test]
 fn compressed_rollouts_match_plain_json_reports_for_every_report_mode() {
+    ccusage_test_support::install_pricing_snapshots();
     let fixture = Fixture::new();
     let log = [
         usage_log("2026-02-01T00:00:00Z", 100).replace("gpt-5", "gpt-5.3-codex"),

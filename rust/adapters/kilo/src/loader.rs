@@ -135,6 +135,7 @@ mod tests {
 
     #[test]
     fn loads_kilo_messages_from_sqlite() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path(super::super::paths::KILO_DB_FILE_NAME),
@@ -170,6 +171,7 @@ mod tests {
 
     #[test]
     fn ignores_kilo_messages_without_timestamps() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         create_db_message(
             &fixture.path(super::super::paths::KILO_DB_FILE_NAME),
@@ -186,6 +188,7 @@ mod tests {
 
     #[test]
     fn deduplicates_kilo_messages_across_data_dirs() {
+        ccusage_test_support::install_pricing_snapshots();
         let first = fs_fixture!({});
         let second = fs_fixture!({});
         for (fixture, input) in [(&first, 10), (&second, 20)] {
@@ -211,6 +214,7 @@ mod tests {
 
     #[test]
     fn keeps_healthy_database_entries_when_another_database_has_the_wrong_schema() {
+        ccusage_test_support::install_pricing_snapshots();
         let broken = fs_fixture!({});
         sqlite::open(broken.path(super::super::paths::KILO_DB_FILE_NAME))
             .unwrap()
@@ -286,6 +290,7 @@ mod tests {
 
     #[test]
     fn debug_diagnostics_do_not_echo_malformed_message_values() {
+        ccusage_test_support::install_pricing_snapshots();
         use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
         use ccusage_core::{
             Diagnostics, ReportWindow,

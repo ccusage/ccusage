@@ -34,6 +34,7 @@ mod tests {
 
     #[test]
     fn loads_jsonl_token_events_and_separates_cached_input() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "project/chats/session-a.jsonl": [
                 r#"{"sessionId":"session-a","projectHash":"project-a","startTime":"2026-05-17T11:07:00.000Z"}"#,

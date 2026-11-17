@@ -813,6 +813,7 @@ mod tests {
 
     #[test]
     fn calculates_cost_for_k2p6_when_opencode_stores_zero_cost() {
+        ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let entry = message_value_to_entry(
             message(json!({

@@ -153,6 +153,7 @@ mod diagnostic_tests {
 
     #[test]
     fn bounded_unified_session_report_keeps_identical_requests_of_two_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let usage = json!({"timestamp":"2026-01-02T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string();
         let _ = fixture.write_file("sessions/session-a.jsonl", &usage);
@@ -181,6 +182,7 @@ mod diagnostic_tests {
 
     #[test]
     fn bounded_unified_rows_match_the_focused_codex_report() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let usage = |timestamp: &str| {
             json!({"timestamp":timestamp,"type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5","last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}).to_string()
@@ -230,6 +232,7 @@ mod diagnostic_tests {
 
     #[test]
     fn malformed_compaction_usage_warns_while_missing_and_zero_usage_stay_quiet() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let mut records = [
             ("array", json!([])),
@@ -300,6 +303,7 @@ mod diagnostic_tests {
 
     #[test]
     fn rejected_timestamps_advance_cumulative_usage_without_recounting_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _env = EnvVarsGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
@@ -355,6 +359,7 @@ mod diagnostic_tests {
 
     #[test]
     fn discovered_nonusage_files_remain_detected_in_all_load_paths() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _env = EnvVarsGuard::set_many([
             ("CODEX_HOME", Some(fixture.root().as_os_str().to_owned())),
@@ -394,6 +399,7 @@ mod diagnostic_tests {
 
     #[test]
     fn invalid_session_timestamps_keep_healthy_usage_with_and_without_date_bounds() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let records = [
             json!({"timestamp":"SECRET_CANARY","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098}}}}),
@@ -451,6 +457,7 @@ mod diagnostic_tests {
 
     #[test]
     fn specialized_diagnostics_keep_healthy_codex_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _ = fixture.write_file("sessions/good.jsonl", r#"{"timestamp":"2026-01-02T00:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":1}}}}"#);
         let _ = fixture.write_file("sessions/bad.jsonl", r#"{"timestamp":{"unexpected":"SECRET_CANARY"},"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}"#);
@@ -527,6 +534,7 @@ mod diagnostic_tests {
 
     #[test]
     fn headless_usage_decode_failures_warn_without_dropping_healthy_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let records = [
             json!({

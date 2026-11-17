@@ -157,6 +157,7 @@ INSERT INTO sessions (
 
     #[test]
     fn loads_accumulated_tokens_from_goose_sqlite() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let db_path = fixture.path(super::super::paths::GOOSE_DB_FILE_NAME);
         create_goose_db(&db_path);
@@ -256,6 +257,7 @@ INSERT INTO sessions (
 
     #[test]
     fn a_failed_session_database_does_not_hide_healthy_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             ".local/share/goose/sessions/sessions.db": "",
             ".local/share/Block/goose/sessions/sessions.db": "not a SQLite database",
@@ -300,6 +302,7 @@ INSERT INTO sessions (
 
     #[test]
     fn focused_and_unified_reports_agree() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"data/sessions/sessions.db": ""});
         let db_path = fixture.path("data/sessions/sessions.db");
         create_goose_db(&db_path);

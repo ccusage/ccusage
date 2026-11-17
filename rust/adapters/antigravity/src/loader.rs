@@ -202,6 +202,7 @@ mod tests {
 
     #[test]
     fn loads_real_schema_rows_with_continuations_and_token_buckets() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/session.db");
         let first_usage = UsageFixture {
@@ -273,6 +274,7 @@ mod tests {
 
     #[test]
     fn decodes_model_id_without_counting_it_as_input_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/model-id.db"),
@@ -305,6 +307,7 @@ mod tests {
 
     #[test]
     fn loads_multiple_databases_consistently() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("one/conversations/one.db"),
@@ -376,6 +379,7 @@ mod tests {
 
     #[test]
     fn deduplicates_response_ids_across_databases() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("first/conversations/first.db"),
@@ -446,6 +450,7 @@ mod tests {
 
     #[test]
     fn collects_steps_and_retries_and_deduplicates_source_copies() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let shared_usage = UsageFixture {
             input_tokens: 100,
@@ -530,6 +535,7 @@ mod tests {
 
     #[test]
     fn deduplicates_unkeyed_mirror_copies_via_step_index() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let unkeyed = UsageFixture {
             input_tokens: 15_027,
@@ -576,6 +582,7 @@ mod tests {
 
     #[test]
     fn drops_unkeyed_retry_mirror_without_step_link() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let unkeyed = UsageFixture {
             input_tokens: 100,
@@ -607,6 +614,7 @@ mod tests {
 
     #[test]
     fn keeps_unkeyed_failed_attempt_when_retries_mirror_primary() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let success = UsageFixture {
             input_tokens: 100,
@@ -662,6 +670,7 @@ mod tests {
 
     #[test]
     fn attributes_step_and_retry_usage_to_their_token_models() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let step_usage = UsageFixture {
             model_id: Some(246),
@@ -725,6 +734,7 @@ mod tests {
 
     #[test]
     fn maps_required_aliases_and_keeps_unprovided_models_unprefixed() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let aliases = [
             "gemini-3-flash-agent",
@@ -793,6 +803,7 @@ mod tests {
 
     #[test]
     fn uses_trajectory_timestamp_when_generation_timestamp_is_missing() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/session.db"),
@@ -948,6 +959,7 @@ mod tests {
 
     #[test]
     fn prefers_explicit_model_name_over_placeholder_for_unknown_ids() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let cases = [
             (1401, "claude-opus-5-5-medium", "unknown-opus"),
@@ -1007,6 +1019,7 @@ mod tests {
 
     #[test]
     fn keeps_alias_mapped_ids_over_explicit_model_name() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/session.db"),
@@ -1040,6 +1053,7 @@ mod tests {
 
     #[test]
     fn keeps_explicit_model_name_when_merging_unnamed_step_copy() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let usage = UsageFixture {
             model_id: Some(1401),
@@ -1075,6 +1089,7 @@ mod tests {
 
     #[test]
     fn skips_zero_byte_databases_and_reports_valid_entries() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/empty.db", "");
         create_database(
@@ -1109,6 +1124,7 @@ mod tests {
 
     #[test]
     fn returns_empty_report_when_only_zero_byte_databases_exist() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let database = fixture.write_file("conversations/empty.db", "");
 
@@ -1124,6 +1140,7 @@ mod tests {
 
     #[test]
     fn returns_empty_report_for_fresh_install_without_conversations_directory() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let summaries_path = fixture.path(".gemini/antigravity-cli/conversation_summaries.db");
         let _ = fixture.create_dir_all(".gemini/antigravity-cli");
@@ -1150,6 +1167,7 @@ mod tests {
 
     #[test]
     fn skips_malformed_database_alongside_empty_databases() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let _ = fixture.write_file("conversations/empty.db", "");
         create_database(
@@ -1186,6 +1204,7 @@ mod tests {
 
     #[test]
     fn skips_database_open_and_query_errors() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let not_a_database = fixture.write_file("conversations/not-a-db.db", "not sqlite");
         let _guard = EnvVarsGuard::set_many([(
@@ -1203,6 +1222,7 @@ mod tests {
 
     #[test]
     fn notes_database_without_generation_table_only_under_debug() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let db_path = fixture.path("conversation_summaries.db");
         let connection = sqlite::open(&db_path).unwrap();
@@ -1233,6 +1253,7 @@ mod tests {
 
     #[test]
     fn skips_database_with_invalid_optional_table_schema() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let db_path = fixture.path("conversations/bad-steps.db");
         let _ = fixture.create_dir_all("conversations");
@@ -1278,6 +1299,7 @@ mod tests {
 
     #[test]
     fn skips_database_with_malformed_metadata() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         create_database(
             &fixture.path("conversations/malformed.db"),
@@ -1300,6 +1322,7 @@ mod tests {
 
     #[test]
     fn structured_loads_tally_skipped_databases_without_their_content() {
+        ccusage_test_support::install_pricing_snapshots();
         use ccusage_adapter_common::source::LoadContext;
         use ccusage_core::{ReportWindow, cli::AgentReportKind};
 

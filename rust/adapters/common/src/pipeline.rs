@@ -356,6 +356,7 @@ mod tests {
 
     #[test]
     fn pricing_reaches_only_the_loaders_that_ask_the_pipeline_for_it() {
+        ccusage_test_support::install_pricing_snapshots();
         let shared = shared(None, None);
         let prices_itself = Fake::new(descriptor(), entries());
         let priced_by_pipeline = Fake::new(EntryDescriptor::standard("fake", "Fake"), entries());

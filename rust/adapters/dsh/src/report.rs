@@ -74,6 +74,7 @@ mod tests {
 
     #[test]
     fn snapshots_focused_reports_from_fixture_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/--home-user-project--/dsh-parent/session.v4.jsonl":
                 include_str!("../tests/fixtures/parent/session.v4.jsonl"),
@@ -104,6 +105,7 @@ mod tests {
 
     #[test]
     fn weeks_start_on_monday_like_the_last_window() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/p/s/session.v4.jsonl": concat!(
                 r#"{"type":"session","version":4,"id":"s","createdAt":1794744000000}"#, "\n",

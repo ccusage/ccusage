@@ -375,6 +375,7 @@ mod tests {
 
     #[test]
     fn loads_completed_rows_with_millisecond_precision() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let _ = fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
@@ -395,6 +396,7 @@ mod tests {
 
     #[test]
     fn keeps_healthy_databases_when_another_database_has_no_supported_schema() {
+        ccusage_test_support::install_pricing_snapshots();
         let broken = fs_fixture!({
             "cli/db/db.sqlite": "not a ZCode database",
         });
@@ -432,6 +434,7 @@ mod tests {
 
     #[test]
     fn separates_invalid_databases_from_unsupported_schemas() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({"broken.db": "SECRET_CANARY"});
         sqlite::open(fixture.path("unsupported.db"))
             .unwrap()
@@ -462,6 +465,7 @@ mod tests {
 
     #[test]
     fn names_the_missing_columns_of_an_incomplete_schema() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let path = fixture.path("incomplete.db");
         let db = sqlite::open(&path).unwrap();
@@ -499,6 +503,7 @@ mod tests {
 
     #[test]
     fn diagnoses_rejected_completed_usage_and_keeps_healthy_rows() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let path = fixture.path("usage.db");
         create_db(&path, false);
@@ -524,6 +529,7 @@ mod tests {
 
     #[test]
     fn diagnoses_malformed_usage_identity_only_when_the_row_has_usage() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let _ = fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
@@ -611,6 +617,7 @@ mod tests {
 
     #[test]
     fn preserves_opaque_provider_for_loader_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let _ = fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
@@ -635,6 +642,7 @@ mod tests {
 
     #[test]
     fn accepts_legacy_schema_without_optional_columns() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let _ = fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
@@ -661,6 +669,7 @@ mod tests {
 
     #[test]
     fn reads_from_wal_database_without_changing_journal_mode() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let _ = fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
@@ -686,6 +695,7 @@ mod tests {
 
     #[test]
     fn skips_unrelated_schema_and_deduplicates_multiple_homes() {
+        ccusage_test_support::install_pricing_snapshots();
         let first = fs_fixture!({});
         let _ = first.create_dir_all("cli/db");
         let first_db = first.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
