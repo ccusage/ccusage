@@ -2088,9 +2088,10 @@ impl PricingMap {
     }
 
     fn overridden(&self, model: &str) -> Option<Pricing> {
-        self.rows
-            .override_keys
-            .get(normalized_pricing_key(model).as_ref())
+        let keys = &self.rows.override_keys;
+        (!keys.is_empty())
+            .then(|| normalized_pricing_key(model))
+            .and_then(|normalized| keys.get(normalized.as_ref()))
             .and_then(|key| self.rows.entries.get(key))
             .or_else(|| {
                 self.rows
