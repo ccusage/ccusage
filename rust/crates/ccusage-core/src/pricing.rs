@@ -532,6 +532,7 @@ struct TablePart<'a, T> {
     rows: &'a FxHashMap<String, T>,
     exact_only: &'a ExactOnlyKeys,
     excluded: Option<&'a FxHashSet<String>>,
+    excluded_exact_only: Option<&'a FxHashSet<String>>,
 }
 impl<T> Clone for TablePart<'_, T> {
     fn clone(&self) -> Self {
@@ -585,23 +586,34 @@ impl<'a, T> Table<'a, T> {
                 .keys()
                 .map(String::as_str)
                 .filter(move |key| part.contains(key))
-                .map(move |key| (key, part.exact_only.contains(key)))
+                .map(move |key| {
+                    (
+                        key,
+                        part.exact_only.contains(key)
+                            && !part
+                                .excluded_exact_only
+                                .is_some_and(|excluded| excluded.contains(key)),
+                    )
+                })
         })
     }
     fn is_exact_only(self, model: &str) -> bool {
         self.all_parts().any(|part| {
             part.exact_only.contains_any_spelling(model)
-                && part
-                    .exact_only
-                    .id_spelled_by(model)
-                    .is_none_or(|id| part.contains(id))
+                && part.exact_only.id_spelled_by(model).is_none_or(|id| {
+                    !part
+                        .excluded_exact_only
+                        .is_some_and(|excluded| excluded.contains(id))
+                })
         })
     }
     fn exact_only_id(self, model: &str) -> Option<&'a str> {
         self.all_parts().find_map(|part| {
-            part.exact_only
-                .id_spelled_by(model)
-                .filter(|id| part.contains(id))
+            part.exact_only.id_spelled_by(model).filter(|id| {
+                !part
+                    .excluded_exact_only
+                    .is_some_and(|excluded| excluded.contains(*id))
+            })
         })
     }
 }
@@ -1679,12 +1691,14 @@ impl PricingMap {
                 rows: &self.rows.entries,
                 exact_only: &self.rows.exact_only,
                 excluded: None,
+                excluded_exact_only: None,
             },
             models_dev: self.models_dev.each_ref().map(|layer| {
                 layer.as_ref().map(|layer| TablePart {
                     rows: &layer.rows.entries,
                     exact_only: &layer.rows.exact_only,
                     excluded: Some(&layer.excluded_prices),
+                    excluded_exact_only: Some(&layer.excluded_prices),
                 })
             }),
         }
@@ -1695,12 +1709,14 @@ impl PricingMap {
                 rows: &self.rows.context_limits,
                 exact_only: &self.rows.exact_only,
                 excluded: None,
+                excluded_exact_only: None,
             },
             models_dev: self.models_dev.each_ref().map(|layer| {
                 layer.as_ref().map(|layer| TablePart {
                     rows: &layer.rows.context_limits,
                     exact_only: &layer.rows.exact_only,
                     excluded: Some(&layer.excluded_limits),
+                    excluded_exact_only: Some(&layer.excluded_prices),
                 })
             }),
         }
@@ -6288,6 +6304,17 @@ mod tests {
             .unwrap();
 
         assert_eq!(matched.input, 2.0);
+    }
+
+    #[test]
+    fn superseded_models_dev_prices_do_not_impose_exact_only_limits() {
+        crate::test_support::install_pricing_snapshots();
+        let map = PricingMap::load_embedded();
+        assert_eq!(map.context_limit("qwen_ai_platform/glm-5.1"), Some(200_000));
+        assert_eq!(
+            map.context_limit("novita/zai-org/glm-5-turbo"),
+            Some(200_000)
+        );
     }
 
     #[test]
