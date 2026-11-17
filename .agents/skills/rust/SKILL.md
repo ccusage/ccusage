@@ -59,9 +59,9 @@ by `rust/crates/ccusage-core/src/pricing.rs`. The build-time half lives in
 crate only the binary depends on: the binary hands its bytes to
 `pricing::set_embedded_snapshots` at startup, so the scheduled snapshot
 refreshes rebuild that crate and the binary, not `ccusage-core` and every
-adapter. Keep snapshot data out of `ccusage-core` for that reason. Tests get the
-snapshots through `ccusage-core`'s `test-snapshots` feature, which a crate
-enables from its `[dev-dependencies]`.
+adapter. Keep snapshot data out of `ccusage-core` for that reason. Tests install the
+snapshots explicitly with `ccusage_test_support::install_pricing_snapshots()`;
+no build of the library installs them on its own.
 
 LiteLLM is the primary table. It is compacted into `OUT_DIR` at build time and
 never committed: Nix builds and the dev shell hand `build.rs` the locked snapshot
