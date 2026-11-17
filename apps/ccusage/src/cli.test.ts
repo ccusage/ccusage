@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { createRequire } from 'node:module';
 import { describe, it, mock } from 'node:test';
 import {
 	createNativeSpawner,
@@ -9,10 +8,12 @@ import {
 	resolveCliRuntime,
 	resolveNativeBinary,
 } from './cli.js';
+import packageJson from '../package.json' with { type: 'json' };
 
-const require = createRequire(import.meta.url);
-/** @type {{ version: string }} */
-const packageJson = require('../package.json');
+function stubChild() {
+	const kill = mock.fn(() => true);
+	return { child: Object.assign(new EventEmitter(), { kill }), kill };
+}
 
 void describe(resolveCliRuntime.name, () => {
 	void it('resolves the native package binary for the current supported platform', () => {
@@ -147,10 +148,7 @@ void describe(resolveCliRuntime.name, () => {
 void describe(createNativeSpawner.name, () => {
 	void it('forwards every supported launcher signal delivery', async () => {
 		const signalSource = new EventEmitter();
-		const kill = mock.fn(() => true);
-		const child = /** @type {import('node:child_process').ChildProcess} */ (
-			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
-		);
+		const { child, kill } = stubChild();
 		const spawnProcess = mock.fn(() => child);
 		const spawnNative = createNativeSpawner({
 			platform: 'linux',
@@ -190,10 +188,7 @@ void describe(createNativeSpawner.name, () => {
 
 	void it('forwards the supported Windows console signals', async () => {
 		const signalSource = new EventEmitter();
-		const kill = mock.fn(() => true);
-		const child = /** @type {import('node:child_process').ChildProcess} */ (
-			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
-		);
+		const { child, kill } = stubChild();
 		const spawnNative = createNativeSpawner({
 			platform: 'win32',
 			signalSource,
@@ -225,10 +220,7 @@ void describe(createNativeSpawner.name, () => {
 
 	void it('removes signal listeners after the child exits', async () => {
 		const signalSource = new EventEmitter();
-		const kill = mock.fn(() => true);
-		const child = /** @type {import('node:child_process').ChildProcess} */ (
-			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
-		);
+		const { child, kill } = stubChild();
 		const spawnNative = createNativeSpawner({
 			platform: 'linux',
 			signalSource,
@@ -251,10 +243,7 @@ void describe(createNativeSpawner.name, () => {
 
 	void it('removes signal listeners after a child error', async () => {
 		const signalSource = new EventEmitter();
-		const kill = mock.fn(() => true);
-		const child = /** @type {import('node:child_process').ChildProcess} */ (
-			/** @type {unknown} */ (Object.assign(new EventEmitter(), { kill }))
-		);
+		const { child, kill } = stubChild();
 		const spawnNative = createNativeSpawner({
 			platform: 'linux',
 			signalSource,
