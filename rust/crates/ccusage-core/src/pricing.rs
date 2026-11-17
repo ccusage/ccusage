@@ -421,20 +421,9 @@ type FindCache = RwLock<FxHashMap<String, Arc<OnceLock<Option<Pricing>>>>>;
 
 #[derive(Debug)]
 pub struct PricingMap {
-    entries: FxHashMap<String, Pricing>,
-    /// Direct model overrides reapply only the fields explicitly supplied by
-    /// the user after any timestamp-based schedule has been selected.
-    user_overrides: FxHashMap<String, PricingOverride>,
-    /// Entries that only a request recording that exact id may use.
-    ///
-    /// A separately priced tier such as `kimi-k2.7-code-highspeed` is the right
-    /// rate only for a request that names it. Left in the fuzzy scan it wins over
-    /// the base model, because that scan prefers the longest matching key, so
-    /// `kimi-k2-7-code` would be billed at the premium tier.
-    exact_only: ExactOnlyKeys,
-    context_limits: FxHashMap<String, u64>,
-    models_dev_keys: FxHashSet<String>,
-    models_dev_limits: FxHashSet<String>,
+    /// Shared by every map derived from the same base: a report map takes its
+    /// own copy only when it applies an override or a layer.
+    rows: Arc<PricingRows>,
     live_merged: OnceLock<Box<PricingMap>>,
     enable_models_dev_fallback: bool,
     find_cache: OnceLock<FindCache>,
@@ -449,7 +438,25 @@ pub struct PricingMap {
     normalized_keys: OnceLock<FxHashMap<String, Option<String>>>,
 }
 
-/// The ids of [`PricingMap::exact_only`], indexed both as written and under the
+#[derive(Clone, Debug, Default)]
+struct PricingRows {
+    entries: FxHashMap<String, Pricing>,
+    /// Direct model overrides reapply only the fields explicitly supplied by
+    /// the user after any timestamp-based schedule has been selected.
+    user_overrides: FxHashMap<String, PricingOverride>,
+    /// Entries that only a request recording that exact id may use.
+    ///
+    /// A separately priced tier such as `kimi-k2.7-code-highspeed` is the right
+    /// rate only for a request that names it. Left in the fuzzy scan it wins over
+    /// the base model, because that scan prefers the longest matching key, so
+    /// `kimi-k2-7-code` would be billed at the premium tier.
+    exact_only: ExactOnlyKeys,
+    context_limits: FxHashMap<String, u64>,
+    models_dev_keys: FxHashSet<String>,
+    models_dev_limits: FxHashSet<String>,
+}
+
+/// The ids of [`PricingRows::exact_only`], indexed both as written and under the
 /// separator-normalized spelling `pricing_key_matches` compares.
 ///
 /// The gate that keeps a request naming an exact-only id off the fuzzy scan has
@@ -533,12 +540,7 @@ impl ExactOnlyKeys {
 impl Default for PricingMap {
     fn default() -> Self {
         Self {
-            entries: FxHashMap::default(),
-            user_overrides: FxHashMap::default(),
-            exact_only: ExactOnlyKeys::default(),
-            context_limits: FxHashMap::default(),
-            models_dev_keys: FxHashSet::default(),
-            models_dev_limits: FxHashSet::default(),
+            rows: Arc::default(),
             live_merged: OnceLock::new(),
             enable_models_dev_fallback: false,
             find_cache: OnceLock::new(),
@@ -1028,6 +1030,10 @@ impl PricingMap {
             .unwrap_or_else(Self::build_embedded)
     }
 
+    fn rows_mut(&mut self) -> &mut PricingRows {
+        Arc::make_mut(&mut self.rows)
+    }
+
     fn build_embedded() -> Self {
         Self::from_litellm(build_time_pricing_json())
     }
@@ -1079,12 +1085,7 @@ impl PricingMap {
     {
         let base = self.live_merged.get().map_or(self, |map| map.as_ref());
         let mut map = Self {
-            entries: base.entries.clone(),
-            user_overrides: base.user_overrides.clone(),
-            exact_only: base.exact_only.clone(),
-            context_limits: base.context_limits.clone(),
-            models_dev_keys: base.models_dev_keys.clone(),
-            models_dev_limits: base.models_dev_limits.clone(),
+            rows: Arc::clone(&base.rows),
             live_merged: OnceLock::new(),
             enable_models_dev_fallback: self.enable_models_dev_fallback
                 && self.live_merged.get().is_none(),
@@ -1154,17 +1155,18 @@ impl PricingMap {
                 .unwrap_or_default();
             let normalized = normalized_pricing_key(&model);
             let replaced: Vec<_> = self
+                .rows
                 .models_dev_keys
                 .iter()
                 .filter(|key| normalized_pricing_key(key) == normalized)
                 .cloned()
                 .collect();
             for key in replaced {
-                self.entries.remove(&key);
-                self.exact_only.remove(&key);
-                self.models_dev_keys.remove(&key);
+                self.rows_mut().entries.remove(&key);
+                self.rows_mut().exact_only.remove(&key);
+                self.rows_mut().models_dev_keys.remove(&key);
             }
-            self.entries.insert(
+            self.rows_mut().entries.insert(
                 model.clone(),
                 provider_specific
                     .or(speed.for_model(&model))
@@ -1189,8 +1191,8 @@ impl PricingMap {
                     }),
             );
             if let Some(context_limit) = context_limit {
-                self.models_dev_limits.remove(&model);
-                self.context_limits.insert(model, context_limit);
+                self.rows_mut().models_dev_limits.remove(&model);
+                self.rows_mut().context_limits.insert(model, context_limit);
             }
             loaded_count += 1;
         }
@@ -1316,7 +1318,7 @@ impl PricingMap {
             // exactly as the generator normalizes, case folding included.
             let normalized_id = normalized_models_dev_model_id(&model_id).into_owned();
             let claimed = claims.get(&normalized_id).cloned();
-            if claimed.is_none() && self.entries.contains_key(&model_id) {
+            if claimed.is_none() && self.rows.entries.contains_key(&model_id) {
                 continue;
             }
             let Some(input) = cost.input else {
@@ -1356,14 +1358,14 @@ impl PricingMap {
                 .as_ref()
                 .filter(|previous| previous.stored_id != model_id)
             {
-                self.entries.remove(&previous.stored_id);
-                self.exact_only.remove(&previous.stored_id);
-                self.context_limits.remove(&previous.stored_id);
+                self.rows_mut().entries.remove(&previous.stored_id);
+                self.rows_mut().exact_only.remove(&previous.stored_id);
+                self.rows_mut().context_limits.remove(&previous.stored_id);
             }
             let input = input / 1_000_000.0;
             let output = output / 1_000_000.0;
 
-            self.entries.insert(
+            self.rows_mut().entries.insert(
                 model_id.clone(),
                 speed.for_model(&model_id).applied_to(Pricing {
                     input,
@@ -1379,18 +1381,20 @@ impl PricingMap {
                 }),
             );
             if exact_only {
-                self.exact_only.insert(model_id.clone());
+                self.rows_mut().exact_only.insert(model_id.clone());
             } else {
-                self.exact_only.remove(&model_id);
+                self.rows_mut().exact_only.remove(&model_id);
             }
             match context_limit {
                 Some(context_limit) => {
-                    self.context_limits.insert(model_id.clone(), context_limit);
+                    self.rows_mut()
+                        .context_limits
+                        .insert(model_id.clone(), context_limit);
                 }
                 // A replacement that publishes no limit must not keep the limit of
                 // the catalog it replaced.
                 None if claimed.is_some() => {
-                    self.context_limits.remove(&model_id);
+                    self.rows_mut().context_limits.remove(&model_id);
                 }
                 None => {}
             }
@@ -1442,30 +1446,30 @@ impl PricingMap {
 
     fn prices(&self) -> Table<'_, Pricing> {
         Table {
-            rows: &self.entries,
-            models_dev: &self.models_dev_keys,
+            rows: &self.rows.entries,
+            models_dev: &self.rows.models_dev_keys,
         }
     }
 
     fn limits(&self) -> Table<'_, u64> {
         Table {
-            rows: &self.context_limits,
-            models_dev: &self.models_dev_limits,
+            rows: &self.rows.context_limits,
+            models_dev: &self.rows.models_dev_limits,
         }
     }
 
     fn merge_models_dev(&mut self, source: &Self) {
         let mut primary = FxHashSet::default();
         let mut replaceable: FxHashMap<String, Vec<String>> = FxHashMap::default();
-        for key in self.entries.keys() {
+        for key in self.rows.entries.keys() {
             let normalized = normalized_pricing_key(key).into_owned();
-            if self.models_dev_keys.contains(key) {
+            if self.rows.models_dev_keys.contains(key) {
                 replaceable.entry(normalized).or_default().push(key.clone());
             } else {
                 primary.insert(normalized);
             }
         }
-        for (model, pricing) in &source.entries {
+        for (model, pricing) in &source.rows.entries {
             let normalized = normalized_pricing_key(model);
             if primary.contains(normalized.as_ref()) {
                 continue;
@@ -1475,24 +1479,26 @@ impl PricingMap {
                 .into_iter()
                 .flatten()
             {
-                self.entries.remove(&key);
-                self.exact_only.remove(&key);
-                self.models_dev_keys.remove(&key);
+                self.rows_mut().entries.remove(&key);
+                self.rows_mut().exact_only.remove(&key);
+                self.rows_mut().models_dev_keys.remove(&key);
             }
-            self.entries.insert(model.clone(), *pricing);
-            self.models_dev_keys.insert(model.clone());
-            if source.exact_only.contains(model) {
-                self.exact_only.insert(model.clone());
+            self.rows_mut().entries.insert(model.clone(), *pricing);
+            self.rows_mut().models_dev_keys.insert(model.clone());
+            if source.rows.exact_only.contains(model) {
+                self.rows_mut().exact_only.insert(model.clone());
             } else {
-                self.exact_only.remove(model);
+                self.rows_mut().exact_only.remove(model);
             }
         }
-        for (model, limit) in &source.context_limits {
-            if self.context_limits.contains_key(model) && !self.models_dev_limits.contains(model) {
+        for (model, limit) in &source.rows.context_limits {
+            if self.rows.context_limits.contains_key(model)
+                && !self.rows.models_dev_limits.contains(model)
+            {
                 continue;
             }
-            self.context_limits.insert(model.clone(), *limit);
-            self.models_dev_limits.insert(model.clone());
+            self.rows_mut().context_limits.insert(model.clone(), *limit);
+            self.rows_mut().models_dev_limits.insert(model.clone());
         }
         self.clear_find_cache();
     }
@@ -1559,9 +1565,9 @@ impl PricingMap {
         let resolved = alias.as_ref();
         let fuzzy = if fuzzy == Fuzzy::Allowed
             && ![model, resolved].into_iter().any(|candidate| {
-                self.exact_only.contains_any_spelling(candidate)
+                self.rows.exact_only.contains_any_spelling(candidate)
                     || pricing_alias(candidate)
-                        .is_some_and(|alias| self.exact_only.contains_any_spelling(alias))
+                        .is_some_and(|alias| self.rows.exact_only.contains_any_spelling(alias))
             }) {
             Fuzzy::Allowed
         } else {
@@ -1618,10 +1624,10 @@ impl PricingMap {
         fuzzy: Fuzzy,
     ) -> Option<&'a str> {
         table.key_in(model, layer).or_else(|| {
-            if let Some(id) = self.exact_only.id_spelled_by(model) {
+            if let Some(id) = self.rows.exact_only.id_spelled_by(model) {
                 return table.key_in(id, layer);
             }
-            if fuzzy == Fuzzy::Denied || self.exact_only.contains_any_spelling(model) {
+            if fuzzy == Fuzzy::Denied || self.rows.exact_only.contains_any_spelling(model) {
                 return None;
             }
             let normalized = normalized_pricing_key(model);
@@ -1630,7 +1636,7 @@ impl PricingMap {
                 .keys()
                 .map(String::as_str)
                 .filter(|key| table.layer_of(key) == layer)
-                .filter(|key| !self.exact_only.contains(key))
+                .filter(|key| !self.rows.exact_only.contains(key))
                 .filter(|key| pricing_key_matches(key, model, normalized.as_ref()))
                 .max_by(|left, right| left.len().cmp(&right.len()).then_with(|| right.cmp(left)))
         })
@@ -1650,14 +1656,15 @@ impl PricingMap {
         };
         let mut pricing = apply_deepseek_v4_schedule(scheduled_model, timestamp, self.find(model)?);
         let override_value = self
+            .rows
             .user_overrides
             .get(model)
             .or_else(|| {
                 (resolved_model.as_ref() != model)
-                    .then(|| self.user_overrides.get(resolved_model.as_ref()))
+                    .then(|| self.rows.user_overrides.get(resolved_model.as_ref()))
                     .flatten()
             })
-            .or_else(|| self.user_overrides.get(scheduled_model));
+            .or_else(|| self.rows.user_overrides.get(scheduled_model));
         if let Some(override_value) = override_value {
             apply_explicit_pricing_override(&mut pricing, override_value);
         }
@@ -1665,13 +1672,14 @@ impl PricingMap {
     }
 
     pub fn find_exact(&self, model: &str) -> Option<Pricing> {
-        self.entries.get(model).copied()
+        self.rows.entries.get(model).copied()
     }
 
     /// Whether a user supplied pricing for this model id or its configured alias.
     pub fn has_user_override(&self, model: &str) -> bool {
-        self.user_overrides.contains_key(model)
+        self.rows.user_overrides.contains_key(model)
             || self
+                .rows
                 .user_overrides
                 .contains_key(crate::model_aliases::resolve_model_name(model).as_ref())
     }
@@ -1688,31 +1696,35 @@ impl PricingMap {
 
     fn find_exact_normalized(&self, model: &str) -> Option<Pricing> {
         self.exact_normalized_key(model)
-            .and_then(|key| self.entries.get(key).copied())
+            .and_then(|key| self.rows.entries.get(key).copied())
     }
 
     fn exact_normalized_key(&self, model: &str) -> Option<&str> {
-        if let Some((key, _)) = self.entries.get_key_value(model) {
+        if let Some((key, _)) = self.rows.entries.get_key_value(model) {
             return Some(key);
         }
-        if self.exact_only.contains_any_spelling(model) {
+        if self.rows.exact_only.contains_any_spelling(model) {
             return self
+                .rows
                 .exact_only
                 .id_spelled_by(model)
-                .and_then(|id| self.entries.get_key_value(id))
+                .and_then(|id| self.rows.entries.get_key_value(id))
                 .map(|(key, _)| key.as_str());
         }
         let key = self
             .normalized_keys()
             .get(normalized_pricing_key(model).as_ref())?
             .as_deref()?;
-        self.entries.get_key_value(key).map(|(key, _)| key.as_str())
+        self.rows
+            .entries
+            .get_key_value(key)
+            .map(|(key, _)| key.as_str())
     }
 
     fn normalized_keys(&self) -> &FxHashMap<String, Option<String>> {
         self.normalized_keys.get_or_init(|| {
             let mut index = FxHashMap::default();
-            for key in self.entries.keys() {
+            for key in self.rows.entries.keys() {
                 index
                     .entry(normalized_pricing_key(key).into_owned())
                     // A second key with the same spelling makes it name
@@ -1742,15 +1754,18 @@ impl PricingMap {
             self.resolve_override(model, &overrides, &mut resolved);
         }
         for (model, pricing) in resolved {
-            self.models_dev_keys.remove(model);
-            self.entries.insert(model.to_string(), pricing);
+            self.rows_mut().models_dev_keys.remove(model);
+            self.rows_mut().entries.insert(model.to_string(), pricing);
         }
         for (model, override_value) in overrides {
-            self.user_overrides
+            self.rows_mut()
+                .user_overrides
                 .insert(model.to_string(), override_value.clone());
             if let Some(limit) = override_value.max_input_tokens {
-                self.models_dev_limits.remove(model);
-                self.context_limits.insert(model.to_string(), limit);
+                self.rows_mut().models_dev_limits.remove(model);
+                self.rows_mut()
+                    .context_limits
+                    .insert(model.to_string(), limit);
             }
         }
         self.clear_find_cache();
@@ -1797,7 +1812,7 @@ impl PricingMap {
             {
                 return OverrideBase::Override(dependency);
             }
-            if let Some(pricing) = self.entries.get(candidate) {
+            if let Some(pricing) = self.rows.entries.get(candidate) {
                 return OverrideBase::Pricing(*pricing);
             }
         }
@@ -1839,7 +1854,7 @@ impl PricingMap {
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.entries.len()
+        self.rows.entries.len()
     }
 
     #[cfg(test)]
@@ -1858,7 +1873,7 @@ impl PricingMap {
     /// rather than per field: each source's rates assume that source's own
     /// boundary, so mixing fields across sources would price both tiers wrong.
     fn fill_long_context_rates_from_models_dev(&mut self, tiers: &Self) {
-        for (model, pricing) in &mut self.entries {
+        for (model, pricing) in &mut self.rows_mut().entries {
             if pricing.input_above_200k.is_some()
                 || pricing.output_above_200k.is_some()
                 || pricing.cache_create_above_200k.is_some()
@@ -1872,9 +1887,10 @@ impl PricingMap {
             let base = model_without_date_suffix(model);
             let resolved = pricing_alias(base).unwrap_or(base);
             let Some(source) = tiers
+                .rows
                 .entries
                 .get(resolved)
-                .or_else(|| tiers.entries.get(base))
+                .or_else(|| tiers.rows.entries.get(base))
             else {
                 continue;
             };
@@ -1892,7 +1908,7 @@ impl PricingMap {
 
     fn supplement_pricing(&mut self, model: &str, pricing: Pricing) {
         let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
-        match self.entries.entry(model.to_string()) {
+        match self.rows_mut().entries.entry(model.to_string()) {
             std::collections::hash_map::Entry::Occupied(mut existing) => {
                 let existing = existing.get_mut();
                 existing.cache_read = existing.cache_read.or(pricing.cache_read);
@@ -1909,8 +1925,10 @@ impl PricingMap {
         for supplement in BUILTIN_PRICING {
             self.supplement_pricing(supplement.model, supplement.pricing);
             if let Some(limit) = supplement.context_limit
-                && let std::collections::hash_map::Entry::Vacant(entry) =
-                    self.context_limits.entry(supplement.model.to_string())
+                && let std::collections::hash_map::Entry::Vacant(entry) = self
+                    .rows_mut()
+                    .context_limits
+                    .entry(supplement.model.to_string())
             {
                 entry.insert(limit);
             }
@@ -2092,9 +2110,10 @@ pub fn long_context_split_threshold(model: &str) -> u64 {
     let base = model_without_date_suffix(model);
     let resolved = pricing_alias(base).unwrap_or(base);
     tiers
+        .rows
         .entries
         .get(resolved)
-        .or_else(|| tiers.entries.get(base))
+        .or_else(|| tiers.rows.entries.get(base))
         .and_then(|pricing| pricing.long_context_threshold)
         .unwrap_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
 }
@@ -2310,7 +2329,9 @@ mod tests {
             "other-model": {"input_cost_per_token": 5, "output_cost_per_token": 6}
         }"#,
         );
-        live.exact_only.insert("sample-special".to_string());
+        live.rows_mut()
+            .exact_only
+            .insert("sample-special".to_string());
         pricing.enable_models_dev_fallback = true;
         let attempts = AtomicUsize::new(0);
         let fetch = || {
@@ -2386,7 +2407,8 @@ mod tests {
     #[test]
     fn curated_context_limits_fill_litellm_gaps_ahead_of_models_dev() {
         let mut live = PricingMap::default();
-        live.context_limits
+        live.rows_mut()
+            .context_limits
             .insert("gpt-5.6-sol".to_string(), 654_321);
         let lookups = AtomicUsize::new(0);
         let fetch = || {
@@ -3119,7 +3141,12 @@ mod tests {
             ),
             Some(1)
         );
-        assert!(models_dev.exact_only.contains("kimi-k2.7-code-highspeed"));
+        assert!(
+            models_dev
+                .rows
+                .exact_only
+                .contains("kimi-k2.7-code-highspeed")
+        );
 
         let pricing = layered(&primary, None);
         let tier = pricing
@@ -3156,7 +3183,7 @@ mod tests {
         let embedded = embedded_models_dev_pricing();
 
         for model in ["claude-opus-5-fast", "claude-opus-5@eu"] {
-            assert!(embedded.exact_only.contains(model), "{model}");
+            assert!(embedded.rows.exact_only.contains(model), "{model}");
             assert!(pricing.find(model).is_some(), "{model}");
             assert!(pricing.context_limit(model).is_some(), "{model}");
         }
@@ -3364,6 +3391,7 @@ mod tests {
 
         let mut builtin = PricingMap::default();
         builtin
+            .rows_mut()
             .context_limits
             .insert("claude-opus-5".to_string(), 123_456);
         let mut exact_only_without_context = PricingMap::default();
@@ -3752,7 +3780,7 @@ mod tests {
 
         let primary = pricing.find("gpt-primary").unwrap();
         let fallback = pricing.find("gpt-fallback").unwrap();
-        let alias = pricing.entries.get("gpt-alias").unwrap();
+        let alias = pricing.rows.entries.get("gpt-alias").unwrap();
 
         assert_eq!(primary.input, 1e-6);
         assert_eq!(primary.output, 10e-6);
@@ -3767,7 +3795,7 @@ mod tests {
         assert_eq!(fallback.fast_multiplier, 1.0);
         assert_eq!(pricing.context_limit("gpt-fallback"), Some(456));
         assert!((alias.input - 4e-6).abs() < f64::EPSILON);
-        assert_eq!(pricing.context_limits.get("gpt-alias"), Some(&654));
+        assert_eq!(pricing.rows.context_limits.get("gpt-alias"), Some(&654));
     }
 
     #[test]
@@ -3987,8 +4015,8 @@ mod tests {
         assert!(pricing.find_exact("claude-3-haiku-20240307").is_some());
         // Carried, but a tier is the right rate only for a request naming it,
         // even one the author prices itself.
-        assert!(pricing.exact_only.contains("claude-opus-5-fast"));
-        assert!(!pricing.exact_only.contains("claude-3-haiku-20240307"));
+        assert!(pricing.rows.exact_only.contains("claude-opus-5-fast"));
+        assert!(!pricing.rows.exact_only.contains("claude-3-haiku-20240307"));
     }
 
     #[test]
@@ -4024,7 +4052,7 @@ mod tests {
         assert!(entry.cache_read.is_some());
         assert!((entry.cache_read.unwrap() * 1e6 - 0.1).abs() < 1e-9);
         assert_eq!(
-            pricing.context_limits.get("kimi-k2.6-nitro"),
+            pricing.rows.context_limits.get("kimi-k2.6-nitro"),
             Some(&128_000)
         );
     }
@@ -4140,7 +4168,7 @@ mod tests {
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         let entry = pricing.find_exact("kimi-k2.6-nitro").unwrap();
         assert!((entry.input * 1e6 - 3.0).abs() < 1e-9);
-        assert_eq!(pricing.context_limits.get("kimi-k2.6-nitro"), None);
+        assert_eq!(pricing.rows.context_limits.get("kimi-k2.6-nitro"), None);
     }
 
     #[test]
@@ -4411,7 +4439,7 @@ mod tests {
         let mut pricing = PricingMap::default();
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-        assert!(pricing.exact_only.contains("claude-opus-5@eu"));
+        assert!(pricing.rows.exact_only.contains("claude-opus-5@eu"));
     }
 
     #[test]
@@ -4571,6 +4599,7 @@ mod tests {
         primary.load_json(build_time_pricing_json());
         primary.put_builtin_pricing();
         let model = embedded_models_dev_pricing()
+            .rows
             .entries
             .keys()
             .find(|model| primary.find(model).is_none())
@@ -4693,10 +4722,11 @@ mod tests {
             assert_eq!(
                 pricing.context_limit(model),
                 litellm_snapshot
+                    .rows
                     .context_limits
                     .get(model)
                     .copied()
-                    .or_else(|| models_dev_snapshot.context_limits.get(model).copied())
+                    .or_else(|| models_dev_snapshot.rows.context_limits.get(model).copied())
                     .or_else(|| super::BUILTIN_PRICING
                         .iter()
                         .find(|entry| entry.model == model)
@@ -4740,10 +4770,12 @@ mod tests {
 
         let mut embedded_models_dev = PricingMap::default();
         embedded_models_dev
+            .rows_mut()
             .context_limits
             .insert("gpt-5.6-sol".to_string(), 777_777);
         let mut live_models_dev = PricingMap::default();
         live_models_dev
+            .rows_mut()
             .context_limits
             .insert("gpt-5.6-sol".to_string(), 888_888);
         assert_eq!(
@@ -4815,7 +4847,7 @@ mod tests {
         );
         assert_eq!(
             pricing.context_limit("gpt-5.6"),
-            pricing.context_limits.get("gpt-5.6").copied()
+            pricing.rows.context_limits.get("gpt-5.6").copied()
         );
     }
 
@@ -5043,7 +5075,10 @@ mod tests {
             ),
             1
         );
-        models_dev.exact_only.insert("gpt-5.6-luna".to_string());
+        models_dev
+            .rows_mut()
+            .exact_only
+            .insert("gpt-5.6-luna".to_string());
 
         let pricing = online(&pricing);
         let resolved = pricing
@@ -5504,7 +5539,7 @@ mod tests {
     #[test]
     fn fuzzy_match_requires_model_key_boundaries() {
         let mut pricing = PricingMap::default();
-        pricing.entries.insert(
+        pricing.rows_mut().entries.insert(
             "claude-opus-4-7".to_string(),
             Pricing {
                 input: 5e-6,
@@ -5514,7 +5549,7 @@ mod tests {
                 ..Pricing::empty()
             },
         );
-        pricing.entries.insert(
+        pricing.rows_mut().entries.insert(
             "claude-opus-4".to_string(),
             Pricing {
                 input: 15e-6,
@@ -5531,7 +5566,7 @@ mod tests {
     #[test]
     fn fuzzy_match_does_not_fall_back_across_numeric_model_versions() {
         let mut pricing = PricingMap::default();
-        pricing.entries.insert(
+        pricing.rows_mut().entries.insert(
             "claude-opus-4".to_string(),
             Pricing {
                 input: 15e-6,
@@ -5673,7 +5708,7 @@ mod tests {
     #[test]
     fn fuzzy_match_prefers_longest_model_key() {
         let mut pricing = PricingMap::default();
-        pricing.entries.insert(
+        pricing.rows_mut().entries.insert(
             "claude-sonnet-4".to_string(),
             Pricing {
                 input: 1.0,
@@ -5683,7 +5718,7 @@ mod tests {
                 ..Pricing::empty()
             },
         );
-        pricing.entries.insert(
+        pricing.rows_mut().entries.insert(
             "claude-sonnet-4-20250514".to_string(),
             Pricing {
                 input: 2.0,
@@ -5786,7 +5821,7 @@ mod tests {
         #[test]
         fn partial_override_preserves_existing_fields() {
             let mut pricing = PricingMap::default();
-            pricing.entries.insert(
+            pricing.rows_mut().entries.insert(
                 "existing".to_string(),
                 Pricing {
                     input: 10e-6,
@@ -5854,7 +5889,10 @@ mod tests {
         #[test]
         fn missing_max_input_tokens_does_not_clobber_existing_limit() {
             let mut pricing = PricingMap::default();
-            pricing.context_limits.insert("model".to_string(), 500_000);
+            pricing
+                .rows_mut()
+                .context_limits
+                .insert("model".to_string(), 500_000);
             let overrides = build_overrides("model", |o| {
                 o.input_cost_per_token = Some(1e-6);
             });
@@ -5865,7 +5903,7 @@ mod tests {
         #[test]
         fn input_override_recomputes_absent_cache_rates_and_preserves_published_tiers() {
             let mut pricing = PricingMap::default();
-            pricing.entries.insert(
+            pricing.rows_mut().entries.insert(
                 "claude-model".to_string(),
                 Pricing {
                     input: 3e-6,
@@ -5897,7 +5935,7 @@ mod tests {
         fn input_override_does_not_scale_zero_cache() {
             let mut pricing = PricingMap::default();
             // Base has zero cache values
-            pricing.entries.insert(
+            pricing.rows_mut().entries.insert(
                 "no-cache-model".to_string(),
                 Pricing {
                     input: 5e-6,
@@ -5921,7 +5959,7 @@ mod tests {
         #[test]
         fn explicit_cache_override_replaces_the_default() {
             let mut pricing = PricingMap::default();
-            pricing.entries.insert(
+            pricing.rows_mut().entries.insert(
                 "model".to_string(),
                 Pricing {
                     input: 3e-6,
