@@ -198,20 +198,15 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
     let cache_read = pricing.cache_read_rate_at(pricing.input);
     let cache_create_1h_cost_above_200k = pricing.one_hour_cache_creation_rate_above_200k();
 
-    // Two-stage pricing: a per-model `long_context_threshold` means the
-    // request's input size selects the tier and every bucket is billed entirely
-    // at that tier's rate. The whole request switches once input exceeds the
-    // threshold, so this is not a marginal breakpoint. This mirrors the Codex
-    // per-request tiering in `calculate_codex_model_cost`.
-    //
-    // `input_tokens` here is the uncached remainder - adapters normalize usage
-    // into the Claude shape - but the vendor's tier is chosen by the request's
-    // whole context, cached or not: a Grok turn re-reading 8M cached tokens
-    // with 10K fresh ones is a long-context request, not a short one.
-    if let Some(threshold) = pricing.long_context_threshold {
-        // Saturating: the counters come from lenient JSONL parsing, and a
-        // corrupt line must not wrap the sum below the threshold or abort under
-        // overflow checks.
+    let rates = pricing
+        .long_context
+        .map(|context| context.rates)
+        .unwrap_or_default();
+    if let Some(context) = pricing
+        .long_context
+        .filter(|context| context.mode == crate::pricing::LongContextMode::WholeRequest)
+    {
+        let threshold = context.threshold;
         let context_tokens = usage
             .input_tokens
             .saturating_add(usage.cache_read_input_tokens)
@@ -225,44 +220,35 @@ pub fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: Pricing
                 base
             }
         };
-        return usage.input_tokens as f64 * rate(pricing.input, pricing.input_above_200k)
-            + usage.output_tokens as f64 * rate(pricing.output, pricing.output_above_200k)
-            + cache_create_5m_tokens as f64 * rate(cache_create, pricing.cache_create_above_200k)
+        return usage.input_tokens as f64 * rate(pricing.input, rates.input)
+            + usage.output_tokens as f64 * rate(pricing.output, rates.output)
+            + cache_create_5m_tokens as f64 * rate(cache_create, rates.cache_create)
             + cache_create_1h_tokens as f64
                 * rate(cache_create_1h_cost, cache_create_1h_cost_above_200k)
-            + usage.cache_read_input_tokens as f64
-                * rate(cache_read, pricing.cache_read_above_200k);
+            + usage.cache_read_input_tokens as f64 * rate(cache_read, rates.cache_read);
     }
 
-    // LiteLLM `*_above_200k_tokens` data keeps its marginal above-threshold
-    // semantics at the default 200K boundary.
-    let threshold = crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS;
-    tiered_cost(
-        usage.input_tokens,
-        pricing.input,
-        pricing.input_above_200k,
-        threshold,
-    ) + tiered_cost(
-        usage.output_tokens,
-        pricing.output,
-        pricing.output_above_200k,
-        threshold,
-    ) + tiered_cost(
-        cache_create_5m_tokens,
-        cache_create,
-        pricing.cache_create_above_200k,
-        threshold,
-    ) + tiered_cost(
-        cache_create_1h_tokens,
-        cache_create_1h_cost,
-        cache_create_1h_cost_above_200k,
-        threshold,
-    ) + tiered_cost(
-        usage.cache_read_input_tokens,
-        cache_read,
-        pricing.cache_read_above_200k,
-        threshold,
-    )
+    let threshold = pricing.long_context_split_threshold();
+    tiered_cost(usage.input_tokens, pricing.input, rates.input, threshold)
+        + tiered_cost(usage.output_tokens, pricing.output, rates.output, threshold)
+        + tiered_cost(
+            cache_create_5m_tokens,
+            cache_create,
+            rates.cache_create,
+            threshold,
+        )
+        + tiered_cost(
+            cache_create_1h_tokens,
+            cache_create_1h_cost,
+            cache_create_1h_cost_above_200k,
+            threshold,
+        )
+        + tiered_cost(
+            usage.cache_read_input_tokens,
+            cache_read,
+            rates.cache_read,
+            threshold,
+        )
 }
 
 pub fn tiered_cost(tokens: u64, base: f64, above: Option<f64>, threshold: u64) -> f64 {

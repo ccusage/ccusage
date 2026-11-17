@@ -1,4 +1,6 @@
-use super::{Pricing, ProviderFamily, Supplement, rates};
+use super::{
+    LongContext, LongContextMode, LongContextRates, Pricing, ProviderFamily, Supplement, rates,
+};
 
 const fn default_write_rates(
     input: f64,
@@ -54,10 +56,17 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     Supplement {
         model: "claude-sonnet-4",
         pricing: Pricing {
-            input_above_200k: Some(6e-6),
-            output_above_200k: Some(22.5e-6),
-            cache_create_above_200k: Some(7.5e-6),
-            cache_read_above_200k: Some(0.6e-6),
+            long_context: Some(LongContext {
+                threshold: 200_000,
+                mode: LongContextMode::Marginal,
+                rates: LongContextRates {
+                    input: Some(6e-6),
+                    output: Some(22.5e-6),
+                    cache_create: Some(7.5e-6),
+                    cache_read: Some(0.6e-6),
+                    cache_create_1h: None,
+                },
+            }),
             ..rates(3e-6, 15e-6, 3.75e-6, 0.3e-6)
         },
         context_limit: Some(200000),

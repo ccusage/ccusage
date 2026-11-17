@@ -270,12 +270,16 @@ fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricin
     // tokens) at the long-context rates, so the aggregated usage is priced as
     // two independent buckets. Models without long-context rates fall back to
     // the flat rates, which keeps both buckets at the same price.
-    let long_input_rate = pricing.input_above_200k.unwrap_or(pricing.input);
-    let long_output_rate = pricing.output_above_200k.unwrap_or(pricing.output);
-    let long_cache_read = pricing
-        .cache_read_above_200k
+    let rates = pricing
+        .long_context
+        .map(|context| context.rates)
+        .unwrap_or_default();
+    let long_input_rate = rates.input.unwrap_or(pricing.input);
+    let long_output_rate = rates.output.unwrap_or(pricing.output);
+    let long_cache_read = rates
+        .cache_read
         .unwrap_or_else(|| pricing.cache_read_rate_at(long_input_rate));
-    let long_cache_creation_rate = pricing.cache_create_above_200k.unwrap_or(cache_creation);
+    let long_cache_creation_rate = rates.cache_create.unwrap_or(cache_creation);
     let long_input = usage.long_context_input_tokens.min(usage.input_tokens);
     let long_cached = usage
         .long_context_cached_input_tokens

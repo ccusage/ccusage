@@ -106,16 +106,7 @@ pub struct Pricing {
     pub(crate) cache_create: Option<f64>,
     pub cache_read: Option<f64>,
     pub(crate) cache_create_1h: Option<f64>,
-    pub(crate) cache_create_1h_above_200k: Option<f64>,
-    pub input_above_200k: Option<f64>,
-    pub output_above_200k: Option<f64>,
-    pub cache_create_above_200k: Option<f64>,
-    pub cache_read_above_200k: Option<f64>,
-    // Token count above which the `*_above_200k` rates apply. The field names
-    // keep the LiteLLM `_above_200k_tokens` suffix for JSON compatibility, but
-    // some providers switch tiers at a different point (OpenAI long-context
-    // pricing starts above 272K input tokens), so the threshold is per model.
-    pub(crate) long_context_threshold: Option<u64>,
+    pub long_context: Option<LongContext>,
     pub fast_multiplier: f64,
     pub ultrafast_multiplier: f64,
     pub flex_multiplier: f64,
@@ -148,6 +139,40 @@ pub struct LongContext {
     pub threshold: u64,
     pub rates: LongContextRates,
     pub mode: LongContextMode,
+}
+
+impl LongContext {
+    const fn empty_marginal() -> Self {
+        Self {
+            threshold: DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+            mode: LongContextMode::Marginal,
+            rates: LongContextRates {
+                input: None,
+                output: None,
+                cache_create: None,
+                cache_create_1h: None,
+                cache_read: None,
+            },
+        }
+    }
+}
+
+impl LongContextRates {
+    fn marginal(self) -> Option<LongContext> {
+        [
+            self.input,
+            self.output,
+            self.cache_create,
+            self.cache_create_1h,
+            self.cache_read,
+        ]
+        .iter()
+        .any(Option::is_some)
+        .then_some(LongContext {
+            rates: self,
+            ..LongContext::empty_marginal()
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,41 +236,10 @@ impl ProviderFamily {
 
 impl Pricing {
     pub fn long_context_split_threshold(self) -> u64 {
-        self.long_context_threshold
-            .unwrap_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
-    }
-
-    pub fn long_context(self) -> Option<LongContext> {
-        let rates = LongContextRates {
-            input: self.input_above_200k,
-            output: self.output_above_200k,
-            cache_create: self.cache_create_above_200k,
-            cache_create_1h: self.one_hour_cache_creation_rate_above_200k(),
-            cache_read: self.cache_read_above_200k,
-        };
-        if self.long_context_threshold.is_none()
-            && [
-                rates.input,
-                rates.output,
-                rates.cache_create,
-                rates.cache_create_1h,
-                rates.cache_read,
-            ]
-            .into_iter()
-            .all(|rate| rate.is_none())
-        {
-            return None;
-        }
-        Some(LongContext {
-            threshold: self
-                .long_context_threshold
-                .unwrap_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
-            rates,
-            mode: match self.long_context_threshold {
-                Some(_) => LongContextMode::WholeRequest,
-                None => LongContextMode::Marginal,
-            },
-        })
+        self.long_context
+            .map_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, |context| {
+                context.threshold
+            })
     }
 
     pub fn cache_creation_rate(self) -> f64 {
@@ -259,8 +253,10 @@ impl Pricing {
     }
 
     pub(crate) fn one_hour_cache_creation_rate_above_200k(self) -> Option<f64> {
-        self.cache_create_1h_above_200k.or_else(|| {
-            self.input_above_200k
+        let rates = self.long_context?.rates;
+        rates.cache_create_1h.or_else(|| {
+            rates
+                .input
                 .map(|input| self.family.absent_one_hour_cache_write(input))
         })
     }
@@ -278,12 +274,7 @@ impl Pricing {
             cache_create: None,
             cache_read: None,
             cache_create_1h: None,
-            cache_create_1h_above_200k: None,
-            input_above_200k: None,
-            output_above_200k: None,
-            cache_create_above_200k: None,
-            cache_read_above_200k: None,
-            long_context_threshold: None,
+            long_context: None,
             fast_multiplier: 1.0,
             ultrafast_multiplier: 1.0,
             flex_multiplier: 1.0,
@@ -441,6 +432,7 @@ impl Pricing {
             return self;
         };
         let rates = schedule.data().rates_at(timestamp);
+        let mut long_context = self.long_context.unwrap_or(LongContext::empty_marginal());
         macro_rules! scheduled {
             ($field:ident, $rate:expr, $bit:expr) => {
                 self.$field = match explicit {
@@ -453,13 +445,34 @@ impl Pricing {
         scheduled!(output, rates.output, 2);
         scheduled!(cache_create, Some(rates.cache_create), 4);
         scheduled!(cache_read, Some(rates.cache_read), 8);
-        scheduled!(input_above_200k, Some(rates.input), 16);
-        scheduled!(output_above_200k, Some(rates.output), 32);
-        scheduled!(cache_create_above_200k, Some(rates.cache_create), 64);
-        scheduled!(cache_read_above_200k, Some(rates.cache_read), 128);
+        long_context.rates.input = match explicit {
+            Some(entry) if entry.explicit_schedule_rates & 16 != 0 => {
+                entry.long_context.and_then(|context| context.rates.input)
+            }
+            _ => Some(rates.input),
+        };
+        long_context.rates.output = match explicit {
+            Some(entry) if entry.explicit_schedule_rates & 32 != 0 => {
+                entry.long_context.and_then(|context| context.rates.output)
+            }
+            _ => Some(rates.output),
+        };
+        long_context.rates.cache_create = match explicit {
+            Some(entry) if entry.explicit_schedule_rates & 64 != 0 => entry
+                .long_context
+                .and_then(|context| context.rates.cache_create),
+            _ => Some(rates.cache_create),
+        };
+        long_context.rates.cache_read = match explicit {
+            Some(entry) if entry.explicit_schedule_rates & 128 != 0 => entry
+                .long_context
+                .and_then(|context| context.rates.cache_read),
+            _ => Some(rates.cache_read),
+        };
         scheduled!(cache_create_1h, self.cache_create_1h, 256);
         scheduled!(fast_multiplier, self.fast_multiplier, 512);
         scheduled!(flex_multiplier, self.flex_multiplier, 1024);
+        self.long_context = Some(long_context);
         self
     }
 
@@ -478,30 +491,32 @@ impl Pricing {
         rate!(output_cost_per_token, output, std::convert::identity, 2);
         rate!(cache_creation_input_token_cost, cache_create, Some, 4);
         rate!(cache_read_input_token_cost, cache_read, Some, 8);
-        rate!(
-            input_cost_per_token_above_200k_tokens,
-            input_above_200k,
-            Some,
-            16
-        );
-        rate!(
-            output_cost_per_token_above_200k_tokens,
-            output_above_200k,
-            Some,
-            32
-        );
-        rate!(
+        let mut context = self.long_context.unwrap_or(LongContext::empty_marginal());
+        let mut changed = false;
+        macro_rules! long_rate {
+            ($source:ident, $field:ident, $bit:expr) => {
+                if let Some(value) = value.$source {
+                    context.rates.$field = Some(value);
+                    self.explicit_schedule_rates |= $bit;
+                    changed = true;
+                }
+            };
+        }
+        long_rate!(input_cost_per_token_above_200k_tokens, input, 16);
+        long_rate!(output_cost_per_token_above_200k_tokens, output, 32);
+        long_rate!(
             cache_creation_input_token_cost_above_200k_tokens,
-            cache_create_above_200k,
-            Some,
+            cache_create,
             64
         );
-        rate!(
+        long_rate!(
             cache_read_input_token_cost_above_200k_tokens,
-            cache_read_above_200k,
-            Some,
+            cache_read,
             128
         );
+        if changed {
+            self.long_context = Some(context);
+        }
         rate!(
             cache_creation_input_token_cost_above_1hr,
             cache_create_1h,
@@ -1387,14 +1402,15 @@ impl PricingMap {
                         cache_create: pricing.cache_creation_input_token_cost,
                         cache_read: pricing.cache_read_input_token_cost,
                         cache_create_1h: pricing.cache_creation_input_token_cost_above_1hr,
-                        cache_create_1h_above_200k: pricing
-                            .cache_creation_input_token_cost_above_1hr_above_200k_tokens,
-                        input_above_200k: pricing.input_cost_per_token_above_200k_tokens,
-                        output_above_200k: pricing.output_cost_per_token_above_200k_tokens,
-                        cache_create_above_200k: pricing
-                            .cache_creation_input_token_cost_above_200k_tokens,
-                        cache_read_above_200k: pricing
-                            .cache_read_input_token_cost_above_200k_tokens,
+                        long_context: LongContextRates {
+                            input: pricing.input_cost_per_token_above_200k_tokens,
+                            output: pricing.output_cost_per_token_above_200k_tokens,
+                            cache_create: pricing.cache_creation_input_token_cost_above_200k_tokens,
+                            cache_read: pricing.cache_read_input_token_cost_above_200k_tokens,
+                            cache_create_1h: pricing
+                                .cache_creation_input_token_cost_above_1hr_above_200k_tokens,
+                        }
+                        .marginal(),
                         family: ProviderFamily::from_model(
                             &model,
                             pricing.litellm_provider.as_deref(),
@@ -1584,11 +1600,17 @@ impl PricingMap {
                     output,
                     cache_create: cost.cache_write.map(|value| value / 1_000_000.0),
                     cache_read: cost.cache_read.map(|value| value / 1_000_000.0),
-                    input_above_200k: long_context.and_then(|rates| rates.input),
-                    output_above_200k: long_context.and_then(|rates| rates.output),
-                    cache_create_above_200k: long_context.and_then(|rates| rates.cache_create),
-                    cache_read_above_200k: long_context.and_then(|rates| rates.cache_read),
-                    long_context_threshold: long_context.map(|rates| rates.threshold),
+                    long_context: long_context.map(|rates| LongContext {
+                        threshold: rates.threshold,
+                        mode: LongContextMode::WholeRequest,
+                        rates: LongContextRates {
+                            input: rates.input,
+                            output: rates.output,
+                            cache_create: rates.cache_create,
+                            cache_read: rates.cache_read,
+                            cache_create_1h: None,
+                        },
+                    }),
                     family: ProviderFamily::from_model(&model_id, None),
                     ..Pricing::empty()
                 }),
@@ -2169,27 +2191,29 @@ impl PricingMap {
     /// boundary, so mixing fields across sources would price both tiers wrong.
     fn fill_long_context_rates_from_models_dev(&mut self, tiers: &Self) {
         for (model, pricing) in &mut self.rows_mut().entries {
-            if pricing.input_above_200k.is_some()
-                || pricing.output_above_200k.is_some()
-                || pricing.cache_create_above_200k.is_some()
-                || pricing.cache_read_above_200k.is_some()
+            let previous = pricing
+                .long_context
+                .map(|context| context.rates)
+                .unwrap_or_default();
+            if [
+                previous.input,
+                previous.output,
+                previous.cache_create,
+                previous.cache_read,
+            ]
+            .iter()
+            .any(Option::is_some)
             {
                 continue;
             }
-            // Only exact ids are consulted (after date-suffix and alias
-            // resolution): a fuzzy match here could graft one model's tier onto
-            // another's base rates.
-            let Some(source) = tiers.long_context_pricing(model) else {
+            let Some(mut context) = tiers
+                .long_context_pricing(model)
+                .and_then(|source| source.long_context)
+            else {
                 continue;
             };
-            if source.long_context_threshold.is_none() {
-                continue;
-            }
-            pricing.input_above_200k = source.input_above_200k;
-            pricing.output_above_200k = source.output_above_200k;
-            pricing.cache_create_above_200k = source.cache_create_above_200k;
-            pricing.cache_read_above_200k = source.cache_read_above_200k;
-            pricing.long_context_threshold = source.long_context_threshold;
+            context.rates.cache_create_1h = previous.cache_create_1h;
+            pricing.long_context = Some(context);
         }
         self.clear_find_cache();
     }
@@ -2392,21 +2416,6 @@ struct ModelsDevLongContextRates {
     cache_read: Option<f64>,
 }
 
-/// Input-token boundary above which a request is billed at a model's
-/// long-context tier. Codex aggregates per-model token sums before pricing is
-/// applied, so each request's tier must be decided during aggregation from the
-/// model's own threshold rather than a single global constant. The boundary
-/// comes from the embedded models.dev snapshot's `cost.tiers` - the same data
-/// `fill_long_context_rates_from_models_dev` stamps onto
-/// `Pricing::long_context_threshold` - and falls back to the default 200K
-/// boundary used for LiteLLM `*_above_200k_tokens` data.
-pub fn long_context_split_threshold(model: &str) -> u64 {
-    embedded_models_dev_pricing()
-        .long_context_pricing(model)
-        .and_then(|pricing| pricing.long_context_threshold)
-        .unwrap_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS)
-}
-
 /// Strips a trailing release-date suffix (`-YYYY-MM-DD` or `-YYYYMMDD`) so
 /// date-pinned pricing keys share their base model's long-context rates.
 fn model_without_date_suffix(model: &str) -> &str {
@@ -2558,8 +2567,8 @@ fn fetch_json_url(url: &str, load: &mut dyn FnMut(&str) -> bool) -> std::io::Res
 mod tests {
     use super::{
         EMBEDDED_PREWARM, Fuzzy, Lookup, Pricing, PricingMap, build_time_models_dev_json,
-        build_time_pricing_json, embedded_models_dev_pricing, long_context_split_threshold,
-        model_without_date_suffix, prewarm_embedded,
+        build_time_pricing_json, embedded_models_dev_pricing, model_without_date_suffix,
+        prewarm_embedded,
     };
     use ccusage_test_support::fs_fixture;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3239,10 +3248,24 @@ mod tests {
             .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
             .unwrap();
 
-        assert_eq!(peak.input_above_200k, Some(0.44e-6));
-        assert_eq!(peak.output_above_200k, Some(1.32e-6));
-        assert_eq!(peak.cache_create_above_200k, Some(0.44e-6));
-        assert_eq!(peak.cache_read_above_200k, Some(0.014e-6));
+        assert_eq!(
+            peak.long_context.and_then(|context| context.rates.input),
+            Some(0.44e-6)
+        );
+        assert_eq!(
+            peak.long_context.and_then(|context| context.rates.output),
+            Some(1.32e-6)
+        );
+        assert_eq!(
+            peak.long_context
+                .and_then(|context| context.rates.cache_create),
+            Some(0.44e-6)
+        );
+        assert_eq!(
+            peak.long_context
+                .and_then(|context| context.rates.cache_read),
+            Some(0.014e-6)
+        );
     }
 
     #[test]
@@ -3393,11 +3416,11 @@ mod tests {
             "flat": {"input_cost_per_token": 1, "output_cost_per_token": 2}
         }"#,
         );
-        let marginal = pricing.find("marginal").unwrap().long_context().unwrap();
+        let marginal = pricing.find("marginal").unwrap().long_context.unwrap();
         assert_eq!(marginal.mode, super::LongContextMode::Marginal);
         assert_eq!(marginal.threshold, 200_000);
         assert_eq!(marginal.rates.input, Some(3.0));
-        assert!(pricing.find("flat").unwrap().long_context().is_none());
+        assert!(pricing.find("flat").unwrap().long_context.is_none());
 
         pricing.load_models_dev_json_for_tests(
             r#"{
@@ -3406,7 +3429,7 @@ mod tests {
             }]}}
         }"#,
         );
-        let whole = pricing.find("whole").unwrap().long_context().unwrap();
+        let whole = pricing.find("whole").unwrap().long_context.unwrap();
         assert_eq!(whole.mode, super::LongContextMode::WholeRequest);
         assert_eq!(whole.threshold, 272_000);
         assert_eq!(whole.rates.input, Some(3e-6));
@@ -4192,10 +4215,26 @@ mod tests {
         assert_eq!(entry.output, 10e-6);
         assert_eq!(entry.cache_create, Some(1.25e-6));
         assert_eq!(entry.cache_read, Some(0.1e-6));
-        assert_eq!(entry.input_above_200k, Some(2e-6));
-        assert_eq!(entry.output_above_200k, Some(20e-6));
-        assert_eq!(entry.cache_create_above_200k, Some(2.5e-6));
-        assert_eq!(entry.cache_read_above_200k, Some(0.2e-6));
+        assert_eq!(
+            entry.long_context.and_then(|context| context.rates.input),
+            Some(2e-6)
+        );
+        assert_eq!(
+            entry.long_context.and_then(|context| context.rates.output),
+            Some(20e-6)
+        );
+        assert_eq!(
+            entry
+                .long_context
+                .and_then(|context| context.rates.cache_create),
+            Some(2.5e-6)
+        );
+        assert_eq!(
+            entry
+                .long_context
+                .and_then(|context| context.rates.cache_read),
+            Some(0.2e-6)
+        );
         assert_eq!(entry.fast_multiplier, 1.5);
         assert_eq!(pricing.context_limit("gpt-every-rate"), Some(123456));
     }
@@ -4368,8 +4407,18 @@ mod tests {
         assert!((fallback.output - 8e-6).abs() < f64::EPSILON);
         assert!((fallback.cache_create.unwrap() - 2.5e-6).abs() < f64::EPSILON);
         assert!((fallback.cache_read.unwrap() - 0.2e-6).abs() < f64::EPSILON);
-        assert_eq!(fallback.input_above_200k, None);
-        assert_eq!(fallback.output_above_200k, None);
+        assert_eq!(
+            fallback
+                .long_context
+                .and_then(|context| context.rates.input),
+            None
+        );
+        assert_eq!(
+            fallback
+                .long_context
+                .and_then(|context| context.rates.output),
+            None
+        );
         assert_eq!(fallback.fast_multiplier, 1.0);
         assert_eq!(pricing.context_limit("gpt-fallback"), Some(456));
         assert!((alias.input - 4e-6).abs() < f64::EPSILON);
@@ -4810,11 +4859,17 @@ mod tests {
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         assert!(pricing.find_exact("grok-9-5").is_none());
         let entry = pricing.find_exact("grok-9.5").unwrap();
-        assert_eq!(entry.long_context_threshold, Some(200_000));
+        assert_eq!(
+            entry.long_context.map(|context| context.threshold),
+            Some(200_000)
+        );
         // The dashed spelling still resolves - through the fuzzy lookup - and
         // lands on the tiered entry rather than a flat duplicate.
         let via_dash = pricing.find("grok-9-5").unwrap();
-        assert_eq!(via_dash.long_context_threshold, Some(200_000));
+        assert_eq!(
+            via_dash.long_context.map(|context| context.threshold),
+            Some(200_000)
+        );
     }
 
     #[test]
@@ -4850,7 +4905,10 @@ mod tests {
 
         assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
         let entry = pricing.find_exact("some-reseller-only-model").unwrap();
-        assert_eq!(entry.long_context_threshold, Some(200_000));
+        assert_eq!(
+            entry.long_context.map(|context| context.threshold),
+            Some(200_000)
+        );
     }
 
     #[test]
@@ -5266,10 +5324,22 @@ mod tests {
                 .unwrap();
             let tier_source = litellm_source
                 .filter(|source| {
-                    source.input_above_200k.is_some()
-                        || source.output_above_200k.is_some()
-                        || source.cache_create_above_200k.is_some()
-                        || source.cache_read_above_200k.is_some()
+                    source
+                        .long_context
+                        .and_then(|context| context.rates.input)
+                        .is_some()
+                        || source
+                            .long_context
+                            .and_then(|context| context.rates.output)
+                            .is_some()
+                        || source
+                            .long_context
+                            .and_then(|context| context.rates.cache_create)
+                            .is_some()
+                        || source
+                            .long_context
+                            .and_then(|context| context.rates.cache_read)
+                            .is_some()
                 })
                 .or_else(|| models_dev_snapshot.find_exact(model))
                 .unwrap();
@@ -5278,23 +5348,40 @@ mod tests {
             assert_eq!(entry.cache_create, base_source.cache_create, "{model}");
             assert_eq!(entry.cache_read, base_source.cache_read, "{model}");
             assert_eq!(
-                entry.input_above_200k, tier_source.input_above_200k,
+                entry.long_context.and_then(|context| context.rates.input),
+                tier_source
+                    .long_context
+                    .and_then(|context| context.rates.input),
                 "{model}"
             );
             assert_eq!(
-                entry.output_above_200k, tier_source.output_above_200k,
+                entry.long_context.and_then(|context| context.rates.output),
+                tier_source
+                    .long_context
+                    .and_then(|context| context.rates.output),
                 "{model}"
             );
             assert_eq!(
-                entry.cache_create_above_200k, tier_source.cache_create_above_200k,
+                entry
+                    .long_context
+                    .and_then(|context| context.rates.cache_create),
+                tier_source
+                    .long_context
+                    .and_then(|context| context.rates.cache_create),
                 "{model}"
             );
             assert_eq!(
-                entry.cache_read_above_200k, tier_source.cache_read_above_200k,
+                entry
+                    .long_context
+                    .and_then(|context| context.rates.cache_read),
+                tier_source
+                    .long_context
+                    .and_then(|context| context.rates.cache_read),
                 "{model}"
             );
             assert_eq!(
-                entry.long_context_threshold, tier_source.long_context_threshold,
+                entry.long_context.map(|context| context.threshold),
+                tier_source.long_context.map(|context| context.threshold),
                 "{model}"
             );
             assert_eq!(
@@ -5394,15 +5481,27 @@ mod tests {
         assert_eq!(alias.output, sol.output);
         assert_eq!(alias.cache_create, sol.cache_create);
         assert_eq!(alias.cache_read, sol.cache_read);
-        assert_eq!(alias.input_above_200k, sol.input_above_200k);
-        assert_eq!(alias.output_above_200k, sol.output_above_200k);
+        assert_eq!(
+            alias.long_context.and_then(|context| context.rates.input),
+            sol.long_context.and_then(|context| context.rates.input)
+        );
+        assert_eq!(
+            alias.long_context.and_then(|context| context.rates.output),
+            sol.long_context.and_then(|context| context.rates.output)
+        );
         assert_eq!(
             pricing.context_limit("gpt-5.6"),
             pricing.context_limit("gpt-5.6-sol")
         );
         assert_eq!(
-            long_context_split_threshold("gpt-5.6"),
-            long_context_split_threshold("gpt-5.6-sol")
+            embedded_models_dev_pricing()
+                .find("gpt-5.6")
+                .unwrap()
+                .long_context_split_threshold(),
+            embedded_models_dev_pricing()
+                .find("gpt-5.6-sol")
+                .unwrap()
+                .long_context_split_threshold()
         );
     }
 
@@ -5417,11 +5516,21 @@ mod tests {
         assert_eq!(resolved.output, exact.output);
         assert_eq!(resolved.cache_create, exact.cache_create);
         assert_eq!(resolved.cache_read, exact.cache_read);
-        assert_eq!(resolved.input_above_200k, exact.input_above_200k);
-        assert_eq!(resolved.output_above_200k, exact.output_above_200k);
         assert_eq!(
-            resolved.long_context_threshold,
-            exact.long_context_threshold
+            resolved
+                .long_context
+                .and_then(|context| context.rates.input),
+            exact.long_context.and_then(|context| context.rates.input)
+        );
+        assert_eq!(
+            resolved
+                .long_context
+                .and_then(|context| context.rates.output),
+            exact.long_context.and_then(|context| context.rates.output)
+        );
+        assert_eq!(
+            resolved.long_context.map(|context| context.threshold),
+            exact.long_context.map(|context| context.threshold)
         );
         assert_eq!(
             pricing.context_limit("gpt-5.6"),
@@ -5435,20 +5544,46 @@ mod tests {
         let pricing = PricingMap::load_embedded();
 
         let gpt_55 = pricing.find("gpt-5.5").unwrap();
-        assert_eq!(gpt_55.input_above_200k, Some(10e-6));
-        assert_eq!(gpt_55.output_above_200k, Some(45e-6));
-        assert_eq!(gpt_55.cache_read_above_200k, Some(1e-6));
-        assert_eq!(gpt_55.long_context_threshold, Some(272_000));
+        assert_eq!(
+            gpt_55.long_context.and_then(|context| context.rates.input),
+            Some(10e-6)
+        );
+        assert_eq!(
+            gpt_55.long_context.and_then(|context| context.rates.output),
+            Some(45e-6)
+        );
+        assert_eq!(
+            gpt_55
+                .long_context
+                .and_then(|context| context.rates.cache_read),
+            Some(1e-6)
+        );
+        assert_eq!(
+            gpt_55.long_context.map(|context| context.threshold),
+            Some(272_000)
+        );
 
         let gpt_54 = pricing.find("gpt-5.4").unwrap();
-        assert_eq!(gpt_54.input_above_200k, Some(5e-6));
-        assert_eq!(gpt_54.output_above_200k, Some(22.5e-6));
-        assert_eq!(gpt_54.long_context_threshold, Some(272_000));
+        assert_eq!(
+            gpt_54.long_context.and_then(|context| context.rates.input),
+            Some(5e-6)
+        );
+        assert_eq!(
+            gpt_54.long_context.and_then(|context| context.rates.output),
+            Some(22.5e-6)
+        );
+        assert_eq!(
+            gpt_54.long_context.map(|context| context.threshold),
+            Some(272_000)
+        );
 
         // Models the pricing page lists without a long-context tier stay flat.
         let mini = pricing.find("gpt-5.4-mini").unwrap();
-        assert_eq!(mini.input_above_200k, None);
-        assert_eq!(mini.long_context_threshold, None);
+        assert_eq!(
+            mini.long_context.and_then(|context| context.rates.input),
+            None
+        );
+        assert_eq!(mini.long_context.map(|context| context.threshold), None);
     }
 
     #[test]
@@ -5473,11 +5608,20 @@ mod tests {
 
         let gpt_55 = pricing.find("gpt-5.5").unwrap();
         assert_eq!(gpt_55.input, 6e-6);
-        assert_eq!(gpt_55.input_above_200k, Some(10e-6));
-        assert_eq!(gpt_55.long_context_threshold, Some(272_000));
+        assert_eq!(
+            gpt_55.long_context.and_then(|context| context.rates.input),
+            Some(10e-6)
+        );
+        assert_eq!(
+            gpt_55.long_context.map(|context| context.threshold),
+            Some(272_000)
+        );
         // Date-pinned keys share the base model's long-context rates.
         let dated = pricing.find_exact("gpt-5.5-2026-04-23").unwrap();
-        assert_eq!(dated.input_above_200k, Some(10e-6));
+        assert_eq!(
+            dated.long_context.and_then(|context| context.rates.input),
+            Some(10e-6)
+        );
 
         // Tier rates published upstream win over the built-in overlay.
         pricing.load_json(
@@ -5492,8 +5636,15 @@ mod tests {
         pricing.fill_long_context_rates_from_models_dev(embedded_models_dev_pricing());
 
         let gpt_55 = pricing.find("gpt-5.5").unwrap();
-        assert_eq!(gpt_55.input_above_200k, Some(12e-6));
-        assert_eq!(gpt_55.long_context_threshold, None);
+        assert_eq!(
+            gpt_55.long_context.and_then(|context| context.rates.input),
+            Some(12e-6)
+        );
+        assert_eq!(
+            gpt_55.long_context.unwrap().mode,
+            super::LongContextMode::Marginal
+        );
+        assert_eq!(gpt_55.long_context.unwrap().threshold, 200_000);
     }
 
     #[test]
@@ -5509,31 +5660,91 @@ mod tests {
             let entry = pricing.find(model).unwrap();
             assert!((entry.input * 1e6 - 2.0).abs() < 1e-9, "{model} base input");
             assert!(
-                (entry.input_above_200k.unwrap() * 1e6 - 4.0).abs() < 1e-9,
+                (entry
+                    .long_context
+                    .and_then(|context| context.rates.input)
+                    .unwrap()
+                    * 1e6
+                    - 4.0)
+                    .abs()
+                    < 1e-9,
                 "{model} long-context input"
             );
             assert!(
-                (entry.output_above_200k.unwrap() * 1e6 - 12.0).abs() < 1e-9,
+                (entry
+                    .long_context
+                    .and_then(|context| context.rates.output)
+                    .unwrap()
+                    * 1e6
+                    - 12.0)
+                    .abs()
+                    < 1e-9,
                 "{model} long-context output"
             );
-            assert_eq!(entry.long_context_threshold, Some(200_000), "{model}");
+            assert_eq!(
+                entry.long_context.map(|context| context.threshold),
+                Some(200_000),
+                "{model}"
+            );
         }
-        assert_eq!(long_context_split_threshold("grok-4.5"), 200_000);
+        assert_eq!(
+            embedded_models_dev_pricing()
+                .find("grok-4.5")
+                .unwrap()
+                .long_context_split_threshold(),
+            200_000
+        );
     }
 
     #[test]
     fn long_context_split_threshold_is_per_model() {
         crate::test_support::install_pricing_snapshots();
         // OpenAI two-stage models switch tiers above 272K input tokens.
-        assert_eq!(long_context_split_threshold("gpt-5.6-sol"), 272_000);
-        assert_eq!(long_context_split_threshold("gpt-5.5"), 272_000);
-        assert_eq!(long_context_split_threshold("gpt-5.5-pro"), 272_000);
+        assert_eq!(
+            embedded_models_dev_pricing()
+                .find("gpt-5.6-sol")
+                .unwrap()
+                .long_context_split_threshold(),
+            272_000
+        );
+        assert_eq!(
+            embedded_models_dev_pricing()
+                .find("gpt-5.5")
+                .unwrap()
+                .long_context_split_threshold(),
+            272_000
+        );
+        assert_eq!(
+            embedded_models_dev_pricing()
+                .find("gpt-5.5-pro")
+                .unwrap()
+                .long_context_split_threshold(),
+            272_000
+        );
         // Date-pinned keys share their base model's boundary.
-        assert_eq!(long_context_split_threshold("gpt-5.5-2026-04-23"), 272_000);
+        assert_eq!(
+            embedded_models_dev_pricing()
+                .find("gpt-5.5-2026-04-23")
+                .unwrap()
+                .long_context_split_threshold(),
+            272_000
+        );
         // Models without a built-in tier fall back to the 200K default used for
         // LiteLLM `*_above_200k_tokens` data.
-        assert_eq!(long_context_split_threshold("gpt-5"), 200_000);
-        assert_eq!(long_context_split_threshold("gpt-5.4-mini"), 200_000);
+        assert_eq!(
+            embedded_models_dev_pricing()
+                .find("gpt-5")
+                .unwrap()
+                .long_context_split_threshold(),
+            200_000
+        );
+        assert_eq!(
+            embedded_models_dev_pricing()
+                .find("gpt-5.4-mini")
+                .unwrap()
+                .long_context_split_threshold(),
+            200_000
+        );
     }
 
     #[test]
@@ -6007,8 +6218,14 @@ mod tests {
         assert_eq!(reserve.cache_read, luna.cache_read);
         assert_eq!(reserve.fast_multiplier, luna.fast_multiplier);
         assert_eq!(
-            long_context_split_threshold("gpt-reserve"),
-            long_context_split_threshold("gpt-5.6-luna")
+            embedded_models_dev_pricing()
+                .find("gpt-reserve")
+                .unwrap()
+                .long_context_split_threshold(),
+            embedded_models_dev_pricing()
+                .find("gpt-5.6-luna")
+                .unwrap()
+                .long_context_split_threshold()
         );
     }
 
@@ -6327,7 +6544,11 @@ mod tests {
             Pricing {
                 input: 1e-6,
                 output: 2e-6,
-                long_context_threshold: Some(123_456),
+                long_context: Some(super::LongContext {
+                    threshold: 123_456,
+                    mode: super::LongContextMode::WholeRequest,
+                    rates: crate::pricing::LongContextRates::default(),
+                }),
                 ..Pricing::empty()
             },
         );
@@ -6525,11 +6746,32 @@ mod tests {
             assert_eq!(entry.output, sol.output);
             assert_eq!(entry.cache_create, sol.cache_create);
             assert_eq!(entry.cache_read, sol.cache_read);
-            assert_eq!(entry.input_above_200k, sol.input_above_200k);
-            assert_eq!(entry.output_above_200k, sol.output_above_200k);
-            assert_eq!(entry.cache_create_above_200k, sol.cache_create_above_200k);
-            assert_eq!(entry.cache_read_above_200k, sol.cache_read_above_200k);
-            assert_eq!(entry.long_context_threshold, sol.long_context_threshold);
+            assert_eq!(
+                entry.long_context.and_then(|context| context.rates.input),
+                sol.long_context.and_then(|context| context.rates.input)
+            );
+            assert_eq!(
+                entry.long_context.and_then(|context| context.rates.output),
+                sol.long_context.and_then(|context| context.rates.output)
+            );
+            assert_eq!(
+                entry
+                    .long_context
+                    .and_then(|context| context.rates.cache_create),
+                sol.long_context
+                    .and_then(|context| context.rates.cache_create)
+            );
+            assert_eq!(
+                entry
+                    .long_context
+                    .and_then(|context| context.rates.cache_read),
+                sol.long_context
+                    .and_then(|context| context.rates.cache_read)
+            );
+            assert_eq!(
+                entry.long_context.map(|context| context.threshold),
+                sol.long_context.map(|context| context.threshold)
+            );
             assert_eq!(entry.fast_multiplier, sol.fast_multiplier);
             assert_eq!(pricing.context_limit("gpt-5.6"), Some(654_321));
         }
@@ -6544,7 +6786,11 @@ mod tests {
                     output: 20e-6,
                     cache_create: Some(30e-6),
                     cache_read: Some(40e-6),
-                    input_above_200k: Some(15e-6),
+                    long_context: crate::pricing::LongContextRates {
+                        input: Some(15e-6),
+                        ..Default::default()
+                    }
+                    .marginal(),
                     fast_multiplier: 1.5,
                     ..Pricing::empty()
                 },
@@ -6561,7 +6807,10 @@ mod tests {
             assert_eq!(entry.output, 20e-6);
             assert_eq!(entry.cache_create, Some(30e-6));
             assert_eq!(entry.cache_read, Some(40e-6));
-            assert_eq!(entry.input_above_200k, Some(15e-6));
+            assert_eq!(
+                entry.long_context.and_then(|context| context.rates.input),
+                Some(15e-6)
+            );
             assert_eq!(entry.fast_multiplier, 1.5);
             assert_eq!(entry.flex_multiplier, 0.5);
         }
@@ -6624,8 +6873,12 @@ mod tests {
                 Pricing {
                     input: 3e-6,
                     output: 15e-6,
-                    cache_create_above_200k: Some(4.6875e-6),
-                    cache_read_above_200k: Some(3.75e-7),
+                    long_context: crate::pricing::LongContextRates {
+                        cache_create: Some(4.6875e-6),
+                        cache_read: Some(3.75e-7),
+                        ..Default::default()
+                    }
+                    .marginal(),
                     ..Pricing::empty()
                 },
             );
@@ -6643,8 +6896,18 @@ mod tests {
             assert!((entry.cache_creation_rate() - 2.5e-6).abs() < 1e-15);
             assert_eq!(entry.cache_read, None);
             assert!((entry.cache_read_rate_at(entry.input) - 2e-7).abs() < 1e-15);
-            assert_eq!(entry.cache_create_above_200k, Some(4.6875e-6));
-            assert_eq!(entry.cache_read_above_200k, Some(3.75e-7));
+            assert_eq!(
+                entry
+                    .long_context
+                    .and_then(|context| context.rates.cache_create),
+                Some(4.6875e-6)
+            );
+            assert_eq!(
+                entry
+                    .long_context
+                    .and_then(|context| context.rates.cache_read),
+                Some(3.75e-7)
+            );
         }
 
         #[test]
