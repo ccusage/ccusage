@@ -1,9 +1,20 @@
 { inputs, ... }:
 {
   perSystem =
-    { system, ... }:
+    { config, system, ... }:
+    let
+      pkgs = inputs.nixpkgs.legacyPackages.${system};
+      manifest = builtins.fromJSON (builtins.readFile ../package.json);
+      expected = "pnpm@${config.packages.pnpm.version}";
+    in
     {
-      # Unmodified so it substitutes from cache.nixos.org; autoDedupe needs >= 12.8.1.
-      packages.pnpm = inputs.pnpm-nixpkgs.legacyPackages.${system}.pnpm_12;
+      packages.pnpm = pkgs.pnpm_12;
+      checks.pnpm-version = pkgs.runCommand "pnpm-version-check" { } ''
+        if [ '${manifest.packageManager}' != '${expected}' ]; then
+          echo "ERROR: package.json packageManager must be ${expected}, matching the flake." >&2
+          exit 1
+        fi
+        touch "$out"
+      '';
     };
 }

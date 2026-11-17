@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    pnpm-nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     # Tirith 0.4 rejects existing shell and Nushell workflow bodies as incomplete.
     # Keep the last working scanner independent of routine nixpkgs updates.
     tirith-nixpkgs.url = "github:NixOS/nixpkgs/91cc1fdf6831e29b6c98768e721a72241f3d0797";
