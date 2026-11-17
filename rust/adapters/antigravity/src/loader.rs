@@ -1252,6 +1252,29 @@ mod tests {
     }
 
     #[test]
+    fn skips_a_conversation_database_with_steps_but_no_generation_table() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = Fixture::new();
+        let _ = fixture.create_dir_all("conversations");
+        let db_path = fixture.path("conversations/renamed.db");
+        let connection = sqlite::open(&db_path).unwrap();
+        connection
+            .execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, metadata BLOB)")
+            .unwrap();
+        let _guard = EnvVarsGuard::set_many([(
+            super::super::paths::ANTIGRAVITY_DATA_DIR_ENV,
+            Some(OsString::from(fixture.root())),
+        )]);
+
+        assert_skipped(
+            &skipped_databases(),
+            SkipKind::Invariant,
+            "unexpected shape",
+            &db_path,
+        );
+    }
+
+    #[test]
     fn skips_database_with_invalid_optional_table_schema() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();

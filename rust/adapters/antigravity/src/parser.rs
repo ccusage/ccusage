@@ -196,6 +196,11 @@ pub(super) fn parse_sqlite_file(path: &Path) -> DatabaseResult<ParsedDatabase> {
         return Ok(ParsedDatabase::EmptySnapshot);
     }
     if !table_exists(&connection, "gen_metadata")? {
+        if table_exists(&connection, "steps")?
+            || table_exists(&connection, "trajectory_metadata_blob")?
+        {
+            return Err(UnitError::unsupported_schema());
+        }
         return Ok(ParsedDatabase::NoGenerationTable);
     }
     let session_id = path

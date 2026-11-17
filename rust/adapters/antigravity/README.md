@@ -27,10 +27,10 @@ root may contain a `conversations/` child or be the conversation directory
 itself. Databases are opened read-only; a conversation database provides the
 `gen_metadata` table. When present, the real `steps` schema contributes step
 and retry usage, and `trajectory_metadata_blob` supplies the timestamp
-fallback. Empty databases and databases without `gen_metadata` (such as
-`conversation_summaries.db`) are skipped silently (logged with `--debug`), and
-unreadable databases
-are skipped with a filename warning. A database only contributes usage when its
+fallback. Empty databases and databases with none of those tables (such as
+`conversation_summaries.db`) are skipped silently (logged with `--debug`); a
+database with `steps` or `trajectory_metadata_blob` but no `gen_metadata`, and
+unreadable databases, are skipped with a filename warning. A database only contributes usage when its
 full read succeeds. Other readable databases remain available to the report.
 
 ## Public surface
