@@ -1,21 +1,12 @@
 use ccusage_adapter_common::{dedupe::dedupe_first_wins, source::LoadContext};
 
-use crate::{LoadedEntry, PricingMap, Result};
+use crate::{LoadedEntry, Result};
 
 use super::parser;
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
-    let owned_pricing = if shared.mode == crate::cli::CostMode::Display || cx.pricing.is_some() {
-        None
-    } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        ))
-    };
-    let pricing = cx.pricing.or(owned_pricing.as_ref());
+    let pricing = cx.pipeline_pricing()?;
     let files = super::paths::discover_chat_files(cx.diagnostics)?;
     let loaded = ccusage_adapter_common::read_units_flat(
         &files,
@@ -26,7 +17,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
                 file,
                 cx.window.timezone(),
                 shared.mode,
-                pricing,
+                Some(pricing),
                 cx.diagnostics,
             )
         },

@@ -17,7 +17,7 @@ impl EntrySource for Qwen {
             session: ccusage_adapter_common::source::SessionShape::WithActivity,
             window: WindowMode::SessionLastActivity,
             detection: Detection::NonEmptyOrHasData(has_data),
-            pricing: PricingSupply::Source,
+            pricing: PricingSupply::Pipeline,
             ..EntryDescriptor::standard("qwen", "Qwen")
         }
     }
