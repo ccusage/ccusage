@@ -48,8 +48,7 @@ jobs:
             --no-progress --offline --include-fragments
             --root-dir docs/.vitepress/dist --fallback-extensions html --index-files index.html
             README.md 'docs/.vitepress/dist/**/*.html'
-          # Collect the existing failures before making internal links a gate.
-          fail: false
+          fail: true
           output: reports/internal-links.md
       - name: Upload link reports
         if: always()
@@ -65,13 +64,14 @@ jobs:
           EXTERNAL_EXIT_CODE: ${{ steps.external_links.outputs.exit_code }}
           INTERNAL_EXIT_CODE: ${{ steps.internal_links.outputs.exit_code }}
         run: |
-          # Exit 2 reports link findings, which remain advisory.
-          for code in "$EXTERNAL_EXIT_CODE" "$INTERNAL_EXIT_CODE"; do
-            case "$code" in
-              0 | 2) ;;
-              *)
-                echo "::error::lychee did not complete normally (exit code: ${code:-missing})"
-                exit 1
-                ;;
-            esac
-          done
+          case "$EXTERNAL_EXIT_CODE" in
+            0 | 2) ;;
+            *)
+              echo "::error::External link checker did not complete normally (exit code: ${EXTERNAL_EXIT_CODE:-missing})"
+              exit 1
+              ;;
+          esac
+          if [ "$INTERNAL_EXIT_CODE" != 0 ]; then
+            echo "::error::Internal link check failed (exit code: ${INTERNAL_EXIT_CODE:-missing})"
+            exit 1
+          fi
