@@ -59,7 +59,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
 mod tests {
     use ccusage_adapter_common::{
         parity::assert_focused_matches_unified,
-        source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
+        source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
     use ccusage_test_support::{EnvVarGuard, Fixture, fs_fixture};
 
@@ -121,13 +121,14 @@ mod tests {
         };
 
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Session,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(
+                    AgentReportKind::Session,
+                ),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                claude_counted: None,
             })
             .unwrap();
 

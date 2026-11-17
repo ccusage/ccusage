@@ -14,7 +14,7 @@ use ccusage_core::{
     cli_error, summary_period,
 };
 
-use crate::{claims::ClaudeCounted, pipeline, rows::UnifiedRow};
+use crate::{pipeline, rows::UnifiedRow};
 
 /// One usage source registered for the unified report.
 pub trait UsageSource: Sync {
@@ -28,17 +28,7 @@ pub trait UsageSource: Sync {
         PricingSupply::Pipeline
     }
 
-    /// Loads the rows this source contributes to the unified report.
-    ///
-    /// `request.kind` is the kind the unified report loads at, not the one it
-    /// prints: weekly and monthly reports load `Daily` rows and bucket them
-    /// afterwards, across sources, with the report's own week start. A source
-    /// must not bucket by week or month here.
-    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows>;
-
-    fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
-        self.unified_rows(&request.legacy()).map(LoadedRows::from)
-    }
+    fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows>;
 
     /// Whether the source has usage data at all, whatever the date window.
     /// Only sources that cannot tell from their loaded rows answer.
@@ -103,33 +93,10 @@ pub struct LoadRequest<'a> {
     pub progress: ProgressOwner,
 }
 
-impl LoadRequest<'_> {
-    pub(crate) fn legacy(&self) -> UnifiedRequest<'_> {
-        UnifiedRequest {
-            kind: self.kind.report_kind(),
-            shared: self.shared,
-            options: self.options,
-            pricing: self.pricing,
-            progress: self.progress,
-            claude_counted: None,
-        }
-    }
-}
-
 pub struct LoadedRows {
     pub rows: Vec<UnifiedRow>,
     pub detected: bool,
     pub diagnostics: Diagnostics,
-}
-
-impl From<SourceRows> for LoadedRows {
-    fn from(rows: SourceRows) -> Self {
-        Self {
-            rows: rows.rows,
-            detected: rows.detected,
-            diagnostics: rows.diagnostics,
-        }
-    }
 }
 
 /// The per-source options beside [`SharedArgs`]. Each is read by one source.
@@ -166,37 +133,6 @@ impl<'a> SourceOptions<'a> {
             codex_speed: source.codex_speed,
         })
     }
-}
-
-/// What the unified report asks one source for.
-pub struct UnifiedRequest<'a> {
-    /// The kind to load at; see [`UsageSource::unified_rows`].
-    pub kind: AgentReportKind,
-    /// The options this source loads with: the ones the configuration resolved
-    /// for it, or the unified report's own.
-    pub shared: &'a SharedArgs,
-    pub options: SourceOptions<'a>,
-    /// The pricing the unified report shares between sources with the same
-    /// pricing options. `None` for a source that loads its own.
-    pub pricing: Option<&'a PricingMap>,
-    pub progress: ProgressOwner,
-    /// OpenCode only: blocks until the Claude source of the same report has
-    /// loaded and yields what it counted.
-    pub claude_counted: Option<&'a (dyn Fn() -> ClaudeCounted + Send)>,
-}
-
-/// What one source contributes to the unified report.
-pub struct SourceRows {
-    pub rows: Vec<UnifiedRow>,
-    /// Whether the report lists the source among the agents it found, which
-    /// must not depend on the date window.
-    pub detected: bool,
-    /// What the load skipped. The unified report merges it with other loads
-    /// of the same source and prints it once all progress output stopped.
-    pub diagnostics: Diagnostics,
-    /// Claude only: the usage it counted, for the sources that would otherwise
-    /// count the same turns.
-    pub claude_counted: Option<ClaudeCounted>,
 }
 
 /// Where a source's date window is applied.
@@ -354,8 +290,8 @@ impl<S: EntrySource> UsageSource for S {
         self.descriptor().pricing
     }
 
-    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-        pipeline::unified_rows(self, request)
+    fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
+        pipeline::load_rows(self, request)
     }
 
     fn has_data(&self) -> bool {

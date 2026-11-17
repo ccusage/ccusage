@@ -4,13 +4,10 @@ use serde_json::json;
 
 use ccusage_adapter_common::{
     rows::UnifiedRow,
-    source::{ProgressOwner, SourceRows, UnifiedRequest, UsageSource},
+    source::{LoadRequest, LoadedRows, UsageSource},
 };
 use ccusage_core::{
-    ModelBreakdown, PricingMap, Result,
-    cli::CostMode,
-    log_level,
-    progress::{UsageLoadAgent, track_usage_load},
+    ModelBreakdown, PricingMap, Result, cli::CostMode, log_level, progress::UsageLoadAgent,
 };
 
 use crate::{
@@ -31,18 +28,15 @@ impl UsageSource for Codex {
         "Codex"
     }
 
-    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-        let load = || unified_rows(request);
-        match request.progress {
-            ProgressOwner::Source => {
-                track_usage_load(UsageLoadAgent("Codex"), request.shared.json, load)
-            }
-            ProgressOwner::Caller => load(),
-        }
+    fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
+        let load = || load_rows(request);
+        request
+            .progress
+            .run(UsageLoadAgent("Codex"), request.shared.json, load)
     }
 }
 
-fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
+fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let diagnostics = Diagnostics::new("codex");
     let shared = request.shared;
     let owned_pricing = request.pricing.is_none().then(|| {
@@ -58,17 +52,17 @@ fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
         .expect("Codex pricing is available");
     let speed = resolve_codex_speed(request.options.codex_speed);
 
-    let (groups, detected) = load_groups_with_diagnostics(shared, request.kind, &diagnostics)?;
+    let (groups, detected) =
+        load_groups_with_diagnostics(shared, request.kind.report_kind(), &diagnostics)?;
     let rows = groups
         .iter()
         .map(|(period, group)| unified_row_from_group(period, group, pricing, speed, shared.mode))
         .collect();
 
-    Ok(SourceRows {
+    Ok(LoadedRows {
         rows,
         detected,
         diagnostics,
-        claude_counted: None,
     })
 }
 
@@ -132,19 +126,18 @@ pub fn unified_row_from_group(
 #[cfg(test)]
 mod diagnostic_tests {
     use super::*;
-    use ccusage_adapter_common::source::SourceOptions;
+    use ccusage_adapter_common::source::{ProgressOwner, SourceOptions};
     use ccusage_core::cli::{AgentReportKind, SharedArgs};
     use ccusage_test_support::{EnvVarsGuard, Fixture};
 
     fn unified_codex_rows(shared: &SharedArgs, kind: AgentReportKind) -> Vec<UnifiedRow> {
         SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
                 shared,
                 options: SourceOptions::default(),
                 pricing: Some(&PricingMap::load_embedded()),
                 progress: ProgressOwner::Caller,
-                claude_counted: None,
             })
             .unwrap()
             .rows
@@ -180,7 +173,7 @@ mod diagnostic_tests {
     }
 
     #[test]
-    fn bounded_unified_rows_match_the_focused_codex_report() {
+    fn bounded_load_rows_match_the_focused_codex_report() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = Fixture::new();
         let usage = |timestamp: &str| {
@@ -267,13 +260,14 @@ mod diagnostic_tests {
                 ..Default::default()
             };
             let result = SOURCE
-                .unified_rows(&UnifiedRequest {
-                    kind: AgentReportKind::Daily,
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
                     shared: &shared,
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    claude_counted: None,
                 })
                 .unwrap();
             assert_eq!(result.rows.len(), 1);
@@ -328,13 +322,14 @@ mod diagnostic_tests {
                     ..Default::default()
                 };
                 let result = SOURCE
-                    .unified_rows(&UnifiedRequest {
-                        kind: AgentReportKind::Daily,
+                    .load_rows(&LoadRequest {
+                        kind: ccusage_adapter_common::source::LoadKind::for_report(
+                            AgentReportKind::Daily,
+                        ),
                         shared: &shared,
                         options: SourceOptions::default(),
                         pricing: Some(&pricing),
                         progress: ProgressOwner::Caller,
-                        claude_counted: None,
                     })
                     .unwrap();
                 assert_eq!(result.rows.len(), 1);
@@ -377,13 +372,14 @@ mod diagnostic_tests {
                     ..Default::default()
                 };
                 let result = SOURCE
-                    .unified_rows(&UnifiedRequest {
-                        kind: AgentReportKind::Daily,
+                    .load_rows(&LoadRequest {
+                        kind: ccusage_adapter_common::source::LoadKind::for_report(
+                            AgentReportKind::Daily,
+                        ),
                         shared: &shared,
                         options: SourceOptions::default(),
                         pricing: Some(&pricing),
                         progress: ProgressOwner::Caller,
-                        claude_counted: None,
                     })
                     .unwrap();
                 assert!(result.detected);
@@ -417,13 +413,14 @@ mod diagnostic_tests {
                 ..Default::default()
             };
             let result = SOURCE
-                .unified_rows(&UnifiedRequest {
-                    kind: AgentReportKind::Daily,
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
                     shared: &shared,
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    claude_counted: None,
                 })
                 .unwrap();
             assert_eq!(result.rows.len(), 1);
@@ -479,13 +476,14 @@ mod diagnostic_tests {
                 ..Default::default()
             };
             let rows = SOURCE
-                .unified_rows(&UnifiedRequest {
-                    kind: AgentReportKind::Daily,
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(
+                        AgentReportKind::Daily,
+                    ),
                     shared: &shared,
                     options: SourceOptions::default(),
                     pricing: Some(&pricing),
                     progress: ProgressOwner::Caller,
-                    claude_counted: None,
                 })
                 .unwrap();
             assert_eq!(rows.rows.len(), 1);
@@ -589,13 +587,12 @@ mod diagnostic_tests {
         };
 
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: Some(&pricing),
                 progress: ProgressOwner::Caller,
-                claude_counted: None,
             })
             .unwrap();
 

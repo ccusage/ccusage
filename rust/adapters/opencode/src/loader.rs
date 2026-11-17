@@ -55,14 +55,11 @@ pub(super) fn load_entries_with_native_sessions_with_diagnostics(
             diagnostics,
         ))
     };
-    match owner {
-        ProgressOwner::Source => crate::progress::track_usage_load(
-            crate::progress::UsageLoadAgent("OpenCode"),
-            shared.json,
-            load,
-        ),
-        ProgressOwner::Caller => load(),
-    }
+    owner.run(
+        crate::progress::UsageLoadAgent("OpenCode"),
+        shared.json,
+        load,
+    )
 }
 
 fn load_directories(

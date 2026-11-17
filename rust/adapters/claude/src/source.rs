@@ -1,9 +1,7 @@
 use ccusage_adapter_common::{
     claims::{ClaudeClaimsTx, ClaudeCounted},
     rows::{summarize_entry_sessions, summary_rows},
-    source::{
-        LoadKind, LoadRequest, LoadedRows, PricingSupply, SourceRows, UnifiedRequest, UsageSource,
-    },
+    source::{LoadKind, LoadRequest, LoadedRows, PricingSupply, UsageSource},
 };
 use ccusage_core::{Diagnostics, ReportWindow, Result};
 
@@ -20,34 +18,13 @@ impl Claude {
         diagnostics: &Diagnostics,
     ) -> Result<ClaudeCounted> {
         let window = ReportWindow::from_shared(shared);
-        let paths = crate::paths::claude_paths()?;
-        let mut files = crate::paths::usage_files(&paths, None, diagnostics);
-        files.sort_by_cached_key(|path| crate::paths::usage_file_order(path));
-        let loaded =
-            ccusage_adapter_common::read_files_parallel(&files, shared.single_thread, |file| {
-                crate::read_usage_file_with_diagnostics(
-                    file,
-                    window.timezone(),
-                    ccusage_core::cli::CostMode::Display,
-                    None,
-                    diagnostics,
-                )
-            });
-        let mut deduped = crate::DedupedEntries::default();
-        let mut indexes = ccusage_core::fast::FxHashMap::default();
-        for entry in loaded.into_iter().flat_map(|file| file.entries) {
-            if let Some((index, discarded)) =
-                crate::push_deduped_entry(entry, &mut indexes, &mut deduped.entries)
-                && crate::loaded_entry_session_id(&discarded)
-                    != crate::loaded_entry_session_id(&deduped.entries[index])
-                && discarded.data.is_sidechain != Some(true)
-            {
-                deduped.copies.push((
-                    index,
-                    std::sync::Arc::from(crate::loaded_entry_session_id(&discarded)),
-                ));
-            }
-        }
+        let deduped = crate::load_entries_with_mode(
+            shared,
+            None,
+            false,
+            diagnostics,
+            ccusage_core::cli::CostMode::Display,
+        )?;
         Ok(ClaudeCounted::session_days(
             deduped.main_thread_session_days(|entry| window.contains_date(&entry.date)),
             shared,
@@ -141,22 +118,6 @@ impl UsageSource for Claude {
         PricingSupply::Source
     }
 
-    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-        let (rows, counted) = self.load(&LoadRequest {
-            kind: LoadKind::for_report(request.kind),
-            shared: request.shared,
-            options: request.options,
-            pricing: request.pricing,
-            progress: request.progress,
-        })?;
-        Ok(SourceRows {
-            rows: rows.rows,
-            detected: rows.detected,
-            diagnostics: rows.diagnostics,
-            claude_counted: Some(counted),
-        })
-    }
-
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
         self.load(request).map(|(rows, _)| rows)
     }
@@ -192,7 +153,8 @@ mod diagnostic_tests {
             &diagnostics,
         )
         .entries
-        .remove(0);
+        .remove(0)
+        .into_loaded();
         assert!(
             counted
                 .retain_uncounted(vec![(entry, Some(std::sync::Arc::from("session-main")))])
@@ -235,13 +197,12 @@ mod diagnostic_tests {
         );
         for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
             let rows = SOURCE
-                .unified_rows(&UnifiedRequest {
-                    kind,
+                .load_rows(&LoadRequest {
+                    kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
                     shared: &shared,
                     options: SourceOptions::default(),
                     pricing: None,
                     progress: ProgressOwner::Caller,
-                    claude_counted: None,
                 })
                 .unwrap();
             assert_eq!(rows.rows.len(), 1);

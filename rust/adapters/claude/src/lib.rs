@@ -82,12 +82,7 @@ pub(crate) fn load_deduped_entries_with_progress(
     diagnostics: &Diagnostics,
 ) -> Result<DedupedEntries> {
     let load = || load_entries_inner(shared, project_filter, false, diagnostics);
-    match owner {
-        ProgressOwner::Source => {
-            progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
-        }
-        ProgressOwner::Caller => load(),
-    }
+    owner.run(progress::UsageLoadAgent("Claude"), shared.json, load)
 }
 
 /// Deduplicated Claude entries plus the main-thread copies dedup merged into
@@ -225,12 +220,7 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
             diagnostics,
         )
     };
-    match owner {
-        ProgressOwner::Source => {
-            progress::track_usage_load(progress::UsageLoadAgent("Claude"), shared.json, load)
-        }
-        ProgressOwner::Caller => load(),
-    }
+    owner.run(progress::UsageLoadAgent("Claude"), shared.json, load)
 }
 
 fn load_entries_inner(
@@ -238,6 +228,22 @@ fn load_entries_inner(
     project_filter: Option<&str>,
     skip_files_before_since: bool,
     diagnostics: &Diagnostics,
+) -> Result<DedupedEntries> {
+    load_entries_with_mode(
+        shared,
+        project_filter,
+        skip_files_before_since,
+        diagnostics,
+        shared.mode,
+    )
+}
+
+fn load_entries_with_mode(
+    shared: &SharedArgs,
+    project_filter: Option<&str>,
+    skip_files_before_since: bool,
+    diagnostics: &Diagnostics,
+    mode: CostMode,
 ) -> Result<DedupedEntries> {
     let paths = claude_paths()?;
     debug_log(
@@ -252,13 +258,16 @@ fn load_entries_inner(
         ),
     );
     let context = UsageLoadContext::new(shared);
-    let mode = shared.mode;
     let read = |file: &Path| {
         read_usage_file_with_diagnostics(
             file,
             context.timezone(),
             mode,
-            context.pricing(),
+            if mode == CostMode::Display {
+                None
+            } else {
+                context.pricing()
+            },
             diagnostics,
         )
     };

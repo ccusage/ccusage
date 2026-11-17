@@ -502,7 +502,7 @@ mod tests {
         tests::NO_SOURCES,
     };
     use ccusage_adapter_codex::{CodexGroup, CodexModelUsage};
-    use ccusage_adapter_common::source::UnifiedRequest;
+    use ccusage_adapter_common::source::LoadRequest;
     use ccusage_adapter_common::{filter_loaded_entries_by_date, rows::summary_rows};
     use ccusage_cli::NamedPiStore;
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
@@ -514,8 +514,8 @@ mod tests {
         pricing: &PricingMap,
     ) -> Result<AgentRows> {
         pi::SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
                 shared,
                 options: SourceOptions {
                     pi_path: custom_path,
@@ -523,7 +523,6 @@ mod tests {
                 },
                 pricing: Some(pricing),
                 progress: ProgressOwner::Caller,
-                claude_counted: None,
             })
             .map(Into::into)
     }
@@ -537,13 +536,12 @@ mod tests {
     ) -> Result<AgentRows> {
         let store = pi::NamedStore::new(agent, pi::named_store_paths(store_path)?);
         store
-            .unified_rows(&UnifiedRequest {
-                kind,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(kind),
                 shared,
                 options: SourceOptions::default(),
                 pricing: Some(pricing),
                 progress: ProgressOwner::Caller,
-                claude_counted: None,
             })
             .map(Into::into)
     }

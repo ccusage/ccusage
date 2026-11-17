@@ -16,7 +16,7 @@ use ccusage_core::cli::{
 
 use crate::{
     pipeline,
-    source::{EntrySource, ProgressOwner, SourceOptions, UnifiedRequest},
+    source::{EntrySource, LoadRequest, ProgressOwner, SourceOptions},
 };
 
 /// A report kind whose focused and unified totals are known to differ, so the
@@ -150,15 +150,14 @@ fn unified_totals<S: EntrySource>(
     shared: &SharedArgs,
 ) -> Totals {
     let load_kind = crate::source::LoadKind::for_report(kind).report_kind();
-    let rows = pipeline::unified_rows(
+    let rows = pipeline::load_rows(
         source,
-        &UnifiedRequest {
-            kind: load_kind,
+        &LoadRequest {
+            kind: crate::source::LoadKind::for_report(load_kind),
             shared,
             options: SourceOptions::default(),
             pricing: None,
             progress: ProgressOwner::Caller,
-            claude_counted: None,
         },
     )
     .unwrap_or_else(|error| panic!("unified {kind:?} load failed: {error}"))

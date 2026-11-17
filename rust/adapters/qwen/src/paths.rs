@@ -97,9 +97,7 @@ pub(super) fn project_from_file(file: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use ccusage_adapter_common::source::{
-        ProgressOwner, SourceOptions, UnifiedRequest, UsageSource,
-    };
+    use ccusage_adapter_common::source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource};
     use ccusage_test_support::{EnvVarGuard, Fixture};
 
     use super::{discover_chat_files, project_from_file};
@@ -177,13 +175,12 @@ mod tests {
             ..shared
         };
         let report = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &outside_window,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                claude_counted: None,
             })
             .unwrap();
 

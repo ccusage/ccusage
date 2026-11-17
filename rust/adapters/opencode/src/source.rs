@@ -1,10 +1,7 @@
 use ccusage_adapter_common::{
     claims::{ClaudeClaimsRx, ClaudeCounted},
     rows::summary_rows,
-    source::{
-        LoadRequest, LoadedRows, PricingSupply, ProgressOwner, SourceRows, UnifiedRequest,
-        UsageSource,
-    },
+    source::{LoadRequest, LoadedRows, PricingSupply, ProgressOwner, UsageSource},
 };
 use ccusage_core::Diagnostics;
 use ccusage_core::{ReportWindow, Result, progress::UsageLoadAgent};
@@ -44,13 +41,6 @@ impl UsageSource for OpenCode {
         PricingSupply::Source
     }
 
-    fn unified_rows(&self, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-        let load = || unified_rows(request);
-        request
-            .progress
-            .run(UsageLoadAgent("OpenCode"), request.shared.json, load)
-    }
-
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
         request
             .progress
@@ -58,29 +48,6 @@ impl UsageSource for OpenCode {
                 load_rows(request, || Ok(ClaudeCounted::nothing()))
             })
     }
-}
-
-fn unified_rows(request: &UnifiedRequest<'_>) -> Result<SourceRows> {
-    let rows = load_rows(
-        &LoadRequest {
-            kind: ccusage_adapter_common::source::LoadKind::for_report(request.kind),
-            shared: request.shared,
-            options: request.options,
-            pricing: request.pricing,
-            progress: request.progress,
-        },
-        || {
-            Ok(request
-                .claude_counted
-                .map_or_else(ClaudeCounted::nothing, |load| load()))
-        },
-    )?;
-    Ok(SourceRows {
-        rows: rows.rows,
-        detected: rows.detected,
-        diagnostics: rows.diagnostics,
-        claude_counted: None,
-    })
 }
 
 fn load_rows(
@@ -137,13 +104,12 @@ mod diagnostic_tests {
             ..Default::default()
         };
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                claude_counted: None,
             })
             .unwrap();
         assert_eq!(rows.rows.len(), 1);

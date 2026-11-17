@@ -97,7 +97,7 @@ mod smoke_tests {
 mod tests {
     use ccusage_adapter_common::{
         parity::assert_focused_matches_unified,
-        source::{ProgressOwner, SourceOptions, UnifiedRequest, UsageSource},
+        source::{LoadRequest, ProgressOwner, SourceOptions, UsageSource},
     };
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
     use std::ffi::OsString;
@@ -190,13 +190,12 @@ mod tests {
         };
 
         let rows = SOURCE
-            .unified_rows(&UnifiedRequest {
-                kind: AgentReportKind::Daily,
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(AgentReportKind::Daily),
                 shared: &shared,
                 options: SourceOptions::default(),
                 pricing: None,
                 progress: ProgressOwner::Caller,
-                claude_counted: None,
             })
             .unwrap();
 

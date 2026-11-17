@@ -17,8 +17,8 @@ use ccusage_core::{
 use crate::{
     rows::summary_rows,
     source::{
-        Detection, EntrySource, LoadContext, PricingSupply, ProgressOwner, SourceOptions,
-        SourceRows, UnifiedRequest, WindowMode,
+        Detection, EntrySource, LoadContext, LoadRequest, LoadedRows, PricingSupply, ProgressOwner,
+        SourceOptions, WindowMode,
     },
 };
 
@@ -65,7 +65,7 @@ pub fn focused_rows(
 }
 
 /// Loads the rows an [`EntrySource`] contributes to the unified report.
-pub fn unified_rows(source: &dyn EntrySource, request: &UnifiedRequest<'_>) -> Result<SourceRows> {
+pub fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let descriptor = source.descriptor();
     let shared = request.shared;
     let own_pricing = (descriptor.pricing == PricingSupply::Pipeline && request.pricing.is_none())
@@ -74,7 +74,7 @@ pub fn unified_rows(source: &dyn EntrySource, request: &UnifiedRequest<'_>) -> R
     let diagnostics = Diagnostics::new(descriptor.id);
     let cx = LoadContext {
         shared,
-        kind: request.kind,
+        kind: request.kind.report_kind(),
         window: &window,
         pricing: request.pricing.or(own_pricing.as_ref()),
         options: request.options,
@@ -85,11 +85,10 @@ pub fn unified_rows(source: &dyn EntrySource, request: &UnifiedRequest<'_>) -> R
     let summaries = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
         source.summarize_unified(entries, kind)
     })?;
-    Ok(SourceRows {
+    Ok(LoadedRows {
         rows: summary_rows(descriptor.id, summaries, descriptor.unified_project_path),
         detected,
         diagnostics,
-        claude_counted: None,
     })
 }
 
@@ -167,10 +166,10 @@ mod tests {
         cli::{AgentCommandArgs, AgentReportKind, SharedArgs, SortOrder},
     };
 
-    use super::{focused_rows, retain_sessions_last_active_in, unified_rows};
+    use super::{focused_rows, load_rows, retain_sessions_last_active_in};
     use crate::{
         source::{
-            Detection, EntryDescriptor, ProgressOwner, SourceOptions, UnifiedRequest, UsageSource,
+            Detection, EntryDescriptor, LoadRequest, ProgressOwner, SourceOptions, UsageSource,
             WindowMode,
         },
         test_source::{Fake, descriptor, entries, shared},
@@ -192,14 +191,13 @@ mod tests {
         }
     }
 
-    fn request(kind: AgentReportKind, shared: &SharedArgs) -> UnifiedRequest<'_> {
-        UnifiedRequest {
-            kind,
+    fn request(kind: AgentReportKind, shared: &SharedArgs) -> LoadRequest<'_> {
+        LoadRequest {
+            kind: crate::source::LoadKind::for_report(kind),
             shared,
             options: SourceOptions::default(),
             pricing: None,
             progress: ProgressOwner::Caller,
-            claude_counted: None,
         }
     }
 
@@ -225,7 +223,7 @@ mod tests {
         kind: AgentReportKind,
         shared: &SharedArgs,
     ) -> Vec<(String, u64)> {
-        unified_rows(source, &request(kind, shared))
+        load_rows(source, &request(kind, shared))
             .unwrap()
             .rows
             .into_iter()
@@ -321,7 +319,7 @@ mod tests {
         let source = Fake::new(descriptor(), entries());
         let shared = shared(Some("20300101"), None);
 
-        let rows = unified_rows(&source, &request(AgentReportKind::Daily, &shared)).unwrap();
+        let rows = load_rows(&source, &request(AgentReportKind::Daily, &shared)).unwrap();
 
         assert!(rows.rows.is_empty());
         assert!(rows.detected);
@@ -340,10 +338,10 @@ mod tests {
             Vec::new(),
         );
 
-        assert!(!unified_rows(&absent, &request).unwrap().detected);
+        assert!(!load_rows(&absent, &request).unwrap().detected);
         assert!(!absent.has_data());
         assert!(
-            unified_rows(&narrowed_by_its_loader, &request)
+            load_rows(&narrowed_by_its_loader, &request)
                 .unwrap()
                 .detected
         );
@@ -375,9 +373,9 @@ mod tests {
         priced_by_pipeline
             .saw_pricing
             .store(false, Ordering::Relaxed);
-        unified_rows(
+        load_rows(
             &priced_by_pipeline,
-            &UnifiedRequest {
+            &LoadRequest {
                 pricing: Some(&pricing),
                 ..request(AgentReportKind::Daily, &shared)
             },
@@ -387,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn unified_rows_carry_what_the_load_skipped() {
+    fn load_rows_carry_what_the_load_skipped() {
         let source = Fake {
             skips_a_unit: true,
             ..Fake::new(descriptor(), entries())
@@ -398,7 +396,7 @@ mod tests {
             ..shared(None, None)
         };
 
-        let rows = unified_rows(&source, &request(AgentReportKind::Daily, &shared)).unwrap();
+        let rows = load_rows(&source, &request(AgentReportKind::Daily, &shared)).unwrap();
 
         assert_eq!(rows.rows.len(), 3, "the rest of the source still reports");
         let warnings = rows.diagnostics.warnings(&shared);
@@ -423,7 +421,7 @@ mod tests {
         let without_path = Fake::new(descriptor(), entries());
 
         let project_path = |source: &Fake| {
-            unified_rows(source, &request).unwrap().rows[0]
+            load_rows(source, &request).unwrap().rows[0]
                 .metadata
                 .as_ref()
                 .and_then(|metadata| metadata.get("projectPath").cloned())
@@ -442,7 +440,7 @@ mod tests {
         assert_eq!(source.label(), "Fake");
         assert_eq!(
             source
-                .unified_rows(&request(AgentReportKind::Daily, &shared(None, None)))
+                .load_rows(&request(AgentReportKind::Daily, &shared(None, None)))
                 .unwrap()
                 .rows
                 .len(),
