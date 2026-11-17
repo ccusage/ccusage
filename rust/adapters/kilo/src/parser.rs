@@ -182,7 +182,9 @@ pub(super) fn message_value_to_entry(
 }
 
 fn normalize_timestamp(value: i64) -> Option<TimestampMs> {
-    (value > 0).then(|| TimestampMs::from_millis(value))
+    (value > 0)
+        .then_some(value)
+        .and_then(TimestampMs::from_instant_millis)
 }
 
 fn calculate_kilo_cost(
@@ -265,19 +267,18 @@ fn normalize_provider(provider: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn kilo_creation_time_is_always_milliseconds() {
-        assert_eq!(
-            super::normalize_timestamp(1_767_312_000)
-                .unwrap()
-                .as_millis(),
-            1_767_312_000
-        );
-    }
-
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn kilo_creation_time_is_always_milliseconds() {
+        assert_eq!(
+            normalize_timestamp(1_767_312_000).unwrap().as_millis(),
+            1_767_312_000
+        );
+        assert_eq!(normalize_timestamp(i64::MAX), None);
+    }
 
     #[test]
     fn keeps_kilo_record_when_cache_field_is_not_an_object() {
