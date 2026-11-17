@@ -7,11 +7,10 @@ const UNPRICED: &str = "goose-mystery-1";
 /// A literal catalog key with the provider inferred from the `qwen` prefix.
 const PROVIDER_PREFIXED: &str = "qwen/qwen3-coder";
 
-/// The columns the adapter selects plus some it never reads. `id` is not a
-/// primary key so a replayed session row can exist in one database.
+/// The columns the adapter selects plus some it never reads.
 const SESSIONS_SCHEMA: &str = r"
 CREATE TABLE sessions (
-    id TEXT,
+    id TEXT PRIMARY KEY,
     name TEXT,
     working_dir TEXT,
     model_config_json TEXT,
@@ -86,15 +85,7 @@ fn counted_rows() -> Vec<Row> {
             created_at: "'2025-12-31T23:50:00'",
             tokens: ["NULL", "NULL", "NULL", "1300", "900", "400"],
         },
-        // Same id again: only the first row of an id is kept.
-        Row {
-            id: "s-replayed",
-            model_config: model(HAIKU),
-            provider: "'anthropic'",
-            created_at: "'2025-12-31T23:55:00'",
-            tokens: ["NULL", "NULL", "NULL", "19998", "9999", "9999"],
-        },
-        // Near miss of the replay: the same usage under another id is counted.
+        // Near miss of `s-replayed`: the same usage under another id is counted.
         // Epoch milliseconds (2026-01-01T00:10:00Z); the non-positive
         // accumulated values fall back to the plain columns one by one.
         Row {

@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path};
+use std::path::Path;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -56,18 +56,13 @@ fn load_entries_from_db(
         .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
 
     let mut entries = Vec::new();
-    let mut seen_sessions = HashSet::new();
     let mut row_number = 0_u32;
     loop {
         match statement.next() {
             Ok(sqlite::State::Row) => {
                 row_number = row_number.saturating_add(1);
                 match row_to_entry(&statement, tz, pricing) {
-                    Ok(Some(entry)) => {
-                        if seen_sessions.insert(entry.session_id.clone()) {
-                            entries.push(entry);
-                        }
-                    }
+                    Ok(Some(entry)) => entries.push(entry),
                     Ok(None) => {}
                     Err(rejection) => diagnostics.record(Skip::record(
                         db_path,
