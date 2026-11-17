@@ -604,19 +604,8 @@ pub(crate) fn advisor_usages_from_line(
 
 #[cold]
 fn advisor_usages_from_progress_line(line: &[u8]) -> std::result::Result<AdvisorUsages, Rejection> {
-    let mut advisors = match advisor_usages_from_line(line) {
-        Ok(advisors) => advisors,
-        Err(Rejection::Malformed) => AdvisorUsages {
-            malformed: 1,
-            ..AdvisorUsages::default()
-        },
-        Err(Rejection::NullContract) => AdvisorUsages::default(),
-    };
     let envelope = deserialize_usage_line::<ProgressIterationsEnvelope>(line)?;
-    let nested = advisor_usages_from_envelope(envelope.data.message);
-    advisors.malformed += nested.malformed;
-    advisors.usages.extend(nested.usages);
-    Ok(advisors)
+    Ok(advisor_usages_from_envelope(envelope.data.message))
 }
 
 fn advisor_usages_from_envelope(envelope: UsageIterationsEnvelope) -> AdvisorUsages {

@@ -390,6 +390,45 @@ fn wrapped_advisors_share_daily_and_full_parsing_and_dedupe() {
         );
     }
 }
+#[test]
+fn wrapped_advisors_dedupe_with_a_top_level_twin_and_ignore_outer_iterations() {
+    ccusage_test_support::install_pricing_snapshots();
+    let wrapped = r#"{"type":"progress","sessionId":"session-a","data":{"type":"agent_progress","message":{"type":"assistant","timestamp":"2026-01-02T10:00:00Z","requestId":"req-a","message":{"id":"msg-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"claude-opus-5","input_tokens":10,"output_tokens":2}]}}}}}"#;
+    let mut wrapper: serde_json::Value = serde_json::from_str(wrapped).unwrap();
+    let mut twin = wrapper["data"]["message"].clone();
+    twin["sessionId"] = serde_json::json!("session-a");
+    twin["isSidechain"] = serde_json::json!(true);
+    wrapper["message"] = serde_json::json!({"usage":{"iterations":[{"type":"advisor_message","model":"claude-opus-5","input_tokens":999,"output_tokens":9}]}});
+    let fixture = fs_fixture!({
+        "projects/p/s.jsonl": wrapper.to_string(),
+        "projects/p/s/subagents/agent-a.jsonl": twin.to_string(),
+    });
+    let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", fixture.root());
+    for mode in [CostMode::Auto, CostMode::Calculate, CostMode::Display] {
+        let shared = SharedArgs {
+            offline: true,
+            mode,
+            ..display_shared_in_utc()
+        };
+        let entries = load_entries(&shared, None).unwrap();
+        assert_eq!(entries.len(), 2, "{mode:?}");
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.data.message.usage.input_tokens)
+                .sum::<u64>(),
+            110
+        );
+        let daily = load_daily_summaries(&shared, None, false).unwrap();
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].input_tokens, 110);
+        assert_eq!(daily[0].models_used.len(), 2);
+        assert!(
+            (daily[0].total_cost - entries.iter().map(|entry| entry.cost).sum::<f64>()).abs()
+                < 1e-12
+        );
+    }
+}
 
 #[test]
 fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {

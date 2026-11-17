@@ -524,7 +524,7 @@ pub(super) fn parse_usage_line(
                 let lookup = if entry.message.usage.has_advisor_iteration {
                     AdvisorLookup::AskProgress
                 } else {
-                    AdvisorLookup::AskLine
+                    AdvisorLookup::RuledOut
                 };
                 (entry, lookup)
             }),
@@ -1104,7 +1104,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_advisor_envelopes_preserve_agent_progress_usage() {
+    fn irrelevant_outer_advisor_fields_do_not_reject_progress_usage() {
         for message in [
             r#""advisor_message""#,
             r#"{"usage":{"iterations":null},"content":"advisor_message"}"#,
@@ -1124,7 +1124,7 @@ mod tests {
             assert_eq!(loaded.len(), 1, "{message}");
             assert_eq!(loaded[0].usage.input_tokens, 10);
             assert!(super::has_usage(&path));
-            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+            assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 0);
         }
     }
 
@@ -1708,11 +1708,12 @@ mod tests {
             for line in [
                 format!(r#"{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}"#),
                 format!(
-                    r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
+                    r#"{{"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
                 ),
             ] {
                 let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
-                let previous = super::advisor_usages_from_line(line.as_bytes()).unwrap();
+                let reference = format!(r#"{{"message":{message}}}"#);
+                let previous = super::advisor_usages_from_line(reference.as_bytes()).unwrap();
                 let actual = lookup.usages(line.as_bytes()).unwrap();
                 match lookup {
                     super::AdvisorLookup::AskLine => {
@@ -1722,8 +1723,8 @@ mod tests {
                     }
                     super::AdvisorLookup::AskProgress => {
                         retained += 1;
-                        assert_eq!(actual.usages.len(), previous.usages.len() * 2, "{line}");
-                        assert_eq!(actual.malformed, previous.malformed * 2, "{line}");
+                        assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
+                        assert_eq!(actual.malformed, previous.malformed, "{line}");
                     }
                     super::AdvisorLookup::RuledOut => {
                         skipped += 1;
@@ -1735,24 +1736,6 @@ mod tests {
         }
         assert!(skipped > 0);
         assert!(retained > 0);
-    }
-
-    #[test]
-    fn reads_top_level_advisor_iterations_beside_an_agent_progress_record() {
-        let fixture = fs_fixture!({
-            "projects/project-a/session-a/chat.jsonl": r#"{"sessionId":"session-a","message":{"usage":{"input_tokens":5,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":10,"output_tokens":2}]}},"data":{"message":{"timestamp":"2026-05-22T02:34:40.000Z","requestId":"req-a","message":{"id":"msg-a","model":"main-model","usage":{"input_tokens":100,"output_tokens":1}}}}}"#,
-        });
-
-        let loaded = read_daily_usage_file(
-            &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            &jiff::tz::TimeZone::system(),
-            CostMode::Display,
-            None,
-        );
-
-        assert_eq!(loaded.len(), 2);
-        assert_eq!(loaded[0].usage.input_tokens, 100);
-        assert_eq!(loaded[1].usage.input_tokens, 10);
     }
 
     #[test]
