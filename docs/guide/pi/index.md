@@ -26,7 +26,7 @@ The CLI reads usage data from pi-agent:
 | -------- | ----------------------- | ----------------------------- |
 | pi-agent | `~/.pi/agent/sessions/` | `PI_AGENT_DIR` or `--pi-path` |
 
-Both `PI_AGENT_DIR` and `--pi-path` can be one sessions directory or a comma-separated list of sessions directories.
+Both `PI_AGENT_DIR` and `--pi-path` can be one sessions directory or a comma-separated list of sessions directories. A pi agent directory such as `~/.pi/agent` is also accepted: when a configured directory has a `sessions` child, ccusage reads that child.
 
 Tools built on the pi session format can also be declared as named stores in the config file for unified reports:
 
