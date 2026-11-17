@@ -188,8 +188,9 @@ pub(super) struct GeminiUsageEvent {
 
 pub(super) fn parse_json_file(
     path: &Path,
+    diagnostics: &ccusage_core::Diagnostics,
 ) -> std::result::Result<Vec<GeminiUsageEvent>, UnitError> {
-    let fallback_timestamp = file_modified_timestamp(path);
+    let fallback_timestamp = ccusage_adapter_common::timestamps::file_mtime(path);
     let GeminiDocument(Some(record)) =
         ccusage_adapter_common::units::read_json::<GeminiDocument>(path)?
     else {
@@ -211,32 +212,56 @@ pub(super) fn parse_json_file(
                 .as_deref()
                 .and_then(crate::parse_ts_timestamp)
         })
-        .unwrap_or(fallback_timestamp);
+        .or(fallback_timestamp);
     if let Some(messages) = &record.messages {
         return Ok(messages
             .iter()
             .filter(|message| message.r#type.as_deref() == Some("gemini"))
             .filter_map(|message| {
-                parse_direct_event_record(message, None, &session_id, session_timestamp)
+                parse_direct_event_record(
+                    message,
+                    None,
+                    &session_id,
+                    &GeminiRecordTime {
+                        fallback: session_timestamp,
+                        path,
+                        line: None,
+                        diagnostics,
+                    },
+                )
             })
             .collect());
     }
     if record.r#type.as_deref() == Some("gemini") {
-        return Ok(
-            parse_direct_event_record(&record, None, &session_id, fallback_timestamp)
-                .into_iter()
-                .collect(),
-        );
+        return Ok(parse_direct_event_record(
+            &record,
+            None,
+            &session_id,
+            &GeminiRecordTime {
+                fallback: fallback_timestamp,
+                path,
+                line: None,
+                diagnostics,
+            },
+        )
+        .into_iter()
+        .collect());
     }
     Ok(parse_stats_events(
         record.stats(),
         record.model.as_deref(),
         &session_id,
-        record
-            .timestamp
-            .as_deref()
-            .and_then(crate::parse_ts_timestamp)
-            .unwrap_or(fallback_timestamp),
+        match (GeminiRecordTime {
+            fallback: fallback_timestamp,
+            path,
+            line: None,
+            diagnostics,
+        })
+        .resolve(&record)
+        {
+            Some(timestamp) => timestamp,
+            None => return Ok(Vec::new()),
+        },
     ))
 }
 
@@ -244,7 +269,6 @@ pub(super) fn parse_jsonl_file(
     path: &Path,
     diagnostics: &ccusage_core::Diagnostics,
 ) -> std::result::Result<Vec<GeminiUsageEvent>, UnitError> {
-    let fallback_timestamp = file_modified_timestamp(path);
     let mut session_id = path
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -254,7 +278,7 @@ pub(super) fn parse_jsonl_file(
     let mut events = Vec::new();
     let mut direct_event_indexes = HashMap::<String, usize>::new();
     let content = fs::read(path).map_err(UnitError::from)?;
-    for record in jsonl::records_with_usage_diagnostics::<GeminiRecord>(
+    for (number, record) in jsonl::numbered_records_with_usage_diagnostics::<GeminiRecord>(
         &content,
         None,
         path,
@@ -272,7 +296,12 @@ pub(super) fn parse_jsonl_file(
                 &record,
                 current_model.as_deref(),
                 &session_id,
-                fallback_timestamp,
+                &GeminiRecordTime {
+                    fallback: None,
+                    path,
+                    line: Some(number),
+                    diagnostics,
+                },
             ) else {
                 continue;
             };
@@ -294,11 +323,17 @@ pub(super) fn parse_jsonl_file(
                 stats,
                 current_model.as_deref(),
                 &session_id,
-                record
-                    .timestamp
-                    .as_deref()
-                    .and_then(crate::parse_ts_timestamp)
-                    .unwrap_or(fallback_timestamp),
+                match (GeminiRecordTime {
+                    fallback: None,
+                    path,
+                    line: Some(number),
+                    diagnostics,
+                })
+                .resolve(&record)
+                {
+                    Some(timestamp) => timestamp,
+                    None => continue,
+                },
             ));
         }
     }
@@ -334,17 +369,16 @@ fn is_usage_envelope(value: &Value) -> bool {
             })
 }
 
-fn parse_direct_event_record(
-    record: &GeminiRecord,
-    model_hint: Option<&str>,
-    session_id: &str,
-    fallback_timestamp: TimestampMs,
-) -> Option<GeminiUsageEvent> {
-    let tokens = parse_tokens(record.tokens.as_ref())?;
-    build_event(
-        record.model.as_deref().or(model_hint),
-        session_id,
-        record
+struct GeminiRecordTime<'a> {
+    fallback: Option<TimestampMs>,
+    path: &'a Path,
+    line: Option<u32>,
+    diagnostics: &'a ccusage_core::Diagnostics,
+}
+
+impl GeminiRecordTime<'_> {
+    fn resolve(&self, record: &GeminiRecord) -> Option<TimestampMs> {
+        let timestamp = record
             .timestamp
             .as_deref()
             .and_then(crate::parse_ts_timestamp)
@@ -354,7 +388,30 @@ fn parse_direct_event_record(
                     .as_deref()
                     .and_then(crate::parse_ts_timestamp)
             })
-            .unwrap_or(fallback_timestamp),
+            .or(self.fallback);
+        if timestamp.is_none() {
+            let kind = ccusage_core::SkipKind::InvalidTimestamp;
+            let detail = "Gemini usage has no valid timestamp";
+            self.diagnostics.record(match self.line {
+                Some(number) => ccusage_core::Skip::record(self.path, number, kind, detail),
+                None => ccusage_core::Skip::unit(self.path, kind, detail),
+            });
+        }
+        timestamp
+    }
+}
+
+fn parse_direct_event_record(
+    record: &GeminiRecord,
+    model_hint: Option<&str>,
+    session_id: &str,
+    time: &GeminiRecordTime<'_>,
+) -> Option<GeminiUsageEvent> {
+    let tokens = parse_tokens(record.tokens.as_ref())?;
+    build_event(
+        record.model.as_deref().or(model_hint),
+        session_id,
+        time.resolve(record)?,
         tokens,
         normalize_session_input,
         record.id.clone(),
@@ -494,16 +551,6 @@ fn normalize_session_input(tokens: GeminiTokens) -> (u64, u64) {
     (tokens.input, tokens.cached)
 }
 
-fn file_modified_timestamp(path: &Path) -> TimestampMs {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-        .map(TimestampMs::from_millis)
-        .unwrap_or(TimestampMs::UNIX_EPOCH)
-}
-
 pub(super) fn event_to_loaded(
     event: GeminiUsageEvent,
     tz: &JiffTimeZone,
@@ -624,6 +671,42 @@ mod tests {
     use ccusage_test_support::fs_fixture;
 
     #[test]
+    fn whole_file_usage_can_use_its_modification_time() {
+        let fixture = fs_fixture!({
+            "chat.json": r#"{"type":"gemini","model":"gemini-3-flash-preview","tokens":{"input":10,"output":2}}"#,
+        });
+        let path = fixture.path("chat.json");
+        let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_767_312_000);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        let diagnostics = Diagnostics::new("gemini");
+        let events = parse_json_file(&path, &diagnostics).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].timestamp.as_millis(), 1_767_312_000_000);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            0
+        );
+    }
+
+    #[test]
+    fn diagnoses_jsonl_usage_without_a_timestamp() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "chat.jsonl": r#"{"type":"gemini","model":"gemini-3-flash-preview","tokens":{"input":10,"output":2}}"#,
+        });
+        let diagnostics = ccusage_core::Diagnostics::new("gemini");
+        let events = parse_jsonl_file(&fixture.path("chat.jsonl"), &diagnostics).unwrap();
+        assert!(events.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            1
+        );
+    }
+    #[test]
     fn diagnoses_malformed_whole_file_json() {
         let fixture = fs_fixture!({"chat.json": "{\"SECRET_CANARY\":}"});
         let diagnostics = Diagnostics::new("gemini");
@@ -632,7 +715,7 @@ mod tests {
             &[fixture.path("chat.json")],
             true,
             &diagnostics,
-            parse_json_file,
+            |path| parse_json_file(path, &diagnostics),
         );
 
         assert!(loaded[0].is_none());
@@ -657,7 +740,9 @@ mod tests {
         let diagnostics = Diagnostics::new("gemini");
 
         let loaded =
-            ccusage_adapter_common::units::read_units(&files, true, &diagnostics, parse_json_file);
+            ccusage_adapter_common::units::read_units(&files, true, &diagnostics, |path| {
+                parse_json_file(path, &diagnostics)
+            });
 
         assert!(
             loaded[..3]

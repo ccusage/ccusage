@@ -17,6 +17,9 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 
 - `${GEMINI_DATA_DIR:-~/.gemini}/tmp/**/chats/*.{json,jsonl}`
 
+JSONL usage records without a valid timestamp are skipped with a diagnostic.
+Whole-file JSON documents can use their session timestamp or file modification time.
+
 Reads plain files through `ccusage-adapter-common`, which handles walking,
 size-balanced chunking, and ordered parallel reads. Antigravity SQLite data is
 owned by the standalone `ccusage-adapter-antigravity` source.

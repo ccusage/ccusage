@@ -194,21 +194,22 @@ pub(super) fn parse_otel_file(
     // Every usable Copilot OTel record carries the `attributes` object, so
     // lines without it are skipped before JSON parsing.
     let prefilter = LinePrefilter::all(&[br#""attributes""#]);
-    let records = jsonl::records_with_usage_diagnostics::<CopilotRecord>(
-        &content,
-        Some(&prefilter),
-        path,
-        diagnostics,
-        is_otel_usage_envelope,
-    )
-    .collect::<Vec<_>>();
+    let (numbers, records): (Vec<_>, Vec<_>) =
+        jsonl::numbered_records_with_usage_diagnostics::<CopilotRecord>(
+            &content,
+            Some(&prefilter),
+            path,
+            diagnostics,
+            is_otel_usage_envelope,
+        )
+        .unzip();
     let trace_contexts = collect_trace_contexts(&records);
-    let fallback_timestamp = file_modified_timestamp(path);
     let candidates = records
         .iter()
         .enumerate()
-        .filter_map(|(index, record)| {
-            to_candidate(record, index, fallback_timestamp, &trace_contexts)
+        .zip(numbers)
+        .filter_map(|((index, record), number)| {
+            to_candidate(record, index, &trace_contexts, path, number, diagnostics)
         })
         .collect::<Vec<_>>();
     let sets = CandidateSets::new(&candidates);
@@ -469,13 +470,28 @@ pub(super) fn parse_session_state_file(
     let mut parsed = CopilotSourceUsage::default();
     let mut records = Vec::new();
     let mut covered_by_records = false;
-    for event in jsonl::records_with_usage_diagnostics::<CopilotSessionStateEvent>(
+    for (number, event) in jsonl::numbered_records_with_usage_diagnostics::<CopilotSessionStateEvent>(
         &content,
         Some(&prefilter),
         path,
         diagnostics,
         is_session_state_usage_envelope,
     ) {
+        if event.carries_usage()
+            && event
+                .timestamp
+                .as_deref()
+                .and_then(parse_ts_timestamp)
+                .is_none()
+        {
+            diagnostics.record(ccusage_core::Skip::record(
+                path,
+                number,
+                ccusage_core::SkipKind::InvalidTimestamp,
+                "Copilot usage has no valid timestamp",
+            ));
+            continue;
+        }
         let is_shutdown = match event.event_type.as_deref() {
             Some(SHUTDOWN_EVENT) => true,
             Some(USAGE_CHECKPOINT_EVENT) => false,
@@ -729,8 +745,10 @@ fn collect_trace_contexts(records: &[CopilotRecord]) -> HashMap<String, TraceCon
 fn to_candidate(
     record: &CopilotRecord,
     index: usize,
-    fallback_timestamp: TimestampMs,
     trace_contexts: &HashMap<String, TraceContext>,
+    path: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
 ) -> Option<CopilotUsageCandidate> {
     let attributes = record.attributes.as_ref()?;
     let source = if is_chat_span_record(record, attributes) {
@@ -776,7 +794,15 @@ fn to_candidate(
         .or_else(|| trace_context.and_then(|context| context.session_id.clone()))
         .or_else(|| trace_id.clone())
         .unwrap_or_else(|| "unknown-session".to_string());
-    let timestamp = timestamp_from_record(record).unwrap_or(fallback_timestamp);
+    let Some(timestamp) = timestamp_from_record(record) else {
+        diagnostics.record(ccusage_core::Skip::record(
+            path,
+            number,
+            ccusage_core::SkipKind::InvalidTimestamp,
+            "Copilot usage has no valid timestamp",
+        ));
+        return None;
+    };
     let (dedup_key, call_key) = dedup_key_for_record(
         source,
         record,
@@ -987,10 +1013,6 @@ fn is_agent_turn_log_record(record: &CopilotRecord, attributes: &Map<String, Val
             || record_body(record).is_some_and(|body| body.starts_with("copilot_chat.agent.turn")))
 }
 
-/// Returns the row's key, and the call key when the record carries the IDs to
-/// build one. Only a call key names the same call in another file; the
-/// fallbacks use the row's line and time, which can come from the file's
-/// modification time.
 fn dedup_key_for_record(
     source: CopilotUsageSource,
     record: &CopilotRecord,
@@ -1142,15 +1164,6 @@ fn timestamp_from_unix_nanos(value: Option<&Value>) -> Option<TimestampMs> {
     (raw > 0).then(|| TimestampMs::from_millis((raw / 1_000_000).min(i64::MAX as u64) as i64))
 }
 
-fn file_modified_timestamp(path: &Path) -> TimestampMs {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| TimestampMs::from_millis(duration.as_millis().min(i64::MAX as u128) as i64))
-        .unwrap_or_else(crate::utc_now)
-}
-
 #[cfg(test)]
 mod session_state_tests {
     use ccusage_test_support::fs_fixture;
@@ -1158,6 +1171,34 @@ mod session_state_tests {
 
     use super::*;
 
+    #[test]
+    fn diagnoses_otel_usage_without_a_timestamp() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "otel.jsonl": r#"{"body":"GenAI inference:","attributes":{"gen_ai.usage.input_tokens":10,"gen_ai.usage.output_tokens":2,"gen_ai.request.model":"gpt-5"}}"#,
+        });
+        let diagnostics = Diagnostics::new("copilot");
+        let events = parse_otel_file(&fixture.path("otel.jsonl"), &diagnostics).unwrap();
+        assert!(events.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            1
+        );
+    }
+
+    #[test]
+    fn diagnoses_session_state_usage_without_a_timestamp() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "session/events.jsonl": r#"{"type":"session.shutdown","data":{"modelMetrics":{"gpt-5":{"usage":{"inputTokens":10,"outputTokens":2}}}}}"#,
+        });
+        let diagnostics = Diagnostics::new("copilot");
+        let events =
+            parse_session_state_file(&fixture.path("session/events.jsonl"), &diagnostics).unwrap();
+        assert!(events.entries.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            1
+        );
+    }
     #[test]
     fn confirms_usage_diagnostics_from_token_or_credit_fields() {
         assert!(is_otel_usage_envelope(&json!({

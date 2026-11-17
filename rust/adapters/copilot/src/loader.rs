@@ -807,6 +807,7 @@ mod tests {
             "copilot.jsonl": [
                 json!({
                     "type": "span",
+                    "endTime": [1_775_934_263_u64, 0_u64],
                     "traceId": "trace-dupe",
                     "spanId": "agent-1",
                     "name": "invoke_agent GitHub Copilot Chat",
@@ -834,6 +835,7 @@ mod tests {
                 .to_string(),
                 json!({
                     "type": "span",
+                    "endTime": [1_775_934_263_u64, 0_u64],
                     "traceId": "trace-dupe",
                     "spanId": "chat-1",
                     "name": "chat gpt-5.4-mini",

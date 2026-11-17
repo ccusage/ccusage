@@ -17,7 +17,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
             cx.diagnostics,
             |file| match file.extension().and_then(|extension| extension.to_str()) {
                 Some("jsonl") => parse_jsonl_file(file, cx.diagnostics),
-                _ => parse_json_file(file),
+                _ => parse_json_file(file, cx.diagnostics),
             },
         );
     events.sort_by_key(|event| event.timestamp);

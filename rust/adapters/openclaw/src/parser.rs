@@ -1,6 +1,6 @@
 use std::{fs, path::Path, sync::Arc};
 
-use ccusage_adapter_common::{jsonl, timestamps::file_mtime, units::UnitError};
+use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
@@ -264,7 +264,6 @@ pub(super) fn parse_session_file(
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
     let mut reader = TranscriptReader::jsonl(extract_session_id(path));
-    let fallback_timestamp = file_mtime(path);
     let content = fs::read(path).map_err(UnitError::from)?;
     let prefilter = record_prefilter();
     Ok(
@@ -275,9 +274,7 @@ pub(super) fn parse_session_file(
             diagnostics,
             is_usage_envelope,
         )
-        .filter_map(|(number, record)| {
-            reader.read(&record, path, number, fallback_timestamp, diagnostics)
-        })
+        .filter_map(|(number, record)| reader.read(&record, path, number, None, diagnostics))
         .map(|entry| entry_to_loaded(entry, tz, mode, pricing))
         .collect(),
     )
@@ -555,6 +552,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn diagnoses_jsonl_usage_without_a_timestamp() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":2}}}"#,
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+        let events = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            None,
+            &diagnostics,
+        )
+        .unwrap();
+        assert!(events.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+    }
+    #[test]
     fn diagnoses_nested_usage_failure_and_skips_lines_without_markers() {
         let fixture = fs_fixture!({
             "session.jsonl": concat!(
@@ -562,7 +576,7 @@ mod tests {
                 "\n",
                 r#"{"type":"message","message":{"role":"toolResult","content":"\u001b[31mred\u001b[0m C:\\users"#,
                 "\n",
-                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20}}}"#,
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","timestamp":"2026-01-02T00:00:00Z","usage":{"input":10,"output":20}}}"#,
                 "\n",
             ),
         });
@@ -632,7 +646,7 @@ mod tests {
             "session.jsonl": concat!(
                 r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":"not-an-object"}"#,
                 "\n",
-                r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                r#"{"type":"message","message":{"role":"assistant","timestamp":"2026-01-02T00:00:00Z","usage":{"input":10,"output":20}}}"#,
                 "\n",
             ),
         });
@@ -660,7 +674,7 @@ mod tests {
                 "{}\n\n",
                 r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":{"role":1,"secret":"SECRET_CANARY"}}"#,
                 "\n",
-                r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                r#"{"type":"message","message":{"role":"assistant","timestamp":"2026-01-02T00:00:00Z","usage":{"input":10,"output":20}}}"#,
                 "\n",
             ),
         });

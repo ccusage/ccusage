@@ -36,6 +36,9 @@ killed mid-turn never gets that row, so its usage is invisible here even though
 source: it carries no per-request model id, so its tokens cannot be priced or
 attributed.
 
+Completed turns use `agentTimestampMs` in milliseconds, then the envelope
+`timestamp` in seconds. Turns with neither valid timestamp are skipped with a diagnostic.
+
 ## Token mapping
 
 Grok records OpenAI-style usage where `inputTokens` includes cache:

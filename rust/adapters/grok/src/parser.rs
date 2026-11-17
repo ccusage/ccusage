@@ -227,7 +227,7 @@ pub(super) fn parse_session_files_with_diagnostics(
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
 
-    for line in jsonl::records_with_usage_diagnostics::<GrokUpdateLine>(
+    for (number, line) in jsonl::numbered_records_with_usage_diagnostics::<GrokUpdateLine>(
         &content,
         Some(&prefilter),
         &files.updates,
@@ -248,7 +248,15 @@ pub(super) fn parse_session_files_with_diagnostics(
         };
 
         let event_id = params.meta.as_ref().and_then(|meta| meta.event_id.clone());
-        let timestamp_ms = resolve_timestamp_ms(&line, params.meta.as_ref());
+        let Some(timestamp_ms) = resolve_timestamp_ms(&line, params.meta.as_ref()) else {
+            diagnostics.record(ccusage_core::Skip::record(
+                &files.updates,
+                number,
+                ccusage_core::SkipKind::InvalidTimestamp,
+                "Grok usage has no valid timestamp",
+            ));
+            continue;
+        };
         let session_id = params
             .session_id
             .clone()
@@ -462,21 +470,19 @@ fn load_session_meta(files: &GrokSessionFiles, diagnostics: &Diagnostics) -> Ses
     }
 }
 
-fn resolve_timestamp_ms(line: &GrokUpdateLine, meta: Option<&GrokMeta>) -> TimestampMs {
-    if let Some(ms) = meta
-        .and_then(|meta| meta.agent_timestamp_ms.as_ref())
+fn resolve_timestamp_ms(line: &GrokUpdateLine, meta: Option<&GrokMeta>) -> Option<TimestampMs> {
+    meta.and_then(|meta| meta.agent_timestamp_ms.as_ref())
         .and_then(value_as_i64)
-        && ms > 0
-    {
-        return TimestampMs::from_millis(ms);
-    }
-    if let Some(seconds) = line.timestamp.as_ref().and_then(value_as_i64)
-        && seconds > 0
-    {
-        // Grok writes Unix seconds on the envelope timestamp field.
-        return TimestampMs::from_millis(seconds.saturating_mul(1000));
-    }
-    TimestampMs::UNIX_EPOCH
+        .filter(|millis| *millis > 0)
+        .and_then(TimestampMs::from_instant_millis)
+        .or_else(|| {
+            line.timestamp
+                .as_ref()
+                .and_then(value_as_i64)
+                .filter(|seconds| *seconds > 0)
+                .and_then(TimestampMs::from_unix_seconds)
+                .and_then(|timestamp| TimestampMs::from_instant_millis(timestamp.as_millis()))
+        })
 }
 
 fn value_as_i64(value: &Value) -> Option<i64> {
@@ -975,13 +981,28 @@ mod tests {
     }
 
     #[test]
-    fn uses_unix_epoch_when_no_timestamp_fields_are_present() {
-        ccusage_test_support::install_pricing_snapshots();
-        let line = r#"{"params":{"sessionId":"sess-e","update":{"sessionUpdate":"turn_completed","usage":{"modelUsage":{"grok-4.5-build":{"inputTokens":1,"outputTokens":1,"cachedReadTokens":0,"reasoningTokens":0}}}},"_meta":{"eventId":"evt-e"}}}"#;
-        let entries = parse_lines(line, None);
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].timestamp.as_millis(), 0);
+    fn diagnoses_usage_without_a_timestamp() {
+        let fixture = fs_fixture!({
+            "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":1,"outputTokens":1}}}}"#,
+        });
+        let files = GrokSessionFiles {
+            updates: fixture.path("sessions/project/session/updates.jsonl"),
+            summary: None,
+        };
+        let diagnostics = Diagnostics::new("grok");
+        let entries = parse_session_files_with_diagnostics(
+            &files,
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            &PricingMap::default(),
+            &diagnostics,
+        )
+        .unwrap();
+        assert!(entries.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            1
+        );
     }
 
     #[test]

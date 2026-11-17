@@ -19,6 +19,9 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 - `${OPENCLAW_DIR:-~/.openclaw}/**/*.jsonl`, plus `~/.clawdbot`, `~/.moltbot`, and `~/.moldbot`
 - `${OPENCLAW_DIR:-~/.openclaw}/agents/*/agent/openclaw-agent.sqlite` (2026.9.x database-first storage)
 
+JSONL usage records without a valid timestamp are skipped with a diagnostic.
+SQLite events can use the timestamp stored in their own `created_at` column.
+
 Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
 chunking, and ordered parallel reads. SQLite stores open read-only; rows from
 `transcript_events` reuse the same transcript parsing and embedded-cost

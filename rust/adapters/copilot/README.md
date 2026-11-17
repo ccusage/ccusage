@@ -20,6 +20,8 @@ Anything that is not specific to this source belongs in `ccusage-core` or
 - `COPILOT_HOME` (single relocated Copilot data root)
 - `COPILOT_OTEL_FILE_EXPORTER_PATH` (one explicit JSONL file)
 
+Usage records without a valid timestamp are skipped with a diagnostic.
+
 Session-state `session.usage_record` events are per-call receipts. A receipt's `accounting`
 identity (`sourceSessionId`, `sequence`) is unique across all session files, so the loader counts
 each identity once even when the receipt appears in several files. It keeps the copy in the file

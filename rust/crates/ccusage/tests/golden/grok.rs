@@ -283,7 +283,6 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
                     DEC_30_1000 * 1000
                 )),
             ),
-            // No usable timestamp at all lands on the Unix epoch.
             update(
                 "turn_completed",
                 None,

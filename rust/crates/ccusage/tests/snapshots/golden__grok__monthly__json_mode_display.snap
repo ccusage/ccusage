@@ -7,28 +7,6 @@ exit: 0
 {
   "monthly": [
     {
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 11,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0,
-          "inputTokens": 11,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "grok-code-fast-1"
-      ],
-      "month": "1970-01",
-      "outputTokens": 1,
-      "totalCost": 0.0,
-      "totalTokens": 12
-    },
-    {
       "cacheCreationTokens": 150,
       "cacheReadTokens": 2600,
       "inputTokens": 5370,
@@ -148,10 +126,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 850,
     "cacheReadTokens": 53400,
-    "inputTokens": 207426,
-    "outputTokens": 3436,
+    "inputTokens": 207415,
+    "outputTokens": 3435,
     "totalCost": 0.6213000000000001,
-    "totalTokens": 265112
+    "totalTokens": 265100
   }
 }
 

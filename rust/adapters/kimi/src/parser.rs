@@ -5,7 +5,7 @@ use std::{
 };
 
 use ccusage_adapter_common::units::UnitError;
-use ccusage_core::Diagnostics;
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
@@ -126,19 +126,20 @@ pub(super) fn read_wire_file(
     diagnostics: &Diagnostics,
 ) -> std::result::Result<Vec<KimiUsageEntry>, UnitError> {
     let model = read_model_from_config(path);
-    let fallback_timestamp = file_modified_timestamp(path);
     let content = fs::read(path).map_err(UnitError::from)?;
     // Usable Kimi wire lines carry either `token_usage` (old format) or `usage.record` (new).
     let prefilter = LinePrefilter::any(&[br#""token_usage""#, br#""usage.record""#]);
-    Ok(jsonl::records_with_usage_diagnostics::<KimiWireLine>(
-        &content,
-        Some(&prefilter),
-        path,
-        diagnostics,
-        is_usage_envelope,
+    Ok(
+        jsonl::numbered_records_with_usage_diagnostics::<KimiWireLine>(
+            &content,
+            Some(&prefilter),
+            path,
+            diagnostics,
+            is_usage_envelope,
+        )
+        .filter_map(|(number, line)| wire_line_to_entry(&line, path, &model, number, diagnostics))
+        .collect::<Vec<_>>(),
     )
-    .filter_map(|line| wire_line_to_entry(&line, path, &model, fallback_timestamp))
-    .collect::<Vec<_>>())
 }
 
 fn is_usage_envelope(value: &serde_json::Value) -> bool {
@@ -194,33 +195,25 @@ fn kimi_root_from_wire_path(file_path: &Path) -> Option<PathBuf> {
     }
 }
 
-fn file_modified_timestamp(path: &Path) -> TimestampMs {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-        .map(TimestampMs::from_millis)
-        .unwrap_or(TimestampMs::UNIX_EPOCH)
-}
-
 fn wire_line_to_entry(
     line: &KimiWireLine,
     file_path: &Path,
     model: &str,
-    fallback_timestamp: TimestampMs,
+    number: u32,
+    diagnostics: &Diagnostics,
 ) -> Option<KimiUsageEntry> {
     match line.r#type.as_deref() {
-        Some("usage.record") => wire_line_to_entry_new(line, file_path, fallback_timestamp),
+        Some("usage.record") => wire_line_to_entry_new(line, file_path, number, diagnostics),
         Some("metadata") => None,
-        _ => wire_line_to_entry_old(line, file_path, model, fallback_timestamp),
+        _ => wire_line_to_entry_old(line, file_path, model, number, diagnostics),
     }
 }
 
 fn wire_line_to_entry_new(
     line: &KimiWireLine,
     file_path: &Path,
-    fallback_timestamp: TimestampMs,
+    number: u32,
+    diagnostics: &Diagnostics,
 ) -> Option<KimiUsageEntry> {
     // Only aggregate turn-level records; session records are cumulative totals.
     if line.usage_scope.as_deref() != Some("turn") {
@@ -238,10 +231,12 @@ fn wire_line_to_entry_new(
     if crate::total_usage_tokens(usage) == 0 {
         return None;
     }
-    let timestamp = line
-        .time
-        .map(TimestampMs::from_millis)
-        .unwrap_or(fallback_timestamp);
+    let timestamp = required_wire_timestamp(
+        line.time.and_then(TimestampMs::from_instant_millis),
+        file_path,
+        number,
+        diagnostics,
+    )?;
     let model = line.model.as_deref().unwrap_or(DEFAULT_MODEL);
     let model = model.trim_prefix("kimi-code/").to_string();
     Some(KimiUsageEntry {
@@ -262,7 +257,8 @@ fn wire_line_to_entry_old(
     line: &KimiWireLine,
     file_path: &Path,
     model: &str,
-    fallback_timestamp: TimestampMs,
+    number: u32,
+    diagnostics: &Diagnostics,
 ) -> Option<KimiUsageEntry> {
     let message = line.message.as_ref()?;
     if message.r#type.as_deref() != Some("StatusUpdate") {
@@ -282,10 +278,12 @@ fn wire_line_to_entry_old(
     if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
         return None;
     }
-    let timestamp = line
-        .timestamp
-        .and_then(timestamp_from_seconds)
-        .unwrap_or(fallback_timestamp);
+    let timestamp = required_wire_timestamp(
+        line.timestamp.and_then(timestamp_from_seconds),
+        file_path,
+        number,
+        diagnostics,
+    )?;
     Some(KimiUsageEntry {
         timestamp,
         timestamp_text: crate::format_rfc3339_millis(timestamp),
@@ -300,6 +298,23 @@ fn wire_line_to_entry_old(
     })
 }
 
+fn required_wire_timestamp(
+    timestamp: Option<TimestampMs>,
+    path: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+) -> Option<TimestampMs> {
+    if timestamp.is_none() {
+        diagnostics.record(Skip::record(
+            path,
+            number,
+            SkipKind::InvalidTimestamp,
+            "Kimi usage has no valid timestamp",
+        ));
+    }
+    timestamp
+}
+
 fn timestamp_from_seconds(seconds: f64) -> Option<TimestampMs> {
     if !seconds.is_finite() {
         return None;
@@ -308,7 +323,7 @@ fn timestamp_from_seconds(seconds: f64) -> Option<TimestampMs> {
     if millis < i64::MIN as f64 || millis > i64::MAX as f64 {
         return None;
     }
-    Some(TimestampMs::from_millis(millis as i64))
+    TimestampMs::from_instant_millis(millis as i64)
 }
 
 fn extract_session_id(file_path: &Path) -> String {
@@ -480,6 +495,27 @@ mod tests {
     use ccusage_test_support::fs_fixture;
 
     #[test]
+    fn diagnoses_both_wire_formats_without_a_timestamp() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "sessions/group/session/wire.jsonl": concat!(
+                r#"{"type":"usage.record","usageScope":"turn","usage":{"inputOther":10,"output":2}}"#,
+                "\n",
+                r#"{"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":10,"output":2}}}}"#,
+            ),
+        });
+        let diagnostics = Diagnostics::new("kimi");
+        let events = read_wire_file(
+            &fixture.path("sessions/group/session/wire.jsonl"),
+            &diagnostics,
+        )
+        .unwrap();
+        assert!(events.is_empty());
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            2
+        );
+    }
+    #[test]
     fn kimi_root_resolves_correctly_for_both_path_layouts() {
         let fixture = fs_fixture!({
             "sessions/group/session-a/wire.jsonl": "",
@@ -514,7 +550,8 @@ mod tests {
         }))
         .unwrap();
 
-        let entry = wire_line_to_entry(&line, &file, "kimi-k2", TimestampMs::UNIX_EPOCH).unwrap();
+        let entry =
+            wire_line_to_entry(&line, &file, "kimi-k2", 1, &Diagnostics::new("kimi")).unwrap();
 
         assert_eq!(entry.output_tokens, 432);
         assert_eq!(entry.extra_total_tokens, 0);
