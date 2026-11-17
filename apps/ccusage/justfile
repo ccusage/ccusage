@@ -9,11 +9,6 @@ default:
 build:
     pnpm run build
 
-generate-schema:
-    cargo run --quiet --manifest-path ../../rust/Cargo.toml -p ccusage-config --bin generate-config-schema -- config-schema.json
-    oxfmt --write config-schema.json
-    cp config-schema.json ../../docs/public/config-schema.json
-
 start *args:
     cargo run --manifest-path ../../rust/Cargo.toml --bin ccusage -- {{args}}
 
