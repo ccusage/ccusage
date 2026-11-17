@@ -150,9 +150,7 @@ impl EntryCollector {
     }
 
     fn push_compaction(&mut self, linked: LinkedEntry) {
-        if self.claim(&linked.0) {
-            self.compactions.push(linked);
-        }
+        self.compactions.push(linked);
     }
 
     fn push_aggregate(&mut self, entry: LoadedEntry) {
@@ -172,11 +170,11 @@ impl EntryCollector {
             aggregate_sessions.insert(entry.session_id.to_string());
             entries.push((entry, None));
         }
-        entries.extend(
-            self.compactions
-                .into_iter()
-                .filter(|(entry, _)| !aggregate_sessions.contains(entry.session_id.as_ref())),
-        );
+        for linked in std::mem::take(&mut self.compactions) {
+            if !aggregate_sessions.contains(linked.0.session_id.as_ref()) && self.claim(&linked.0) {
+                entries.push(linked);
+            }
+        }
         entries.sort_by_key(|(entry, _)| entry.timestamp);
         entries
     }
@@ -1998,6 +1996,48 @@ mod tests {
                     + entry.extra_total_tokens
             })
             .sum()
+    }
+
+    #[test]
+    fn a_message_wins_over_a_compaction_with_its_id_in_an_earlier_directory() {
+        let fixture = fs_fixture!({});
+        let first = fixture.path("first/opencode.db");
+        let second = fixture.path("second/opencode.db");
+        std::fs::create_dir_all(fixture.path("first")).unwrap();
+        std::fs::create_dir_all(fixture.path("second")).unwrap();
+        create_db_session_message_table(&first, true);
+        insert_db_session_message(
+            &first,
+            "shared-id",
+            "v2-session",
+            "compaction",
+            1_767_312_000_000,
+            COMPACTION_COMPLETED,
+            true,
+        );
+        create_db_session_message_table(&second, true);
+        insert_db_session_message(
+            &second,
+            "shared-id",
+            "v2-session",
+            "assistant",
+            1_767_312_000_000,
+            assistant_payload(10, 2, 0.01).as_str(),
+            true,
+        );
+
+        let entries = load_linked(
+            &[&fixture.path("first"), &fixture.path("second")],
+            &SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some("UTC".to_string()),
+                ..SharedArgs::default()
+            },
+            AgentReportKind::Daily,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0.data.message.usage.input_tokens, 10);
     }
 
     #[test]
