@@ -48,13 +48,13 @@ cost = inputTokens         × input price
 
 When a record includes a cache-write duration split, the calculation uses its 5-minute and 1-hour counts. Otherwise, all `cache_creation_input_tokens` use the standard cache creation rate.
 
-The one-hour rate uses the published duration price or `cacheCreationInputTokenCostAbove1hr` override. If neither is available, it falls back to twice the input price.
+The one-hour rate uses the published duration price or `cacheCreationInputTokenCostAbove1hr` override, and above 200K tokens the published long-context one-hour price. When a model publishes no cache rate, the default depends on its provider: OpenAI models bill cache writes, one-hour cache writes, and cache reads at the input price; Anthropic and other models use 1.25×, 2×, and 0.1× the input price.
 
 For pricing entries with a context threshold, the request input context (including cache reads and writes) selects the rate tier for the whole request. Other entries with above-200K rates apply the higher rate only to the portion of each token category above 200,000. Fast-mode usage applies the model fast multiplier.
 
 Pricing comes from LiteLLM, models.dev, built-in model data, and configured [pricing overrides](/guide/config-files#pricing-overrides). Timestamp-aware historical rates use the entry timestamp where supported. `--offline` uses embedded pricing without network requests; `--no-offline` enables online pricing retrieval, including its cache.
 
-An exact embedded model match takes precedence over a fuzzy primary-source match. Explicit pricing overrides retain precedence over both sources.
+LiteLLM and built-in model data take precedence over models.dev, which only prices models the primary sources do not. A model that models.dev marks as a separately priced tier is matched exactly, never by a fuzzy match to its base model. Explicit pricing overrides retain precedence over all sources.
 
 ## Comparing Stored and Calculated Costs
 
