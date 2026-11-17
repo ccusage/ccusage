@@ -268,12 +268,28 @@ struct DailyUsageEntry {
 /// Each shape is tried against the raw bytes in the order `#[serde(untagged)]` would
 /// use; the derive would first buffer every line, message content included, into an
 /// intermediate tree.
-fn deserialize_daily_usage_line(line: &[u8]) -> std::result::Result<DailyUsageEntry, Rejection> {
+fn deserialize_daily_usage_line(
+    line: &[u8],
+) -> std::result::Result<(DailyUsageEntry, AdvisorLookup), Rejection> {
     match deserialize_usage_line::<DailyUsageEntry>(line) {
+        Ok(entry) => {
+            let lookup = if entry.message.usage.has_advisor_iteration {
+                AdvisorLookup::AskLine
+            } else {
+                AdvisorLookup::RuledOut
+            };
+            Ok((entry, lookup))
+        }
         Err(Rejection::Malformed) => deserialize_usage_line::<DailyAgentProgressEntry>(line)
-            .map(DailyAgentProgressEntry::into_entry),
-        result => result,
+            .map(|entry| (entry.into_entry(), AdvisorLookup::AskLine)),
+        Err(rejection) => Err(rejection),
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AdvisorLookup {
+    RuledOut,
+    AskLine,
 }
 
 #[derive(Debug, Deserialize)]
@@ -285,13 +301,9 @@ struct DailyAgentProgressEntry {
 
 impl DailyAgentProgressEntry {
     fn into_entry(self) -> DailyUsageEntry {
-        let mut message = self.data.message.message;
-        // Advisor turns are read from the line's top-level `message`, not
-        // from this nested one, so only the line can rule them out.
-        message.usage.has_advisor_iteration = true;
         DailyUsageEntry {
             timestamp: self.data.message.timestamp,
-            message,
+            message: self.data.message.message,
             version: None,
             session_id: self.session_id,
             cost_usd: self.data.message.cost_usd,
@@ -355,8 +367,8 @@ fn read_daily_usage_file_with_diagnostics(
         if !usage_marker.matches(line) {
             return;
         }
-        let data = match deserialize_daily_usage_line(line) {
-            Ok(data) => data,
+        let (data, advisor_lookup) = match deserialize_daily_usage_line(line) {
+            Ok(parsed) => parsed,
             Err(Rejection::NullContract) => return,
             Err(Rejection::Malformed) => {
                 super::diagnostics::rejected(path, current, diagnostics, true);
@@ -376,10 +388,7 @@ fn read_daily_usage_file_with_diagnostics(
             super::diagnostics::rejected(path, current, diagnostics, true);
             return;
         }
-        let IteratedTokenUsage {
-            usage,
-            has_advisor_iteration,
-        } = data.message.usage;
+        let IteratedTokenUsage { usage, .. } = data.message.usage;
         let cost = calculate_cost_for_usage_at(
             data.message.model.as_deref(),
             usage,
@@ -427,7 +436,7 @@ fn read_daily_usage_file_with_diagnostics(
             request_id: data.request_id,
             is_sidechain: data.is_sidechain,
         });
-        if !has_advisor_iteration {
+        if matches!(advisor_lookup, AdvisorLookup::RuledOut) {
             return;
         }
         for (index, advisor) in advisor_usages_from_line(line).into_iter().enumerate() {
@@ -990,7 +999,7 @@ mod tests {
 
     #[test]
     fn propagates_sidechain_metadata_from_agent_progress_lines() {
-        let data = super::deserialize_daily_usage_line(
+        let (data, _) = super::deserialize_daily_usage_line(
             br#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
         )
         .unwrap();
@@ -1001,7 +1010,7 @@ mod tests {
 
     #[test]
     fn prefers_the_direct_entry_over_an_agent_progress_wrapper() {
-        let data = super::deserialize_daily_usage_line(
+        let (data, _) = super::deserialize_daily_usage_line(
             br#"{"timestamp":"2026-03-29T08:00:00.000Z","requestId":"req-direct","message":{"usage":{"input_tokens":1,"output_tokens":2},"model":"direct-model","id":"msg-direct"},"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-wrapped","message":{"usage":{"input_tokens":3,"output_tokens":4},"model":"wrapped-model","id":"msg-wrapped"}}}}"#,
         )
         .unwrap();
@@ -1332,9 +1341,9 @@ mod tests {
                     r#"{{"message":{message},"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
                 ),
             ] {
-                let parsed = super::deserialize_daily_usage_line(line.as_bytes()).unwrap();
+                let (_, lookup) = super::deserialize_daily_usage_line(line.as_bytes()).unwrap();
                 let previous = super::advisor_usages_from_line(line.as_bytes());
-                if parsed.message.usage.has_advisor_iteration {
+                if matches!(lookup, super::AdvisorLookup::AskLine) {
                     retained += 1;
                 } else {
                     skipped += 1;
