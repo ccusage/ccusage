@@ -159,6 +159,9 @@ impl ConfigContext {
     }
 
     fn option_maps(&self) -> Vec<&crate::layers::Layer> {
+        if self.layers.is_empty() {
+            return Vec::new();
+        }
         self.option_paths()
             .iter()
             .filter_map(|path| self.layers.get(path))
