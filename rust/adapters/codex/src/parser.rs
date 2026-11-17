@@ -1132,9 +1132,7 @@ pub(super) fn codex_timestamp_instant(value: Option<&CodexTimestamp<'_>>) -> Opt
             } else {
                 raw.checked_mul(1_000)?
             };
-            Some(TimestampMs::from_millis(
-                i64::try_from(millis).unwrap_or(i64::MAX),
-            ))
+            TimestampMs::from_instant_millis(i64::try_from(millis).ok()?)
         }
     }
 }
@@ -2088,5 +2086,23 @@ mod diagnostic_tests {
             );
         }
         assert!(!warnings.contains("SECRET_CANARY"), "{warnings}");
+    }
+
+    #[test]
+    fn numeric_timestamps_beyond_the_supported_range_do_not_date_usage() {
+        let (events, diagnostics) = session_events(&[
+            r#"{"type":"event_msg","timestamp":1767312000000000,"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}"#,
+        ]);
+        assert!(events.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+
+        let (events, _) = session_events(&[
+            r#"{"type":"turn.completed","timestamp":1767312000000000,"created_at":"2026-01-02T00:00:00Z","usage":{"input_tokens":10,"output_tokens":2}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].timestamp,
+            parse_ts_timestamp("2026-01-02T00:00:00Z").unwrap()
+        );
     }
 }
