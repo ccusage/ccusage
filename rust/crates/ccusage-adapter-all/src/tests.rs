@@ -1293,7 +1293,7 @@ fn unified_daily_keeps_claude_agent_rows_on_days_the_claude_window_excludes() {
 }
 
 #[test]
-fn unified_daily_keeps_claude_agent_rows_after_a_since_that_excludes_the_claude_turn() {
+fn unified_daily_claims_sessions_with_usage_on_the_day_before_since() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
@@ -1325,12 +1325,12 @@ fn unified_daily_keeps_claude_agent_rows_after_a_since_that_excludes_the_claude_
             &claude_agent_shared("20990103", "20990103"),
             &NO_SOURCES
         )["inputTokens"],
-        7
+        0
     );
 }
 
 #[test]
-fn unified_reports_keep_the_turns_of_a_mixed_session_that_claude_did_not_count() {
+fn unified_reports_keep_api_turns_when_the_native_session_is_claimed() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
@@ -1363,10 +1363,8 @@ fn unified_reports_keep_the_turns_of_a_mixed_session_that_claude_did_not_count()
     let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
     let shared = claude_agent_shared("20990101", "20990103");
 
-    // A session report counts the Claude session whole, so its day-two turn
-    // is covered too; the daily report finds no Claude usage on day two.
     for (kind, input) in [
-        (AgentReportKind::Daily, 127),
+        (AgentReportKind::Daily, 120),
         (AgentReportKind::Session, 120),
     ] {
         assert_eq!(
@@ -1459,12 +1457,12 @@ fn unified_daily_dates_claude_agent_rows_in_the_claude_source_timezone() {
 
     assert_eq!(
         unified_totals(AgentReportKind::Daily, &shared, &sources)["inputTokens"],
-        107
+        100
     );
 }
 
 #[test]
-fn unified_daily_counts_a_claude_agent_turn_twice_when_claude_logs_it_after_midnight() {
+fn unified_reports_count_a_claude_agent_turn_once_when_claude_logs_it_after_midnight() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({});
     let _ = fixture.write_file(
@@ -1484,15 +1482,137 @@ fn unified_daily_counts_a_claude_agent_turn_twice_when_claude_logs_it_after_midn
     let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
     let shared = claude_agent_shared("20990101", "20990104");
 
-    for (kind, input) in [
-        (AgentReportKind::Daily, 200),
-        (AgentReportKind::Session, 100),
+    for kind in [
+        AgentReportKind::Daily,
+        AgentReportKind::Weekly,
+        AgentReportKind::Monthly,
+        AgentReportKind::Session,
     ] {
         assert_eq!(
             unified_totals(kind, &shared, &NO_SOURCES)["inputTokens"],
-            input,
+            100,
             "{kind:?}"
         );
+    }
+}
+
+#[test]
+fn a_claude_agent_turn_before_until_does_not_borrow_next_days_usage() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({});
+    let _ = fixture.write_file(
+        "claude/projects/project-a/claude-native-a.jsonl",
+        claude_usage_line("claude-native-a", "2099-01-03T00:00:05.000Z", "msg-a", 100),
+    );
+    let turn_start = CLAUDE_AGENT_DAY_TWO - 10_000;
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[(
+            "m-dup",
+            "ses-agent",
+            turn_start,
+            claude_agent_row("claude-native-a", turn_start, 100),
+        )],
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990102", "20990102");
+    for kind in [
+        AgentReportKind::Daily,
+        AgentReportKind::Weekly,
+        AgentReportKind::Monthly,
+        AgentReportKind::Session,
+    ] {
+        assert_eq!(
+            unified_totals(kind, &shared, &NO_SOURCES)["inputTokens"],
+            0,
+            "{kind:?}"
+        );
+        let (entries, _) = loader::load_opencode_entries(&shared, kind, false, None).unwrap();
+        assert!(entries.is_empty(), "{kind:?}");
+        let (entries, _) = loader::load_opencode_entries(&shared, kind, true, None).unwrap();
+        assert_eq!(entries.len(), 1, "{kind:?}");
+    }
+}
+
+#[test]
+fn native_claims_widen_by_calendar_days_across_months_and_clock_changes() {
+    ccusage_test_support::install_pricing_snapshots();
+    for (timezone, day, call, turn) in [
+        (
+            "UTC",
+            "20990131",
+            "2099-02-01T00:00:05Z",
+            "2099-01-31T23:59:50Z",
+        ),
+        (
+            "America/New_York",
+            "20261102",
+            "2026-11-01T04:30:00Z",
+            "2026-11-02T06:00:00Z",
+        ),
+    ] {
+        let fixture = fs_fixture!({});
+        let _ = fixture.write_file(
+            "claude/projects/p/native.jsonl",
+            claude_usage_line("native", call, "m", 100),
+        );
+        let created = crate::parse_ts_timestamp(turn).unwrap().as_millis();
+        write_opencode_rows(
+            &fixture.create_dir_all("opencode").join("opencode.db"),
+            &[(
+                "m-dup",
+                "ses-agent",
+                created,
+                claude_agent_row("native", created, 100),
+            )],
+        );
+        let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+        let shared = SharedArgs {
+            timezone: Some(timezone.to_owned()),
+            ..claude_agent_shared(day, day)
+        };
+        for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+            assert_eq!(
+                unified_totals(kind, &shared, &NO_SOURCES)["inputTokens"],
+                0,
+                "{timezone} {kind:?}"
+            );
+            let (entries, _) = loader::load_opencode_entries(&shared, kind, false, None).unwrap();
+            assert!(entries.is_empty(), "{timezone} {kind:?}");
+        }
+    }
+}
+
+#[test]
+fn native_claims_keep_turns_when_claude_usage_is_beyond_the_one_day_margin() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({});
+    let _ = fixture.write_file(
+        "claude/projects/p/native.jsonl",
+        claude_usage_line("native", "2099-01-02T00:00:05Z", "m", 100),
+    );
+    let created = crate::parse_ts_timestamp("2099-01-04T12:00:00Z")
+        .unwrap()
+        .as_millis();
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[(
+            "m-kept",
+            "ses-agent",
+            created,
+            claude_agent_row("native", created, 7),
+        )],
+    );
+    let _env = claude_opencode_env(&fixture, fixture.path("claude").into_os_string());
+    let shared = claude_agent_shared("20990104", "20990104");
+    for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+        assert_eq!(
+            unified_totals(kind, &shared, &NO_SOURCES)["inputTokens"],
+            7,
+            "{kind:?}"
+        );
+        let (entries, _) = loader::load_opencode_entries(&shared, kind, false, None).unwrap();
+        assert_eq!(entries.len(), 1, "{kind:?}");
     }
 }
 

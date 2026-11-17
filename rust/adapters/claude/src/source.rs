@@ -1,9 +1,12 @@
+use std::borrow::Cow;
+
 use ccusage_adapter_common::{
     claims::{ClaudeClaimsTx, ClaudeCounted},
     rows::{summarize_entry_sessions, summary_rows},
     source::{LoadKind, LoadRequest, LoadedRows, PricingSupply, UsageSource},
 };
-use ccusage_core::{Diagnostics, Result};
+use ccusage_core::{Diagnostics, ReportWindow, Result, cli::SharedArgs};
+use jiff::{ToSpan, civil::Date};
 
 use crate::load_daily_summaries_with_detection_progress;
 
@@ -12,23 +15,25 @@ pub struct Claude;
 pub static SOURCE: Claude = Claude;
 
 impl Claude {
-    /// The main-thread session days this source counts inside `shared`'s
-    /// window, for every focused report kind: a focused session report counts
-    /// only a session's in-window days, so it matches by session day too.
     pub fn counted(
         &self,
         shared: &ccusage_core::cli::SharedArgs,
         project_filter: Option<&str>,
         diagnostics: &Diagnostics,
     ) -> Result<ClaudeCounted> {
+        let load_shared = claim_load_options(shared)?;
         let deduped = crate::load_windowed_entries(
-            shared,
+            &load_shared,
             project_filter,
             diagnostics,
             ccusage_core::cli::CostMode::Display,
         )?;
-        Ok(ClaudeCounted::session_days(
-            deduped.main_thread_session_days(|_| true),
+        Ok(ClaudeCounted::sessions(
+            deduped
+                .main_thread_session_days(|_| true)
+                .into_iter()
+                .map(|(session, _)| session)
+                .collect(),
             shared,
         ))
     }
@@ -38,20 +43,38 @@ impl Claude {
         request: &LoadRequest<'_>,
         claims: ClaudeClaimsTx,
     ) -> Result<LoadedRows> {
-        let (rows, counted) = self.load(request)?;
+        let (rows, counted) = self.load(request, true)?;
         claims.publish(counted);
         Ok(rows)
     }
 
-    fn load(&self, request: &LoadRequest<'_>) -> Result<(LoadedRows, ClaudeCounted)> {
+    fn load(
+        &self,
+        request: &LoadRequest<'_>,
+        with_claims: bool,
+    ) -> Result<(LoadedRows, ClaudeCounted)> {
         let shared = request.shared;
+        let load_shared = if with_claims {
+            claim_load_options(shared)?
+        } else {
+            Cow::Borrowed(shared)
+        };
+        let report_window =
+            matches!(load_shared, Cow::Owned(_)).then(|| ReportWindow::from_shared(shared));
         let project_filter = request.options.claude_project;
         let diagnostics = Diagnostics::new("claude");
         if request.kind == LoadKind::Session {
-            let deduped = request.progress.run(
+            let mut deduped = request.progress.run(
                 ccusage_core::progress::UsageLoadAgent("Claude"),
                 shared.json,
-                || crate::load_windowed_entries(shared, project_filter, &diagnostics, shared.mode),
+                || {
+                    crate::load_windowed_entries(
+                        &load_shared,
+                        project_filter,
+                        &diagnostics,
+                        shared.mode,
+                    )
+                },
             )?;
             let detected = deduped.detected;
             let sessions = deduped
@@ -59,6 +82,14 @@ impl Claude {
                 .into_iter()
                 .map(|(session, _)| session)
                 .collect();
+            if let Some(window) = report_window.as_ref() {
+                crate::retain_copied_entries(
+                    &mut deduped.entries,
+                    &mut deduped.copies,
+                    window,
+                    |entry| &entry.date,
+                );
+            }
             let summaries = summarize_entry_sessions(&deduped.entries)?;
             return Ok((
                 LoadedRows {
@@ -70,13 +101,21 @@ impl Claude {
             ));
         }
         let loaded = load_daily_summaries_with_detection_progress(
-            shared,
+            &load_shared,
             project_filter,
             false,
             request.progress,
             &diagnostics,
         )?;
-        let summaries = loaded.summaries;
+        let mut summaries = loaded.summaries;
+        if let Some(window) = report_window.as_ref() {
+            summaries.retain(|summary| {
+                summary
+                    .date
+                    .as_deref()
+                    .is_some_and(|date| window.contains_date(date))
+            });
+        }
         let session_days = loaded.session_days;
         Ok((
             LoadedRows {
@@ -84,9 +123,44 @@ impl Claude {
                 detected: loaded.detected,
                 diagnostics,
             },
-            ClaudeCounted::session_days(session_days, shared),
+            ClaudeCounted::sessions(
+                session_days
+                    .into_iter()
+                    .map(|(session, _)| session)
+                    .collect(),
+                shared,
+            ),
         ))
     }
+}
+
+fn claim_load_options(shared: &SharedArgs) -> Result<Cow<'_, SharedArgs>> {
+    if shared.since.is_none() && shared.until.is_none() {
+        return Ok(Cow::Borrowed(shared));
+    }
+    Ok(Cow::Owned(SharedArgs {
+        since: claim_bound(shared.since.as_deref(), -1)?,
+        until: claim_bound(shared.until.as_deref(), 1)?,
+        ..shared.clone()
+    }))
+}
+
+fn claim_bound(bound: Option<&str>, days: i64) -> Result<Option<String>> {
+    bound
+        .map(|bound| {
+            if bound.len() != 8 || !bound.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Ok(Some(bound.to_owned()));
+            }
+            let date = Date::strptime("%Y%m%d", bound).map_err(|error| {
+                ccusage_core::cli_error(format!("Invalid Claude claims date: {error}"))
+            })?;
+            Ok(date
+                .checked_add(days.days())
+                .ok()
+                .map(|date| date.strftime("%Y%m%d").to_string()))
+        })
+        .transpose()
+        .map(Option::flatten)
 }
 
 impl UsageSource for Claude {
@@ -103,7 +177,7 @@ impl UsageSource for Claude {
     }
 
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
-        self.load(request).map(|(rows, _)| rows)
+        self.load(request, false).map(|(rows, _)| rows)
     }
 }
 
@@ -117,7 +191,28 @@ mod diagnostic_tests {
     use std::sync::Arc;
 
     #[test]
-    fn counted_keeps_only_in_window_main_thread_session_days() {
+    fn claims_accept_the_last_supported_report_day() {
+        let fixture = Fixture::new();
+        let _ = fixture.create_dir_all("projects");
+        let _env = EnvVarsGuard::set_many([(
+            "CLAUDE_CONFIG_DIR",
+            Some(fixture.root().as_os_str().to_owned()),
+        )]);
+        let shared = SharedArgs {
+            since: Some("99991231".into()),
+            until: Some("99991231".into()),
+            timezone: Some("UTC".into()),
+            ..Default::default()
+        };
+        assert!(
+            SOURCE
+                .counted(&shared, None, &Diagnostics::new("claude"))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn counted_matches_main_thread_sessions_inside_the_source_window() {
         let fixture = Fixture::new();
         let main = fixture.write_file(
             "projects/p/session-main.jsonl",
@@ -169,7 +264,7 @@ mod diagnostic_tests {
             ("session-main", "2026-01-02T12:00:00Z", true),
             ("session-resumed", "2026-01-02T12:00:00Z", true),
             ("session-side", "2026-01-02T12:00:00Z", false),
-            ("session-main", "2026-01-03T12:00:00Z", false),
+            ("session-main", "2026-01-03T12:00:00Z", true),
             ("session-main", "2025-12-01T12:00:00Z", false),
             ("session-stale", "2026-01-03T12:00:00Z", false),
         ];
