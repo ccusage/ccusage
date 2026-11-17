@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
-
 use serde_json::{Value, json};
 
 use crate::{
-    BucketKind, LoadedEntry, Result, SessionAccumulator, cli::AgentReportKind, cli::WeekDay,
-    summarize_by_key, summarize_summaries_by_bucket, totals_json,
+    BucketKind, LoadedEntry, Result, cli::AgentReportKind, cli::WeekDay, summarize_by_key,
+    summarize_summaries_by_bucket, totals_json,
 };
 
 pub fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
@@ -40,19 +38,7 @@ pub fn summarize_entries(
                 WeekDay::Sunday,
             ))
         }
-        AgentReportKind::Session => {
-            let mut groups = BTreeMap::<String, SessionAccumulator>::new();
-            for entry in entries {
-                groups
-                    .entry(entry.session_id.to_string())
-                    .or_default()
-                    .add_entry(entry);
-            }
-            groups
-                .into_values()
-                .map(|group| group.into_summary())
-                .collect()
-        }
+        AgentReportKind::Session => ccusage_adapter_common::rows::summarize_entry_sessions(entries),
         AgentReportKind::Weekly => {
             let daily = summarize_entries(entries, AgentReportKind::Daily)?;
             Ok(summarize_summaries_by_bucket(

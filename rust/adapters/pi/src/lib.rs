@@ -143,7 +143,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unified_sessions_keep_project_paths_and_focused_totals() {
+    fn focused_and_unified_sessions_keep_projects_with_the_same_session_id() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "sessions/project-a/agent_same-session.jsonl": [
@@ -171,7 +171,15 @@ mod tests {
         let unified =
             report::summarize_unified_entries(&entries, AgentReportKind::Session).unwrap();
 
-        assert_eq!(focused.len(), 1);
+        assert_eq!(focused.len(), 2);
+        assert_eq!(focused[0].input_tokens, 10);
+        assert_eq!(focused[1].input_tokens, 20);
+        let json = SOURCE.report_json(&focused, AgentReportKind::Session);
+        assert_eq!(json["sessions"][0]["sessionId"], "same-session");
+        assert_eq!(json["sessions"][0]["projectPath"], "project-a");
+        assert_eq!(json["sessions"][1]["sessionId"], "same-session");
+        assert_eq!(json["sessions"][1]["projectPath"], "project-b");
+        assert_eq!(json["totals"]["inputTokens"], 30);
         assert_eq!(unified.len(), 2);
         assert_eq!(
             unified
