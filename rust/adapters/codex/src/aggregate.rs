@@ -2,9 +2,9 @@ use ccusage_core::Diagnostics;
 use std::{
     collections::{BTreeMap, HashSet},
     hash::{Hash, Hasher},
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::Mutex,
-    thread,
 };
 
 use compact_str::CompactString;
@@ -23,25 +23,39 @@ use super::{
     replay::{CodexReplayFile, CodexReplayPlan, CodexSessionMetadata, read_session_metadata},
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-enum CodexEventKey {
-    Response(CompactString),
-    Usage(CodexUsageKey),
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+struct StringId(NonZeroUsize);
+
+#[derive(Default)]
+struct StringInterner {
+    ids: FxHashMap<CompactString, StringId>,
+    values: Vec<CompactString>,
+}
+
+impl StringInterner {
+    fn intern(&mut self, value: &str) -> Result<StringId> {
+        if let Some(id) = self.ids.get(value) {
+            return Ok(*id);
+        }
+        let id = StringId(
+            self.values
+                .len()
+                .checked_add(1)
+                .and_then(NonZeroUsize::new)
+                .ok_or_else(|| crate::cli_error("too many interned Codex strings"))?,
+        );
+        self.values.push(CompactString::new(value));
+        self.ids.insert(CompactString::new(value), id);
+        Ok(id)
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct CodexUsageKey {
-    session_hash: u64,
-    session_len: usize,
+    session: Option<StringId>,
     timestamp: crate::TimestampMs,
-    model_hash: u64,
-    model_len: usize,
-    input_tokens: u64,
-    cached_input_tokens: u64,
-    cache_creation_tokens: u64,
-    output_tokens: u64,
-    reasoning_output_tokens: u64,
-    total_tokens: u64,
+    model: StringId,
+    usage: crate::CodexRawUsage,
     occurrence: u32,
 }
 
@@ -75,6 +89,7 @@ impl<K: Hash + Eq + Clone> CodexFileOccurrences<K> {
 struct CodexEventProvenance {
     file_index: usize,
     occurrences: CodexFileOccurrences<CodexUsageKey>,
+    ids: FxHashMap<CompactString, StringId>,
 }
 
 impl CodexEventProvenance {
@@ -82,39 +97,199 @@ impl CodexEventProvenance {
         Self {
             file_index,
             occurrences: CodexFileOccurrences::default(),
+            ids: FxHashMap::default(),
         }
     }
 
-    fn event_key(
-        &mut self,
-        event: &CodexTokenUsageEvent,
-        timestamp: crate::TimestampMs,
-        model: &str,
-        kind: AgentReportKind,
-    ) -> CodexEventKey {
-        let mut key = codex_event_key(event, timestamp, model, kind);
-        if let CodexEventKey::Usage(usage) = &mut key {
-            usage.occurrence = self.occurrences.next(usage);
+    fn intern(&mut self, seen: &CodexDedupe, value: &str) -> Result<StringId> {
+        if let Some(id) = self.ids.get(value) {
+            return Ok(*id);
         }
-        key
+        let id = seen
+            .strings
+            .lock()
+            .map_err(|_| crate::cli_error("codex interner poisoned"))?
+            .intern(value)?;
+        self.ids.insert(CompactString::new(value), id);
+        Ok(id)
     }
 }
 
-struct CodexDedupeRecord {
-    service_tier: Option<CodexServiceTier>,
-    model: CompactString,
-    session_id: Option<CompactString>,
-    compaction: Option<Box<CodexCompactionEvent>>,
-}
-
-struct CodexCompactionEvent {
+struct CodexAttribution {
     file_index: usize,
-    timestamp: crate::TimestampMs,
-    event: CodexTokenUsageEvent,
+    last_activity: CompactString,
+    is_fallback: bool,
+    service_tier: Option<CodexServiceTier>,
 }
 
-type CodexDedupeMap = FxHashMap<CodexEventKey, CodexDedupeRecord>;
-type CodexDedupeShards = [Mutex<CodexDedupeMap>];
+impl CodexAttribution {
+    fn new(event: &CodexTokenUsageEvent, file_index: usize) -> Self {
+        Self {
+            file_index,
+            last_activity: CompactString::new(&event.last_activity),
+            is_fallback: event.is_fallback_model,
+            service_tier: event.service_tier,
+        }
+    }
+
+    fn merge(&mut self, event: &CodexTokenUsageEvent, file_index: usize) -> bool {
+        self.service_tier = merge_codex_service_tiers(self.service_tier, event.service_tier);
+        if file_index >= self.file_index {
+            return false;
+        }
+        self.file_index = file_index;
+        self.last_activity = CompactString::new(&event.last_activity);
+        self.is_fallback = event.is_fallback_model;
+        true
+    }
+}
+
+struct CodexResponseUsage {
+    key: CodexUsageKey,
+    attribution: CodexAttribution,
+}
+
+#[derive(Default)]
+struct CodexDedupeMap {
+    usage: FxHashMap<CodexUsageKey, CodexAttribution>,
+    responses: FxHashMap<CompactString, CodexResponseUsage>,
+}
+
+struct CodexDedupe {
+    shards: Vec<Mutex<CodexDedupeMap>>,
+    strings: Mutex<StringInterner>,
+}
+
+impl CodexDedupe {
+    fn new(files: usize) -> Self {
+        let count = ccusage_adapter_common::worker_count(false, files);
+        Self {
+            shards: (0..count)
+                .map(|_| Mutex::new(CodexDedupeMap::default()))
+                .collect(),
+            strings: Mutex::new(StringInterner::default()),
+        }
+    }
+
+    fn shard(&self, key: &impl Hash) -> Result<&Mutex<CodexDedupeMap>> {
+        let mut hasher = FxHasher::default();
+        key.hash(&mut hasher);
+        let count = u64::try_from(self.shards.len())
+            .map_err(|error| crate::cli_error(error.to_string()))?;
+        let index = usize::try_from(hasher.finish() % count)
+            .map_err(|error| crate::cli_error(error.to_string()))?;
+        Ok(&self.shards[index])
+    }
+
+    fn record(
+        &self,
+        event: &CodexTokenUsageEvent,
+        kind: AgentReportKind,
+        provenance: &mut CodexEventProvenance,
+    ) -> Result<()> {
+        let model = crate::model_aliases::resolve_model_name(&event.model);
+        let mut key = CodexUsageKey {
+            session: if kind == AgentReportKind::Session {
+                Some(provenance.intern(self, &event.session_id)?)
+            } else {
+                None
+            },
+            timestamp: event.timestamp,
+            model: provenance.intern(self, &model)?,
+            usage: event.raw_usage(),
+            occurrence: 0,
+        };
+        if let Some(response) = &event.response_id {
+            let mut shard = self
+                .shard(response)?
+                .lock()
+                .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
+            if let Some(record) = shard.responses.get_mut(response.as_str()) {
+                if record.attribution.merge(event, provenance.file_index) {
+                    record.key = key;
+                }
+            } else {
+                shard.responses.insert(
+                    CompactString::new(response),
+                    CodexResponseUsage {
+                        key,
+                        attribution: CodexAttribution::new(event, provenance.file_index),
+                    },
+                );
+            }
+        } else {
+            key.occurrence = provenance.occurrences.next(&key);
+            let mut shard = self
+                .shard(&key)?
+                .lock()
+                .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
+            if let Some(record) = shard.usage.get_mut(&key) {
+                record.merge(event, provenance.file_index);
+            } else {
+                shard
+                    .usage
+                    .insert(key, CodexAttribution::new(event, provenance.file_index));
+            }
+        }
+        Ok(())
+    }
+
+    fn fold(
+        self,
+        shared: &SharedArgs,
+        kind: AgentReportKind,
+    ) -> Result<BTreeMap<String, CodexGroup>> {
+        let strings = self
+            .strings
+            .into_inner()
+            .map_err(|_| crate::cli_error("codex interner poisoned"))?;
+        let timezone = resolve_tz(shared.timezone.as_deref());
+        let mut groups = BTreeMap::new();
+        let mut models = FxHashMap::default();
+        for shard in self.shards {
+            let records = shard
+                .into_inner()
+                .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
+            for (key, attribution) in records.usage.into_iter().chain(
+                records
+                    .responses
+                    .into_values()
+                    .map(|record| (record.key, record.attribution)),
+            ) {
+                let model = models.entry(key.model).or_insert_with(|| {
+                    let name = strings.values[key.model.0.get() - 1].as_str();
+                    CodexModel {
+                        name,
+                        long_context_threshold: crate::pricing::long_context_split_threshold(name),
+                        time_dependent: crate::has_time_dependent_pricing(name),
+                    }
+                });
+                let session = key
+                    .session
+                    .map(|id| strings.values[id.0.get() - 1].as_str());
+                let Some(period) =
+                    codex_period_for(key.timestamp, session, kind, &timezone, shared)
+                else {
+                    continue;
+                };
+                accumulate_codex_usage_into_group(
+                    groups.entry(period).or_default(),
+                    key.usage,
+                    model,
+                    key.timestamp,
+                    &attribution,
+                );
+            }
+        }
+        Ok(groups)
+    }
+}
+
+struct CodexModel<'a> {
+    name: &'a str,
+    long_context_threshold: u64,
+    time_dependent: bool,
+}
 
 /// How a run tells which rollouts replayed a parent's history.
 #[derive(Clone, Copy)]
@@ -139,11 +314,6 @@ struct CodexAggregateRun<'a> {
 }
 
 impl CodexAggregateRun<'_> {
-    fn file_indexes(&self) -> Vec<usize> {
-        self.selection
-            .map_or_else(|| (0..self.files.len()).collect(), <[usize]>::to_vec)
-    }
-
     fn chunk_file_indexes(&self, worker_count: usize) -> Vec<Vec<usize>> {
         let Some(selection) = self.selection else {
             return crate::chunk_file_indexes_by_size(self.files, worker_count);
@@ -255,8 +425,7 @@ fn aggregate_file_groups(
     let replay = bounded_plan
         .as_ref()
         .map_or(CodexReplay::Discover, CodexReplay::Planned);
-    let mut groups = BTreeMap::new();
-    let seen = create_dedupe_shards();
+    let seen = CodexDedupe::new(selected.iter().map(|(_, files)| files.len()).sum());
     let mut metadata_by_group = Vec::with_capacity(selected.len());
     let mut file_offset = 0;
     for &(sessions_dir, files) in selected {
@@ -270,8 +439,7 @@ fn aggregate_file_groups(
             file_offset,
             diagnostics,
         };
-        let (group_rows, metadata) = aggregate_files_with_dedupe(&run, &seen)?;
-        merge_groups(&mut groups, group_rows);
+        let metadata = aggregate_files_with_dedupe(&run, &seen)?;
         metadata_by_group.push(fork_indexes(files, sessions_dir, metadata));
         file_offset += files.len();
     }
@@ -296,100 +464,45 @@ fn aggregate_file_groups(
                     file_offset,
                     diagnostics,
                 };
-                merge_groups(&mut groups, aggregate_files_with_dedupe(&run, &seen)?.0);
+                aggregate_files_with_dedupe(&run, &seen)?;
             }
             file_offset += files.len();
         }
     }
-    apply_recorded_usage_from_shards(&mut groups, &seen, shared, kind);
-    Ok(groups)
+    seen.fold(shared, kind)
 }
 
 fn aggregate_files_with_dedupe(
     run: &CodexAggregateRun<'_>,
-    seen: &CodexDedupeShards,
-) -> Result<(BTreeMap<String, CodexGroup>, CodexFileMetadata)> {
-    if run.shared.single_thread {
-        return Ok(aggregate_files(run, seen));
-    }
-    aggregate_files_parallel(run, seen)
-}
-
-fn aggregate_files(
-    run: &CodexAggregateRun<'_>,
-    seen: &CodexDedupeShards,
-) -> (BTreeMap<String, CodexGroup>, CodexFileMetadata) {
-    let mut groups = BTreeMap::new();
-    let mut metadata = Vec::new();
-    let timezone = resolve_tz(run.shared.timezone.as_deref());
-    for index in run.file_indexes() {
-        aggregate_file(run, index, &timezone, seen, &mut groups, &mut metadata);
-    }
-    (groups, metadata)
-}
-
-fn aggregate_files_parallel(
-    run: &CodexAggregateRun<'_>,
-    seen: &CodexDedupeShards,
-) -> Result<(BTreeMap<String, CodexGroup>, CodexFileMetadata)> {
+    seen: &CodexDedupe,
+) -> Result<CodexFileMetadata> {
     let file_count = run.selection.map_or(run.files.len(), <[usize]>::len);
-    let worker_count = thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1)
-        .min(file_count);
-    if worker_count <= 1 {
-        return Ok(aggregate_files(run, seen));
-    }
-
-    let chunks = run.chunk_file_indexes(worker_count);
-    thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(chunks.len());
-        for chunk in chunks {
-            handles.push(scope.spawn(move || {
-                let mut groups = BTreeMap::new();
-                let mut metadata = Vec::new();
-                let timezone = resolve_tz(run.shared.timezone.as_deref());
-                for index in chunk {
-                    aggregate_file(run, index, &timezone, seen, &mut groups, &mut metadata);
-                }
-                (groups, metadata)
-            }));
-        }
-
-        let mut groups = BTreeMap::new();
-        let mut metadata = Vec::new();
-        for handle in handles {
-            let (worker_groups, worker_metadata) = handle
-                .join()
-                .map_err(|_| crate::cli_error("codex worker panicked"))?;
-            merge_groups(&mut groups, worker_groups);
-            metadata.extend(worker_metadata);
-        }
-        Ok((groups, metadata))
-    })
-}
-
-fn aggregate_file(
-    run: &CodexAggregateRun<'_>,
-    file_index: usize,
-    timezone: &JiffTimeZone,
-    seen: &CodexDedupeShards,
-    groups: &mut BTreeMap<String, CodexGroup>,
-    metadata: &mut CodexFileMetadata,
-) {
-    let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
-    let add = |event: &CodexTokenUsageEvent| {
-        add_event_to_groups(
-            event,
-            run.kind,
-            timezone,
-            run.shared,
-            seen,
-            groups,
-            &mut provenance,
-        )
-    };
-    visit_run_file(run, file_index, metadata, add)
+    let chunks = run.chunk_file_indexes(ccusage_adapter_common::worker_count(
+        run.shared.single_thread,
+        file_count,
+    ));
+    ccusage_adapter_common::map_parallel(
+        &chunks,
+        run.shared.single_thread,
+        ccusage_adapter_common::Split::ByCount,
+        |chunk| {
+            let mut metadata = Vec::new();
+            for &file_index in chunk {
+                let mut provenance = CodexEventProvenance::new(run.file_offset + file_index);
+                let mut result = Ok(());
+                visit_run_file(run, file_index, &mut metadata, |event| {
+                    if result.is_ok() {
+                        result = seen.record(event, run.kind, &mut provenance);
+                    }
+                });
+                result?;
+            }
+            Ok(metadata)
+        },
+    )
+    .into_iter()
+    .collect::<Result<Vec<_>>>()
+    .map(|metadata| metadata.into_iter().flatten().collect())
 }
 
 /// Visits one file of `run`, recording its metadata when the run discovers
@@ -426,53 +539,6 @@ fn visit_run_file(
     }
 }
 
-fn add_event_to_groups(
-    event: &CodexTokenUsageEvent,
-    kind: AgentReportKind,
-    timezone: &JiffTimeZone,
-    shared: &SharedArgs,
-    seen: &CodexDedupeShards,
-    groups: &mut BTreeMap<String, CodexGroup>,
-    provenance: &mut CodexEventProvenance,
-) {
-    let model = crate::model_aliases::resolve_model_name(&event.model);
-    let timestamp = event.timestamp;
-    if !insert_event_key(event, timestamp, model.as_ref(), kind, seen, provenance) {
-        return;
-    }
-    add_deduped_event_to_groups(
-        event,
-        model.as_ref(),
-        timestamp,
-        kind,
-        timezone,
-        shared,
-        groups,
-    )
-}
-
-fn add_deduped_event_to_groups(
-    event: &CodexTokenUsageEvent,
-    model: &str,
-    timestamp: crate::TimestampMs,
-    kind: AgentReportKind,
-    timezone: &JiffTimeZone,
-    shared: &SharedArgs,
-    groups: &mut BTreeMap<String, CodexGroup>,
-) {
-    let Some(period) = codex_period_for(
-        timestamp,
-        Some(event.session_id.as_str()),
-        kind,
-        timezone,
-        shared,
-    ) else {
-        return;
-    };
-    let group = groups.entry(period).or_default();
-    accumulate_codex_event_into_group(group, event, model, timestamp, false);
-}
-
 fn codex_period_for(
     timestamp: crate::TimestampMs,
     session_id: Option<&str>,
@@ -497,12 +563,12 @@ fn codex_period_for(
     })
 }
 
-fn accumulate_codex_event_into_group(
+fn accumulate_codex_usage_into_group(
     group: &mut CodexGroup,
-    event: &CodexTokenUsageEvent,
-    model: &str,
+    event: crate::CodexRawUsage,
+    model: &CodexModel<'_>,
     timestamp: crate::TimestampMs,
-    record_service_tier: bool,
+    attribution: &CodexAttribution,
 ) {
     group.input_tokens += event.input_tokens;
     group.cached_input_tokens += event.cached_input_tokens;
@@ -513,27 +579,30 @@ fn accumulate_codex_event_into_group(
     if group
         .last_activity
         .as_deref()
-        .is_none_or(|current| event.last_activity.as_str() > current)
+        .is_none_or(|current| attribution.last_activity.as_str() > current)
     {
-        group.last_activity = Some(event.last_activity.clone());
+        group.last_activity = Some(attribution.last_activity.to_string());
     }
 
-    let model_usage = group.models.entry(model.to_string()).or_default();
-    accumulate_codex_event_into_model_usage(
-        model_usage,
-        event,
-        model,
-        timestamp,
-        record_service_tier,
-    );
+    if let Some(model_usage) = group.models.get_mut(model.name) {
+        accumulate_codex_usage_into_model_usage(model_usage, event, model, timestamp, attribution);
+    } else {
+        accumulate_codex_usage_into_model_usage(
+            group.models.entry(model.name.to_string()).or_default(),
+            event,
+            model,
+            timestamp,
+            attribution,
+        );
+    }
 }
 
-fn accumulate_codex_event_into_model_usage(
+fn accumulate_codex_usage_into_model_usage(
     model_usage: &mut crate::CodexModelUsage,
-    event: &CodexTokenUsageEvent,
-    model: &str,
+    event: crate::CodexRawUsage,
+    model: &CodexModel<'_>,
     timestamp: crate::TimestampMs,
-    record_service_tier: bool,
+    attribution: &CodexAttribution,
 ) {
     model_usage.input_tokens += event.input_tokens;
     model_usage.cached_input_tokens += event.cached_input_tokens;
@@ -546,25 +615,21 @@ fn accumulate_codex_event_into_model_usage(
     // boundary is per model (OpenAI's 272K models and any future tier with a
     // different threshold) rather than a single global constant, matching the
     // threshold used to price the long-context buckets.
-    let is_long_context = event.input_tokens > crate::pricing::long_context_split_threshold(model);
+    let is_long_context = event.input_tokens > model.long_context_threshold;
     if is_long_context {
         model_usage.long_context_input_tokens += event.input_tokens;
         model_usage.long_context_cached_input_tokens += event.cached_input_tokens;
         model_usage.long_context_cache_creation_tokens += event.cache_creation_tokens;
         model_usage.long_context_output_tokens += event.output_tokens;
     }
-    if crate::has_time_dependent_pricing(model) {
+    if model.time_dependent {
         let timestamped_usage = model_usage
             .timestamped_usage
             .entry(timestamp.as_millis())
             .or_default();
-        accumulate_codex_event_into_usage_bucket(
-            &mut timestamped_usage.usage,
-            event,
-            is_long_context,
-        );
-        if record_service_tier {
-            let recorded_usage = match event.service_tier {
+        accumulate_codex_usage_into_bucket(&mut timestamped_usage.usage, event, is_long_context);
+        {
+            let recorded_usage = match attribution.service_tier {
                 Some(CodexServiceTier::Standard) => {
                     Some(&mut timestamped_usage.recorded_standard_usage)
                 }
@@ -576,12 +641,12 @@ fn accumulate_codex_event_into_model_usage(
                 None => None,
             };
             if let Some(recorded_usage) = recorded_usage {
-                accumulate_codex_event_into_usage_bucket(recorded_usage, event, is_long_context);
+                accumulate_codex_usage_into_bucket(recorded_usage, event, is_long_context);
             }
         }
     }
-    if record_service_tier {
-        let recorded_usage = match event.service_tier {
+    {
+        let recorded_usage = match attribution.service_tier {
             Some(CodexServiceTier::Standard) => Some(&mut model_usage.recorded_standard_usage),
             Some(CodexServiceTier::Fast) => Some(&mut model_usage.recorded_fast_usage),
             Some(CodexServiceTier::Flex) => Some(&mut model_usage.recorded_flex_usage),
@@ -589,15 +654,15 @@ fn accumulate_codex_event_into_model_usage(
             None => None,
         };
         if let Some(recorded_usage) = recorded_usage {
-            accumulate_codex_event_into_usage_bucket(recorded_usage, event, is_long_context);
+            accumulate_codex_usage_into_bucket(recorded_usage, event, is_long_context);
         }
     }
-    model_usage.is_fallback |= event.is_fallback_model;
+    model_usage.is_fallback |= attribution.is_fallback;
 }
 
-fn accumulate_codex_event_into_usage_bucket(
+fn accumulate_codex_usage_into_bucket(
     usage: &mut CodexUsageBucket,
-    event: &CodexTokenUsageEvent,
+    event: crate::CodexRawUsage,
     is_long_context: bool,
 ) {
     usage.input_tokens += event.input_tokens;
@@ -610,322 +675,6 @@ fn accumulate_codex_event_into_usage_bucket(
         usage.long_context_cache_creation_tokens += event.cache_creation_tokens;
         usage.long_context_output_tokens += event.output_tokens;
     }
-}
-
-fn merge_codex_usage_bucket(target: &mut CodexUsageBucket, source: CodexUsageBucket) {
-    target.input_tokens += source.input_tokens;
-    target.cached_input_tokens += source.cached_input_tokens;
-    target.cache_creation_tokens += source.cache_creation_tokens;
-    target.output_tokens += source.output_tokens;
-    target.long_context_input_tokens += source.long_context_input_tokens;
-    target.long_context_cached_input_tokens += source.long_context_cached_input_tokens;
-    target.long_context_cache_creation_tokens += source.long_context_cache_creation_tokens;
-    target.long_context_output_tokens += source.long_context_output_tokens;
-}
-
-fn merge_recorded_codex_usage(
-    model_usage: &mut crate::CodexModelUsage,
-    model: &str,
-    timestamp: crate::TimestampMs,
-    service_tier: CodexServiceTier,
-    usage: CodexUsageBucket,
-) {
-    let recorded_usage = match service_tier {
-        CodexServiceTier::Standard => &mut model_usage.recorded_standard_usage,
-        CodexServiceTier::Fast => &mut model_usage.recorded_fast_usage,
-        CodexServiceTier::Flex => &mut model_usage.recorded_flex_usage,
-        CodexServiceTier::Ultrafast => &mut model_usage.recorded_ultrafast_usage,
-    };
-    merge_codex_usage_bucket(recorded_usage, usage);
-
-    if crate::has_time_dependent_pricing(model) {
-        let timestamped_usage = model_usage
-            .timestamped_usage
-            .entry(timestamp.as_millis())
-            .or_default();
-        let recorded_usage = match service_tier {
-            CodexServiceTier::Standard => &mut timestamped_usage.recorded_standard_usage,
-            CodexServiceTier::Fast => &mut timestamped_usage.recorded_fast_usage,
-            CodexServiceTier::Flex => &mut timestamped_usage.recorded_flex_usage,
-            CodexServiceTier::Ultrafast => &mut timestamped_usage.recorded_ultrafast_usage,
-        };
-        merge_codex_usage_bucket(recorded_usage, usage);
-    }
-}
-
-fn apply_recorded_usage_from_shards(
-    groups: &mut BTreeMap<String, CodexGroup>,
-    seen: &CodexDedupeShards,
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-) {
-    for shard in seen {
-        let records = shard.lock().unwrap();
-        apply_recorded_usage_entries(groups, records.iter(), shared, kind);
-    }
-}
-
-fn apply_recorded_usage_entries<'a>(
-    groups: &mut BTreeMap<String, CodexGroup>,
-    records: impl IntoIterator<Item = (&'a CodexEventKey, &'a CodexDedupeRecord)>,
-    shared: &SharedArgs,
-    kind: AgentReportKind,
-) {
-    let timezone = resolve_tz(shared.timezone.as_deref());
-    for (key, record) in records {
-        if let Some(compaction) = &record.compaction {
-            // Workers may encounter a later file first. Compaction usage is
-            // added only after every worker has selected the first file's copy.
-            let mut event = compaction.event.clone();
-            event.service_tier = record.service_tier;
-            if let Some(period) = codex_period_for(
-                compaction.timestamp,
-                Some(&event.session_id),
-                kind,
-                &timezone,
-                shared,
-            ) {
-                accumulate_codex_event_into_group(
-                    groups.entry(period).or_default(),
-                    &event,
-                    &record.model,
-                    compaction.timestamp,
-                    true,
-                );
-            }
-            continue;
-        }
-        let CodexEventKey::Usage(key) = key else {
-            continue;
-        };
-        let Some(service_tier) = record.service_tier else {
-            continue;
-        };
-        let Some(period) = codex_period_for(
-            key.timestamp,
-            record.session_id.as_deref(),
-            kind,
-            &timezone,
-            shared,
-        ) else {
-            continue;
-        };
-        let Some(group) = groups.get_mut(&period) else {
-            continue;
-        };
-        let Some(model_usage) = group.models.get_mut(record.model.as_str()) else {
-            continue;
-        };
-        let is_long_context =
-            key.input_tokens > crate::pricing::long_context_split_threshold(record.model.as_str());
-        let usage = CodexUsageBucket {
-            input_tokens: key.input_tokens,
-            cached_input_tokens: key.cached_input_tokens,
-            cache_creation_tokens: key.cache_creation_tokens,
-            output_tokens: key.output_tokens,
-            long_context_input_tokens: if is_long_context { key.input_tokens } else { 0 },
-            long_context_cached_input_tokens: if is_long_context {
-                key.cached_input_tokens
-            } else {
-                0
-            },
-            long_context_cache_creation_tokens: if is_long_context {
-                key.cache_creation_tokens
-            } else {
-                0
-            },
-            long_context_output_tokens: if is_long_context {
-                key.output_tokens
-            } else {
-                0
-            },
-        };
-        merge_recorded_codex_usage(
-            model_usage,
-            record.model.as_str(),
-            key.timestamp,
-            service_tier,
-            usage,
-        );
-    }
-}
-
-fn create_dedupe_shards() -> Vec<Mutex<CodexDedupeMap>> {
-    let shard_count = thread::available_parallelism()
-        .map(usize::from)
-        .unwrap_or(1);
-    (0..shard_count.max(1))
-        .map(|_| Mutex::new(FxHashMap::default()))
-        .collect()
-}
-
-fn insert_event_key(
-    event: &CodexTokenUsageEvent,
-    timestamp: crate::TimestampMs,
-    model: &str,
-    kind: AgentReportKind,
-    seen: &CodexDedupeShards,
-    provenance: &mut CodexEventProvenance,
-) -> bool {
-    let key = provenance.event_key(event, timestamp, model, kind);
-    let mut hasher = FxHasher::default();
-    key.hash(&mut hasher);
-    let shard_index = hasher.finish() as usize % seen.len();
-    insert_dedupe_record(
-        &mut seen[shard_index].lock().unwrap(),
-        key,
-        event,
-        model,
-        kind,
-        timestamp,
-        provenance.file_index,
-    )
-}
-
-fn insert_dedupe_record(
-    seen: &mut CodexDedupeMap,
-    key: CodexEventKey,
-    event: &CodexTokenUsageEvent,
-    model: &str,
-    kind: AgentReportKind,
-    timestamp: crate::TimestampMs,
-    file_index: usize,
-) -> bool {
-    if let Some(record) = seen.get_mut(&key) {
-        record.service_tier = merge_codex_service_tiers(record.service_tier, event.service_tier);
-        if let Some(compaction) = record.compaction.as_mut()
-            && file_index < compaction.file_index
-        {
-            compaction.file_index = file_index;
-            compaction.timestamp = timestamp;
-            compaction.event = event.clone();
-            record.model = CompactString::new(model);
-            record.session_id =
-                (kind == AgentReportKind::Session).then(|| CompactString::new(&event.session_id));
-        }
-        return false;
-    }
-    seen.insert(
-        key,
-        CodexDedupeRecord {
-            service_tier: event.service_tier,
-            model: CompactString::new(model),
-            session_id: (kind == AgentReportKind::Session)
-                .then(|| CompactString::new(&event.session_id)),
-            compaction: event.response_id.as_ref().map(|_| {
-                Box::new(CodexCompactionEvent {
-                    file_index,
-                    timestamp,
-                    event: event.clone(),
-                })
-            }),
-        },
-    );
-    event.response_id.is_none()
-}
-
-fn codex_event_key(
-    event: &CodexTokenUsageEvent,
-    timestamp: crate::TimestampMs,
-    model: &str,
-    kind: AgentReportKind,
-) -> CodexEventKey {
-    if let Some(response_id) = &event.response_id {
-        return CodexEventKey::Response(CompactString::new(response_id));
-    }
-    let (session_hash, session_len) = if kind == AgentReportKind::Session {
-        (hash_text(&event.session_id), event.session_id.len())
-    } else {
-        (0, 0)
-    };
-    CodexEventKey::Usage(CodexUsageKey {
-        session_hash,
-        session_len,
-        timestamp,
-        model_hash: hash_text(model),
-        model_len: model.len(),
-        input_tokens: event.input_tokens,
-        cached_input_tokens: event.cached_input_tokens,
-        cache_creation_tokens: event.cache_creation_tokens,
-        output_tokens: event.output_tokens,
-        reasoning_output_tokens: event.reasoning_output_tokens,
-        total_tokens: event.total_tokens,
-        occurrence: 0,
-    })
-}
-
-fn hash_text(value: &str) -> u64 {
-    let mut hasher = FxHasher::default();
-    value.hash(&mut hasher);
-    hasher.finish()
-}
-
-fn merge_groups(target: &mut BTreeMap<String, CodexGroup>, source: BTreeMap<String, CodexGroup>) {
-    for (period, group) in source {
-        let target_group = target.entry(period).or_default();
-        target_group.input_tokens += group.input_tokens;
-        target_group.cached_input_tokens += group.cached_input_tokens;
-        target_group.cache_creation_tokens += group.cache_creation_tokens;
-        target_group.output_tokens += group.output_tokens;
-        target_group.reasoning_output_tokens += group.reasoning_output_tokens;
-        target_group.total_tokens += group.total_tokens;
-        if target_group.last_activity.as_deref().is_none_or(|current| {
-            group
-                .last_activity
-                .as_deref()
-                .is_some_and(|next| next > current)
-        }) {
-            target_group.last_activity = group.last_activity;
-        }
-        for (model, usage) in group.models {
-            let target_usage = target_group.models.entry(model).or_default();
-            merge_codex_model_usage(target_usage, usage);
-        }
-    }
-}
-
-fn merge_codex_model_usage(target: &mut crate::CodexModelUsage, source: crate::CodexModelUsage) {
-    target.input_tokens += source.input_tokens;
-    target.cached_input_tokens += source.cached_input_tokens;
-    target.cache_creation_tokens += source.cache_creation_tokens;
-    target.output_tokens += source.output_tokens;
-    target.reasoning_output_tokens += source.reasoning_output_tokens;
-    target.total_tokens += source.total_tokens;
-    target.long_context_input_tokens += source.long_context_input_tokens;
-    target.long_context_cached_input_tokens += source.long_context_cached_input_tokens;
-    target.long_context_cache_creation_tokens += source.long_context_cache_creation_tokens;
-    target.long_context_output_tokens += source.long_context_output_tokens;
-    merge_codex_usage_bucket(
-        &mut target.recorded_standard_usage,
-        source.recorded_standard_usage,
-    );
-    merge_codex_usage_bucket(&mut target.recorded_fast_usage, source.recorded_fast_usage);
-    merge_codex_usage_bucket(&mut target.recorded_flex_usage, source.recorded_flex_usage);
-    merge_codex_usage_bucket(
-        &mut target.recorded_ultrafast_usage,
-        source.recorded_ultrafast_usage,
-    );
-    for (timestamp, usage) in source.timestamped_usage {
-        let target_usage = target.timestamped_usage.entry(timestamp).or_default();
-        merge_codex_usage_bucket(&mut target_usage.usage, usage.usage);
-        merge_codex_usage_bucket(
-            &mut target_usage.recorded_standard_usage,
-            usage.recorded_standard_usage,
-        );
-        merge_codex_usage_bucket(
-            &mut target_usage.recorded_fast_usage,
-            usage.recorded_fast_usage,
-        );
-        merge_codex_usage_bucket(
-            &mut target_usage.recorded_flex_usage,
-            usage.recorded_flex_usage,
-        );
-        merge_codex_usage_bucket(
-            &mut target_usage.recorded_ultrafast_usage,
-            usage.recorded_ultrafast_usage,
-        );
-    }
-    target.is_fallback |= source.is_fallback;
 }
 
 fn has_date_bounds(shared: &SharedArgs) -> bool {
@@ -941,7 +690,7 @@ mod tests {
     use serde_json::json;
 
     use crate::{
-        CodexModelUsage, CodexSpeedPolicy, PricingMap,
+        CodexSpeedPolicy, PricingMap,
         model_aliases::set_model_aliases_for_tests,
         paths::CodexUsageSource,
         test_support::{
@@ -949,6 +698,54 @@ mod tests {
             service_tier_line, token_count_line,
         },
     };
+
+    #[test]
+    fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
+        ccusage_test_support::install_pricing_snapshots();
+        let first = CodexTokenUsageEvent {
+            session_id: "session".into(),
+            response_id: None,
+            timestamp: crate::parse_ts_timestamp("2026-09-01T00:00:01Z").unwrap(),
+            last_activity: "2026-09-01T00:00:01Z".into(),
+            model: "gpt-5".into(),
+            input_tokens: 300,
+            cached_input_tokens: 0,
+            cache_creation_tokens: 0,
+            output_tokens: 20,
+            reasoning_output_tokens: 0,
+            total_tokens: 320,
+            is_fallback_model: false,
+            service_tier: Some(CodexServiceTier::Standard),
+        };
+        let mut copied = first.clone();
+        copied.last_activity = "2026-09-01T00:00:01.000Z".into();
+        copied.is_fallback_model = true;
+        copied.service_tier = Some(CodexServiceTier::Fast);
+        let shared = SharedArgs {
+            timezone: Some("UTC".into()),
+            ..SharedArgs::default()
+        };
+        let seen = CodexDedupe::new(2);
+        for (event, file_index) in [(&copied, 1), (&first, 0)] {
+            seen.record(
+                event,
+                AgentReportKind::Session,
+                &mut CodexEventProvenance::new(file_index),
+            )
+            .unwrap();
+        }
+        let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
+
+        assert_eq!(groups.len(), 1);
+        let group = &groups["session"];
+        assert_eq!(group.total_tokens, 320);
+        assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
+        assert!(!group.models["gpt-5"].is_fallback);
+        assert_eq!(
+            group.models["gpt-5"].recorded_standard_usage.input_tokens,
+            300
+        );
+    }
 
     #[test]
     fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
@@ -980,20 +777,16 @@ mod tests {
             timezone: Some("UTC".into()),
             ..SharedArgs::default()
         };
-        let seen = create_dedupe_shards();
-        let mut groups = BTreeMap::new();
+        let seen = CodexDedupe::new(2);
         for (event, file_index) in [(&copied, 1), (&first, 0)] {
-            add_event_to_groups(
+            seen.record(
                 event,
                 AgentReportKind::Session,
-                &jiff::tz::TimeZone::system(),
-                &shared,
-                &seen,
-                &mut groups,
                 &mut CodexEventProvenance::new(file_index),
-            );
+            )
+            .unwrap();
         }
-        apply_recorded_usage_from_shards(&mut groups, &seen, &shared, AgentReportKind::Session);
+        let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
 
         assert_eq!(groups.len(), 1);
         let group = &groups["first-session"];
@@ -1607,36 +1400,30 @@ mod tests {
     }
 
     #[test]
-    fn merges_cache_creation_usage_into_groups_and_recorded_buckets() {
-        let usage = CodexModelUsage {
-            cache_creation_tokens: 30,
-            long_context_cache_creation_tokens: 20,
-            recorded_standard_usage: CodexUsageBucket {
-                cache_creation_tokens: 30,
-                long_context_cache_creation_tokens: 20,
-                ..CodexUsageBucket::default()
-            },
-            ..CodexModelUsage::default()
-        };
-        let mut source_group = CodexGroup {
-            cache_creation_tokens: 30,
-            ..CodexGroup::default()
-        };
-        source_group.models.insert("gpt-test".to_string(), usage);
-        let source = BTreeMap::from([("2026-07-09".to_string(), source_group)]);
-        let mut target = BTreeMap::new();
-
-        merge_groups(&mut target, source);
-
-        let merged = &target["2026-07-09"];
-        let merged_usage = &merged.models["gpt-test"];
-        assert_eq!(merged.cache_creation_tokens, 30);
-        assert_eq!(merged_usage.cache_creation_tokens, 30);
+    fn folds_cache_creation_usage_into_groups_and_recorded_buckets() {
+        ccusage_test_support::install_pricing_snapshots();
+        let rollout = [
+            service_tier_line("2026-07-09T08:00:00Z", "default"),
+            token_count_line(
+                "2026-07-09T08:01:00Z",
+                "gpt-5.6-sol",
+                json!({
+                    "input_tokens": 280_000,
+                    "cache_write_input_tokens": 30,
+                    "output_tokens": 1,
+                }),
+            ),
+        ];
+        let groups = load_rollouts(&[("session.jsonl", &rollout)], AgentReportKind::Daily);
+        let group = &groups["2026-07-09"];
+        let usage = &group.models["gpt-5.6-sol"];
+        assert_eq!(group.cache_creation_tokens, 30);
+        assert_eq!(usage.cache_creation_tokens, 30);
         assert_eq!(
-            merged_usage
+            usage
                 .recorded_standard_usage
                 .long_context_cache_creation_tokens,
-            20
+            30
         );
     }
 
