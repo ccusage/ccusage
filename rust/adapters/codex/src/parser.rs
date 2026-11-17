@@ -26,12 +26,7 @@ use super::{
 };
 
 static TYPE_KEY_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""type""#));
-static USAGE_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""usage":"#));
-static INPUT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""input_tokens":"#));
-static PROMPT_TOKENS_FIELD_FINDER: LazyLock<Finder<'static>> =
-    LazyLock::new(|| Finder::new(br#""prompt_tokens":"#));
+static KEY_END_FINDER: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#"":"#));
 static ESCAPED_USAGE_MARKERS: LazyLock<LinePrefilter> = LazyLock::new(|| {
     LinePrefilter::any(&[
         br#""type""#,
@@ -921,13 +916,16 @@ fn verbatim_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
     {
         return Some(CodexLineKind::Session);
     }
-    if USAGE_FIELD_FINDER.find(line).is_some()
-        || INPUT_TOKENS_FIELD_FINDER.find(line).is_some()
-        || PROMPT_TOKENS_FIELD_FINDER.find(line).is_some()
-    {
-        return Some(CodexLineKind::Headless);
-    }
-    None
+    has_headless_usage_field(line).then_some(CodexLineKind::Headless)
+}
+
+fn has_headless_usage_field(line: &[u8]) -> bool {
+    KEY_END_FINDER.find_iter(line).any(|end| {
+        let key = &line[..end];
+        key.ends_with(br#""usage"#)
+            || key.ends_with(br#""input_tokens"#)
+            || key.ends_with(br#""prompt_tokens"#)
+    })
 }
 
 fn codex_line_type_flags(line: &[u8]) -> (bool, bool, bool, bool, bool, bool) {
@@ -2005,6 +2003,71 @@ mod tests {
             br#"{"type" : "compacted","payload":{"type":"summary"}}"#.as_slice(),
         ] {
             assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Session));
+        }
+    }
+
+    #[test]
+    fn headless_usage_field_search_matches_the_previous_implementation() {
+        let markers: [&[u8]; 3] = [
+            br#""usage":"#,
+            br#""input_tokens":"#,
+            br#""prompt_tokens":"#,
+        ];
+        let fragments: &[&[u8]] = &[
+            br#""usage":"#,
+            br#""input_tokens":"#,
+            br#""prompt_tokens":"#,
+            br#""usage" :"#,
+            br#""cached_input_tokens":"#,
+            br#""my_usage":"#,
+            br#""usage_details":"#,
+            br#"\"usage\":"#,
+            br#"\\u0061"#,
+            br#"\u0061"#,
+            br#""#,
+            b":",
+            b"{",
+            b"}",
+            b"\\",
+            b"\\\\",
+            b" ",
+        ];
+        let finders = markers.map(Finder::new);
+        let mut state = 0xbb67_ae85_84ca_a73b_u64;
+        let mut next = |bound: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            usize::try_from(state % bound as u64).unwrap_or_default()
+        };
+        for _ in 0..50_000 {
+            let line = (0..next(32))
+                .flat_map(|_| fragments[next(fragments.len())].iter().copied())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                has_headless_usage_field(&line),
+                finders.iter().any(|finder| finder.find(&line).is_some()),
+                "{}",
+                String::from_utf8_lossy(&line)
+            );
+        }
+    }
+
+    #[test]
+    fn recognizes_headless_usage_fields_only_as_whole_keys() {
+        for line in [
+            br#"{"type":"turn.completed","usage":{"input_tokens":1}}"#.as_slice(),
+            br#"{"stats":{"input_tokens":1}}"#.as_slice(),
+            br#"{"x":1,"prompt_tokens":2}"#.as_slice(),
+        ] {
+            assert_matches!(codex_line_usage_kind(line), Some(CodexLineKind::Headless));
+        }
+        for line in [
+            br#"{"usage" :{"input_tokens" :1}}"#.as_slice(),
+            br#"{"text":"\"usage\":1","cached_input_tokens":1}"#.as_slice(),
+            br#"{"my_usage":1,"prompt_tokens_details":{}}"#.as_slice(),
+        ] {
+            assert_matches!(codex_line_usage_kind(line), None);
         }
     }
 

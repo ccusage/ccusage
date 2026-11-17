@@ -7,13 +7,16 @@ use serde::{
 
 use super::CacheCreationRaw;
 
-/// The cache-write split summed over the `message` entries of `usage.iterations`.
-///
-/// `None` when there is no `message` iteration, or when one of them lacks a
-/// well-formed split, because a partial sum would undercount just like the
-/// top-level split it replaces.
 #[derive(Default)]
-pub(super) struct MessageIterationsCacheCreation(pub(super) Option<CacheCreationRaw>);
+pub(super) struct Iterations {
+    /// The cache-write split summed over the `message` entries.
+    ///
+    /// `None` when there is no `message` iteration, or when one of them lacks
+    /// a well-formed split, because a partial sum would undercount just like
+    /// the top-level split it replaces.
+    pub(super) message_cache_creation: Option<CacheCreationRaw>,
+    pub(super) has_advisor_message: bool,
+}
 
 /// Reads `T` from any JSON shape without allocating. A shape `T` does not
 /// expect becomes `T::default()` instead of an error, so a malformed
@@ -108,13 +111,15 @@ impl<'de, T: LenientValue> Visitor<'de> for LenientVisitor<T> {
     }
 }
 
-impl LenientValue for MessageIterationsCacheCreation {
+impl LenientValue for Iterations {
     fn from_seq<'de, A: SeqAccess<'de>>(mut seq: A) -> Result<Self, A::Error> {
         let mut total = CacheCreationRaw::default();
         let mut has_message = false;
         let mut every_message_has_split = true;
+        let mut has_advisor_message = false;
         while let Some(Lenient(iteration)) = seq.next_element::<Lenient<Iteration>>()? {
-            if !iteration.is_message {
+            has_advisor_message |= matches!(iteration.kind, IterationKind::AdvisorMessage);
+            if !matches!(iteration.kind, IterationKind::Message) {
                 continue;
             }
             has_message = true;
@@ -130,15 +135,16 @@ impl LenientValue for MessageIterationsCacheCreation {
                 None => every_message_has_split = false,
             }
         }
-        Ok(Self(
-            (has_message && every_message_has_split).then_some(total),
-        ))
+        Ok(Self {
+            message_cache_creation: (has_message && every_message_has_split).then_some(total),
+            has_advisor_message,
+        })
     }
 }
 
 #[derive(Default)]
 struct Iteration {
-    is_message: bool,
+    kind: IterationKind,
     cache_creation: Option<CacheCreationRaw>,
 }
 
@@ -157,7 +163,7 @@ impl LenientValue for Iteration {
         while let Some(key) = map.next_key::<IterationKey>()? {
             match key {
                 IterationKey::Type => {
-                    iteration.is_message = map.next_value::<Lenient<IsMessage>>()?.0.0;
+                    iteration.kind = map.next_value::<Lenient<IterationKind>>()?.0;
                 }
                 IterationKey::CacheCreation => {
                     iteration.cache_creation = map.next_value::<Lenient<CacheCreationSplit>>()?.0.0;
@@ -172,11 +178,20 @@ impl LenientValue for Iteration {
 }
 
 #[derive(Default)]
-struct IsMessage(bool);
+enum IterationKind {
+    Message,
+    AdvisorMessage,
+    #[default]
+    Other,
+}
 
-impl LenientValue for IsMessage {
+impl LenientValue for IterationKind {
     fn from_str(value: &str) -> Self {
-        Self(value == "message")
+        match value {
+            "message" => Self::Message,
+            "advisor_message" => Self::AdvisorMessage,
+            _ => Self::Other,
+        }
     }
 }
 

@@ -6,7 +6,7 @@ use crate::TimestampMs;
 
 mod iterations;
 
-use iterations::{Lenient, MessageIterationsCacheCreation};
+use iterations::{Iterations, Lenient};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,7 +52,26 @@ struct TokenUsageRawJson {
     #[serde(default)]
     cache_creation: Option<CacheCreationRaw>,
     #[serde(default)]
-    iterations: Lenient<MessageIterationsCacheCreation>,
+    iterations: Lenient<Iterations>,
+}
+
+/// A `usage` object read together with whether its `iterations` hold an
+/// `advisor_message` entry, so a caller that reports advisor turns knows
+/// from this parse whether to look for them.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(from = "TokenUsageRawJson")]
+pub struct IteratedTokenUsage {
+    pub usage: TokenUsageRaw,
+    pub has_advisor_iteration: bool,
+}
+
+impl From<TokenUsageRawJson> for IteratedTokenUsage {
+    fn from(json: TokenUsageRawJson) -> Self {
+        Self {
+            has_advisor_iteration: json.iterations.0.has_advisor_message,
+            usage: json.into(),
+        }
+    }
 }
 
 impl From<TokenUsageRawJson> for TokenUsageRaw {
@@ -66,7 +85,11 @@ impl From<TokenUsageRawJson> for TokenUsageRaw {
             // Claude Code advisor turns report one `usage` object whose
             // top-level `cache_creation` split covers only the first `message`
             // iteration, while `cache_creation_input_tokens` sums them all.
-            cache_creation: json.iterations.0.0.or(json.cache_creation),
+            cache_creation: json
+                .iterations
+                .0
+                .message_cache_creation
+                .or(json.cache_creation),
         }
     }
 }
@@ -397,6 +420,33 @@ mod tests {
                 Some(4),
                 "{iterations}"
             );
+        }
+    }
+
+    #[test]
+    fn notes_an_advisor_message_iteration_however_its_type_is_spelled() {
+        let escaped_type = ["advisor", "\\", "u005fmessage"].concat();
+        for (iterations, has_advisor) in [
+            r#"[{"type": "advisor_message", "model": "m"}]"#.to_owned(),
+            format!(r#"[{{"type": "message"}}, {{"type": "{escaped_type}"}}]"#),
+        ]
+        .into_iter()
+        .map(|iterations| (iterations, true))
+        .chain(
+            [
+                r#"[{"type": "message"}, {"kind": "advisor_message"}]"#,
+                r#"[{"type": ["advisor_message"]}, "advisor_message"]"#,
+                r#""advisor_message""#,
+            ]
+            .map(|iterations| (iterations.to_owned(), false)),
+        ) {
+            let line =
+                format!(r#"{{"input_tokens":1,"output_tokens":2,"iterations":{iterations}}}"#);
+            let usage = serde_json::from_str::<IteratedTokenUsage>(&line)
+                .unwrap_or_else(|error| panic!("{iterations}: {error}"));
+
+            assert_eq!(usage.has_advisor_iteration, has_advisor, "{iterations}");
+            assert_eq!(usage.usage.input_tokens, 1, "{iterations}");
         }
     }
 
