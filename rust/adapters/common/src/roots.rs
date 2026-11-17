@@ -23,8 +23,23 @@ impl RootsEnv<'_> {
     }
 
     pub fn candidates(self, defaults: impl FnOnce() -> Vec<PathBuf>) -> Vec<PathBuf> {
-        self.configured().unwrap_or_else(defaults)
+        self.configured()
+            .unwrap_or_else(|| default_candidates(defaults))
     }
+}
+
+pub fn default_candidates(defaults: impl FnOnce() -> Vec<PathBuf>) -> Vec<PathBuf> {
+    let paths = defaults();
+    if paths.is_empty()
+        && home::home_dir().is_none()
+        && ccusage_core::log_level().is_some_and(|level| level >= 4)
+    {
+        static NO_HOME: std::sync::Once = std::sync::Once::new();
+        NO_HOME.call_once(|| {
+            eprintln!("Unable to resolve default data roots: home directory is not set")
+        });
+    }
+    paths
 }
 
 pub fn resolve(env: RootsEnv<'_>, defaults: impl FnOnce() -> Vec<PathBuf>) -> Vec<PathBuf> {

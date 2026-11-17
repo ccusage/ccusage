@@ -11,10 +11,12 @@ fn paths(shared: &SharedArgs) -> Result<Vec<PathBuf>> {
     let configured_roots = RootsEnv::List(ZCODE_HOME_ENV).configured();
     let configured = configured_roots.is_some();
     let candidates = configured_roots.unwrap_or_else(|| {
-        crate::home::home_dir()
-            .map(|home| home.join(".zcode"))
-            .into_iter()
-            .collect()
+        roots::default_candidates(|| {
+            crate::home::home_dir()
+                .map(|home| home.join(".zcode"))
+                .into_iter()
+                .collect()
+        })
     });
     Ok(roots::directories_with(candidates, |path, error| {
         if configured {
@@ -63,6 +65,27 @@ pub(super) fn db_paths(shared: &SharedArgs) -> Result<Vec<PathBuf>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn discovers_and_deduplicates_configured_roots() {
+        let fixture = fs_fixture!({});
+        let first = fixture.create_dir_all("first");
+        let second = fixture.create_dir_all("second");
+        let raw = format!(
+            " {}, {}, {} ",
+            first.display(),
+            second.display(),
+            first.display()
+        );
+        let _guard = EnvVarsGuard::set_many([
+            (ZCODE_HOME_ENV, Some(raw.into())),
+            ("HOME", None),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+        ]);
+        assert_eq!(paths(&shared()).unwrap(), vec![first, second]);
+    }
+
     use std::ffi::OsString;
 
     use ccusage_test_support::{EnvVarsGuard, fs_fixture};
