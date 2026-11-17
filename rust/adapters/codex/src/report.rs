@@ -149,24 +149,24 @@ fn totals_json<'a>(
     pricing: &PricingMap,
     speed: CodexSpeedPolicy,
 ) -> Value {
-    let mut input = 0;
-    let mut cached = 0;
-    let mut creation = 0;
-    let mut output = 0;
-    let mut reasoning = 0;
-    let mut total = 0;
+    let mut input = 0u64;
+    let mut cached = 0u64;
+    let mut creation = 0u64;
+    let mut output = 0u64;
+    let mut reasoning = 0u64;
+    let mut total = 0u64;
     let mut cost = 0.0;
     for group in groups {
-        input += non_cached_input_tokens(
+        input = input.saturating_add(non_cached_input_tokens(
             group.input_tokens,
             group.cached_input_tokens,
             group.cache_creation_tokens,
-        );
-        cached += group.cached_input_tokens;
-        creation += group.cache_creation_tokens;
-        output += group.output_tokens;
-        reasoning += group.reasoning_output_tokens;
-        total += group.total_tokens;
+        ));
+        cached = cached.saturating_add(group.cached_input_tokens);
+        creation = creation.saturating_add(group.cache_creation_tokens);
+        output = output.saturating_add(group.output_tokens);
+        reasoning = reasoning.saturating_add(group.reasoning_output_tokens);
+        total = total.saturating_add(group.total_tokens);
         cost += calculate_group_cost(group, pricing, speed);
     }
     json!({
@@ -523,12 +523,18 @@ struct CodexTableTotals {
 
 impl CodexTableTotals {
     fn add(&mut self, group: &CodexGroup, input_tokens: u64, cost: f64) {
-        self.input_tokens += input_tokens;
-        self.cache_creation_tokens += group.cache_creation_tokens;
-        self.cached_input_tokens += group.cached_input_tokens;
-        self.output_tokens += group.output_tokens;
-        self.reasoning_output_tokens += group.reasoning_output_tokens;
-        self.total_tokens += group.total_tokens;
+        self.input_tokens = self.input_tokens.saturating_add(input_tokens);
+        self.cache_creation_tokens = self
+            .cache_creation_tokens
+            .saturating_add(group.cache_creation_tokens);
+        self.cached_input_tokens = self
+            .cached_input_tokens
+            .saturating_add(group.cached_input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(group.output_tokens);
+        self.reasoning_output_tokens = self
+            .reasoning_output_tokens
+            .saturating_add(group.reasoning_output_tokens);
+        self.total_tokens = self.total_tokens.saturating_add(group.total_tokens);
         self.cost += cost;
     }
 }
@@ -713,6 +719,37 @@ pub(super) fn print_table_from_groups(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn report_totals_saturate_across_periods() {
+        let group = CodexGroup {
+            input_tokens: u64::MAX,
+            output_tokens: u64::MAX,
+            reasoning_output_tokens: u64::MAX,
+            total_tokens: u64::MAX,
+            ..CodexGroup::default()
+        };
+        let totals = totals_json(
+            [&group, &group].into_iter(),
+            &PricingMap::default(),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+        );
+        for field in [
+            "inputTokens",
+            "outputTokens",
+            "reasoningOutputTokens",
+            "totalTokens",
+        ] {
+            assert_eq!(totals[field], u64::MAX);
+        }
+        let mut table = CodexTableTotals::default();
+        table.add(&group, u64::MAX, 0.0);
+        table.add(&group, u64::MAX, 0.0);
+        assert_eq!(table.input_tokens, u64::MAX);
+        assert_eq!(table.output_tokens, u64::MAX);
+        assert_eq!(table.reasoning_output_tokens, u64::MAX);
+        assert_eq!(table.total_tokens, u64::MAX);
+    }
 
     #[test]
     fn report_totals_list_unpriced_codex_models_only_when_present() {

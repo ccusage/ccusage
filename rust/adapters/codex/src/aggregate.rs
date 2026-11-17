@@ -570,12 +570,18 @@ fn accumulate_codex_usage_into_group(
     timestamp: crate::TimestampMs,
     attribution: &CodexAttribution,
 ) {
-    group.input_tokens += event.input_tokens;
-    group.cached_input_tokens += event.cached_input_tokens;
-    group.cache_creation_tokens += event.cache_creation_tokens;
-    group.output_tokens += event.output_tokens;
-    group.reasoning_output_tokens += event.reasoning_output_tokens;
-    group.total_tokens += event.total_tokens;
+    group.input_tokens = group.input_tokens.saturating_add(event.input_tokens);
+    group.cached_input_tokens = group
+        .cached_input_tokens
+        .saturating_add(event.cached_input_tokens);
+    group.cache_creation_tokens = group
+        .cache_creation_tokens
+        .saturating_add(event.cache_creation_tokens);
+    group.output_tokens = group.output_tokens.saturating_add(event.output_tokens);
+    group.reasoning_output_tokens = group
+        .reasoning_output_tokens
+        .saturating_add(event.reasoning_output_tokens);
+    group.total_tokens = group.total_tokens.saturating_add(event.total_tokens);
     if group
         .last_activity
         .as_deref()
@@ -604,12 +610,20 @@ fn accumulate_codex_usage_into_model_usage(
     timestamp: crate::TimestampMs,
     attribution: &CodexAttribution,
 ) {
-    model_usage.input_tokens += event.input_tokens;
-    model_usage.cached_input_tokens += event.cached_input_tokens;
-    model_usage.cache_creation_tokens += event.cache_creation_tokens;
-    model_usage.output_tokens += event.output_tokens;
-    model_usage.reasoning_output_tokens += event.reasoning_output_tokens;
-    model_usage.total_tokens += event.total_tokens;
+    model_usage.input_tokens = model_usage.input_tokens.saturating_add(event.input_tokens);
+    model_usage.cached_input_tokens = model_usage
+        .cached_input_tokens
+        .saturating_add(event.cached_input_tokens);
+    model_usage.cache_creation_tokens = model_usage
+        .cache_creation_tokens
+        .saturating_add(event.cache_creation_tokens);
+    model_usage.output_tokens = model_usage
+        .output_tokens
+        .saturating_add(event.output_tokens);
+    model_usage.reasoning_output_tokens = model_usage
+        .reasoning_output_tokens
+        .saturating_add(event.reasoning_output_tokens);
+    model_usage.total_tokens = model_usage.total_tokens.saturating_add(event.total_tokens);
     // Each event is one request, so its input size decides the pricing tier
     // here; the summed totals cannot recover per-request context sizes. The
     // boundary is per model (OpenAI's 272K models and any future tier with a
@@ -617,10 +631,18 @@ fn accumulate_codex_usage_into_model_usage(
     // threshold used to price the long-context buckets.
     let is_long_context = event.input_tokens > model.long_context_threshold;
     if is_long_context {
-        model_usage.long_context_input_tokens += event.input_tokens;
-        model_usage.long_context_cached_input_tokens += event.cached_input_tokens;
-        model_usage.long_context_cache_creation_tokens += event.cache_creation_tokens;
-        model_usage.long_context_output_tokens += event.output_tokens;
+        model_usage.long_context_input_tokens = model_usage
+            .long_context_input_tokens
+            .saturating_add(event.input_tokens);
+        model_usage.long_context_cached_input_tokens = model_usage
+            .long_context_cached_input_tokens
+            .saturating_add(event.cached_input_tokens);
+        model_usage.long_context_cache_creation_tokens = model_usage
+            .long_context_cache_creation_tokens
+            .saturating_add(event.cache_creation_tokens);
+        model_usage.long_context_output_tokens = model_usage
+            .long_context_output_tokens
+            .saturating_add(event.output_tokens);
     }
     if model.time_dependent {
         let timestamped_usage = model_usage
@@ -665,15 +687,27 @@ fn accumulate_codex_usage_into_bucket(
     event: crate::CodexRawUsage,
     is_long_context: bool,
 ) {
-    usage.input_tokens += event.input_tokens;
-    usage.cached_input_tokens += event.cached_input_tokens;
-    usage.cache_creation_tokens += event.cache_creation_tokens;
-    usage.output_tokens += event.output_tokens;
+    usage.input_tokens = usage.input_tokens.saturating_add(event.input_tokens);
+    usage.cached_input_tokens = usage
+        .cached_input_tokens
+        .saturating_add(event.cached_input_tokens);
+    usage.cache_creation_tokens = usage
+        .cache_creation_tokens
+        .saturating_add(event.cache_creation_tokens);
+    usage.output_tokens = usage.output_tokens.saturating_add(event.output_tokens);
     if is_long_context {
-        usage.long_context_input_tokens += event.input_tokens;
-        usage.long_context_cached_input_tokens += event.cached_input_tokens;
-        usage.long_context_cache_creation_tokens += event.cache_creation_tokens;
-        usage.long_context_output_tokens += event.output_tokens;
+        usage.long_context_input_tokens = usage
+            .long_context_input_tokens
+            .saturating_add(event.input_tokens);
+        usage.long_context_cached_input_tokens = usage
+            .long_context_cached_input_tokens
+            .saturating_add(event.cached_input_tokens);
+        usage.long_context_cache_creation_tokens = usage
+            .long_context_cache_creation_tokens
+            .saturating_add(event.cache_creation_tokens);
+        usage.long_context_output_tokens = usage
+            .long_context_output_tokens
+            .saturating_add(event.output_tokens);
     }
 }
 
@@ -698,6 +732,76 @@ mod tests {
             service_tier_line, token_count_line,
         },
     };
+
+    #[test]
+    fn saturates_usage_totals_across_distinct_requests() {
+        ccusage_test_support::install_pricing_snapshots();
+        let line = token_count_line(
+            "2026-09-01T08:00:00Z",
+            "deepseek-v4-flash",
+            json!({
+                "input_tokens": u64::MAX,
+                "cached_input_tokens": 1,
+                "cache_write_input_tokens": 1,
+                "output_tokens": u64::MAX,
+                "reasoning_output_tokens": 1,
+                "total_tokens": u64::MAX,
+            }),
+        );
+        let rollout = [
+            service_tier_line("2026-09-01T07:59:00Z", "priority"),
+            line.clone(),
+            line,
+        ];
+        let groups = load_rollouts(&[("session.jsonl", &rollout)], AgentReportKind::Daily);
+        let group = &groups["2026-09-01"];
+        let usage = &group.models["deepseek-v4-flash"];
+        assert_eq!(group.input_tokens, u64::MAX);
+        assert_eq!(group.output_tokens, u64::MAX);
+        assert_eq!(group.total_tokens, u64::MAX);
+        assert_eq!(usage.input_tokens, u64::MAX);
+        assert_eq!(usage.output_tokens, u64::MAX);
+        assert_eq!(usage.total_tokens, u64::MAX);
+        assert_eq!(usage.recorded_fast_usage.input_tokens, u64::MAX);
+        assert_eq!(usage.recorded_fast_usage.cached_input_tokens, 2);
+        assert_eq!(
+            usage
+                .timestamped_usage
+                .values()
+                .next()
+                .unwrap()
+                .usage
+                .input_tokens,
+            u64::MAX
+        );
+    }
+
+    #[test]
+    fn saturates_each_usage_bucket_component() {
+        let event = crate::CodexRawUsage {
+            input_tokens: u64::MAX,
+            cached_input_tokens: u64::MAX,
+            cache_creation_tokens: u64::MAX,
+            output_tokens: u64::MAX,
+            ..crate::CodexRawUsage::default()
+        };
+        let mut usage = CodexUsageBucket::default();
+        accumulate_codex_usage_into_bucket(&mut usage, event, true);
+        accumulate_codex_usage_into_bucket(&mut usage, event, true);
+        assert_eq!(
+            usage,
+            CodexUsageBucket {
+                input_tokens: u64::MAX,
+                cached_input_tokens: u64::MAX,
+                cache_creation_tokens: u64::MAX,
+                output_tokens: u64::MAX,
+                long_context_input_tokens: u64::MAX,
+                long_context_cached_input_tokens: u64::MAX,
+                long_context_cache_creation_tokens: u64::MAX,
+                long_context_output_tokens: u64::MAX,
+            }
+        );
+    }
 
     #[test]
     fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
