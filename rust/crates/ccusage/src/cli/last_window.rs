@@ -1,6 +1,6 @@
 use ccusage_cli::Command;
 use ccusage_core::utc_now;
-use ccusage_report::{PeriodUnit, format_date, last_periods_since};
+use ccusage_report::{format_date, last_periods_since};
 
 /// Turns `--last N` into the `--since` bound every loader already understands.
 ///
@@ -32,6 +32,7 @@ mod tests {
     use ccusage_cli::{
         AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SortOrder, WeekDay, WeeklyArgs,
     };
+    use ccusage_report::PeriodUnit;
 
     use super::*;
 

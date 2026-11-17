@@ -133,7 +133,6 @@ fn shared_snapshot(shared: &SharedArgs) -> Value {
         "order": format!("{:?}", shared.order),
         "breakdown": shared.breakdown,
         "offline": shared.offline,
-        "noOffline": shared.no_offline,
         "color": shared.color,
         "noColor": shared.no_color,
         "timezone": shared.timezone.as_deref(),
@@ -184,11 +183,9 @@ fn command_snapshot(command: Command) -> Value {
         Command::Statusline(args) => json!({
             "type": "statusline",
             "offline": args.offline,
-            "noOffline": args.no_offline,
             "visualBurnRate": format!("{:?}", args.visual_burn_rate),
             "costSource": format!("{:?}", args.cost_source),
             "cache": args.cache,
-            "noCache": args.no_cache,
             "refreshInterval": args.refresh_interval,
             "contextLowThreshold": args.context_low_threshold,
             "contextMediumThreshold": args.context_medium_threshold,
@@ -255,6 +252,132 @@ fn source_reparse_keeps_the_unified_week_start() {
         panic!("expected unified weekly report");
     };
     assert_eq!(args.start_of_week, WeekDay::Wednesday);
+}
+
+#[test]
+fn offline_flags_override_config_in_both_directions_and_positions() {
+    for (config_json, flag, expected) in [
+        (r#"{"defaults":{"offline":true}}"#, "--no-offline", false),
+        (r#"{"defaults":{"noOffline":true}}"#, "--offline", true),
+        (r#"{"defaults":{"offline":false}}"#, "--offline", true),
+    ] {
+        let fixture = fs_fixture!({ "ccusage.json": config_json });
+        let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+        for command in ["daily", "statusline"] {
+            for argv in [
+                vec!["ccusage", command, flag, "--config", &path],
+                vec!["ccusage", flag, command, "--config", &path],
+            ] {
+                let config_args = argv[1..]
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>();
+                let config = ccusage_config::ConfigContext::from_args(&config_args);
+                let command = parse_with_config(&argv, &config);
+                let offline = match command {
+                    Command::Statusline(args) => args.offline,
+                    command => command.shared().unwrap().offline,
+                };
+                assert_eq!(offline, expected, "{argv:?}, {config_json}");
+            }
+        }
+    }
+}
+
+#[test]
+fn cache_flags_override_config_in_both_directions() {
+    for (config_json, flag, expected) in [
+        (r#"{"defaults":{"cache":true}}"#, "--no-cache", false),
+        (r#"{"defaults":{"noCache":true}}"#, "--cache", true),
+    ] {
+        let fixture = fs_fixture!({ "ccusage.json": config_json });
+        let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+        let argv = ["ccusage", "statusline", flag, "--config", &path];
+        let config_args = argv[1..]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&config_args);
+        let Command::Statusline(args) = parse_with_config(&argv, &config) else {
+            panic!("expected statusline");
+        };
+        assert_eq!(args.cache && !args.no_cache, expected, "{config_json}");
+    }
+}
+
+#[test]
+fn color_flags_override_the_opposite_config_value() {
+    for (config_json, flag, expected) in [
+        (
+            r#"{"defaults":{"color":true}}"#,
+            "--no-color",
+            (false, true),
+        ),
+        (r#"{"defaults":{"noColor":true}}"#, "--color", (true, false)),
+    ] {
+        let fixture = fs_fixture!({ "ccusage.json": config_json });
+        let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+        let argv = ["ccusage", "daily", flag, "--config", &path];
+        let config_args = argv[1..]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&config_args);
+        let command = parse_with_config(&argv, &config);
+        let shared = command.shared().unwrap();
+        assert_eq!((shared.color, shared.no_color), expected, "{config_json}");
+    }
+}
+
+#[test]
+fn the_last_offline_flag_wins() {
+    for (flags, expected) in [
+        (["--offline", "--no-offline"], false),
+        (["--no-offline", "--offline"], true),
+    ] {
+        let command = parse(&["ccusage", "daily", flags[0], flags[1]]);
+        assert_eq!(command.shared().unwrap().offline, expected);
+        let Command::Statusline(args) = parse(&["ccusage", "statusline", flags[0], flags[1]])
+        else {
+            panic!("expected statusline");
+        };
+        assert_eq!(args.offline, expected);
+    }
+}
+
+#[test]
+fn higher_config_layers_override_negated_defaults() {
+    let fixture = fs_fixture!({
+        "ccusage.json": r#"{
+            "defaults": { "noOffline": true, "noCache": true, "noColor": true },
+            "commands": {
+                "daily": { "offline": true, "color": true },
+                "statusline": { "offline": true, "cache": true }
+            }
+        }"#,
+    });
+    let path = fixture.path("ccusage.json").to_string_lossy().into_owned();
+    for report in ["daily", "statusline"] {
+        let argv = ["ccusage", report, "--config", &path];
+        let config_args = argv[1..]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>();
+        let config = ccusage_config::ConfigContext::from_args(&config_args);
+        let command = parse_with_config(&argv, &config);
+        match command {
+            Command::Statusline(args) => {
+                assert!(args.offline);
+                assert!(args.cache && !args.no_cache);
+            }
+            command => {
+                let shared = command.shared().unwrap();
+                assert!(shared.offline);
+                assert!(shared.color);
+                assert!(!shared.no_color);
+            }
+        }
+    }
 }
 
 #[test]
@@ -1299,7 +1422,7 @@ fn parses_statusline_options() {
         panic!("expected statusline command");
     };
     assert!(args.offline);
-    assert!(args.no_cache);
+    assert!(!args.cache);
     assert_eq!(args.timezone.as_deref(), Some("Asia/Tokyo"));
     assert_eq!(args.visual_burn_rate, VisualBurnRate::EmojiText);
     assert_eq!(args.cost_source, CostSource::Both);

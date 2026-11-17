@@ -17,13 +17,14 @@ enum ControlArg {
 }
 
 #[derive(Default)]
-struct RootAllOptions {
+struct RootOptions {
+    offline_override: Option<bool>,
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
     first_flag: Option<&'static str>,
 }
 
-impl RootAllOptions {
+impl RootOptions {
     fn mark_used(&mut self, flag: &'static str) {
         self.first_flag.get_or_insert(flag);
     }
@@ -94,7 +95,7 @@ where
     }
     let mut shared = SharedArgs::with_defaults();
     config.apply_shared(&mut shared);
-    let mut root_all_options = RootAllOptions::default();
+    let mut root_options = RootOptions::default();
     while let Some(arg) = parser.peek() {
         if is_command(arg) {
             break;
@@ -102,23 +103,29 @@ where
         if !arg.starts_with('-') {
             return Err(format!("Unknown command '{arg}'"));
         }
-        if parse_root_all_arg(&mut parser, &mut root_all_options)? {
+        if parse_root_all_arg(&mut parser, &mut root_options)? {
             continue;
         }
+        let offline_override = match parser.peek_name() {
+            Some("-O" | "--offline") => Some(true),
+            Some("--no-offline") => Some(false),
+            _ => None,
+        };
         parse_shared_arg(&mut parser, &mut shared)?;
+        if offline_override.is_some() {
+            root_options.offline_override = offline_override;
+        }
     }
 
     let mut command = match parser.next() {
-        None => {
-            Command::All(root_all_options.into_agent_args(shared.clone(), AgentReportKind::Daily))
-        }
+        None => Command::All(root_options.into_agent_args(shared.clone(), AgentReportKind::Daily)),
         Some(command) => parse_command(
             &command,
             &mut parser,
             shared.clone(),
             config,
             default_session_duration_hours,
-            root_all_options,
+            root_options,
         )?,
     };
     if let (Some(start_of_week), Command::All(args)) = (week_start_override, &mut command) {
@@ -156,39 +163,31 @@ fn parse_command(
     shared: SharedArgs,
     config: &dyn CliConfig,
     default_session_duration_hours: f64,
-    root_all_options: RootAllOptions,
+    root_options: RootOptions,
 ) -> Result<Command, String> {
-    if root_all_options.is_used() && !accepts_root_all_options(command) {
-        return Err(format!(
-            "Unknown option '{}'",
-            root_all_options.first_flag()
-        ));
+    if root_options.is_used() && !accepts_root_options(command) {
+        return Err(format!("Unknown option '{}'", root_options.first_flag()));
     }
+    let offline_override = root_options.offline_override;
     match command {
-        "daily" => parse_all_command(
-            parser,
-            shared,
-            AgentReportKind::Daily,
-            config,
-            root_all_options,
-        ),
+        "daily" => parse_all_command(parser, shared, AgentReportKind::Daily, config, root_options),
         "monthly" => parse_all_command(
             parser,
             shared,
             AgentReportKind::Monthly,
             config,
-            root_all_options,
+            root_options,
         ),
         "weekly" => parse_all_command(
             parser,
             shared,
             AgentReportKind::Weekly,
             config,
-            root_all_options,
+            root_options,
         ),
-        "session" => parse_top_level_session_command(parser, shared, config, root_all_options),
+        "session" => parse_top_level_session_command(parser, shared, config, root_options),
         "blocks" => parse_blocks_command(parser, shared, config, default_session_duration_hours),
-        "statusline" => parse_statusline_command(parser, &shared, config),
+        "statusline" => parse_statusline_command(parser, &shared, config, offline_override),
         _ => match AgentId::from_name(command) {
             Some(agent) => parse_agent_command(
                 agent,
@@ -196,6 +195,7 @@ fn parse_command(
                 shared,
                 config,
                 default_session_duration_hours,
+                offline_override,
             ),
             None => Err(format!("Unknown command '{command}'")),
         },
@@ -208,11 +208,16 @@ fn parse_agent_command(
     shared: SharedArgs,
     config: &dyn CliConfig,
     default_session_duration_hours: f64,
+    offline_override: Option<bool>,
 ) -> Result<Command, String> {
     match agent {
-        AgentId::Claude => {
-            parse_claude_command(parser, shared, config, default_session_duration_hours)
-        }
+        AgentId::Claude => parse_claude_command(
+            parser,
+            shared,
+            config,
+            default_session_duration_hours,
+            offline_override,
+        ),
         AgentId::Codex => parse_codex_command(parser, shared, config),
         AgentId::OpenCode => parse_opencode_command(parser, shared),
         AgentId::Pi => parse_pi_command(parser, shared, config),
@@ -259,14 +264,18 @@ fn parse_statusline_command(
     parser: &mut ArgParser,
     shared: &SharedArgs,
     config: &dyn CliConfig,
+    offline_override: Option<bool>,
 ) -> Result<Command, String> {
     let mut args = StatuslineArgs::default();
     config.apply_statusline_args(&mut args);
+    if let Some(offline) = offline_override {
+        args.offline = offline;
+    }
     args.timezone = shared.timezone.clone();
     while parser.peek().is_some() {
         match parser.next_flag()?.as_str() {
             "-O" | "--offline" => args.offline = true,
-            "--no-offline" => args.no_offline = true,
+            "--no-offline" => args.offline = false,
             "-B" | "--visual-burn-rate" => {
                 args.visual_burn_rate =
                     parse_visual_burn_rate(&parser.value_for("--visual-burn-rate")?)?
@@ -275,7 +284,7 @@ fn parse_statusline_command(
                 args.cost_source = parse_cost_source(&parser.value_for("--cost-source")?)?
             }
             "--cache" => args.cache = true,
-            "--no-cache" => args.no_cache = true,
+            "--no-cache" => args.cache = false,
             "--refresh-interval" => {
                 args.refresh_interval = parser
                     .value_for("--refresh-interval")?
@@ -305,14 +314,11 @@ fn parse_statusline_command(
     Ok(Command::Statusline(args))
 }
 
-fn accepts_root_all_options(command: &str) -> bool {
+fn accepts_root_options(command: &str) -> bool {
     matches!(command, "daily" | "monthly" | "weekly" | "session")
 }
 
-fn parse_root_all_arg(
-    parser: &mut ArgParser,
-    options: &mut RootAllOptions,
-) -> Result<bool, String> {
+fn parse_root_all_arg(parser: &mut ArgParser, options: &mut RootOptions) -> Result<bool, String> {
     if let Some(flag) =
         parse_unified_report_arg(parser, &mut options.sections, &mut options.by_agent)?
     {
@@ -349,7 +355,7 @@ fn parse_all_command(
     mut shared: SharedArgs,
     kind: AgentReportKind,
     config: &dyn CliConfig,
-    initial_options: RootAllOptions,
+    initial_options: RootOptions,
 ) -> Result<Command, String> {
     let mut sections = initial_options.sections;
     let mut by_agent = initial_options.by_agent;
@@ -387,7 +393,7 @@ fn parse_top_level_session_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     _config: &dyn CliConfig,
-    initial_options: RootAllOptions,
+    initial_options: RootOptions,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
     let mut sections = initial_options.sections;
@@ -508,6 +514,7 @@ fn parse_claude_command(
     shared: SharedArgs,
     config: &dyn CliConfig,
     default_session_duration_hours: f64,
+    offline_override: Option<bool>,
 ) -> Result<Command, String> {
     let command = match parser.peek() {
         Some(command) if !command.starts_with('-') => {
@@ -523,7 +530,7 @@ fn parse_claude_command(
         "weekly" => parse_claude_weekly_command(parser, shared, config),
         "session" => parse_claude_session_command(parser, shared, config),
         "blocks" => parse_blocks_command(parser, shared, config, default_session_duration_hours),
-        "statusline" => parse_statusline_command(parser, &shared, config),
+        "statusline" => parse_statusline_command(parser, &shared, config, offline_override),
         command => Err(format!("Unknown claude command '{command}'")),
     }
 }
@@ -725,9 +732,15 @@ fn parse_shared_arg(parser: &mut ArgParser, shared: &mut SharedArgs) -> Result<(
         }
         "-b" | "--breakdown" => shared.breakdown = true,
         "-O" | "--offline" => shared.offline = true,
-        "--no-offline" => shared.no_offline = true,
-        "--color" => shared.color = true,
-        "--no-color" => shared.no_color = true,
+        "--no-offline" => shared.offline = false,
+        "--color" => {
+            shared.color = true;
+            shared.no_color = false;
+        }
+        "--no-color" => {
+            shared.color = false;
+            shared.no_color = true;
+        }
         "-z" | "--timezone" => shared.timezone = Some(parser.value_for("--timezone")?),
         "-q" | "--jq" => shared.jq = Some(parser.value_for("--jq")?),
         "--config" => {

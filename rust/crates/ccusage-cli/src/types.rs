@@ -80,7 +80,6 @@ pub struct SharedArgs {
     pub order_explicit: bool,
     pub breakdown: bool,
     pub offline: bool,
-    pub no_offline: bool,
     pub color: bool,
     pub no_color: bool,
     pub timezone: Option<String>,
@@ -188,7 +187,6 @@ pub struct BlocksArgs {
 #[derive(Clone)]
 pub struct StatuslineArgs {
     pub offline: bool,
-    pub no_offline: bool,
     pub visual_burn_rate: VisualBurnRate,
     pub cost_source: CostSource,
     pub cache: bool,
@@ -276,7 +274,6 @@ impl Default for StatuslineArgs {
     fn default() -> Self {
         Self {
             offline: true,
-            no_offline: false,
             visual_burn_rate: VisualBurnRate::Off,
             cost_source: CostSource::Auto,
             cache: true,

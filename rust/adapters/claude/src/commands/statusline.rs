@@ -100,7 +100,7 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
 
 fn statusline_shared(args: &StatuslineArgs) -> SharedArgs {
     SharedArgs {
-        offline: args.offline && !args.no_offline,
+        offline: args.offline,
         pricing_overrides: args.pricing_overrides.clone(),
         ..SharedArgs::default()
     }

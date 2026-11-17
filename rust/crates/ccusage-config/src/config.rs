@@ -476,8 +476,8 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
         if let Some(offline) = options.offline {
             args.offline = offline;
         }
-        if let Some(no_offline) = options.no_offline {
-            args.no_offline = no_offline;
+        if options.no_offline == Some(true) {
+            args.offline = false;
         }
         if let Some(visual_burn_rate) = options.visual_burn_rate {
             args.visual_burn_rate = visual_burn_rate.into();
@@ -488,8 +488,8 @@ fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config: &ConfigCon
         if let Some(cache) = options.cache {
             args.cache = cache;
         }
-        if let Some(no_cache) = options.no_cache {
-            args.no_cache = no_cache;
+        if options.no_cache == Some(true) {
+            args.cache = false;
         }
         if let Some(refresh_interval) = options.refresh_interval {
             args.refresh_interval = refresh_interval;
@@ -612,14 +612,18 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
     if let Some(offline) = options.offline {
         shared.offline = offline;
     }
-    if let Some(no_offline) = options.no_offline {
-        shared.no_offline = no_offline;
+    if options.no_offline == Some(true) {
+        shared.offline = false;
     }
     if let Some(color) = options.color {
         shared.color = color;
+        shared.no_color = false;
     }
     if let Some(no_color) = options.no_color {
         shared.no_color = no_color;
+        if no_color {
+            shared.color = false;
+        }
     }
     if let Some(timezone) = options.timezone {
         shared.timezone = Some(timezone);
@@ -848,9 +852,8 @@ mod tests {
         assert_eq!(shared.debug_samples, 9);
         assert_eq!(shared.order, SortOrder::Desc);
         assert!(shared.breakdown);
-        assert!(shared.offline);
-        assert!(shared.no_offline);
-        assert!(shared.color);
+        assert!(!shared.offline);
+        assert!(!shared.color);
         assert!(shared.no_color);
         assert_eq!(shared.timezone.as_deref(), Some("Asia/Tokyo"));
         assert_eq!(shared.jq.as_deref(), Some(".totals"));
@@ -929,11 +932,9 @@ mod tests {
         apply_config_to_statusline_args(&mut statusline, &config);
 
         assert!(!statusline.offline);
-        assert!(statusline.no_offline);
         assert_eq!(statusline.visual_burn_rate, VisualBurnRate::EmojiText);
         assert_eq!(statusline.cost_source, ccusage_cli::CostSource::Both);
         assert!(!statusline.cache);
-        assert!(statusline.no_cache);
         assert_eq!(statusline.refresh_interval, 3);
         assert_eq!(statusline.context_low_threshold, 45);
         assert_eq!(statusline.context_medium_threshold, 75);
