@@ -18,9 +18,9 @@ use crate::{
 };
 
 use super::{
-    DailySummaries, DedupeIndexVec, Rejection, SessionDays, UsageLoadContext,
-    advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id, is_semver_prefix,
-    main_thread_session_days,
+    DailySummaries, DedupeIndexVec, GuardedUsage, Nullable, Rejection, SessionDays,
+    UsageLoadContext, advisor_usages_from_line, deserialize_usage_line, is_per_response_message_id,
+    is_semver_prefix, main_thread_session_days, non_null,
     paths::{
         claude_paths, extract_project, split_files_before_since, usage_file_order, usage_files,
         visit_usage_files,
@@ -365,23 +365,80 @@ impl ParsedUsage {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// A decoded usage record that honors the null contract.
+#[derive(Debug)]
 pub(super) struct ClaudeUsageRecord {
     pub(super) timestamp: String,
     pub(super) message: ClaudeUsageMessage,
-    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) version: Option<String>,
-    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) session_id: Option<String>,
-    #[serde(rename = "costUSD")]
-    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) cost_usd: Option<f64>,
-    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) request_id: Option<String>,
     pub(super) is_sidechain: Option<bool>,
-    #[serde(default, deserialize_with = "super::non_null_option")]
     pub(super) is_api_error_message: Option<bool>,
+}
+
+#[derive(Debug)]
+pub(super) struct ClaudeUsageMessage {
+    pub(super) usage: IteratedTokenUsage,
+    pub(super) model: Option<String>,
+    pub(super) id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawUsageRecord {
+    timestamp: String,
+    message: RawUsageMessage,
+    #[serde(default, deserialize_with = "super::nullable")]
+    version: Nullable<String>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    session_id: Nullable<String>,
+    #[serde(rename = "costUSD")]
+    #[serde(default, deserialize_with = "super::nullable")]
+    cost_usd: Nullable<f64>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    request_id: Nullable<String>,
+    is_sidechain: Option<bool>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    is_api_error_message: Nullable<bool>,
+}
+
+impl RawUsageRecord {
+    fn decode(self) -> std::result::Result<ClaudeUsageRecord, Rejection> {
+        Ok(ClaudeUsageRecord {
+            timestamp: self.timestamp,
+            message: self.message.decode()?,
+            version: non_null(self.version)?,
+            session_id: non_null(self.session_id)?,
+            cost_usd: non_null(self.cost_usd)?,
+            request_id: non_null(self.request_id)?,
+            is_sidechain: self.is_sidechain,
+            is_api_error_message: non_null(self.is_api_error_message)?,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct RawUsageMessage {
+    usage: GuardedUsage,
+    #[serde(default, deserialize_with = "super::nullable")]
+    model: Nullable<String>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    id: Nullable<String>,
+}
+
+impl RawUsageMessage {
+    fn decode(self) -> std::result::Result<ClaudeUsageMessage, Rejection> {
+        if self.usage.has_null {
+            return Err(Rejection::NullContract);
+        }
+        Ok(ClaudeUsageMessage {
+            usage: self.usage.usage,
+            model: non_null(self.model)?,
+            id: non_null(self.id)?,
+        })
+    }
 }
 
 /// Parses a direct assistant line, falling back to the AgentProgress wrapper.
@@ -392,8 +449,9 @@ pub(super) struct ClaudeUsageRecord {
 pub(super) fn parse_usage_line(
     line: &[u8],
 ) -> std::result::Result<(ClaudeUsageRecord, AdvisorLookup), Rejection> {
-    match deserialize_usage_line::<ClaudeUsageRecord>(line) {
-        Ok(entry) => {
+    match deserialize_usage_line::<RawUsageRecord>(line) {
+        Ok(raw) => {
+            let entry = raw.decode()?;
             let lookup = if entry.message.usage.has_advisor_iteration {
                 AdvisorLookup::AskLine
             } else {
@@ -401,9 +459,9 @@ pub(super) fn parse_usage_line(
             };
             Ok((entry, lookup))
         }
-        Err(Rejection::Malformed) => deserialize_usage_line::<AgentProgressEntry>(line)
-            .map(|entry| (entry.into_entry(), AdvisorLookup::AskLine)),
-        Err(rejection) => Err(rejection),
+        Err(_) => deserialize_usage_line::<AgentProgressEntry>(line)
+            .and_then(AgentProgressEntry::decode)
+            .map(|entry| (entry, AdvisorLookup::AskLine)),
     }
 }
 
@@ -425,23 +483,24 @@ impl AdvisorLookup {
 #[derive(Debug, Deserialize)]
 struct AgentProgressEntry {
     #[serde(rename = "sessionId")]
-    #[serde(default, deserialize_with = "super::non_null_option")]
-    session_id: Option<String>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    session_id: Nullable<String>,
     data: AgentProgressData,
 }
 
 impl AgentProgressEntry {
-    fn into_entry(self) -> ClaudeUsageRecord {
-        ClaudeUsageRecord {
-            timestamp: self.data.message.timestamp,
-            message: self.data.message.message,
+    fn decode(self) -> std::result::Result<ClaudeUsageRecord, Rejection> {
+        let message = self.data.message;
+        Ok(ClaudeUsageRecord {
+            timestamp: message.timestamp,
+            message: message.message.decode()?,
             version: None,
-            is_api_error_message: self.data.message.is_api_error_message,
-            session_id: self.session_id,
-            cost_usd: self.data.message.cost_usd,
-            request_id: self.data.message.request_id,
-            is_sidechain: self.data.message.is_sidechain,
-        }
+            is_api_error_message: non_null(message.is_api_error_message)?,
+            session_id: non_null(self.session_id)?,
+            cost_usd: non_null(message.cost_usd)?,
+            request_id: non_null(message.request_id)?,
+            is_sidechain: message.is_sidechain,
+        })
     }
 }
 
@@ -453,26 +512,16 @@ struct AgentProgressData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentProgressMessage {
-    #[serde(default, deserialize_with = "super::non_null_option")]
-    is_api_error_message: Option<bool>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    is_api_error_message: Nullable<bool>,
     timestamp: String,
-    message: ClaudeUsageMessage,
+    message: RawUsageMessage,
     #[serde(rename = "costUSD")]
-    #[serde(default, deserialize_with = "super::non_null_option")]
-    cost_usd: Option<f64>,
-    #[serde(default, deserialize_with = "super::non_null_option")]
-    request_id: Option<String>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    cost_usd: Nullable<f64>,
+    #[serde(default, deserialize_with = "super::nullable")]
+    request_id: Nullable<String>,
     is_sidechain: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct ClaudeUsageMessage {
-    #[serde(deserialize_with = "super::deserialize_usage_fields")]
-    pub(super) usage: IteratedTokenUsage,
-    #[serde(default, deserialize_with = "super::non_null_option")]
-    pub(super) model: Option<String>,
-    #[serde(default, deserialize_with = "super::non_null_option")]
-    pub(super) id: Option<String>,
 }
 
 fn read_daily_usage_file_with_diagnostics(

@@ -25,7 +25,10 @@ use memchr::memmem;
 use rustc_hash::FxHasher;
 use serde::{
     Deserialize, Deserializer,
-    de::{DeserializeOwned, DeserializeSeed, MapAccess, Visitor, value::MapAccessDeserializer},
+    de::{
+        DeserializeOwned, DeserializeSeed, MapAccess, Visitor,
+        value::{BorrowedStrDeserializer, MapAccessDeserializer, StringDeserializer},
+    },
 };
 use smallvec::SmallVec;
 
@@ -578,8 +581,8 @@ struct UsageIteration {
     #[serde(rename = "type")]
     kind: String,
     model: Option<String>,
-    #[serde(flatten, deserialize_with = "deserialize_usage_fields")]
-    usage: IteratedTokenUsage,
+    #[serde(flatten)]
+    usage: GuardedUsage,
 }
 
 pub(crate) struct AdvisorUsage {
@@ -595,15 +598,14 @@ pub(crate) fn advisor_usages_from_line(
     if !ADVISOR_MARKER.matches(line) {
         return Ok(Vec::new());
     }
-    let envelope = match deserialize_usage_line::<UsageIterationsEnvelope>(line) {
-        Ok(envelope) => envelope,
-        Err(Rejection::NullContract) => return Err(Rejection::NullContract),
-        Err(Rejection::Malformed) => return Ok(Vec::new()),
+    let Ok(envelope) = deserialize_usage_line::<UsageIterationsEnvelope>(line) else {
+        return Ok(Vec::new());
     };
-    Ok(envelope
-        .message
-        .usage
-        .iterations
+    let iterations = envelope.message.usage.iterations;
+    if iterations.iter().any(|iteration| iteration.usage.has_null) {
+        return Err(Rejection::NullContract);
+    }
+    Ok(iterations
         .into_iter()
         .filter_map(|iteration| {
             (iteration.kind == "advisor_message")
@@ -612,7 +614,7 @@ pub(crate) fn advisor_usages_from_line(
                 .filter(|model| !model.is_empty())
                 .map(|model| AdvisorUsage {
                     model,
-                    usage: iteration.usage.usage,
+                    usage: iteration.usage.usage.usage,
                 })
         })
         .collect())
@@ -620,168 +622,93 @@ pub(crate) fn advisor_usages_from_line(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Rejection {
+    // NOTE(2026-11-16): Claude Code itself writes `<synthetic>` API-error, refusal and
+    // interrupt lines with `"speed":null` and zero tokens, so a null in a field the loader
+    // reads is skipped quietly rather than reported as invalid data.
     NullContract,
     Malformed,
 }
 
-const NULL_CONTRACT_ERROR: &str = "null Claude usage field";
-
 pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
     line: &[u8],
 ) -> std::result::Result<T, Rejection> {
-    serde_json::from_slice(line).map_err(|error| {
-        if error.to_string().starts_with(NULL_CONTRACT_ERROR) {
-            Rejection::NullContract
-        } else {
-            Rejection::Malformed
+    serde_json::from_slice(line).map_err(|_| Rejection::Malformed)
+}
+
+/// A record field read as absent (`None`), explicit `null` (`Some(None)`) or a
+/// value, so the null contract is checked on the decoded record.
+pub(crate) type Nullable<T> = Option<Option<T>>;
+
+pub(crate) fn nullable<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Nullable<T>, D::Error> {
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// The value of a [`Nullable`] field, or [`Rejection::NullContract`] when the
+/// record wrote `null` there.
+pub(crate) fn non_null<T>(field: Nullable<T>) -> std::result::Result<Option<T>, Rejection> {
+    match field {
+        Some(None) => Err(Rejection::NullContract),
+        Some(value) => Ok(value),
+        None => Ok(None),
+    }
+}
+
+/// A `usage` object plus whether one of the members the loader reads, beyond
+/// the required token counts, was an explicit `null`.
+#[derive(Debug)]
+pub(crate) struct GuardedUsage {
+    pub(crate) usage: IteratedTokenUsage,
+    pub(crate) has_null: bool,
+}
+
+impl<'de> Deserialize<'de> for GuardedUsage {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct UsageVisitor;
+        impl<'de> Visitor<'de> for UsageVisitor {
+            type Value = GuardedUsage;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a usage object")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> std::result::Result<Self::Value, A::Error> {
+                let mut fields = UsageFields {
+                    map,
+                    pending: None,
+                    has_null: false,
+                };
+                let usage =
+                    IteratedTokenUsage::deserialize(MapAccessDeserializer::new(&mut fields))?;
+                Ok(GuardedUsage {
+                    usage,
+                    has_null: fields.has_null,
+                })
+            }
         }
-    })
-}
-
-fn non_null_option<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<Option<T>, D::Error> {
-    Option::<T>::deserialize(deserializer)?
-        .map(Some)
-        .ok_or_else(|| serde::de::Error::custom(NULL_CONTRACT_ERROR))
-}
-
-struct NonNull<S>(S);
-
-impl<'de, S: DeserializeSeed<'de>> DeserializeSeed<'de> for NonNull<S> {
-    type Value = S::Value;
-
-    fn deserialize<D: Deserializer<'de>>(
-        self,
-        deserializer: D,
-    ) -> std::result::Result<Self::Value, D::Error> {
-        deserializer.deserialize_option(self)
+        deserializer.deserialize_map(UsageVisitor)
     }
 }
 
-impl<'de, S: DeserializeSeed<'de>> Visitor<'de> for NonNull<S> {
-    type Value = S::Value;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("a non-null usage field")
-    }
-
-    fn visit_none<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
-        Err(E::custom(NULL_CONTRACT_ERROR))
-    }
-
-    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
-        Err(E::custom(NULL_CONTRACT_ERROR))
-    }
-
-    fn visit_some<D: Deserializer<'de>>(
-        self,
-        deserializer: D,
-    ) -> std::result::Result<Self::Value, D::Error> {
-        self.0.deserialize(deserializer)
-    }
+/// The optional `usage` members the loader reads, where `null` breaks the
+/// contract instead of meaning absent.
+fn is_guarded_usage_member(key: &str) -> bool {
+    matches!(
+        key,
+        "speed" | "cache_creation_input_tokens" | "cache_read_input_tokens"
+    )
 }
 
-struct UsageKeySeed<'a, S> {
-    seed: S,
-    non_null: &'a mut bool,
-}
-
-impl<'de, S: DeserializeSeed<'de>> DeserializeSeed<'de> for UsageKeySeed<'_, S> {
-    type Value = S::Value;
-
-    fn deserialize<D: Deserializer<'de>>(
-        self,
-        deserializer: D,
-    ) -> std::result::Result<Self::Value, D::Error> {
-        self.seed.deserialize(UsageKeyDeserializer {
-            deserializer,
-            non_null: self.non_null,
-        })
-    }
-}
-
-struct UsageKeyDeserializer<'a, D> {
-    deserializer: D,
-    non_null: &'a mut bool,
-}
-
-impl<'de, D: Deserializer<'de>> Deserializer<'de> for UsageKeyDeserializer<'_, D> {
-    type Error = D::Error;
-
-    fn deserialize_identifier<V: Visitor<'de>>(
-        self,
-        visitor: V,
-    ) -> std::result::Result<V::Value, Self::Error> {
-        self.deserializer.deserialize_identifier(UsageKeyVisitor {
-            visitor,
-            non_null: self.non_null,
-        })
-    }
-
-    fn deserialize_any<V: Visitor<'de>>(
-        self,
-        visitor: V,
-    ) -> std::result::Result<V::Value, Self::Error> {
-        self.deserializer.deserialize_any(UsageKeyVisitor {
-            visitor,
-            non_null: self.non_null,
-        })
-    }
-
-    serde::forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum ignored_any
-    }
-}
-
-struct UsageKeyVisitor<'a, V> {
-    visitor: V,
-    non_null: &'a mut bool,
-}
-
-impl<V> UsageKeyVisitor<'_, V> {
-    fn check(&mut self, key: &str) {
-        *self.non_null = matches!(
-            key,
-            "speed" | "cache_creation_input_tokens" | "cache_read_input_tokens"
-        );
-    }
-}
-
-impl<'de, V: Visitor<'de>> Visitor<'de> for UsageKeyVisitor<'_, V> {
-    type Value = V::Value;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.visitor.expecting(formatter)
-    }
-
-    fn visit_str<E: serde::de::Error>(mut self, key: &str) -> std::result::Result<Self::Value, E> {
-        self.check(key);
-        self.visitor.visit_str(key)
-    }
-
-    fn visit_borrowed_str<E: serde::de::Error>(
-        mut self,
-        key: &'de str,
-    ) -> std::result::Result<Self::Value, E> {
-        self.check(key);
-        self.visitor.visit_borrowed_str(key)
-    }
-
-    fn visit_string<E: serde::de::Error>(
-        mut self,
-        key: String,
-    ) -> std::result::Result<Self::Value, E> {
-        self.check(&key);
-        self.visitor.visit_string(key)
-    }
-}
-
+/// Passes a `usage` object through to its typed parse, leaving out a guarded
+/// member whose value is `null` and noting it in `has_null`.
 struct UsageFields<A> {
     map: A,
-    non_null: bool,
+    pending: Option<serde_json::Value>,
+    has_null: bool,
 }
 
 impl<'de, A: MapAccess<'de>> MapAccess<'de> for UsageFields<A> {
@@ -791,46 +718,83 @@ impl<'de, A: MapAccess<'de>> MapAccess<'de> for UsageFields<A> {
         &mut self,
         seed: K,
     ) -> std::result::Result<Option<K::Value>, Self::Error> {
-        self.map.next_key_seed(UsageKeySeed {
-            seed,
-            non_null: &mut self.non_null,
-        })
+        loop {
+            let Some(key) = self.map.next_key::<UsageKey<'de>>()? else {
+                return Ok(None);
+            };
+            if !is_guarded_usage_member(key.as_str()) {
+                return key.into_seed(seed).map(Some);
+            }
+            match self.map.next_value::<serde_json::Value>()? {
+                serde_json::Value::Null => self.has_null = true,
+                value => {
+                    self.pending = Some(value);
+                    return key.into_seed(seed).map(Some);
+                }
+            }
+        }
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(
         &mut self,
         seed: V,
     ) -> std::result::Result<V::Value, Self::Error> {
-        if self.non_null {
-            self.map.next_value_seed(NonNull(seed))
-        } else {
-            self.map.next_value_seed(seed)
+        match self.pending.take() {
+            Some(value) => seed.deserialize(value).map_err(serde::de::Error::custom),
+            None => self.map.next_value_seed(seed),
         }
     }
 }
 
-fn deserialize_usage_fields<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<IteratedTokenUsage, D::Error> {
-    struct UsageVisitor;
-    impl<'de> Visitor<'de> for UsageVisitor {
-        type Value = IteratedTokenUsage;
+/// A member name, borrowed from the line unless it had to be unescaped.
+enum UsageKey<'de> {
+    Borrowed(&'de str),
+    Owned(String),
+}
 
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("a usage object")
-        }
-
-        fn visit_map<A: MapAccess<'de>>(
-            self,
-            map: A,
-        ) -> std::result::Result<Self::Value, A::Error> {
-            IteratedTokenUsage::deserialize(MapAccessDeserializer::new(UsageFields {
-                map,
-                non_null: false,
-            }))
+impl<'de> UsageKey<'de> {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Borrowed(key) => key,
+            Self::Owned(key) => key,
         }
     }
-    deserializer.deserialize_map(UsageVisitor)
+
+    fn into_seed<K: DeserializeSeed<'de>, E: serde::de::Error>(
+        self,
+        seed: K,
+    ) -> std::result::Result<K::Value, E> {
+        match self {
+            Self::Borrowed(key) => seed.deserialize(BorrowedStrDeserializer::new(key)),
+            Self::Owned(key) => seed.deserialize(StringDeserializer::new(key)),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UsageKey<'de> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct KeyVisitor;
+        impl<'de> Visitor<'de> for KeyVisitor {
+            type Value = UsageKey<'de>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a usage member name")
+            }
+
+            fn visit_borrowed_str<E>(self, key: &'de str) -> std::result::Result<Self::Value, E> {
+                Ok(UsageKey::Borrowed(key))
+            }
+
+            fn visit_str<E>(self, key: &str) -> std::result::Result<Self::Value, E> {
+                Ok(UsageKey::Owned(key.to_owned()))
+            }
+
+            fn visit_string<E>(self, key: String) -> std::result::Result<Self::Value, E> {
+                Ok(UsageKey::Owned(key))
+            }
+        }
+        deserializer.deserialize_identifier(KeyVisitor)
+    }
 }
 
 pub(crate) fn is_semver_prefix(value: &str) -> bool {
@@ -888,8 +852,8 @@ mod tests {
     use std::{path::Path, sync::Arc};
 
     use super::{
-        deserialize_usage_line, extract_session_parts, load_deduped_entries,
-        paths::is_project_path_segment, usage_files, usage_limit_reset_time_from_line_bytes,
+        extract_session_parts, load_deduped_entries, paths::is_project_path_segment, usage_files,
+        usage_limit_reset_time_from_line_bytes,
     };
     use crate::{
         Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw,
@@ -1203,11 +1167,24 @@ mod tests {
 
     #[test]
     fn rejects_null_under_escaped_read_field_names() {
-        let line = br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"m\u006fdel":null,"usage":{"input_tokens":1,"output_tokens":2}}}"#;
-        assert_eq!(
-            super::daily::parse_usage_line(line).unwrap_err(),
-            super::Rejection::NullContract
-        );
+        for line in [
+            br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"m\u006fdel":null,"usage":{"input_tokens":1,"output_tokens":2}}}"#.as_slice(),
+            br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"sp\u0065ed":null}}}"#,
+        ] {
+            assert_eq!(
+                super::daily::parse_usage_line(line).unwrap_err(),
+                super::Rejection::NullContract
+            );
+        }
+        let (record, _) = super::daily::parse_usage_line(
+            br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"cache_r\u0065ad_input_tokens":7,"sp\u0065ed":"fast"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(record.message.usage.usage.cache_read_input_tokens, 7);
+        assert!(matches!(
+            record.message.usage.usage.speed,
+            Some(crate::Speed::Fast)
+        ));
     }
 
     #[test]
@@ -1248,17 +1225,11 @@ mod tests {
             );
 
             assert!(
-                deserialize_usage_line::<super::daily::ClaudeUsageRecord>(
-                    duplicate_known.as_bytes()
-                )
-                .is_err(),
+                super::daily::parse_usage_line(duplicate_known.as_bytes()).is_err(),
                 "{duplicate_known}"
             );
             assert!(
-                deserialize_usage_line::<super::daily::ClaudeUsageRecord>(
-                    duplicate_unknown.as_bytes()
-                )
-                .is_ok(),
+                super::daily::parse_usage_line(duplicate_unknown.as_bytes()).is_ok(),
                 "{duplicate_unknown}"
             );
         }
@@ -1279,17 +1250,17 @@ mod tests {
                 r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":1,"output_tokens":2,"{field}":{value},"{field}":{value}}}}}}}"#
             );
             assert!(
-                deserialize_usage_line::<super::daily::ClaudeUsageRecord>(line.as_bytes()).is_err(),
+                super::daily::parse_usage_line(line.as_bytes()).is_err(),
                 "{field}"
             );
         }
         let line = br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"metadata":null,"metadata":{}}}}"#;
-        assert!(deserialize_usage_line::<super::daily::ClaudeUsageRecord>(line).is_ok());
+        assert!(super::daily::parse_usage_line(line).is_ok());
     }
 
     #[test]
     fn rejects_duplicate_members_before_typed_deserialization() {
-        assert!(deserialize_usage_line::<super::daily::ClaudeUsageRecord>(
+        assert!(super::daily::parse_usage_line(
             br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
         )
         .is_err());
