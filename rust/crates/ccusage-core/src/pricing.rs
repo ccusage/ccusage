@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    sync::{Arc, Mutex, OnceLock, RwLock},
+    sync::{Arc, LazyLock, OnceLock, RwLock},
     thread::{self, JoinHandle},
 };
 
@@ -1274,28 +1274,35 @@ impl SpeedMultiplierOverrides {
 }
 
 pub struct PendingPricing {
-    worker: Mutex<Option<JoinHandle<PricingMap>>>,
-    joined: OnceLock<std::result::Result<Box<PricingMap>, &'static str>>,
+    state: PricingLoadState,
+}
+
+type PricingLoad = LazyLock<
+    std::result::Result<PricingMap, &'static str>,
+    Box<dyn FnOnce() -> std::result::Result<PricingMap, &'static str> + Send + Sync>,
+>;
+
+enum PricingLoadState {
+    Ready(Box<PricingMap>),
+    Running(Box<PricingLoad>),
 }
 
 impl PendingPricing {
+    fn from_worker(worker: JoinHandle<PricingMap>) -> Self {
+        Self {
+            state: PricingLoadState::Running(Box::new(LazyLock::new(Box::new(move || {
+                worker.join().map_err(|_| "pricing load worker failed")
+            })))),
+        }
+    }
+
     pub fn join(&self) -> crate::Result<&PricingMap> {
-        self.joined
-            .get_or_init(|| {
-                let worker = self
-                    .worker
-                    .lock()
-                    .map_err(|_| "pricing load lock was poisoned")?
-                    .take()
-                    .ok_or("pricing load has no worker")?;
-                worker
-                    .join()
-                    .map(Box::new)
-                    .map_err(|_| "pricing load worker failed")
-            })
-            .as_ref()
-            .map(|pricing| pricing.as_ref())
-            .map_err(|error| crate::cli_error(*error))
+        match &self.state {
+            PricingLoadState::Ready(pricing) => Ok(pricing),
+            PricingLoadState::Running(load) => LazyLock::force(load)
+                .as_ref()
+                .map_err(|error| crate::cli_error(*error)),
+        }
     }
 }
 
@@ -1329,8 +1336,7 @@ impl PricingMap {
         let overrides = overrides.into_iter();
         if let Some(base) = base_pricing(offline).get() {
             return Ok(PendingPricing {
-                worker: Mutex::new(None),
-                joined: OnceLock::from(Ok(Box::new(base.with_user_overrides(overrides)))),
+                state: PricingLoadState::Ready(Box::new(base.with_user_overrides(overrides))),
             });
         }
         let overrides = overrides
@@ -1346,10 +1352,7 @@ impl PricingMap {
                 )
             })
             .map_err(|error| crate::cli_error(format!("could not start pricing load: {error}")))?;
-        Ok(PendingPricing {
-            worker: Mutex::new(Some(worker)),
-            joined: OnceLock::new(),
-        })
+        Ok(PendingPricing::from_worker(worker))
     }
 
     fn rows_mut(&mut self) -> &mut PricingRows {
@@ -3395,10 +3398,8 @@ mod tests {
 
     #[test]
     fn pending_pricing_reports_worker_failure_without_rebuilding() {
-        let pending = super::PendingPricing {
-            worker: std::sync::Mutex::new(Some(std::thread::spawn(|| panic!("failed load")))),
-            joined: std::sync::OnceLock::new(),
-        };
+        let pending =
+            super::PendingPricing::from_worker(std::thread::spawn(|| panic!("failed load")));
 
         for _ in 0..2 {
             assert_eq!(
@@ -3423,7 +3424,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(pending.worker.lock().unwrap().is_none());
+        assert!(matches!(pending.state, super::PricingLoadState::Ready(_)));
         assert!(pending.join().unwrap().find("gpt-5").is_some());
     }
 

@@ -109,10 +109,11 @@ fn load(
     cx: &LoadContext<'_, LoaderPricing<'_>>,
     progress: ProgressOwner,
 ) -> Result<Vec<LoadedEntry>> {
+    let cx = cx.resolve_pricing()?;
     progress.run(
         UsageLoadAgent(source.descriptor().label),
         cx.shared.json,
-        || source.load_priced_entries(cx),
+        || source.load_entries(&cx),
     )
 }
 

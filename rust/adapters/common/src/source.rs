@@ -355,26 +355,25 @@ impl<'a> LoadContext<'a> {
     }
 }
 
-/// A source whose loader yields `Vec<LoadedEntry>`.
-pub trait EntrySource: Sync {
-    fn descriptor(&self) -> EntryDescriptor;
-
-    fn load_priced_entries(
-        &self,
-        cx: &LoadContext<'_, LoaderPricing<'_>>,
-    ) -> Result<Vec<LoadedEntry>> {
-        self.load_entries(&LoadContext {
-            shared: cx.shared,
-            kind: cx.kind,
-            window: cx.window,
-            pricing: match &cx.pricing {
+impl LoadContext<'_, LoaderPricing<'_>> {
+    pub(crate) fn resolve_pricing(&self) -> Result<LoadContext<'_>> {
+        Ok(LoadContext {
+            shared: self.shared,
+            kind: self.kind,
+            window: self.window,
+            pricing: match &self.pricing {
                 LoaderPricing::Pipeline(pricing) => Some(pricing.get()?),
                 LoaderPricing::Source => None,
             },
-            options: cx.options,
-            diagnostics: cx.diagnostics,
+            options: self.options,
+            diagnostics: self.diagnostics,
         })
     }
+}
+
+/// A source whose loader yields `Vec<LoadedEntry>`.
+pub trait EntrySource: Sync {
+    fn descriptor(&self) -> EntryDescriptor;
 
     /// Runs `ccusage <id> <kind>` through the shared entry pipeline.
     fn run_focused(&self, args: AgentCommandArgs) -> Result<()>
