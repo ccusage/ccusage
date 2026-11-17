@@ -507,10 +507,15 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = CodexModelUsage {
-            input_tokens: 1_000,
-            output_tokens: 100,
             total_tokens: 1_100,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 1_000,
+                    output_tokens: 100,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
 
         let reserve_cost = calculate_codex_model_cost(
@@ -593,12 +598,17 @@ mod tests {
             }"#,
         );
         let usage = CodexModelUsage {
-            input_tokens: 100,
-            cached_input_tokens: 40,
-            output_tokens: 5,
             reasoning_output_tokens: 0,
             total_tokens: 105,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 100,
+                    cached_input_tokens: 40,
+                    output_tokens: 5,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
         let cost = |model| {
             calculate_codex_model_cost(
@@ -629,14 +639,19 @@ mod tests {
             }"#,
         );
         let usage = CodexModelUsage {
-            input_tokens: 350_000,
-            cached_input_tokens: 50_000,
-            output_tokens: 1_000,
             total_tokens: 351_000,
-            long_context_input_tokens: 300_000,
-            long_context_cached_input_tokens: 40_000,
-            long_context_output_tokens: 800,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 350_000,
+                    cached_input_tokens: 50_000,
+                    output_tokens: 1_000,
+                    long_context_input_tokens: 300_000,
+                    long_context_cached_input_tokens: 40_000,
+                    long_context_output_tokens: 800,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
 
         let cost = calculate_codex_model_cost(
@@ -674,30 +689,38 @@ mod tests {
             }"#,
         );
         let usage = CodexModelUsage {
-            input_tokens: 350_000,
-            cached_input_tokens: 50_000,
-            output_tokens: 1_000,
             total_tokens: 351_000,
-            long_context_input_tokens: 300_000,
-            long_context_cached_input_tokens: 40_000,
-            long_context_output_tokens: 800,
-            recorded_standard_usage: CodexUsageBucket {
-                input_tokens: 50_000,
-                cached_input_tokens: 10_000,
-                output_tokens: 200,
-                ..CodexUsageBucket::default()
-            },
-            recorded_fast_usage: CodexUsageBucket {
-                input_tokens: 300_000,
-                cached_input_tokens: 40_000,
-                cache_creation_tokens: 0,
-                output_tokens: 800,
-                long_context_input_tokens: 300_000,
-                long_context_cached_input_tokens: 40_000,
-                long_context_cache_creation_tokens: 0,
-                long_context_output_tokens: 800,
-            },
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 350_000,
+                    cached_input_tokens: 50_000,
+                    output_tokens: 1_000,
+                    long_context_input_tokens: 300_000,
+                    long_context_cached_input_tokens: 40_000,
+                    long_context_output_tokens: 800,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = crate::TierBuckets::default();
+                    tiers[crate::CodexServiceTier::Standard] = CodexUsageBucket {
+                        input_tokens: 50_000,
+                        cached_input_tokens: 10_000,
+                        output_tokens: 200,
+                        ..CodexUsageBucket::default()
+                    };
+                    tiers[crate::CodexServiceTier::Fast] = CodexUsageBucket {
+                        input_tokens: 300_000,
+                        cached_input_tokens: 40_000,
+                        cache_creation_tokens: 0,
+                        output_tokens: 800,
+                        long_context_input_tokens: 300_000,
+                        long_context_cached_input_tokens: 40_000,
+                        long_context_cache_creation_tokens: 0,
+                        long_context_output_tokens: 800,
+                    };
+                    tiers
+                },
+            )
         };
 
         let cost = calculate_codex_model_cost(
@@ -724,16 +747,24 @@ mod tests {
             }"#,
         );
         let flat = CodexModelUsage {
-            input_tokens: 400_000,
-            cached_input_tokens: 100_000,
-            output_tokens: 2_000,
             total_tokens: 402_000,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 400_000,
+                    cached_input_tokens: 100_000,
+                    output_tokens: 2_000,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
         let split = CodexModelUsage {
-            long_context_input_tokens: 300_000,
-            long_context_cached_input_tokens: 80_000,
-            long_context_output_tokens: 1_500,
+            usage: crate::CodexUsageBucket {
+                long_context_input_tokens: 300_000,
+                long_context_cached_input_tokens: 80_000,
+                long_context_output_tokens: 1_500,
+                ..flat.clone().usage
+            },
             ..flat.clone()
         };
 
@@ -766,12 +797,17 @@ mod tests {
             }"#,
         );
         let usage = CodexModelUsage {
-            input_tokens: 100,
-            cached_input_tokens: 40,
-            output_tokens: 5,
             reasoning_output_tokens: 0,
             total_tokens: 105,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 100,
+                    cached_input_tokens: 40,
+                    output_tokens: 5,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
 
         let standard = calculate_codex_model_cost(
@@ -795,12 +831,17 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = CodexModelUsage {
-            input_tokens: 1_000_000,
-            cached_input_tokens: 1_000_000,
             total_tokens: 1_000_000,
-            long_context_input_tokens: 1_000_000,
-            long_context_cached_input_tokens: 1_000_000,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 1_000_000,
+                    cached_input_tokens: 1_000_000,
+                    long_context_input_tokens: 1_000_000,
+                    long_context_cached_input_tokens: 1_000_000,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
 
         let standard = calculate_codex_model_cost(
@@ -825,11 +866,16 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = CodexModelUsage {
-            input_tokens: 1_000_000,
-            cached_input_tokens: 500_000,
-            output_tokens: 100_000,
             total_tokens: 1_100_000,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 1_000_000,
+                    cached_input_tokens: 500_000,
+                    output_tokens: 100_000,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
 
         for model in ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"] {
@@ -864,17 +910,25 @@ mod tests {
             }"#,
         );
         let usage = CodexModelUsage {
-            input_tokens: 20,
             total_tokens: 20,
-            recorded_standard_usage: CodexUsageBucket {
-                input_tokens: 10,
-                ..CodexUsageBucket::default()
-            },
-            recorded_fast_usage: CodexUsageBucket {
-                input_tokens: 10,
-                ..CodexUsageBucket::default()
-            },
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 20,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = crate::TierBuckets::default();
+                    tiers[crate::CodexServiceTier::Standard] = CodexUsageBucket {
+                        input_tokens: 10,
+                        ..CodexUsageBucket::default()
+                    };
+                    tiers[crate::CodexServiceTier::Fast] = CodexUsageBucket {
+                        input_tokens: 10,
+                        ..CodexUsageBucket::default()
+                    };
+                    tiers
+                },
+            )
         };
 
         let auto = calculate_codex_model_cost(
@@ -914,13 +968,21 @@ mod tests {
             }"#,
         );
         let usage = CodexModelUsage {
-            input_tokens: 20,
             total_tokens: 20,
-            recorded_flex_usage: CodexUsageBucket {
-                input_tokens: 20,
-                ..CodexUsageBucket::default()
-            },
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 20,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = crate::TierBuckets::default();
+                    tiers[crate::CodexServiceTier::Flex] = CodexUsageBucket {
+                        input_tokens: 20,
+                        ..CodexUsageBucket::default()
+                    };
+                    tiers
+                },
+            )
         };
 
         let cost = calculate_codex_model_cost(
@@ -938,15 +1000,23 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let ultrafast = |usage: CodexUsageBucket| CodexModelUsage {
-            input_tokens: usage.input_tokens,
-            cached_input_tokens: usage.cached_input_tokens,
-            output_tokens: usage.output_tokens,
             total_tokens: usage.input_tokens + usage.output_tokens,
-            long_context_input_tokens: usage.long_context_input_tokens,
-            long_context_cached_input_tokens: usage.long_context_cached_input_tokens,
-            long_context_output_tokens: usage.long_context_output_tokens,
-            recorded_ultrafast_usage: usage,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: usage.input_tokens,
+                    cached_input_tokens: usage.cached_input_tokens,
+                    output_tokens: usage.output_tokens,
+                    long_context_input_tokens: usage.long_context_input_tokens,
+                    long_context_cached_input_tokens: usage.long_context_cached_input_tokens,
+                    long_context_output_tokens: usage.long_context_output_tokens,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = crate::TierBuckets::default();
+                    tiers[crate::CodexServiceTier::Ultrafast] = usage;
+                    tiers
+                },
+            )
         };
         let short = ultrafast(CodexUsageBucket {
             input_tokens: 1_200,
@@ -985,17 +1055,25 @@ mod tests {
     fn keeps_standard_pricing_for_ultrafast_without_a_published_rate() {
         let pricing = ultrafast_test_pricing();
         let usage = CodexModelUsage {
-            input_tokens: 1_200,
-            cached_input_tokens: 200,
-            output_tokens: 50,
             total_tokens: 1_250,
-            recorded_ultrafast_usage: CodexUsageBucket {
-                input_tokens: 1_200,
-                cached_input_tokens: 200,
-                output_tokens: 50,
-                ..CodexUsageBucket::default()
-            },
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 1_200,
+                    cached_input_tokens: 200,
+                    output_tokens: 50,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = crate::TierBuckets::default();
+                    tiers[crate::CodexServiceTier::Ultrafast] = CodexUsageBucket {
+                        input_tokens: 1_200,
+                        cached_input_tokens: 200,
+                        output_tokens: 50,
+                        ..CodexUsageBucket::default()
+                    };
+                    tiers
+                },
+            )
         };
 
         for model in ["gpt-6-sol", "gpt-6.1-terra", "gpt-6-luna"] {
@@ -1050,17 +1128,25 @@ mod tests {
         ]);
         let pricing = ultrafast_test_pricing();
         let usage = CodexModelUsage {
-            input_tokens: 1_200,
-            cached_input_tokens: 200,
-            output_tokens: 50,
             total_tokens: 1_250,
-            recorded_ultrafast_usage: CodexUsageBucket {
-                input_tokens: 1_200,
-                cached_input_tokens: 200,
-                output_tokens: 50,
-                ..CodexUsageBucket::default()
-            },
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 1_200,
+                    cached_input_tokens: 200,
+                    output_tokens: 50,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = crate::TierBuckets::default();
+                    tiers[crate::CodexServiceTier::Ultrafast] = CodexUsageBucket {
+                        input_tokens: 1_200,
+                        cached_input_tokens: 200,
+                        output_tokens: 50,
+                        ..CodexUsageBucket::default()
+                    };
+                    tiers
+                },
+            )
         };
         let cost = |model: &str, speed: CodexSpeedPolicy| {
             calculate_codex_model_cost(model, &usage, &pricing, speed)
@@ -1293,12 +1379,17 @@ mod tests {
             }"#,
         );
         let usage = CodexModelUsage {
-            input_tokens: 100,
-            cached_input_tokens: 40,
-            output_tokens: 5,
             reasoning_output_tokens: 0,
             total_tokens: 105,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 100,
+                    cached_input_tokens: 40,
+                    output_tokens: 5,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
 
         let standard = calculate_codex_model_cost(
@@ -1332,19 +1423,29 @@ mod tests {
         group.models.insert(
             "gpt-known".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
-                output_tokens: 5,
                 total_tokens: 105,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        output_tokens: 5,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         group.models.insert(
             "gpt-unknown".to_string(),
             CodexModelUsage {
-                input_tokens: 200,
-                output_tokens: 10,
                 total_tokens: 210,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 200,
+                        output_tokens: 10,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let groups = BTreeMap::from([("2026-01-02".to_string(), group)]);

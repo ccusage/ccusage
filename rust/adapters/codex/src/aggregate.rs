@@ -735,7 +735,9 @@ mod tests {
             .fold(&SharedArgs::default(), AgentReportKind::Session)
             .unwrap();
         assert_eq!(
-            groups["session"].models["gpt-5.5"].long_context_input_tokens,
+            groups["session"].models["gpt-5.5"]
+                .usage
+                .long_context_input_tokens,
             250_000
         );
     }
@@ -766,11 +768,17 @@ mod tests {
         assert_eq!(group.input_tokens, u64::MAX);
         assert_eq!(group.output_tokens, u64::MAX);
         assert_eq!(group.total_tokens, u64::MAX);
-        assert_eq!(usage.input_tokens, u64::MAX);
-        assert_eq!(usage.output_tokens, u64::MAX);
+        assert_eq!(usage.usage.input_tokens, u64::MAX);
+        assert_eq!(usage.usage.output_tokens, u64::MAX);
         assert_eq!(usage.total_tokens, u64::MAX);
-        assert_eq!(usage.recorded_fast_usage.input_tokens, u64::MAX);
-        assert_eq!(usage.recorded_fast_usage.cached_input_tokens, 2);
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+            u64::MAX
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Fast].cached_input_tokens,
+            2
+        );
         assert_eq!(
             usage
                 .timestamped_usage
@@ -854,7 +862,7 @@ mod tests {
         assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
         assert!(!group.models["gpt-5"].is_fallback);
         assert_eq!(
-            group.models["gpt-5"].recorded_standard_usage.input_tokens,
+            group.models["gpt-5"].recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
             300
         );
     }
@@ -906,7 +914,7 @@ mod tests {
         assert_eq!(group.total_tokens, 320);
         assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
         assert_eq!(
-            group.models["gpt-5"].recorded_standard_usage.input_tokens,
+            group.models["gpt-5"].recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
             300
         );
     }
@@ -982,11 +990,23 @@ mod tests {
         let groups = load_rollouts(&[("session-1.jsonl", &rollout)], AgentReportKind::Daily);
         let usage = &groups["2026-08-17"].models["gpt-test"];
 
-        assert_eq!(usage.input_tokens, 1_000);
-        assert_eq!(usage.recorded_flex_usage.input_tokens, 1_000);
-        assert_eq!(usage.recorded_flex_usage.cached_input_tokens, 100);
-        assert_eq!(usage.recorded_flex_usage.cache_creation_tokens, 50);
-        assert_eq!(usage.recorded_flex_usage.output_tokens, 25);
+        assert_eq!(usage.usage.input_tokens, 1_000);
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Flex].input_tokens,
+            1_000
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Flex].cached_input_tokens,
+            100
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Flex].cache_creation_tokens,
+            50
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Flex].output_tokens,
+            25
+        );
     }
 
     #[test]
@@ -1255,7 +1275,8 @@ mod tests {
                 assert_eq!(group.reasoning_output_tokens, 20);
                 assert_eq!(group.total_tokens, 1_200);
                 assert_eq!(
-                    group.models["gpt-5.2"].recorded_fast_usage.input_tokens,
+                    group.models["gpt-5.2"].recorded_usage[crate::CodexServiceTier::Fast]
+                        .input_tokens,
                     1_000
                 );
                 costs.push(crate::calculate_group_cost(
@@ -1327,9 +1348,15 @@ mod tests {
                 .unwrap();
                 let usage = &groups["2026-05-29"].models["gpt-5.2"];
 
-                assert_eq!(usage.input_tokens, 1_000);
-                assert_eq!(usage.recorded_standard_usage.input_tokens, 1_000);
-                assert_eq!(usage.recorded_fast_usage.input_tokens, 0);
+                assert_eq!(usage.usage.input_tokens, 1_000);
+                assert_eq!(
+                    usage.recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
+                    1_000
+                );
+                assert_eq!(
+                    usage.recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+                    0
+                );
             }
         }
     }
@@ -1394,24 +1421,48 @@ mod tests {
 
         let group = groups.get("2026-07-09").unwrap();
         let usage = group.models.get("gpt-5.6-sol").unwrap();
-        assert_eq!(usage.input_tokens, 380_000);
-        assert_eq!(usage.cached_input_tokens, 70_000);
-        assert_eq!(usage.output_tokens, 800);
-        assert_eq!(usage.long_context_input_tokens, 280_000);
-        assert_eq!(usage.long_context_cached_input_tokens, 20_000);
-        assert_eq!(usage.long_context_output_tokens, 500);
-        assert_eq!(usage.recorded_fast_usage.input_tokens, 280_000);
-        assert_eq!(usage.recorded_fast_usage.cached_input_tokens, 20_000);
-        assert_eq!(usage.recorded_fast_usage.output_tokens, 500);
-        assert_eq!(usage.recorded_fast_usage.long_context_input_tokens, 280_000);
+        assert_eq!(usage.usage.input_tokens, 380_000);
+        assert_eq!(usage.usage.cached_input_tokens, 70_000);
+        assert_eq!(usage.usage.output_tokens, 800);
+        assert_eq!(usage.usage.long_context_input_tokens, 280_000);
+        assert_eq!(usage.usage.long_context_cached_input_tokens, 20_000);
+        assert_eq!(usage.usage.long_context_output_tokens, 500);
         assert_eq!(
-            usage.recorded_fast_usage.long_context_cached_input_tokens,
+            usage.recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+            280_000
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Fast].cached_input_tokens,
             20_000
         );
-        assert_eq!(usage.recorded_fast_usage.long_context_output_tokens, 500);
-        assert_eq!(usage.recorded_standard_usage.input_tokens, 100_000);
-        assert_eq!(usage.recorded_standard_usage.cached_input_tokens, 50_000);
-        assert_eq!(usage.recorded_standard_usage.output_tokens, 300);
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Fast].output_tokens,
+            500
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_input_tokens,
+            280_000
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_cached_input_tokens,
+            20_000
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_output_tokens,
+            500
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
+            100_000
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Standard].cached_input_tokens,
+            50_000
+        );
+        assert_eq!(
+            usage.recorded_usage[crate::CodexServiceTier::Standard].output_tokens,
+            300
+        );
     }
 
     #[test]
@@ -1493,21 +1544,43 @@ mod tests {
             .unwrap();
             let usage = &groups["2026-07-09"].models["gpt-5.6-sol"];
 
-            assert_eq!(usage.input_tokens, 380_000);
-            assert_eq!(usage.cache_creation_tokens, 40_000);
-            assert_eq!(usage.long_context_input_tokens, 280_000);
-            assert_eq!(usage.long_context_cache_creation_tokens, 30_000);
-            assert_eq!(usage.recorded_fast_usage.input_tokens, 280_000);
-            assert_eq!(usage.recorded_fast_usage.cache_creation_tokens, 30_000);
-            assert_eq!(usage.recorded_fast_usage.long_context_input_tokens, 280_000);
+            assert_eq!(usage.usage.input_tokens, 380_000);
+            assert_eq!(usage.usage.cache_creation_tokens, 40_000);
+            assert_eq!(usage.usage.long_context_input_tokens, 280_000);
+            assert_eq!(usage.usage.long_context_cache_creation_tokens, 30_000);
             assert_eq!(
-                usage.recorded_fast_usage.long_context_cache_creation_tokens,
+                usage.recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+                280_000
+            );
+            assert_eq!(
+                usage.recorded_usage[crate::CodexServiceTier::Fast].cache_creation_tokens,
                 30_000
             );
-            assert_eq!(usage.recorded_standard_usage.input_tokens, 100_000);
-            assert_eq!(usage.recorded_standard_usage.cache_creation_tokens, 10_000);
-            assert_eq!(usage.recorded_standard_usage.long_context_input_tokens, 0);
-            observed.push((usage.recorded_fast_usage, usage.recorded_standard_usage));
+            assert_eq!(
+                usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_input_tokens,
+                280_000
+            );
+            assert_eq!(
+                usage.recorded_usage[crate::CodexServiceTier::Fast]
+                    .long_context_cache_creation_tokens,
+                30_000
+            );
+            assert_eq!(
+                usage.recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
+                100_000
+            );
+            assert_eq!(
+                usage.recorded_usage[crate::CodexServiceTier::Standard].cache_creation_tokens,
+                10_000
+            );
+            assert_eq!(
+                usage.recorded_usage[crate::CodexServiceTier::Standard].long_context_input_tokens,
+                0
+            );
+            observed.push((
+                usage.recorded_usage[crate::CodexServiceTier::Fast],
+                usage.recorded_usage[crate::CodexServiceTier::Standard],
+            ));
         }
 
         assert_eq!(observed[0], observed[1]);
@@ -1532,10 +1605,9 @@ mod tests {
         let group = &groups["2026-07-09"];
         let usage = &group.models["gpt-5.6-sol"];
         assert_eq!(group.cache_creation_tokens, 30);
-        assert_eq!(usage.cache_creation_tokens, 30);
+        assert_eq!(usage.usage.cache_creation_tokens, 30);
         assert_eq!(
-            usage
-                .recorded_standard_usage
+            usage.recorded_usage[crate::CodexServiceTier::Standard]
                 .long_context_cache_creation_tokens,
             30
         );
@@ -1602,7 +1674,7 @@ mod tests {
             let group = groups.get("2026-05-29").unwrap();
             assert_eq!(group.input_tokens, 1_000);
             assert_eq!(group.models.len(), 1);
-            assert_eq!(group.models["gpt-5.2"].input_tokens, 1_000);
+            assert_eq!(group.models["gpt-5.2"].usage.input_tokens, 1_000);
         }
     }
 

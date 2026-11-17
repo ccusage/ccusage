@@ -219,17 +219,25 @@ mod tests {
             }"#,
         );
         let usage = crate::CodexModelUsage {
-            input_tokens: 30,
             total_tokens: 30,
-            recorded_flex_usage: crate::CodexUsageBucket {
-                input_tokens: 10,
-                ..Default::default()
-            },
-            recorded_fast_usage: crate::CodexUsageBucket {
-                input_tokens: 10,
-                ..Default::default()
-            },
-            ..Default::default()
+            ..crate::CodexModelUsage::from_buckets(
+                crate::CodexUsageBucket {
+                    input_tokens: 30,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = crate::TierBuckets::default();
+                    tiers[crate::CodexServiceTier::Flex] = crate::CodexUsageBucket {
+                        input_tokens: 10,
+                        ..Default::default()
+                    };
+                    tiers[crate::CodexServiceTier::Fast] = crate::CodexUsageBucket {
+                        input_tokens: 10,
+                        ..Default::default()
+                    };
+                    tiers
+                },
+            )
         };
 
         let cost = crate::report::calculate_codex_model_cost(

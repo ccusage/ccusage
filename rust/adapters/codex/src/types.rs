@@ -370,25 +370,10 @@ pub struct CodexTimestampedUsage {
 
 #[derive(Debug, Clone, Default)]
 pub struct CodexModelUsage {
-    pub input_tokens: u64,
-    pub cached_input_tokens: u64,
-    pub cache_creation_tokens: u64,
-    pub output_tokens: u64,
+    pub usage: CodexUsageBucket,
+    pub recorded_usage: TierBuckets,
     pub reasoning_output_tokens: u64,
     pub total_tokens: u64,
-    // Portion of the sums above that came from long-context requests (input
-    // above the OpenAI 272K threshold). OpenAI decides the pricing tier per
-    // request and bills the whole request at long-context rates, so the split
-    // has to be tracked while events are aggregated; it cannot be derived
-    // from the summed totals afterwards.
-    pub long_context_input_tokens: u64,
-    pub long_context_cached_input_tokens: u64,
-    pub long_context_cache_creation_tokens: u64,
-    pub long_context_output_tokens: u64,
-    pub recorded_standard_usage: CodexUsageBucket,
-    pub recorded_fast_usage: CodexUsageBucket,
-    pub recorded_flex_usage: CodexUsageBucket,
-    pub recorded_ultrafast_usage: CodexUsageBucket,
     /// Exact event timestamps keep time-dependent pricing available after aggregation.
     pub timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub is_fallback: bool,
@@ -396,54 +381,18 @@ pub struct CodexModelUsage {
 
 impl CodexModelUsage {
     pub fn from_buckets(usage: CodexUsageBucket, recorded_usage: TierBuckets) -> Self {
-        let mut model = Self::default();
-        model.set_buckets(usage, recorded_usage);
-        model
-    }
-
-    pub(crate) fn usage_bucket(&self) -> CodexUsageBucket {
-        CodexUsageBucket {
-            input_tokens: self.input_tokens,
-            cached_input_tokens: self.cached_input_tokens,
-            cache_creation_tokens: self.cache_creation_tokens,
-            output_tokens: self.output_tokens,
-            long_context_input_tokens: self.long_context_input_tokens,
-            long_context_cached_input_tokens: self.long_context_cached_input_tokens,
-            long_context_cache_creation_tokens: self.long_context_cache_creation_tokens,
-            long_context_output_tokens: self.long_context_output_tokens,
+        Self {
+            usage,
+            recorded_usage,
+            ..Self::default()
         }
-    }
-
-    pub(crate) fn recorded_usage(&self) -> TierBuckets {
-        TierBuckets([
-            self.recorded_standard_usage,
-            self.recorded_fast_usage,
-            self.recorded_flex_usage,
-            self.recorded_ultrafast_usage,
-        ])
     }
 
     pub(crate) fn add_usage(&mut self, usage: CodexUsageBucket, tier: Option<CodexServiceTier>) {
-        let mut recorded = self.recorded_usage();
+        self.usage += usage;
         if let Some(tier) = tier {
-            recorded[tier] += usage;
+            self.recorded_usage[tier] += usage;
         }
-        self.set_buckets(self.usage_bucket() + usage, recorded);
-    }
-
-    fn set_buckets(&mut self, usage: CodexUsageBucket, recorded: TierBuckets) {
-        self.input_tokens = usage.input_tokens;
-        self.cached_input_tokens = usage.cached_input_tokens;
-        self.cache_creation_tokens = usage.cache_creation_tokens;
-        self.output_tokens = usage.output_tokens;
-        self.long_context_input_tokens = usage.long_context_input_tokens;
-        self.long_context_cached_input_tokens = usage.long_context_cached_input_tokens;
-        self.long_context_cache_creation_tokens = usage.long_context_cache_creation_tokens;
-        self.long_context_output_tokens = usage.long_context_output_tokens;
-        self.recorded_standard_usage = recorded[CodexServiceTier::Standard];
-        self.recorded_fast_usage = recorded[CodexServiceTier::Fast];
-        self.recorded_flex_usage = recorded[CodexServiceTier::Flex];
-        self.recorded_ultrafast_usage = recorded[CodexServiceTier::Ultrafast];
     }
 }
 

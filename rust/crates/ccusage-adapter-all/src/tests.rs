@@ -2602,12 +2602,17 @@ fn uses_non_cached_codex_input_tokens_in_all_rows() {
     group.models.insert(
         "gpt-5".to_string(),
         CodexModelUsage {
-            input_tokens: 100,
-            cached_input_tokens: 70,
-            cache_creation_tokens: 20,
-            output_tokens: 5,
             total_tokens: 105,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                ccusage_adapter_codex::CodexUsageBucket {
+                    input_tokens: 100,
+                    cached_input_tokens: 70,
+                    cache_creation_tokens: 20,
+                    output_tokens: 5,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         },
     );
     let row = adapter::codex::unified_row_from_group(
@@ -2651,21 +2656,31 @@ fn includes_codex_model_breakdowns_in_all_rows() {
     group.models.insert(
         "gpt-5-mini".to_string(),
         CodexModelUsage {
-            input_tokens: 100,
-            cached_input_tokens: 20,
-            output_tokens: 10,
             total_tokens: 110,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                ccusage_adapter_codex::CodexUsageBucket {
+                    input_tokens: 100,
+                    cached_input_tokens: 20,
+                    output_tokens: 10,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         },
     );
     group.models.insert(
         "gpt-5".to_string(),
         CodexModelUsage {
-            input_tokens: 200,
-            cached_input_tokens: 80,
-            output_tokens: 40,
             total_tokens: 240,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                ccusage_adapter_codex::CodexUsageBucket {
+                    input_tokens: 200,
+                    cached_input_tokens: 80,
+                    output_tokens: 40,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         },
     );
 
@@ -2691,9 +2706,14 @@ fn display_mode_omits_codex_missing_pricing_from_unified_json() {
     group.models.insert(
         "gpt-unknown-preview".to_string(),
         CodexModelUsage {
-            input_tokens: 100,
             total_tokens: 100,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                ccusage_adapter_codex::CodexUsageBucket {
+                    input_tokens: 100,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         },
     );
     let row = adapter::codex::unified_row_from_group(

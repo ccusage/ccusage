@@ -1060,17 +1060,27 @@ mod tests {
             }"#,
         );
         let usage = CodexModelUsage {
-            input_tokens: 30,
             total_tokens: 30,
-            recorded_standard_usage: codex::CodexUsageBucket {
-                input_tokens: 10,
-                ..codex::CodexUsageBucket::default()
-            },
-            recorded_fast_usage: codex::CodexUsageBucket {
-                input_tokens: 10,
-                ..codex::CodexUsageBucket::default()
-            },
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                ccusage_adapter_codex::CodexUsageBucket {
+                    input_tokens: 30,
+                    ..Default::default()
+                },
+                {
+                    let mut tiers = ccusage_adapter_codex::TierBuckets::default();
+                    tiers[ccusage_adapter_codex::CodexServiceTier::Standard] =
+                        codex::CodexUsageBucket {
+                            input_tokens: 10,
+                            ..codex::CodexUsageBucket::default()
+                        };
+                    tiers[ccusage_adapter_codex::CodexServiceTier::Fast] =
+                        codex::CodexUsageBucket {
+                            input_tokens: 10,
+                            ..codex::CodexUsageBucket::default()
+                        };
+                    tiers
+                },
+            )
         };
         let mut group = CodexGroup {
             input_tokens: 30,
@@ -1099,16 +1109,21 @@ mod tests {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = PricingMap::load_embedded();
         let usage = CodexModelUsage {
-            input_tokens: 935_040,
-            cached_input_tokens: 875_306,
-            cache_creation_tokens: 57_610,
-            output_tokens: 11_150,
             total_tokens: 946_190,
-            long_context_input_tokens: 935_040,
-            long_context_cached_input_tokens: 875_306,
-            long_context_cache_creation_tokens: 57_610,
-            long_context_output_tokens: 11_150,
-            ..CodexModelUsage::default()
+            ..CodexModelUsage::from_buckets(
+                ccusage_adapter_codex::CodexUsageBucket {
+                    input_tokens: 935_040,
+                    cached_input_tokens: 875_306,
+                    cache_creation_tokens: 57_610,
+                    output_tokens: 11_150,
+                    long_context_input_tokens: 935_040,
+                    long_context_cached_input_tokens: 875_306,
+                    long_context_cache_creation_tokens: 57_610,
+                    long_context_output_tokens: 11_150,
+                    ..Default::default()
+                },
+                Default::default(),
+            )
         };
         let mut group = CodexGroup {
             input_tokens: 935_040,

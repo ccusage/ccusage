@@ -131,13 +131,13 @@ pub fn non_cached_input_tokens(
 fn model_usage_json(usage: &CodexModelUsage) -> Value {
     json!({
         "inputTokens": non_cached_input_tokens(
-            usage.input_tokens,
-            usage.cached_input_tokens,
-            usage.cache_creation_tokens,
+            usage.usage.input_tokens,
+            usage.usage.cached_input_tokens,
+            usage.usage.cache_creation_tokens,
         ),
-        "cacheCreationTokens": usage.cache_creation_tokens,
-        "cacheReadTokens": usage.cached_input_tokens,
-        "outputTokens": usage.output_tokens,
+        "cacheCreationTokens": usage.usage.cache_creation_tokens,
+        "cacheReadTokens": usage.usage.cached_input_tokens,
+        "outputTokens": usage.usage.output_tokens,
         "reasoningOutputTokens": usage.reasoning_output_tokens,
         "totalTokens": usage.total_tokens,
         "isFallback": usage.is_fallback,
@@ -205,8 +205,8 @@ pub fn calculate_codex_model_cost(
     };
     calculate_codex_usage_cost(
         CodexTimestampedUsage {
-            usage: usage.usage_bucket(),
-            recorded_usage: usage.recorded_usage(),
+            usage: usage.usage,
+            recorded_usage: usage.recorded_usage,
         },
         &pricing,
         speed,
@@ -326,9 +326,12 @@ pub fn codex_model_missing_pricing(
 ) -> bool {
     missing_pricing_model_for_token_total(
         Some(model),
-        usage
-            .total_tokens
-            .max(usage.input_tokens.saturating_add(usage.output_tokens)),
+        usage.total_tokens.max(
+            usage
+                .usage
+                .input_tokens
+                .saturating_add(usage.usage.output_tokens),
+        ),
         Some(pricing),
     )
     .is_some()
@@ -507,15 +510,19 @@ fn codex_breakdown_rows(
     let mut rows = Vec::with_capacity(models.len());
     for (model, usage, cost) in models {
         let input_tokens = non_cached_input_tokens(
-            usage.input_tokens,
-            usage.cached_input_tokens,
-            usage.cache_creation_tokens,
+            usage.usage.input_tokens,
+            usage.usage.cached_input_tokens,
+            usage.usage.cache_creation_tokens,
         );
         let mut row = vec![
             color(shared, format_breakdown_model_label(model), Color::Grey),
             String::new(),
             color(shared, format_number(input_tokens), Color::Grey),
-            color(shared, format_number(usage.output_tokens), Color::Grey),
+            color(
+                shared,
+                format_number(usage.usage.output_tokens),
+                Color::Grey,
+            ),
             color(
                 shared,
                 format_number(usage.reasoning_output_tokens),
@@ -523,12 +530,12 @@ fn codex_breakdown_rows(
             ),
             color(
                 shared,
-                format_number(usage.cache_creation_tokens),
+                format_number(usage.usage.cache_creation_tokens),
                 Color::Grey,
             ),
             color(
                 shared,
-                format_number(usage.cached_input_tokens),
+                format_number(usage.usage.cached_input_tokens),
                 Color::Grey,
             ),
             color(shared, format_number(usage.total_tokens), Color::Grey),
@@ -684,10 +691,15 @@ mod tests {
         group.models.insert(
             "gpt-unknown-preview".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
-                output_tokens: 5,
                 total_tokens: 105,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        output_tokens: 5,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let groups = BTreeMap::from([("2026-08-20".to_string(), group)]);
@@ -721,10 +733,15 @@ mod tests {
         free_group.models.insert(
             "gpt-free".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
-                output_tokens: 5,
                 total_tokens: 105,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        output_tokens: 5,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let free = BTreeMap::from([("2026-08-20".to_string(), free_group)]);
@@ -759,10 +776,15 @@ mod tests {
         priced_group.models.insert(
             "gpt-priced".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
-                output_tokens: 5,
                 total_tokens: 105,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        output_tokens: 5,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let priced = BTreeMap::from([("2026-08-20".to_string(), priced_group)]);
@@ -783,9 +805,14 @@ mod tests {
         group.models.insert(
             "gpt-unknown-preview".to_string(),
             CodexModelUsage {
-                input_tokens: 100,
                 total_tokens: 100,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 100,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         let groups = BTreeMap::from([("2026-08-20".to_string(), group)]);
@@ -952,25 +979,35 @@ mod tests {
         group.models.insert(
             "gpt-5.3-codex".to_string(),
             CodexModelUsage {
-                input_tokens: 70,
-                cached_input_tokens: 40,
-                cache_creation_tokens: 20,
-                output_tokens: 3,
                 reasoning_output_tokens: 1,
                 total_tokens: 73,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 70,
+                        cached_input_tokens: 40,
+                        cache_creation_tokens: 20,
+                        output_tokens: 3,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         group.models.insert(
             "gpt-5-mini".to_string(),
             CodexModelUsage {
-                input_tokens: 30,
-                cached_input_tokens: 20,
-                cache_creation_tokens: 10,
-                output_tokens: 2,
                 reasoning_output_tokens: 0,
                 total_tokens: 32,
-                ..CodexModelUsage::default()
+                ..CodexModelUsage::from_buckets(
+                    crate::CodexUsageBucket {
+                        input_tokens: 30,
+                        cached_input_tokens: 20,
+                        cache_creation_tokens: 10,
+                        output_tokens: 2,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
             },
         );
         group
@@ -1005,9 +1042,9 @@ mod tests {
             .values()
             .map(|usage| {
                 non_cached_input_tokens(
-                    usage.input_tokens,
-                    usage.cached_input_tokens,
-                    usage.cache_creation_tokens,
+                    usage.usage.input_tokens,
+                    usage.usage.cached_input_tokens,
+                    usage.usage.cache_creation_tokens,
                 )
             })
             .sum();

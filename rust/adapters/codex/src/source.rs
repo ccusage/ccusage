@@ -79,16 +79,16 @@ pub fn unified_row_from_group(
         .iter()
         .map(|(model, usage)| {
             let input = non_cached_input_tokens(
-                usage.input_tokens,
-                usage.cached_input_tokens,
-                usage.cache_creation_tokens,
+                usage.usage.input_tokens,
+                usage.usage.cached_input_tokens,
+                usage.usage.cache_creation_tokens,
             );
             ModelBreakdown {
                 model_name: model.clone(),
                 input_tokens: input,
-                output_tokens: usage.output_tokens,
-                cache_creation_tokens: usage.cache_creation_tokens,
-                cache_read_tokens: usage.cached_input_tokens,
+                output_tokens: usage.usage.output_tokens,
+                cache_creation_tokens: usage.usage.cache_creation_tokens,
+                cache_read_tokens: usage.usage.cached_input_tokens,
                 cache_creation_1h_tokens: None,
                 extra_total_tokens: 0,
                 cost: calculate_codex_model_cost(model, usage, pricing, speed),

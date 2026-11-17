@@ -202,8 +202,8 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
             let groups = load_groups_from_directory(fixture.root(), &shared, kind).unwrap();
             assert_eq!(groups.len(), 1);
             assert_eq!(
-                groups.values().next().unwrap().models["gpt-5"]
-                    .recorded_fast_usage
+                groups.values().next().unwrap().models["gpt-5"].recorded_usage
+                    [crate::CodexServiceTier::Fast]
                     .input_tokens,
                 300
             );
@@ -256,10 +256,16 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
         assert_eq!(groups.len(), 1);
         let usage = &groups["a-first"].models["gpt-5"];
         let recorded = [
-            (Standard, usage.recorded_standard_usage),
-            (Fast, usage.recorded_fast_usage),
-            (Flex, usage.recorded_flex_usage),
-            (Ultrafast, usage.recorded_ultrafast_usage),
+            (
+                Standard,
+                usage.recorded_usage[crate::CodexServiceTier::Standard],
+            ),
+            (Fast, usage.recorded_usage[crate::CodexServiceTier::Fast]),
+            (Flex, usage.recorded_usage[crate::CodexServiceTier::Flex]),
+            (
+                Ultrafast,
+                usage.recorded_usage[crate::CodexServiceTier::Ultrafast],
+            ),
         ];
         let input_tokens = |tier| {
             recorded
@@ -281,7 +287,7 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
             300,
             "{first_tier:?} + {copy_tier:?}"
         );
-        assert_eq!(usage.input_tokens, 300);
+        assert_eq!(usage.usage.input_tokens, 300);
     }
 }
 
