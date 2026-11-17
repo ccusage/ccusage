@@ -42,6 +42,22 @@ Both fields describe pricing availability, not amounts, so `--no-cost` keeps the
 ccusage daily --json | jq '.totals.unpricedModels // []'
 ```
 
+In the `ccusage claude daily --json` fixture report, `mystery-model-9000` has no price. Its `modelBreakdowns` entry on 2026-01-01:
+
+```json
+{
+	"cacheCreationTokens": 0,
+	"cacheReadTokens": 800,
+	"cost": 0.0,
+	"inputTokens": 300,
+	"missingPricing": true,
+	"modelName": "mystery-model-9000",
+	"outputTokens": 70
+}
+```
+
+The report's `totals`:
+
 ```json
 {
 	"totals": {
@@ -65,132 +81,134 @@ Update ccusage, or run without `--offline`, once the pricing source lists the mo
 Unified reports also support JSON-oriented flags for dashboard-style consumers:
 
 ```bash
-ccusage daily --sections daily,monthly,session --by-agent --json
+ccusage daily --sections daily,weekly,monthly,session --json
+ccusage daily --by-agent --json
 ```
 
-`--sections` emits each requested unified section from one load. The invoked command's section is always included, and the top-level `totals` object remains the total for that invoked section. JSON keys are emitted with the invoked section first, then remaining sections in `daily`, `weekly`, `monthly`, `session` order, with `totals` last. `--by-agent` adds an `agents` array to daily, weekly, and monthly rows; session rows are already per-agent.
+`--sections` emits each requested unified section from one load. The invoked command's section is always included, and the top-level `totals` object remains the total for that invoked section. JSON keys are emitted with the invoked section first, then remaining sections in `daily`, `weekly`, `monthly`, `session` order, with `totals` last. This excerpt of `ccusage daily --sections daily,weekly,monthly,session --json` keeps one row of each section:
 
 ```json
 {
 	"daily": [
 		{
 			"agent": "all",
-			"period": "2025-12-31",
-			"inputTokens": 66794,
-			"outputTokens": 19832,
-			"cacheCreationTokens": 6111,
-			"cacheReadTokens": 185616,
-			"totalTokens": 278963,
-			"totalCost": 11.416471755000002,
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
 			"metadata": {
-				"agents": [
-					"amp",
-					"antigravity",
-					"claude",
-					"cline",
-					"codebuff",
-					"codex",
-					"copilot",
-					"droid",
-					"dsh",
-					"gemini",
-					"goose",
-					"grok",
-					"hermes",
-					"kilo",
-					"kimi",
-					"openclaw",
-					"opencode",
-					"pi",
-					"qwen",
-					"zcode"
-				]
+				"agents": ["kimi"]
 			},
-			"modelsUsed": [
-				"GLM-5.3",
-				"GLM-5.3-Flash",
-				"[openclaw] claude-haiku-4-5-20251001",
-				"[openclaw] gpt-5",
-				"[openclaw] openclaw-mystery-1",
-				"[pi] claude-haiku-4-5-20251001",
-				"[pi] claude-sonnet-4-20250514",
-				"anthropic/claude-sonnet-4",
-				"claude-haiku-4-5-20251001",
-				"claude-opus-4-20250514",
-				"claude-sonnet-4-20250514",
-				"copilot-mystery-1",
-				"deepseek-v4-pro",
-				"droid-mystery-1",
-				"dsh-mystery-1",
-				"gemini-2-5-pro",
-				"gemini-2.5-pro",
-				"gemini-3-flash-preview",
-				"gemini-3-pro",
-				"gemini-3.5-flash-high",
-				"gemini-mystery-1",
-				"gpt-5",
-				"gpt-5-codex",
-				"gpt-5.2-codex",
-				"gpt-5.5",
-				"grok-4.5-build",
-				"grok-4.7-build",
-				"grok-code-fast-1",
-				"grok-mystery-1",
-				"kimi-for-coding",
-				"kimi-k2-thinking",
-				"qwen-2.5-72b-instruct",
-				"qwen-3-235b",
-				"qwen-mystery-1",
-				"qwen3-coder-plus",
-				"unknown"
-			]
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-21",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
+		}
+	],
+	"weekly": [
+		{
+			"agent": "all",
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
+			"metadata": {
+				"agents": ["kimi"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-20",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
 		}
 	],
 	"monthly": [
 		{
 			"agent": "all",
-			"period": "1970-01",
-			"inputTokens": 33,
-			"outputTokens": 9,
 			"cacheCreationTokens": 0,
-			"cacheReadTokens": 0,
-			"totalTokens": 42,
-			"totalCost": 0.0001112,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
 			"metadata": {
-				"agents": ["grok", "opencode", "zcode"]
+				"agents": ["kimi"]
 			},
-			"modelsUsed": ["gpt-5", "grok-code-fast-1"]
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
 		}
 	],
 	"session": [
 		{
-			"agent": "pi",
-			"period": "sess-beta-legacy",
-			"inputTokens": 5055,
-			"outputTokens": 2126,
-			"cacheCreationTokens": 400,
-			"cacheReadTokens": 18000,
-			"totalTokens": 25831,
-			"totalCost": 4.01994,
+			"agent": "claude",
+			"cacheCreationTokens": 250,
+			"cacheReadTokens": 16000,
+			"inputTokens": 2320,
 			"metadata": {
-				"lastActivity": "2026-01-02T10:20:00.000Z",
-				"projectPath": "--Users-dev-beta--"
+				"lastActivity": "2026-01-02T10:00:00.000Z"
 			},
-			"modelsUsed": [
-				"[pi] claude-haiku-4-5-20251001",
-				"[pi] claude-sonnet-4-20250514",
-				"[pi] gpt-5",
-				"[pi] claude-opus-4-20250514"
-			]
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 50,
+					"cacheReadTokens": 9000,
+					"cost": 0.5090975000000001,
+					"inputTokens": 1420,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 410,
+					"storedCost": 0.5
+				},
+				{
+					"cacheCreationTokens": 200,
+					"cacheReadTokens": 7000,
+					"cost": 0.05775,
+					"inputTokens": 900,
+					"modelName": "claude-opus-4-20250514",
+					"outputTokens": 400
+				}
+			],
+			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
+			"outputTokens": 810,
+			"period": "sess-beta-1",
+			"totalCost": 0.5668475000000001,
+			"totalTokens": 19380
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 18065,
-		"cacheReadTokens": 1316617,
-		"inputTokens": 1349391,
-		"outputTokens": 59241,
-		"totalCost": 28.645522425000003,
-		"totalTokens": 2746731,
+		"cacheCreationTokens": 17765,
+		"cacheReadTokens": 1312617,
+		"inputTokens": 1348380,
+		"outputTokens": 59040,
+		"totalCost": 27.895498675000006,
+		"totalTokens": 2741219,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
@@ -224,6 +242,61 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 			"zcode-mystery-1"
 		]
 	}
+}
+```
+
+`--by-agent` adds an `agents` array to daily, weekly, and monthly rows, one entry per source with its own tokens, cost, and `modelBreakdowns`; session rows are already per-agent. A row of `ccusage daily --by-agent --json`:
+
+```json
+{
+	"daily": [
+		{
+			"agent": "all",
+			"agents": [
+				{
+					"agent": "kimi",
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"inputTokens": 1000,
+					"modelBreakdowns": [
+						{
+							"cacheCreationTokens": 0,
+							"cacheReadTokens": 2000,
+							"cost": 0.00327,
+							"inputTokens": 1000,
+							"modelName": "kimi-for-coding",
+							"outputTokens": 500
+						}
+					],
+					"modelsUsed": ["kimi-for-coding"],
+					"outputTokens": 500,
+					"totalCost": 0.00327,
+					"totalTokens": 3500
+				}
+			],
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
+			"metadata": {
+				"agents": ["kimi"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-21",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
+		}
+	]
 }
 ```
 
@@ -261,9 +334,9 @@ In `auto` [cost mode](/guide/cost-modes), an entry's `cost` can add together cos
 
 ## JSON Structure
 
-There are two families of shapes. The unified reports, `ccusage daily`, `weekly`, `monthly`, and `session`, use one row shape keyed by `period`. A focused report such as `ccusage claude daily` uses its source's shape, keyed by `date`, `week`, `month`, or `sessionId`. Most report shapes include a `totals` object; `blocks` and `session --id` do not, and focused Qwen reports use `totals: null`.
+There are two families of shapes. The unified reports, `ccusage daily`, `weekly`, `monthly`, and `session`, use one row shape keyed by `period`. A focused report such as `ccusage claude daily` uses its source's shape, keyed by `date`, `week`, `month`, or `sessionId`. Most report shapes include a `totals` object; `blocks` and `session --id` do not, and a focused Qwen report with no rows emits `totals: null`.
 
-The samples below are real output from the test fixtures that pin ccusage's report formats. The examples are excerpts; omitted rows and fields still contribute to the displayed totals. Most objects use alphabetical key order; multi-section reports place the invoked section first and `totals` last.
+The samples below are real output from the test fixtures that pin ccusage's report formats. The examples are excerpts that keep whole rows; omitted rows still contribute to the displayed `totals`. Most objects use alphabetical key order; multi-section reports place the invoked section first and `totals` last.
 
 ### Unified Daily, Weekly, and Monthly Reports
 
@@ -274,89 +347,44 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 	"daily": [
 		{
 			"agent": "all",
-			"period": "2025-12-31",
-			"inputTokens": 67294,
-			"outputTokens": 19952,
-			"cacheCreationTokens": 6111,
-			"cacheReadTokens": 185916,
-			"totalTokens": 279883,
-			"totalCost": 11.418334255000001,
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
 			"metadata": {
-				"agents": [
-					"amp",
-					"antigravity",
-					"claude",
-					"cline",
-					"codebuff",
-					"codex",
-					"copilot",
-					"droid",
-					"dsh",
-					"gemini",
-					"goose",
-					"grok",
-					"hermes",
-					"kilo",
-					"kimi",
-					"openclaw",
-					"opencode",
-					"pi",
-					"qwen",
-					"zcode"
-				]
+				"agents": ["kimi"]
 			},
-			"modelsUsed": [
-				"GLM-5.3",
-				"GLM-5.3-Flash",
-				"[openclaw] claude-haiku-4-5-20251001",
-				"[openclaw] gpt-5",
-				"[openclaw] openclaw-mystery-1",
-				"[pi] claude-haiku-4-5-20251001",
-				"[pi] claude-sonnet-4-20250514",
-				"anthropic/claude-sonnet-4",
-				"claude-haiku-4-5-20251001",
-				"claude-opus-4-20250514",
-				"claude-sonnet-4-20250514",
-				"copilot-mystery-1",
-				"deepseek-v4-pro",
-				"droid-mystery-1",
-				"dsh-mystery-1",
-				"gemini-2-5-pro",
-				"gemini-2.5-pro",
-				"gemini-3-flash-preview",
-				"gemini-3-pro",
-				"gemini-3.5-flash-high",
-				"gemini-mystery-1",
-				"gpt-5",
-				"gpt-5-codex",
-				"gpt-5.2-codex",
-				"gpt-5.5",
-				"grok-4.5-build",
-				"grok-4.7-build",
-				"grok-code-fast-1",
-				"grok-mystery-1",
-				"kimi-for-coding",
-				"kimi-k2-thinking",
-				"qwen-2.5-72b-instruct",
-				"qwen-3-235b",
-				"qwen-mystery-1",
-				"qwen3-coder-plus",
-				"unknown"
-			]
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-21",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 9001,
-		"cacheReadTokens": 671244,
-		"inputTokens": 1172663,
-		"outputTokens": 37582,
-		"totalCost": 15.123121700000002,
-		"totalTokens": 1892152,
+		"cacheCreationTokens": 17765,
+		"cacheReadTokens": 1312617,
+		"inputTokens": 1348380,
+		"outputTokens": 59040,
+		"totalCost": 27.895498675000006,
+		"totalTokens": 2741219,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
+			"[openclaw] unknown",
 			"[pi] pi-mystery-1",
+			"[pi] pi-mystery-2",
 			"amp-mystery-1",
+			"antigravity-model-77",
 			"antigravity-mystery-1",
 			"claude-sonnet-4-20250514",
 			"cline-mystery-1",
@@ -365,6 +393,7 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 			"copilot-mystery-1",
 			"droid-mystery-1",
 			"dsh-mystery-1",
+			"gemini-internal-model",
 			"gemini-mystery-1",
 			"goose-mystery-1",
 			"gpt-unknown",
@@ -373,6 +402,7 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 			"hermes-mystery-1",
 			"kilo-mystery-1",
 			"kimi-mystery-1",
+			"model_placeholder_m499",
 			"mystery-model-9000",
 			"opencode-mystery-1",
 			"qwen-mystery-1",
@@ -391,38 +421,54 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 {
 	"session": [
 		{
-			"agent": "pi",
-			"period": "sess-beta-legacy",
-			"inputTokens": 2515,
-			"outputTokens": 1516,
-			"cacheCreationTokens": 400,
-			"cacheReadTokens": 18000,
-			"totalTokens": 22681,
-			"totalCost": 4.01685,
+			"agent": "claude",
+			"cacheCreationTokens": 250,
+			"cacheReadTokens": 16000,
+			"inputTokens": 2320,
 			"metadata": {
-				"lastActivity": "2026-01-01T00:50:00.000Z",
-				"projectPath": "--Users-dev-beta--"
+				"lastActivity": "2026-01-02T10:00:00.000Z"
 			},
-			"modelsUsed": [
-				"[pi] claude-haiku-4-5-20251001",
-				"[pi] claude-sonnet-4-20250514",
-				"[pi] gpt-5",
-				"[pi] claude-opus-4-20250514"
-			]
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 50,
+					"cacheReadTokens": 9000,
+					"cost": 0.5090975000000001,
+					"inputTokens": 1420,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 410,
+					"storedCost": 0.5
+				},
+				{
+					"cacheCreationTokens": 200,
+					"cacheReadTokens": 7000,
+					"cost": 0.05775,
+					"inputTokens": 900,
+					"modelName": "claude-opus-4-20250514",
+					"outputTokens": 400
+				}
+			],
+			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
+			"outputTokens": 810,
+			"period": "sess-beta-1",
+			"totalCost": 0.5668475000000001,
+			"totalTokens": 19380
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 9001,
-		"cacheReadTokens": 569584,
-		"inputTokens": 868845,
-		"outputTokens": 34170,
-		"totalCost": 14.790176300000002,
-		"totalTokens": 1483095,
+		"cacheCreationTokens": 18465,
+		"cacheReadTokens": 1323217,
+		"inputTokens": 1350408,
+		"outputTokens": 60062,
+		"totalCost": 28.770669675000025,
+		"totalTokens": 2755589,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
+			"[openclaw] unknown",
 			"[pi] pi-mystery-1",
+			"[pi] pi-mystery-2",
 			"amp-mystery-1",
+			"antigravity-model-77",
 			"antigravity-mystery-1",
 			"claude-sonnet-4-20250514",
 			"cline-mystery-1",
@@ -431,6 +477,7 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 			"copilot-mystery-1",
 			"droid-mystery-1",
 			"dsh-mystery-1",
+			"gemini-internal-model",
 			"gemini-mystery-1",
 			"goose-mystery-1",
 			"gpt-unknown",
@@ -439,8 +486,10 @@ The samples below are real output from the test fixtures that pin ccusage's repo
 			"hermes-mystery-1",
 			"kilo-mystery-1",
 			"kimi-mystery-1",
+			"model_placeholder_m499",
 			"mystery-model-9000",
 			"opencode-mystery-1",
+			"qwen-mystery-1",
 			"unknown",
 			"zcode-mystery-1"
 		]
@@ -456,26 +505,45 @@ This excerpt shows one session; `totals` covers the complete report.
 {
 	"sessions": [
 		{
-			"sessionId": "sess-beta-1",
-			"projectPath": "-Users-dev-beta",
+			"cacheCreationTokens": 250,
+			"cacheReadTokens": 16000,
 			"firstActivity": "2025-12-31T23:50:00.000Z",
-			"lastActivity": "2026-01-01T01:00:05.000Z",
-			"inputTokens": 1520,
-			"outputTokens": 510,
-			"cacheCreationTokens": 200,
-			"cacheReadTokens": 10000,
-			"totalTokens": 12230,
-			"totalCost": 0.55796,
-			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"]
+			"inputTokens": 2320,
+			"lastActivity": "2026-01-02T10:00:00.000Z",
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 50,
+					"cacheReadTokens": 9000,
+					"cost": 0.5090975000000001,
+					"inputTokens": 1420,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 410,
+					"storedCost": 0.5
+				},
+				{
+					"cacheCreationTokens": 200,
+					"cacheReadTokens": 7000,
+					"cost": 0.05775,
+					"inputTokens": 900,
+					"modelName": "claude-opus-4-20250514",
+					"outputTokens": 400
+				}
+			],
+			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
+			"outputTokens": 810,
+			"projectPath": "-Users-dev-beta",
+			"sessionId": "sess-beta-1",
+			"totalCost": 0.5668475000000001,
+			"totalTokens": 19380
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 1550,
-		"cacheReadTokens": 22300,
-		"inputTokens": 5294,
-		"outputTokens": 1570,
-		"totalCost": 0.6219695000000001,
-		"totalTokens": 30714,
+		"cacheCreationTokens": 3100,
+		"cacheReadTokens": 53200,
+		"inputTokens": 8594,
+		"outputTokens": 4390,
+		"totalCost": 0.935817,
+		"totalTokens": 69284,
 		"unpricedModels": ["mystery-model-9000"]
 	}
 }

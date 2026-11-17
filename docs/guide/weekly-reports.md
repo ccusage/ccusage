@@ -14,13 +14,17 @@ ccusage opencode weekly
 
 ## Example Output
 
-Excerpt from the fixture report; additional rows are omitted.
+`ccusage weekly` prints an `All` row per week followed by one row per source. This excerpt from the fixture report keeps the week of 2026-04-20 and the Total row; the other weeks are omitted:
 
 ```text
 ┌────────────┬──────────────────────┬───────────────────────────┬────────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
 │ Week       │ Agent                │ Models                    │      Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
 ├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
-│ 1969-12-29 │ All                  │                           │         22 │         2 │             0 │           0 │            24 │       $0.00 │
+│ 2026-04-20 │ All                  │                           │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│            │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                      │                           │  1,348,380 │    59,040 │        17,765 │   1,312,617 │     2,741,219 │      $27.90 │
 └────────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
@@ -102,19 +106,35 @@ See per-model weekly costs:
 ccusage weekly --breakdown
 ```
 
-Excerpt from the fixture report; additional rows are omitted.
+Each source row is followed by one `└─` row per model. This excerpt from a 120-column terminal keeps the week of 2025-12-29, its Amp row, and Amp's model rows; the other sources and weeks are omitted:
 
 ```text
 ┌──────────┬──────────────┬──────────────┬────────────┬───────────┬────────────┬─────────────┬─────────────┬───────────┐
 │ Week     │ Agent        │ Models       │      Input │    Output │      Cache │  Cache Read │       Total │      Cost │
 │          │              │              │            │           │     Create │             │      Tokens │     (USD) │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│ 2025     │ All          │              │  1,338,775 │    56,722 │     16,501 │   1,309,524 │   2,724,909 │    $24.06 │
+│ 12-29    │              │              │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │ - Amp        │ - amp-myste… │      5,000 │     2,215 │        550 │      25,000 │      32,765 │     $0.03 │
+│          │              │ - gpt-5      │            │           │            │             │             │           │
+│          │              │ - haiku-4-5  │            │           │            │             │             │           │
+│          │              │ - sonnet-4   │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─ sonnet-4  │      1,600 │       800 │        300 │       7,000 │       9,700 │     $0.02 │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │   └─ gpt-5   │      1,400 │       645 │          0 │       5,000 │       7,045 │     $0.01 │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─ haiku-4-5 │        900 │       400 │        200 │       7,000 │       8,500 │     $0.00 │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │ └─           │      1,100 │       370 │         50 │       6,000 │       7,520 │     $0.00 │
+│          │              │ amp-mystery… │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│ Total    │              │              │  1,348,380 │    59,040 │     17,765 │   1,312,617 │   2,741,219 │    $27.90 │
 └──────────┴──────────────┴──────────────┴────────────┴───────────┴────────────┴─────────────┴─────────────┴───────────┘
 ```
 
 ### JSON Output
-
-The following output excerpt omits other rows and some per-row fields; `totals` covers the complete report.
 
 Export weekly data as JSON:
 
@@ -122,125 +142,51 @@ Export weekly data as JSON:
 ccusage weekly --json
 ```
 
-Rows use the same fields as [daily JSON](/guide/daily-reports#json-output), with the first day of the week in `period`:
+Rows use the same fields as [daily JSON](/guide/daily-reports#json-output), with the first day of the week in `period`. This excerpt keeps one row; `totals` covers the complete report:
 
 ```json
 {
 	"weekly": [
 		{
 			"agent": "all",
-			"period": "2025-12-29",
-			"inputTokens": 1172663,
-			"outputTokens": 37582,
-			"cacheCreationTokens": 9001,
-			"cacheReadTokens": 671244,
-			"totalTokens": 1892152,
-			"totalCost": 15.123121700000002,
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
 			"metadata": {
-				"agents": [
-					"amp",
-					"antigravity",
-					"claude",
-					"cline",
-					"codebuff",
-					"codex",
-					"copilot",
-					"droid",
-					"dsh",
-					"gemini",
-					"goose",
-					"grok",
-					"hermes",
-					"kilo",
-					"kimi",
-					"openclaw",
-					"opencode",
-					"pi",
-					"qwen",
-					"zcode"
-				]
+				"agents": ["kimi"]
 			},
-			"modelsUsed": [
-				"GLM-5.3",
-				"GLM-5.3-Flash",
-				"[grok] grok-4.3-build",
-				"[openclaw] claude-haiku-4-5-20251001",
-				"[openclaw] claude-sonnet-4-20250514",
-				"[openclaw] gpt-5",
-				"[openclaw] openclaw-mystery-1",
-				"[pi] claude-haiku-4-5-20251001",
-				"[pi] claude-opus-4-20250514",
-				"[pi] claude-sonnet-4-20250514",
-				"[pi] gpt-5",
-				"[pi] pi-mystery-1",
-				"amp-mystery-1",
-				"anthropic/claude-sonnet-4",
-				"anthropic/claude-sonnet-4.5",
-				"antigravity-mystery-1",
-				"claude-haiku-4-5-20251001",
-				"claude-opus-4-20250514",
-				"claude-opus-5",
-				"claude-sonnet-4-20250514",
-				"cline-mystery-1",
-				"codebuff-mystery-1",
-				"codex-mystery-1",
-				"copilot-mystery-1",
-				"deepseek-flash",
-				"deepseek-v4-pro",
-				"droid-mystery-1",
-				"dsh-mystery-1",
-				"gemini-2-5-pro",
-				"gemini-2.5-flash",
-				"gemini-2.5-pro",
-				"gemini-3-flash-preview",
-				"gemini-3-pro",
-				"gemini-3-pro-high",
-				"gemini-3.5-flash-high",
-				"gemini-3.6-flash-high",
-				"gemini-mystery-1",
-				"glm-5.3",
-				"goose-mystery-1",
-				"gpt-5",
-				"gpt-5-codex",
-				"gpt-5.2-codex",
-				"gpt-5.5",
-				"gpt-unknown",
-				"grok-4.5-build",
-				"grok-4.7-build",
-				"grok-code-fast-1",
-				"grok-mystery-1",
-				"grok-unknown",
-				"hermes-mystery-1",
-				"kilo-mystery-1",
-				"kimi-for-coding",
-				"kimi-k2-thinking",
-				"kimi-k2.5",
-				"kimi-mystery-1",
-				"mystery-model-9000",
-				"opencode-mystery-1",
-				"opus",
-				"qwen-2.5-72b-instruct",
-				"qwen-3-235b",
-				"qwen-mystery-1",
-				"qwen/qwen3-coder",
-				"qwen3-coder-plus",
-				"unknown",
-				"zcode-mystery-1"
-			]
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-20",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
 		}
 	],
 	"totals": {
-		"cacheCreationTokens": 9001,
-		"cacheReadTokens": 671244,
-		"inputTokens": 1172663,
-		"outputTokens": 37582,
-		"totalCost": 15.123121700000002,
-		"totalTokens": 1892152,
+		"cacheCreationTokens": 17765,
+		"cacheReadTokens": 1312617,
+		"inputTokens": 1348380,
+		"outputTokens": 59040,
+		"totalCost": 27.895498675000002,
+		"totalTokens": 2741219,
 		"unpricedModels": [
 			"GLM-5.3",
 			"[openclaw] openclaw-mystery-1",
+			"[openclaw] unknown",
 			"[pi] pi-mystery-1",
+			"[pi] pi-mystery-2",
 			"amp-mystery-1",
+			"antigravity-model-77",
 			"antigravity-mystery-1",
 			"claude-sonnet-4-20250514",
 			"cline-mystery-1",
@@ -249,6 +195,7 @@ Rows use the same fields as [daily JSON](/guide/daily-reports#json-output), with
 			"copilot-mystery-1",
 			"droid-mystery-1",
 			"dsh-mystery-1",
+			"gemini-internal-model",
 			"gemini-mystery-1",
 			"goose-mystery-1",
 			"gpt-unknown",
@@ -257,6 +204,7 @@ Rows use the same fields as [daily JSON](/guide/daily-reports#json-output), with
 			"hermes-mystery-1",
 			"kilo-mystery-1",
 			"kimi-mystery-1",
+			"model_placeholder_m499",
 			"mystery-model-9000",
 			"opencode-mystery-1",
 			"qwen-mystery-1",
