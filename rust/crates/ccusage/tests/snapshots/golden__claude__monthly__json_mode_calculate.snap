@@ -7,18 +7,18 @@ exit: 0
 {
   "monthly": [
     {
-      "cacheCreationTokens": 1800,
-      "cacheReadTokens": 36100,
-      "inputTokens": 3870,
+      "cacheCreationTokens": 1200,
+      "cacheReadTokens": 27100,
+      "inputTokens": 3370,
       "modelBreakdowns": [
         {
           "cacheCreation1hTokens": 400,
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 25000,
-          "cost": 0.24675,
-          "inputTokens": 1900,
+          "cacheCreationTokens": 800,
+          "cacheReadTokens": 16000,
+          "cost": 0.1545,
+          "inputTokens": 1400,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 2000
+          "outputTokens": 1200
         },
         {
           "cacheCreationTokens": 400,
@@ -43,14 +43,14 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "month": "2025-12",
-      "outputTokens": 2760,
-      "totalCost": 0.26857,
-      "totalTokens": 44530
+      "outputTokens": 1960,
+      "totalCost": 0.17631999999999998,
+      "totalTokens": 33630
     },
     {
       "cacheCreationTokens": 1300,
       "cacheReadTokens": 17100,
-      "inputTokens": 4724,
+      "inputTokens": 4757,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
@@ -64,10 +64,10 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 1300,
           "cacheReadTokens": 13000,
-          "cost": 0.024746999999999998,
-          "inputTokens": 1824,
+          "cost": 0.025506,
+          "inputTokens": 1857,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 550
+          "outputTokens": 594
         },
         {
           "cacheCreationTokens": 0,
@@ -103,18 +103,18 @@ exit: 0
         "claude-opus-5-fast"
       ],
       "month": "2026-01",
-      "outputTokens": 1630,
-      "totalCost": 0.10704700000000002,
-      "totalTokens": 24754
+      "outputTokens": 1674,
+      "totalCost": 0.10780600000000001,
+      "totalTokens": 24831
     }
   ],
   "totals": {
-    "cacheCreationTokens": 3100,
-    "cacheReadTokens": 53200,
-    "inputTokens": 8594,
-    "outputTokens": 4390,
-    "totalCost": 0.375617,
-    "totalTokens": 69284,
+    "cacheCreationTokens": 2500,
+    "cacheReadTokens": 44200,
+    "inputTokens": 8127,
+    "outputTokens": 3634,
+    "totalCost": 0.284126,
+    "totalTokens": 58461,
     "unpricedModels": [
       "mystery-model-9000"
     ]

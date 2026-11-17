@@ -51,9 +51,9 @@ exit: 0
     {
       "actualEndTime": "2025-12-30T10:07:00.000Z",
       "burnRate": null,
-      "costUSD": 0.23915999999999998,
+      "costUSD": 0.14690999999999999,
       "endTime": "2025-12-30T11:00:00.000Z",
-      "entries": 4,
+      "entries": 3,
       "id": "2025-12-30T10:00:00.000Z",
       "isActive": false,
       "isGap": false,
@@ -65,12 +65,12 @@ exit: 0
       "projection": null,
       "startTime": "2025-12-30T10:00:00.000Z",
       "tokenCounts": {
-        "cacheCreationInputTokens": 1500,
-        "cacheReadInputTokens": 22100,
-        "inputTokens": 2050,
-        "outputTokens": 1820
+        "cacheCreationInputTokens": 900,
+        "cacheReadInputTokens": 13100,
+        "inputTokens": 1550,
+        "outputTokens": 1020
       },
-      "totalTokens": 27470
+      "totalTokens": 16570
     },
     {
       "actualEndTime": null,
@@ -221,11 +221,11 @@ exit: 0
       "totalTokens": 3715
     },
     {
-      "actualEndTime": "2026-01-01T01:00:05.000Z",
+      "actualEndTime": "2026-01-01T02:00:00.000Z",
       "burnRate": null,
-      "costUSD": 0.000105,
+      "costUSD": 0.000864,
       "endTime": "2026-01-01T02:00:00.000Z",
-      "entries": 1,
+      "entries": 2,
       "id": "2026-01-01T01:00:00.000Z",
       "isActive": false,
       "isGap": false,
@@ -237,30 +237,10 @@ exit: 0
       "tokenCounts": {
         "cacheCreationInputTokens": 0,
         "cacheReadInputTokens": 0,
-        "inputTokens": 10,
-        "outputTokens": 5
+        "inputTokens": 43,
+        "outputTokens": 49
       },
-      "totalTokens": 15
-    },
-    {
-      "actualEndTime": null,
-      "burnRate": null,
-      "costUSD": 0,
-      "endTime": "2026-01-01T03:00:00.000Z",
-      "entries": 0,
-      "id": "gap-2026-01-01T02:00:05.000Z",
-      "isActive": false,
-      "isGap": true,
-      "models": [],
-      "projection": null,
-      "startTime": "2026-01-01T02:00:05.000Z",
-      "tokenCounts": {
-        "cacheCreationInputTokens": 0,
-        "cacheReadInputTokens": 0,
-        "inputTokens": 0,
-        "outputTokens": 0
-      },
-      "totalTokens": 0
+      "totalTokens": 92
     },
     {
       "actualEndTime": "2026-01-01T03:00:00.000Z",

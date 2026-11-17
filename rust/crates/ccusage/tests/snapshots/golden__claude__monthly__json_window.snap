@@ -41,16 +41,16 @@ exit: 0
     {
       "cacheCreationTokens": 1250,
       "cacheReadTokens": 8300,
-      "inputTokens": 3574,
+      "inputTokens": 3607,
       "modelBreakdowns": [
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 1250,
           "cacheReadTokens": 7000,
-          "cost": 0.5116595,
-          "inputTokens": 1024,
+          "cost": 0.5124185,
+          "inputTokens": 1057,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 250,
+          "outputTokens": 294,
           "storedCost": 0.5
         },
         {
@@ -86,18 +86,18 @@ exit: 0
         "claude-opus-5"
       ],
       "month": "2026-01",
-      "outputTokens": 680,
-      "totalCost": 0.5381595,
-      "totalTokens": 13804
+      "outputTokens": 724,
+      "totalCost": 0.5389185,
+      "totalTokens": 13881
     }
   ],
   "totals": {
     "cacheCreationTokens": 1550,
     "cacheReadTokens": 22300,
-    "inputTokens": 5294,
-    "outputTokens": 1570,
-    "totalCost": 0.6219695000000001,
-    "totalTokens": 30714,
+    "inputTokens": 5327,
+    "outputTokens": 1614,
+    "totalCost": 0.6227285,
+    "totalTokens": 30791,
     "unpricedModels": [
       "mystery-model-9000"
     ]

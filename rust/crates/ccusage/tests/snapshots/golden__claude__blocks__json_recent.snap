@@ -113,9 +113,9 @@ exit: 0
     {
       "actualEndTime": "2026-01-01T03:00:00.000Z",
       "burnRate": null,
-      "costUSD": 0.5840595,
+      "costUSD": 0.5848184999999999,
       "endTime": "2026-01-01T04:00:00.000Z",
-      "entries": 6,
+      "entries": 7,
       "id": "2025-12-31T23:00:00.000Z",
       "isActive": false,
       "isGap": false,
@@ -129,10 +129,10 @@ exit: 0
       "tokenCounts": {
         "cacheCreationInputTokens": 1450,
         "cacheReadInputTokens": 13000,
-        "inputTokens": 3524,
-        "outputTokens": 860
+        "inputTokens": 3557,
+        "outputTokens": 904
       },
-      "totalTokens": 18834
+      "totalTokens": 18911
     },
     {
       "actualEndTime": null,

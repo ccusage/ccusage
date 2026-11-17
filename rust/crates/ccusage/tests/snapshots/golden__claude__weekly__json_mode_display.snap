@@ -6,12 +6,12 @@ exit: 0
 --- stdout ---
 {
   "totals": {
-    "cacheCreationTokens": 3100,
-    "cacheReadTokens": 53200,
-    "inputTokens": 8594,
-    "outputTokens": 4390,
+    "cacheCreationTokens": 2500,
+    "cacheReadTokens": 44200,
+    "inputTokens": 8127,
+    "outputTokens": 3634,
     "totalCost": 0.5800000000000001,
-    "totalTokens": 69284
+    "totalTokens": 58461
   },
   "weekly": [
     {
@@ -37,27 +37,27 @@ exit: 0
       "week": "2025-12-21"
     },
     {
-      "cacheCreationTokens": 3100,
-      "cacheReadTokens": 53200,
-      "inputTokens": 8494,
+      "cacheCreationTokens": 2500,
+      "cacheReadTokens": 44200,
+      "inputTokens": 8027,
       "modelBreakdowns": [
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 1700,
           "cacheReadTokens": 24000,
           "cost": 0.5700000000000001,
-          "inputTokens": 3644,
+          "inputTokens": 3677,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 1240
+          "outputTokens": 1284
         },
         {
           "cacheCreation1hTokens": 400,
-          "cacheCreationTokens": 1400,
-          "cacheReadTokens": 28000,
+          "cacheCreationTokens": 800,
+          "cacheReadTokens": 19000,
           "cost": 0.0,
-          "inputTokens": 2300,
+          "inputTokens": 1800,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 2660
+          "outputTokens": 1860
         },
         {
           "cacheCreationTokens": 0,
@@ -100,9 +100,9 @@ exit: 0
         "claude-opus-5",
         "claude-opus-5-fast"
       ],
-      "outputTokens": 4340,
+      "outputTokens": 3584,
       "totalCost": 0.5700000000000001,
-      "totalTokens": 69134,
+      "totalTokens": 58311,
       "week": "2025-12-28"
     }
   ]
