@@ -1,4 +1,4 @@
-use ccusage_adapter_common::source::LoadContext;
+use ccusage_adapter_common::{dedupe::dedupe_first_wins, source::LoadContext};
 
 use crate::{LoadedEntry, PricingMap, Result};
 
@@ -31,13 +31,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
             )
         },
     );
-    let mut entries = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for entry in loaded {
-        if seen.insert(parser::entry_id(&entry)) {
-            entries.push(entry);
-        }
-    }
+    let mut entries = dedupe_first_wins(loaded, parser::entry_id);
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }

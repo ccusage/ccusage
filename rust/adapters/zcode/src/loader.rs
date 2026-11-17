@@ -1,14 +1,15 @@
-use std::{collections::HashSet, path::Path};
+use std::{collections::HashSet, path::PathBuf};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use ccusage_adapter_common::{
-    SqliteStage, read_units,
+    SqliteStage,
+    dedupe::dedupe_first_wins,
     source::LoadContext,
-    sqlite::{read_count, read_i64},
+    sqlite::{read_count, read_i64, sqlite_units},
     units::UnitError,
 };
-use ccusage_core::{Diagnostics, Skip, SkipKind};
+use ccusage_core::{Diagnostics, SkipKind};
 
 use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log};
 
@@ -42,45 +43,55 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
     let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let db_paths = db_paths(shared)?;
-    let loaded = read_units(&db_paths, shared.single_thread, cx.diagnostics, |db_path| {
-        load_entries_from_database(db_path, tz, shared, pricing, cx.diagnostics)
-    });
-
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for entry in loaded.into_iter().flatten().flatten() {
-        let id = entry
-            .data
-            .message
-            .id
-            .as_deref()
-            .expect("ZCode entries always have message IDs");
-        if seen.insert(id.to_string()) {
-            entries.push(entry);
-        }
-    }
+    let loaded = load_entries_from_databases(&db_paths, tz, shared, pricing, cx.diagnostics);
+    let mut entries: Vec<_> = dedupe_first_wins(loaded, |(id, _)| id.clone())
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
-fn load_entries_from_database(
-    db_path: &Path,
+fn load_entries_from_databases(
+    db_paths: &[PathBuf],
     tz: &JiffTimeZone,
     shared: &SharedArgs,
     pricing: &PricingMap,
     diagnostics: &Diagnostics,
-) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let connection =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
+) -> Vec<(String, LoadedEntry)> {
+    sqlite_units(
+        db_paths,
+        shared.single_thread,
+        diagnostics,
+        |connection, db_path| prepare_usage_query(connection, db_path, shared),
+        |statement, _, _| {
+            row_to_entry(
+                read_usage_row(statement),
+                tz,
+                shared.mode,
+                pricing,
+                &shared.pricing_overrides,
+            )
+            .map_err(|rejection| match rejection {
+                RowRejection::InvalidIdentity => UnitError::new(
+                    SkipKind::InvalidData,
+                    "completed ZCode usage row has no id, session id or model",
+                ),
+                RowRejection::InvalidTimestamp => UnitError::new(
+                    SkipKind::InvalidTimestamp,
+                    "completed ZCode usage row has an invalid start time",
+                ),
+            })
+        },
+    )
+}
 
-    for pragma in ["PRAGMA busy_timeout = 5000", "PRAGMA query_only = ON"] {
-        connection
-            .execute(pragma)
-            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    }
-
-    let schema = read_schema(&connection)?;
+fn prepare_usage_query<'a>(
+    connection: &'a sqlite::Connection,
+    db_path: &std::path::Path,
+    shared: &SharedArgs,
+) -> std::result::Result<sqlite::Statement<'a>, UnitError> {
+    let schema = read_schema(connection)?;
     debug_log(
         shared,
         format!(
@@ -122,42 +133,9 @@ fn load_entries_from_database(
     let query = format!(
         "SELECT m.id, m.session_id, m.started_at, m.model_id, m.input_tokens, m.output_tokens, {cache_creation}, {cache_read}, {computed_total}, {provider_id}, s.directory, {version} FROM model_usage m LEFT JOIN session s ON s.id = m.session_id WHERE m.status = 'completed'"
     );
-    let mut statement = connection
+    connection
         .prepare(&query)
-        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                let row = read_usage_row(&statement);
-                match row_to_entry(row, tz, shared.mode, pricing, &shared.pricing_overrides) {
-                    Ok(Some(entry)) => entries.push(entry),
-                    Ok(None) => {}
-                    Err(RowRejection::InvalidIdentity) => diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "completed ZCode usage row has no id, session id or model",
-                    )),
-                    Err(RowRejection::InvalidTimestamp) => diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        SkipKind::InvalidTimestamp,
-                        "completed ZCode usage row has an invalid start time",
-                    )),
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
-                break;
-            }
-        }
-    }
-    Ok(entries)
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
 }
 
 fn read_schema(connection: &sqlite::Connection) -> std::result::Result<Schema, UnitError> {
@@ -424,22 +402,15 @@ mod tests {
         let diagnostics = Diagnostics::new("zcode");
         let shared = SharedArgs::default();
         let pricing = PricingMap::load_embedded();
-        let loaded = read_units(
+        let loaded = load_entries_from_databases(
             &[fixture.path("broken.db"), fixture.path("unsupported.db")],
-            true,
+            &jiff::tz::TimeZone::system(),
+            &shared,
+            &pricing,
             &diagnostics,
-            |path| {
-                load_entries_from_database(
-                    path,
-                    &jiff::tz::TimeZone::system(),
-                    &shared,
-                    &pricing,
-                    &diagnostics,
-                )
-            },
         );
 
-        assert!(loaded.iter().all(Option::is_none));
+        assert!(loaded.is_empty());
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }
@@ -456,15 +427,13 @@ mod tests {
         drop(db);
 
         let diagnostics = Diagnostics::new("zcode");
-        load_entries_from_database(
-            &path,
+        load_entries_from_databases(
+            std::slice::from_ref(&path),
             &jiff::tz::TimeZone::system(),
             &SharedArgs::default(),
             &PricingMap::load_embedded(),
             &diagnostics,
-        )
-        .unwrap_err()
-        .record(&path, &diagnostics);
+        );
 
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
         let warnings = diagnostics
@@ -495,14 +464,13 @@ mod tests {
             .execute("UPDATE model_usage SET model_id = NULL WHERE id = 'broken'")
             .unwrap();
         let diagnostics = Diagnostics::new("zcode");
-        let entries = load_entries_from_database(
-            &path,
+        let entries = load_entries_from_databases(
+            std::slice::from_ref(&path),
             &jiff::tz::TimeZone::system(),
             &SharedArgs::default(),
             &PricingMap::load_embedded(),
             &diagnostics,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);

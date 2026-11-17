@@ -1,7 +1,10 @@
-use std::{collections::HashSet, path::Path, path::PathBuf};
+use std::path::PathBuf;
 
-use ccusage_adapter_common::{SqliteStage, UnitError, jsonl, read_units, source::LoadContext};
-use ccusage_core::{Skip, SkipKind};
+use ccusage_adapter_common::{
+    SqliteStage, UnitError, dedupe::dedupe_first_wins, jsonl, source::LoadContext,
+    sqlite::sqlite_units,
+};
+use ccusage_core::SkipKind;
 
 use crate::{LoadedEntry, PricingMap, Result};
 
@@ -13,108 +16,71 @@ use super::{
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let db_paths: Vec<PathBuf> = paths()?.iter().filter_map(|path| db_path(path)).collect();
     let pricing = cx.pipeline_pricing()?;
-    // Load each database in parallel (a fresh read-only connection per DB), then
-    // run the sequential id dedup over the original path order so the surviving
-    // record per id matches the single-threaded read.
-    let loaded = read_units(
-        &db_paths,
-        cx.shared.single_thread,
-        cx.diagnostics,
-        |db_path| load_entries_from_database(db_path, cx, pricing),
-    );
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for db_entries in loaded.into_iter().flatten() {
-        for entry in db_entries {
-            if let Some(id) = entry.data.message.id.as_deref()
-                && !seen.insert(id.to_string())
-            {
-                continue;
-            }
-            entries.push(entry);
-        }
-    }
+    let loaded = load_entries_from_databases(&db_paths, cx, pricing);
+    let mut entries = dedupe_first_wins(loaded, |entry| entry.data.message.id.clone());
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
-fn load_entries_from_database(
-    db_path: &Path,
+fn load_entries_from_databases(
+    db_paths: &[PathBuf],
     cx: &LoadContext<'_>,
     pricing: &PricingMap,
-) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let connection =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut statement = connection
-        .prepare("SELECT id, session_id, data FROM message")
-        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                let row = statement
-                    .read::<String, _>(0)
-                    .and_then(|row_id| {
-                        statement
-                            .read::<String, _>(1)
-                            .map(|session| (row_id, session))
-                    })
-                    .and_then(|(row_id, session)| {
-                        statement
-                            .read::<String, _>(2)
-                            .map(|data| (row_id, session, data))
-                    });
-                let Ok((row_id, row_session_id, data)) = row else {
-                    cx.diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        SkipKind::InvalidData,
-                        "Kilo message row has invalid fields",
-                    ));
-                    continue;
-                };
-                let Some(value) = jsonl::decode_record::<KiloMessage>(
-                    data.as_bytes(),
-                    db_path,
-                    row_number,
-                    cx.diagnostics,
-                    Some(|value| {
-                        value.get("role").and_then(serde_json::Value::as_str) == Some("assistant")
-                            && value.get("tokens").is_some()
-                    }),
-                ) else {
-                    continue;
-                };
-                match message_value_to_entry(
-                    &value,
-                    &row_id,
-                    &row_session_id,
-                    db_path,
-                    cx.window.timezone(),
-                    cx.shared.mode,
-                    pricing,
-                ) {
-                    Ok(Some(entry)) => entries.push(entry),
-                    Ok(None) => {}
-                    Err(MissingTimestamp) => cx.diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        SkipKind::InvalidTimestamp,
-                        "Kilo usage record has no valid creation time",
-                    )),
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, cx.diagnostics);
-                break;
-            }
-        }
-    }
-    Ok(entries)
+) -> Vec<LoadedEntry> {
+    sqlite_units(
+        db_paths,
+        cx.shared.single_thread,
+        cx.diagnostics,
+        |connection, _| {
+            connection
+                .prepare("SELECT id, session_id, data FROM message")
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |statement, db_path, row_number| {
+            let row = statement
+                .read::<String, _>(0)
+                .and_then(|row_id| {
+                    statement
+                        .read::<String, _>(1)
+                        .map(|session| (row_id, session))
+                })
+                .and_then(|(row_id, session)| {
+                    statement
+                        .read::<String, _>(2)
+                        .map(|data| (row_id, session, data))
+                });
+            let (row_id, row_session_id, data) = row.map_err(|_| {
+                UnitError::new(SkipKind::InvalidData, "Kilo message row has invalid fields")
+            })?;
+            let Some(value) = jsonl::decode_record::<KiloMessage>(
+                data.as_bytes(),
+                db_path,
+                row_number,
+                cx.diagnostics,
+                Some(|value| {
+                    value.get("role").and_then(serde_json::Value::as_str) == Some("assistant")
+                        && value.get("tokens").is_some()
+                }),
+            ) else {
+                return Ok(None);
+            };
+            message_value_to_entry(
+                &value,
+                &row_id,
+                &row_session_id,
+                db_path,
+                cx.window.timezone(),
+                cx.shared.mode,
+                pricing,
+            )
+            .map_err(|MissingTimestamp| {
+                UnitError::new(
+                    SkipKind::InvalidTimestamp,
+                    "Kilo usage record has no valid creation time",
+                )
+            })
+        },
+    )
 }
 
 #[cfg(test)]
@@ -309,9 +275,9 @@ mod tests {
                 options: SourceOptions::default(),
                 diagnostics: &diagnostics,
             };
-            super::load_entries_from_database(&path, &cx, &pricing)
-                .unwrap_err()
-                .record(&path, &diagnostics);
+            let entries =
+                super::load_entries_from_databases(std::slice::from_ref(&path), &cx, &pricing);
+            assert!(entries.is_empty());
 
             assert_eq!(diagnostics.skipped(kind), 1, "{}", path.display());
         }

@@ -1,5 +1,5 @@
 use ccusage_adapter_common::{
-    SqliteStage, dir_entries, jsonl, read_units_flat,
+    SqliteStage, any_file_matching, dir_entries, jsonl, read_units_flat,
     sqlite::{read_count, read_f64, read_i64},
     units::{UnitError, decode_json},
 };
@@ -193,29 +193,14 @@ pub(crate) fn has_source(opencode_dir: &Path) -> bool {
     if db_path(opencode_dir, &Diagnostics::new("opencode")).is_some() {
         return true;
     }
-    has_json_file(&opencode_dir.join("storage").join("message"))
-}
-
-// Mirrors `collect_files_with_extension`: judge entries by `file_type()` so
-// symlinks are neither followed nor counted. Following them would let detection
-// claim files the collection pass then refuses to read, and a symlinked cycle
-// would recurse until the stack gives out.
-fn has_json_file(dir: &Path) -> bool {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return false;
-    };
-    entries.filter_map(std::result::Result::ok).any(|entry| {
-        let Ok(file_type) = entry.file_type() else {
-            return false;
-        };
-        let path = entry.path();
-        if file_type.is_file() {
+    any_file_matching(
+        &opencode_dir.join("storage").join("message"),
+        &|path| {
             path.extension()
                 .is_some_and(|extension| extension == "json")
-        } else {
-            file_type.is_dir() && has_json_file(&path)
-        }
-    })
+        },
+        &Diagnostics::new("opencode"),
+    )
 }
 
 fn db_path(opencode_dir: &Path, diagnostics: &Diagnostics) -> Option<PathBuf> {

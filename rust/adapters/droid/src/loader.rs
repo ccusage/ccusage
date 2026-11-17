@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -6,7 +6,9 @@ use super::{
     parser::{DroidEntry, calculate_droid_cost, load_settings_file, missing_droid_pricing},
     paths::discover_settings_files,
 };
-use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
+use ccusage_adapter_common::{
+    dedupe::dedupe_last_wins, source::LoadContext, units::read_units_flat,
+};
 
 use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
@@ -15,9 +17,6 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let tz = cx.window.timezone();
     let mut files = discover_settings_files(cx.diagnostics)?;
     files.sort();
-    // Read files in parallel, reassembled in the original (sorted) file order so
-    // the subsequent stable sort and reverse latest-wins dedup pick the same
-    // snapshot per session as the single-threaded read.
     let mut parsed = read_units_flat(
         &files,
         cx.shared.single_thread,
@@ -25,15 +24,11 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
         load_settings_file,
     );
     parsed.sort_by_key(|entry| entry.timestamp);
-    let mut seen_sessions = HashSet::new();
-    let mut entries = Vec::new();
-    for entry in parsed.into_iter().rev() {
-        if !seen_sessions.insert(entry.session_id.clone()) {
-            continue;
-        }
-        entries.push(to_loaded_entry(entry, tz, pricing));
-    }
-    Ok(entries)
+    Ok(dedupe_last_wins(parsed, |entry| entry.session_id.clone())
+        .into_iter()
+        .rev()
+        .map(|entry| to_loaded_entry(entry, tz, pricing))
+        .collect())
 }
 
 fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: &PricingMap) -> LoadedEntry {

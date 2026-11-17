@@ -1,13 +1,9 @@
-use std::path::Path;
+use std::path::PathBuf;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use ccusage_adapter_common::{
-    SqliteStage,
-    source::LoadContext,
-    units::{UnitError, read_units_flat},
-};
-use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result, Skip};
+use ccusage_adapter_common::{SqliteStage, UnitError, source::LoadContext, sqlite::sqlite_units};
+use ccusage_core::{Diagnostics, LoadedEntry, PricingMap, Result};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -32,54 +28,38 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let db_paths = goose_db_paths()?;
-    let mut entries = read_units_flat(
+    let mut entries = load_entries_from_dbs(
         &db_paths,
         cx.shared.single_thread,
+        tz,
+        pricing,
         cx.diagnostics,
-        |db_path| load_entries_from_db(db_path, tz, pricing, cx.diagnostics),
     );
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
-fn load_entries_from_db(
-    db_path: &Path,
+fn load_entries_from_dbs(
+    db_paths: &[PathBuf],
+    single_thread: bool,
     tz: &JiffTimeZone,
     pricing: &PricingMap,
     diagnostics: &Diagnostics,
-) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
-    let connection =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut statement = connection
-        .prepare(GOOSE_SESSION_QUERY)
-        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                match row_to_entry(&statement, tz, pricing) {
-                    Ok(Some(entry)) => entries.push(entry),
-                    Ok(None) => {}
-                    Err(rejection) => diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        rejection.kind(),
-                        rejection.detail(),
-                    )),
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
-                break;
-            }
-        }
-    }
-    Ok(entries)
+) -> Vec<LoadedEntry> {
+    sqlite_units(
+        db_paths,
+        single_thread,
+        diagnostics,
+        |connection, _| {
+            connection
+                .prepare(GOOSE_SESSION_QUERY)
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |statement, _, _| {
+            row_to_entry(statement, tz, pricing)
+                .map_err(|rejection| UnitError::new(rejection.kind(), rejection.detail()))
+        },
+    )
 }
 
 #[cfg(test)]
@@ -171,9 +151,13 @@ INSERT INTO sessions (
 
         let pricing = PricingMap::load_embedded();
         let diagnostics = Diagnostics::new("goose");
-        let entries =
-            load_entries_from_db(&db_path, &jiff::tz::TimeZone::UTC, &pricing, &diagnostics)
-                .unwrap();
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
+            &jiff::tz::TimeZone::UTC,
+            &pricing,
+            &diagnostics,
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date, "2026-05-01");
@@ -207,13 +191,13 @@ INSERT INTO sessions (
         insert_session(&db_path, session("idle", "{}", "SECRET_CANARY", 0));
 
         let diagnostics = Diagnostics::new("goose");
-        let entries = load_entries_from_db(
-            &db_path,
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
             &jiff::tz::TimeZone::UTC,
             &PricingMap::default(),
             &diagnostics,
-        )
-        .unwrap();
+        );
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id.as_ref(), "healthy");
@@ -237,15 +221,15 @@ INSERT INTO sessions (
             .execute("CREATE TABLE sessions (id TEXT)")
             .unwrap();
 
-        let error = load_entries_from_db(
-            &db_path,
+        let diagnostics = Diagnostics::new("goose");
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
             &jiff::tz::TimeZone::UTC,
             &PricingMap::default(),
-            &Diagnostics::new("goose"),
-        )
-        .unwrap_err();
-        let diagnostics = Diagnostics::new("goose");
-        error.record(&db_path, &diagnostics);
+            &diagnostics,
+        );
+        assert!(entries.is_empty());
 
         assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
     }

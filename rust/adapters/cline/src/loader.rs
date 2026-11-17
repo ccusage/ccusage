@@ -1,30 +1,25 @@
-use std::collections::HashMap;
+use std::path::Path;
 
 use crate::{LoadedEntry, Result};
-use ccusage_adapter_common::{read_units_flat, source::LoadContext};
+use ccusage_adapter_common::{source::LoadContext, units::read_typed_units_flat};
 
-use super::paths::discover_files;
+use super::paths::{SourceFile, discover_files};
+
+impl AsRef<Path> for SourceFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let shared = cx.shared;
     let pricing = cx.pipeline_pricing()?;
     let sources = discover_files(cx.diagnostics)?;
     let timezone = cx.window.timezone();
-    let files = sources
-        .iter()
-        .map(|source| source.path.clone())
-        .collect::<Vec<_>>();
-    let source_by_path = sources
-        .iter()
-        .map(|source| (source.path.as_path(), source))
-        .collect::<HashMap<_, _>>();
-    let mut entries = read_units_flat(&files, shared.single_thread, cx.diagnostics, |path| {
-        let source = source_by_path
-            .get(path)
-            .copied()
-            .expect("discovered Cline file has source metadata");
-        super::parser::read_file(source, shared.mode, pricing, timezone, cx.diagnostics)
-    });
+    let mut entries =
+        read_typed_units_flat(&sources, shared.single_thread, cx.diagnostics, |source| {
+            super::parser::read_file(source, shared.mode, pricing, timezone, cx.diagnostics)
+        });
     entries.sort_by(|left, right| {
         left.timestamp
             .cmp(&right.timestamp)

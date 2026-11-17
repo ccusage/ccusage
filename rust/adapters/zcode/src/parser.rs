@@ -36,7 +36,7 @@ pub(super) fn row_to_entry(
     mode: CostMode,
     pricing: &PricingMap,
     pricing_overrides: &BTreeMap<String, PricingOverride>,
-) -> std::result::Result<Option<LoadedEntry>, RowRejection> {
+) -> std::result::Result<Option<(String, LoadedEntry)>, RowRejection> {
     let cache_read = row.cache_read_input_tokens.min(row.input_tokens);
     let cache_creation = row
         .cache_creation_input_tokens
@@ -118,35 +118,38 @@ pub(super) fn row_to_entry(
             .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned())
     };
 
-    Ok(Some(LoadedEntry {
-        data: UsageEntry {
-            session_id: Some(session_id.clone()),
-            timestamp: format_rfc3339_millis(timestamp),
-            version: row.version,
-            message: UsageMessage {
-                usage,
-                model: Some(raw_model.clone()),
-                id: Some(id),
+    Ok(Some((
+        id.clone(),
+        LoadedEntry {
+            data: UsageEntry {
+                session_id: Some(session_id.clone()),
+                timestamp: format_rfc3339_millis(timestamp),
+                version: row.version,
+                message: UsageMessage {
+                    usage,
+                    model: Some(raw_model.clone()),
+                    id: Some(id),
+                },
+                cost_usd: None,
+                request_id: None,
+                is_api_error_message: None,
+                is_sidechain: None,
             },
-            cost_usd: None,
-            request_id: None,
-            is_api_error_message: None,
-            is_sidechain: None,
+            date: format_date_tz(timestamp, tz),
+            timestamp,
+            project: Arc::from("zcode"),
+            session_id: Arc::from(session_id),
+            project_path: Arc::from(project_path),
+            cost,
+            extra_total_tokens,
+            credits: None,
+            message_count: None,
+            model: Some(raw_model),
+            usage_limit_reset_time: None,
+            missing_pricing_model,
+            stored_cost: None,
         },
-        date: format_date_tz(timestamp, tz),
-        timestamp,
-        project: Arc::from("zcode"),
-        session_id: Arc::from(session_id),
-        project_path: Arc::from(project_path),
-        cost,
-        extra_total_tokens,
-        credits: None,
-        message_count: None,
-        model: Some(raw_model),
-        usage_limit_reset_time: None,
-        missing_pricing_model,
-        stored_cost: None,
-    }))
+    )))
 }
 
 fn non_blank(value: Option<String>) -> Option<String> {
@@ -242,7 +245,7 @@ mod tests {
     #[test]
     fn normalizes_both_inclusive_cache_buckets() {
         ccusage_test_support::install_pricing_snapshots();
-        let entry = row_to_entry(
+        let (id, entry) = row_to_entry(
             row(),
             &JiffTimeZone::UTC,
             CostMode::Display,
@@ -251,6 +254,8 @@ mod tests {
         )
         .unwrap()
         .expect("test row has usage");
+        assert_eq!(id, "usage-1");
+        assert_eq!(entry.data.message.id.as_deref(), Some(id.as_str()));
         let usage = entry.data.message.usage;
 
         assert_eq!(usage.input_tokens, 60);
@@ -284,7 +289,8 @@ mod tests {
                     &BTreeMap::new(),
                 )
                 .unwrap()
-                .expect("test row has usage");
+                .expect("test row has usage")
+                .1;
                 assert!(entry.cost > 0.0, "{provider} {model}");
                 assert!(entry.missing_pricing_model.is_none(), "{provider} {model}");
             }
@@ -303,7 +309,8 @@ mod tests {
             &BTreeMap::new(),
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
         assert!(priced.cost > 0.0);
         assert!(priced.missing_pricing_model.is_none());
 
@@ -318,7 +325,8 @@ mod tests {
             &BTreeMap::new(),
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
         assert_eq!(custom.cost, 0.0);
         assert_eq!(
             custom.missing_pricing_model.as_deref(),
@@ -340,7 +348,8 @@ mod tests {
             &BTreeMap::new(),
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
 
         assert_eq!(entry.cost, 0.00015549999999999999);
         assert!(entry.missing_pricing_model.is_none());
@@ -362,6 +371,7 @@ mod tests {
             )
             .unwrap()
             .expect("test row has usage")
+            .1
         };
 
         let glm_52 = priced("GLM-5.2");
@@ -401,7 +411,8 @@ mod tests {
             &overrides,
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
 
         assert!(entry.cost > 0.0);
         assert!(entry.missing_pricing_model.is_none());
@@ -420,7 +431,8 @@ mod tests {
             &BTreeMap::new(),
         )
         .unwrap()
-        .expect("test row has usage");
+        .expect("test row has usage")
+        .1;
         assert_eq!(entry.extra_total_tokens, 13);
         assert_eq!(entry.data.message.usage.output_tokens, 10);
     }

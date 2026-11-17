@@ -1,10 +1,12 @@
-use std::{collections::HashSet, path::Path};
+use std::path::PathBuf;
 
 use ccusage_adapter_common::{
+    dedupe::dedupe_first_wins,
     source::LoadContext,
-    units::{SqliteStage, UnitError, read_units_flat},
+    sqlite::sqlite_units,
+    units::{SqliteStage, UnitError},
 };
-use ccusage_core::{Diagnostics, LoadedEntry, Result, Skip};
+use ccusage_core::{Diagnostics, LoadedEntry, Result};
 
 use super::{
     parser::{HermesEntry, read_session_row, to_loaded_entry},
@@ -15,37 +17,28 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let pricing = cx.pipeline_pricing()?;
     let tz = cx.window.timezone();
     let db_paths = hermes_state_db_paths()?;
-    // Load each state database in parallel (a fresh read-only connection per DB),
-    // then run the sequential session dedup over the original path order so the
-    // surviving session matches the single-threaded read.
-    let loaded = read_units_flat(
-        &db_paths,
-        cx.shared.single_thread,
-        cx.diagnostics,
-        |db_path| load_state_db_entries(db_path, cx.diagnostics),
-    );
-    let mut entries = Vec::new();
-    let mut seen_sessions = HashSet::new();
-    for entry in loaded {
-        if !seen_sessions.insert(entry.session_id.clone()) {
-            continue;
-        }
-        entries.push(to_loaded_entry(entry, tz, cx.shared.mode, pricing));
-    }
+    let loaded = load_state_db_entries(&db_paths, cx.shared.single_thread, cx.diagnostics);
+    let mut entries: Vec<_> = dedupe_first_wins(loaded, |entry| entry.session_id.clone())
+        .into_iter()
+        .map(|entry| to_loaded_entry(entry, tz, cx.shared.mode, pricing))
+        .collect();
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
 }
 
 fn load_state_db_entries(
-    db_path: &Path,
+    db_paths: &[PathBuf],
+    single_thread: bool,
     diagnostics: &Diagnostics,
-) -> std::result::Result<Vec<HermesEntry>, UnitError> {
-    let connection =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-            .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut statement = connection
-        .prepare(
-            "
+) -> Vec<HermesEntry> {
+    sqlite_units(
+        db_paths,
+        single_thread,
+        diagnostics,
+        |connection, _| {
+            connection
+                .prepare(
+                    "
             SELECT
                 id,
                 model,
@@ -63,33 +56,14 @@ fn load_state_db_entries(
             WHERE model IS NOT NULL
                 AND TRIM(model) != ''
         ",
-        )
-        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
-    let mut entries = Vec::new();
-    let mut row_number = 0_u32;
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                row_number = row_number.saturating_add(1);
-                match read_session_row(&statement) {
-                    Ok(Some(entry)) => entries.push(entry),
-                    Ok(None) => {}
-                    Err(error) => diagnostics.record(Skip::record(
-                        db_path,
-                        row_number,
-                        error.kind(),
-                        error.detail(),
-                    )),
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code).record(db_path, diagnostics);
-                break;
-            }
-        }
-    }
-    Ok(entries)
+                )
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |statement, _, _| {
+            read_session_row(statement)
+                .map_err(|rejection| UnitError::new(rejection.kind(), rejection.detail()))
+        },
+    )
 }
 
 #[cfg(test)]
@@ -169,8 +143,7 @@ mod tests {
         };
         let tz = crate::resolve_tz(shared.timezone.as_deref());
         let diagnostics = Diagnostics::new("hermes");
-        let entries = load_state_db_entries(&db_path, &diagnostics)
-            .unwrap()
+        let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics)
             .into_iter()
             .map(|entry| to_loaded_entry(entry, &tz, shared.mode, &pricing))
             .collect::<Vec<_>>();
@@ -255,7 +228,7 @@ mod tests {
             .unwrap();
         let diagnostics = Diagnostics::new("hermes");
 
-        let entries = load_state_db_entries(&db_path, &diagnostics).unwrap();
+        let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics);
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].session_id, "before");
@@ -286,7 +259,7 @@ mod tests {
             .unwrap();
         let diagnostics = Diagnostics::new("hermes");
 
-        let entries = load_state_db_entries(&db_path, &diagnostics).unwrap();
+        let entries = load_state_db_entries(std::slice::from_ref(&db_path), true, &diagnostics);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id, " ");

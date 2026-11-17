@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
@@ -6,7 +6,9 @@ use super::{
     parser::{CodebuffEntry, calculate_codebuff_cost, load_chat_file, missing_codebuff_pricing},
     paths::discover_chat_files,
 };
-use ccusage_adapter_common::{source::LoadContext, units::read_units_flat};
+use ccusage_adapter_common::{
+    dedupe::dedupe_last_wins, source::LoadContext, units::read_units_flat,
+};
 
 use crate::{LoadedEntry, PricingMap, Result, UsageEntry, UsageMessage, format_date_tz};
 
@@ -18,11 +20,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
     let loaded = read_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |path| {
         load_chat_file(path, cx.diagnostics)
     });
-    let mut deduped = HashMap::<String, CodebuffEntry>::new();
-    for entry in loaded {
-        deduped.insert(entry.dedup_key.clone(), entry);
-    }
-    let mut entries = deduped.into_values().collect::<Vec<_>>();
+    let mut entries = dedupe_last_wins(loaded, |entry| entry.dedup_key.clone());
     entries.sort_by(|left, right| {
         (left.timestamp, &left.dedup_key).cmp(&(right.timestamp, &right.dedup_key))
     });
