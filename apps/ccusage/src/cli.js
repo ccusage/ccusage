@@ -41,43 +41,15 @@ function getNativeBinarySubpath(platform = process.platform) {
 }
 
 /**
- * @param {{ arch?: string; platform?: string; resolvePath?: (id: string) => string }} [options]
- * @returns {string | undefined}
- */
-function resolveNativeBinary({
-	arch = process.arch,
-	platform = process.platform,
-	resolvePath = (id) => require.resolve(id),
-} = {}) {
-	const packageName = getNativePackageName(platform, arch);
-	if (packageName == null) {
-		return undefined;
-	}
-
-	try {
-		return resolvePath(`${packageName}/${getNativeBinarySubpath(platform)}`);
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * @param {{ arch?: string; argv: string[]; nativeBinaryPath?: string | null; platform?: string }} options
+ * @param {{ arch?: string; argv: string[]; platform?: string; resolvePath?: (id: string) => string }} options
  * @returns {CliRuntime}
  */
 function resolveCliRuntime({
 	argv,
 	arch = process.arch,
-	nativeBinaryPath = resolveNativeBinary(),
 	platform = process.platform,
+	resolvePath = (id) => require.resolve(id),
 }) {
-	if (nativeBinaryPath != null) {
-		return {
-			args: argv,
-			command: nativeBinaryPath,
-		};
-	}
-
 	const target = `${platform}-${arch}`;
 	const packageName = getNativePackageName(platform, arch);
 	if (packageName == null) {
@@ -86,9 +58,29 @@ function resolveCliRuntime({
 		};
 	}
 
-	return {
-		errorMessage: `Missing optional native package "${packageName}@${wrapperVersion}" for ${target}. It may be absent because of npm --before/--min-release-age, mise minimum_release_age, or --omit=optional. Reinstall ccusage with optional dependencies enabled and no release-age cutoff.\n`,
-	};
+	try {
+		return {
+			args: argv,
+			command: resolvePath(`${packageName}/${getNativeBinarySubpath(platform)}`),
+		};
+	} catch (error) {
+		if (isModuleNotFound(error)) {
+			return {
+				errorMessage: `Missing optional native package "${packageName}@${wrapperVersion}" for ${target}. It may be absent because of npm --before/--min-release-age, mise minimum_release_age, or --omit=optional. Reinstall ccusage with optional dependencies enabled and no release-age cutoff.\n`,
+			};
+		}
+		return {
+			errorMessage: `Cannot resolve native package "${packageName}" for ${target}: ${errorMessage(error)}\n`,
+		};
+	}
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isModuleNotFound(error) {
+	return error instanceof Error && 'code' in error && error.code === 'MODULE_NOT_FOUND';
 }
 
 /**
@@ -242,10 +234,4 @@ if (isMainModule({ moduleUrl: import.meta.url })) {
 	process.exitCode = await runCli(process.argv.slice(2));
 }
 
-export {
-	createNativeSpawner,
-	ensureNativeBinaryExecutable,
-	isMainModule,
-	resolveCliRuntime,
-	resolveNativeBinary,
-};
+export { createNativeSpawner, ensureNativeBinaryExecutable, isMainModule, resolveCliRuntime };
