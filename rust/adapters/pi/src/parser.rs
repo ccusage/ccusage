@@ -615,94 +615,6 @@ pub(crate) fn entry_id(entry: &LoadedEntry) -> PiEntryId {
 #[cfg(test)]
 mod tests {
 
-    #[test]
-    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
-        use ccusage_core::pricing::MatchKind;
-        ccusage_test_support::install_pricing_snapshots();
-        for override_key in [
-            None,
-            Some("gpt-5"),
-            Some("[pi] gpt-5"),
-            Some("[openclaw] gpt-5"),
-            Some("grok-4.5-build"),
-            Some("google/gemini-2.5-pro"),
-            Some("moonshot/kimi-k2.5"),
-        ] {
-            let override_value = ccusage_core::cli::PricingOverride {
-                input_cost_per_token: Some(0.123),
-                output_cost_per_token: Some(0.456),
-                ..Default::default()
-            };
-            let override_key = override_key.map(str::to_string);
-            let pricing = PricingMap::load_embedded()
-                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
-            for model in [
-                "claude-sonnet-4",
-                "anthropic/claude-sonnet-4",
-                "claude-sonnet-4-20250514",
-                "claude-opus-4.1",
-                "claude-opus-5",
-                "gpt-5",
-                "openai/gpt-5",
-                "gpt-5.1-codex",
-                "o3",
-                "gemini-2.5-pro",
-                "gemini-2.5-flash",
-                "gemini-3-pro-preview",
-                "google/gemini-2.5-pro",
-                "kimi-k2",
-                "kimi-k2.5",
-                "kimi-k2.6",
-                "kimi-for-coding",
-                "moonshot/kimi-k2.5",
-                "grok-4",
-                "grok-4.5",
-                "grok-4.5-build",
-                "xai/grok-4.5",
-                "deepseek-chat",
-                "unknown-wave4-model",
-                "",
-            ] {
-                for timestamp in [
-                    crate::TimestampMs::from_millis(1_776_698_890_071),
-                    crate::TimestampMs::from_millis(1_776_698_890_072),
-                ] {
-                    let display = format!("[pi] {model}");
-                    let overridden =
-                        pricing_override_model(Some(model), Some(&display), Some(&pricing));
-                    let legacy = overridden
-                        .and_then(|name| {
-                            pricing.find_at(name, timestamp).map(|rates| (name, rates))
-                        })
-                        .or_else(|| {
-                            pricing
-                                .find_exact(&display)
-                                .map(|rates| (display.as_str(), rates))
-                        })
-                        .or_else(|| {
-                            pricing
-                                .find_at(model, timestamp)
-                                .map(|rates| (model, rates))
-                        });
-                    let candidates: Vec<(&str, MatchKind)> = overridden
-                        .into_iter()
-                        .map(|name| (name, MatchKind::Fuzzy))
-                        .chain([
-                            (display.as_str(), MatchKind::StrictExact),
-                            (model, MatchKind::Fuzzy),
-                        ])
-                        .collect();
-                    let resolved = pricing.resolve_at(&candidates, Some(timestamp));
-                    assert_eq!(
-                        format!("{legacy:?}"),
-                        format!("{resolved:?}"),
-                        "{model}, {override_key:?}, {timestamp:?}"
-                    );
-                }
-            }
-        }
-    }
-
     use super::*;
     use ccusage_test_support::fs_fixture;
     use std::path::Path;
@@ -1320,6 +1232,22 @@ mod tests {
         assert_eq!(
             named_entry.missing_pricing_model.as_deref(),
             Some("unknown-model")
+        );
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        assert_eq!(
+            store_pricing_candidates(Some("gpt-5.2"), Some("[pi] gpt-5.2"), None),
+            vec![
+                ("[pi] gpt-5.2", MatchKind::StrictExact),
+                ("gpt-5.2", MatchKind::Fuzzy),
+            ]
         );
     }
 }

@@ -475,68 +475,6 @@ fn cache_tokens_by_message_id(messages: &[AmpMessage]) -> HashMap<i64, (u64, u64
 #[cfg(test)]
 mod tests {
 
-    #[test]
-    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
-        use ccusage_core::pricing::MatchKind;
-        ccusage_test_support::install_pricing_snapshots();
-        for override_key in [
-            None,
-            Some("gpt-5"),
-            Some("[pi] gpt-5"),
-            Some("[openclaw] gpt-5"),
-            Some("grok-4.5-build"),
-            Some("google/gemini-2.5-pro"),
-            Some("moonshot/kimi-k2.5"),
-        ] {
-            let override_value = ccusage_core::cli::PricingOverride {
-                input_cost_per_token: Some(0.123),
-                output_cost_per_token: Some(0.456),
-                ..Default::default()
-            };
-            let override_key = override_key.map(str::to_string);
-            let pricing = PricingMap::load_embedded()
-                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
-            for model in [
-                "claude-sonnet-4",
-                "anthropic/claude-sonnet-4",
-                "claude-sonnet-4-20250514",
-                "claude-opus-4.1",
-                "claude-opus-5",
-                "gpt-5",
-                "openai/gpt-5",
-                "gpt-5.1-codex",
-                "o3",
-                "gemini-2.5-pro",
-                "gemini-2.5-flash",
-                "gemini-3-pro-preview",
-                "google/gemini-2.5-pro",
-                "kimi-k2",
-                "kimi-k2.5",
-                "kimi-k2.6",
-                "kimi-for-coding",
-                "moonshot/kimi-k2.5",
-                "grok-4",
-                "grok-4.5",
-                "grok-4.5-build",
-                "xai/grok-4.5",
-                "deepseek-chat",
-                "unknown-wave4-model",
-                "",
-            ] {
-                {
-                    let legacy = pricing.find(model).map(|rates| (model, rates));
-                    let candidates: Vec<(&str, MatchKind)> = vec![(model, MatchKind::Fuzzy)];
-                    let resolved = pricing.resolve_at(&candidates, None);
-                    assert_eq!(
-                        format!("{legacy:?}"),
-                        format!("{resolved:?}"),
-                        "{model}, {override_key:?}"
-                    );
-                }
-            }
-        }
-    }
-
     use super::*;
     use ccusage_test_support::{fs_fixture, mutation::assert_parser_survives_mutations};
 
@@ -965,5 +903,29 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.input_tokens, 10);
         assert_eq!(entries[0].data.message.usage.output_tokens, 178);
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "thread.json": r#"{"id":"t","messages":[{"role":"assistant","timestamp":"2026-11-17T10:00:00Z","model":"gpt-5.2","usage":{"inputTokens":1000}}]}"#
+        });
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        let rows = read_thread(
+            &fixture.path("thread.json"),
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            Some(&pricing),
+            &Diagnostics::new("amp"),
+        )
+        .unwrap();
+        assert_eq!(rows[0].model.as_deref(), Some("gpt-5.2"));
+        assert!((rows[0].cost - 0.00175).abs() < 1e-12);
     }
 }

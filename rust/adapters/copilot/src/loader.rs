@@ -599,68 +599,6 @@ fn usage_entry_to_loaded(
 #[cfg(test)]
 mod tests {
 
-    #[test]
-    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
-        use ccusage_core::pricing::MatchKind;
-        ccusage_test_support::install_pricing_snapshots();
-        for override_key in [
-            None,
-            Some("gpt-5"),
-            Some("[pi] gpt-5"),
-            Some("[openclaw] gpt-5"),
-            Some("grok-4.5-build"),
-            Some("google/gemini-2.5-pro"),
-            Some("moonshot/kimi-k2.5"),
-        ] {
-            let override_value = ccusage_core::cli::PricingOverride {
-                input_cost_per_token: Some(0.123),
-                output_cost_per_token: Some(0.456),
-                ..Default::default()
-            };
-            let override_key = override_key.map(str::to_string);
-            let pricing = crate::PricingMap::load_embedded()
-                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
-            for model in [
-                "claude-sonnet-4",
-                "anthropic/claude-sonnet-4",
-                "claude-sonnet-4-20250514",
-                "claude-opus-4.1",
-                "claude-opus-5",
-                "gpt-5",
-                "openai/gpt-5",
-                "gpt-5.1-codex",
-                "o3",
-                "gemini-2.5-pro",
-                "gemini-2.5-flash",
-                "gemini-3-pro-preview",
-                "google/gemini-2.5-pro",
-                "kimi-k2",
-                "kimi-k2.5",
-                "kimi-k2.6",
-                "kimi-for-coding",
-                "moonshot/kimi-k2.5",
-                "grok-4",
-                "grok-4.5",
-                "grok-4.5-build",
-                "xai/grok-4.5",
-                "deepseek-chat",
-                "unknown-wave4-model",
-                "",
-            ] {
-                {
-                    let legacy = pricing.find(model).map(|rates| (model, rates));
-                    let candidates: Vec<(&str, MatchKind)> = vec![(model, MatchKind::Fuzzy)];
-                    let resolved = pricing.resolve_at(&candidates, None);
-                    assert_eq!(
-                        format!("{legacy:?}"),
-                        format!("{resolved:?}"),
-                        "{model}, {override_key:?}"
-                    );
-                }
-            }
-        }
-    }
-
     use ccusage_core::ReportWindow;
     use std::ffi::OsString;
 

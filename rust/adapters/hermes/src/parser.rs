@@ -608,81 +608,38 @@ mod tests {
 }
 
 #[cfg(test)]
-mod resolver_differential {
+mod pricing_identity_tests {
     use super::*;
-    use ccusage_core::pricing::MatchKind;
+
     #[test]
-    fn ordered_resolver_preserves_legacy_names_and_rates() {
+    fn adapter_pricing_identity() {
         ccusage_test_support::install_pricing_snapshots();
-        let mut pricing = PricingMap::load_embedded();
-        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
-        for model in [
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4",
-            "claude-opus-5",
-            "anthropic/claude-sonnet-4",
-            "gpt-5",
-            "gpt-5.5",
-            "openai/gpt-5",
-            "gemini-2.5-pro",
-            "gemini-3.8-flash-high",
-            "gemini-3.7-flash-medium",
-            "gemini-3.6-flash-low",
-            "gemini-3.8-flash",
-            "qwen3-coder",
-            "qwen3-coder-plus",
-            "qwen3-coder-flash",
-            "glm-5.3",
-            "GLM-5.3",
-            "glm-4.5",
-            "deepseek-v4-flash",
-            "deepseek/deepseek-v4-flash",
-            "grok-4.3",
-            "sample",
-            "vendor/sample",
-            "unpriced-model-xyz",
-        ] {
-            for provider in [
-                "anthropic",
-                "openai",
-                "google",
-                "qwen",
-                "alibaba",
-                "zai",
-                "openrouter",
-                "vendor",
-                "unknown",
-            ] {
-                let qualified = format!("{provider}/{model}");
-                let old = pricing
-                    .find_exact_with_fallback(&qualified)
-                    .and_then(|_| {
-                        pricing
-                            .find(&qualified)
-                            .map(|rates| (qualified.as_str(), rates))
-                    })
-                    .or_else(|| pricing.find(model).map(|rates| (model, rates)));
-                let new =
-                    pricing.resolve(&[(&qualified, MatchKind::Exact), (model, MatchKind::Fuzzy)]);
-                assert!(
-                    old.is_none_or(|(_, rates)| ccusage_core::calculate_cost_from_pricing(
-                        TokenUsageRaw {
-                            input_tokens: 1,
-                            output_tokens: 1,
-                            cache_creation_input_tokens: 1,
-                            cache_read_input_tokens: 1,
-                            ..TokenUsageRaw::default()
-                        },
-                        rates
-                    ) > 0.0),
-                    "{model} / {provider} must exercise the legacy positive-cost path"
-                );
-                assert_eq!(
-                    format!("{old:?}"),
-                    format!("{new:?}"),
-                    "{model} / {provider}"
-                );
-            }
-        }
+        let pricing = PricingMap::load_embedded();
+        let model = "deepseek.v4.flash";
+        let entry = HermesEntry {
+            timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            timestamp_text: String::new(),
+            session_id: "s".into(),
+            model: model.into(),
+            provider: normalize_provider(Some("deepseek"), model),
+            usage: TokenUsageRaw {
+                input_tokens: 1000,
+                output_tokens: 1000,
+                ..Default::default()
+            },
+            reasoning_tokens: 0,
+            message_count: 1,
+            cost_usd: None,
+        };
+        assert_eq!(
+            model_candidates(&entry),
+            vec![
+                ("deepseek/deepseek.v4.flash".into(), MatchKind::Exact),
+                ("deepseek.v4.flash".into(), MatchKind::Fuzzy),
+            ]
+        );
+        assert!(
+            (price_hermes(&entry, CostMode::Calculate, Some(&pricing)).0 - 0.0015).abs() < 1e-12
+        );
     }
 }

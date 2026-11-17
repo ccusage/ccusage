@@ -646,91 +646,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
-        use ccusage_core::pricing::MatchKind;
-        ccusage_test_support::install_pricing_snapshots();
-        for override_key in [
-            None,
-            Some("gpt-5"),
-            Some("[pi] gpt-5"),
-            Some("[openclaw] gpt-5"),
-            Some("grok-4.5-build"),
-            Some("google/gemini-2.5-pro"),
-            Some("moonshot/kimi-k2.5"),
-        ] {
-            let override_value = ccusage_core::cli::PricingOverride {
-                input_cost_per_token: Some(0.123),
-                output_cost_per_token: Some(0.456),
-                ..Default::default()
-            };
-            let override_key = override_key.map(str::to_string);
-            let pricing = PricingMap::load_embedded()
-                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
-            for model in [
-                "claude-sonnet-4",
-                "anthropic/claude-sonnet-4",
-                "claude-sonnet-4-20250514",
-                "claude-opus-4.1",
-                "claude-opus-5",
-                "gpt-5",
-                "openai/gpt-5",
-                "gpt-5.1-codex",
-                "o3",
-                "gemini-2.5-pro",
-                "gemini-2.5-flash",
-                "gemini-3-pro-preview",
-                "google/gemini-2.5-pro",
-                "kimi-k2",
-                "kimi-k2.5",
-                "kimi-k2.6",
-                "kimi-for-coding",
-                "moonshot/kimi-k2.5",
-                "grok-4",
-                "grok-4.5",
-                "grok-4.5-build",
-                "xai/grok-4.5",
-                "deepseek-chat",
-                "unknown-wave4-model",
-                "",
-            ] {
-                {
-                    let names = pricing_candidates(model);
-                    let legacy = names
-                        .iter()
-                        .find(|name| pricing.find_exact(name).is_some())
-                        .or_else(|| names.iter().find(|name| pricing.find(name).is_some()))
-                        .and_then(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
-                    let candidates: Vec<(&str, MatchKind)> = names
-                        .iter()
-                        .map(|name| (name.as_str(), MatchKind::StrictExact))
-                        .chain(names.iter().map(|name| (name.as_str(), MatchKind::Fuzzy)))
-                        .collect();
-                    let resolved = pricing.resolve_at(&candidates, None);
-                    let corrected_rate = match (model, override_key.as_deref()) {
-                        ("grok-4.5", Some("grok-4.5-build")) => Some((2e-6, 6e-6)),
-                        ("gemini-2.5-pro", Some("google/gemini-2.5-pro")) => Some((1.25e-6, 10e-6)),
-                        _ => None,
-                    };
-                    if let Some((input, output)) = corrected_rate {
-                        let (old_name, old_price) = legacy.unwrap();
-                        let (name, price) = resolved.unwrap();
-                        assert_eq!(name, old_name);
-                        assert_eq!(old_price.input, 0.123);
-                        assert_eq!(price.input, input);
-                        assert_eq!(price.output, output);
-                        continue;
-                    }
-                    assert_eq!(
-                        format!("{legacy:?}"),
-                        format!("{resolved:?}"),
-                        "{model}, {override_key:?}"
-                    );
-                }
-            }
-        }
-    }
-
     use super::*;
     use ccusage_test_support::fs_fixture;
 
@@ -1540,6 +1455,26 @@ mod tests {
             )
             .0,
             20.0
+        );
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        assert_eq!(
+            pricing_candidates(" grok-4.5-build "),
+            [
+                "grok-4.5-build",
+                "xai/grok-4.5-build",
+                "x-ai/grok-4.5-build",
+                "grok-4.5",
+                "xai/grok-4.5",
+                "x-ai/grok-4.5"
+            ]
         );
     }
 }

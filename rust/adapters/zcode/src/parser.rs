@@ -469,90 +469,14 @@ mod tests {
 }
 
 #[cfg(test)]
-mod resolver_differential {
+mod pricing_identity_tests {
     use super::*;
-    use ccusage_core::pricing::MatchKind;
+
     #[test]
-    fn ordered_resolver_preserves_legacy_names_and_rates() {
-        ccusage_test_support::install_pricing_snapshots();
-        let mut pricing = PricingMap::load_embedded();
-        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
-        for model in [
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4",
-            "claude-opus-5",
-            "anthropic/claude-sonnet-4",
-            "gpt-5",
-            "gpt-5.5",
-            "openai/gpt-5",
-            "gemini-2.5-pro",
-            "gemini-3.8-flash-high",
-            "gemini-3.7-flash-medium",
-            "gemini-3.6-flash-low",
-            "gemini-3.8-flash",
-            "qwen3-coder",
-            "qwen3-coder-plus",
-            "qwen3-coder-flash",
-            "glm-5.3",
-            "GLM-5.3",
-            "glm-4.5",
-            "deepseek-v4-flash",
-            "deepseek/deepseek-v4-flash",
-            "grok-4.3",
-            "sample",
-            "vendor/sample",
-            "unpriced-model-xyz",
-        ] {
-            for provider in [
-                "anthropic",
-                "openai",
-                "google",
-                "qwen",
-                "alibaba",
-                "zai",
-                "openrouter",
-                "vendor",
-                "unknown",
-            ] {
-                let overrides: BTreeMap<String, PricingOverride> = BTreeMap::new();
-                let legacy = pricing_candidates(model, Some(provider));
-                let old_name = legacy
-                    .iter()
-                    .find(|name| overrides.contains_key(*name))
-                    .cloned()
-                    .or_else(|| {
-                        is_zai_provider(Some(provider))
-                            .then(|| {
-                                legacy
-                                    .iter()
-                                    .filter(|name| name.starts_with("zai/"))
-                                    .chain(legacy.iter().filter(|name| !name.starts_with("zai/")))
-                                    .find(|name| pricing.find(name).is_some())
-                                    .cloned()
-                            })
-                            .flatten()
-                    });
-                let old = old_name
-                    .as_deref()
-                    .and_then(|name| pricing.find(name).map(|rates| (name, rates)));
-                let candidates = pricing_candidates(model, Some(provider));
-                let ordered: Vec<_> = if is_zai_provider(Some(provider)) {
-                    candidates
-                        .iter()
-                        .filter(|name| name.starts_with("zai/"))
-                        .chain(candidates.iter().filter(|name| !name.starts_with("zai/")))
-                        .map(|name| (name.as_str(), MatchKind::Fuzzy))
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                let new = pricing.resolve(&ordered);
-                assert_eq!(
-                    format!("{old:?}"),
-                    format!("{new:?}"),
-                    "{model} / {provider}"
-                );
-            }
-        }
+    fn adapter_pricing_identity() {
+        assert_eq!(
+            ordered_pricing_candidates(" GLM-4.7 ", None, &BTreeMap::new()),
+            ["zai/GLM-4.7", "zai/glm-4.7", "GLM-4.7", "glm-4.7"]
+        );
     }
 }

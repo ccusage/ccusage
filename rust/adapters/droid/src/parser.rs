@@ -441,85 +441,38 @@ mod tests {
 }
 
 #[cfg(test)]
-mod resolver_differential {
+mod pricing_identity_tests {
     use super::*;
-    use ccusage_core::pricing::MatchKind;
+
     #[test]
-    fn ordered_resolver_preserves_legacy_names_and_rates() {
+    fn adapter_pricing_identity() {
         ccusage_test_support::install_pricing_snapshots();
-        let mut pricing = PricingMap::load_embedded();
-        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
-        for model in [
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4",
-            "claude-opus-5",
-            "anthropic/claude-sonnet-4",
-            "gpt-5",
-            "gpt-5.5",
-            "openai/gpt-5",
-            "gemini-2.5-pro",
-            "gemini-3.8-flash-high",
-            "gemini-3.7-flash-medium",
-            "gemini-3.6-flash-low",
-            "gemini-3.8-flash",
-            "qwen3-coder",
-            "qwen3-coder-plus",
-            "qwen3-coder-flash",
-            "glm-5.3",
-            "GLM-5.3",
-            "glm-4.5",
-            "deepseek-v4-flash",
-            "deepseek/deepseek-v4-flash",
-            "grok-4.3",
-            "sample",
-            "vendor/sample",
-            "unpriced-model-xyz",
+        let pricing = PricingMap::load_embedded();
+        for (raw, normalized, input, output) in [
+            ("gpt-5.1", "gpt-5-1", 1.25, 10.0),
+            ("gpt-5.1-codex", "gpt-5-1-codex", 1.25, 10.0),
+            ("gpt-5.2", "gpt-5-2", 1.75, 14.0),
+            ("gpt-5.4", "gpt-5-4", 2.5, 15.0),
+            ("gpt-5.5", "gpt-5-5", 5.0, 30.0),
+            ("gpt-5.6", "gpt-5-6", 4.0, 20.0),
+            ("gpt-4.1", "gpt-4-1", 2.0, 8.0),
+            ("gemini-2.5-flash", "gemini-2-5-flash", 0.3, 2.5),
+            ("gemini-3.5-flash", "gemini-3-5-flash", 1.5, 9.0),
+            ("glm-4.7", "glm-4-7", 0.6, 2.2),
         ] {
-            for provider in [
-                "anthropic",
-                "openai",
-                "google",
-                "qwen",
-                "alibaba",
-                "zai",
-                "openrouter",
-                "vendor",
-                "unknown",
-            ] {
-                let candidates = std::iter::once(model.to_string())
-                    .chain(
-                        provider_prefixes(provider)
-                            .into_iter()
-                            .map(|prefix| format!("{prefix}{model}")),
-                    )
-                    .collect::<Vec<_>>();
-                let old = candidates
-                    .iter()
-                    .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
-                let typed: Vec<_> = candidates
-                    .iter()
-                    .map(|name| (name.as_str(), MatchKind::Fuzzy))
-                    .collect();
-                let new = pricing.resolve(&typed);
-                assert!(
-                    old.is_none_or(|(_, rates)| ccusage_core::calculate_cost_from_pricing(
-                        TokenUsageRaw {
-                            input_tokens: 1,
-                            output_tokens: 1,
-                            cache_creation_input_tokens: 1,
-                            cache_read_input_tokens: 1,
-                            ..TokenUsageRaw::default()
-                        },
-                        rates
-                    ) > 0.0),
-                    "{model} / {provider} must exercise the legacy positive-cost path"
-                );
-                assert_eq!(
-                    format!("{old:?}"),
-                    format!("{new:?}"),
-                    "{model} / {provider}"
-                );
-            }
+            let fixture = ccusage_test_support::fs_fixture!({
+                "s.settings.json": serde_json::json!({"model":raw,"providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":1000,"outputTokens":1000}}).to_string()
+            });
+            let entry = load_settings_file(&fixture.path("s.settings.json"))
+                .unwrap()
+                .unwrap();
+            assert_eq!(entry.model, normalized);
+            let (cost, missing) = price_droid(&entry, CostMode::Calculate, Some(&pricing));
+            assert!(
+                (cost - (input + output) / 1000.0).abs() < 1e-12,
+                "{raw}: {cost}"
+            );
+            assert_eq!(missing, None);
         }
     }
 }

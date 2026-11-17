@@ -1641,3 +1641,15 @@ mod session_state_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        let model = normalize_copilot_model(" claude-opus-4.7-1m-internal ");
+        assert_eq!(model, "claude-opus-4.7");
+        assert_eq!(normalize_copilot_model("gpt-5.2"), "gpt-5.2");
+    }
+}

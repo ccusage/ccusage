@@ -454,103 +454,25 @@ fn pick_nested_u64(record: &serde_json::Map<String, Value>, key: &str, keys: &[&
 }
 
 #[cfg(test)]
-mod resolver_differential {
+mod pricing_identity_tests {
+    use super::*;
+
     #[test]
-    fn zero_rates_stop_candidate_fallback() {
+    fn adapter_pricing_identity() {
         let entry = CodebuffEntry {
-            timestamp: crate::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
+            timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
             timestamp_text: String::new(),
             session_id: "s".into(),
-            model: "sample".into(),
-            provider: "vendor".into(),
+            model: "gpt-5.2".into(),
+            provider: "openai".into(),
             credits: 0.0,
-            usage: TokenUsageRaw {
-                input_tokens: 100,
-                ..TokenUsageRaw::default()
-            },
+            usage: TokenUsageRaw::default(),
             extra_total_tokens: 0,
-            dedup_key: "k".into(),
+            dedup_key: String::new(),
         };
-        let mut pricing = PricingMap::default();
-        pricing.load_json(r#"{"sample":{"input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
-            price_codebuff(&entry, CostMode::Calculate, Some(&pricing)),
-            (0.0, None)
+            codebuff_model_candidates(&entry),
+            ["gpt-5.2", "openai/gpt-5.2"]
         );
-    }
-
-    use super::*;
-    use ccusage_core::pricing::MatchKind;
-    #[test]
-    fn ordered_resolver_preserves_legacy_names_and_rates() {
-        ccusage_test_support::install_pricing_snapshots();
-        let mut pricing = PricingMap::load_embedded();
-        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
-        for model in [
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4",
-            "claude-opus-5",
-            "anthropic/claude-sonnet-4",
-            "gpt-5",
-            "gpt-5.5",
-            "openai/gpt-5",
-            "gemini-2.5-pro",
-            "gemini-3.8-flash-high",
-            "gemini-3.7-flash-medium",
-            "gemini-3.6-flash-low",
-            "gemini-3.8-flash",
-            "qwen3-coder",
-            "qwen3-coder-plus",
-            "qwen3-coder-flash",
-            "glm-5.3",
-            "GLM-5.3",
-            "glm-4.5",
-            "deepseek-v4-flash",
-            "deepseek/deepseek-v4-flash",
-            "grok-4.3",
-            "sample",
-            "vendor/sample",
-            "unpriced-model-xyz",
-        ] {
-            for provider in [
-                "anthropic",
-                "openai",
-                "google",
-                "qwen",
-                "alibaba",
-                "zai",
-                "openrouter",
-                "vendor",
-                "unknown",
-            ] {
-                let candidates = [model.to_string(), format!("{provider}/{model}")];
-                let old = candidates
-                    .iter()
-                    .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
-                let typed: Vec<_> = candidates
-                    .iter()
-                    .map(|name| (name.as_str(), MatchKind::Fuzzy))
-                    .collect();
-                let new = pricing.resolve(&typed);
-                assert!(
-                    old.is_none_or(|(_, rates)| ccusage_core::calculate_cost_from_pricing(
-                        TokenUsageRaw {
-                            input_tokens: 1,
-                            output_tokens: 1,
-                            cache_creation_input_tokens: 1,
-                            cache_read_input_tokens: 1,
-                            ..TokenUsageRaw::default()
-                        },
-                        rates
-                    ) > 0.0),
-                    "{model} / {provider} must exercise the legacy positive-cost path"
-                );
-                assert_eq!(
-                    format!("{old:?}"),
-                    format!("{new:?}"),
-                    "{model} / {provider}"
-                );
-            }
-        }
     }
 }

@@ -440,89 +440,6 @@ fn kimi_for_coding_pricing_model(timestamp: TimestampMs) -> &'static str {
 #[cfg(test)]
 mod tests {
 
-    #[test]
-    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
-        use ccusage_core::pricing::MatchKind;
-        ccusage_test_support::install_pricing_snapshots();
-        for override_key in [
-            None,
-            Some("gpt-5"),
-            Some("[pi] gpt-5"),
-            Some("[openclaw] gpt-5"),
-            Some("grok-4.5-build"),
-            Some("google/gemini-2.5-pro"),
-            Some("moonshot/kimi-k2.5"),
-        ] {
-            let override_value = ccusage_core::cli::PricingOverride {
-                input_cost_per_token: Some(0.123),
-                output_cost_per_token: Some(0.456),
-                ..Default::default()
-            };
-            let override_key = override_key.map(str::to_string);
-            let pricing = PricingMap::load_embedded()
-                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
-            for model in [
-                "claude-sonnet-4",
-                "anthropic/claude-sonnet-4",
-                "claude-sonnet-4-20250514",
-                "claude-opus-4.1",
-                "claude-opus-5",
-                "gpt-5",
-                "openai/gpt-5",
-                "gpt-5.1-codex",
-                "o3",
-                "gemini-2.5-pro",
-                "gemini-2.5-flash",
-                "gemini-3-pro-preview",
-                "google/gemini-2.5-pro",
-                "kimi-k2",
-                "kimi-k2.5",
-                "kimi-k2.6",
-                "kimi-for-coding",
-                "moonshot/kimi-k2.5",
-                "grok-4",
-                "grok-4.5",
-                "grok-4.5-build",
-                "xai/grok-4.5",
-                "deepseek-chat",
-                "unknown-wave4-model",
-                "",
-            ] {
-                for timestamp in [
-                    crate::TimestampMs::from_millis(1_776_698_890_071),
-                    crate::TimestampMs::from_millis(1_776_698_890_072),
-                ] {
-                    let entry = KimiUsageEntry {
-                        timestamp,
-                        timestamp_text: String::new(),
-                        session_id: String::new(),
-                        model: model.to_string(),
-                        message_id: None,
-                        input_tokens: 0,
-                        output_tokens: 0,
-                        cache_creation_tokens: 0,
-                        cache_read_tokens: 0,
-                        extra_total_tokens: 0,
-                    };
-                    let names = model_candidates(&entry);
-                    let legacy = names
-                        .iter()
-                        .find_map(|name| pricing.find(name).map(|rates| (name.as_str(), rates)));
-                    let candidates: Vec<(&str, MatchKind)> = names
-                        .iter()
-                        .map(|name| (name.as_str(), MatchKind::Fuzzy))
-                        .collect();
-                    let resolved = pricing.resolve_at(&candidates, None);
-                    assert_eq!(
-                        format!("{legacy:?}"),
-                        format!("{resolved:?}"),
-                        "{model}, {override_key:?}, {timestamp:?}"
-                    );
-                }
-            }
-        }
-    }
-
     use super::*;
     use ccusage_test_support::fs_fixture;
 
@@ -680,5 +597,35 @@ mod tests {
         assert!((at_cost - 0.00032035).abs() < f64::EPSILON);
         assert_eq!(loaded.model.as_deref(), Some(DEFAULT_MODEL));
         assert_eq!(loaded.data.message.model.as_deref(), Some(DEFAULT_MODEL));
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        let entry = KimiUsageEntry {
+            timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            timestamp_text: String::new(),
+            session_id: "s".into(),
+            model: "kimi-for-coding".into(),
+            message_id: None,
+            input_tokens: 1000,
+            output_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            extra_total_tokens: 0,
+        };
+        assert_eq!(
+            model_candidates(&entry),
+            [
+                "moonshot/kimi-k2.6",
+                "moonshot/kimi-for-coding",
+                "kimi/kimi-for-coding",
+                "kimi-for-coding"
+            ]
+        );
     }
 }

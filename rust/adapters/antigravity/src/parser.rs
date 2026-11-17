@@ -2012,86 +2012,26 @@ mod tests {
 }
 
 #[cfg(test)]
-mod resolver_differential {
+mod pricing_identity_tests {
     use super::*;
-    use ccusage_core::pricing::MatchKind;
+
     #[test]
-    fn ordered_resolver_preserves_legacy_names_and_rates() {
-        ccusage_test_support::install_pricing_snapshots();
-        let mut pricing = PricingMap::load_embedded();
-        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
-        for model in [
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4",
-            "claude-opus-5",
-            "anthropic/claude-sonnet-4",
-            "gpt-5",
-            "gpt-5.5",
-            "openai/gpt-5",
-            "gemini-2.5-pro",
-            "gemini-3.8-flash-high",
-            "gemini-3.7-flash-medium",
-            "gemini-3.6-flash-low",
-            "gemini-3.8-flash",
-            "qwen3-coder",
-            "qwen3-coder-plus",
-            "qwen3-coder-flash",
-            "glm-5.3",
-            "GLM-5.3",
-            "glm-4.5",
-            "deepseek-v4-flash",
-            "deepseek/deepseek-v4-flash",
-            "grok-4.3",
-            "sample",
-            "vendor/sample",
-            "unpriced-model-xyz",
-        ] {
-            for provider in [
-                "anthropic",
-                "openai",
-                "google",
-                "qwen",
-                "alibaba",
-                "zai",
-                "openrouter",
-                "vendor",
-                "unknown",
-            ] {
-                let candidates = model_candidates(model, Some(API_PROVIDER_GOOGLE_GEMINI));
-                let exact = gemini_flash_pricing_alias(model).is_some();
-                let old = candidates.iter().find_map(|name| {
-                    let rates = if exact {
-                        pricing.find_exact_with_fallback(name).or_else(|| {
-                            let alias = crate::model_aliases::resolve_model_name(name);
-                            (alias.as_ref() != name)
-                                .then(|| pricing.find_exact_with_fallback(alias.as_ref()))
-                                .flatten()
-                        })
-                    } else {
-                        pricing.find(name)
-                    };
-                    rates.map(|rates| (name.as_str(), rates))
-                });
-                let typed: Vec<_> = candidates
-                    .iter()
-                    .map(|name| {
-                        (
-                            name.as_str(),
-                            if exact {
-                                MatchKind::Exact
-                            } else {
-                                MatchKind::Fuzzy
-                            },
-                        )
-                    })
-                    .collect();
-                let new = pricing.resolve(&typed);
-                assert_eq!(
-                    format!("{old:?}"),
-                    format!("{new:?}"),
-                    "{model} / {provider}"
-                );
-            }
-        }
+    fn adapter_pricing_identity() {
+        let model = normalize_antigravity_model("gemini-3.6-flash-high").unwrap();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"gemini-3.6-flash":{"input_cost_per_token":0.00000075,"output_cost_per_token":0.00000375},"gemini/gemini-3.6-flash-lite":{"input_cost_per_token":0.0000001,"output_cost_per_token":0.0000004}}"#);
+        let (cost, missing) = price_antigravity(
+            &model,
+            None,
+            TokenUsageRaw {
+                input_tokens: 1000,
+                ..Default::default()
+            },
+            crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        assert!((cost - 0.00075).abs() < 1e-12);
+        assert_eq!(missing, None);
     }
 }

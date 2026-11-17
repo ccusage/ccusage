@@ -3687,6 +3687,12 @@ mod tests {
                 .resolve(&[(model, super::MatchKind::Fuzzy)])
                 .unwrap()
                 .1;
+            let direct = pricing.find(model).unwrap();
+            assert_eq!(
+                (rates.input, rates.output),
+                (direct.input, direct.output),
+                "{model}"
+            );
             assert!((rates.input * 1e6 - input).abs() < 1e-9, "{model}");
             assert!((rates.output * 1e6 - output).abs() < 1e-9, "{model}");
         }

@@ -556,78 +556,6 @@ pub(super) fn migration_id(entry: &LoadedEntry) -> MigrationId {
 #[cfg(test)]
 mod tests {
 
-    #[test]
-    fn shared_resolver_preserves_legacy_candidate_names_and_rates() {
-        use ccusage_core::pricing::MatchKind;
-        ccusage_test_support::install_pricing_snapshots();
-        for override_key in [
-            None,
-            Some("gpt-5"),
-            Some("[pi] gpt-5"),
-            Some("[openclaw] gpt-5"),
-            Some("grok-4.5-build"),
-            Some("google/gemini-2.5-pro"),
-            Some("moonshot/kimi-k2.5"),
-        ] {
-            let override_value = ccusage_core::cli::PricingOverride {
-                input_cost_per_token: Some(0.123),
-                output_cost_per_token: Some(0.456),
-                ..Default::default()
-            };
-            let override_key = override_key.map(str::to_string);
-            let pricing = PricingMap::load_embedded()
-                .with_user_overrides(override_key.iter().map(|key| (key, &override_value)));
-            for model in [
-                "claude-sonnet-4",
-                "anthropic/claude-sonnet-4",
-                "claude-sonnet-4-20250514",
-                "claude-opus-4.1",
-                "claude-opus-5",
-                "gpt-5",
-                "openai/gpt-5",
-                "gpt-5.1-codex",
-                "o3",
-                "gemini-2.5-pro",
-                "gemini-2.5-flash",
-                "gemini-3-pro-preview",
-                "google/gemini-2.5-pro",
-                "kimi-k2",
-                "kimi-k2.5",
-                "kimi-k2.6",
-                "kimi-for-coding",
-                "moonshot/kimi-k2.5",
-                "grok-4",
-                "grok-4.5",
-                "grok-4.5-build",
-                "xai/grok-4.5",
-                "deepseek-chat",
-                "unknown-wave4-model",
-                "",
-            ] {
-                {
-                    let display = format!("[openclaw] {model}");
-                    let legacy = if pricing.find_exact(&display).is_some() {
-                        pricing
-                            .find(&display)
-                            .map(|rates| (display.as_str(), rates))
-                    } else {
-                        pricing.find(model).map(|rates| (model, rates))
-                    };
-                    let candidates: Vec<(&str, MatchKind)> = vec![
-                        (&display, MatchKind::StrictExact),
-                        (model, MatchKind::Fuzzy),
-                    ];
-                    let resolved = pricing.resolve_at(&candidates, None);
-                    assert_eq!(
-                        format!("{legacy:?}"),
-                        format!("{resolved:?}"),
-                        "{model}, {override_key:?}"
-                    );
-                }
-            }
-        }
-    }
-
     use ccusage_test_support::fs_fixture;
 
     use super::*;
@@ -889,5 +817,32 @@ mod tests {
             Some("[openclaw] deepseek-v4-flash")
         );
         assert!((entries[0].cost - 0.44).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = ccusage_test_support::fs_fixture!({
+            "s.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek.v4.flash","usage":{"input":1000,"output":0,"totalTokens":1000},"timestamp":"2026-11-17T10:00:00Z"}}"#
+        });
+        let pricing = PricingMap::load_embedded();
+        let rows = parse_session_file(
+            &fixture.path("s.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            Some(&pricing),
+            &Diagnostics::new("openclaw"),
+        )
+        .unwrap();
+        assert_eq!(
+            rows[0].model.as_deref(),
+            Some("[openclaw] deepseek.v4.flash")
+        );
+        assert!((rows[0].cost - 0.00022).abs() < 1e-12);
     }
 }

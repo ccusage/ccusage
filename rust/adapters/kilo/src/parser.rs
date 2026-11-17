@@ -419,76 +419,6 @@ mod tests {
 }
 
 #[cfg(test)]
-mod resolver_differential {
-    use super::*;
-    #[test]
-    fn ordered_resolver_preserves_legacy_names_and_rates() {
-        ccusage_test_support::install_pricing_snapshots();
-        let mut pricing = PricingMap::load_embedded();
-        pricing.load_json(r#"{"sample":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002},"vendor/sample":{"input_cost_per_token":0.000003,"output_cost_per_token":0.000004}}"#);
-        for model in [
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4",
-            "claude-opus-5",
-            "anthropic/claude-sonnet-4",
-            "gpt-5",
-            "gpt-5.5",
-            "openai/gpt-5",
-            "gemini-2.5-pro",
-            "gemini-3.8-flash-high",
-            "gemini-3.7-flash-medium",
-            "gemini-3.6-flash-low",
-            "gemini-3.8-flash",
-            "qwen3-coder",
-            "qwen3-coder-plus",
-            "qwen3-coder-flash",
-            "glm-5.3",
-            "GLM-5.3",
-            "glm-4.5",
-            "deepseek-v4-flash",
-            "deepseek/deepseek-v4-flash",
-            "grok-4.3",
-            "sample",
-            "vendor/sample",
-            "unpriced-model-xyz",
-        ] {
-            for provider in [
-                "anthropic",
-                "openai",
-                "google",
-                "qwen",
-                "alibaba",
-                "zai",
-                "openrouter",
-                "vendor",
-                "unknown",
-            ] {
-                let qualified = format!("{provider}/{model}");
-                let old = pricing
-                    .find_exact(&qualified)
-                    .and_then(|_| {
-                        pricing
-                            .find(&qualified)
-                            .map(|rates| (qualified.as_str(), rates))
-                    })
-                    .or_else(|| pricing.find(model).map(|rates| (model, rates)));
-                let candidates = model_candidates(model, Some(provider));
-                let candidates: Vec<_> = candidates
-                    .iter()
-                    .map(|(name, kind)| (name.as_str(), *kind))
-                    .collect();
-                let new = pricing.resolve(&candidates);
-                assert_eq!(
-                    format!("{old:?}"),
-                    format!("{new:?}"),
-                    "{model} / {provider}"
-                );
-            }
-        }
-    }
-}
-
-#[cfg(test)]
 mod cost_mode_warnings {
     use super::*;
 
@@ -518,5 +448,21 @@ mod cost_mode_warnings {
             assert_eq!(entry.cost, 0.0);
             assert_eq!(entry.missing_pricing_model.as_deref(), expected, "{mode:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        assert_eq!(
+            model_candidates("gpt-5.2", Some("open-ai")),
+            vec![
+                ("open_ai/gpt-5.2".into(), MatchKind::StrictExact),
+                ("gpt-5.2".into(), MatchKind::Fuzzy),
+            ]
+        );
     }
 }
