@@ -67,7 +67,7 @@ def main []: nothing -> nothing {
     try {
         let mock = $fixture | path join gh
         [
-            '#!/usr/bin/env nu'
+            $"#!($nu.current-exe)"
             'def --wrapped main [...args: string] { print $env.TEST_PR_FILES }'
         ] | str join "\n" | save $mock
         ^chmod +x $mock

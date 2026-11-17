@@ -20,8 +20,8 @@ default:
     @just --list
 
 # Install the JS dependencies needed to work in this repository
+[script('bash')]
 install mode="always":
-    #!/usr/bin/env bash
     set -euo pipefail
     toolDirs=()
     lockfiles=(pnpm-lock.yaml)
@@ -99,8 +99,8 @@ schema:
     nix run .#generate-schema
 
 # Re-resolve the Nix-built JS tools under nix/tools and regenerate their bun.nix
+[script('bash')]
 gen-bun-nix:
-    #!/usr/bin/env bash
     set -euo pipefail
     for lockfile in nix/tools/*/bun.lock; do
         toolDir="$(dirname "$lockfile")"

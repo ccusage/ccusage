@@ -8,7 +8,7 @@ def main []: nothing -> nothing {
     try {
         let mock = $fixture | path join gh
         [
-            '#!/usr/bin/env nu'
+            $"#!($nu.current-exe)"
             'def --wrapped main [...args: string] {'
             '    let method = if "--method" in $args { $args | skip (($args | enumerate | where item == "--method" | first | get index) + 1) | first } else { "GET" }'
             '    $method + "\n" | save --append $env.TEST_CALLS'

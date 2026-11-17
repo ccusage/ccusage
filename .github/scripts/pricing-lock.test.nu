@@ -13,14 +13,14 @@ def main []: nothing -> nothing {
     let fixture = mktemp -d
     try {
         [
-            '#!/usr/bin/env nu'
+            $"#!($nu.current-exe)"
             'def --wrapped main [...args: string] {'
             '    if "shell" in $args and $env.TEST_FAIL_GENERATION == "true" { exit 73 }'
             '    print "fixture nix diagnostic"'
             '}'
         ] | str join "\n" | save ($fixture | path join nix)
         [
-            '#!/usr/bin/env nu'
+            $"#!($nu.current-exe)"
             'def --wrapped main [...args: string] {'
             '    if $args == ["diff" "--quiet" "--" "flake.lock"] { return }'
             '    if ($args | first) == "diff" { return }'

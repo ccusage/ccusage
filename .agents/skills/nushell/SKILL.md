@@ -18,18 +18,21 @@ Scripts live in `.github/scripts/`, `apps/ccusage/scripts/`, and `scripts/`.
 ## Runtime Shape
 
 Every executable script is a `.nu` file with a Nix shebang and a `def main`; that
-shebang is how CI gets an interpreter, rather than a `nushell` profile install in
-the workflow. List only the tools the script directly invokes; `--inputs-from` is relative to
+shebang is how CI jobs with Nix get an interpreter, rather than a `nushell`
+profile install in the workflow. List only the tools the script directly invokes; `--inputs-from` is relative to
 the script's own directory, so its depth differs per directory — copy the header
 from a neighbor, such as `.github/scripts/upsert-pr-comment.nu` or
 `apps/ccusage/scripts/stage-native-package.nu`.
 
 Files that exist only to be imported as modules carry no shebang and no `main`:
-`.github/scripts/pricing-lock.nu`, `apps/ccusage/scripts/native-binary.nu`.
+`.github/scripts/pricing-lock.nu`, `.github/scripts/contribution-gate/core.nu`.
 
-Workflows run these scripts through the shebang, but the commit-msg hook in
-`nix/git-hooks.nix` invokes `scripts/validate-commit-scope.nu` as an argument to
-`nushell` instead, so that script only ever gets `nu` itself.
+Three callers pass the script to `nu` instead of running the shebang, so those
+scripts only ever get `nu` itself: the gate workflows, which install Nushell
+without Nix through `.github/actions/setup-nu`; the commit-msg hook in
+`nix/git-hooks.nix`; and the fixture suites in `checks.infra-scripts`, which run
+in the Nix build sandbox. A fixture's mock executable starts with
+`$"#!($nu.current-exe)"`, because the Linux sandbox has no `/usr/bin/env`.
 
 Calling external tools such as `gh`, `jq`, `git`, `hyperfine`, `pnpm`, `node`, or
 `bun` is fine when they are the right boundary — pin them through the shebang

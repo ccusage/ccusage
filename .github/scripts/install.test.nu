@@ -23,7 +23,7 @@ def main []: nothing -> nothing {
         for tool in [pnpm bun] {
             let mock = $fixture | path join bin $tool
             [
-                '#!/usr/bin/env nu'
+                $"#!($nu.current-exe)"
                 'def --wrapped main [...args: string] {'
                 '    ($env.CURRENT_FILE | path basename) + "\n" | save --append $env.TEST_CALLS'
                 '}'
