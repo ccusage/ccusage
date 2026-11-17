@@ -72,8 +72,6 @@ jobs:
               git diff --quiet && exit 0
               nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just
               pnpm install --frozen-lockfile
-              mkdir -p "$HOME/.claude/projects"
-              mkdir -p "$HOME/.config/claude/projects"
               just test-node
           - name: Babashka performance harness test
             run: |

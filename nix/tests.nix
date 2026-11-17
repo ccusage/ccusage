@@ -52,12 +52,10 @@ in
           # day. Point it at the nixpkgs tzdata; referencing the store path here
           # also pulls it into the sandbox as a build input.
           TZDIR = "${pkgs.tzdata}/share/zoneinfo";
-          # The workspace tests resolve default Claude data directories from
-          # $HOME; the sandbox has none, so seed a writable HOME with the same
-          # empty directory layout the CI test job creates before running tests.
+          # The sandbox HOME is not writable, and tools such as insta may
+          # write under it.
           preBuild = ''
             export HOME=$(mktemp -d)
-            mkdir -p "$HOME/.claude/projects" "$HOME/.config/claude/projects"
           '';
         }
       );
