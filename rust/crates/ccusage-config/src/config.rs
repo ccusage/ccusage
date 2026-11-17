@@ -217,11 +217,7 @@ fn load_config_paths(
             Err(error) if !explicit && error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => {
                 let message = config_error(format!("{}: {error}", path.display()));
-                if explicit {
-                    return (None, Some(message), warnings);
-                }
-                warnings.push(message);
-                continue;
+                return (None, Some(message), warnings);
             }
         };
         let file = serde_json::from_str(&content)
@@ -752,6 +748,14 @@ impl From<ConfigCostSource> for CostSource {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unreadable_discovered_config_does_not_select_another_file() {
+        let fixture = fs_fixture!({"lower.json": r#"{"defaults":{"json":true}}"#});
+        let selected = fixture.create_dir_all("selected.json");
+        let (file, error, _) = load_config_paths(false, vec![selected, fixture.path("lower.json")]);
+        assert!(file.is_none());
+        assert!(error.unwrap().contains("selected.json"));
+    }
     #[test]
     fn token_limits_accept_numbers_and_strings() {
         for raw in [
