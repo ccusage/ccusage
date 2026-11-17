@@ -1922,7 +1922,7 @@ fn assert_invalid_discovered_stores_allow(args: &[&str]) {
         ccusage_cli::DEFAULT_SESSION_DURATION_HOURS,
         env!("CARGO_PKG_VERSION"),
     );
-    assert!(parsed.is_ok(), "{parsed:?}");
+    assert!(parsed.is_ok(), "{:?}", parsed.err());
 }
 
 #[test]
