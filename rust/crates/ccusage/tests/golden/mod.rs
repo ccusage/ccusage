@@ -65,8 +65,8 @@ pub const ALL_REPORT_KINDS: [&str; 6] = [
     "statusline",
 ];
 
-/// Mirror of `agent_report_supported` in
-/// `rust/crates/ccusage-cli-parser/src/parser.rs`. The matrix also snapshots
+/// Mirror of the report sets in the agent table,
+/// `rust/crates/ccusage-cli/src/agents.rs`. The matrix also snapshots
 /// the rejection of every kind left out here, so a drift between this table
 /// and the parser shows up as a snapshot change.
 pub fn report_kinds(agent: &str) -> &'static [&'static str] {

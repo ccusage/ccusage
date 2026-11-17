@@ -456,7 +456,7 @@ fn seed_main_database(path: &Path) {
     );
 
     // No `time.created` in the payload: the column is the timestamp, and a
-    // NULL column falls back to the Unix epoch.
+    // row whose column is NULL is skipped as an invalid timestamp.
     let misc = "ses-v2-misc";
     db.session_message(
         "msg-v2-column-time",
@@ -886,5 +886,6 @@ pub fn extra_cases(_root: &Path) -> Vec<Case> {
                 "--include-claude-agent",
             ],
         ),
+        Case::new("daily", "table_warn", &["opencode", "daily", "--offline"]).env("LOG_LEVEL", "3"),
     ]
 }

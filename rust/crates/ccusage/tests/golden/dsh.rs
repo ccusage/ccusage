@@ -378,9 +378,12 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
 
 /// What the adapter says under `--debug` about the logs it cannot read.
 pub fn extra_cases(_root: &Path) -> Vec<Case> {
-    vec![Case::new(
-        "session",
-        "json_debug",
-        &["dsh", "session", "--offline", "--json", "--debug"],
-    )]
+    vec![
+        Case::new(
+            "session",
+            "json_debug",
+            &["dsh", "session", "--offline", "--json", "--debug"],
+        ),
+        Case::new("daily", "table_warn", &["dsh", "daily", "--offline"]).env("LOG_LEVEL", "3"),
+    ]
 }

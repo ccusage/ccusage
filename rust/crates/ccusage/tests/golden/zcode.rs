@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::golden::Case;
+
 const SONNET: &str = "'claude-sonnet-4-20250514'";
 const OPUS: &str = "'claude-opus-4-20250514'";
 const HAIKU: &str = "'claude-haiku-4-5-20251001'";
@@ -585,4 +587,8 @@ pub fn seed(root: &Path) -> Vec<(&'static str, PathBuf)> {
     .join(" , ");
 
     vec![("ZCODE_HOME", PathBuf::from(homes))]
+}
+
+pub fn extra_cases(_root: &Path) -> Vec<Case> {
+    vec![Case::new("daily", "table_warn", &["zcode", "daily", "--offline"]).env("LOG_LEVEL", "3")]
 }

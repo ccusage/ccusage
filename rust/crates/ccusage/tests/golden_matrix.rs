@@ -57,7 +57,7 @@ agent_matrix! {
     qwen => golden::no_extras,
     openclaw => golden::openclaw::extra_cases,
     grok => golden::no_extras,
-    zcode => golden::no_extras,
+    zcode => golden::zcode::extra_cases,
     cline => golden::no_extras,
     dsh => golden::dsh::extra_cases,
 }
