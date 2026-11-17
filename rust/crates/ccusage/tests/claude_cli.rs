@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use ccusage_test_support::{Fixture, Instant, instant, set_modified};
 
 mod support;
@@ -677,13 +679,12 @@ fn unified_sessions_keep_a_session_last_active_on_the_until_day() {
 /// boundaries: dropping whole early files re-anchors every later block.
 fn write_block_chain(
     fixture: &Fixture,
-    last_entry_ms: i64,
-    entries: i64,
+    last_entry: Instant,
+    entries: u32,
 ) -> Vec<std::path::PathBuf> {
-    const STEP_MS: i64 = 4 * 60 * 60 * 1000;
     let timestamps = (0..entries)
         .rev()
-        .map(|back| last_entry_ms - back * STEP_MS)
+        .map(|back| last_entry.minus(HOUR * 4 * back))
         .collect::<Vec<_>>();
     let mut files = Vec::new();
     // The earliest entry opens block 0 alone in its file; later files each hold
@@ -693,11 +694,10 @@ fn write_block_chain(
     for (index, chunk) in chunks.into_iter().enumerate() {
         let lines = chunk
             .iter()
-            .map(|&ms| {
-                let timestamp =
-                    ccusage_core::format_rfc3339_millis(ccusage_core::TimestampMs::from_millis(ms));
+            .map(|&timestamp| {
+                let ms = timestamp.millis();
                 usage_line(
-                    &timestamp,
+                    &timestamp.rfc3339_millis(),
                     "session-chain",
                     &format!("msg-{ms}"),
                     &format!("req-{ms}"),
@@ -707,12 +707,7 @@ fn write_block_chain(
             .collect::<Vec<_>>()
             .join("\n");
         let file = fixture.write_file(format!("projects/chain/part-{index:03}.jsonl"), lines);
-        set_modified(
-            &file,
-            instant(&ccusage_core::format_rfc3339_millis(
-                ccusage_core::TimestampMs::from_millis(*chunk.last().unwrap()),
-            )),
-        );
+        set_modified(&file, *chunk.last().unwrap());
         files.push(file);
     }
     files
@@ -721,7 +716,7 @@ fn write_block_chain(
 #[test]
 fn bounded_blocks_keep_anchors_from_older_files() {
     let fixture = Fixture::new();
-    let files = write_block_chain(&fixture, instant("2026-09-11T21:00:00Z").millis(), 71);
+    let files = write_block_chain(&fixture, instant("2026-09-11T21:00:00Z"), 71);
 
     assert_output_ignores_mtimes(
         || claude_command(&fixture),
@@ -744,7 +739,7 @@ fn bounded_blocks_keep_anchors_from_older_files() {
 }
 
 const NOW: &str = "2026-09-12T12:00:00Z";
-const HOUR_MS: i64 = 60 * 60 * 1000;
+const HOUR: Duration = Duration::from_secs(60 * 60);
 
 fn claude_command_at_now(fixture: &Fixture) -> std::process::Command {
     let mut command = claude_command(fixture);
@@ -776,7 +771,7 @@ fn statusline_hook(session: &str, transcript: &std::path::Path) -> String {
 #[test]
 fn statusline_active_block_keeps_anchors_from_older_files() {
     let fixture = Fixture::new();
-    let files = write_block_chain(&fixture, instant(NOW).millis() - HOUR_MS, 71);
+    let files = write_block_chain(&fixture, instant(NOW).minus(HOUR), 71);
     let hook = statusline_hook("session-chain", files.last().unwrap());
 
     let output = assert_output_ignores_mtimes(
@@ -830,17 +825,25 @@ fn bounded_unified_reports_still_detect_claude_with_only_stale_files() {
 #[test]
 fn statusline_keeps_the_current_block_before_future_dated_entries() {
     let fixture = Fixture::new();
-    let at = |offset_hours: i64| {
-        ccusage_core::format_rfc3339_millis(ccusage_core::TimestampMs::from_millis(
-            instant(NOW).millis() + offset_hours * HOUR_MS,
-        ))
-    };
+    let now = instant(NOW);
     // A skewed clock wrote an entry eight hours ahead, after a long pause.
     let transcript = fixture.write_file(
         "projects/project-a/session-now.jsonl",
         [
-            usage_line(&at(-1), "session-now", "msg-now", "req-now", 1.0),
-            usage_line(&at(8), "session-now", "msg-future", "req-future", 9.0),
+            usage_line(
+                &now.minus(HOUR).rfc3339_millis(),
+                "session-now",
+                "msg-now",
+                "req-now",
+                1.0,
+            ),
+            usage_line(
+                &now.plus(HOUR * 8).rfc3339_millis(),
+                "session-now",
+                "msg-future",
+                "req-future",
+                9.0,
+            ),
         ]
         .join("\n"),
     );

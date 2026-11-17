@@ -3,6 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
+    time::Duration,
 };
 
 use assert_fs::{
@@ -42,6 +43,26 @@ impl Instant {
         self.0
             .duration_since(jiff::Timestamp::UNIX_EPOCH)
             .as_millis_f64()
+    }
+
+    pub fn rfc3339_millis(self) -> String {
+        format!("{:.3}", self.0)
+    }
+
+    pub fn plus(self, duration: Duration) -> Self {
+        Instant(
+            self.0
+                .checked_add(duration)
+                .expect("fixture instant stays in range"),
+        )
+    }
+
+    pub fn minus(self, duration: Duration) -> Self {
+        Instant(
+            self.0
+                .checked_sub(duration)
+                .expect("fixture instant stays in range"),
+        )
     }
 }
 
@@ -206,6 +227,20 @@ mod tests {
         assert_eq!(timestamp.secs_f64(), 1_767_342_660.125);
         assert_eq!(timestamp.millis_f64(), 1_767_342_660_125.0);
         assert_eq!(timestamp, instant("2026-01-02T17:31:00.125+09:00"));
+    }
+
+    #[test]
+    fn fixture_instant_steps_by_durations_and_prints_milliseconds() {
+        let timestamp = instant("2026-01-02T08:31:00Z");
+        let hour = std::time::Duration::from_secs(60 * 60);
+
+        assert_eq!(timestamp.plus(hour), instant("2026-01-02T09:31:00Z"));
+        assert_eq!(timestamp.minus(hour * 9), instant("2026-01-01T23:31:00Z"));
+        assert_eq!(timestamp.rfc3339_millis(), "2026-01-02T08:31:00.000Z");
+        assert_eq!(
+            instant("2026-01-02T08:31:00.125Z").rfc3339_millis(),
+            "2026-01-02T08:31:00.125Z"
+        );
     }
 
     #[test]
