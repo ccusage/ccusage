@@ -385,7 +385,7 @@ pub fn load_groups(
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let diagnostics = Diagnostics::new("codex");
     let (groups, _) = load_groups_with_diagnostics(shared, kind, &diagnostics)?;
-    diagnostics.emit(shared);
+    diagnostics.emit(shared.debug);
     Ok(groups)
 }
 

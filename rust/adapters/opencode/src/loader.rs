@@ -1127,7 +1127,7 @@ pub(super) fn load_entries_with_native_sessions_with_progress(
     let diagnostics = Diagnostics::new("opencode");
     let entries =
         load_entries_with_native_sessions_with_diagnostics(shared, kind, owner, &diagnostics)?;
-    diagnostics.emit(shared);
+    diagnostics.emit(shared.debug);
     Ok(entries)
 }
 

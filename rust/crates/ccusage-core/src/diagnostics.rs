@@ -276,12 +276,7 @@ impl Diagnostics {
         self.state().tallies[kind as usize].skips()
     }
 
-    /// Prints [`warnings`](Self::warnings) to stderr.
-    pub fn emit(&self, shared: &SharedArgs) {
-        self.emit_with_verbosity(shared.debug);
-    }
-
-    pub fn emit_with_verbosity(&self, debug: bool) {
+    pub fn emit(&self, debug: bool) {
         for warning in self.render(log_level() != Some(0), debug) {
             eprintln!("{warning}");
         }

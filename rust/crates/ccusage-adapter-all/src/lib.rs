@@ -109,7 +109,7 @@ pub fn run_opencode(args: AgentCommandArgs) -> Result<()> {
         diagnostics.emit(
             args.sources
                 .get("claude")
-                .map_or(&args.shared, |source| &source.shared),
+                .map_or(args.shared.debug, |source| source.shared.debug),
         );
     }
     adapter::opencode::print_report(&args, entries)
@@ -125,7 +125,7 @@ fn emit_diagnostics(
         let shared = sources
             .get(diagnostics.source())
             .map_or(shared, |source| &source.shared);
-        diagnostics.emit(shared);
+        diagnostics.emit(shared.debug);
     }
 }
 

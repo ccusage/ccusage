@@ -56,7 +56,7 @@ pub fn focused_rows(
         diagnostics: &diagnostics,
     };
     let entries = load(source, &cx, ProgressOwner::Source)?;
-    diagnostics.emit(shared);
+    diagnostics.emit(shared.debug);
     let mut rows = summarize_in_window(descriptor.window, entries, &cx, |entries, kind| {
         source.summarize(
             entries,

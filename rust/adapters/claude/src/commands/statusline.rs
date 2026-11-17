@@ -66,7 +66,7 @@ pub fn run_statusline(args: StatuslineArgs) -> Result<()> {
 
     let diagnostics = Diagnostics::new("claude");
     let statusline_result = render_statusline(&hook, &args, &shared, &diagnostics);
-    diagnostics.emit_with_verbosity(args.debug);
+    diagnostics.emit(args.debug);
     match statusline_result {
         Ok(statusline) => {
             println!("{statusline}");
